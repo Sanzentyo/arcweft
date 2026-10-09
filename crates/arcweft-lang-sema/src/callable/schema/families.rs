@@ -865,7 +865,9 @@ impl CollectionMethodId {
 
         let item = sequence_item(receiver)?;
         Some(match self {
-            Self::Len => empty(TypeKind::USize, &[], validator),
+            Self::Len if !matches!(receiver, TypeKind::String) => {
+                empty(TypeKind::USize, &[], validator)
+            }
             Self::Filter => one_positional(
                 "predicate",
                 TypeKind::function([item], TypeKind::Bool),
@@ -873,8 +875,9 @@ impl CollectionMethodId {
                 &[],
                 validator,
             ),
-            Self::Sum => empty(TypeKind::I64, &[], validator),
+            Self::Sum if item.is_integer() => empty(TypeKind::I64, &[], validator),
             Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
+            Self::Len | Self::Sum => return None,
             Self::Collect { .. } => unreachable!("collect schema returned above"),
         })
     }

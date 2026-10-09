@@ -489,11 +489,12 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
-        if let RuntimeValue::Seq(sequence) = &value
-            && let Some(sum) = sequence.sum_as_i64()
-        {
-            return Ok(RuntimeValue::i64(sum));
-        }
+        let value = match value {
+            RuntimeValue::Seq(sequence) => {
+                return sequence.into_checked_sum_as_i64().map(RuntimeValue::i64);
+            }
+            value => value,
+        };
         let iterator = RuntimeIterator::from_value(value)
             .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))?;
         let items = iterator.collect::<Vec<_>>();

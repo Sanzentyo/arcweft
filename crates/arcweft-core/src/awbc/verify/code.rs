@@ -43,6 +43,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 #[cfg(test)]
 mod capacity_tests;
 #[cfg(test)]
+mod collection_tests;
+#[cfg(test)]
 mod index_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1683,6 +1685,19 @@ fn apply_instruction(
             if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 verify_index_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
+                verify_collection_intrinsic_signature(
+                    program,
+                    *identity,
+                    intrinsic.signature,
+                    &at,
+                )?;
+                if matches!(
+                    identity,
+                    RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+                ) && dst.is_none()
+                {
+                    return invalid_type(&at, "collection intrinsic requires a result destination");
+                }
                 if matches!(
                     identity,
                     RuntimeIntrinsic::StdOptionContext
@@ -5829,6 +5844,65 @@ fn verify_index_intrinsic_signature(
             at: at.to_owned(),
             message: "CoreIndex has an invalid typed signature".to_owned(),
         });
+    }
+    Ok(())
+}
+
+fn verify_collection_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    if !matches!(
+        intrinsic,
+        RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+    ) {
+        return Ok(());
+    }
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "collection intrinsic has no signature".to_owned(),
+        })?;
+    let [receiver] = signature.params.as_slice() else {
+        return invalid_type(at, "collection intrinsic requires exactly one receiver");
+    };
+    let Some(result) = signature.result else {
+        return invalid_type(at, "collection intrinsic requires a result");
+    };
+    let item = match runtime_shape(program, *receiver) {
+        Some(
+            AwbcRuntimeTypeShape::Sequence { item, .. } | AwbcRuntimeTypeShape::Array { item, .. },
+        ) => *item,
+        _ => return invalid_type(at, "collection intrinsic requires a sequence receiver"),
+    };
+    let typed_result = match intrinsic {
+        RuntimeIntrinsic::CoreSeqLen => matches!(
+            runtime_shape(program, result),
+            Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize))
+        ),
+        RuntimeIntrinsic::CoreSeqSum => {
+            matches!(
+                runtime_shape(program, result),
+                Some(AwbcRuntimeTypeShape::Int(
+                    crate::awbc::schema::AwbcSignedIntKind::I64
+                ))
+            ) && matches!(
+                runtime_shape(program, item),
+                Some(AwbcRuntimeTypeShape::Int(_) | AwbcRuntimeTypeShape::UInt(_))
+            )
+        }
+        _ => unreachable!("the closed collection intrinsic family was checked above"),
+    };
+    let pure = program
+        .effect_sets
+        .get(signature.effects.index())
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !typed_result || !pure {
+        return invalid_type(at, "collection intrinsic has an invalid typed signature");
     }
     Ok(())
 }

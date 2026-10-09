@@ -2474,8 +2474,10 @@ impl<'a> LocalUseChecker<'a> {
         if self
             .analysis
             .expression(owner)
-            .and_then(super::CheckedExpression::value_type)
-            == Some(&TypeKind::Never)
+            .and_then(|expression| {
+                super::completion::NormalContinuation::from_checked_result(expression.result())
+            })
+            .is_some_and(super::completion::NormalContinuation::is_never)
         {
             state.terminate();
         }
@@ -2501,7 +2503,7 @@ impl<'a> LocalUseChecker<'a> {
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
         let ownership_reachable = state.reachable;
-        let prefix_diverges = state.result_type == TypeKind::Never;
+        let prefix_diverges = state.result_type.is_never();
         if self.analysis.statement(owner).is_none() {
             return Ok(());
         }
@@ -2611,6 +2613,11 @@ impl<'a> LocalUseChecker<'a> {
                 }
                 if let Some(joined) = joined {
                     *state = joined;
+                } else {
+                    // The empty alternative join is Never. Match coverage, not
+                    // an absent branch, determines whether this source domain
+                    // admits an empty exhaustive arm inventory.
+                    state.terminate();
                 }
             }
             HirStmtEvaluationPlan::LetElse {
@@ -2623,11 +2630,11 @@ impl<'a> LocalUseChecker<'a> {
                 let mut failed = state.clone();
                 // Check this branch's control contract even when the outer
                 // ownership path is unreachable, without reviving its loans.
-                failed.result_type = TypeKind::Unit;
+                failed.result_type = super::completion::NormalContinuation::Unit;
                 for statement in else_body {
                     self.statement(*statement, &mut failed)?;
                 }
-                if failed.result_type != TypeKind::Never {
+                if !failed.result_type.is_never() {
                     return Err(CheckedLocalUseError::LetElseContinues { statement: owner });
                 }
                 // The proven divergent failure branch cannot consume a

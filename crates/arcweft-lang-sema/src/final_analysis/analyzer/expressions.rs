@@ -1,5 +1,7 @@
 //! Expression-family checking outside ordinary-call resolution.
 
+#[path = "expressions/completion.rs"]
+mod completion;
 #[path = "dialogue_line_plan.rs"]
 pub(super) mod dialogue_line_plan;
 #[path = "expressions/records.rs"]
@@ -49,7 +51,7 @@ use arcweft_lang_hir::expr::{
     HirSelectExpr,
 };
 use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
-use arcweft_lang_hir::stmt::HirTrigger;
+use arcweft_lang_hir::stmt::{HirStmtEvaluationPlan, HirStmtValuePlanKind, HirTrigger};
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -802,11 +804,6 @@ impl Analyzer<'_, '_, '_> {
                 EffectSet::new(),
             )
         } else {
-            enum BodySeed {
-                Complete(CheckedExpression),
-                OwnerBound(Box<PreparedOwnerBoundExpression>),
-            }
-
             self.implicit_callable_stack
                 .push(super::ImplicitCallableContext {
                     owner,
@@ -821,11 +818,15 @@ impl Analyzer<'_, '_, '_> {
                 expression,
                 &body_expectation,
             )? {
-                Some(PreparedExpressionFact::OwnerBound(body)) => BodySeed::OwnerBound(body),
-                Some(other) => BodySeed::Complete(other.into_complete().map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                })?),
-                None => BodySeed::Complete(self.check_expression_kind::<E>(
+                Some(body @ PreparedExpressionFact::OwnerBound(_)) => body,
+                Some(other) => {
+                    PreparedExpressionFact::from(other.into_complete().map_err(|_| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        )
+                    })?)
+                }
+                None => PreparedExpressionFact::from(self.check_expression_kind::<E>(
                     context,
                     module,
                     owner,
@@ -838,17 +839,13 @@ impl Analyzer<'_, '_, '_> {
                 .implicit_callable_stack
                 .pop()
                 .expect("implicit callable context was just pushed");
-            let body_type = match &body {
-                BodySeed::Complete(body) => body.value_type().cloned(),
-                BodySeed::OwnerBound(body) => body.value_type().cloned(),
-            }
-            .ok_or_else(|| {
+            let body_type = body.value_type().cloned().ok_or_else(|| {
                 AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 )
             })?;
             let propagates_to_function_site = match &body {
-                BodySeed::Complete(body) => matches!(
+                PreparedExpressionFact::Complete(body) => matches!(
                     body.resolution(),
                     CheckedExpressionResolution::Try(tried)
                         if matches!(
@@ -858,7 +855,7 @@ impl Analyzer<'_, '_, '_> {
                             ))
                         )
                 ),
-                BodySeed::OwnerBound(body) => matches!(
+                PreparedExpressionFact::OwnerBound(body) => matches!(
                     body.resolution(),
                     PreparedOwnerBoundResolution::Try(try_expression)
                         if matches!(
@@ -866,6 +863,7 @@ impl Analyzer<'_, '_, '_> {
                             PreparedTryBoundary::ImplicitFunctionSite { .. }
                         )
                 ),
+                _ => false,
             };
             let result = if propagates_to_function_site {
                 context
@@ -873,15 +871,30 @@ impl Analyzer<'_, '_, '_> {
                     .clone()
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?
             } else {
-                self.callable_body_result(module, owner, body_type, context.result.as_ref())?
+                self.callable_body_result(
+                    module,
+                    owner,
+                    owner,
+                    body_type,
+                    &body,
+                    context.result.as_ref(),
+                )?
             };
-            let effects = match &body {
-                BodySeed::Complete(body) => body.effects().clone(),
-                BodySeed::OwnerBound(body) => body.effects().clone(),
-            };
+            let effects = body.effects().clone();
             let body = match body {
-                BodySeed::Complete(body) => PreparedImplicitCallableBody::Complete(body),
-                BodySeed::OwnerBound(body) => PreparedImplicitCallableBody::OwnerBound(body),
+                PreparedExpressionFact::Complete(body) => {
+                    PreparedImplicitCallableBody::Complete(body)
+                }
+                PreparedExpressionFact::OwnerBound(body) => {
+                    PreparedImplicitCallableBody::OwnerBound(body)
+                }
+                other => {
+                    PreparedImplicitCallableBody::Complete(other.into_complete().map_err(|_| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        )
+                    })?)
+                }
             };
             (body, result, effects)
         };
@@ -1976,43 +1989,68 @@ impl Analyzer<'_, '_, '_> {
             .collect()
     }
 
-    /// A callable whose body cannot fall through still has its declared or
-    /// contextual result contract. With no result hint, a terminal Return
-    /// supplies the result type; other divergent bodies retain Never.
+    /// The body continuation and exact receiving callable are derived from the
+    /// typed HIR evaluation/transfer rows. Named scopes never intercept Return.
     fn callable_body_result(
         &self,
         module: &HirModule,
+        callable: ExprId,
         body: ExprId,
         body_type: TypeKind,
+        body_fact: &PreparedExpressionFact,
         expected: Option<&TypeKind>,
     ) -> Result<TypeKind, AnalyzerExpressionError> {
-        if body_type != TypeKind::Never {
-            return Ok(body_type);
-        }
         if let Some(expected) = expected {
-            return Ok(expected.clone());
+            return Ok(if body_type == TypeKind::Never {
+                expected.clone()
+            } else {
+                body_type
+            });
         }
-        let expression = module.resolve_expr(body).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-        })?;
-        let HirExprKind::Block(block) = expression.kind() else {
+        let continuation = self.expression_body_completion(module, body, callable, body_fact)?;
+        let mut results = continuation
+            .returns()
+            .iter()
+            .map(|statement| {
+                let source = module.resolve_stmt(*statement).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                let HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Return,
+                    expression,
+                    ..
+                } = source.kind().evaluation_plan()
+                else {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    ));
+                };
+                match expression {
+                    Some(value) => self
+                        .facts
+                        .expressions()
+                        .get(&value)
+                        .and_then(PreparedExpressionFact::value_type)
+                        .ok_or_else(|| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                    owner: value,
+                                },
+                            )
+                        }),
+                    None => Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    )),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if continuation.continues() {
+            results.push(&body_type);
+        }
+        if results.is_empty() {
             return Ok(body_type);
-        };
-        let Some(statement) = block.statements().last() else {
-            return Ok(body_type);
-        };
-        let statement = module.resolve_stmt(*statement).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-        })?;
-        let HirStmtKind::Return { value } = statement.kind() else {
-            return Ok(body_type);
-        };
-        self.facts
-            .expressions()
-            .get(value)
-            .and_then(PreparedExpressionFact::value_type)
-            .cloned()
-            .ok_or_else(|| AnalyzerExpressionError::rejected(body))
+        }
+        common_type(results, None).ok_or_else(|| AnalyzerExpressionError::rejected(body))
     }
 
     fn check_control_expression_kind(
@@ -2027,11 +2065,9 @@ impl Analyzer<'_, '_, '_> {
         match expression.kind() {
             HirExprKind::Block(block) => {
                 self.evaluate_block_statement_uses(context, module, block.statements())?;
-                let returns = block.statements().last().is_some_and(|statement| {
-                    module.resolve_stmt(*statement).is_ok_and(|statement| {
-                        matches!(statement.kind(), HirStmtKind::Return { .. })
-                    })
-                });
+                let returns = !self
+                    .block_statements_completion(module, block.statements(), None)?
+                    .continues();
                 let tail = self.evaluate_expression_with_expectation(
                     context,
                     block.tail(),
@@ -2073,6 +2109,12 @@ impl Analyzer<'_, '_, '_> {
             }
             HirExprKind::ComputationBlock(block) => {
                 self.evaluate_block_statement_uses(context, module, block.statements())?;
+                let returns = matches!(
+                    block.kind(),
+                    HirComputationBlockKind::Result | HirComputationBlockKind::Option
+                ) && !self
+                    .block_statements_completion(module, block.statements(), None)?
+                    .continues();
                 let expected_success = match (block.kind(), expected) {
                     (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
                         Some(ok.as_ref())
@@ -2085,7 +2127,11 @@ impl Analyzer<'_, '_, '_> {
                 let tail = self.evaluate_expression_with_expectation(
                     context,
                     block.tail(),
-                    expectation.project_checked(owner, expected_success)?,
+                    if returns {
+                        AnalyzerExpressionExpectation::Unconstrained
+                    } else {
+                        expectation.project_checked(owner, expected_success)?
+                    },
                 )?;
                 let tail_type = tail.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2129,14 +2175,24 @@ impl Analyzer<'_, '_, '_> {
                         error: Box::new(TypeKind::Unit),
                     },
                 };
-                Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
+                Ok(structural_expression(
+                    if returns { TypeKind::Never } else { ty },
+                    CheckedTypeSelection::Inferred,
+                ))
             }
             HirExprKind::NamedBlock(block) => {
                 self.evaluate_block_statement_uses(context, module, block.statements())?;
+                let returns = !self
+                    .block_statements_completion(module, block.statements(), None)?
+                    .continues();
                 let tail = self.evaluate_expression_with_expectation(
                     context,
                     block.tail(),
-                    expectation.clone(),
+                    if returns {
+                        AnalyzerExpressionExpectation::Unconstrained
+                    } else {
+                        expectation.clone()
+                    },
                 )?;
                 let tail_type = tail.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
@@ -2167,7 +2223,7 @@ impl Analyzer<'_, '_, '_> {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                     })?;
                 Ok(CheckedExpression::value(
-                    tail_type,
+                    if returns { TypeKind::Never } else { tail_type },
                     tail_selection,
                     EffectSet::new(),
                     CheckedExpressionResolution::Scope(
@@ -2837,7 +2893,14 @@ impl Analyzer<'_, '_, '_> {
                         )
                     })?
                 };
-                let result = self.callable_body_result(module, closure.body(), result, body_expected)?;
+                let result = self.callable_body_result(
+                    module,
+                    owner,
+                    closure.body(),
+                    result,
+                    &body,
+                    body_expected,
+                )?;
                 let ty = TypeKind::function_with_effects(
                     parameters,
                     result,

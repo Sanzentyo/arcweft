@@ -34,7 +34,9 @@ pub(crate) use arc_error::{RuntimeArcErrorContextKind, RuntimeArcErrorContextSta
 mod awbc_save;
 mod callable;
 mod character_dialogue;
+mod collection;
 mod color;
+pub(crate) use collection::evaluate_collection_intrinsic;
 mod data_shape;
 mod env;
 pub(crate) use env::RuntimeEnvRollbackImage;
@@ -524,6 +526,8 @@ pub enum RuntimeIntrinsic {
     Add,
     CoreRange,
     CoreIterCollect,
+    CoreSeqLen,
+    CoreSeqSum,
     CoreRangeIntoIter,
     CoreSeqIntoIter,
     CoreStreamIntoIter,
@@ -652,6 +656,8 @@ impl RuntimeIntrinsic {
             "add" => Some(Self::Add),
             "core.range" => Some(Self::CoreRange),
             "core.iter.collect" => Some(Self::CoreIterCollect),
+            "core.seq.len" => Some(Self::CoreSeqLen),
+            "core.seq.sum" => Some(Self::CoreSeqSum),
             "core.iter.into_iter.range" => Some(Self::CoreRangeIntoIter),
             "core.iter.into_iter.seq" => Some(Self::CoreSeqIntoIter),
             "core.iter.into_iter.stream" => Some(Self::CoreStreamIntoIter),
@@ -748,6 +754,8 @@ impl RuntimeIntrinsic {
             Self::Add => "add",
             Self::CoreRange => "core.range",
             Self::CoreIterCollect => "core.iter.collect",
+            Self::CoreSeqLen => "core.seq.len",
+            Self::CoreSeqSum => "core.seq.sum",
             Self::CoreRangeIntoIter => "core.iter.into_iter.range",
             Self::CoreSeqIntoIter => "core.iter.into_iter.seq",
             Self::CoreStreamIntoIter => "core.iter.into_iter.stream",
@@ -4219,6 +4227,8 @@ impl RuntimeIntrinsic {
             Self::MathMatmulF64 => 87,
             Self::MathMatrixAddF64 => 88,
             Self::MathTensorAddF64 => 89,
+            Self::CoreSeqLen => 90,
+            Self::CoreSeqSum => 91,
         }
     }
 }

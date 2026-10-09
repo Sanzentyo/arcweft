@@ -7,8 +7,8 @@ use super::{
     CheckedLocalUseError, CheckedLocalUseSite, CheckedPlaceDisplacement,
     CheckedPlaceInitialization, CheckedSyntheticUse, CheckedSyntheticUseOwner, ExprId, LocalId,
 };
+use crate::final_analysis::completion::NormalContinuation;
 use crate::record_field::CheckedRecordFieldSemanticId;
-use crate::types::TypeKind;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -52,7 +52,7 @@ pub(super) struct NodeId(usize);
 pub(super) struct Availability {
     pub(super) reachable: bool,
     // Unit denotes a normal continuation; Never denotes a divergent body.
-    pub(super) result_type: TypeKind,
+    pub(super) result_type: NormalContinuation,
     frontier: BTreeSet<NodeId>,
 }
 
@@ -60,17 +60,13 @@ impl Availability {
     pub(super) fn root() -> Self {
         Self {
             reachable: true,
-            result_type: TypeKind::Unit,
+            result_type: NormalContinuation::Unit,
             frontier: BTreeSet::new(),
         }
     }
 
     pub(super) fn join(mut self, mut other: Self) -> Self {
-        let result_type = if self.result_type == TypeKind::Never {
-            other.result_type.clone()
-        } else {
-            self.result_type.clone()
-        };
+        let result_type = self.result_type.join(other.result_type);
         if !self.reachable {
             other.result_type = result_type;
             return other;
@@ -84,7 +80,7 @@ impl Availability {
 
     pub(super) fn terminate(&mut self) {
         self.reachable = false;
-        self.result_type = TypeKind::Never;
+        self.result_type = NormalContinuation::Never;
         self.frontier.clear();
     }
 
@@ -96,7 +92,7 @@ impl Availability {
     pub(super) fn at(node: NodeId) -> Self {
         Self {
             reachable: true,
-            result_type: TypeKind::Unit,
+            result_type: NormalContinuation::Unit,
             frontier: BTreeSet::from([node]),
         }
     }

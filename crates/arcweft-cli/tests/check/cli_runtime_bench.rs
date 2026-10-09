@@ -6991,3 +6991,1537 @@ adapter = "custom-http"
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+mod source_map_batch_owner_tests {
+    use arcweft_core::engine::{Engine, FlowFiberStatus};
+    use arcweft_core::pure::{RuntimePureCallBackend, RuntimePureFunctionRef};
+    use arcweft_core::step::{RuntimeStepBudget, RuntimeStepMode, RuntimeStepOptions};
+    use arcweft_core::value::{RuntimeValue, runtime_sequence_values};
+    use arcweft_runtime_accelerator::{
+        RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
+        RuntimePureWorkerCount,
+    };
+    use std::sync::Arc;
+
+    fn authored(source: &str) -> arcweft_compiler::lower::CompiledDeterministicProgram {
+        use arcweft_lang_sema::final_analysis::{
+            CheckedExecutionBodyOwner, CheckedExecutionSource,
+        };
+        let compiled = arcweft_compiler::source::compile_source(source).unwrap();
+        let lease = &compiled.analysis;
+        let declaration = lease
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        lease
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+            )
+            .unwrap()
+    }
+    fn inputs() -> Vec<RuntimeValue> {
+        vec![
+            runtime_sequence_values(vec![
+                RuntimeValue::i64(1),
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+            ]),
+            RuntimeValue::i64(2),
+            RuntimeValue::i64(71),
+        ]
+    }
+    fn source(sum: bool) -> String {
+        let result = if sum { "i64" } else { "Vec<i64>" };
+        let body = if sum {
+            "values.map(|item| score(item, bonus, unused)).sum()"
+        } else {
+            "values.map(|item| score(item, bonus, unused))"
+        };
+        format!(
+            "fn score(value: i64, bonus: i64, unused: i64) -> i64 {{ return value * (bonus + 2i64) }}\npub fn root(values: Vec<i64>, bonus: i64, unused: i64) -> {result} {{ {body} }}\nflow main() -> String {{ return \"ok\" }}\n"
+        )
+    }
+    fn accelerator(
+        mode: RuntimePureBackendMode,
+        plan: &Arc<arcweft_core::plan::RuntimePlan>,
+    ) -> RuntimePureAccelerator {
+        RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig {
+                backend: mode,
+                workers: RuntimePureWorkerCount::Fixed(2),
+                batch_min_len: 1,
+                ..RuntimePureAcceleratorConfig::default()
+            },
+            plan,
+        )
+    }
+    fn finish_native(
+        selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+        backend: &mut RuntimePureAccelerator,
+        mode: RuntimeStepMode,
+        budget: usize,
+    ) -> RuntimeValue {
+        let mut engine = Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            inputs(),
+        )
+        .unwrap();
+        for _ in 0..512 {
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode,
+                    budget: RuntimeStepBudget { max_ops: budget },
+                    ..Default::default()
+                },
+                backend,
+            );
+            assert!(step.stats.executed_ops <= budget);
+            assert!(
+                !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                "{:?}",
+                step.output.diagnostics
+            );
+            if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                return engine.take_program_result().unwrap().unwrap().1;
+            }
+            assert!(
+                engine.take_program_result().unwrap().is_none(),
+                "running invocation cannot expose a result"
+            );
+        }
+        panic!("source Map must complete within the bounded test schedule");
+    }
+    fn assert_values(value: RuntimeValue) {
+        let RuntimeValue::Seq(values) = value else {
+            panic!("checked Vec family")
+        };
+        assert_eq!(values.len(), 3);
+        let actual = (0..values.len())
+            .map(|index| values.value_at(index))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual,
+            [
+                RuntimeValue::i64(4),
+                RuntimeValue::i64(8),
+                RuntimeValue::i64(12)
+            ]
+        );
+    }
+    fn score(
+        selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+    ) -> RuntimePureFunctionRef<'_> {
+        RuntimePureFunctionRef::eager_candidates(selected.plan())
+            .find(|function| {
+                function.output_type == arcweft_core::plan::RuntimePureOutputType::I64
+                    && function.inputs.len() == 3
+                    && function
+                        .inputs
+                        .iter()
+                        .all(|input| input.abi() == arcweft_core::plan::RuntimePureInputType::I64)
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn source_map_batch_preserves_original_captured_and_unused_formals() {
+        let selected = authored(&source(false));
+        assert!(selected.plan().pure_helpers().is_empty());
+        let target = score(&selected);
+        assert_eq!(
+            target.function_site().unwrap().parameter_inputs().count(),
+            3
+        );
+        assert!(std::ptr::eq(
+            target.function_site().unwrap(),
+            selected
+                .plan()
+                .function_sites()
+                .get(match target.id() {
+                    arcweft_core::pure::RuntimePureFunctionId::Function(site) => site,
+                    _ => unreachable!("source FunctionSite"),
+                })
+                .unwrap()
+        ));
+        let rejection = Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            inputs().into_iter().take(2).collect(),
+        )
+        .unwrap_err();
+        assert_eq!(rejection.into_parts().1.len(), 2);
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            assert_values(finish_native(
+                &selected,
+                &mut backend,
+                RuntimeStepMode::Drain,
+                4096,
+            ));
+            let stats = backend.stats();
+            assert_eq!(stats.pure_calls, 3);
+            assert_eq!(stats.batch_calls, 1);
+            assert_eq!(stats.batch_items, 3);
+            assert_eq!(stats.flat_batch_calls, 1);
+            assert_eq!(stats.arg_vec_allocations, 0);
+            assert_eq!(stats.arg_bytes_copied, 0);
+            assert_eq!(stats.arg_bytes_borrowed, 72);
+            assert_eq!(stats.result_bytes_copied, 24);
+            assert_eq!(stats.aot_calls + stats.jit_calls, 3);
+            assert_eq!(stats.vm_calls, 0);
+        }
+    }
+
+    #[test]
+    fn source_map_forwarding_scope_uses_the_original_native_schedule_and_full_formals() {
+        use arcweft_core::plan::{FlowOp, RuntimeFunctionSiteBody};
+        let source = source(false).replace(
+            "values.map(|item| score(item, bonus, unused))",
+            "values.map(|item| { scope forwarding { return score(item, bonus, unused) } })",
+        );
+        let selected = authored(&source);
+        fn retained_forwarding(ops: &[FlowOp], entered: bool) -> bool {
+            let mut entered = entered;
+            for op in ops {
+                match op {
+                    FlowOp::EnterScope { .. } => entered = true,
+                    FlowOp::Scope { body, .. } if retained_forwarding(body, true) => return true,
+                    FlowOp::ProjectCall { .. } if entered => return true,
+                    _ => {}
+                }
+            }
+            false
+        }
+        assert!(selected.plan().function_sites().iter_with_ids().any(|(_, row)|
+            matches!(row.body(), RuntimeFunctionSiteBody::Executable(body) if retained_forwarding(body.ops(), false))),
+            "the callback must retain an emitted lexical owner around the actual ProjectCall");
+        fn finish_with_cost(
+            selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+            backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
+        ) -> (RuntimeValue, usize) {
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                inputs(),
+            )
+            .unwrap();
+            let mut ops = 0;
+            for _ in 0..64 {
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::Drain,
+                        budget: RuntimeStepBudget { max_ops: 4096 },
+                        ..Default::default()
+                    },
+                    backend,
+                );
+                ops += step.stats.executed_ops;
+                assert!(
+                    !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                    "{:?}",
+                    step.output.diagnostics
+                );
+                if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                    return (engine.take_program_result().unwrap().unwrap().1, ops);
+                }
+            }
+            panic!("accepted scoped forwarding must finish");
+        }
+        let (expected, expected_ops) = finish_with_cost(
+            &selected,
+            &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+        );
+        assert_values(expected.clone());
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            let (actual, actual_ops) = finish_with_cost(&selected, &mut backend);
+            assert_eq!(actual, expected);
+            assert_eq!(actual_ops, expected_ops);
+            let stats = backend.stats();
+            assert_eq!(stats.batch_calls, 1);
+            assert_eq!(stats.flat_batch_items, 3);
+            assert_eq!(stats.pure_calls, 3);
+            assert_eq!(stats.vm_calls, 0);
+            match mode {
+                RuntimePureBackendMode::Aot => assert_eq!(stats.aot_calls, 3),
+                RuntimePureBackendMode::Jit => assert_eq!(stats.jit_calls, 3),
+                _ => unreachable!(),
+            }
+            assert_eq!(stats.arg_bytes_borrowed, 72);
+            assert_eq!(stats.arg_bytes_copied, 0);
+            assert_eq!(stats.arg_vec_allocations, 0);
+        }
+        assert_values(finish_awbc_inputs(
+            &selected,
+            inputs(),
+            RuntimeStepMode::OneOp,
+            64,
+        ));
+    }
+
+    #[test]
+    fn source_map_sum_fuses_only_the_consuming_checked_sum() {
+        let selected = authored(&source(true));
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            assert_eq!(
+                finish_native(&selected, &mut backend, RuntimeStepMode::Drain, 4096),
+                RuntimeValue::i64(24)
+            );
+            let stats = backend.stats();
+            assert_eq!(stats.batch_calls, 1);
+            assert_eq!(stats.flat_batch_items, 3);
+            assert_eq!(stats.pure_calls, 3);
+            assert_eq!(stats.aot_calls + stats.jit_calls, 3);
+            assert_eq!(stats.arg_bytes_borrowed, 72);
+            assert_eq!(stats.arg_vec_allocations, 0);
+            assert_eq!(stats.result_bytes_copied, 0);
+        }
+    }
+
+    #[test]
+    fn source_map_one_op_and_under_budget_keep_native_and_awbc_continuations() {
+        let selected = authored(&source(false));
+        for (mode, budget) in [(RuntimeStepMode::Drain, 1), (RuntimeStepMode::OneOp, 64)] {
+            let mut backend = accelerator(RuntimePureBackendMode::Jit, selected.plan());
+            assert_values(finish_native(&selected, &mut backend, mode, budget));
+            assert_eq!(backend.stats().batch_calls, 0);
+            assert_eq!(backend.stats().pure_calls, 3);
+            assert_eq!(backend.stats().vm_calls, 3);
+            assert_eq!(backend.stats().jit_calls, 0);
+            assert_eq!(backend.stats().aot_calls, 0);
+        }
+        let mut plan = selected.plan().as_ref().clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([89; 32]).unwrap(),
+        )
+        .unwrap();
+        let product = Arc::new(
+            arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                &plan,
+                &selected.lowering_report().dialogue_content_catalog,
+                "numeric-map-budget.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        );
+        let mut awbc =
+            arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                product,
+                selected.program(),
+                inputs(),
+                arcweft_core::task::GenerationId::new(0),
+                1,
+            )
+            .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        for _ in 0..512 {
+            let step = awbc.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
+                &mut backend,
+            );
+            assert!(step.stats.executed_ops <= 1);
+            assert!(
+                !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                "{:?}",
+                step.output.diagnostics
+            );
+            if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                assert_values(awbc.take_program_result().unwrap().unwrap().1);
+                return;
+            }
+            assert!(awbc.take_program_result().unwrap().is_none());
+        }
+        panic!("AWBC source Map must retain its bounded one-op continuation");
+    }
+
+    #[test]
+    fn source_map_batch_declines_a_foreign_plan_with_colliding_sites() {
+        let selected = authored(&source(false));
+        let foreign = Arc::new(selected.plan().as_ref().clone());
+        assert!(!Arc::ptr_eq(&foreign, selected.plan()));
+        let mut backend = accelerator(RuntimePureBackendMode::Aot, &foreign);
+        assert_values(finish_native(
+            &selected,
+            &mut backend,
+            RuntimeStepMode::Drain,
+            4096,
+        ));
+        let stats = backend.stats();
+        assert_eq!(stats.batch_calls, 0);
+        assert_eq!(stats.aot_calls, 0);
+        assert_eq!(stats.jit_calls, 0);
+        assert_eq!(stats.vm_calls, 3);
+        assert_eq!(stats.fallbacks, 3);
+    }
+
+    #[test]
+    fn source_map_fallible_callback_preserves_prior_rows_and_failure_owner() {
+        use arcweft_core::plan::FlowOp;
+        use arcweft_core::value::{RuntimeExprKind, RuntimeLocalReadMode};
+        fn accumulator(
+            ops: &[FlowOp],
+        ) -> Option<arcweft_core::runtime_id::RuntimeLocalDeclarationId> {
+            for op in ops {
+                match op {
+                    FlowOp::Scope { body, .. } | FlowOp::WhileLet { body, .. } => {
+                        if let Some(found) = accumulator(body) {
+                            return Some(found);
+                        }
+                    }
+                    FlowOp::Let { expr, .. } => {
+                        if let RuntimeExprKind::SequencePush { place, value } = expr.kind() {
+                            assert!(
+                                matches!(value.kind(), RuntimeExprKind::Local(read) if read.mode() == RuntimeLocalReadMode::Move)
+                            );
+                            return Some(place.local());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+        let selected = authored(
+            "fn score(value: i64, bonus: i64, unused: i64) -> i64 { return value / (value - bonus) }\npub fn root(values: Vec<i64>, bonus: i64, unused: i64) -> Vec<i64> { values.map(|item| score(item, bonus, unused)) }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let root = selected
+            .plan()
+            .function_sites()
+            .get(selected.function_site().unwrap())
+            .unwrap();
+        let arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) = root.body() else {
+            panic!("Map execution owner")
+        };
+        let accumulator = accumulator(body.ops()).unwrap();
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                inputs(),
+            )
+            .unwrap();
+            let mut failed = false;
+            for _ in 0..512 {
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::Drain,
+                        budget: RuntimeStepBudget { max_ops: 1 },
+                        ..Default::default()
+                    },
+                    &mut backend,
+                );
+                assert!(step.stats.executed_ops <= 1);
+                if matches!(step.fiber_status, FlowFiberStatus::Failed(_)) {
+                    assert!(
+                        step.output
+                            .diagnostics
+                            .iter()
+                            .any(|diagnostic| diagnostic.message.contains("division by zero"))
+                    );
+                    failed = true;
+                    break;
+                }
+                assert!(engine.take_program_result().unwrap().is_none());
+            }
+            assert!(failed);
+            assert!(engine.take_program_result().unwrap().is_none());
+            let RuntimeValue::Seq(previous) = engine.fiber().env.get(accumulator).unwrap() else {
+                panic!("original accumulator")
+            };
+            assert_eq!(previous.len(), 1);
+            assert_eq!(previous.value_at(0), RuntimeValue::i64(-1));
+            assert_eq!(backend.stats().batch_calls, 0);
+            let after = previous.value_at(0);
+            let repeat = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::Drain,
+                    budget: RuntimeStepBudget { max_ops: 64 },
+                    ..Default::default()
+                },
+                &mut backend,
+            );
+            assert_eq!(repeat.stats.executed_ops, 0);
+            let RuntimeValue::Seq(previous) = engine.fiber().env.get(accumulator).unwrap() else {
+                panic!("retained failed accumulator")
+            };
+            assert_eq!(previous.len(), 1);
+            assert_eq!(previous.value_at(0), after);
+        }
+    }
+
+    #[test]
+    fn source_map_batch_uses_the_exact_existing_loop_budget() {
+        use arcweft_core::plan::FlowOp;
+        use arcweft_core::value::RuntimeExprKind;
+        let selected = authored(&source(false));
+        fn at_loop(
+            selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+            backend: &mut RuntimePureAccelerator,
+        ) -> Engine {
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                inputs(),
+            )
+            .unwrap();
+            for _ in 0..64 {
+                if matches!(
+                    engine.fiber().pending_ops.front(),
+                    Some(FlowOp::WhileLet { .. })
+                ) {
+                    return engine;
+                }
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::OneOp,
+                        budget: RuntimeStepBudget { max_ops: 1 },
+                        ..Default::default()
+                    },
+                    backend,
+                );
+                assert_eq!(step.stats.executed_ops, 1);
+                assert!(matches!(step.fiber_status, FlowFiberStatus::Running));
+            }
+            panic!("accepted Map must expose its actual loop owner");
+        }
+        fn coordinates(
+            engine: &Engine,
+        ) -> (
+            arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+            arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+        ) {
+            let Some(FlowOp::WhileLet { expr, body, .. }) = engine.fiber().pending_ops.front()
+            else {
+                panic!("actual Map loop")
+            };
+            let RuntimeExprKind::Call { args, .. } = expr.kind() else {
+                panic!("checked iterator operation")
+            };
+            let RuntimeExprKind::Local(iterator) = args[0].value().kind() else {
+                panic!("iterator local")
+            };
+            let FlowOp::Let { expr, .. } = &body[2] else {
+                panic!("accepted append operation")
+            };
+            let RuntimeExprKind::SequencePush { place, .. } = expr.kind() else {
+                panic!("owned sequence append")
+            };
+            (iterator.local(), place.local())
+        }
+        let mut ordinary = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut reference = at_loop(&selected, &mut ordinary);
+        let (iterator, accumulator) = coordinates(&reference);
+        let mut actual_cost = 0;
+        for _ in 0..128 {
+            let step = reference.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
+                &mut ordinary,
+            );
+            actual_cost += step.stats.executed_ops;
+            assert_eq!(step.stats.executed_ops, 1);
+            let completed = reference.fiber().env.get(iterator).is_none()
+                && !reference
+                    .fiber()
+                    .pending_ops
+                    .iter()
+                    .any(|op| matches!(op, FlowOp::WhileLetNext { .. }))
+                && matches!(reference.fiber().env.get(accumulator), Some(RuntimeValue::Seq(seq)) if seq.len() == 3);
+            if completed {
+                break;
+            }
+        }
+        assert_eq!(ordinary.stats().batch_calls, 0);
+        assert!(
+            actual_cost > 3,
+            "scope/bind/next operations must be charged"
+        );
+        let mut physical = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut admitted = at_loop(&selected, &mut physical);
+        let step = admitted.step_with_pure_backend(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget {
+                    max_ops: actual_cost,
+                },
+                ..Default::default()
+            },
+            &mut physical,
+        );
+        assert_eq!(step.stats.executed_ops, actual_cost);
+        assert_eq!(physical.stats().batch_calls, 1);
+        assert!(admitted.fiber().env.get(iterator).is_none());
+        let RuntimeValue::Seq(result) = admitted.fiber().env.get(accumulator).unwrap() else {
+            panic!("same accumulator owner")
+        };
+        assert_eq!(result.len(), 3);
+        assert!(admitted.take_program_result().unwrap().is_none());
+        let mut limited = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut declined = at_loop(&selected, &mut limited);
+        let step = declined.step_with_pure_backend(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget {
+                    max_ops: actual_cost - 1,
+                },
+                ..Default::default()
+            },
+            &mut limited,
+        );
+        assert_eq!(step.stats.executed_ops, actual_cost - 1);
+        assert_eq!(limited.stats().batch_calls, 0);
+        assert!(declined.take_program_result().unwrap().is_none());
+    }
+
+    #[test]
+    fn source_map_wide_output_retains_batch_and_the_checked_sum_failure() {
+        let selected = authored(
+            "fn score(value: u64, bonus: u64, unused: u64) -> u64 { return value + bonus }\npub fn root(values: Vec<u64>, bonus: u64, unused: u64) -> i64 { values.map(|item| score(item, bonus, unused)).sum() }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let values =
+            runtime_sequence_values(vec![RuntimeValue::u64(u64::MAX), RuntimeValue::u64(2)]);
+        let mut backend = accelerator(RuntimePureBackendMode::Jit, selected.plan());
+        let mut engine = Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            vec![values, RuntimeValue::u64(0), RuntimeValue::u64(71)],
+        )
+        .unwrap();
+        let step = engine.step_with_pure_backend(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget { max_ops: 4096 },
+                ..Default::default()
+            },
+            &mut backend,
+        );
+        assert!(
+            matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+            "wide Core Sum must reject rather than narrow: {:?}",
+            step
+        );
+        assert!(!step.output.diagnostics.is_empty());
+        assert!(engine.take_program_result().unwrap().is_none());
+        assert_eq!(backend.stats().batch_calls, 1);
+        assert_eq!(backend.stats().flat_batch_items, 2);
+        assert_eq!(backend.stats().jit_calls, 2);
+        assert_eq!(backend.stats().result_bytes_copied, 16);
+        assert!(
+            arcweft_core::value::RuntimeSeq::dense_u64(vec![u64::MAX])
+                .sum_as_i64()
+                .is_none()
+        );
+    }
+
+    fn array_source(length: usize, sum: bool) -> String {
+        let result = if sum {
+            "i64".to_owned()
+        } else {
+            format!("Array<i64, {length}>")
+        };
+        let returned = if sum { "scores.sum()" } else { "scores" };
+        format!(
+            "fn score(value: i64, bonus: i64, unused: i64) -> i64 {{ return value * (bonus + 2i64) }}\npub fn root(values: Array<i64, {length}>, bonus: i64, unused: i64) -> {result} {{ let scores: Array<i64, {length}> = values.map(|item| score(item, bonus, unused))\nreturn {returned} }}\nflow main() -> String {{ return \"ok\" }}\n"
+        )
+    }
+    fn numeric_inputs(values: &[i64]) -> Vec<RuntimeValue> {
+        vec![
+            runtime_sequence_values(values.iter().copied().map(RuntimeValue::i64).collect()),
+            RuntimeValue::i64(2),
+            RuntimeValue::i64(71),
+        ]
+    }
+    fn finish_native_inputs(
+        selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+        backend: &mut RuntimePureAccelerator,
+        values: Vec<RuntimeValue>,
+        mode: RuntimeStepMode,
+        budget: usize,
+    ) -> RuntimeValue {
+        let mut engine =
+            Engine::for_program_invocation(Arc::clone(selected.plan()), selected.program(), values)
+                .unwrap();
+        for _ in 0..4096 {
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode,
+                    budget: RuntimeStepBudget { max_ops: budget },
+                    ..Default::default()
+                },
+                backend,
+            );
+            assert!(step.stats.executed_ops <= budget);
+            assert!(
+                !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                "{:?}",
+                step.output.diagnostics
+            );
+            if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                return engine.take_program_result().unwrap().unwrap().1;
+            }
+            assert!(engine.take_program_result().unwrap().is_none());
+        }
+        panic!("actual Array continuation must finish within the bounded test schedule");
+    }
+    // A test completion bound, independent of numeric physical admission. It
+    // borrows the accepted bytecode call/CFG inventory: every reachable call
+    // has a closed typed target, callbacks are acyclic, and the root's single
+    // owning iterator decreases once per source row (Array is already unrolled).
+    struct AwbcFiniteMapSchedule<'a> {
+        product: &'a arcweft_core::awbc::schema::AwbcProgram,
+        root: arcweft_core::awbc::schema::AwbcFunctionId,
+        root_visits: usize,
+        root_is_sequence: bool,
+        visiting: std::collections::BTreeSet<arcweft_core::awbc::schema::AwbcFunctionId>,
+        bounds: std::collections::BTreeMap<arcweft_core::awbc::schema::AwbcFunctionId, usize>,
+    }
+    impl AwbcFiniteMapSchedule<'_> {
+        fn state_targets(
+            &self,
+            state: arcweft_core::runtime_id::RuntimeCallableStateId,
+        ) -> Vec<arcweft_core::awbc::schema::AwbcFunctionId> {
+            use arcweft_core::plan::{RuntimeCallableAttachedContract, RuntimeCallableTransition};
+            let state = &self.product.callable_states[state.index()];
+            assert!(
+                matches!(state.attached, RuntimeCallableAttachedContract::None),
+                "fixture has no default body to schedule"
+            );
+            match state.transition {
+                RuntimeCallableTransition::Invoke { function, .. } => vec![function],
+                RuntimeCallableTransition::Retain { .. } => Vec::new(),
+                RuntimeCallableTransition::RequiresSpecialization => {
+                    panic!("the fixture must own an admitted concrete target")
+                }
+            }
+        }
+        fn value_targets(
+            &self,
+            function: arcweft_core::awbc::schema::AwbcFunctionId,
+            callee: arcweft_core::awbc::schema::AwbcRegisterId,
+        ) -> Vec<arcweft_core::awbc::schema::AwbcFunctionId> {
+            let function = &self.product.functions[function.index()];
+            let ty =
+                self.product.frame_layouts[function.frame_layout.index()].slots[callee.index()].ty;
+            let mut targets = std::collections::BTreeSet::new();
+            let mut matched = false;
+            for (index, state) in self.product.callable_states.iter().enumerate() {
+                if state.function_type != ty {
+                    continue;
+                }
+                matched = true;
+                targets.extend(
+                    self.state_targets(
+                        arcweft_core::runtime_id::RuntimeCallableStateId::from_zero_based(index)
+                            .unwrap(),
+                    ),
+                );
+            }
+            assert!(
+                matched,
+                "callee register has an exact admitted callable-state type"
+            );
+            targets.into_iter().collect()
+        }
+        fn successors(
+            &self,
+            terminator: &arcweft_core::awbc::schema::AwbcTerminator,
+        ) -> Vec<arcweft_core::awbc::schema::AwbcBlockId> {
+            use arcweft_core::awbc::schema::AwbcTerminator;
+            match terminator {
+                AwbcTerminator::Jump { target } => vec![*target],
+                AwbcTerminator::Branch {
+                    then_block,
+                    else_block,
+                    ..
+                } => vec![*then_block, *else_block],
+                AwbcTerminator::SequenceNext {
+                    some_block,
+                    none_block,
+                    ..
+                } => vec![*some_block, *none_block],
+                AwbcTerminator::Match { arms, default, .. } => {
+                    let mut targets = self.product.match_arms
+                        [arms.start as usize..arms.checked_end().unwrap() as usize]
+                        .iter()
+                        .map(|arm| {
+                            assert!(
+                                arm.guard.is_none(),
+                                "fixture has no separately scheduled Match guard"
+                            );
+                            arm.target
+                        })
+                        .collect::<Vec<_>>();
+                    targets.push(*default);
+                    targets
+                }
+                AwbcTerminator::CallFunction { resume, .. }
+                | AwbcTerminator::BudgetYield { resume } => {
+                    vec![self.product.resume_points[resume.index()].block]
+                }
+                AwbcTerminator::ProjectCall { call } => {
+                    vec![self.product.resume_points[call.resume.index()].block]
+                }
+                AwbcTerminator::Complete
+                | AwbcTerminator::Return { .. }
+                | AwbcTerminator::Trap { .. }
+                | AwbcTerminator::Unreachable => Vec::new(),
+                _ => panic!(
+                    "the finite Map fixture cannot suspend, jump to another entry or issue host/child work"
+                ),
+            }
+        }
+        fn visit_blocks(
+            &self,
+            function: arcweft_core::awbc::schema::AwbcFunctionId,
+            block: arcweft_core::awbc::schema::AwbcBlockId,
+            iterator_gate: Option<arcweft_core::awbc::schema::AwbcBlockId>,
+            active: &mut std::collections::BTreeSet<arcweft_core::awbc::schema::AwbcBlockId>,
+            done: &mut std::collections::BTreeSet<arcweft_core::awbc::schema::AwbcBlockId>,
+        ) {
+            if done.contains(&block) {
+                return;
+            }
+            assert!(
+                active.insert(block),
+                "a callback/root path has an unbounded CFG cycle"
+            );
+            let row = &self.product.blocks[block.index()];
+            assert_eq!(row.owner, function);
+            // Cutting the sole decreasing iterator gate must remove all root
+            // cycles. No callback loop or extra root cycle is admitted here.
+            if Some(block) != iterator_gate {
+                for target in self.successors(&row.terminator) {
+                    self.visit_blocks(function, target, iterator_gate, active, done);
+                }
+            }
+            active.remove(&block);
+            done.insert(block);
+        }
+        fn bound(&mut self, function: arcweft_core::awbc::schema::AwbcFunctionId) -> usize {
+            use arcweft_core::awbc::schema::{AwbcInstruction, AwbcTerminator};
+            if let Some(bound) = self.bounds.get(&function) {
+                return *bound;
+            }
+            assert!(
+                self.visiting.insert(function),
+                "the fixture call/frame graph is recursive"
+            );
+            let range = self.product.functions[function.index()].blocks;
+            let blocks = range.start as usize..range.checked_end().unwrap() as usize;
+            let mut gates = Vec::new();
+            let mut own_ops = 0_usize;
+            let mut calls = Vec::new();
+            for index in blocks.clone() {
+                let block = &self.product.blocks[index];
+                assert_eq!(block.owner, function);
+                own_ops = own_ops
+                    .checked_add(block.instructions.len as usize)
+                    .unwrap()
+                    .checked_add(1)
+                    .unwrap();
+                for instruction in &self.product.instructions[block.instructions.start as usize
+                    ..block.instructions.checked_end().unwrap() as usize]
+                {
+                    match instruction {
+                        AwbcInstruction::ApplyGroup { callee, .. } => {
+                            calls.push(self.value_targets(function, *callee))
+                        }
+                        AwbcInstruction::CallIntrinsic { intrinsic, .. }
+                            if self.product.intrinsics[intrinsic.index()]
+                                .identity
+                                .as_intrinsic()
+                                == Some(arcweft_core::value::RuntimeIntrinsic::CoreIterNext) =>
+                        {
+                            gates.push(arcweft_core::awbc::schema::AwbcBlockId(index as u32))
+                        }
+                        AwbcInstruction::CallPureHelper { .. }
+                        | AwbcInstruction::CallTraitMethod { .. }
+                        | AwbcInstruction::SpawnFiber { .. }
+                        | AwbcInstruction::StartNeed { .. }
+                        | AwbcInstruction::FormatContent { .. }
+                        | AwbcInstruction::RegisterDefer { .. } => {
+                            panic!("the fixture has an additional independently scheduled body")
+                        }
+                        _ => {}
+                    }
+                }
+                match &block.terminator {
+                    AwbcTerminator::CallFunction { function, .. } => calls.push(vec![*function]),
+                    AwbcTerminator::ProjectCall { call } => {
+                        calls.push(self.state_targets(call.state))
+                    }
+                    AwbcTerminator::SequenceNext { .. } => {
+                        gates.push(arcweft_core::awbc::schema::AwbcBlockId(index as u32))
+                    }
+                    _ => {}
+                }
+                // Validate every emitted successor, including dead table blocks.
+                self.successors(&block.terminator);
+            }
+            let iterator_gate = if function == self.root && self.root_is_sequence {
+                let [gate] = gates.as_slice() else {
+                    panic!("one decreasing root iterator gate: {gates:?}")
+                };
+                Some(*gate)
+            } else {
+                assert!(
+                    gates.is_empty(),
+                    "Array/callback body has no variable iterator loop"
+                );
+                None
+            };
+            let mut done = std::collections::BTreeSet::new();
+            for index in blocks {
+                self.visit_blocks(
+                    function,
+                    arcweft_core::awbc::schema::AwbcBlockId(index as u32),
+                    iterator_gate,
+                    &mut std::collections::BTreeSet::new(),
+                    &mut done,
+                );
+            }
+            // Both branches may be counted; each static call site contributes
+            // its worst exact typed target. Original full-formal prologues are
+            // already part of each target's admitted instruction inventory.
+            let mut bound = own_ops.checked_add(2).unwrap(); // frame enter/return delivery
+            for targets in calls {
+                let mut maximum = 0;
+                for target in targets {
+                    maximum = maximum.max(self.bound(target));
+                }
+                bound = bound.checked_add(maximum).unwrap();
+            }
+            if function == self.root {
+                bound = bound.checked_mul(self.root_visits).unwrap();
+            }
+            self.visiting.remove(&function);
+            self.bounds.insert(function, bound);
+            bound
+        }
+    }
+    fn finish_awbc_inputs(
+        selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+        values: Vec<RuntimeValue>,
+        mode: RuntimeStepMode,
+        budget: usize,
+    ) -> RuntimeValue {
+        let mut plan = selected.plan().as_ref().clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([90; 32]).unwrap(),
+        )
+        .unwrap();
+        let product = Arc::new(
+            arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                &plan,
+                &selected.lowering_report().dialogue_content_catalog,
+                "numeric-array-map-budget.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        );
+        // This fixture owns one finite Map and closed acyclic callbacks. That
+        // structural schedule is distinct from optional numeric totality: a
+        // forwarding callback and a callback with two calls are both finite.
+        let RuntimeValue::Seq(input_values) = values.first().unwrap() else {
+            panic!("checked Map source collection")
+        };
+        let rows = input_values.len();
+        let root_site = selected
+            .plan()
+            .function_sites()
+            .get(selected.function_site().unwrap())
+            .unwrap();
+        let first = root_site.parameter_inputs().next().unwrap();
+        let input_ty = selected
+            .plan()
+            .local_declarations()
+            .get(first.input_local())
+            .unwrap()
+            .ty();
+        let (root_visits, root_is_sequence) = match selected
+            .plan()
+            .type_table()
+            .get(input_ty)
+            .unwrap()
+            .projection()
+        {
+            arcweft_core::plan::RuntimePlanTypeProjection::Array { length, .. } => {
+                assert_eq!(length.constant(), Some(rows as u64));
+                (1, false)
+            }
+            arcweft_core::plan::RuntimePlanTypeProjection::Sequence { .. } => {
+                (rows.checked_add(1).unwrap(), true)
+            }
+            _ => panic!("finite Array/Vec Map input authority"),
+        };
+        let root_function = product.pure_program_function(selected.program()).unwrap();
+        if root_is_sequence {
+            use arcweft_core::pattern::RuntimePatternKind;
+            use arcweft_core::plan::FlowOp;
+            use arcweft_core::value::{RuntimeExprKind, RuntimeIntrinsic, RuntimeLocalReadMode};
+            let ops = root_site.body().executable().unwrap().ops();
+            let loops = ops
+                .iter()
+                .filter_map(|op| {
+                    if let FlowOp::WhileLet {
+                        pattern,
+                        expr,
+                        guard,
+                        body,
+                    } = op
+                    {
+                        Some((pattern, expr, guard, body))
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let [(pattern, next, guard, body)] = loops.as_slice() else {
+                panic!("one source-owned iterator loop")
+            };
+            assert!(guard.is_none());
+            let RuntimeExprKind::Call { callee, args } = next.kind() else {
+                panic!("iterator gate")
+            };
+            assert_eq!(callee.as_intrinsic(), Some(RuntimeIntrinsic::CoreIterNext));
+            let [argument] = args.as_slice() else {
+                panic!("one owned iterator")
+            };
+            let RuntimeExprKind::Local(iterator) = argument.value().kind() else {
+                panic!("exact iterator place")
+            };
+            assert_eq!(iterator.mode(), RuntimeLocalReadMode::Move);
+            assert!(iterator.fields().is_empty());
+            let RuntimePatternKind::Tuple(parts) = pattern.kind() else {
+                panic!("next iterator plus Option item")
+            };
+            let [returned_iterator, _] = parts.as_ref() else {
+                panic!("owning next pair")
+            };
+            let RuntimePatternKind::Bind { binding, .. } = returned_iterator.kind() else {
+                panic!("returned iterator binding")
+            };
+            let Some(FlowOp::Assign { place, value }) = body.first() else {
+                panic!("next iteration retains only the returned iterator")
+            };
+            assert_eq!(place.place().local(), iterator.local());
+            assert!(place.place().fields().is_empty());
+            let RuntimeExprKind::Local(returned) = value.kind() else {
+                panic!("exact returned iterator")
+            };
+            assert_eq!(returned.local(), binding.local());
+            assert_eq!(returned.mode(), RuntimeLocalReadMode::Move);
+            assert!(body.iter().skip(1).all(|op| !matches!(op, FlowOp::Assign { place, .. } if place.place().local() == iterator.local())));
+            // The single iterator originates in the supplied sequence, through
+            // actual owned local transfers; no reset or invented length enters
+            // the bound. Each gate consumes one row or the final None.
+            let RuntimePatternKind::Bind { binding: input, .. } = first.pattern().kind() else {
+                panic!("source parameter binding")
+            };
+            let mut sources = std::collections::BTreeMap::from([(input.local(), input.local())]);
+            let mut initialized = false;
+            for op in ops {
+                let FlowOp::Let { pattern, expr } = op else {
+                    continue;
+                };
+                let RuntimePatternKind::Bind { binding, .. } = pattern.kind() else {
+                    continue;
+                };
+                if let RuntimeExprKind::Local(read) = expr.kind() {
+                    if let Some(source) = sources.get(&read.local()).copied() {
+                        sources.insert(binding.local(), source);
+                    }
+                }
+                if binding.local() != iterator.local() {
+                    continue;
+                }
+                assert!(!initialized, "the iterator is created once");
+                let RuntimeExprKind::Call { callee, args } = expr.kind() else {
+                    panic!("collection into iterator")
+                };
+                assert!(matches!(
+                    callee.as_intrinsic(),
+                    Some(RuntimeIntrinsic::CoreVecIntoIter | RuntimeIntrinsic::CoreSeqIntoIter)
+                ));
+                let [argument] = args.as_slice() else {
+                    panic!("one source sequence")
+                };
+                let RuntimeExprKind::Local(source) = argument.value().kind() else {
+                    panic!("source owned place")
+                };
+                assert_eq!(source.mode(), RuntimeLocalReadMode::Move);
+                assert!(source.fields().is_empty());
+                assert_eq!(sources.get(&source.local()), Some(&input.local()));
+                initialized = true;
+            }
+            assert!(
+                initialized,
+                "the emitted iterator belongs to the actual supplied sequence"
+            );
+        }
+        let turn_bound = AwbcFiniteMapSchedule {
+            product: &product,
+            root: root_function,
+            root_visits,
+            root_is_sequence,
+            visiting: Default::default(),
+            bounds: Default::default(),
+        }
+        .bound(root_function)
+        .checked_add(1)
+        .unwrap();
+        let mut executed_ops = 0_usize;
+        let mut awbc =
+            arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                product,
+                selected.program(),
+                values,
+                arcweft_core::task::GenerationId::new(0),
+                1,
+            )
+            .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        for _ in 0..turn_bound {
+            let step = awbc.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode,
+                    budget: RuntimeStepBudget { max_ops: budget },
+                    ..Default::default()
+                },
+                &mut backend,
+            );
+            assert!(step.stats.executed_ops <= budget);
+            executed_ops = executed_ops.checked_add(step.stats.executed_ops).unwrap();
+            assert!(executed_ops <= turn_bound);
+            assert!(
+                !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                "{:?}",
+                step.output.diagnostics
+            );
+            if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                return awbc.take_program_result().unwrap().unwrap().1;
+            }
+            assert!(awbc.take_program_result().unwrap().is_none());
+        }
+        panic!(
+            "AWBC finite Map exceeded admitted bound {turn_bound} after {executed_ops} operations; rows={rows}, root_visits={root_visits}, cursor={:?}, status={:?}",
+            awbc.compact_fiber().cursor,
+            awbc.compact_fiber().status
+        );
+    }
+
+    #[test]
+    fn source_array_map_batches_the_admitted_apply_span_and_consuming_sum() {
+        for sum in [false, true] {
+            let selected = authored(&array_source(3, sum));
+            let root = selected
+                .plan()
+                .function_sites()
+                .get(selected.function_site().unwrap())
+                .unwrap();
+            assert_eq!(root.parameter_inputs().count(), 3);
+            if !sum {
+                assert!(
+                    matches!(selected.plan().type_table().get(root.result()).unwrap().projection(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::Array { length, .. } if length.constant() == Some(3))
+                );
+            }
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut backend = accelerator(mode, selected.plan());
+                let value = finish_native_inputs(
+                    &selected,
+                    &mut backend,
+                    numeric_inputs(&[1, 2, 3]),
+                    RuntimeStepMode::Drain,
+                    4096,
+                );
+                if sum {
+                    assert_eq!(value, RuntimeValue::i64(24))
+                } else {
+                    assert_values(value)
+                }
+                assert_eq!(backend.stats().batch_calls, 1);
+                assert_eq!(backend.stats().flat_batch_items, 3);
+                assert_eq!(backend.stats().aot_calls + backend.stats().jit_calls, 3);
+                assert_eq!(backend.stats().arg_bytes_borrowed, 72);
+                assert_eq!(backend.stats().arg_bytes_copied, 0);
+                assert_eq!(backend.stats().arg_vec_allocations, 0);
+                assert_eq!(
+                    backend.stats().result_bytes_copied,
+                    if sum { 0 } else { 24 }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_array_map_original_low_and_one_op_budgets_keep_native_awbc_parity() {
+        let selected = authored(&array_source(128, true));
+        let values = (1_i64..=128).collect::<Vec<_>>();
+        let expected = RuntimeValue::i64(
+            values
+                .iter()
+                .copied()
+                .fold(0_i64, i64::wrapping_add)
+                .wrapping_mul(4),
+        );
+        for (mode, budget) in [
+            (RuntimeStepMode::Drain, 64),
+            (RuntimeStepMode::Drain, 1),
+            (RuntimeStepMode::OneOp, 64),
+        ] {
+            let mut backend = accelerator(RuntimePureBackendMode::Jit, selected.plan());
+            assert_eq!(
+                finish_native_inputs(
+                    &selected,
+                    &mut backend,
+                    numeric_inputs(&values),
+                    mode,
+                    budget
+                ),
+                expected
+            );
+            let stats = backend.stats();
+            assert_eq!(stats.batch_calls, 0);
+            assert_eq!(stats.pure_calls, 128);
+            assert_eq!(stats.vm_calls + stats.aot_calls + stats.jit_calls, 128);
+            if mode == RuntimeStepMode::OneOp || budget == 1 {
+                assert_eq!(stats.vm_calls, 128);
+                assert_eq!(stats.aot_calls, 0);
+                assert_eq!(stats.jit_calls, 0);
+            }
+            assert_eq!(
+                finish_awbc_inputs(&selected, numeric_inputs(&values), mode, budget),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn source_array_map_charges_its_exact_existing_apply_span() {
+        use arcweft_core::plan::FlowOp;
+        use arcweft_core::value::RuntimeExprKind;
+        let selected = authored(&array_source(3, false));
+        fn at_apply(
+            selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+            backend: &mut RuntimePureAccelerator,
+        ) -> Engine {
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                numeric_inputs(&[1, 2, 3]),
+            )
+            .unwrap();
+            for _ in 0..64 {
+                if matches!(
+                    engine.fiber().pending_ops.front(),
+                    Some(FlowOp::ApplyGroup { .. })
+                ) {
+                    return engine;
+                }
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::OneOp,
+                        budget: RuntimeStepBudget { max_ops: 1 },
+                        ..Default::default()
+                    },
+                    backend,
+                );
+                assert_eq!(step.stats.executed_ops, 1);
+                assert!(matches!(step.fiber_status, FlowFiberStatus::Running));
+            }
+            panic!("Array Map must expose its accepted ApplyGroup owner");
+        }
+        let at_aggregate = |engine: &Engine| {
+            matches!(engine.fiber().pending_ops.front(),
+            Some(FlowOp::Let { expr, .. }) if matches!(expr.kind(), RuntimeExprKind::BracketSeq(_)))
+        };
+        let mut ordinary = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut reference = at_apply(&selected, &mut ordinary);
+        let mut actual_cost = 0;
+        for _ in 0..128 {
+            if at_aggregate(&reference) {
+                break;
+            }
+            let step = reference.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
+                &mut ordinary,
+            );
+            assert_eq!(step.stats.executed_ops, 1);
+            actual_cost += step.stats.executed_ops;
+        }
+        assert!(at_aggregate(&reference));
+        assert!(actual_cost > 3, "actual forwarding control must be charged");
+        assert_eq!(ordinary.stats().batch_calls, 0);
+        let mut physical = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut admitted = at_apply(&selected, &mut physical);
+        let step = admitted.step_with_pure_backend(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget {
+                    max_ops: actual_cost,
+                },
+                ..Default::default()
+            },
+            &mut physical,
+        );
+        assert_eq!(step.stats.executed_ops, actual_cost);
+        assert!(at_aggregate(&admitted));
+        assert_eq!(physical.stats().batch_calls, 1);
+        assert!(admitted.take_program_result().unwrap().is_none());
+        let mut limited = accelerator(RuntimePureBackendMode::Aot, selected.plan());
+        let mut declined = at_apply(&selected, &mut limited);
+        let step = declined.step_with_pure_backend(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget {
+                    max_ops: actual_cost - 1,
+                },
+                ..Default::default()
+            },
+            &mut limited,
+        );
+        assert_eq!(step.stats.executed_ops, actual_cost - 1);
+        assert_eq!(limited.stats().batch_calls, 0);
+        assert!(!at_aggregate(&declined));
+        assert!(declined.take_program_result().unwrap().is_none());
+    }
+
+    #[test]
+    fn source_repeated_i64_sum_uses_core_wrapping_reduction() {
+        let selected = authored(
+            "fn score(value: i64, bonus: i64, unused: i64) -> i64 { return value }\npub fn root(values: Array<i64, 2>, bonus: i64, unused: i64) -> i64 { let scores: Array<i64, 2> = values.map(|item| score(item, bonus, unused))\nreturn scores.sum() }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let expected = arcweft_core::value::RuntimeSeq::dense_i64(vec![i64::MAX, i64::MAX])
+            .sum_as_i64()
+            .unwrap();
+        assert_eq!(expected, -2);
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            assert_eq!(
+                finish_native_inputs(
+                    &selected,
+                    &mut backend,
+                    numeric_inputs(&[i64::MAX, i64::MAX]),
+                    RuntimeStepMode::Drain,
+                    4096
+                ),
+                RuntimeValue::i64(expected)
+            );
+            assert_eq!(backend.stats().batch_calls, 1);
+            assert_eq!(backend.stats().flat_batch_items, 2);
+            assert_eq!(backend.stats().aot_calls + backend.stats().jit_calls, 2);
+            assert_eq!(
+                backend.stats().arg_bytes_borrowed,
+                24,
+                "one original whole repeated row"
+            );
+            assert_eq!(backend.stats().result_bytes_copied, 0);
+        }
+        let mut vm = accelerator(RuntimePureBackendMode::Vm, selected.plan());
+        assert_eq!(
+            finish_native_inputs(
+                &selected,
+                &mut vm,
+                numeric_inputs(&[i64::MAX, i64::MAX]),
+                RuntimeStepMode::OneOp,
+                1
+            ),
+            RuntimeValue::i64(expected)
+        );
+        assert_eq!(vm.stats().batch_calls, 0);
+        assert_eq!(
+            finish_awbc_inputs(
+                &selected,
+                numeric_inputs(&[i64::MAX, i64::MAX]),
+                RuntimeStepMode::OneOp,
+                1
+            ),
+            RuntimeValue::i64(expected)
+        );
+    }
+    #[test]
+    fn source_map_copy_sum_elision_declines_later_reuse_and_capture() {
+        for tail in [
+            "return total + scores.sum()",
+            "let observer = || scores.sum()\nreturn total + observer()",
+        ] {
+            let source = format!(
+                "fn score(value: i64, bonus: i64, unused: i64) -> i64 {{ return value * (bonus + 2i64) }}\npub fn root(values: Array<i64, 3>, bonus: i64, unused: i64) -> i64 {{ let scores: Array<i64, 3> = values.map(|item| score(item, bonus, unused))\nlet total: i64 = scores.sum()\n{tail} }}\nflow main() -> String {{ return \"ok\" }}\n"
+            );
+            let selected = authored(&source);
+            for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+                let mut backend = accelerator(mode, selected.plan());
+                assert_eq!(
+                    finish_native_inputs(
+                        &selected,
+                        &mut backend,
+                        numeric_inputs(&[1, 2, 3]),
+                        RuntimeStepMode::Drain,
+                        4096
+                    ),
+                    RuntimeValue::i64(48)
+                );
+                assert_eq!(
+                    backend.stats().batch_calls,
+                    1,
+                    "the map itself may still batch"
+                );
+                assert_eq!(
+                    backend.stats().result_bytes_copied,
+                    24,
+                    "live checked scores must be retained"
+                );
+                assert_eq!(
+                    finish_awbc_inputs(
+                        &selected,
+                        numeric_inputs(&[1, 2, 3]),
+                        RuntimeStepMode::OneOp,
+                        1
+                    ),
+                    RuntimeValue::i64(48)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_map_lexical_aliases_preserve_original_cost_and_full_formals() {
+        let source = source(false).replace(
+            "values.map(|item| score(item, bonus, unused))",
+            "values.map(|item| { let forwarded = item\nlet zero = ()\nscope forwarding { score(forwarded, bonus, unused) } })",
+        );
+        let selected = authored(&source);
+        fn execute(
+            selected: &arcweft_compiler::lower::CompiledDeterministicProgram,
+            backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
+        ) -> (RuntimeValue, usize) {
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                inputs(),
+            )
+            .unwrap();
+            let mut ops = 0_usize;
+            for _ in 0..512 {
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    RuntimeStepOptions {
+                        mode: RuntimeStepMode::Drain,
+                        budget: RuntimeStepBudget { max_ops: 4096 },
+                        ..Default::default()
+                    },
+                    backend,
+                );
+                ops = ops.checked_add(step.stats.executed_ops).unwrap();
+                assert!(
+                    !matches!(step.fiber_status, FlowFiberStatus::Failed(_)),
+                    "{:?}",
+                    step.output.diagnostics
+                );
+                if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+                    return (engine.take_program_result().unwrap().unwrap().1, ops);
+                }
+                assert!(engine.take_program_result().unwrap().is_none());
+            }
+            panic!("the closed lexical forwarding fixture must finish");
+        }
+        let (expected, expected_ops) = execute(
+            &selected,
+            &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+        );
+        assert_values(expected.clone());
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            let (actual, actual_ops) = execute(&selected, &mut backend);
+            assert_eq!(actual, expected);
+            assert_eq!(actual_ops, expected_ops);
+            assert_eq!(backend.stats().batch_calls, 1);
+            assert_eq!(backend.stats().pure_calls, 3);
+            assert_eq!(backend.stats().aot_calls + backend.stats().jit_calls, 3);
+            assert_eq!(backend.stats().vm_calls, 0);
+            assert_eq!(backend.stats().arg_bytes_borrowed, 72);
+            assert_eq!(backend.stats().arg_bytes_copied, 0);
+            assert_eq!(backend.stats().arg_vec_allocations, 0);
+        }
+        assert_values(finish_awbc_inputs(
+            &selected,
+            inputs(),
+            RuntimeStepMode::OneOp,
+            1,
+        ));
+    }
+
+    #[test]
+    fn source_map_hidden_second_call_declines_batch_and_executes_each_original_call_once() {
+        let source = source(false).replace(
+            "values.map(|item| score(item, bonus, unused))",
+            "values.map(|item| { let first = score(item, bonus, unused)\nscore(first, bonus, unused) })",
+        );
+        let selected = authored(&source);
+        let expected = runtime_sequence_values(vec![
+            RuntimeValue::i64(16),
+            RuntimeValue::i64(32),
+            RuntimeValue::i64(48),
+        ]);
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut backend = accelerator(mode, selected.plan());
+            assert_eq!(
+                finish_native(&selected, &mut backend, RuntimeStepMode::Drain, 4096),
+                expected
+            );
+            assert_eq!(backend.stats().batch_calls, 0);
+            assert_eq!(backend.stats().pure_calls, 6);
+            assert_eq!(backend.stats().aot_calls + backend.stats().jit_calls, 6);
+            assert_eq!(backend.stats().vm_calls, 0);
+        }
+        assert_eq!(
+            finish_awbc_inputs(&selected, inputs(), RuntimeStepMode::OneOp, 1),
+            expected
+        );
+    }
+}

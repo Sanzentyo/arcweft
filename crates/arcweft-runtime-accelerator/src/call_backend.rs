@@ -52,6 +52,40 @@ impl RuntimePureAccelerator {
 }
 
 impl RuntimePureCallBackend for RuntimePureAccelerator {
+    fn prepare_total_numeric_batch(
+        &mut self,
+        function: RuntimePureFunctionRef<'_>,
+        rows: usize,
+    ) -> Option<()> {
+        if !std::sync::Arc::ptr_eq(&self.cache.plan, function.plan())
+            || !function.supports_total_numeric_completion()
+        {
+            return None;
+        }
+        super::helper_native_kind(function)?;
+        if self.config.backend == RuntimePureBackendMode::Auto {
+            self.promote_auto_jit_for_flat_batch(function, rows);
+        }
+        match cache_entry(&self.cache, function)? {
+            RuntimePureCacheEntry::Vm => None,
+            RuntimePureCacheEntry::Jit(_)
+            | RuntimePureCacheEntry::JitI8(_)
+            | RuntimePureCacheEntry::JitI16(_)
+            | RuntimePureCacheEntry::JitI128Batch(_)
+            | RuntimePureCacheEntry::JitI32(_)
+            | RuntimePureCacheEntry::JitISize(_)
+            | RuntimePureCacheEntry::JitU8(_)
+            | RuntimePureCacheEntry::JitU16(_)
+            | RuntimePureCacheEntry::JitU32(_)
+            | RuntimePureCacheEntry::JitU64(_)
+            | RuntimePureCacheEntry::JitU128Batch(_)
+            | RuntimePureCacheEntry::JitUSize(_)
+            | RuntimePureCacheEntry::JitF32(_)
+            | RuntimePureCacheEntry::JitF64(_)
+            | RuntimePureCacheEntry::Aot(_)
+            | RuntimePureCacheEntry::AutoAot { .. } => Some(()),
+        }
+    }
     fn record_interpreted_function_call(&mut self, _: RuntimePureFunctionRef<'_>) {
         self.stats.pure_calls = self.stats.pure_calls.saturating_add(1);
         self.stats.vm_calls = self.stats.vm_calls.saturating_add(1);

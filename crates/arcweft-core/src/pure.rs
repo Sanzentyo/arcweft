@@ -1,4 +1,8 @@
 mod callable;
+mod callable_batch;
+pub(crate) use callable_batch::{
+    RuntimeNumericMapBatchData, RuntimeNumericMapBatchResult, project_numeric_map,
+};
 mod control;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_interaction_model::dialogue::{
@@ -336,6 +340,19 @@ pub struct RuntimeCompactPureHelper {
 
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
+    /// Prepares an optional total numeric batch on the exact admitted lease.
+    /// A decline leaves all operands and the Engine continuation untouched.
+    /// A successful query means the existing typed batch methods select the
+    /// same compiled capability and cannot enter an interpreted child Engine.
+    fn prepare_total_numeric_batch(
+        &mut self,
+        function: RuntimePureFunctionRef<'_>,
+        rows: usize,
+    ) -> Option<()> {
+        let _ = (function, rows);
+        None
+    }
+
     /// Accounts for a scalar function actually entered by the owning Engine
     /// after physical backends decline it. This grants no execution authority.
     fn record_interpreted_function_call(&mut self, _function: RuntimePureFunctionRef<'_>) {}
@@ -1029,7 +1046,6 @@ impl VmPureFunctionBackend {
             stats: engine.evaluation_stats().clone(),
         })
     }
-
     pub fn evaluate_i32_args(
         &self,
         plan: &Arc<RuntimePlan>,
@@ -2993,11 +3009,12 @@ impl<'a> PureEvaluator<'a> {
             return Ok(RuntimeValue::i64(sum));
         }
         let value = self.evaluate_expr(source)?;
-        if let RuntimeValue::Seq(seq) = &value
-            && let Some(sum) = seq.sum_as_i64()
-        {
-            return Ok(RuntimeValue::i64(sum));
-        }
+        let value = match value {
+            RuntimeValue::Seq(sequence) => {
+                return sequence.into_checked_sum_as_i64().map(RuntimeValue::i64);
+            }
+            value => value,
+        };
         let iterator = match RuntimeIterator::from_value(value) {
             Ok(iterator) => iterator,
             Err(value) => {
@@ -3062,6 +3079,11 @@ impl<'a> PureEvaluator<'a> {
         callee: &RuntimeCallTarget,
         mut args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let Some(intrinsic) = callee.as_intrinsic()
+            && let Some(value) = crate::value::evaluate_collection_intrinsic(intrinsic, &mut args)?
+        {
+            return Ok(value);
+        }
         if let Some(intrinsic) = callee.as_intrinsic()
             && let Some(result) = evaluate_core_iterator_intrinsic(intrinsic, &mut args)
         {

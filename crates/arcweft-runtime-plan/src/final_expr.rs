@@ -16,7 +16,7 @@ use arcweft_core::plan::{
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeLocalReadMode,
+    RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeLocalReadMode,
     RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
@@ -2058,6 +2058,19 @@ impl<'hir> FinalExprLowerer<'hir> {
             .iter()
             .map(|(value, mode)| (value.clone(), *mode))
             .collect::<Vec<_>>();
+        if matches!(
+            selected.dispatch(),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Intrinsic(
+                RuntimeIntrinsic::CoreSeqSum
+            ))
+        ) {
+            let [(source, RuntimeCallArgumentMode::Value)] = values.as_slice() else {
+                return Err(format!("sequence sum {id:?} requires one checked receiver"));
+            };
+            return Ok(RuntimeExprSeedKind::Sum {
+                source: Box::new(source.clone()),
+            });
+        }
         let arguments = self.lower_function_arguments(id, selected, &values)?;
         match selected.dispatch() {
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Intrinsic(

@@ -9910,11 +9910,13 @@ const fn runtime_agent_probe_comparison(
 fn runtime_intrinsic(
     candidate: &arcweft_lang_sema::callable::CallableCandidateId,
 ) -> Option<RuntimeIntrinsic> {
-    if matches!(
-        candidate,
-        CallableCandidateId::CollectionMethod(CollectionMethodId::Collect { .. })
-    ) {
-        return Some(RuntimeIntrinsic::CoreIterCollect);
+    if let CallableCandidateId::CollectionMethod(method) = candidate {
+        return match method {
+            CollectionMethodId::Len => Some(RuntimeIntrinsic::CoreSeqLen),
+            CollectionMethodId::Sum => Some(RuntimeIntrinsic::CoreSeqSum),
+            CollectionMethodId::Collect { .. } => Some(RuntimeIntrinsic::CoreIterCollect),
+            CollectionMethodId::Filter | CollectionMethodId::Contains => None,
+        };
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::CapacityMethod(method) = candidate {
         return match (method.receiver(), method.method().as_str()) {

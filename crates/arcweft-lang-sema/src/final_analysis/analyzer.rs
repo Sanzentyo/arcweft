@@ -539,7 +539,12 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .accept_symbol_generation(symbols)
             .map_err(|_| FinalSemanticAnalysisError::SymbolGenerationMismatch)?
             .into_evaluation_topology()
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            .map_err(|error| match error {
+                arcweft_lang_hir::project::HirSemanticPathError::ControlTransfer(error) => {
+                    FinalSemanticAnalysisError::ControlTransfer(error)
+                }
+                _ => FinalSemanticAnalysisError::InvalidOwner,
+            })?;
         let modules = executable
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))

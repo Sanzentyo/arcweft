@@ -1805,4 +1805,366 @@ mod tests {
             expected
         );
     }
+    mod collection_owner_tests {
+        use super::*;
+        use arcweft_core::engine::{Engine, FlowFiberStatus};
+        use arcweft_core::step::{RuntimeStepBudget, RuntimeStepOptions};
+        use arcweft_core::value::*;
+
+        fn run_collection_native(
+            selected: &super::super::CompiledDeterministicProgram,
+            receiver: RuntimeValue,
+        ) -> Result<RuntimeValue, String> {
+            let mut engine = Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                vec![receiver],
+            )
+            .unwrap();
+            let options = RuntimeStepOptions {
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            };
+            let mut diagnostics = Vec::new();
+            for _ in 0..64 {
+                let step = engine.step(Default::default(), options);
+                assert!(step.stats.executed_ops <= 1);
+                diagnostics.extend(step.output.diagnostics);
+                if !matches!(engine.fiber().status, FlowFiberStatus::Running) {
+                    break;
+                }
+            }
+            match &engine.fiber().status {
+                FlowFiberStatus::Done(_) => {
+                    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+                    let (program, result) = engine
+                        .take_program_result()
+                        .unwrap()
+                        .expect("the selected collection result is published");
+                    assert_eq!(program, selected.program());
+                    Ok(result)
+                }
+                FlowFiberStatus::Failed(message) => {
+                    let message = message.clone();
+                    assert!(
+                        diagnostics
+                            .iter()
+                            .any(|diagnostic| diagnostic.message == message)
+                    );
+                    assert!(engine.take_program_result().unwrap().is_none());
+                    let execution = engine.fiber().execution;
+                    let cursor = engine.fiber().cursor;
+                    let second = engine.step(Default::default(), options);
+                    assert_eq!(second.stats.executed_ops, 0);
+                    assert!(
+                        matches!(&engine.fiber().status,FlowFiberStatus::Failed(actual) if actual==&message)
+                    );
+                    assert_eq!(engine.fiber().execution, execution);
+                    assert_eq!(engine.fiber().cursor, cursor);
+                    Err(message)
+                }
+                status => panic!(
+                    "the admitted collection did not finish within 64 one-op steps: {status:?}, {diagnostics:?}"
+                ),
+            }
+        }
+
+        fn run_collection_awbc(
+            selected: &super::super::CompiledDeterministicProgram,
+            receiver: RuntimeValue,
+        ) -> Result<RuntimeValue, String> {
+            let lowered = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                selected.plan(),
+                &selected.lowering_report().dialogue_content_catalog,
+                "collection-owner.arcw",
+            )
+            .lower()
+            .unwrap();
+            assert!(lowered.diagnostics.is_empty());
+            let encoded = lowered.program.encode_canonical().unwrap();
+            let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+                &encoded,
+                arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+            )
+            .unwrap();
+            assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+            decoded
+                .verify(
+                    Default::default(),
+                    arcweft_core::awbc::verify::AwbcVerifyContext {
+                        require_entrypoint: false,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let mut executor =
+                arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                    Arc::new(decoded),
+                    selected.program(),
+                    vec![receiver],
+                    arcweft_core::task::GenerationId::new(0),
+                    1,
+                )
+                .unwrap();
+            let options = RuntimeStepOptions {
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            };
+            let mut diagnostics = Vec::new();
+            for _ in 0..64 {
+                let step = executor.step(Default::default(), options);
+                assert!(step.stats.executed_ops <= 1);
+                diagnostics.extend(step.output.diagnostics);
+                if !matches!(executor.fiber().status, FlowFiberStatus::Running) {
+                    break;
+                }
+            }
+            match &executor.fiber().status {
+                FlowFiberStatus::Done(_) => {
+                    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+                    let (program, result) = executor
+                        .take_program_result()
+                        .unwrap()
+                        .expect("the canonical AWBC collection result is published");
+                    assert_eq!(program, selected.program());
+                    Ok(result)
+                }
+                FlowFiberStatus::Failed(message) => {
+                    let message = message.clone();
+                    assert!(
+                        diagnostics
+                            .iter()
+                            .any(|diagnostic| diagnostic.message == message)
+                    );
+                    assert!(executor.take_program_result().unwrap().is_none());
+                    let second = executor.step(Default::default(), options);
+                    assert_eq!(second.stats.executed_ops, 0);
+                    assert!(
+                        matches!(&executor.fiber().status,FlowFiberStatus::Failed(actual) if actual==&message)
+                    );
+                    assert!(executor.take_program_result().unwrap().is_none());
+                    Err(message)
+                }
+                status => panic!(
+                    "the canonical collection did not finish within 64 one-op steps: {status:?}, {diagnostics:?}"
+                ),
+            }
+        }
+
+        fn assert_collection_parity(
+            selected: &super::super::CompiledDeterministicProgram,
+            receiver: RuntimeValue,
+            expected: Result<RuntimeValue, String>,
+        ) {
+            assert_eq!(run_collection_native(selected, receiver.clone()), expected);
+            assert_eq!(run_collection_awbc(selected, receiver), expected);
+        }
+
+        #[test]
+        fn source_collection_sum_matches_native_and_canonical_awbc_for_all_integer_widths() {
+            macro_rules! row {
+                ($name:literal,$dense:ident,$value:ident,$maximum:expr,$expected:expr) => {
+                    (
+                        $name,
+                        $dense(vec![$maximum, 1]),
+                        runtime_sequence_values(vec![
+                            RuntimeValue::$value($maximum),
+                            RuntimeValue::$value(1),
+                        ]),
+                        $expected,
+                    )
+                };
+            }
+            for (item, dense, dynamic, expected) in [
+                row!(
+                    "i8",
+                    runtime_sequence_dense_i8,
+                    i8,
+                    i8::MAX,
+                    i64::from(i8::MAX) + 1
+                ),
+                row!(
+                    "i16",
+                    runtime_sequence_dense_i16,
+                    i16,
+                    i16::MAX,
+                    i64::from(i16::MAX) + 1
+                ),
+                row!(
+                    "i32",
+                    runtime_sequence_dense_i32,
+                    i32,
+                    i32::MAX,
+                    i64::from(i32::MAX) + 1
+                ),
+                row!("i64", runtime_sequence_dense_i64, i64, i64::MAX, i64::MIN),
+                row!(
+                    "i128",
+                    runtime_sequence_dense_i128,
+                    i128,
+                    i128::from(i64::MAX),
+                    i64::MIN
+                ),
+                row!(
+                    "isize",
+                    runtime_sequence_dense_isize,
+                    isize,
+                    i64::MAX,
+                    i64::MIN
+                ),
+                row!(
+                    "u8",
+                    runtime_sequence_dense_u8,
+                    u8,
+                    u8::MAX,
+                    i64::from(u8::MAX) + 1
+                ),
+                row!(
+                    "u16",
+                    runtime_sequence_dense_u16,
+                    u16,
+                    u16::MAX,
+                    i64::from(u16::MAX) + 1
+                ),
+                row!(
+                    "u32",
+                    runtime_sequence_dense_u32,
+                    u32,
+                    u32::MAX,
+                    i64::from(u32::MAX) + 1
+                ),
+                row!(
+                    "u64",
+                    runtime_sequence_dense_u64,
+                    u64,
+                    i64::MAX as u64,
+                    i64::MIN
+                ),
+                row!(
+                    "u128",
+                    runtime_sequence_dense_u128,
+                    u128,
+                    i64::MAX as u128,
+                    i64::MIN
+                ),
+                row!(
+                    "usize",
+                    runtime_sequence_dense_usize,
+                    usize,
+                    i64::MAX as u64,
+                    i64::MIN
+                ),
+            ] {
+                for ty in [format!("Vec<{item}>"), format!("Array<{item}, 2>")] {
+                    let selected = authored_map_program(&format!(
+                        "pub fn root(values: {ty}) -> i64 {{ values.sum() }}\nflow main() -> String {{ return \"ok\" }}\n"
+                    ));
+                    for receiver in [dense.clone(), dynamic.clone()] {
+                        assert_collection_parity(
+                            &selected,
+                            receiver,
+                            Ok(RuntimeValue::i64(expected)),
+                        );
+                    }
+                }
+            }
+            for ty in ["Vec<u8>", "Array<u8, 2>"] {
+                let selected = authored_map_program(&format!(
+                    "pub fn root(values: {ty}) -> i64 {{ values.sum() }}\nflow main() -> String {{ return \"ok\" }}\n"
+                ));
+                assert_collection_parity(
+                    &selected,
+                    runtime_sequence_dense_bytes(vec![u8::MAX, 1]),
+                    Ok(RuntimeValue::i64(256)),
+                );
+            }
+        }
+
+        #[test]
+        fn source_collection_length_matches_native_and_canonical_awbc_storage() {
+            for (ty, receiver, length) in [
+                ("Vec<Unit>", runtime_sequence_dense_units(1024), 1024),
+                ("Seq<i32>", runtime_sequence_dense_i32(vec![1, 2, 3]), 3),
+                (
+                    "Slice<i32>",
+                    runtime_sequence_values(vec![RuntimeValue::i32(1), RuntimeValue::i32(2)]),
+                    2,
+                ),
+                (
+                    "Array<u8, 3>",
+                    runtime_sequence_dense_bytes(vec![1, 2, 3]),
+                    3,
+                ),
+            ] {
+                let selected = authored_map_program(&format!(
+                    "pub fn root(values: {ty}) -> usize {{ values.len() }}\nflow main() -> String {{ return \"ok\" }}\n"
+                ));
+                assert_collection_parity(&selected, receiver, Ok(RuntimeValue::usize(length)));
+            }
+        }
+
+        #[test]
+        fn source_collection_sum_retains_first_exact_rejection_in_native_and_canonical_awbc() {
+            let first_signed = i128::from(i64::MIN) - 1;
+            let first_unsigned = i64::MAX as u128 + 1;
+            let first_u64 = i64::MAX as u64 + 1;
+            for (item, dense, dynamic, first) in [
+                (
+                    "i128",
+                    runtime_sequence_dense_i128(vec![7, first_signed, i128::MAX]),
+                    runtime_sequence_values(vec![
+                        RuntimeValue::i128(7),
+                        RuntimeValue::i128(first_signed),
+                        RuntimeValue::i128(i128::MAX),
+                    ]),
+                    first_signed.to_string(),
+                ),
+                (
+                    "u128",
+                    runtime_sequence_dense_u128(vec![7, first_unsigned, u128::MAX]),
+                    runtime_sequence_values(vec![
+                        RuntimeValue::u128(7),
+                        RuntimeValue::u128(first_unsigned),
+                        RuntimeValue::u128(u128::MAX),
+                    ]),
+                    first_unsigned.to_string(),
+                ),
+                (
+                    "u64",
+                    runtime_sequence_dense_u64(vec![7, first_u64, u64::MAX]),
+                    runtime_sequence_values(vec![
+                        RuntimeValue::u64(7),
+                        RuntimeValue::u64(first_u64),
+                        RuntimeValue::u64(u64::MAX),
+                    ]),
+                    first_u64.to_string(),
+                ),
+                (
+                    "usize",
+                    runtime_sequence_dense_usize(vec![7, first_u64, u64::MAX]),
+                    runtime_sequence_values(vec![
+                        RuntimeValue::usize(7),
+                        RuntimeValue::usize(first_u64),
+                        RuntimeValue::usize(u64::MAX),
+                    ]),
+                    first_u64.to_string(),
+                ),
+            ] {
+                for ty in [format!("Vec<{item}>"), format!("Array<{item}, 3>")] {
+                    let selected = authored_map_program(&format!(
+                        "pub fn root(values: {ty}) -> i64 {{ values.sum() }}\nflow main() -> String {{ return \"ok\" }}\n"
+                    ));
+                    let expected = RuntimeEvalError::UnsupportedBinary {
+                        op: "+",
+                        lhs: "int".into(),
+                        rhs: first.clone(),
+                    }
+                    .to_string();
+                    for receiver in [dense.clone(), dynamic.clone()] {
+                        assert_collection_parity(&selected, receiver, Err(expected.clone()));
+                    }
+                }
+            }
+        }
+    }
 }

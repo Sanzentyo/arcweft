@@ -13,7 +13,6 @@ use arcweft_core::awbc::schema::{
     AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange,
     AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
-use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
 use arcweft_core::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableTransition, RuntimeFunctionSiteBody,
@@ -21,8 +20,8 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeFieldProjection, RuntimeLocalReadMode, RuntimeMutablePlace, RuntimeStandardMapFamily,
-    RuntimeStandardMapOperandOrder, RuntimeUnaryOp,
+    RuntimeFieldProjection, RuntimeIntrinsic, RuntimeLocalReadMode, RuntimeMutablePlace,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -703,10 +702,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(result_ty);
                 let intrinsic = self.intern_intrinsic(
-                    &RuntimeCallTarget::callable(
-                        RuntimeCallableId::try_new("seq.sum".to_owned())
-                            .expect("synthetic seq.sum callable identity is valid"),
-                    ),
+                    &RuntimeCallTarget::intrinsic(RuntimeIntrinsic::CoreSeqSum),
                     &[source_ty],
                     Some(result_ty),
                 );

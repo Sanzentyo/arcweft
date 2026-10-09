@@ -10,7 +10,9 @@ use crate::plan::{
     RuntimeFunctionInputSource, RuntimeFunctionSite, RuntimeFunctionSiteBody, RuntimePlan,
     RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
 };
-use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
+use crate::runtime_id::{
+    RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimeProjectCallSiteId,
+};
 use crate::value::{RuntimeEvalError, RuntimeExpr, RuntimeFunctionApplyError};
 
 /// An admitted source body or an explicitly authored synthetic helper recipe.
@@ -241,23 +243,26 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
     /// Projects the original body's complete, equally scheduled control paths.
     /// The same lexical target resolver as native/AWBC handles emitted exits,
     /// consumed control scaffolding, typed Unit moves and early-return cleanup.
-    pub(crate) fn exact_scheduled_control_ops(
+    fn exact_scheduled_control_ops(
         self,
         function: RuntimePureFunctionRef<'_>,
+        forwarding: Option<RuntimeProjectCallSiteId>,
     ) -> Option<usize> {
         use super::RuntimePureControlBindings;
         use crate::scope::{RuntimeScopeExitTarget, RuntimeScopeFrameKind};
+        use std::collections::BTreeMap;
         fn cost(
             function: RuntimePureFunctionRef<'_>,
             ops: &[crate::plan::FlowOp],
             control: &mut RuntimePureControlBindings<'_, BTreeMap<RuntimeLocalDeclarationId, ()>>,
+            forwarding: Option<RuntimeProjectCallSiteId>,
             depth: usize,
         ) -> Option<(usize, bool)> {
             if depth > 128 {
                 return None;
             }
             use crate::plan::FlowOp;
-            let mut count = 0usize;
+            let mut count = 0_usize;
             for op in ops {
                 count = count.checked_add(1)?;
                 match op {
@@ -315,6 +320,51 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
                             control.numeric_mut().insert(binding.local(), ());
                         }
                     }
+                    FlowOp::ProjectCall { site } => {
+                        // A matched direct forwarding call borrows this exact
+                        // admitted site. Scalar completion passes no such site,
+                        // so hidden calls remain outside its physical subset.
+                        if forwarding != Some(*site) {
+                            return None;
+                        }
+                        let row = function.plan().project_call_sites().get(*site)?;
+                        let request = row.plan();
+                        let crate::value::RuntimeExprKind::MakeCallable { state, captures } =
+                            request.callee().kind()
+                        else {
+                            return None;
+                        };
+                        if *state != request.state() || request.attached().is_some() {
+                            return None;
+                        }
+                        // Native ProjectCall evaluates the callee captures,
+                        // then operands in their admitted source order.
+                        for expression in captures
+                            .iter()
+                            .chain(request.operands().iter().map(|operand| operand.value()))
+                        {
+                            if !scalar_completion_expr_is_total(function.plan(), expression, 0) {
+                                return None;
+                            }
+                            control.consume_numeric_expression(expression).ok()?;
+                        }
+                        if request.operands().iter().any(|operand| {
+                            operand.mode() != crate::value::RuntimeCallArgumentMode::Value
+                        }) {
+                            return None;
+                        }
+                        let (RuntimePatternKind::Bind { binding, .. }
+                        | RuntimePatternKind::Typed { binding }) = row.result().kind()
+                        else {
+                            return None;
+                        };
+                        if super::pure_scalar_projection(function.plan(), row.result().ty())
+                            .is_none()
+                        {
+                            return None;
+                        }
+                        control.numeric_mut().insert(binding.local(), ());
+                    }
                     FlowOp::Noop => {}
                     FlowOp::ReturnExpr(value) => {
                         if !scalar_completion_expr_is_total(function.plan(), value, 0) {
@@ -327,7 +377,8 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
                         if !body.is_empty() {
                             let scope = control.enter_scope(RuntimeScopeFrameKind::EmittedLexical);
                             count = count.checked_add(1)?;
-                            let (nested, returns) = cost(function, body, control, depth + 1)?;
+                            let (nested, returns) =
+                                cost(function, body, control, forwarding, depth + 1)?;
                             count = count.checked_add(nested)?;
                             if returns {
                                 return Some((count, true));
@@ -358,7 +409,7 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
                             let scope = (!ops.is_empty())
                                 .then(|| selected.enter_scope(RuntimeScopeFrameKind::Control));
                             let (mut count, returns) =
-                                cost(function, ops, &mut selected, depth + 1)?;
+                                cost(function, ops, &mut selected, forwarding, depth + 1)?;
                             if let Some(scope) = scope {
                                 count = count.checked_add(1)?;
                                 if !returns && selected.contains_scope(scope) {
@@ -392,7 +443,9 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
             Some((count, false))
         }
         match self {
-            Self::Expression(_) => Some(0),
+            Self::Expression(value) if forwarding.is_none() => {
+                scalar_completion_expr_is_total(function.plan(), value, 0).then_some(0)
+            }
             Self::Executable(body) if body.is_effect_free() => {
                 let initial = function
                     .inputs
@@ -400,10 +453,10 @@ impl<'a> RuntimePureFunctionBodyRef<'a> {
                     .map(|input| (input.local(), ()))
                     .collect();
                 let mut control = RuntimePureControlBindings::new(function, initial);
-                let (count, returns) = cost(function, body.ops(), &mut control, 0)?;
+                let (count, returns) = cost(function, body.ops(), &mut control, forwarding, 0)?;
                 returns.then_some(count)
             }
-            Self::Executable(_) => None,
+            Self::Expression(_) | Self::Executable(_) => None,
         }
     }
     pub const fn is_executable(self) -> bool {
@@ -427,7 +480,26 @@ impl<'a> RuntimePureFunctionRef<'a> {
     /// Completes only total original numeric control with exactly scheduled cost.
     /// Hidden calls, unequal paths and fallible operators retain native control.
     pub(crate) fn exact_scalar_completion_control_ops(self) -> Option<usize> {
-        self.body.exact_scheduled_control_ops(self)
+        self.body.exact_scheduled_control_ops(self, None)
+    }
+
+    /// Totality and scheduled cost come from the original admitted body and
+    /// its typed places. Compilation alone does not make a fallible body total.
+    #[must_use]
+    pub fn supports_total_numeric_completion(self) -> bool {
+        self.scalar_eval_supported
+            && self.supports_scalar_frame()
+            && self.exact_scalar_completion_control_ops().is_some()
+    }
+
+    /// The direct forwarding projection authorizes only one exact retained
+    /// ProjectCall leaf; the shared walker still owns scopes, Move availability,
+    /// generated exits, return suffixes and the bounded recursion rule.
+    pub(crate) fn exact_forwarding_control_ops(
+        self,
+        site: RuntimeProjectCallSiteId,
+    ) -> Option<usize> {
+        self.body.exact_scheduled_control_ops(self, Some(site))
     }
 
     /// Synthetic recipes and effect-free ordinary definitions are

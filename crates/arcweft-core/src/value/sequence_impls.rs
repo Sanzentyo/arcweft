@@ -6,7 +6,7 @@ use super::{
     runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
     runtime_sequence_dense_i128, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
     runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
-    runtime_value_label,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
@@ -1174,6 +1174,16 @@ impl RuntimeSeq {
             Self::Dense(values) => values.sum_as_i64(),
             Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
         }
+    }
+
+    /// Consumes this logical collection through the canonical source Sum owner.
+    /// Dense success stays allocation-free; the existing storage move exposes
+    /// the exact first rejected member without cloning an affine sibling.
+    pub(crate) fn into_checked_sum_as_i64(self) -> Result<i64, RuntimeEvalError> {
+        if let Some(sum) = self.sum_as_i64() {
+            return Ok(sum);
+        }
+        sum_i64_sequence_ref(&self.into_values())
     }
 }
 

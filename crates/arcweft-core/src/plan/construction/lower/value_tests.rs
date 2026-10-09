@@ -499,3 +499,230 @@ fn sum_construction_rejects_a_forged_result_matching_the_source_width() {
         ));
     }
 }
+
+fn collection_intrinsic_call_seed(
+    intrinsic: crate::value::RuntimeIntrinsic,
+    result: u8,
+    arguments: Vec<RuntimeExprSeed>,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        semantic(result),
+        RuntimeExprSeedKind::Call {
+            callee: crate::value::RuntimeCallTarget::intrinsic(intrinsic),
+            args: arguments
+                .into_iter()
+                .enumerate()
+                .map(|(position, value)| {
+                    RuntimeCallArgumentSeed::new(
+                        value,
+                        RuntimeCallArgumentMode::Value,
+                        u32::try_from(position).unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        },
+    )
+}
+
+fn collection_receiver_seed(value: RuntimeValue) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        semantic(2),
+        RuntimeExprSeedKind::BracketSeq(Box::new([RuntimeExprSeed::new(
+            semantic(1),
+            RuntimeExprSeedKind::Value(value),
+        )])),
+    )
+}
+
+#[test]
+fn collection_intrinsic_construction_admits_exact_sequence_and_array_results() {
+    use crate::value::RuntimeIntrinsic;
+    for (item, value) in [
+        (Type::Signed(RuntimeSignedIntWidth::I8), RuntimeValue::i8(7)),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I16),
+            RuntimeValue::i16(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I32),
+            RuntimeValue::i32(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I64),
+            RuntimeValue::i64(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::I128),
+            RuntimeValue::i128(7),
+        ),
+        (
+            Type::Signed(RuntimeSignedIntWidth::ISize),
+            RuntimeValue::isize(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U8),
+            RuntimeValue::u8(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U16),
+            RuntimeValue::u16(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U32),
+            RuntimeValue::u32(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U64),
+            RuntimeValue::u64(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::U128),
+            RuntimeValue::u128(7),
+        ),
+        (
+            Type::Unsigned(RuntimeUnsignedIntWidth::USize),
+            RuntimeValue::usize(7),
+        ),
+    ] {
+        for collection in [
+            Type::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: semantic(1),
+            },
+            Type::Sequence {
+                kind: RuntimePlanSequenceKind::Seq,
+                item: semantic(1),
+            },
+            Type::Sequence {
+                kind: RuntimePlanSequenceKind::Slice,
+                item: semantic(1),
+            },
+            Type::Array {
+                item: semantic(1),
+                length: 1.into(),
+            },
+        ] {
+            let mut builder = RuntimePlanBuilder::new();
+            builder
+                .admit_type_batch(
+                    [
+                        seed(1, item.clone()),
+                        seed(2, collection),
+                        seed(3, Type::Signed(RuntimeSignedIntWidth::I64)),
+                        seed(4, Type::Unsigned(RuntimeUnsignedIntWidth::USize)),
+                    ],
+                    [],
+                )
+                .unwrap();
+            for (intrinsic, result, expected) in [
+                (
+                    RuntimeIntrinsic::CoreSeqSum,
+                    3,
+                    Type::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                (
+                    RuntimeIntrinsic::CoreSeqLen,
+                    4,
+                    Type::Unsigned(RuntimeUnsignedIntWidth::USize),
+                ),
+            ] {
+                let lowered = builder
+                    .lower_expression(collection_intrinsic_call_seed(
+                        intrinsic,
+                        result,
+                        vec![collection_receiver_seed(value.clone())],
+                    ))
+                    .unwrap();
+                assert_eq!(builder.projection(lowered.ty()).unwrap(), &expected);
+                let RuntimeExprKind::Call { callee, args } = lowered.kind() else {
+                    panic!("the selected intrinsic remains a typed call");
+                };
+                assert_eq!(callee.as_intrinsic(), Some(intrinsic));
+                assert_eq!(args.len(), 1);
+            }
+        }
+    }
+}
+
+#[test]
+fn collection_intrinsic_construction_rejects_wrong_receiver_and_result_types() {
+    use crate::value::RuntimeIntrinsic;
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                seed(1, Type::Signed(RuntimeSignedIntWidth::I32)),
+                seed(
+                    2,
+                    Type::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: semantic(1),
+                    },
+                ),
+                seed(3, Type::Signed(RuntimeSignedIntWidth::I64)),
+                seed(4, Type::Unsigned(RuntimeUnsignedIntWidth::USize)),
+            ],
+            [],
+        )
+        .unwrap();
+    let scalar = builder
+        .resolve_seed_type("test scalar receiver", semantic(1))
+        .unwrap();
+    assert!(
+        matches!(builder.lower_expression(collection_intrinsic_call_seed(
+        RuntimeIntrinsic::CoreSeqLen,4,vec![RuntimeExprSeed::new(semantic(1),RuntimeExprSeedKind::Value(RuntimeValue::i32(7)))],
+    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection intrinsic receiver",ty}) if ty==scalar)
+    );
+    for (intrinsic, result, context) in [
+        (RuntimeIntrinsic::CoreSeqSum, 1, "collection sum result"),
+        (RuntimeIntrinsic::CoreSeqLen, 3, "collection length result"),
+    ] {
+        let actual = builder
+            .resolve_seed_type("test forged result", semantic(result))
+            .unwrap();
+        assert!(
+            matches!(builder.lower_expression(collection_intrinsic_call_seed(
+            intrinsic,result,vec![collection_receiver_seed(RuntimeValue::i32(7))],
+        )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:actual_context,ty}) if actual_context==context && ty==actual)
+        );
+    }
+}
+
+#[test]
+fn collection_intrinsic_construction_rejects_noninteger_sum_and_wrong_arity() {
+    use crate::value::RuntimeIntrinsic;
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                seed(1, Type::Bool),
+                seed(
+                    2,
+                    Type::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: semantic(1),
+                    },
+                ),
+                seed(3, Type::Signed(RuntimeSignedIntWidth::I64)),
+                seed(4, Type::Unsigned(RuntimeUnsignedIntWidth::USize)),
+            ],
+            [],
+        )
+        .unwrap();
+    let item = builder
+        .resolve_seed_type("test bool element", semantic(1))
+        .unwrap();
+    assert!(
+        matches!(builder.lower_expression(collection_intrinsic_call_seed(
+        RuntimeIntrinsic::CoreSeqSum,3,vec![collection_receiver_seed(RuntimeValue::Bool(true))],
+    )),Err(RuntimePlanBuildError::InvalidTypeProjection {context:"collection sum element",ty}) if ty==item)
+    );
+    for count in [0, 2] {
+        assert!(
+            matches!(builder.lower_expression(collection_intrinsic_call_seed(
+            RuntimeIntrinsic::CoreSeqLen,4,(0..count).map(|_|collection_receiver_seed(RuntimeValue::Bool(true))).collect(),
+        )),Err(RuntimePlanBuildError::CallableAbiArity {context:"collection intrinsic",expected:1,actual}) if actual==count)
+        );
+    }
+}

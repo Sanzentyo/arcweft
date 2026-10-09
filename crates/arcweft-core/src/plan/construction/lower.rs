@@ -1074,10 +1074,13 @@ impl RuntimePlanBodyConstruction<'_> {
                     body: Box::new(body),
                 }
             }
-            RuntimeExprSeedKind::Call { callee, args } => RuntimeExprKind::Call {
-                callee,
-                args: self.lower_call_arguments(args)?,
-            },
+            RuntimeExprSeedKind::Call { callee, args } => {
+                let args = self.lower_call_arguments(args)?;
+                if let Some(intrinsic) = callee.as_intrinsic() {
+                    self.validate_collection_intrinsic_signature(intrinsic, &args, ty)?;
+                }
+                RuntimeExprKind::Call { callee, args }
+            }
             RuntimeExprSeedKind::Function { site, captures } => {
                 let (site, input_sources, input_types, result, _, _) =
                     site.resolve(&self.issuer)
@@ -2070,6 +2073,59 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             );
         }
         Ok((callee, args))
+    }
+
+    /// The closed collection intrinsic ABI uses this exact admitted type graph,
+    /// including already checked spread/position expansion. It cannot publish
+    /// a result inferred from an unrelated same-width or receiver type.
+    fn validate_collection_intrinsic_signature(
+        &self,
+        intrinsic: crate::value::RuntimeIntrinsic,
+        args: &[RuntimeCallArgument],
+        result: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        use crate::value::RuntimeIntrinsic;
+        if !matches!(
+            intrinsic,
+            RuntimeIntrinsic::CoreSeqLen | RuntimeIntrinsic::CoreSeqSum
+        ) {
+            return Ok(());
+        }
+        let inputs = self.expanded_argument_types(args)?;
+        let [receiver] = inputs.as_slice() else {
+            return Err(RuntimePlanBuildError::CallableAbiArity {
+                context: "collection intrinsic",
+                expected: 1,
+                actual: inputs.len(),
+            });
+        };
+        let (item, _) = self.sequence_projection(*receiver, "collection intrinsic receiver")?;
+        match intrinsic {
+            RuntimeIntrinsic::CoreSeqLen => {
+                if !matches!(
+                    self.projection(result)?,
+                    RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::USize)
+                ) {
+                    return invalid_projection("collection length result", result);
+                }
+            }
+            RuntimeIntrinsic::CoreSeqSum => {
+                if !matches!(
+                    self.projection(item)?,
+                    RuntimePlanTypeProjection::Signed(_) | RuntimePlanTypeProjection::Unsigned(_)
+                ) {
+                    return invalid_projection("collection sum element", item);
+                }
+                if !matches!(
+                    self.projection(result)?,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64)
+                ) {
+                    return invalid_projection("collection sum result", result);
+                }
+            }
+            _ => unreachable!("the closed collection intrinsic family was selected above"),
+        }
+        Ok(())
     }
 
     fn lower_call_arguments(

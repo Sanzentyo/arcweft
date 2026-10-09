@@ -45,6 +45,7 @@ pub mod aot;
 pub mod audio;
 pub mod dialogue;
 pub mod eval;
+mod numeric_map;
 pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
@@ -2677,12 +2678,24 @@ impl Engine {
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
-            let (_, control_ops) = self.with_scalar_operation_budget(
-                options.mode,
-                options.budget.max_ops - executed_ops - 1,
-                |engine| engine.step_runtime_op(&mut input, &events, &mut output, pure_backend),
-            );
-            executed_ops += 1 + control_ops;
+            let consumed = self
+                .try_step_numeric_map_span(
+                    options.budget.max_ops - executed_ops,
+                    options.mode,
+                    &mut output,
+                    pure_backend,
+                )
+                .unwrap_or_else(|| {
+                    let (_, control_ops) = self.with_scalar_operation_budget(
+                        options.mode,
+                        options.budget.max_ops - executed_ops - 1,
+                        |engine| {
+                            engine.step_runtime_op(&mut input, &events, &mut output, pure_backend)
+                        },
+                    );
+                    1 + control_ops
+                });
+            executed_ops += consumed;
             if self.should_return_to_host(options.mode, &output, executed_ops) {
                 break;
             }
@@ -2836,18 +2849,38 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        self.with_main_flow_transaction(
+            output,
+            pure_backend,
+            |candidate, staged_output, backend, drop_policy| {
+                candidate.step_flow(staged_output, backend, drop_policy);
+                1
+            },
+        );
+    }
+    fn with_main_flow_transaction<B: RuntimeCallBackend>(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut B,
+        execute: impl FnOnce(
+            &mut Self,
+            &mut RuntimeStepOutput,
+            &mut B,
+            &mut Option<crate::effect::RuntimeDropPolicy>,
+        ) -> usize,
+    ) -> usize {
         let before = match self.main_fiber_line_handle_owners() {
             Ok(owners) => owners,
             Err(error) => {
                 self.fail_eval(error, output);
-                return;
+                return 1;
             }
         };
         let image = match self.inert_rollback_image() {
             Ok(image) => image,
             Err(error) => {
                 self.fail_eval(error, output);
-                return;
+                return 1;
             }
         };
         let mut candidate = std::mem::replace(
@@ -2856,14 +2889,19 @@ impl Engine {
         );
         let mut staged_output = RuntimeStepOutput::default();
         let mut drop_policy = None;
-        candidate.step_flow(&mut staged_output, pure_backend, &mut drop_policy);
+        let executed = execute(
+            &mut candidate,
+            &mut staged_output,
+            pure_backend,
+            &mut drop_policy,
+        );
         let mut drops = candidate.fiber.env.take_assignment_discard_authorization();
         if let Err(error) = drops.set_boundary(drop_policy) {
             drop(candidate);
             *self = Self::from_rollback_image(image)
                 .expect("a native Engine rollback image reconstructs its admitted owner");
             self.fail_eval(error, output);
-            return;
+            return 1;
         }
         let after = match candidate.main_fiber_line_handle_owners() {
             Ok(owners) => owners,
@@ -2872,7 +2910,7 @@ impl Engine {
                 *self = Self::from_rollback_image(image)
                     .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
-                return;
+                return 1;
             }
         };
         let receipt = match candidate.dialogue_activations.reconcile_parent_fiber(
@@ -2887,7 +2925,7 @@ impl Engine {
                 *self = Self::from_rollback_image(image)
                     .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
-                return;
+                return 1;
             }
         };
         staged_output
@@ -2896,6 +2934,7 @@ impl Engine {
             .extend(receipt.into_commands());
         *self = candidate;
         output.merge(staged_output);
+        executed
     }
 
     fn main_fiber_can_attempt_runtime_op(&self) -> bool {

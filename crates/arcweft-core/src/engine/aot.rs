@@ -20,6 +20,18 @@ impl Engine {
         let mut runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
+            if let Some(consumed) = self.try_step_numeric_map_span(
+                options.budget.max_ops - executed_ops,
+                options.mode,
+                &mut output,
+                pure_backend,
+            ) {
+                executed_ops += consumed;
+                if self.should_return_to_host(options.mode, &output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
             // Fallback operations may spawn/goto while a linear prefix is
             // active. Executor work always returns to the existing native
             // scheduler, including detached work, join-deferred returns and an

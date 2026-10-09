@@ -1025,48 +1025,44 @@ impl HirAnalysisProjectView<'_> {
                     .into_iter()
                     .map(crate::expr::HirExpressionTypeRoot::type_id),
             );
-            if domain == SelectedExpressionDomain::SemanticAnalysis
-                && matches!(kind, HirExprKind::Call(_))
-            {
-                let selected_call = selected_call_edges(owner).ok_or(
-                    HirSelectedExpressionInventoryError::MissingSelectedCallEdges {
-                        expression: owner,
-                    },
-                )?;
-                if apply_selected_semantic_call(
+            if domain == SelectedExpressionDomain::SemanticAnalysis {
+                let followed_edges = selected_semantic_expression_edges(
                     topology,
                     owner,
                     kind,
-                    selected_call,
-                    &mut pending,
-                    &mut selected,
-                    &mut selected_edges,
+                    if matches!(kind, HirExprKind::PostfixBracket(_)) {
+                        selected_postfix(owner)
+                    } else {
+                        None
+                    },
+                    if matches!(kind, HirExprKind::Call(_)) {
+                        selected_call_edges(owner)
+                    } else {
+                        None
+                    },
+                    if matches!(kind, HirExprKind::Select(_)) {
+                        selected_select_target(owner)
+                    } else {
+                        None
+                    },
                     &mut required_semantic_owners,
-                )? {
-                    continue;
-                }
-            }
-            if domain == SelectedExpressionDomain::SemanticAnalysis
-                && let HirExprKind::AttachedContentApplication(application) = kind
-                && let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
-                    application.family()
-                && invocation.form() == crate::expr::HirCallInvocationForm::Parenthesized
-            {
-                // Language-owned content callees are static namespace
-                // identities. Their path is checked through the attached
-                // callable fact and is not a semantic expression operand;
-                // ordinary authored arguments and the attached body remain
-                // part of the selected graph.
-                selected.insert(owner);
-                let mut followed_edges = Vec::new();
-                append_selected_language_content_operands(
-                    topology,
-                    owner,
-                    invocation,
-                    &mut pending,
-                    &mut followed_edges,
                 )?;
-                selected_edges.insert(owner, followed_edges.into_boxed_slice());
+                selected.insert(owner);
+                pending.extend(
+                    followed_edges
+                        .iter()
+                        .filter(|edge| {
+                            !matches!(
+                                edge,
+                                HirExpressionEvaluationEdge::Expression {
+                                    ownership: HirExpressionChildOwnership::ReferenceOnly,
+                                    ..
+                                }
+                            )
+                        })
+                        .map(HirExpressionEvaluationEdge::child),
+                );
+                selected_edges.insert(owner, followed_edges);
                 continue;
             }
             let select_target_disposition = if matches!(kind, HirExprKind::Select(_)) {
@@ -1128,11 +1124,6 @@ impl HirAnalysisProjectView<'_> {
                     selected.insert(owner);
                     selected_edges.insert(owner, Box::new([]));
                     continue;
-                }
-                (HirExprKind::Call(_), HirRuntimeExpressionProjection::Structural { value })
-                    if domain == SelectedExpressionDomain::SemanticAnalysis =>
-                {
-                    value
                 }
                 (HirExprKind::Call(_), HirRuntimeExpressionProjection::Structural { .. }) => {
                     return Err(
@@ -1316,55 +1307,132 @@ fn selected_expression_excluded_roots(
     }
 }
 
-fn apply_selected_semantic_call(
+impl HirProjectEvaluationTopology {
+    /// Projects one owner's accepted semantic child edges during preparation.
+    /// This bounded query uses the final graph's exact selection primitive; it
+    /// does not publish descendant admission or a complete project graph.
+    pub fn selected_expression_child_edges(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        selected_postfix: Option<ExprId>,
+        selected_call: Option<HirSelectedCallExpressionDisposition>,
+        selected_select_target: Option<HirSelectedSelectTargetDisposition>,
+    ) -> Result<Box<[HirExpressionEvaluationEdge]>, HirSelectedExpressionInventoryError> {
+        if owner.module() != module.module_id()
+            || self
+                .module(owner.module())
+                .is_none_or(|entry| entry.snapshot() != module.snapshot_id())
+        {
+            return Err(HirSelectedExpressionInventoryError::TopologyMismatch);
+        }
+        let kind = module
+            .resolve_expr(owner)
+            .map(crate::expr::HirExpr::kind)
+            .map_err(
+                |_| HirSelectedExpressionInventoryError::UnresolvedExpression { expression: owner },
+            )?;
+        selected_semantic_expression_edges(
+            self,
+            owner,
+            kind,
+            selected_postfix,
+            selected_call,
+            selected_select_target,
+            &mut BTreeSet::new(),
+        )
+    }
+}
+
+fn selected_semantic_expression_edges(
     topology: &HirProjectEvaluationTopology,
     owner: ExprId,
     kind: &HirExprKind,
-    disposition: HirSelectedCallExpressionDisposition,
-    pending: &mut VecDeque<ExprId>,
-    selected: &mut BTreeSet<ExprId>,
-    selected_edges: &mut BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
+    selected_postfix: Option<ExprId>,
+    selected_call: Option<HirSelectedCallExpressionDisposition>,
+    selected_select_target: Option<HirSelectedSelectTargetDisposition>,
     required_semantic_owners: &mut BTreeSet<ExprId>,
-) -> Result<bool, HirSelectedExpressionInventoryError> {
-    let (call, admitted) = match disposition {
-        HirSelectedCallExpressionDisposition::Structural => return Ok(false),
-        HirSelectedCallExpressionDisposition::Callable(call)
-        | HirSelectedCallExpressionDisposition::NonCallable(call) => (call, true),
-        HirSelectedCallExpressionDisposition::Unselected(call) => (call, false),
-    };
-    let HirExprKind::Call(invocation) = kind else {
-        return Err(
-            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
-                expression: owner,
-            },
-        );
-    };
-    selected.insert(owner);
+) -> Result<Box<[HirExpressionEvaluationEdge]>, HirSelectedExpressionInventoryError> {
+    let mut pending = VecDeque::new();
     let mut followed_edges = Vec::new();
-    let mut operands = VecDeque::new();
-    let mut semantic_owners = BTreeSet::new();
-    append_selected_call_expression_edges(
-        topology,
-        owner,
-        invocation,
-        call.arguments(),
-        call.callee(),
-        &mut operands,
-        &mut followed_edges,
-        &mut semantic_owners,
-    )?;
-    if admitted {
-        pending.extend(operands);
-        required_semantic_owners.extend(semantic_owners);
-    } else {
-        // The same ownership/arity validation applies to tooling evidence,
-        // but rejection grants no evaluated operand or callback body.
-        followed_edges.clear();
+    if let HirExprKind::Call(invocation) = kind {
+        let disposition = selected_call.ok_or(
+            HirSelectedExpressionInventoryError::MissingSelectedCallEdges { expression: owner },
+        )?;
+        let (call, admitted) = match disposition {
+            HirSelectedCallExpressionDisposition::Structural => (None, true),
+            HirSelectedCallExpressionDisposition::Callable(call)
+            | HirSelectedCallExpressionDisposition::NonCallable(call) => (Some(call), true),
+            HirSelectedCallExpressionDisposition::Unselected(call) => (Some(call), false),
+        };
+        if let Some(call) = call {
+            let mut semantic_owners = BTreeSet::new();
+            append_selected_call_expression_edges(
+                topology,
+                owner,
+                invocation,
+                call.arguments(),
+                call.callee(),
+                &mut pending,
+                &mut followed_edges,
+                &mut semantic_owners,
+            )?;
+            if admitted {
+                required_semantic_owners.extend(semantic_owners);
+            } else {
+                // Rejection validates source ownership without admitting its
+                // operands or callback bodies for active evaluation.
+                followed_edges.clear();
+            }
+            return Ok(followed_edges.into_boxed_slice());
+        }
     }
-    selected_edges.insert(owner, followed_edges.into_boxed_slice());
-    Ok(true)
+    if let HirExprKind::AttachedContentApplication(application) = kind
+        && let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+            application.family()
+        && invocation.form() == crate::expr::HirCallInvocationForm::Parenthesized
+    {
+        // The attached callable fact owns this static language callee.
+        // Authored arguments and attached body retain their owning edges.
+        append_selected_language_content_operands(
+            topology,
+            owner,
+            invocation,
+            &mut pending,
+            &mut followed_edges,
+        )?;
+        return Ok(followed_edges.into_boxed_slice());
+    }
+    if let (
+        HirExprKind::Select(select),
+        Some(HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+    ) = (kind, selected_select_target)
+    {
+        if !matches!(select.member(), HirSelectedMember::Name(_)) {
+            return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+        }
+        return Ok(Box::new([]));
+    }
+    if let HirExprKind::PostfixBracket(postfix) = kind {
+        let candidate = selected_postfix.ok_or(
+            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression: owner },
+        )?;
+        SelectedPostfixContext {
+            topology,
+            owner,
+            postfix,
+            domain: SelectedExpressionDomain::SemanticAnalysis,
+            value: HirRuntimeValueRetention::Retain,
+            pending: &mut pending,
+            selected: &mut BTreeSet::new(),
+            followed: &mut followed_edges,
+        }
+        .apply(candidate)?;
+    } else {
+        enqueue_expression_edges(topology, owner, &mut pending, &mut followed_edges);
+    }
+    Ok(followed_edges.into_boxed_slice())
 }
-
 impl HirRuntimeSemanticReachability<'_> {
     /// Returns the exact retained expression owners whose accepted types enter
     /// runtime lowering after bounded postfix ambiguity has been resolved.

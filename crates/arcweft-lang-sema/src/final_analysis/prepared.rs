@@ -1084,6 +1084,44 @@ impl PreparedExpressionFact {
         }
     }
 
+    /// Continuation supplied by the accepted result grammar, independently
+    /// of whether this expression publishes a runtime value. An unavailable
+    /// checked expression grants no continuation evidence.
+    pub(crate) fn normal_continuation(&self) -> Option<super::completion::NormalContinuation> {
+        use super::completion::NormalContinuation;
+        Some(match self {
+            Self::Complete(value) => {
+                return NormalContinuation::from_checked_result(value.result());
+            }
+            Self::OwnerBound(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::CompileTimeScalar(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::DialogueApplication(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::ContentApplication(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::Method(value) => NormalContinuation::from_prepared_result(value.shell().result()),
+            Self::Entry(value) => NormalContinuation::from_prepared_result(value.shell().result()),
+            Self::Variant(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::ProjectField(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::ProjectRecord(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+            Self::ProjectNominalTypeValue(value) => {
+                NormalContinuation::from_prepared_result(value.shell().result())
+            }
+        })
+    }
+
     pub(crate) const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         match self {
             Self::Complete(value) => value.type_selection(),
