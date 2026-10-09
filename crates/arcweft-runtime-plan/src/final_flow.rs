@@ -995,7 +995,8 @@ pub fn lower_runtime_plan_with_stats(
                         ty, origin
                     } => Some(origin.runtime_local_declaration_source().map(|origin| (ProjectFunctionFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Value { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let mut locals = locals;
@@ -1127,7 +1128,8 @@ pub fn lower_runtime_plan_with_stats(
                     } if !captured.contains(local) => Some(origin.runtime_local_declaration_source().map(|origin| (ClosureFrameLocal::Hir(*local), RuntimeLocalDeclarationSeed::new(origin, ty.identity()))).map_err(|error| RuntimePlanLowerError::new(error.to_string()))),
                     RuntimeProjectFunctionTypeProjection::Local { .. }
                     | RuntimeProjectFunctionTypeProjection::Value { .. }
-                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. } => None,
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyExpression { .. }
+                    | RuntimeProjectFunctionTypeProjection::SemanticOnlyType { .. } => None,
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             rows.extend(closure.parameters().iter().map(|parameter| {

@@ -33,10 +33,10 @@ pub(crate) use model::ResolvedAssociatedTypeReceiver;
 pub use model::{
     AliasExpansionFact, BuiltinTypeConstructor, DetachedNominalEvidence, DetachedNominalReason,
     DetachedTypeRef, ExternalNominalResolution, PoisonedTypeRef, ResolvedAliasReference,
-    ResolvedOpenNominal, ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome,
-    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
-    TypeArityTarget, TypeNameResolution, TypeResolutionFailure, TypeResolutionReport,
-    TypeSourceEvidence,
+    ResolvedOpenNominal, ResolvedTypeNode, ResolvedTypeNodePurpose, ResolvedTypeProduct,
+    ResolvedTypeRefOutcome, StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind,
+    TypeArityExpectation, TypeArityTarget, TypeNameResolution, TypeResolutionFailure,
+    TypeResolutionReport, TypeSourceEvidence,
 };
 pub(crate) use resolver::hir_path_matches_type_path;
 pub use resolver::resolve_type_ref;

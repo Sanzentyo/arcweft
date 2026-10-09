@@ -22,6 +22,7 @@ use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimePatternFactFamily, CheckedExecutableRuntimeStatementFactFamily,
     CheckedLocalUseAuthority,
 };
+use arcweft_lang_sema::nominal::ResolvedTypeNodePurpose;
 use thiserror::Error;
 
 use super::{
@@ -906,8 +907,9 @@ impl RuntimeProjectFunctionTypeOwner {
 
 /// Complete substitution-backed semantic disposition used while lowering one
 /// closed instance body. Every callable-scope expression owns a row even when
-/// its semantic result is not a runtime value; patterns, locals, and source type roots
-/// always own a normalized value type.
+/// its semantic result is not a runtime value. Patterns and locals always own
+/// a normalized value type; source type nodes retain the exact purpose issued
+/// by accepted nominal resolution, including non-value arguments and predicates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeProjectFunctionTypeProjection {
     Local {
@@ -921,6 +923,10 @@ pub enum RuntimeProjectFunctionTypeProjection {
     },
     SemanticOnlyExpression {
         owner: ExprId,
+    },
+    SemanticOnlyType {
+        owner: TypeId,
+        purpose: ResolvedTypeNodePurpose,
     },
 }
 
@@ -1210,6 +1216,10 @@ impl RuntimeProjectFunctionTypeProjection {
         Self::SemanticOnlyExpression { owner }
     }
 
+    pub const fn semantic_only_type(owner: TypeId, purpose: ResolvedTypeNodePurpose) -> Self {
+        Self::SemanticOnlyType { owner, purpose }
+    }
+
     pub const fn owner(&self) -> RuntimeProjectFunctionTypeOwner {
         match self {
             Self::Local { owner, .. } => RuntimeProjectFunctionTypeOwner::Local(*owner),
@@ -1217,13 +1227,14 @@ impl RuntimeProjectFunctionTypeProjection {
             Self::SemanticOnlyExpression { owner } => {
                 RuntimeProjectFunctionTypeOwner::Expression(*owner)
             }
+            Self::SemanticOnlyType { owner, .. } => RuntimeProjectFunctionTypeOwner::Type(*owner),
         }
     }
 
     pub const fn ty(&self) -> Option<&RuntimeNormalizedType> {
         match self {
             Self::Local { ty, .. } | Self::Value { ty, .. } => Some(ty),
-            Self::SemanticOnlyExpression { .. } => None,
+            Self::SemanticOnlyExpression { .. } | Self::SemanticOnlyType { .. } => None,
         }
     }
 }
@@ -1770,8 +1781,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 partition
                     .types()
                     .iter()
-                    .copied()
-                    .map(RuntimeProjectFunctionTypeOwner::Type),
+                    .map(|row| RuntimeProjectFunctionTypeOwner::Type(row.owner())),
             )
             .collect::<BTreeSet<_>>();
         let actual_type_owners = type_projection
@@ -1808,14 +1818,22 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     .ok()
                     .is_none_or(|index| type_projection[index].ty().is_none())
             })
-            || partition.types().iter().any(|owner| {
+            || partition.types().iter().any(|expected| {
                 type_projection
                     .binary_search_by_key(
-                        &RuntimeProjectFunctionTypeOwner::Type(*owner),
+                        &RuntimeProjectFunctionTypeOwner::Type(expected.owner()),
                         RuntimeProjectFunctionTypeProjection::owner,
                     )
                     .ok()
-                    .is_none_or(|index| type_projection[index].ty().is_none())
+                    .is_none_or(|index| match &type_projection[index] {
+                        RuntimeProjectFunctionTypeProjection::Value { .. } => {
+                            !expected.has_runtime_type()
+                        }
+                        RuntimeProjectFunctionTypeProjection::SemanticOnlyType {
+                            purpose, ..
+                        } => expected.has_runtime_type() || purpose != expected.purpose(),
+                        _ => true,
+                    })
             })
         {
             return Err(RuntimeProjectFunctionFactError::IncompleteTypeProjection);

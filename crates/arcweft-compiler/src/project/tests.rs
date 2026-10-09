@@ -1,6 +1,7 @@
 use super::*;
 
 mod analysis_lease;
+mod type_purpose;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
 };

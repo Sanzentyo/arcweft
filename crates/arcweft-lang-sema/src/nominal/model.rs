@@ -144,6 +144,25 @@ pub enum StructuralTypeNodeKind {
     Slice,
 }
 
+/// Semantic role of one accepted structural type node.
+///
+/// Type-constructor arguments and trait predicates retain source ownership
+/// without inventing a runtime value type. The nominal resolver's accepted
+/// outcome is the sole authority for this distinction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolvedTypeNodePurpose {
+    ValueType,
+    ConstantArgument,
+    EntityFamilyArgument(EntityKind),
+    TraitPredicate,
+}
+
+impl ResolvedTypeNodePurpose {
+    pub const fn has_runtime_type(&self) -> bool {
+        matches!(self, Self::ValueType)
+    }
+}
+
 /// Resolution fact tied to its exact structural address and source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTypeNode {
@@ -700,6 +719,22 @@ impl ResolvedTypeNode {
     /// values and therefore return `None`.
     pub const fn recovered(&self) -> Option<&TypeKind> {
         self.recovered.as_ref()
+    }
+
+    /// Purpose selected by the accepted nominal-resolution outcome.
+    ///
+    /// A missing recovered type is never used to infer semantic-only status.
+    pub fn purpose(&self) -> ResolvedTypeNodePurpose {
+        match &self.outcome {
+            TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt) => {
+                ResolvedTypeNodePurpose::ConstantArgument
+            }
+            TypeNameResolution::EntityFamily(family) => {
+                ResolvedTypeNodePurpose::EntityFamilyArgument(family.clone())
+            }
+            TypeNameResolution::TraitHead(_) => ResolvedTypeNodePurpose::TraitPredicate,
+            _ => ResolvedTypeNodePurpose::ValueType,
+        }
     }
 
     pub const fn outcome(&self) -> &TypeNameResolution {

@@ -121,6 +121,8 @@ mod statement_producers;
 mod target_effects;
 #[path = "tests/text_proxy.rs"]
 mod text_proxy;
+#[path = "tests/type_purpose.rs"]
+mod type_purpose;
 use crate::{
     CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},

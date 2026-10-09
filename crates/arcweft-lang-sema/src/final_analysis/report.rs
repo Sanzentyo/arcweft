@@ -77,6 +77,7 @@ pub struct FinalSemanticAnalysis {
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
     types: BTreeMap<TypeId, TypeKind>,
     type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+    type_resolution_nodes: BTreeMap<TypeId, ResolvedTypeNodeLocation>,
     locals: BTreeMap<LocalId, CheckedBinding>,
     captures: BTreeMap<CaptureId, CheckedBinding>,
     expressions: BTreeMap<ExprId, CheckedExpression>,
@@ -95,6 +96,14 @@ pub struct FinalSemanticAnalysis {
     physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     work: FinalSemanticAnalysisWork,
+}
+
+/// Exact address of a source-owned node in the immutable resolution reports.
+/// No nominal facts are copied into this lookup index.
+#[derive(Clone, Copy, Debug)]
+struct ResolvedTypeNodeLocation {
+    root: TypeId,
+    node: usize,
 }
 
 /// Retains the actual registration allocations, rather than reconstructing
@@ -267,6 +276,8 @@ pub enum FinalAnalysisExecutionProjectionError {
     },
     #[error("checked expression {owner:?} is absent from the final analysis")]
     MissingExpression { owner: ExprId },
+    #[error("checked source type {owner:?} has no accepted nominal-resolution purpose")]
+    MissingTypeResolution { owner: TypeId },
     #[error("checked pattern {owner:?} is absent from the final analysis")]
     MissingPattern { owner: PatternId },
     #[error("checked statement {owner:?} is absent from the final analysis")]
@@ -446,6 +457,27 @@ impl CheckedExecutableRuntimeStatementFactOwner {
     }
 }
 
+/// One final-sema-sealed source type row in an executable partition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedExecutableRuntimeTypeFactOwner {
+    owner: TypeId,
+    purpose: crate::nominal::ResolvedTypeNodePurpose,
+}
+
+impl CheckedExecutableRuntimeTypeFactOwner {
+    pub const fn owner(&self) -> TypeId {
+        self.owner
+    }
+
+    pub const fn purpose(&self) -> &crate::nominal::ResolvedTypeNodePurpose {
+        &self.purpose
+    }
+
+    pub const fn has_runtime_type(&self) -> bool {
+        self.purpose.has_runtime_type()
+    }
+}
+
 /// Sealed final-sema inventory of every semantic owner belonging to one exact
 /// HIR executable partition.
 ///
@@ -461,7 +493,7 @@ pub struct CheckedExecutableRuntimeFactPartition {
     statements: Box<[CheckedExecutableRuntimeStatementFactOwner]>,
     locals: Box<[LocalId]>,
     input_locals: Box<[LocalId]>,
-    types: Box<[TypeId]>,
+    types: Box<[CheckedExecutableRuntimeTypeFactOwner]>,
     captures: Box<[CaptureId]>,
 }
 
@@ -495,7 +527,7 @@ impl CheckedExecutableRuntimeFactPartition {
         &self.input_locals
     }
 
-    pub const fn types(&self) -> &[TypeId] {
+    pub const fn types(&self) -> &[CheckedExecutableRuntimeTypeFactOwner] {
         &self.types
     }
 
@@ -944,7 +976,18 @@ impl FinalAnalysisExecutionProjection<'_> {
             statements: statements.into_boxed_slice(),
             locals: owners.locals().collect(),
             input_locals: Box::new([]),
-            types: owners.types().collect(),
+            types: owners
+                .types()
+                .map(|owner| {
+                    let node = self.analysis.type_resolution_node(owner).ok_or(
+                        FinalAnalysisExecutionProjectionError::MissingTypeResolution { owner },
+                    )?;
+                    Ok(CheckedExecutableRuntimeTypeFactOwner {
+                        owner,
+                        purpose: node.purpose(),
+                    })
+                })
+                .collect::<Result<_, FinalAnalysisExecutionProjectionError>>()?,
             captures: owners.captures().collect(),
         })
     }
@@ -1471,7 +1514,8 @@ impl FinalSemanticAnalysisPostEntryDraft {
 
         let type_owners =
             accepted_type_owners(&modules, &expressions, &calls, &selected_expressions)?;
-        validate_type_resolution_reports(&type_owners, &types, &type_resolutions)?;
+        let type_resolution_nodes =
+            validate_type_resolution_reports(&type_owners, &types, &type_resolutions)?;
         control.check()?;
 
         let inventory = SemanticFactInventory {
@@ -1595,6 +1639,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             dialogue_lines,
             types,
             type_resolutions,
+            type_resolution_nodes,
             locals,
             captures,
             expressions,
@@ -2396,6 +2441,18 @@ impl FinalSemanticAnalysis {
         self.type_resolutions.get(&owner)
     }
 
+    /// Borrows the exact source-owned node, excluding alias-use substitutions.
+    /// The index is issued once while sealing the complete resolution inventory.
+    pub fn type_resolution_node(&self, owner: TypeId) -> Option<&crate::nominal::ResolvedTypeNode> {
+        let location = self.type_resolution_nodes.get(&owner)?;
+        self.type_resolutions
+            .get(&location.root)?
+            .outcome()
+            .product()
+            .nodes()
+            .get(location.node)
+    }
+
     pub fn type_resolutions(
         &self,
     ) -> impl ExactSizeIterator<Item = (TypeId, &TypeResolutionReport)> {
@@ -2792,18 +2849,19 @@ fn validate_type_resolution_reports(
     accepted_owners: &BTreeSet<TypeId>,
     types: &BTreeMap<TypeId, TypeKind>,
     reports: &BTreeMap<TypeId, TypeResolutionReport>,
-) -> Result<(), FinalSemanticAnalysisError> {
+) -> Result<BTreeMap<TypeId, ResolvedTypeNodeLocation>, FinalSemanticAnalysisError> {
     if reports.is_empty() {
-        return Ok(());
+        return Ok(BTreeMap::new());
     }
     let all_nodes = accepted_owners;
     let mut node_facts = BTreeMap::new();
+    let mut locations = BTreeMap::new();
     for (owner, report) in reports {
         let product = report.outcome().product();
         if product.root() != *owner {
             return Err(FinalSemanticAnalysisError::TypeResolutionReportMismatch { owner: *owner });
         }
-        for node in product.nodes() {
+        for (index, node) in product.nodes().iter().enumerate() {
             if node.is_contextual_alias_target() {
                 continue;
             }
@@ -2812,14 +2870,20 @@ fn validate_type_resolution_reports(
                     owner: node.node(),
                 });
             }
-            let recovered = node.recovered().cloned();
-            merge_type_resolution_fact(&mut node_facts, node.node(), &recovered)?;
+            let fact = (node.recovered().cloned(), node.purpose());
+            merge_type_resolution_fact(&mut node_facts, node.node(), &fact)?;
+            locations
+                .entry(node.node())
+                .or_insert(ResolvedTypeNodeLocation {
+                    root: *owner,
+                    node: index,
+                });
         }
     }
     let covered = node_facts.keys().copied().collect::<BTreeSet<_>>();
     let recovered = node_facts
         .into_iter()
-        .filter_map(|(owner, ty)| ty.map(|ty| (owner, ty)))
+        .filter_map(|(owner, (ty, _))| ty.map(|ty| (owner, ty)))
         .collect::<BTreeMap<_, _>>();
     if &covered != all_nodes || recovered != *types {
         let owner = all_nodes
@@ -2835,7 +2899,7 @@ fn validate_type_resolution_reports(
             .unwrap_or_else(|| *reports.keys().next().expect("non-empty report inventory"));
         return Err(FinalSemanticAnalysisError::TypeResolutionReportMismatch { owner });
     }
-    Ok(())
+    Ok(locations)
 }
 
 pub(super) fn merge_type_resolution_fact<T: Clone + Eq>(

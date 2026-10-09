@@ -12827,7 +12827,11 @@ fn validate_project_function_semantic_catalog(
                 .map(|row| row.owner())
                 .ne(exact.statements())
             || partition.locals().iter().copied().ne(exact.locals())
-            || partition.types().iter().copied().ne(exact.types())
+            || partition
+                .types()
+                .iter()
+                .map(|row| row.owner())
+                .ne(exact.types())
             || partition.captures().iter().copied().ne(exact.captures())
             || partition
                 .expressions()

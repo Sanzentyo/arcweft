@@ -90,17 +90,25 @@ impl RuntimeExecutableInstantiation<'_> {
                 })?,
             ));
         }
-        for owner in partition.types() {
-            let ty = if let Some(abi) = source_type_abis.get(owner) {
+        for expected in partition.types() {
+            let owner = expected.owner();
+            if !expected.has_runtime_type() {
+                projection.push(RuntimeProjectFunctionTypeProjection::semantic_only_type(
+                    owner,
+                    expected.purpose().clone(),
+                ));
+                continue;
+            }
+            let ty = if let Some(abi) = source_type_abis.get(&owner) {
                 (*abi).clone()
             } else {
-                let checked = analysis.ty(*owner).ok_or_else(|| {
+                let checked = analysis.ty(owner).ok_or_else(|| {
                     origin.error("runtime type root has no checked semantic fact")
                 })?;
                 self.runtime_type(checked, symbols, world, analysis)?
             };
             projection.push(RuntimeProjectFunctionTypeProjection::value(
-                RuntimeProjectFunctionTypeOwner::Type(*owner),
+                RuntimeProjectFunctionTypeOwner::Type(owner),
                 ty,
             ));
         }
