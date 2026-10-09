@@ -39,7 +39,7 @@ pub struct BundleViewStyleNodeId {
 
 /// Closed node-producer inventory used by the runtime Style substrate.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BundleViewStyleNodeKind {
     Element {
         element: ViewElementKind,
@@ -47,6 +47,9 @@ pub enum BundleViewStyleNodeKind {
         target: Option<String>,
     },
     Text {
+        text_source: String,
+    },
+    RichText {
         text_source: String,
     },
     Image {
@@ -77,11 +80,24 @@ impl BundleViewStyleNode {
 }
 
 impl BundleViewStyleNodeKind {
+    /// The retained producer is the authority for selector classification.
+    pub const fn style_target_kind(&self) -> arcweft_view::ViewStyleTargetKind {
+        use arcweft_view::ViewStyleTargetKind;
+        match self {
+            Self::Element { element, .. } => ViewStyleTargetKind::Element(*element),
+            Self::Text { .. } => ViewStyleTargetKind::Text,
+            Self::RichText { .. } => ViewStyleTargetKind::RichText,
+            Self::Image { .. } => ViewStyleTargetKind::Image,
+            Self::Custom { .. } => ViewStyleTargetKind::Custom,
+            Self::CallView { .. } => ViewStyleTargetKind::View,
+        }
+    }
+
     #[must_use]
     pub const fn runtime_geometry_owner(&self) -> ViewRuntimeGeometryOwner {
         match self {
             Self::Element { element, .. } => ViewRuntimeGeometryOwner::Element(*element),
-            Self::Text { .. } => ViewRuntimeGeometryOwner::Text,
+            Self::Text { .. } | Self::RichText { .. } => ViewRuntimeGeometryOwner::Text,
             Self::Image { .. } => ViewRuntimeGeometryOwner::Image,
             Self::Custom { .. } => ViewRuntimeGeometryOwner::Custom,
             Self::CallView { .. } => ViewRuntimeGeometryOwner::CallView,

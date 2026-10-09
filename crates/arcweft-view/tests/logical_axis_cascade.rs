@@ -79,7 +79,9 @@ fn resolve_program(
         ViewStyleBoundaryFacts::SAME_VIEW,
     );
     let applications = [application];
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![1], 1);
     let parent_key = parent.map(|_| ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0));
     let environment = environment(ColorScheme::Light);

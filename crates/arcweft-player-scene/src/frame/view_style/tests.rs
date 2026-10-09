@@ -471,6 +471,9 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
             }],
         }])),
     };
+    presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
+        text_source: "text.no-axis-inference".to_owned(),
+    };
     let changed_text = state
         .resolve(
             &InputController::default(),
@@ -498,7 +501,7 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
     assert_eq!(baseline.text(target), themed.text(target));
 
     let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0);
-    let facts = ViewStyleNodeFacts::new(None);
+    let facts = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::RichText));
     let cached = state
         .resolver
         .resolve(
@@ -1173,8 +1176,15 @@ fn environment_style_fixture(
     )
     .unwrap();
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, Vec::new())
-            .unwrap(),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Panel,
+            )),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
     ])
     .unwrap();
     let rule = ViewStyleRule::new(
@@ -1344,4 +1354,69 @@ fn style_root_node(instruction: u32, target: &str) -> BundleViewStyleNode {
 
 fn interaction_target(id: &str) -> InteractionTarget {
     InteractionTarget::new(PublicId::try_new(id).unwrap())
+}
+
+#[test]
+fn live_text_style_target_is_bound_to_its_actual_payload_and_source() {
+    use arcweft_view::ViewStyleTargetKind;
+    let mut mount = empty_mount();
+    mount.text = vec![BundleViewTextOutput {
+        source_id: "text.target-proof".to_owned(),
+        targets: Vec::new(),
+        value: BundleViewTextValue::RichTextDocument {
+            document: Box::new(RichTextDocument::new(vec![RichTextNode::Text {
+                text: "rich".to_owned(),
+            }])),
+        },
+        classification: ViewObserveClassification::default(),
+        replacement: None,
+    }];
+    let mut node = BundleViewStyleNode {
+        path: BundleViewInstancePath::default(),
+        instruction: 7,
+        parent: None,
+        kind: BundleViewStyleNodeKind::RichText {
+            text_source: "text.target-proof".to_owned(),
+        },
+        part: None,
+        exported_part: None,
+        applications: Vec::new(),
+    };
+    let input = InputController::default();
+    let presentation = BundlePresentationSnapshot::default();
+    let binding = NodeBinding {
+        keys: Vec::new(),
+        target: None,
+        enabled: true,
+        composing: false,
+        placeholder_shown: false,
+    };
+    assert!(
+        node_bindings(&presentation, &input, &mount, &node)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        node_facts(&input, &node, &binding).target(),
+        Some(ViewStyleTargetKind::RichText)
+    );
+    node.kind = BundleViewStyleNodeKind::Text {
+        text_source: "text.target-proof".to_owned(),
+    };
+    assert!(matches!(
+        node_bindings(&presentation, &input, &mount, &node),
+        Err(PlayerFrameError::StyleTextKindMismatch {
+            instruction: 7,
+            expected: ViewStyleTargetKind::Text,
+            actual: ViewStyleTargetKind::RichText,
+            ..
+        })
+    ));
+    node.kind = BundleViewStyleNodeKind::RichText {
+        text_source: "text.foreign".to_owned(),
+    };
+    assert!(matches!(
+        node_bindings(&presentation, &input, &mount, &node),
+        Err(PlayerFrameError::MissingStyleTextSource { instruction: 7, .. })
+    ));
 }

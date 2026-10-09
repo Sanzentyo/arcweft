@@ -190,8 +190,15 @@ fn style_resource_with_source_inventory(
     )
     .expect("valid declaration");
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Button), None, Vec::new())
-            .expect("valid selector sequence"),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
+            None,
+            Vec::new(),
+        )
+        .expect("valid selector sequence"),
     ])
     .expect("valid selector");
     let rule =

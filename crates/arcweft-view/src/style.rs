@@ -19,6 +19,7 @@ pub mod property;
 pub mod resolver;
 pub mod selector;
 pub mod sheet;
+mod target;
 pub mod trace;
 pub mod value;
 
@@ -62,6 +63,7 @@ pub use sheet::{
     ViewStyleRule, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSheetIdError,
     ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId,
 };
+pub use target::ViewStyleTargetKind;
 pub use trace::{ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection};
 pub use value::{
     ViewAlignment, ViewAngleMilliDegrees, ViewAxisValueError, ViewBlendMode, ViewBorderRadii,

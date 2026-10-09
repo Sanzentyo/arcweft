@@ -104,7 +104,9 @@ fn environment_guard_adds_zero_specificity() {
     let selector = ViewStyleSelector::new(vec![
         ViewStyleSelectorSequence::new(
             None,
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
             None,
             Vec::<ViewStylePredicate>::new(),
         )
@@ -550,8 +552,15 @@ fn guarded_program(
     )
     .unwrap();
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Button), None, Vec::new())
-            .unwrap(),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
     ])
     .unwrap();
     let rule = ViewStyleRule::new(
@@ -585,7 +594,9 @@ fn resolve(
         ViewStyleBoundaryFacts::SAME_VIEW,
     );
     let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![1], 0);
-    let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let facts = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )));
     resolver
         .resolve(
             program,

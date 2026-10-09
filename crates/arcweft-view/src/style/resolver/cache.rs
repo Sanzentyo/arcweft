@@ -5,11 +5,11 @@ use super::{
     ViewStyleEnvironmentUsage, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleResolveContext,
     ViewStyleResolver, ViewStyleRevisionSet,
 };
+use crate::ViewMountId;
 use crate::style::{
     ComputedViewAxes, ComputedViewStyle, ComputedViewStyleRevision, ViewBoxAxisRevision,
     ViewInheritedBoxAxes, ViewPropertyKind, ViewSpecifiedValue, ViewStyleTrace,
 };
-use crate::{ViewElementKind, ViewMountId};
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationEnvironment, PresentationEnvironmentField,
     PresentationEnvironmentFieldRevisions, PresentationEnvironmentFieldSet,
@@ -238,13 +238,8 @@ pub(super) fn computed_revision(
     }
     for facts in &key.facts {
         revision ^= facts
-            .element
-            .and_then(|element| {
-                ViewElementKind::ALL
-                    .into_iter()
-                    .position(|candidate| candidate == element)
-            })
-            .and_then(|index| u64::try_from(index).ok())
+            .target
+            .map(|target| u64::from(target.semantic_tag()))
             .unwrap_or(u64::MAX);
         revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
         for part in [

@@ -16,7 +16,7 @@ use super::{
     ViewStyleProgram, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     ViewStyleTokenId, ViewStyleTraceMode, ViewStyleTraceRejection,
 };
-use crate::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
+use crate::{ViewMountId, ViewPartLocalName, ViewPartName};
 use arcweft_presentation::appearance::{PresentationEnvironment, PresentationEnvironmentFieldSet};
 use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
 use cache::{ViewStyleCacheEntry, ViewStyleCacheKey, ViewStyleSelectionStamp, computed_revision};
@@ -49,7 +49,7 @@ pub struct ViewElementStateSet(u8);
 /// Typed facts available while matching one selector sequence.
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleNodeFacts {
-    element: Option<ViewElementKind>,
+    target: Option<super::ViewStyleTargetKind>,
     implementation_part: Option<ViewPartLocalName>,
     exported_part: Option<ViewPartName>,
     interactions: ViewInteractionStateSet,
@@ -321,9 +321,9 @@ impl ViewElementStateSet {
 }
 
 impl ViewStyleNodeFacts {
-    pub const fn new(element: Option<ViewElementKind>) -> Self {
+    pub const fn new(target: Option<super::ViewStyleTargetKind>) -> Self {
         Self {
-            element,
+            target,
             implementation_part: None,
             exported_part: None,
             interactions: ViewInteractionStateSet(0),
@@ -361,8 +361,8 @@ impl ViewStyleNodeFacts {
         self
     }
 
-    pub const fn element(&self) -> Option<ViewElementKind> {
-        self.element
+    pub const fn target(&self) -> Option<super::ViewStyleTargetKind> {
+        self.target
     }
 
     pub const fn implementation_part(&self) -> Option<&ViewPartLocalName> {
@@ -568,8 +568,8 @@ impl ViewStyleResolver {
         for (declaration_order, declaration) in patch.declarations().iter().enumerate() {
             if context
                 .node
-                .element()
-                .is_some_and(|element| !declaration.property().applies_to(element))
+                .target()
+                .is_some_and(|target| !declaration.property().applies_to(target))
             {
                 trace.patch_rejected(
                     patch.id(),
@@ -679,8 +679,8 @@ impl ViewStyleResolver {
             for (declaration_order, declaration) in rule.declarations().iter().enumerate() {
                 if context
                     .node
-                    .element()
-                    .is_some_and(|element| !declaration.property().applies_to(element))
+                    .target()
+                    .is_some_and(|target| !declaration.property().applies_to(target))
                 {
                     trace.rule_rejected(
                         sheet.id(),

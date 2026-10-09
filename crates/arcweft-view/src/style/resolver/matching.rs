@@ -114,8 +114,8 @@ fn match_sequence(
         return Err(ViewStyleTraceRejection::BoundaryTraversalBlocked);
     }
     if sequence
-        .element()
-        .is_some_and(|element| node.element() != Some(element))
+        .target()
+        .is_some_and(|target| node.target().is_none_or(|kind| !target.matches(kind)))
     {
         return Err(ViewStyleTraceRejection::SelectorMismatch);
     }

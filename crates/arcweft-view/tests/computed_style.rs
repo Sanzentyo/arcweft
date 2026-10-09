@@ -69,7 +69,13 @@ fn declaration(
 
 fn selector(element: ViewElementKind, predicates: Vec<ViewStylePredicate>) -> ViewStyleSelector {
     ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(element), None, predicates).unwrap(),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(element)),
+            None,
+            predicates,
+        )
+        .unwrap(),
     ])
     .unwrap()
 }
@@ -227,7 +233,10 @@ fn simultaneous_states_use_rule_source_order_instead_of_fixed_state_order() {
         Vec::new(),
     )
     .unwrap();
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_interactions(
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )))
+    .with_interactions(
         ViewInteractionStateSet::default()
             .with(ViewInteractionSelector::Hovered)
             .with(ViewInteractionSelector::Pressed),
@@ -279,7 +288,9 @@ fn deeper_scope_then_later_application_choose_the_winner() {
         application("style.local_first", 2, 3),
         application("style.local_last", 2, 4),
     ];
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )));
     let key = node_key(1, Vec::new(), 0);
     let environment = environment(ColorScheme::Dark);
     let computed = ViewStyleResolver::default()
@@ -326,7 +337,9 @@ fn inheritance_copies_only_the_canonical_inherited_property_set() {
     let program = ViewStyleProgram::default();
     let parent_key = node_key(1, Vec::new(), 0);
     let key = node_key(1, Vec::new(), 1);
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     let environment = environment(ColorScheme::Light);
     let child = ViewStyleResolver::default()
         .resolve(
@@ -388,8 +401,10 @@ fn environment_and_element_states_match_together_and_cache_key_tracks_environmen
         Vec::new(),
     )
     .unwrap();
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button))
-        .with_element_states(ViewElementStateSet::default().with(ViewElementState::FocusVisible));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )))
+    .with_element_states(ViewElementStateSet::default().with(ViewElementState::FocusVisible));
     let key = node_key(8, vec![13], 21);
     let applications = [application("style.environment", 1, 0)];
     let dark =
@@ -481,7 +496,9 @@ fn inline_patch_uses_authored_application_layer_and_full_trace_is_deterministic(
             ViewStyleBoundaryFacts::SAME_VIEW,
         ),
     ];
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )));
     let key = node_key(3, vec![4], 5);
     let environment = environment(ColorScheme::Light);
     let resolution = ViewStyleResolver::default()
@@ -527,7 +544,9 @@ fn trace_modes_keep_off_empty_reconstruct_winners_and_bypass_full_cache() {
     )
     .unwrap();
     let applications = [application("style.trace-modes", 1, 0)];
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )));
     let key = node_key(30, vec![1], 2);
     let environment = environment(ColorScheme::Light);
     let mut resolver = ViewStyleResolver::default();
@@ -627,7 +646,9 @@ fn inline_patch_rejects_a_property_that_does_not_apply_to_the_node_element() {
         0,
         ViewStyleBoundaryFacts::SAME_VIEW,
     )];
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )));
     let key = node_key(10, Vec::new(), 1);
     let environment = environment(ColorScheme::Light);
     let resolution = ViewStyleResolver::default()
@@ -673,7 +694,9 @@ fn cache_distinguishes_no_parent_from_a_revision_zero_parent() {
     let program = ViewStyleProgram::default();
     let parent_key = node_key(11, Vec::new(), 0);
     let key = node_key(11, Vec::new(), 1);
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     let environment = environment(ColorScheme::Light);
     let mut resolver = ViewStyleResolver::default();
 
@@ -764,7 +787,9 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
 
     let root = resolve(
         1,
-        &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)),
+        &ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        ))),
         ViewStyleBoundaryFacts::nested_view(1, false, true),
     );
     assert_eq!(
@@ -774,7 +799,10 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
 
     let private = resolve(
         2,
-        &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
+        &ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        )))
+        .with_parts(
             Some(ViewPartLocalName::try_new("private.action").unwrap()),
             None,
         ),
@@ -784,7 +812,10 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
 
     let public = resolve(
         3,
-        &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
+        &ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        )))
+        .with_parts(
             Some(ViewPartLocalName::try_new("private.action").unwrap()),
             Some(exported),
         ),
@@ -797,7 +828,9 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
 
     let transitive_root = resolve(
         4,
-        &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)),
+        &ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        ))),
         ViewStyleBoundaryFacts::nested_view(2, false, true),
     );
     assert_eq!(
@@ -824,9 +857,10 @@ fn resolver_rejects_specificity_that_cannot_be_represented_exactly() {
         max_selector_steps: usize::from(u16::MAX) + 2,
         ..ViewStyleResolverLimits::default()
     };
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_interactions(
-        ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered),
-    );
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )))
+    .with_interactions(ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered));
     let key = node_key(12, Vec::new(), 1);
     let applications = [application("style.specificity", 1, 0)];
     let environment = environment(ColorScheme::Light);
@@ -859,7 +893,9 @@ fn exported_part_does_not_expose_private_child_ancestry_to_structural_selectors(
     let structural = ViewStyleSelector::new(vec![
         ViewStyleSelectorSequence::new(
             None,
-            Some(ViewElementKind::Panel),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Panel,
+            )),
             None,
             vec![ViewStylePredicate::Interaction(
                 ViewInteractionSelector::Hovered,
@@ -892,12 +928,15 @@ fn exported_part_does_not_expose_private_child_ancestry_to_structural_selectors(
         0,
         ViewStyleBoundaryFacts::nested_view(1, true, false),
     );
-    let private_ancestor = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel))
-        .with_interactions(
-            ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered),
-        )
-        .with_active_scopes(vec![ViewStyleScopeId::new(1)]);
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
+    let private_ancestor = ViewStyleNodeFacts::new(Some(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Panel),
+    ))
+    .with_interactions(ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered))
+    .with_active_scopes(vec![ViewStyleScopeId::new(1)]);
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Button,
+    )))
+    .with_parts(
         Some(ViewPartLocalName::try_new("private.action").unwrap()),
         Some(exported),
     );
@@ -925,25 +964,38 @@ fn exported_part_does_not_expose_private_child_ancestry_to_structural_selectors(
 #[test]
 fn specificity_sequence_traversal_consumes_the_global_selector_budget() {
     let long_selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, Vec::new())
-            .unwrap(),
         ViewStyleSelectorSequence::new(
-            Some(ViewStyleCombinator::Descendant),
-            Some(ViewElementKind::Panel),
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Panel,
+            )),
             None,
             Vec::new(),
         )
         .unwrap(),
         ViewStyleSelectorSequence::new(
             Some(ViewStyleCombinator::Descendant),
-            Some(ViewElementKind::Panel),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Panel,
+            )),
             None,
             Vec::new(),
         )
         .unwrap(),
         ViewStyleSelectorSequence::new(
             Some(ViewStyleCombinator::Descendant),
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Panel,
+            )),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
+        ViewStyleSelectorSequence::new(
+            Some(ViewStyleCombinator::Descendant),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
             None,
             Vec::new(),
         )
@@ -965,7 +1017,9 @@ fn specificity_sequence_traversal_consumes_the_global_selector_budget() {
         max_selector_steps: 5,
         ..ViewStyleResolverLimits::default()
     };
-    let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     let key = node_key(14, Vec::new(), 1);
     let applications = [application("style.selector_budget", 1, 0)];
     let environment = environment(ColorScheme::Light);
@@ -987,4 +1041,195 @@ fn specificity_sequence_traversal_consumes_the_global_selector_budget() {
             .unwrap_err(),
         ViewStyleResolveError::SelectorBudget { limit: 5 }
     );
+}
+
+#[test]
+fn text_and_rich_text_selectors_match_their_actual_node_family_and_keep_controls_distinct() {
+    use arcweft_view::{ViewLengthMilli, ViewStyleTargetKind};
+    let length = |milli| ViewSpecifiedValue::Length {
+        value: ViewLengthMilli::new(milli),
+    };
+    let typed_rule = |kind, order, property, value| {
+        ViewStyleRule::new(
+            ViewStyleSelector::new(vec![
+                ViewStyleSelectorSequence::new(None, Some(kind), None, Vec::new()).unwrap(),
+            ])
+            .unwrap(),
+            None,
+            vec![declaration(property, value, order)],
+            order,
+            ViewStyleSourceId::new(order),
+        )
+        .unwrap()
+    };
+    let program = ViewStyleProgram::try_new(
+        vec![sheet(
+            "style.text-targets",
+            vec![
+                typed_rule(
+                    ViewStyleTargetKind::Text,
+                    0,
+                    ViewPropertyKind::FontSize,
+                    length(42_000),
+                ),
+                typed_rule(
+                    ViewStyleTargetKind::RichText,
+                    1,
+                    ViewPropertyKind::LineHeight,
+                    length(56_700),
+                ),
+                typed_rule(
+                    ViewStyleTargetKind::Element(ViewElementKind::Button),
+                    2,
+                    ViewPropertyKind::FontSize,
+                    length(18_000),
+                ),
+            ],
+        )],
+        Vec::new(),
+    )
+    .unwrap();
+    let applications = [application("style.text-targets", 0, 0)];
+    let environment = environment(ColorScheme::Light);
+    let key = node_key(11, vec![2], 3);
+    let mut resolver = ViewStyleResolver::default();
+    let mut target_revisions = Vec::new();
+    for (kind, expected_size, expected_height) in [
+        (ViewStyleTargetKind::Text, 42_000, None),
+        (ViewStyleTargetKind::RichText, 42_000, Some(56_700)),
+        (
+            ViewStyleTargetKind::Element(ViewElementKind::Button),
+            18_000,
+            None,
+        ),
+    ] {
+        let node = ViewStyleNodeFacts::new(Some(kind));
+        let resolved = resolver
+            .resolve(
+                &program,
+                &context(
+                    &key,
+                    &node,
+                    &[],
+                    &applications,
+                    None,
+                    &environment,
+                    ViewStyleTraceMode::Off,
+                ),
+            )
+            .unwrap();
+        assert!(!resolved.cache_hit());
+        target_revisions.push(resolved.computed().revision());
+        let cached = resolver
+            .resolve(
+                &program,
+                &context(
+                    &key,
+                    &node,
+                    &[],
+                    &applications,
+                    None,
+                    &environment,
+                    ViewStyleTraceMode::Off,
+                ),
+            )
+            .unwrap();
+        assert!(cached.cache_hit());
+        assert_eq!(cached.computed().revision(), resolved.computed().revision());
+        assert_eq!(
+            resolved.computed().value(ViewPropertyKind::FontSize),
+            Some(&length(expected_size))
+        );
+        assert_eq!(
+            resolved.computed().value(ViewPropertyKind::LineHeight),
+            expected_height.map(length).as_ref()
+        );
+    }
+    assert_ne!(target_revisions[0], target_revisions[1]);
+    assert_ne!(target_revisions[0], target_revisions[2]);
+    assert_ne!(target_revisions[1], target_revisions[2]);
+    let unknown = ViewStyleNodeFacts::new(None);
+    let resolved = resolver
+        .resolve(
+            &program,
+            &context(
+                &key,
+                &unknown,
+                &[],
+                &applications,
+                None,
+                &environment,
+                ViewStyleTraceMode::Off,
+            ),
+        )
+        .unwrap();
+    assert_eq!(resolved.computed().value(ViewPropertyKind::FontSize), None);
+    assert_eq!(
+        resolved.computed().value(ViewPropertyKind::LineHeight),
+        None
+    );
+}
+
+#[test]
+fn selector_target_codec_rechecks_closed_kinds_and_refuses_obsolete_element_fields() {
+    use arcweft_view::ViewStyleTargetKind;
+    for kind in [
+        ViewStyleTargetKind::Text,
+        ViewStyleTargetKind::RichText,
+        ViewStyleTargetKind::Element(ViewElementKind::Button),
+    ] {
+        let selector = ViewStyleSelector::new(vec![
+            ViewStyleSelectorSequence::new(None, Some(kind), None, Vec::new()).unwrap(),
+        ])
+        .unwrap();
+        let encoded = serde_json::to_vec(&selector).unwrap();
+        let decoded: ViewStyleSelector = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, selector);
+        assert_eq!(serde_json::to_vec(&decoded).unwrap(), encoded);
+        assert_eq!(decoded.target_kind(), Some(kind));
+    }
+    for target in [
+        serde_json::json!({"kind":"unknown"}),
+        serde_json::json!({"kind":"element","element":"text"}),
+        serde_json::json!({"kind":"text","element":"button"}),
+        serde_json::json!({"kind":"rich_text","unexpected":1}),
+    ] {
+        let encoded = serde_json::json!({"sequences":[{"relation_to_previous":null,"target":target,"part":null,"predicates":[]}]});
+        assert!(serde_json::from_value::<ViewStyleSelector>(encoded).is_err());
+    }
+    let obsolete = serde_json::json!({"sequences":[{"relation_to_previous":null,"element":"button","part":null,"predicates":[]}]});
+    assert!(serde_json::from_value::<ViewStyleSelector>(obsolete).is_err());
+}
+
+#[test]
+fn text_targets_refuse_control_only_and_container_only_properties_at_admission() {
+    use arcweft_view::ViewStyleTargetKind;
+    for target in [ViewStyleTargetKind::Text, ViewStyleTargetKind::RichText] {
+        for (property, value) in [
+            (
+                ViewPropertyKind::FlexDirection,
+                ViewSpecifiedValue::FlexDirection {
+                    value: ViewFlexDirection::Row,
+                },
+            ),
+            (ViewPropertyKind::PlaceholderColor, color(1, 2, 3)),
+        ] {
+            let rule = ViewStyleRule::new(
+                ViewStyleSelector::new(vec![
+                    ViewStyleSelectorSequence::new(None, Some(target), None, Vec::new()).unwrap(),
+                ])
+                .unwrap(),
+                None,
+                vec![declaration(property, value, 0)],
+                0,
+                ViewStyleSourceId::new(0),
+            )
+            .unwrap();
+            assert!(
+                matches!(ViewStyleSheet::new(ViewStyleSheetId::try_new("style.invalid-target").unwrap(), Vec::new(), vec![rule]),
+                    Err(arcweft_view::ViewStyleModelError::PropertyNotApplicable { property: actual, target: actual_target, source_order: 0 }) if actual == property && actual_target == target
+                )
+            );
+        }
+    }
 }

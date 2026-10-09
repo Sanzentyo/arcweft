@@ -1686,11 +1686,20 @@ fn fixture_style() -> ViewStyleResource {
     )
     .expect("valid token");
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Column), None, Vec::new())
-            .expect("valid ancestor selector"),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Column,
+            )),
+            None,
+            Vec::new(),
+        )
+        .expect("valid ancestor selector"),
         ViewStyleSelectorSequence::new(
             Some(arcweft_view::ViewStyleCombinator::Child),
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
             None,
             vec![ViewStylePredicate::ElementState(
                 ViewElementState::FocusVisible,

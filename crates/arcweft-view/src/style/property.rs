@@ -1,7 +1,7 @@
 //! Canonical native Style property inventory and metadata.
 
 use super::{ViewAxisSign, ViewBoxAxisMode, ViewPhysicalAxis, ViewPhysicalSide};
-use crate::ViewElementKind;
+use crate::ViewStyleTargetKind;
 use serde::{Deserialize, Serialize};
 
 mod geometry;
@@ -998,17 +998,23 @@ impl ViewPropertyKind {
         )
     }
 
-    pub const fn applies_to(self, element: ViewElementKind) -> bool {
+    pub const fn applies_to(self, target: ViewStyleTargetKind) -> bool {
         match self {
             Self::PlaceholderColor
             | Self::SelectionColor
             | Self::CaretColor
-            | Self::CompositionUnderlineColor => element.is_text_input(),
+            | Self::CompositionUnderlineColor => match target.element() {
+                Some(element) => element.is_text_input(),
+                None => false,
+            },
             Self::FlexDirection
             | Self::FlexWrap
             | Self::AlignItems
             | Self::AlignContent
-            | Self::JustifyContent => element.is_layout_container(),
+            | Self::JustifyContent => match target.element() {
+                Some(element) => element.is_layout_container(),
+                None => false,
+            },
             _ => true,
         }
     }

@@ -205,6 +205,20 @@ pub enum BundleViewTextValue {
     },
 }
 
+impl BundleViewTextValue {
+    /// Style target issued from the actual resolved text payload, without reading source labels.
+    pub const fn style_target_kind(&self) -> arcweft_view::ViewStyleTargetKind {
+        match self {
+            Self::Plain { .. } | Self::CharacterDisplayName { .. } => {
+                arcweft_view::ViewStyleTargetKind::Text
+            }
+            Self::Localized { .. } | Self::RichTextDocument { .. } | Self::DisplayFrame { .. } => {
+                arcweft_view::ViewStyleTargetKind::RichText
+            }
+        }
+    }
+}
+
 /// One authored text target retained with its typed layout and style contract.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleViewTextTarget {

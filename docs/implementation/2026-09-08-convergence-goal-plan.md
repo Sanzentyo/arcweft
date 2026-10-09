@@ -11216,3 +11216,14 @@ Core reverse integration136 targetsはterminalで、exact実行1017=1016 PASS/1 
 最終選択66 patch SHA-256は `26320cf525aba442005da835e2f2132f5065b4cdd4fb6c88fd86a8e44936cc4a`。以前の4349候補をbyte-exact退避し、他65 candidate blobsを保持した。変更されたaccelerator/lib selected blobは `ca781a613be6de82a43e692b53267455db38014ad11754ed31e0953d7717d388`。3579入力は全136とinitial6 gates終了までdrift0、以後の差分はそのcfg-disabled stub1ファイルだけである。feature-enabled/defaultの実行済みownerは変わらないため全suiteを再実行せず、影響するno-default2構成を再検証した。最終証拠はTEMP `arcweft-1010-scalar-scope-fault-final-validation-receipt.json`。独立Style/nativeENV failuresは隠さず次のowner cutで閉じる。
 
 この記録と選択差分をexplicit stage/complete cached diff確認後にcommit/pushする。全収束goalは未完で、CLI主要統合 → Generic Match残件 → retained View →all14 task-plan公開接続の順序を継続する。
+
+
+### 2026-10-10 — Typed Style target / Length 検証済み公開 cut
+
+基点main `5d8ae1deaa8903c528955e7aaabc441cdee34ea7`、無関係なdirty WIPを保持。40 Rust +1 maintained contractでStyle target/source/codec/property/matching/cacheをViewStyleTargetKindのregistryへ統一した。Text共通familyとRichText実payload/sourceをruntime/Playerで照合し、Button等のsemantic roleが実text kindを上書きしない。Style Lengthは既存checked compile-time scalar/登録型/shared literal reductionと借用accessorを使い、px・元resolution・source spanを保持する。obsolete element selector readerを削除、version1。root全差分/独立査読を完了した。
+
+owning24 PASSを再利用。alltarget reverse41 libraries run `f08ed2cd-0ccb-4837-a34f-51a8a6fa5229` は3084=3083 PASS/1 FAIL。残るnative registered environment再公開 Expr21 typecheckは既観測の別Native61 owner残件であり、空library4とGPU16skipを成功に数えない。非CLI126 integration targets初回1029=1025 PASS/4 FAILは実RichTextをElement(Button)としていたfixture2files。Box ancestry/semantic Button/全handler・state・colour・scale・outline・inheritance assertionsを保持してselectorをRichTextへ移行し、View4 run `d3a47cbc-7c5b-44db-83a9-0c001b269b38`、host1 run `eac5401d-928e-47ad-9bc7-0b966e264932`で全PASS。非変更1024casesの証拠を再利用し、effective1029 PASS、初回failure receiptは保持する。CLI標準6targets/24casesはrun `f1232e10-554a-483f-9334-78eadd555f7f`全PASS。全CLI check608=407/201は未再実行で、この24と混ぜない。
+
+workspace alltargets/allfeatures check/Clippy、wasm player-web/render-web、structure gateはexit0。fixture修正後のaffected2packages check/Clippy、workspace fmt checkもexit0。3582 source/test/fixture/config/vendor inputsは初回drift0、fixture2変更後の最終drift0。selected authority closureを査読したが、実行はcurrent dirty treeでありisolated selected HEAD build成功とは主張しない。Range67 view_text の未公開変更は既存payload variantsのcontext/origin移行のみでStyleの前提ではない。
+
+最終source+contract patch SHA-256 `8b36980cae395df71d2433fd4768f8800979afbc609815755447fa41d465e8b7`、TEMP `arcweft-1010-style-final-validation-receipt.json`とoriginal41/fixture2 independent receipts/full run/log identitiesを保持。この記録のみをHEADへ足し、source+contract41+note1をexplicit stage/blob/diff確認後commit/pushする。CLI主要統合の残件を閉じ、Generic Match→retained View .1.4→all14 task-plan public atomic connectionへ戻る。Astra一回は消費済み、再相談なし。goal全体completeではない。

@@ -102,7 +102,7 @@ fn style_rule(
     let selector = ViewStyleSelector::new(vec![
         ViewStyleSelectorSequence::new(
             None,
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::RichText),
             None,
             state
                 .map(ViewStylePredicate::Interaction)
@@ -327,14 +327,30 @@ fn ancestry_fragment(
 
 fn ancestry_program(sheet_id: ViewStyleSheetId, patch_id: ViewStylePatchId) -> ViewStyleProgram {
     let box_selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Box), None, Vec::new()).unwrap(),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Box,
+            )),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
     ])
     .unwrap();
     let child_selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Box), None, Vec::new()).unwrap(),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Box,
+            )),
+            None,
+            Vec::new(),
+        )
+        .unwrap(),
         ViewStyleSelectorSequence::new(
             Some(ViewStyleCombinator::Child),
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::RichText),
             None,
             Vec::new(),
         )

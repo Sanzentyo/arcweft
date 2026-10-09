@@ -8,7 +8,7 @@ use crate::{
     ViewInteractionStateSet, ViewMountId, ViewSemanticFragment, ViewStyleApplication,
     ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleNodeFacts, ViewStyleNodeKey,
     ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolver, ViewStyleRevisionSet,
-    ViewStyleScopeId, ViewStyleTraceMode,
+    ViewStyleScopeId, ViewStyleTargetKind, ViewStyleTraceMode,
 };
 use arcweft_presentation::{
     appearance::PresentationEnvironment, interaction::InteractionState, semantic::SemanticRole,
@@ -42,7 +42,7 @@ struct DisplayStyleNode {
     key: ViewStyleNodeKey,
     parent: Option<NodeId>,
     ancestors: Vec<NodeId>,
-    element: Option<ViewElementKind>,
+    target: ViewStyleTargetKind,
     semantics: Option<SemanticSpecId>,
     active_scopes: Vec<ViewStyleScopeId>,
     applications: Vec<ViewStyleApplication>,
@@ -348,7 +348,7 @@ fn retain_style_node(
         key: ViewStyleNodeKey::new(ViewMountId::from_raw(0), path, node.0),
         parent,
         ancestors,
-        element: fragment_element(source.kind()),
+        target: fragment_style_target(source.kind()),
         semantics: source.semantics(),
         active_scopes,
         applications,
@@ -446,10 +446,16 @@ fn style_facts(
         .fold(ViewInteractionStateSet::default(), |states, state| {
             states.with(state)
         });
-    let element = semantic
-        .and_then(|semantic| semantic_element(semantic.role()))
-        .or(node.element);
-    Ok(ViewStyleNodeFacts::new(element)
+    let target = match node.target {
+        ViewStyleTargetKind::Element(element) => {
+            let element = semantic
+                .and_then(|semantic| semantic_element(semantic.role()))
+                .unwrap_or(element);
+            ViewStyleTargetKind::Element(element)
+        }
+        primitive => primitive,
+    };
+    Ok(ViewStyleNodeFacts::new(Some(target))
         .with_interactions(interactions)
         .with_active_scopes(node.active_scopes.clone()))
 }
@@ -468,16 +474,18 @@ const fn semantic_element(role: SemanticRole) -> Option<ViewElementKind> {
     }
 }
 
-const fn fragment_element(kind: FragmentKind) -> Option<ViewElementKind> {
+const fn fragment_style_target(kind: FragmentKind) -> ViewStyleTargetKind {
     match kind {
         FragmentKind::Container(ContainerKind::Block | ContainerKind::Inline) => {
-            Some(ViewElementKind::Box)
+            ViewStyleTargetKind::Element(ViewElementKind::Box)
         }
-        FragmentKind::Container(ContainerKind::Stack) => Some(ViewElementKind::Stack),
-        FragmentKind::Text(_)
-        | FragmentKind::RichText(_)
-        | FragmentKind::Image(_)
-        | FragmentKind::View(_)
-        | FragmentKind::Custom(_) => None,
+        FragmentKind::Container(ContainerKind::Stack) => {
+            ViewStyleTargetKind::Element(ViewElementKind::Stack)
+        }
+        FragmentKind::Text(_) => ViewStyleTargetKind::Text,
+        FragmentKind::RichText(_) => ViewStyleTargetKind::RichText,
+        FragmentKind::Image(_) => ViewStyleTargetKind::Image,
+        FragmentKind::View(_) => ViewStyleTargetKind::View,
+        FragmentKind::Custom(_) => ViewStyleTargetKind::Custom,
     }
 }

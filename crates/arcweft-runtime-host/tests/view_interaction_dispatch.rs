@@ -12,12 +12,11 @@ use arcweft_runtime_host::ViewFrameCommitBuilder;
 use arcweft_view::{
     EventBinding, EventKind, FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults,
     LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId, ViewColorValue,
-    ViewElementKind, ViewFragmentBuilder, ViewHandlerRouteId, ViewInteractionSelector,
-    ViewLayerOutput, ViewPropertyKind, ViewSemanticFragmentBuilder, ViewSemanticNode,
-    ViewSpecifiedValue, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration,
-    ViewStylePredicate, ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId,
+    ViewFragmentBuilder, ViewHandlerRouteId, ViewInteractionSelector, ViewLayerOutput,
+    ViewPropertyKind, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewSpecifiedValue,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePredicate,
+    ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -48,7 +47,7 @@ fn style_rule(
     let selector = ViewStyleSelector::new(vec![
         ViewStyleSelectorSequence::new(
             None,
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::RichText),
             None,
             state
                 .map(ViewStylePredicate::Interaction)

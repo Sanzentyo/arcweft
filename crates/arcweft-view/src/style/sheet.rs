@@ -4,7 +4,7 @@ use super::{
     ViewAlignment, ViewEnvironmentCondition, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleSelector, ViewStyleValueKind,
 };
-use crate::ViewElementKind;
+use crate::ViewStyleTargetKind;
 use crate::{ViewPartLocalName, ViewPartName};
 use arcweft_id::{IdError, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -262,10 +262,10 @@ pub enum ViewStyleModelError {
     },
     #[error("Style rules are not in canonical source order: {previous} precedes {next}")]
     NonCanonicalRuleOrder { previous: u32, next: u32 },
-    #[error("property {property:?} in rule {source_order} does not apply to element {element:?}")]
+    #[error("property {property:?} in rule {source_order} does not apply to target {target:?}")]
     PropertyNotApplicable {
         property: ViewPropertyKind,
-        element: ViewElementKind,
+        target: ViewStyleTargetKind,
         source_order: u32,
     },
 }
@@ -932,15 +932,15 @@ fn validate_rules(
                 rule.source_order(),
             ));
         }
-        if let Some(element) = rule.selector().target_element()
+        if let Some(target) = rule.selector().target_kind()
             && let Some(declaration) = rule
                 .declarations()
                 .iter()
-                .find(|declaration| !declaration.property().applies_to(element))
+                .find(|declaration| !declaration.property().applies_to(target))
         {
             return Err(ViewStyleModelError::PropertyNotApplicable {
                 property: declaration.property(),
-                element,
+                target,
                 source_order: rule.source_order(),
             });
         }

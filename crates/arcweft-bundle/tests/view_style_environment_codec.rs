@@ -1061,8 +1061,15 @@ fn fixture() -> (SourceDocument, ViewStyleResource) {
     )
     .expect("checked condition");
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Button), None, Vec::new())
-            .expect("selector sequence"),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
+            None,
+            Vec::new(),
+        )
+        .expect("selector sequence"),
     ])
     .expect("selector");
     let declaration = ViewStyleDeclaration::new(
@@ -1166,8 +1173,15 @@ fn nested_fixture(
     )
     .expect("nested condition");
     let selector = ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Button), None, Vec::new())
-            .expect("selector sequence"),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
+            None,
+            Vec::new(),
+        )
+        .expect("selector sequence"),
     ])
     .expect("selector");
     let declaration = ViewStyleDeclaration::new(

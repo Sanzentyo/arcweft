@@ -2106,7 +2106,7 @@ style Primary { Panel { color = rgba(10, 20, 30, 255) } }
     }
     let mount = ViewMountId::from_raw(7);
     let key = ViewStyleNodeKey::new(mount, Vec::new(), main.body.start_instruction);
-    let node = ViewStyleNodeFacts::new(Some(*element));
+    let node = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(*element)));
     let applications = [ViewStyleApplication::new(
         styles[0].clone(),
         ViewStyleScopeId::new(1),

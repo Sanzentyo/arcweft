@@ -33,6 +33,189 @@ pub style Mobile {
 "#;
 
 #[test]
+fn authored_dialogue_profile_retains_typed_text_extents_and_typography_sources() {
+    use arcweft_view::style::{ViewPropertyKind, ViewSpecifiedValue};
+    let source = r#"
+pub view Mobile(dialogue: DialogueView) { RichText(dialogue.content) }
+pub style Mobile {
+  Text {
+    width = 720px
+    height = 84px
+    font-size = 42px
+    line-height = 56.7px
+  }
+}
+"#;
+    let fixture = Fixture::new(
+        source,
+        "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
+        true,
+    );
+    let compiled = fixture
+        .compile()
+        .expect("authored text geometry and typography compile");
+    let profile = compiled.dialogue_profile();
+    assert_eq!(profile.presentation().view().as_str(), "view.Mobile");
+    assert_eq!(
+        profile.presentation().style().unwrap().as_str(),
+        "style.Mobile"
+    );
+    assert!(Arc::ptr_eq(
+        profile.product(),
+        compiled.view_product().product()
+    ));
+    let style = profile
+        .product()
+        .style()
+        .expect("accepted Style product")
+        .resource();
+    assert_eq!(
+        arcweft_bundle::resource_codec::view::ViewStyleResource::decode_canonical_section(
+            &style.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *style
+    );
+    let sheet = style
+        .program
+        .sheets()
+        .iter()
+        .find(|sheet| sheet.id().as_str() == "style.Mobile")
+        .expect("selected authored sheet");
+    assert_eq!(
+        sheet.rules()[0].selector().target_kind(),
+        Some(arcweft_view::ViewStyleTargetKind::Text)
+    );
+    let analysis = compiled.analysis_lease().final_analysis();
+    let hir = compiled
+        .analysis_lease()
+        .hir_project()
+        .analysis_view()
+        .unwrap();
+    let (_, module) = hir.modules().next().unwrap();
+    let style_item = module
+        .items()
+        .find_map(|(_, item)| match item.kind() {
+            arcweft_lang_hir::item::HirItemKind::Style(style) => Some(style),
+            _ => None,
+        })
+        .unwrap();
+    let [arcweft_lang_hir::item::HirStyleBodyItem::Rule(rule)] = style_item.body() else {
+        panic!("one source-owned typography rule")
+    };
+    for (declaration, milli) in rule
+        .declarations()
+        .iter()
+        .zip([720_000, 84_000, 42_000, 56_700])
+    {
+        let checked = analysis.expression(declaration.value()).unwrap();
+        let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::CompileTimeScalar(
+            scalar,
+        ) = checked.resolution()
+        else {
+            panic!("owning Style declaration retains its admitted scalar")
+        };
+        assert_eq!(scalar.length().unwrap().milli, milli);
+        assert_eq!(
+            scalar.length().unwrap().unit,
+            arcweft_lang_sema::checked_rich_text::LengthUnit::Px
+        );
+        assert!(matches!(
+            scalar.original(),
+            arcweft_lang_sema::final_analysis::CheckedExpressionResolution::Literal(_)
+        ));
+    }
+    let declarations = sheet.rules()[0].declarations();
+    assert_eq!(declarations.len(), 4);
+    for (declaration, (property, milli, authored)) in declarations.iter().zip([
+        (ViewPropertyKind::Width, 720_000, "width = 720px"),
+        (ViewPropertyKind::Height, 84_000, "height = 84px"),
+        (ViewPropertyKind::FontSize, 42_000, "font-size = 42px"),
+        (ViewPropertyKind::LineHeight, 56_700, "line-height = 56.7px"),
+    ]) {
+        assert_eq!(declaration.property(), property);
+        let ViewSpecifiedValue::Length { value } = declaration.value() else {
+            panic!("checked physical Length value");
+        };
+        assert_eq!(value.value(), milli);
+        let range = &style.source_map_refs[usize::try_from(declaration.source().value()).unwrap()];
+        let product_source = &style.source_refs[usize::try_from(range.source().value()).unwrap()];
+        assert_eq!(
+            *product_source,
+            arcweft_source::ProductSourceRef::try_for_identity(fixture.source_document.identity())
+                .unwrap()
+        );
+        assert_eq!(
+            &source[usize::try_from(range.start_byte()).unwrap()
+                ..usize::try_from(range.end_byte()).unwrap()],
+            authored
+        );
+    }
+}
+
+#[test]
+fn authored_dialogue_typography_rejects_unconverted_units_and_wrong_types() {
+    for value in ["2pt", "2em", "2deg", "20%", "30", "true", "\"30px\""] {
+        let source = format!(
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n Text {{\n font-size = {value}\n }}\n}}\n"
+        );
+        let fixture = Fixture::new(
+            &source,
+            "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
+            true,
+        );
+        let error = fixture
+            .compile()
+            .expect_err("the typed Style source rejects unsupported values");
+        assert_eq!(error.diagnostics().len(), 1, "{value}: {error:?}");
+        let diagnostic = &error.diagnostics()[0];
+        assert_eq!(
+            diagnostic.stage(),
+            ProjectCompileStage::TypeCheck,
+            "{value}: {error:?}"
+        );
+        assert_eq!(
+            diagnostic
+                .diagnostic()
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            Some("sema.final_analysis")
+        );
+    }
+}
+
+#[test]
+fn authored_dialogue_typography_rejects_properties_outside_the_current_registry() {
+    for property in ["font_size", "line_height", "unknown-property"] {
+        let source = format!(
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n Text {{\n {property} = 30px\n }}\n}}\n"
+        );
+        let fixture = Fixture::new(
+            &source,
+            "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
+            true,
+        );
+        let error = fixture
+            .compile()
+            .expect_err("an unknown property cannot enter the accepted Style product");
+        assert_eq!(error.diagnostics().len(), 1, "{property}: {error:?}");
+        let diagnostic = &error.diagnostics()[0];
+        assert_eq!(
+            diagnostic.stage(),
+            ProjectCompileStage::StyleLower,
+            "{property}: {error:?}"
+        );
+        assert_eq!(
+            diagnostic
+                .diagnostic()
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            Some("style.lower")
+        );
+    }
+}
+
+#[test]
 fn compiler_admits_profile_against_the_same_view_product_and_revision() {
     let fixture = Fixture::new(
         DIALOGUE_SOURCE,
@@ -355,4 +538,67 @@ fn fixture_document(id: &str, name: &str, text: impl Into<Arc<str>>) -> Arc<Sour
         )
         .expect("source document"),
     )
+}
+
+#[test]
+fn authored_style_selector_targets_share_the_checked_text_and_control_schema() {
+    use arcweft_view::{ViewElementKind, ViewStyleTargetKind};
+    let source = "pub view Mobile(dialogue: DialogueView) { RichText(dialogue.content) }\npub style Mobile {\n Text { font-size = 42px }\n RichText { line-height = 56.7px }\n Button { color = rgba(10, 20, 30, 255) }\n}\n";
+    let fixture = Fixture::new(
+        source,
+        "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
+        true,
+    );
+    let compiled = fixture
+        .compile()
+        .expect("all typed selector targets are admitted");
+    let style = compiled
+        .dialogue_profile()
+        .product()
+        .style()
+        .unwrap()
+        .resource();
+    let targets = style
+        .program
+        .sheets()
+        .iter()
+        .find(|sheet| sheet.id().as_str() == "style.Mobile")
+        .unwrap()
+        .rules()
+        .iter()
+        .map(|rule| rule.selector().target_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        targets,
+        [
+            Some(ViewStyleTargetKind::Text),
+            Some(ViewStyleTargetKind::RichText),
+            Some(ViewStyleTargetKind::Element(ViewElementKind::Button)),
+        ]
+    );
+    assert_eq!(
+        arcweft_bundle::resource_codec::view::ViewStyleResource::decode_canonical_section(
+            &style.encode_canonical_section().unwrap()
+        )
+        .unwrap(),
+        *style
+    );
+    for selector in ["text", "rich_text", "Paragraph", "UnknownControl"] {
+        let source = format!(
+            "pub view Mobile(dialogue: DialogueView) {{ RichText(dialogue.content) }}\npub style Mobile {{\n {selector} {{ font-size = 42px }}\n}}\n"
+        );
+        let fixture = Fixture::new(
+            &source,
+            "[profiles.dev.dialogue]\nview = \"view.Mobile\"\nstyle = \"style.Mobile\"\n",
+            true,
+        );
+        let error = fixture
+            .compile()
+            .expect_err("source target must be in the owning closed registry");
+        assert_eq!(error.diagnostics().len(), 1);
+        assert_eq!(
+            error.diagnostics()[0].stage(),
+            ProjectCompileStage::StyleLower
+        );
+    }
 }

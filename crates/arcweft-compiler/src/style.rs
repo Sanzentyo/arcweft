@@ -24,13 +24,10 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis};
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_source::{ProductSourceRef, SourceSpan};
-use arcweft_view::{
-    ViewElementKind,
-    style::{
-        ViewPropertyKind, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator,
-        ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleSelectorSequence,
-        ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    },
+use arcweft_view::style::{
+    ViewPropertyKind, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator,
+    ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule, ViewStyleSelectorSequence,
+    ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleTargetKind,
 };
 use thiserror::Error;
 
@@ -241,8 +238,26 @@ fn lower_style_body(
             let checked = analysis
                 .expression(declaration.value())
                 .ok_or(ViewStyleLowerError::MissingCheckedStyleProjection { owner })?;
-            let CheckedExpressionResolution::StyleValue(value) = checked.resolution() else {
-                return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+            let value = match checked.resolution() {
+                CheckedExpressionResolution::StyleValue(value)
+                    if property.value_kind() != arcweft_view::style::ViewStyleValueKind::Length =>
+                {
+                    value.clone()
+                }
+                CheckedExpressionResolution::CompileTimeScalar(scalar)
+                    if property.value_kind() == arcweft_view::style::ViewStyleValueKind::Length =>
+                {
+                    let Some(length) = scalar.length() else {
+                        return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+                    };
+                    if length.unit != arcweft_lang_sema::checked_rich_text::LengthUnit::Px {
+                        return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner });
+                    }
+                    arcweft_view::style::ViewSpecifiedValue::Length {
+                        value: arcweft_view::style::ViewLengthMilli::new(length.milli),
+                    }
+                }
+                _ => return Err(ViewStyleLowerError::MissingCheckedStyleProjection { owner }),
             };
             let declaration_source = style_product_source(
                 module,
@@ -271,7 +286,7 @@ fn lower_style_body(
             };
             declarations.push(ViewStyleDeclaration::new(
                 property,
-                value.clone(),
+                value,
                 op,
                 declaration_source,
             )?);
@@ -303,17 +318,14 @@ fn lower_selector(selector: &HirStyleSelector) -> Option<arcweft_view::style::Vi
                     HirStyleCombinator::Descendant => ViewStyleCombinator::Descendant,
                     HirStyleCombinator::Child => ViewStyleCombinator::Child,
                 });
-            let element = match sequence.element() {
-                Some(name) => Some(ViewElementKind::from_source_name(name.as_str()?)?),
+            let target = match sequence.element() {
+                Some(name) => Some(ViewStyleTargetKind::from_source_name(name.as_str()?)?),
                 None => None,
             };
-            if sequence.element().is_some() && element.is_none() {
-                return None;
-            }
             if sequence.part().is_some() || !sequence.predicates().is_empty() {
                 return None;
             }
-            ViewStyleSelectorSequence::new(relation, element, None, Vec::new())
+            ViewStyleSelectorSequence::new(relation, target, None, Vec::new())
         })
         .collect::<Option<Vec<_>>>()?;
     arcweft_view::style::ViewStyleSelector::new(sequences)

@@ -450,7 +450,8 @@ fn bind_product<'a>(
         BundleViewStyleNodeKind::Element { element, target } => {
             bind_element(input, mount, node, owner, *element, target.as_deref())
         }
-        BundleViewStyleNodeKind::Text { text_source } => {
+        BundleViewStyleNodeKind::Text { text_source }
+        | BundleViewStyleNodeKind::RichText { text_source } => {
             let matches = mount
                 .text
                 .iter()

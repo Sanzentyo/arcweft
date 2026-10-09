@@ -427,6 +427,82 @@ fn style_value_fact_is_outside_match_descendants() {
 }
 
 #[test]
+fn style_length_values_use_registered_roots_and_shared_scalar_reduction() {
+    let source = "pub style typography {\n Text {\n width = 720px\n height = 84px\n font-size = 42px\n line-height = 56.7px\n letter-spacing = -1.25px\n }\n}\nfn ordinary() -> i32 { 42 }\n";
+    let world = super::super::fixture(source, None);
+    let report = super::super::analyze(&world).expect("typed Style lengths are admitted");
+    let mut values = report
+        .expressions()
+        .filter_map(|(_, checked)| {
+            let CheckedExpressionResolution::CompileTimeScalar(scalar) = checked.resolution()
+            else {
+                return None;
+            };
+            let crate::checked_text_proxy::CheckedCompileTimeScalar::Length(value) = scalar.value()
+            else {
+                return None;
+            };
+            assert!(checked.effects().is_empty());
+            assert_eq!(value.unit, crate::checked_rich_text::LengthUnit::Px);
+            Some(value.milli)
+        })
+        .collect::<Vec<_>>();
+    values.sort_unstable();
+    assert_eq!(values, [-1_250, 42_000, 56_700, 84_000, 720_000]);
+    assert!(
+        report.expressions().any(|(_, checked)| {
+            matches!(
+                checked.resolution(),
+                CheckedExpressionResolution::Literal(arcweft_lang_hir::leaf::HirLiteral::Integer(
+                    _
+                ))
+            ) && checked.value_type() == Some(&TypeKind::I32)
+        }),
+        "the ordinary numeric root remains a literal"
+    );
+}
+
+#[test]
+fn style_length_values_reject_unconverted_units_types_and_overflow_at_the_source() {
+    for value in [
+        "12pt",
+        "12em",
+        "12%",
+        "12deg",
+        "12",
+        "true",
+        "\"12px\"",
+        "rgba(1, 2, 3, 4)",
+        "2147483.648px",
+    ] {
+        let source = format!("pub style typography {{\n Text {{\n height = {value}\n }}\n}}\n");
+        let world = super::super::fixture(&source, None);
+        let error = super::super::analyze(&world)
+            .expect_err("the Style value must be rejected before publication");
+        let FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = error else {
+            panic!("wrong source rejection for {value}: {error:?}");
+        };
+        let project = world.project.analysis_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module");
+        let lookup = module
+            .source_site(
+                module.provenance().source_identity(),
+                HirSourceQuery::Expr {
+                    owner,
+                    role: HirExprSourceRole::Whole,
+                },
+            )
+            .expect("source owner");
+        let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+            panic!("rejected Style root has an exact source span");
+        };
+        assert_eq!(&source[span.range().as_range()], value);
+    }
+}
+
+#[test]
 fn checked_match_contextual_expression_corpus_retains_families_and_meaning() {
     for case in contextual_expression_corpus_cases() {
         let row = case.row;

@@ -4129,8 +4129,14 @@ impl Analyzer<'_, '_, '_> {
         let Some(expected) = self.style_value_kinds.get(&owner).copied() else {
             return Ok(None);
         };
-        if expected != arcweft_view::style::ViewStyleValueKind::Color {
-            return Ok(None);
+        match expected {
+            arcweft_view::style::ViewStyleValueKind::Length => {
+                return self
+                    .check_style_length_expression(context, module, owner, expression)
+                    .map(Some);
+            }
+            arcweft_view::style::ViewStyleValueKind::Color => {}
+            _ => return Ok(None),
         }
         let HirExprKind::Call(call) = expression.kind() else {
             return Ok(None);
@@ -4187,6 +4193,57 @@ impl Analyzer<'_, '_, '_> {
                 arcweft_view::style::ViewSpecifiedValue::Color { value: color },
             ),
         )))
+    }
+
+    /// Admits the direct Style property root through the registered Length type
+    /// and the shared HIR scalar reducer. The current physical layout profile
+    /// owns logical pixels; no relative or point-unit conversion is inferred.
+    fn check_style_length_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
+        use crate::checked_rich_text::LengthUnit;
+        use crate::checked_text_proxy::{CheckedCompileTimeScalar, CheckedCompileTimeScalarKind};
+
+        let kind = CheckedCompileTimeScalarKind::Length;
+        let scalar = crate::checked_text_proxy::reduce_literal_expression(module, owner, &kind)
+            .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+        let CheckedCompileTimeScalar::Length(length) = &scalar else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        if length.unit != LengthUnit::Px {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        let ty = self.compile_time_scalar_type(&kind);
+        let checked = match self.check_leaf_expression_kind(module, owner, expression, Some(&ty))? {
+            Some(checked) => checked,
+            None => self
+                .check_unary_expression_kind(
+                    context,
+                    module,
+                    owner,
+                    expression,
+                    &AnalyzerExpressionExpectation::Complete(&ty),
+                )?
+                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?,
+        };
+        if checked.value_type() != Some(&ty) || !checked.effects().is_empty() {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        Ok(CheckedExpression::value(
+            ty,
+            CheckedTypeSelection::Expected,
+            checked.effects().clone(),
+            CheckedExpressionResolution::CompileTimeScalar(
+                super::super::CheckedCompileTimeScalarExpression::new(
+                    scalar,
+                    checked.resolution().clone(),
+                ),
+            ),
+        ))
     }
 
     fn direct_callee_name(

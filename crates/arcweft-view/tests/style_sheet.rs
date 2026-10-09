@@ -54,8 +54,15 @@ fn sheet_identity_owns_authored_and_engine_family_invariants() {
 
 fn button_selector() -> ViewStyleSelector {
     ViewStyleSelector::new(vec![
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Button), None, Vec::new())
-            .expect("non-empty selector sequence"),
+        ViewStyleSelectorSequence::new(
+            None,
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
+            None,
+            Vec::new(),
+        )
+        .expect("non-empty selector sequence"),
     ])
     .expect("valid selector")
 }
@@ -436,7 +443,7 @@ fn declaration_and_rule_validation_rejects_malformed_combinations() {
         ),
         Err(ViewStyleModelError::PropertyNotApplicable {
             property: ViewPropertyKind::FlexDirection,
-            element: ViewElementKind::Button,
+            target: arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Button),
             source_order: 0,
         })
     ));
@@ -449,7 +456,7 @@ fn serde_decode_rechecks_nested_values_selectors_and_patch_declarations() {
     let leading_combinator = serde_json::json!({
         "sequences": [{
             "relation_to_previous": "descendant",
-            "element": "button",
+            "target": {"kind": "element", "element": "button"},
             "part": null,
             "predicates": []
         }]
@@ -500,7 +507,9 @@ fn checked_style_records_reject_unknown_fields_at_every_nested_boundary() {
     let selector = ViewStyleSelector::new(vec![
         ViewStyleSelectorSequence::new(
             None,
-            Some(ViewElementKind::Button),
+            Some(arcweft_view::ViewStyleTargetKind::Element(
+                ViewElementKind::Button,
+            )),
             None,
             vec![ViewStylePredicate::Container(ViewContainerPredicate::new(
                 ViewContainerAxis::InlineSize,
@@ -801,11 +810,20 @@ fn canonical_sheet_decode_rejects_unsorted_token_and_rule_arrays() {
 
 #[test]
 fn selector_depth_matches_combinator_chain_length() {
-    let root = ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, Vec::new())
-        .expect("root selector");
+    let root = ViewStyleSelectorSequence::new(
+        None,
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )),
+        None,
+        Vec::new(),
+    )
+    .expect("root selector");
     let child = ViewStyleSelectorSequence::new(
         Some(ViewStyleCombinator::Child),
-        Some(ViewElementKind::Button),
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        )),
         None,
         Vec::new(),
     )

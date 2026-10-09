@@ -536,13 +536,7 @@ fn node_facts(
     node: &BundleViewStyleNode,
     binding: &NodeBinding,
 ) -> ViewStyleNodeFacts {
-    let element = match node.kind {
-        BundleViewStyleNodeKind::Element { element, .. } => Some(element),
-        BundleViewStyleNodeKind::Text { .. }
-        | BundleViewStyleNodeKind::Image { .. }
-        | BundleViewStyleNodeKind::Custom { .. }
-        | BundleViewStyleNodeKind::CallView { .. } => None,
-    };
+    let target = Some(node.kind.style_target_kind());
     let implementation_part = node.part.clone();
     let exported_part = node.exported_part.clone();
     let interactions = interaction_states(
@@ -580,7 +574,7 @@ fn node_facts(
             }
             scopes
         });
-    ViewStyleNodeFacts::new(element)
+    ViewStyleNodeFacts::new(target)
         .with_parts(implementation_part, exported_part)
         .with_interactions(interactions)
         .with_element_states(element_states)
@@ -628,20 +622,44 @@ fn node_bindings(
             .transpose()?
             .into_iter()
             .collect(),
-        BundleViewStyleNodeKind::Text { text_source } => mount
-            .text
-            .iter()
-            .filter(|text| text.source_id == *text_source)
-            .flat_map(|text| &text.targets)
-            .map(|target| {
-                binding_for_target(
-                    presentation,
-                    input,
-                    mount.scoped_id(&target.public_id),
-                    StyleTargetKind::Text,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?,
+        BundleViewStyleNodeKind::Text { text_source }
+        | BundleViewStyleNodeKind::RichText { text_source } => {
+            let expected = node.kind.style_target_kind();
+            let mut found = false;
+            let mut bindings = Vec::new();
+            for text in mount
+                .text
+                .iter()
+                .filter(|text| text.source_id == *text_source)
+            {
+                found = true;
+                let actual = text.value.style_target_kind();
+                if expected != actual {
+                    return Err(PlayerFrameError::StyleTextKindMismatch {
+                        mount: mount.mount.get(),
+                        instruction: node.instruction,
+                        expected,
+                        actual,
+                    });
+                }
+                for target in &text.targets {
+                    bindings.push(binding_for_target(
+                        presentation,
+                        input,
+                        mount.scoped_id(&target.public_id),
+                        StyleTargetKind::Text,
+                    )?);
+                }
+            }
+            if !found {
+                return Err(PlayerFrameError::MissingStyleTextSource {
+                    mount: mount.mount.get(),
+                    instruction: node.instruction,
+                    text_source: text_source.clone(),
+                });
+            }
+            bindings
+        }
         BundleViewStyleNodeKind::Image { image, target } => vec![binding_for_target(
             presentation,
             input,

@@ -453,7 +453,9 @@ fn surface_rule<const N: usize>(
 ) -> ViewStyleRule {
     let sequence = ViewStyleSelectorSequence::new(
         None,
-        Some(ViewElementKind::Panel),
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )),
         Some(ViewPartName::try_new(public_id).expect("exact Style part ID is valid")),
         Vec::new(),
     )

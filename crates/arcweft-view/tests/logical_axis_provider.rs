@@ -66,7 +66,9 @@ fn resolve(
     applications: &[ViewStyleApplication],
     revisions: ViewStyleRevisionSet,
 ) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
-    let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let facts = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     resolve_with_facts(
         resolver,
         program,
@@ -171,8 +173,15 @@ fn axis_rule_with_environment(
 ) -> ViewStyleRule {
     ViewStyleRule::new(
         ViewStyleSelector::new(vec![
-            ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, predicates)
-                .unwrap(),
+            ViewStyleSelectorSequence::new(
+                None,
+                Some(arcweft_view::ViewStyleTargetKind::Element(
+                    ViewElementKind::Panel,
+                )),
+                None,
+                predicates,
+            )
+            .unwrap(),
         ])
         .unwrap(),
         environment,
@@ -393,7 +402,9 @@ fn ancestor_change_evicts_descendant_projection_entries_and_mount_cleanup_is_ide
             root_computed.axes().revision()
         );
     }
-    let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+    let facts = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+        ViewElementKind::Panel,
+    )));
     let unused_environment_change = resolve_with_facts(
         &mut resolver,
         &program,
@@ -1928,8 +1939,13 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         )
         .unwrap();
         let application = named_application("style.axis.sheet.interaction", 0);
-        let plain = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
-        let hovered = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel)).with_interactions(
+        let plain = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )));
+        let hovered = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )))
+        .with_interactions(
             ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered),
         );
         let key = node(55, 0);
@@ -2069,7 +2085,9 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         )
         .unwrap();
         let application = named_application("style.axis.sheet.environment", 0);
-        let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
+        let facts = ViewStyleNodeFacts::new(Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )));
         let light =
             environment_with_revision(ColorScheme::Light, EnvironmentRevision::from_value(1));
         let dark = environment_with_revision(ColorScheme::Dark, EnvironmentRevision::from_value(2));

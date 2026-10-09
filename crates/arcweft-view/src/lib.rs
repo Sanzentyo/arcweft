@@ -118,8 +118,8 @@ pub use style::{
     ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult, ViewStyleResolver,
     ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleToken,
-    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
+    ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleTargetKind,
+    ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
     ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
     ViewTextScaleComparison,
 };

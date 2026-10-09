@@ -2192,6 +2192,25 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 } => {
                     builder.retain_node(structural_path, instruction_ordinal(cursor)?, None);
                     let root = builder.is_root_node();
+                    let text =
+                        self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
+                    let kind = match text.value.style_target_kind() {
+                        arcweft_view::ViewStyleTargetKind::Text => BundleViewStyleNodeKind::Text {
+                            text_source: text_source.clone(),
+                        },
+                        arcweft_view::ViewStyleTargetKind::RichText => {
+                            BundleViewStyleNodeKind::RichText {
+                                text_source: text_source.clone(),
+                            }
+                        }
+                        _ => {
+                            return Err(EvaluationFailure::new(
+                                BundleViewDiagnosticCode::UnsupportedTextValue,
+                                Some(cursor),
+                                "resolved text has a non-text Style target",
+                            ));
+                        }
+                    };
                     let _local_styles = builder
                         .style_scopes
                         .retain_node(
@@ -2200,9 +2219,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
-                                kind: BundleViewStyleNodeKind::Text {
-                                    text_source: text_source.clone(),
-                                },
+                                kind,
                                 part: part.as_ref(),
                                 local: styles,
                                 root,
@@ -2210,8 +2227,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             &mut self.style_scope_allocator,
                         )
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
-                    let text =
-                        self.resolve_text(&key.handle, definition, mounted, text_source, cursor)?;
                     for target in &text.targets {
                         builder.retain_target(&target.public_id);
                         builder.paint.push(BundleViewPaintItem::Text {

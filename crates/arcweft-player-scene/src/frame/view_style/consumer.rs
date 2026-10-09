@@ -177,7 +177,11 @@ pub(super) fn validate_supported_properties(
                 element => StyleConsumer::Structural(*element),
             }
         }
-        BundleViewStyleNodeKind::Text { .. } if !bindings.is_empty() => StyleConsumer::Text,
+        BundleViewStyleNodeKind::Text { .. } | BundleViewStyleNodeKind::RichText { .. }
+            if !bindings.is_empty() =>
+        {
+            StyleConsumer::Text
+        }
         BundleViewStyleNodeKind::Image { .. }
             if bindings
                 .iter()
@@ -192,6 +196,7 @@ pub(super) fn validate_supported_properties(
             StyleConsumer::Image
         }
         BundleViewStyleNodeKind::Text { .. }
+        | BundleViewStyleNodeKind::RichText { .. }
         | BundleViewStyleNodeKind::Image { .. }
         | BundleViewStyleNodeKind::Custom { .. }
         | BundleViewStyleNodeKind::CallView { .. } => StyleConsumer::Boundary,

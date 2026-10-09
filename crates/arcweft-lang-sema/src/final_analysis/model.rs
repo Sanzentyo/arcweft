@@ -822,6 +822,14 @@ impl CheckedCompileTimeScalarExpression {
         &self.value
     }
 
+    /// Borrows the admitted Length payload without exposing the scalar registry.
+    pub const fn length(&self) -> Option<&crate::checked_rich_text::CheckedLength> {
+        match &self.value {
+            CheckedCompileTimeScalar::Length(value) => Some(value),
+            _ => None,
+        }
+    }
+
     pub const fn original(&self) -> &CheckedExpressionResolution {
         &self.original
     }

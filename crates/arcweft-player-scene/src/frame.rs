@@ -147,6 +147,23 @@ pub enum PlayerFrameError {
     DuplicateStyleTarget { target: String },
     #[error("View Style node identity repeats in mount {mount} at instruction {instruction}")]
     DuplicateStyleNode { mount: u64, instruction: u32 },
+    #[error(
+        "View Style text source {text_source} is missing for mount {mount} instruction {instruction}"
+    )]
+    MissingStyleTextSource {
+        mount: u64,
+        instruction: u32,
+        text_source: String,
+    },
+    #[error(
+        "View Style text kind differs from its actual source for mount {mount} instruction {instruction}: expected {expected:?}, actual {actual:?}"
+    )]
+    StyleTextKindMismatch {
+        mount: u64,
+        instruction: u32,
+        expected: arcweft_view::ViewStyleTargetKind,
+        actual: arcweft_view::ViewStyleTargetKind,
+    },
     #[error("View Style parent is missing for mount {mount} instruction {instruction}")]
     MissingStyleParent { mount: u64, instruction: u32 },
     #[error("View Style parent is ambiguous for mount {mount} instruction {instruction}")]

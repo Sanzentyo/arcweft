@@ -549,6 +549,9 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
         ViewTextSelectionPolicy::Disabled,
         ViewRuntimeControlVisualStyle::default(),
     );
+    presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
+        text_source: presentation.view.mounts[0].text[0].source_id.clone(),
+    };
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
@@ -619,6 +622,9 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         ViewTextSelectionPolicy::Disabled,
         ViewRuntimeControlVisualStyle::default(),
     );
+    presentation.view.mounts[0].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
+        text_source: presentation.view.mounts[0].text[0].source_id.clone(),
+    };
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::Localized {
         key: "text.greeting".to_owned(),
         locale: Some("ja-JP".to_owned()),
@@ -677,6 +683,9 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
     .expect("fixture Content envelope");
     let display =
         resolve_frame_with_template(&spec, &template, &content, &test_line_context()).unwrap();
+    presentation.view.mounts[1].style_nodes[0].kind = BundleViewStyleNodeKind::RichText {
+        text_source: presentation.view.mounts[1].text[0].source_id.clone(),
+    };
     presentation.view.mounts[1].text[0].value = BundleViewTextValue::DisplayFrame {
         frame: Box::new(display),
         stage_index: 0,

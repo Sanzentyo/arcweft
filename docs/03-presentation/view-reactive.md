@@ -170,6 +170,23 @@ profile は px の固定小数点 thousandths を使い、pt／em は換算規�
 既存の Style/layout 規則に従う。これらの入力は新しい runtime scalar interpreter
 や別の bounds table を作らず、既存の cascade、geometry、paint、hit-test 境界を使う。
 
+Style の型 selector は、同じ `ViewStyleTargetKind` の registry から source、codec、
+property applicability、runtime matching へ渡す。container／control は既存の
+`ViewElementKind` を保持し、`Text`、`RichText`、`Image`、`View`、
+`Custom` は別の target kind を持つ。`Text` は plain と rich の共通 text family を
+選び、`RichText` は rich document／resolved display frame に限定する。type selector
+の specificity はどちらも一つと数え、同じ specificity の後続 rule が優先される。
+未知の target 名や、その target に適用できない property は admission で拒否する。
+
+runtime の text node kind は、実際に解決された typed text payload が所有する。
+plain text と character display name は `Text`、localized document、rich document、
+display frame は `RichText` として保持し、Player は text source identity と
+payload kind の一致を確認してから Style を照合する。Fragment の Text／RichText が
+Button 等の semantic role を持っていても text kind は変わらず、focus／hover 等の
+interaction state はその target に独立して適用する。canonical selector は tagged
+`target` を保持する。obsolete な bare `element` selector reader は持たず、contract
+version は `1` のままとする。
+
 ## Binding
 
 Binding は直接 state を破壊的に書き換えず、lens + event/command。

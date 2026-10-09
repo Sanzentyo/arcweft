@@ -2391,6 +2391,33 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
     assert!(frame.diagnostics.is_empty(), "{frame:#?}");
     assert_eq!(frame.mounts[0].paint.len(), 3);
     assert_eq!(frame.mounts[0].text.len(), 3);
+    assert_eq!(frame.mounts[0].style_nodes.len(), 3);
+    for (node, text) in frame.mounts[0]
+        .style_nodes
+        .iter()
+        .zip(&frame.mounts[0].text)
+    {
+        assert_eq!(
+            node.kind.style_target_kind(),
+            arcweft_view::ViewStyleTargetKind::RichText
+        );
+        assert_eq!(
+            node.kind.style_target_kind(),
+            text.value.style_target_kind()
+        );
+        let BundleViewStyleNodeKind::RichText { text_source } = &node.kind else {
+            panic!("rich stores retain the rich node producer");
+        };
+        assert_eq!(text_source, &text.source_id);
+        let encoded = serde_json::to_vec(node).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<BundleViewStyleNode>(&encoded).unwrap(),
+            *node
+        );
+        let mut forged = serde_json::to_value(&node.kind).unwrap();
+        forged["text_source_alias"] = serde_json::json!("text.foreign");
+        assert!(serde_json::from_value::<BundleViewStyleNodeKind>(forged).is_err());
+    }
     assert!(matches!(
         &frame.mounts[0].text[0].value,
         BundleViewTextValue::Localized { document, .. }
@@ -2451,6 +2478,14 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
         BundleViewTextValue::DisplayFrame { frame, stage_index: 0 }
             if frame.as_ref() == &display_frame
     ));
+    assert_eq!(
+        first.mounts[0].style_nodes[0].kind.style_target_kind(),
+        arcweft_view::ViewStyleTargetKind::Text
+    );
+    assert_eq!(
+        first.mounts[0].style_nodes[1].kind.style_target_kind(),
+        arcweft_view::ViewStyleTargetKind::RichText
+    );
     let first_mount = first.mounts[0].mount;
 
     let snapshot = runtime.snapshot().unwrap();

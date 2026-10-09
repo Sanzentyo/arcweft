@@ -135,12 +135,24 @@ fn property_metadata_encodes_value_and_element_constraints() {
     assert!(!ViewPropertyKind::Opacity.is_appendable());
     assert!(ViewPropertyKind::Opacity.is_transitionable());
 
-    assert!(ViewPropertyKind::PlaceholderColor.applies_to(ViewElementKind::TextField));
-    assert!(ViewPropertyKind::PlaceholderColor.applies_to(ViewElementKind::SecureField));
-    assert!(!ViewPropertyKind::PlaceholderColor.applies_to(ViewElementKind::Button));
-    assert!(ViewPropertyKind::BackgroundColor.applies_to(ViewElementKind::Panel));
-    assert!(!ViewPropertyKind::FlexDirection.applies_to(ViewElementKind::Button));
-    assert!(ViewPropertyKind::FlexDirection.applies_to(ViewElementKind::Row));
+    assert!(ViewPropertyKind::PlaceholderColor.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::TextField)
+    ));
+    assert!(ViewPropertyKind::PlaceholderColor.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::SecureField)
+    ));
+    assert!(!ViewPropertyKind::PlaceholderColor.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Button)
+    ));
+    assert!(ViewPropertyKind::BackgroundColor.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Panel)
+    ));
+    assert!(!ViewPropertyKind::FlexDirection.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Button)
+    ));
+    assert!(ViewPropertyKind::FlexDirection.applies_to(
+        arcweft_view::ViewStyleTargetKind::Element(ViewElementKind::Row)
+    ));
 
     assert!(ViewAlignment::SpaceBetween.applies_to(ViewPropertyKind::JustifyContent));
     assert!(!ViewAlignment::SpaceBetween.applies_to(ViewPropertyKind::AlignSelf));
@@ -199,12 +211,20 @@ fn typed_ids_and_applications_preserve_scope_order_and_boundaries() {
 
 #[test]
 fn selector_sequences_validate_relations_and_compute_specificity() {
-    let first =
-        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, Vec::new())
-            .expect("element sequence");
+    let first = ViewStyleSelectorSequence::new(
+        None,
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Panel,
+        )),
+        None,
+        Vec::new(),
+    )
+    .expect("element sequence");
     let second = ViewStyleSelectorSequence::new(
         Some(ViewStyleCombinator::Child),
-        Some(ViewElementKind::Button),
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        )),
         Some(ViewPartName::try_new("part.action").expect("valid part")),
         vec![ViewStylePredicate::Interaction(
             ViewInteractionSelector::Hovered,
@@ -219,7 +239,9 @@ fn selector_sequences_validate_relations_and_compute_specificity() {
 
     let leading_combinator = ViewStyleSelectorSequence::new(
         Some(ViewStyleCombinator::Descendant),
-        Some(ViewElementKind::Button),
+        Some(arcweft_view::ViewStyleTargetKind::Element(
+            ViewElementKind::Button,
+        )),
         None,
         Vec::new(),
     )

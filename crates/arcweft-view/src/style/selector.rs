@@ -1,7 +1,8 @@
 //! Canonical native Style selector state inventory.
 
+use super::ViewStyleTargetKind;
 use super::value::ViewLengthMilli;
-use crate::{ViewElementKind, ViewPartName};
+use crate::ViewPartName;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
 use serde::{Deserialize, Serialize};
@@ -73,7 +74,7 @@ pub enum ViewStylePredicate {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewStyleSelectorSequence {
     relation_to_previous: Option<ViewStyleCombinator>,
-    element: Option<ViewElementKind>,
+    target: Option<ViewStyleTargetKind>,
     part: Option<ViewPartName>,
     predicates: Vec<ViewStylePredicate>,
 }
@@ -183,13 +184,13 @@ impl ViewContainerPredicate {
 impl ViewStyleSelectorSequence {
     pub fn new(
         relation_to_previous: Option<ViewStyleCombinator>,
-        element: Option<ViewElementKind>,
+        target: Option<ViewStyleTargetKind>,
         part: Option<ViewPartName>,
         predicates: Vec<ViewStylePredicate>,
     ) -> Option<Self> {
-        (element.is_some() || part.is_some() || !predicates.is_empty()).then_some(Self {
+        (target.is_some() || part.is_some() || !predicates.is_empty()).then_some(Self {
             relation_to_previous,
-            element,
+            target,
             part,
             predicates,
         })
@@ -199,8 +200,8 @@ impl ViewStyleSelectorSequence {
         self.relation_to_previous
     }
 
-    pub const fn element(&self) -> Option<ViewElementKind> {
-        self.element
+    pub const fn target(&self) -> Option<ViewStyleTargetKind> {
+        self.target
     }
 
     pub const fn part(&self) -> Option<&ViewPartName> {
@@ -243,7 +244,7 @@ impl ViewStyleSelector {
                     predicates: specificity.predicates.checked_add(sequence_predicates)?,
                     elements: specificity
                         .elements
-                        .checked_add(u16::from(sequence.element.is_some()))?,
+                        .checked_add(u16::from(sequence.target.is_some()))?,
                 })
             })
     }
@@ -253,11 +254,11 @@ impl ViewStyleSelector {
         self.sequences.len()
     }
 
-    /// Element constrained by the final selector sequence, when explicit.
-    pub fn target_element(&self) -> Option<ViewElementKind> {
+    /// Typed target constrained by the final selector sequence, when explicit.
+    pub fn target_kind(&self) -> Option<ViewStyleTargetKind> {
         self.sequences
             .last()
-            .and_then(ViewStyleSelectorSequence::element)
+            .and_then(ViewStyleSelectorSequence::target)
     }
 }
 

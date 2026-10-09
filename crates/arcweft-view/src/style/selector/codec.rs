@@ -3,14 +3,14 @@
 use super::{
     ViewStyleCombinator, ViewStylePredicate, ViewStyleSelector, ViewStyleSelectorSequence,
 };
-use crate::{ViewElementKind, ViewPartName};
+use crate::{ViewPartName, ViewStyleTargetKind};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EncodedSelectorSequence {
     relation_to_previous: Option<ViewStyleCombinator>,
-    element: Option<ViewElementKind>,
+    target: Option<ViewStyleTargetKind>,
     part: Option<ViewPartName>,
     predicates: Vec<ViewStylePredicate>,
 }
@@ -29,7 +29,7 @@ impl<'de> Deserialize<'de> for ViewStyleSelectorSequence {
         let encoded = EncodedSelectorSequence::deserialize(deserializer)?;
         Self::new(
             encoded.relation_to_previous,
-            encoded.element,
+            encoded.target,
             encoded.part,
             encoded.predicates,
         )
