@@ -1110,6 +1110,7 @@ impl TypeCheckEnv {
             ("DataPathSegment", TypeKind::DataPathSegment),
             ("DataMapKind", TypeKind::DataMapKind),
             ("AgentValue", TypeKind::AgentValue),
+            ("AgentResourceBody", TypeKind::AgentResourceBody),
             (
                 "ObservedObjectId",
                 TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::ObservedObjectId),

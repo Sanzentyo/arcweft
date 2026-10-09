@@ -5099,6 +5099,55 @@ fn runtime_type_at(
     )
 }
 
+fn runtime_environment_builtin_variant(
+    ty: &TypeKind,
+    expected: arcweft_core::pattern::RuntimeBuiltinVariantIdentity,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+    path: &RuntimeTypeProjectionPath,
+    scope: &arcweft_lang_sema::types::GenericScope,
+) -> Result<RuntimeTypeShape, RuntimeSemanticProjectionError> {
+    let semantic_type = ty.semantic_identity_digest()?;
+    let owner = analysis
+        .accepted_closed_variant_owner(semantic_type)
+        .filter(|owner| owner.ty() == *ty && matches!(
+            owner.kind(), CheckedVariantOwnerKind::RuntimeBuiltin { owner, .. } if *owner == expected
+        ))
+        .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+            reason: format!("runtime builtin `{}` has no exact accepted variant owner", ty.source_label()),
+        })?;
+    let cases = owner
+        .cases()
+        .iter()
+        .map(|case| {
+            let payload = owner.case_payload_type(case.ordinal()).ok_or_else(|| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: "runtime builtin case has no exact accepted payload schema".to_owned(),
+                }
+            })?;
+            payload
+                .map(|payload| {
+                    runtime_type_scoped_at(
+                        &payload,
+                        symbols,
+                        world,
+                        analysis,
+                        &path.pushed(RuntimeTypeProjectionStep::BuiltinVariantCase(
+                            case.ordinal(),
+                        )),
+                        scope,
+                    )
+                })
+                .transpose()
+        })
+        .collect::<Result<Box<[_]>, _>>()?;
+    Ok(RuntimeTypeShape::BuiltinVariant {
+        owner: expected,
+        cases,
+    })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "the closed semantic type vocabulary must be projected exhaustively in one boundary"
@@ -5250,42 +5299,20 @@ fn runtime_type_scoped_at(
         TypeKind::CaptureTarget => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::CaptureTarget),
         TypeKind::CaptureRef => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::CaptureReference),
         TypeKind::AgentResource => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Resource),
-        TypeKind::AgentResourceBody => RuntimeTypeShape::BuiltinVariant {
-            owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentResourceBody,
-            cases: vec![
-                Some(runtime_type_scoped_at(
-                    &TypeKind::AgentValue,
-                    symbols,
-                    world,
-                    analysis,
-                    path,
-                    scope,
-                )?),
-                Some(runtime_type_scoped_at(
-                    &TypeKind::String,
-                    symbols,
-                    world,
-                    analysis,
-                    path,
-                    scope,
-                )?),
-                Some(runtime_type_scoped_at(
-                    &TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryBody),
-                    symbols,
-                    world,
-                    analysis,
-                    path,
-                    scope,
-                )?),
-            ]
-            .into_boxed_slice(),
-        },
+        TypeKind::AgentResourceBody => runtime_environment_builtin_variant(
+            ty,
+            arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentResourceBody,
+            symbols,
+            world,
+            analysis,
+            path,
+            scope,
+        )?,
         TypeKind::RagContextPack => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::RagContextPack),
         TypeKind::AgentBuiltin(builtin) => match builtin.runtime_variant() {
-            Some(owner) => RuntimeTypeShape::BuiltinVariant {
-                owner,
-                cases: owner.cases().iter().map(|_| None).collect(),
-            },
+            Some(owner) => runtime_environment_builtin_variant(
+                ty, owner, symbols, world, analysis, path, scope,
+            )?,
             None => RuntimeTypeShape::Agent(
                 runtime_agent_builtin_type(*builtin)
                     .expect("non-variant Agent builtin has one operational projection"),

@@ -998,6 +998,7 @@ fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
         ("DataPathSegment", TypeKind::DataPathSegment),
         ("DataMapKind", TypeKind::DataMapKind),
         ("AgentValue", TypeKind::AgentValue),
+        ("AgentResourceBody", TypeKind::AgentResourceBody),
         (
             "ObservedObjectId",
             TypeKind::AgentBuiltin(AgentBuiltinType::ObservedObjectId),

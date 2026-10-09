@@ -1649,6 +1649,7 @@ impl TypeKind {
             "DataPathSegment" => Self::DataPathSegment,
             "DataMapKind" => Self::DataMapKind,
             "AgentValue" => Self::AgentValue,
+            "AgentResourceBody" => Self::AgentResourceBody,
             "TextCluster" => Self::TextCluster,
             "Duration" => Self::Duration,
             "Progress" => Self::Progress,

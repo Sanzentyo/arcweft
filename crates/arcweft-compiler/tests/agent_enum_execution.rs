@@ -43,3 +43,20 @@ fn agent_enum_cases_match_after_awbc_function_arguments() {
         }
     }
 }
+
+#[test]
+fn agent_resource_body_text_payload_matches_after_native_and_awbc_arguments() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+fn inspect_body(value: AgentResourceBody) -> i64 {
+    match value {
+        .Json(_) => 0i64,
+        .Text(text) => if text == "payload" { 17i64 } else { -1i64 },
+        .BytesBase64(_) => 2i64,
+    }
+}
+flow main() -> i64 { return inspect_body(.Text("payload")) }
+"#;
+    execution::assert_native_return(source, "17");
+    execution::assert_awbc_return(source, RuntimeValue::i64(17));
+}
