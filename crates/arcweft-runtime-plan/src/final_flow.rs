@@ -6828,10 +6828,12 @@ impl<'a> FinalFlowLowerer<'a> {
                 }
             }
             HirStmtKind::Goto { target } => {
-                if let Some(RuntimeResolvedValue::ProjectItem(item)) = self.value(*target)
-                    && let Some(target) = item.flow_runtime_id()
+                if let Some(RuntimeResolvedValue::Entity(entity)) = self.value(*target)
+                    && let Some(target) = entity
+                        .flow_runtime_identity()
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
                 {
-                    Ok(vec![RuntimeFlowOpSeed::Goto(target.clone())])
+                    Ok(vec![RuntimeFlowOpSeed::Goto(target)])
                 } else {
                     Ok(vec![RuntimeFlowOpSeed::GotoExpr(
                         self.expr_lowerer()

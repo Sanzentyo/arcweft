@@ -1235,8 +1235,13 @@ fn project_runtime_semantic_fact_inventories(
                 let projected = if let Some(value) = runtime_callable_values.get(&owner) {
                     Some(value.clone())
                 } else {
-                    runtime_value_resolution(value, checked_expression_type(expression, owner)?)
-                        .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
+                    runtime_value_resolution(
+                        analysis,
+                        owner,
+                        value,
+                        checked_expression_type(expression, owner)?,
+                    )
+                    .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
                 };
                 if let Some(value) = projected {
                     input.push_value(owner, value);
@@ -5799,15 +5804,20 @@ fn runtime_decimal(decimal: &HirDecimal, ty: &TypeKind) -> Result<RuntimeValue, 
 }
 
 fn runtime_value_resolution(
+    analysis: &FinalSemanticAnalysis,
+    owner: ExprId,
     value: &CheckedValueResolution,
     ty: &TypeKind,
 ) -> Result<Option<RuntimeResolvedValue>, String> {
     Ok(Some(match value {
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
-        CheckedValueResolution::ProjectItem(item) if matches!(ty, TypeKind::Ref(_)) => {
-            RuntimeResolvedValue::ProjectItem(
-                runtime_project_item(item).map_err(|error| error.to_string())?,
-            )
+        CheckedValueResolution::CatalogAsset(_) | CheckedValueResolution::ProjectItem(_)
+            if matches!(ty, TypeKind::Ref(_)) => {
+            let entity = analysis.entity_value_projection(owner).map_err(|error| error.to_string())?;
+            if entity.resolution() != value || entity.ty() != ty {
+                return Err("entity runtime projection differs from its final accepted value or type".to_owned());
+            }
+            RuntimeResolvedValue::Entity(entity)
         }
         // A checked Ref is an entity value whether selected through an alias,
         // a path or explicit reference syntax. Other retained items remain
@@ -5817,6 +5827,7 @@ fn runtime_value_resolution(
         // needs a typed function-value identity before it can be executable.
         CheckedValueResolution::ProjectCallable(_)
         | CheckedValueResolution::ProjectItem(_)
+        | CheckedValueResolution::CatalogAsset(_)
         | CheckedValueResolution::LineContext
         | CheckedValueResolution::CharacterField { .. }
         // Entry references are generation-bound tooling/selection identities;
@@ -8037,14 +8048,19 @@ fn runtime_executable_semantic_facts<'abi>(
                                 instances,
                             )?
                         } else {
-                            runtime_value_resolution(value, &lexical.instantiate_type(ty)?)
-                                .map_err(|reason| RuntimeSemanticProjectionError::Value {
-                                    owner,
-                                    reason,
-                                })?
-                                .ok_or_else(|| {
-                                    error(owner, "instance value has no runtime scalar projection")
-                                })?
+                            runtime_value_resolution(
+                                analysis,
+                                owner,
+                                value,
+                                &lexical.instantiate_type(ty)?,
+                            )
+                            .map_err(|reason| RuntimeSemanticProjectionError::Value {
+                                owner,
+                                reason,
+                            })?
+                            .ok_or_else(|| {
+                                error(owner, "instance value has no runtime scalar projection")
+                            })?
                         }
                     }
                     CheckedExpressionResolution::DialogueLineReference(target) => {

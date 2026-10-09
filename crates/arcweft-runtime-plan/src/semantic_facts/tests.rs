@@ -4095,3 +4095,318 @@ fn flow_invocation_projection_rejects_nonfunction_and_incomplete_arity() {
         })
     ));
 }
+
+#[test]
+fn closed_entity_value_constructor_rejects_foreign_owner_and_type_before_publication() {
+    use super::project_function::{
+        RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
+        RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceSemanticFacts,
+        RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+    };
+    use arcweft_lang_sema::final_analysis::{
+        CheckedExecutableRuntimeExpressionFactFamily, CheckedLocalUseAuthority,
+    };
+    let source = "fn selected() -> Ref<Asset> { @asset.bg.pulse }\n";
+    let project = project_fixture("closed-entity-value-admission", source);
+    let analysis = analyze_identity_fixture(&project);
+    let owner = entity_reference(&project);
+    let root = project
+        .analysis_view()
+        .expect("HIR")
+        .items()
+        .find(|item| {
+            matches!(item.item().kind(), HirItemKind::Function(function)
+            if function.name().resolved().is_some_and(|name| name.as_str() == "selected"))
+        })
+        .expect("actual function owner")
+        .id();
+    let reachability = runtime_reachability(&project);
+    let partition = analysis
+        .execution_projection()
+        .runtime_fact_partition(&reachability, &HirRuntimeExecutableOwner::Item(root))
+        .expect("final Sema seals the source body partition");
+    assert!(
+        partition.locals().is_empty()
+            && partition.patterns().is_empty()
+            && partition.statements().is_empty()
+            && partition.captures().is_empty()
+    );
+    let entity = analysis
+        .entity_value_projection(owner)
+        .expect("accepted source address");
+    let normalized = |identity| {
+        super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes(identity),
+            RuntimeTypeShape::EntityReference,
+        )
+    };
+    let assemble = |value: arcweft_lang_sema::final_analysis::CheckedEntityValueProjection,
+                    identity: [u8; 32]| {
+        let mut types = partition
+            .expressions()
+            .iter()
+            .map(|row| RuntimeProjectFunctionTypeProjection::Value {
+                owner: RuntimeProjectFunctionTypeOwner::Expression(row.owner()),
+                ty: normalized(identity),
+            })
+            .collect::<Vec<_>>();
+        types.extend(partition.types().iter().map(|row| {
+            if row.has_runtime_type() {
+                RuntimeProjectFunctionTypeProjection::Value {
+                    owner: RuntimeProjectFunctionTypeOwner::Type(row.owner()),
+                    ty: normalized(
+                        *analysis
+                            .ty(row.owner())
+                            .expect("accepted type")
+                            .semantic_identity_digest()
+                            .expect("type key")
+                            .as_bytes(),
+                    ),
+                }
+            } else {
+                RuntimeProjectFunctionTypeProjection::SemanticOnlyType {
+                    owner: row.owner(),
+                    purpose: row.purpose().clone(),
+                }
+            }
+        }));
+        types.sort_by_key(RuntimeProjectFunctionTypeProjection::owner);
+        let expressions = partition
+            .expressions()
+            .iter()
+            .map(|row| {
+                assert_eq!(
+                    row.family(),
+                    CheckedExecutableRuntimeExpressionFactFamily::Value,
+                    "the source fixture owns only its admitted entity expression"
+                );
+                RuntimeProjectFunctionExpressionSemanticFact::new(
+                    row.owner(),
+                    row.children().into(),
+                    RuntimeProjectFunctionExpressionPayload::Value(RuntimeResolvedValue::Entity(
+                        value.clone(),
+                    )),
+                )
+            })
+            .collect::<Box<[_]>>();
+        RuntimeProjectFunctionInstanceSemanticFacts::try_new(
+            partition.clone(),
+            CheckedLocalUseAuthority::Global(Arc::clone(analysis.checked_local_uses())),
+            types.into_boxed_slice(),
+            expressions,
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+        )
+    };
+    assemble(entity.clone(), *entity.type_identity().as_bytes())
+        .expect("actual source projection passes closed admission");
+    let foreign = project_fixture("closed-entity-value-admission", source);
+    let foreign_analysis = analyze_identity_fixture(&foreign);
+    let foreign_value = foreign_analysis
+        .entity_value_projection(entity_reference(&foreign))
+        .expect("foreign actual source address");
+    assert!(
+        matches!(assemble(foreign_value, *entity.type_identity().as_bytes()),
+        Err(RuntimeProjectFunctionFactError::InvalidEntityValueOrigin { expression }) if expression == owner)
+    );
+    let wrong_family =
+        arcweft_lang_sema::types::TypeKind::entity_ref(arcweft_lang_sema::types::EntityKind::Flow)
+            .semantic_identity_digest()
+            .expect("other closed Ref");
+    assert!(matches!(assemble(entity, *wrong_family.as_bytes()),
+        Err(RuntimeProjectFunctionFactError::InvalidEntityValueType { expression }) if expression == owner));
+}
+
+fn checked_entity_value_input(
+    project: &HirProject,
+    analysis: &arcweft_lang_sema::final_analysis::FinalSemanticAnalysis,
+    mut select: impl FnMut(
+        arcweft_lang_hir::identity::ExprId,
+        arcweft_lang_sema::final_analysis::CheckedEntityValueProjection,
+    ) -> arcweft_lang_sema::final_analysis::CheckedEntityValueProjection,
+) -> RuntimePlanSemanticFactInput {
+    let mut input = complete_type_input(project);
+    for (owner, row) in analysis.expressions() {
+        if matches!(
+            row.resolution(),
+            arcweft_lang_sema::final_analysis::CheckedExpressionResolution::Value(
+                arcweft_lang_sema::final_analysis::CheckedValueResolution::CatalogAsset(_)
+                    | arcweft_lang_sema::final_analysis::CheckedValueResolution::ProjectItem(_)
+            )
+        ) {
+            let entity = analysis
+                .entity_value_projection(owner)
+                .expect("accepted source entity projection");
+            let ty = super::RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
+                RuntimeTypeShape::EntityReference,
+            );
+            input
+                .expression_facts
+                .iter_mut()
+                .find(|(row, _)| *row == owner)
+                .expect("runtime expression owner")
+                .1
+                .ty = Some(ty);
+            input.push_value(owner, RuntimeResolvedValue::Entity(select(owner, entity)));
+        }
+    }
+    input
+}
+
+#[test]
+fn entity_value_public_admission_retains_exact_source_asset_and_rejects_swapped_addresses_or_generation()
+ {
+    let source = "fn root(flag: bool) -> Ref<Asset> { if flag { @asset.bg.pulse } else { @asset.bg.poster } }\n";
+    let project = project_fixture("entity-value-public-admission", source);
+    let analysis = analyze_identity_fixture(&project);
+    let entities = analysis
+        .expressions()
+        .filter_map(|(owner, row)| {
+            matches!(
+                row.resolution(),
+                arcweft_lang_sema::final_analysis::CheckedExpressionResolution::Value(
+                    arcweft_lang_sema::final_analysis::CheckedValueResolution::CatalogAsset(_)
+                )
+            )
+            .then(|| {
+                (
+                    owner,
+                    analysis
+                        .entity_value_projection(owner)
+                        .expect("sealed source address"),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let [(first, pulse), (second, poster)] = entities.as_slice() else {
+        panic!("two accepted Asset addresses")
+    };
+    assert_ne!(pulse.runtime_reference(), poster.runtime_reference());
+    let facts = runtime_facts(
+        &project,
+        checked_entity_value_input(&project, &analysis, |_, value| value),
+    )
+    .expect("actual source values admitted");
+    let Some(RuntimeResolvedValue::Entity(actual)) = facts.value(*first) else {
+        panic!("sealed entity value retained")
+    };
+    assert_eq!(actual, pulse);
+    assert_eq!(actual.origin().expression(), *first);
+    assert_eq!(
+        facts
+            .expression_type(*first)
+            .expect("Ref type")
+            .identity()
+            .as_bytes(),
+        pulse.type_identity().as_bytes()
+    );
+    let swapped = checked_entity_value_input(&project, &analysis, |owner, value| {
+        if owner == *first {
+            poster.clone()
+        } else {
+            value
+        }
+    });
+    assert_eq!(
+        runtime_facts(&project, swapped).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidEntityValueOrigin { expression: *first }
+    );
+    let swapped_owner = checked_entity_value_input(&project, &analysis, |owner, value| {
+        if owner == *second {
+            pulse.clone()
+        } else {
+            value
+        }
+    });
+    assert_eq!(
+        runtime_facts(&project, swapped_owner).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidEntityValueOrigin {
+            expression: *second
+        }
+    );
+    let foreign = project_fixture("entity-value-public-admission", source);
+    let foreign_analysis = analyze_identity_fixture(&foreign);
+    let foreign_owner = entity_reference(&foreign);
+    let foreign_value = foreign_analysis
+        .entity_value_projection(foreign_owner)
+        .expect("same source address in foreign allocation");
+    let foreign_input = checked_entity_value_input(&project, &analysis, |owner, value| {
+        if owner == *first {
+            foreign_value.clone()
+        } else {
+            value
+        }
+    });
+    assert_eq!(
+        runtime_facts(&project, foreign_input).unwrap_err(),
+        RuntimeSemanticFactsError::InvalidEntityValueOrigin { expression: *first }
+    );
+}
+
+#[test]
+fn entity_value_public_admission_rejects_wrong_ref_family_or_physical_shape_for_the_same_owner() {
+    let project = project_fixture(
+        "entity-value-type-admission",
+        "fn root() -> Ref<Asset> { @asset.bg.pulse }\n",
+    );
+    let analysis = analyze_identity_fixture(&project);
+    let owner = entity_reference(&project);
+    let entity = analysis
+        .entity_value_projection(owner)
+        .expect("sealed Asset");
+    let wrong_family =
+        arcweft_lang_sema::types::TypeKind::entity_ref(arcweft_lang_sema::types::EntityKind::Flow)
+            .semantic_identity_digest()
+            .expect("closed Ref<Flow>");
+    for ty in [
+        super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes(*wrong_family.as_bytes()),
+            RuntimeTypeShape::EntityReference,
+        ),
+        super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes(*entity.type_identity().as_bytes()),
+            RuntimeTypeShape::Unit,
+        ),
+    ] {
+        let mut input = checked_entity_value_input(&project, &analysis, |_, value| value);
+        input
+            .expression_facts
+            .iter_mut()
+            .find(|(row, _)| *row == owner)
+            .expect("same expression owner")
+            .1
+            .ty = Some(ty);
+        assert_eq!(
+            runtime_facts(&project, input).unwrap_err(),
+            RuntimeSemanticFactsError::InvalidEntityValueType { expression: owner }
+        );
+    }
+}
+
+#[test]
+fn source_project_entity_values_use_the_same_sealed_admission_as_catalog_assets() {
+    let project = project_fixture(
+        "project-entity-value-admission",
+        "pub character alice {}\nfn root() -> Ref<Character> { @character.alice }\n",
+    );
+    let analysis = analyze_identity_fixture(&project);
+    let owner = entity_reference(&project);
+    let projection = analysis
+        .entity_value_projection(owner)
+        .expect("accepted Character source value");
+    assert!(
+        matches!(projection.resolution(), arcweft_lang_sema::final_analysis::CheckedValueResolution::ProjectItem(item)
+        if item.family() == arcweft_id::DeclarationIdentityFamily::Character)
+    );
+    let facts = runtime_facts(
+        &project,
+        checked_entity_value_input(&project, &analysis, |_, value| value),
+    )
+    .expect("retained source owner");
+    assert_eq!(
+        facts.value(owner),
+        Some(&RuntimeResolvedValue::Entity(projection))
+    );
+}

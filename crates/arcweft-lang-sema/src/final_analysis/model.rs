@@ -559,6 +559,9 @@ pub enum CheckedValueResolution {
     },
     ProjectCallable(CheckedProjectCallable),
     ProjectItem(CheckedProjectItem),
+    /// Catalog-owned resource identity. It is not a source declaration or a
+    /// scalar String; bundle admission owns the final asset lookup.
+    CatalogAsset(arcweft_id::AssetId),
     Entry(CheckedEntryReference),
     Registered(RegisteredSemanticValueId),
     Constant(HirLiteral),
@@ -576,6 +579,7 @@ impl CheckedValueResolution {
             Self::Entry(_) => 0x0305,
             Self::Registered(_) => 0x0306,
             Self::Constant(_) => 0x0307,
+            Self::CatalogAsset(_) => 0x0308,
         }
     }
 
@@ -587,6 +591,7 @@ impl CheckedValueResolution {
             | Self::LineContext
             | Self::CharacterField { .. }
             | Self::ProjectCallable(_)
+            | Self::CatalogAsset(_)
             | Self::Entry(_)
             | Self::Registered(_)
             | Self::Constant(_) => None,
@@ -603,6 +608,7 @@ impl CheckedValueResolution {
             Self::Local(_)
             | Self::LineContext
             | Self::ProjectCallable(_)
+            | Self::CatalogAsset(_)
             | Self::Entry(_)
             | Self::Registered(_)
             | Self::Constant(_) => Ok(()),

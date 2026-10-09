@@ -2556,7 +2556,8 @@ pub enum RuntimeResolvedValue {
         callable: RuntimeProjectCallable,
         target: RuntimeProjectCallableValueTarget,
     },
-    ProjectItem(RuntimeProjectItem),
+    /// Final Sema's accepted expression, actual entity payload and type key.
+    Entity(arcweft_lang_sema::final_analysis::CheckedEntityValueProjection),
     /// Checked one-way lowering of a durable `say.*` identity into the
     /// path-only runtime line domain.
     DialogueLine(RuntimeLineId),
@@ -7759,7 +7760,14 @@ impl RuntimePlanSemanticFacts {
                     )
                 },
             )?;
-            validate_resolved_value(&modules, runtime_owners, value)?;
+            validate_resolved_value(
+                &modules,
+                runtime_owners,
+                RuntimeEntityValueOriginContext::Project(project),
+                *expression,
+                expression_types.get(expression),
+                value,
+            )?;
             if let RuntimeResolvedValue::Place(place) = value {
                 let sites = [
                     arcweft_lang_sema::final_analysis::CheckedLocalUseSite::Expression(*expression),
@@ -7782,7 +7790,7 @@ impl RuntimePlanSemanticFacts {
                     });
                 }
             }
-            if matches!(value, RuntimeResolvedValue::ProjectItem(_))
+            if matches!(value, RuntimeResolvedValue::Entity(_))
                 && !matches!(
                     expression_types
                         .get(expression)
@@ -7812,7 +7820,7 @@ impl RuntimePlanSemanticFacts {
                 }
                 (
                     HirExprKind::EntityReference(_),
-                    RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
+                    RuntimeResolvedValue::Entity(_) | RuntimeResolvedValue::DialogueLine(_),
                 )
                 | (HirExprKind::Path(_), _) => {}
                 _ => unreachable!("value fact family was checked immediately above"),
@@ -10400,6 +10408,12 @@ pub enum RuntimeSemanticFactsError {
     InvalidScopeOrigin { owner: RuntimeScopeOwner },
     #[error("expression {expression:?} origin belongs to another owner or HIR allocation")]
     InvalidExpressionOrigin { expression: ExprId },
+    #[error(
+        "entity value for {expression:?} was issued for another accepted expression or generation"
+    )]
+    InvalidEntityValueOrigin { expression: ExprId },
+    #[error("entity value for {expression:?} disagrees with its accepted canonical Ref type")]
+    InvalidEntityValueType { expression: ExprId },
     #[error("local {local:?} origin belongs to another owner or HIR allocation")]
     InvalidLocalOrigin { local: LocalId },
     #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
@@ -10945,6 +10959,9 @@ fn require_pattern_family(
 fn validate_resolved_value(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    origin_context: RuntimeEntityValueOriginContext<'_>,
+    expression: ExprId,
+    expression_type: Option<&RuntimeNormalizedType>,
     value: &RuntimeResolvedValue,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match value {
@@ -10968,7 +10985,9 @@ fn validate_resolved_value(
             }
             Ok(())
         }
-        RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
+        RuntimeResolvedValue::Entity(entity) => {
+            validate_entity_value(origin_context, expression, expression_type, entity)
+        }
         RuntimeResolvedValue::DialogueLine(_)
         | RuntimeResolvedValue::Intrinsic(_)
         | RuntimeResolvedValue::Registered(_)
@@ -12998,7 +13017,14 @@ fn validate_project_function_semantic_catalog(
                         return Err(RuntimeSemanticFactsError::InactiveLocalReference { local });
                     }
                 } else {
-                    validate_resolved_value(modules, runtime_owners, value)?;
+                    validate_resolved_value(
+                        modules,
+                        runtime_owners,
+                        RuntimeEntityValueOriginContext::Closed(semantics.local_uses()),
+                        owner,
+                        expression_types.get(&owner),
+                        value,
+                    )?;
                 }
             }
             RuntimeProjectFunctionExpressionPayload::Select(select) => {
@@ -14345,3 +14371,36 @@ pub(crate) mod tests;
 #[cfg(test)]
 #[path = "semantic_facts/variant_selection_tests.rs"]
 mod variant_selection_tests;
+
+/// Borrows the existing owning source authority at each admission boundary.
+/// It does not duplicate generation/module validation or issue new evidence.
+enum RuntimeEntityValueOriginContext<'a> {
+    Project(HirAnalysisProjectView<'a>),
+    Closed(&'a CheckedLocalUseAuthority),
+}
+
+fn validate_entity_value(
+    origin_context: RuntimeEntityValueOriginContext<'_>,
+    expression: ExprId,
+    expression_type: Option<&RuntimeNormalizedType>,
+    entity: &arcweft_lang_sema::final_analysis::CheckedEntityValueProjection,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let accepted_origin = match origin_context {
+        RuntimeEntityValueOriginContext::Project(project) => {
+            entity.origin().validate_owner(project, expression)
+        }
+        RuntimeEntityValueOriginContext::Closed(local_uses) => {
+            entity.origin().validate_authority(local_uses, expression)
+        }
+    };
+    if !accepted_origin {
+        return Err(RuntimeSemanticFactsError::InvalidEntityValueOrigin { expression });
+    }
+    if expression_type.is_none_or(|ty| {
+        ty.identity().as_bytes() != entity.type_identity().as_bytes()
+            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+    }) {
+        return Err(RuntimeSemanticFactsError::InvalidEntityValueType { expression });
+    }
+    Ok(())
+}

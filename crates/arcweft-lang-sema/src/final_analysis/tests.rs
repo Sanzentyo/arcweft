@@ -10361,3 +10361,42 @@ view Main(dialogue: DialogueView) {
     );
     callable_values::assert_unselected_call_has_no_execution(&analysis, owner);
 }
+
+#[test]
+fn catalog_asset_reference_keeps_its_exact_ref_asset_type() {
+    for reference in ["@asset:.bg.pulse", "@asset.bg.pulse"] {
+        let source = format!("fn image_asset() -> Ref<Asset> {{ {reference} }}\n");
+        let fixture = fixture(&source, None);
+        let view = fixture.project.analysis_view().expect("accepted final HIR");
+        let module = view
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module");
+        let report =
+            analyze(&fixture).expect("catalog-owned Asset reference is a typed Ref<Asset>");
+        let owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::EntityReference(_)).then_some(owner)
+            })
+            .expect("actual typed source reference");
+        let expression = report.expression(owner).expect("accepted reference fact");
+        assert_eq!(
+            expression.value_type(),
+            Some(&TypeKind::entity_ref(EntityKind::Asset))
+        );
+        assert!(
+            !matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::Value(CheckedValueResolution::Constant(
+                    arcweft_lang_hir::leaf::HirLiteral::String(_)
+                ))
+            ),
+            "catalog identity must never become a scalar string"
+        );
+        assert_eq!(
+            report.calls().count(),
+            0,
+            "catalog identity is a value, not a declaration callable"
+        );
+    }
+}

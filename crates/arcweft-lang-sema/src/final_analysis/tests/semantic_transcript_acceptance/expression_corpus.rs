@@ -208,6 +208,7 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::CharacterField { .. } => CharacterField => Accepted,
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
+    CheckedValueResolution::CatalogAsset(_) => CatalogAsset => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
     CheckedValueResolution::Registered(_) => Registered => Accepted,
     CheckedValueResolution::Constant(_) => Constant => Accepted,
@@ -769,6 +770,16 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
 
 fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     vec![
+        ExpressionCorpusRow {
+            name: "checked catalog Asset references",
+            exact_path_families: false,
+            source: "fn root(flag: bool) -> Ref<Asset> { match flag { true => @asset:.bg.pulse, false => @asset.bg.room } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural, ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::CatalogAsset],
+            selects: &[],
+        },
         ExpressionCorpusRow {
             name: "checked Entry references",
             exact_path_families: false,
@@ -1640,5 +1651,43 @@ fn checked_match_expression_corpus_excludes_unrelated_declaration_expressions() 
     assert!(
         !observation.shapes.contains(&ExprShapeFamily::Range),
         "an unrelated checked Range must not enter the Match corpus",
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_catalog_asset_identity_without_source_spelling() {
+    let source = |first: &str| {
+        format!(
+            "fn root(flag: bool) -> Ref<Asset> {{ match flag {{ true => {first}, false => @asset.bg.room }} }}"
+        )
+    };
+    let relative = ExpressionCorpusFixture::Standard.build(&source("@asset:.bg.pulse"));
+    let absolute = ExpressionCorpusFixture::Standard.build(&source("@asset.bg.pulse"));
+    let changed = ExpressionCorpusFixture::Standard.build(&source("@asset:.bg.poster"));
+    let relative = accepted_match_expression_corpus_observation_for_fixture(&relative);
+    let absolute = accepted_match_expression_corpus_observation_for_fixture(&absolute);
+    let changed = accepted_match_expression_corpus_observation_for_fixture(&changed);
+    assert_eq!(
+        relative.semantic_digest, absolute.semantic_digest,
+        "normalized catalog identity is independent of reference spelling"
+    );
+    assert_ne!(
+        relative.semantic_digest, changed.semantic_digest,
+        "changing the actual catalog identity changes the admitted Match transcript"
+    );
+    let assets = relative
+        .value_facts
+        .iter()
+        .filter_map(|(value, ty)| {
+            let CheckedValueResolution::CatalogAsset(asset) = value else {
+                return None;
+            };
+            assert_eq!(ty, &TypeKind::entity_ref(EntityKind::Asset));
+            Some(asset.as_str())
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        assets,
+        ["asset.bg.pulse", "asset.bg.room"].into_iter().collect()
     );
 }

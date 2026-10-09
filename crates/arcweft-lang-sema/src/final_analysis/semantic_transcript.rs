@@ -3104,6 +3104,9 @@ fn write_value_resolution(
             transcript_update!(hasher, item.semantic_id().as_bytes());
             transcript_update!(hasher, item.value_type().as_bytes());
         }
+        CheckedValueResolution::CatalogAsset(asset) => {
+            write_bytes(hasher, asset.as_public_id().canonical_identity_bytes())?;
+        }
         CheckedValueResolution::Entry(entry) => {
             transcript_update!(hasher, entry.binding().as_bytes());
             transcript_update!(hasher, entry.value_type().as_bytes());

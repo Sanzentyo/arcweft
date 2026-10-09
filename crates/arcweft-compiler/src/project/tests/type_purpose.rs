@@ -15,6 +15,14 @@ fn ref_flow_signature_retains_every_type_owner_and_rejects_wrong_purpose_project
     );
 }
 
+#[test]
+fn ref_asset_signature_retains_every_type_owner_and_rejects_wrong_purpose_projection() {
+    assert_entity_family_type_partition(
+        "entry cli @entry.main { goto @flow.main }\nfn choose(flag: bool) -> Ref<Asset> { match flag { true => @asset:.bg.pulse, false => @asset:.bg.room } }\nflow main() -> String { return choose(true).id }",
+        EntityKind::Asset,
+    );
+}
+
 fn assert_entity_family_type_partition(source: &str, family: EntityKind) {
     let (project, context) = removed_role_project(source);
     let (mut session, sources) = compilation_state(&project);

@@ -770,6 +770,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                         if matches!(
                             value,
                             super::CheckedValueResolution::Local(_)
+                                | super::CheckedValueResolution::CatalogAsset(_)
                                 | super::CheckedValueResolution::Registered(_)
                                 | super::CheckedValueResolution::Constant(_)
                         ) || (matches!(

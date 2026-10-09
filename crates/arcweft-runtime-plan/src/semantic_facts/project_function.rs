@@ -1839,6 +1839,34 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             return Err(RuntimeProjectFunctionFactError::IncompleteTypeProjection);
         }
 
+        for row in &expressions {
+            if let RuntimeProjectFunctionExpressionPayload::Value(RuntimeResolvedValue::Entity(
+                entity,
+            )) = row.payload()
+            {
+                if !entity.origin().validate_authority(&local_uses, row.owner()) {
+                    return Err(RuntimeProjectFunctionFactError::InvalidEntityValueOrigin {
+                        expression: row.owner(),
+                    });
+                }
+                let ty = type_projection
+                    .binary_search_by_key(
+                        &RuntimeProjectFunctionTypeOwner::Expression(row.owner()),
+                        RuntimeProjectFunctionTypeProjection::owner,
+                    )
+                    .ok()
+                    .and_then(|index| type_projection[index].ty());
+                if ty.is_none_or(|ty| {
+                    ty.identity().as_bytes() != entity.type_identity().as_bytes()
+                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+                }) {
+                    return Err(RuntimeProjectFunctionFactError::InvalidEntityValueType {
+                        expression: row.owner(),
+                    });
+                }
+            }
+        }
+
         let expression_owners = expressions
             .iter()
             .map(RuntimeProjectFunctionExpressionSemanticFact::owner)
@@ -3065,6 +3093,12 @@ pub enum RuntimeProjectFunctionFactError {
     InvalidExecution,
     #[error("project-function type projection is not strictly owner-ordered and unique")]
     NonCanonicalTypeProjection,
+    #[error(
+        "closed entity value for {expression:?} belongs to another accepted expression or generation"
+    )]
+    InvalidEntityValueOrigin { expression: ExprId },
+    #[error("closed entity value for {expression:?} has a different canonical Ref type")]
+    InvalidEntityValueType { expression: ExprId },
     #[error("project-function semantic subcatalog does not match its sealed executable partition")]
     NonCanonicalSemanticFacts,
     #[error("project-function fact refers to a HIR owner in another module")]

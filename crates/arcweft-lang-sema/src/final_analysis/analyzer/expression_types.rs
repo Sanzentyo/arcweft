@@ -144,6 +144,9 @@ pub(super) fn value_resolution_type(
         // Named callable values require the staged body-effect authority.
         CheckedValueResolution::ProjectCallable(_) => None,
         CheckedValueResolution::ProjectItem(item) => Some(item.ty()),
+        CheckedValueResolution::CatalogAsset(_) => {
+            Some(TypeKind::entity_ref(crate::types::EntityKind::Asset))
+        }
         CheckedValueResolution::Entry(entry) => Some(entry.ty()),
         CheckedValueResolution::Constant(literal) => literal_type(literal, None).map(|(ty, _)| ty),
     }

@@ -4427,6 +4427,32 @@ impl Analyzer<'_, '_, '_> {
                 let reference = reference.as_resolved().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                 })?;
+                // Catalog assets and source declarations are disjoint identity
+                // domains. Select the domain from the admitted HIR reference
+                // before invoking a declaration resolver; no failed-lookup
+                // fallback or source spelling reader participates here.
+                if let Some(public_id) =
+                    reference.declaration_public_id(arcweft_id::DeclarationIdentityFamily::Asset)
+                {
+                    let asset = arcweft_id::AssetId::try_from(public_id)
+                        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+                    let ty = TypeKind::entity_ref(EntityKind::Asset);
+                    if matches!(
+                        expectation,
+                        AnalyzerExpressionExpectation::Complete(expected)
+                            if !expected.accepts(&ty)
+                    ) {
+                        return Err(AnalyzerExpressionError::rejected(owner).into());
+                    }
+                    return Ok(Some(CheckedExpression::value(
+                        ty,
+                        CheckedTypeSelection::Inferred,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::Value(CheckedValueResolution::CatalogAsset(
+                            asset,
+                        )),
+                    )));
+                }
                 if matches!(
                     expected,
                     Some(TypeKind::Ref(entity))

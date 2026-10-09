@@ -2036,6 +2036,9 @@ fn validate_value(
         }
         CheckedValueResolution::ProjectItem(item) => validate_project_item(symbols, modules, item),
         CheckedValueResolution::Entry(entry) => validate_entry_reference(modules, entry),
+        CheckedValueResolution::CatalogAsset(asset) => arcweft_id::DeclarationIdentityFamily::Asset
+            .validate_public_id(asset.as_public_id())
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedValueResolution::LineContext
         | CheckedValueResolution::Registered(_)
         | CheckedValueResolution::Constant(_) => Ok(()),

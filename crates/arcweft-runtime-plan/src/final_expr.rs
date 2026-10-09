@@ -31,7 +31,7 @@ use arcweft_lang_sema::final_analysis::{
 };
 
 use crate::agent::RuntimeAgentIntrinsic;
-use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
+use crate::final_pattern::FinalPatternLowerer;
 use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
@@ -1872,9 +1872,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.checked_local_read(CheckedLocalUseSite::Expression(id), place.local())?,
             )),
             RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
-            RuntimeResolvedValue::ProjectItem(item) => Ok(RuntimeExprSeedKind::EntityRef(
-                project_entity_reference(item),
-            )),
+            RuntimeResolvedValue::Entity(entity) => {
+                Ok(RuntimeExprSeedKind::EntityRef(entity.runtime_reference()))
+            }
             RuntimeResolvedValue::ProjectCallable { target, .. } => {
                 let state = match target {
                     RuntimeProjectCallableValueTarget::Closed(instance) => self
@@ -3334,7 +3334,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
     ) -> Result<arcweft_core::value::RuntimeEntityReference, String> {
         match self.value(id) {
-            Some(RuntimeResolvedValue::ProjectItem(item)) => Ok(project_entity_reference(item)),
+            Some(RuntimeResolvedValue::Entity(entity)) => Ok(entity.runtime_reference()),
             Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(
                 arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
             ),

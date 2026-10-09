@@ -57,6 +57,8 @@ pub use execution_regions::{
     CheckedExecutionBodyOwner, CheckedExecutionOperation, CheckedExecutionRegion,
 };
 mod deterministic_program;
+mod entity_value;
+pub use entity_value::{CheckedEntityValueProjection, CheckedEntityValueProjectionError};
 mod execution_inputs;
 mod flow_execution;
 pub use deterministic_program::{CheckedDeterministicProgram, CheckedProgramAdmissionError};

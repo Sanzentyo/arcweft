@@ -1486,6 +1486,16 @@ pub struct CheckedExpressionOrigin {
 }
 
 impl CheckedExpressionOrigin {
+    pub const fn expression(&self) -> ExprId {
+        self.expression
+    }
+
+    pub fn generation(
+        &self,
+    ) -> &std::sync::Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
+        self.topology.generation()
+    }
+
     pub(crate) fn new(
         expression: ExprId,
         topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,

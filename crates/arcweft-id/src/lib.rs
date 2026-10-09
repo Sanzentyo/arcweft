@@ -322,6 +322,17 @@ impl AssetId {
     }
 }
 
+/// Admits an already normalized Asset identity. This checks the closed
+/// identity family; the owning asset catalog still checks existence and data.
+impl TryFrom<PublicId> for AssetId {
+    type Error = PublicIdFamilyError;
+
+    fn try_from(id: PublicId) -> Result<Self, Self::Error> {
+        DeclarationIdentityFamily::Asset.validate_public_id(&id)?;
+        Ok(Self(id))
+    }
+}
+
 impl TryFrom<&AssetVirtualPath> for AssetId {
     type Error = AssetIdError;
 
@@ -751,5 +762,32 @@ mod tests {
         assert!(DeclarationName::try_new("alice_2").is_ok());
         assert!(DeclarationName::try_new("dialogue.main").is_err());
         assert!(DeclarationName::try_new("2dialogue").is_err());
+    }
+}
+
+#[cfg(test)]
+mod catalog_reference_tests {
+    use super::{AssetId, AssetVirtualPath, PublicId, PublicIdFamilyError};
+
+    #[test]
+    fn source_asset_identity_matches_the_catalog_virtual_path_owner() {
+        let catalog =
+            AssetId::try_from(&AssetVirtualPath::try_new("bg/pulse.gif").unwrap()).unwrap();
+        let source = AssetId::try_from(PublicId::try_new("asset.bg.pulse").unwrap()).unwrap();
+        assert_eq!(source, catalog);
+        assert_eq!(
+            source.as_public_id().canonical_identity_bytes(),
+            catalog.as_public_id().canonical_identity_bytes()
+        );
+    }
+
+    #[test]
+    fn source_asset_identity_rejects_another_family_or_missing_suffix() {
+        for id in ["view.bg.pulse", "asset", "asset."] {
+            let rejected = PublicId::try_new(id).unwrap();
+            assert!(
+                matches!(AssetId::try_from(rejected.clone()), Err(PublicIdFamilyError::WrongFamily { expected: "asset", id }) if id == rejected)
+            );
+        }
     }
 }
