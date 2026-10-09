@@ -14,7 +14,7 @@ use crate::plan::{
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
-    RuntimeI64Args, RuntimePureCallBackend, RuntimePureHelperRef, VmPureFunctionBackend,
+    RuntimeI64Args, RuntimePureCallBackend, RuntimePureFunctionRef, VmPureFunctionBackend,
     VmPureFunctionScratch, VmRuntimePureCallBackend, compare_pure_function_backend,
 };
 use crate::scope::RuntimeScopeIdentity;
@@ -73,13 +73,14 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
         })
         .expect("move-only pure helper");
     let plan = Arc::new(builder.finish().expect("sealed pure helper"));
-    let helper =
-        RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id).expect("helper reference");
-    assert_eq!(helper.definition.as_bytes(), &[51; 32]);
-    assert_eq!(helper.inputs[0].abi(), RuntimePureInputType::Value);
+    let helper = RuntimePureFunctionRef::resolve(&plan, plan.pure_helpers()[0].id)
+        .expect("helper reference");
+    assert_eq!(helper.definition().as_bytes(), &[51; 32]);
+    let input = helper.inputs.get(0).expect("complete affine formal");
+    assert_eq!(input.abi(), RuntimePureInputType::Value);
     assert_eq!(
-        helper.inputs[0].passing(),
-        crate::plan::RuntimeFunctionParameterPassing::Affine
+        input.passing(),
+        Some(crate::plan::RuntimeFunctionParameterPassing::Affine)
     );
     let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"));
     assert!(!value.ownership().permits_copy());
@@ -158,7 +159,7 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
         })
         .expect("collect helper admits");
     let plan = Arc::new(builder.finish().expect("collect helper seals"));
-    let helper = RuntimePureHelperRef::resolve(&plan, plan.pure_helpers()[0].id)
+    let helper = RuntimePureFunctionRef::resolve(&plan, plan.pure_helpers()[0].id)
         .expect("collect helper reference");
     let item = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.collect"));
     let original = match &item {
@@ -751,8 +752,8 @@ struct AdmittedHelper {
 }
 
 impl AdmittedHelper {
-    fn helper_ref(&self) -> RuntimePureHelperRef<'_> {
-        RuntimePureHelperRef::resolve(&self.plan, self.helper).expect("admitted helper")
+    fn function_ref(&self) -> RuntimePureFunctionRef<'_> {
+        RuntimePureFunctionRef::resolve(&self.plan, self.helper).expect("admitted helper")
     }
 
     fn request(&self, args: impl IntoIterator<Item = RuntimeValue>) -> PureFunctionRequest {
@@ -828,7 +829,7 @@ fn pure_request_is_qualified_by_the_admitted_plan_and_helper() {
     let request = helper.request([RuntimeValue::i64(3), RuntimeValue::i64(4)]);
 
     assert!(Arc::ptr_eq(request.plan(), &helper.plan));
-    assert_eq!(request.helper_id(), helper.helper);
+    assert_eq!(request.function_id(), helper.helper.into());
     assert_eq!(
         request
             .bindings()
@@ -880,7 +881,7 @@ fn runtime_backend_accepts_only_a_plan_qualified_helper_handle() {
     let mut backend = VmRuntimePureCallBackend::default();
 
     let value = backend
-        .call_i64(helper.helper_ref(), RuntimeI64Args::new([9, 4, 0, 0], 2))
+        .call_i64(helper.function_ref(), RuntimeI64Args::new([9, 4, 0, 0], 2))
         .expect("runtime helper call");
 
     assert_eq!(value, Some(13));
@@ -902,7 +903,7 @@ fn runtime_backend_flat_batch_reuses_the_same_plan_qualified_helper() {
     let mut output = [0; 3];
 
     backend
-        .call_i64_flat_batch(helper.helper_ref(), &[2, 3, 4, 5, 6, 7], 2, &mut output)
+        .call_i64_flat_batch(helper.function_ref(), &[2, 3, 4, 5, 6, 7], 2, &mut output)
         .expect("typed flat batch");
 
     assert_eq!(output, [6, 20, 42]);

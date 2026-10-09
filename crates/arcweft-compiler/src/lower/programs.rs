@@ -137,6 +137,175 @@ pub(crate) fn project(
     )?)
 }
 
+// Public owner seam for compiling a selected accepted deterministic body.
+// The selected root uses the same checked context, root reachability and
+// instance materializer as the other accepted deterministic programs.
+
+use arcweft_core::plan::RuntimePlan;
+use arcweft_id::runtime_program::RuntimePureProgramId;
+use arcweft_lang_sema::final_analysis::{
+    CheckedExecutionSource, CheckedLocalUseInstanceIdentity, CheckedLocalUseInstantiation,
+};
+use arcweft_runtime_plan::flow::RuntimePlanLowerStats;
+use thiserror::Error;
+
+/// One selected root and its immutable, complete plan. Persisted artifact
+/// binding remains with the transport that emits the canonical artifact.
+#[derive(Clone, Debug)]
+pub struct CompiledDeterministicProgram {
+    plan: Arc<RuntimePlan>,
+    program: RuntimePureProgramId,
+    report: Arc<arcweft_runtime_plan::flow::RuntimePlanLowerReport>,
+}
+
+impl CompiledDeterministicProgram {
+    pub const fn plan(&self) -> &Arc<RuntimePlan> {
+        &self.plan
+    }
+
+    pub const fn program(&self) -> RuntimePureProgramId {
+        self.program
+    }
+
+    pub fn stats(&self) -> &RuntimePlanLowerStats {
+        &self.report.stats
+    }
+
+    /// Retains the same lowering generation's Content, presentation and
+    /// assertion products required by bytecode and persisted consumers.
+    pub const fn lowering_report(
+        &self,
+    ) -> &Arc<arcweft_runtime_plan::flow::RuntimePlanLowerReport> {
+        &self.report
+    }
+
+    pub fn function_site(
+        &self,
+    ) -> Result<
+        arcweft_core::runtime_id::RuntimeFunctionSiteId,
+        arcweft_core::plan::RuntimePureProgramLookupError,
+    > {
+        self.plan
+            .pure_program_binding(self.program)
+            .map(|binding| binding.site())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum DeterministicProgramCompileError {
+    #[error(transparent)]
+    Hir(#[from] arcweft_lang_hir::project::HirProjectAnalysisError),
+    #[error(transparent)]
+    Context(#[from] Box<arcweft_lang_sema::final_analysis::CheckedExecutionContextError>),
+    #[error(transparent)]
+    Admission(#[from] arcweft_lang_sema::final_analysis::CheckedProgramAdmissionError),
+    #[error(transparent)]
+    Reachability(#[from] Box<super::RuntimeReachabilityProjectionError>),
+    #[error(transparent)]
+    Projection(#[from] Box<super::RuntimeSemanticProjectionError>),
+    #[error("selected deterministic program Fx catalog failed: {reason}")]
+    Fx { reason: String },
+    #[error("selected deterministic program lowering failed: {diagnostics:?}")]
+    RuntimeLower {
+        diagnostics: Box<[arcweft_runtime_plan::errors::RuntimePlanLowerError]>,
+    },
+}
+
+pub fn compile_deterministic_program(
+    lease: &crate::project::ProjectAnalysisLease,
+    source: CheckedExecutionSource,
+    instance: Option<CheckedLocalUseInstantiation<'_>>,
+    control: &super::ProjectInstantiationControl,
+) -> Result<CompiledDeterministicProgram, DeterministicProgramCompileError> {
+    let analysis = lease.final_analysis();
+    let hir = lease.hir_project().analysis_view()?;
+    let context = analysis
+        .checked_execution_context(hir, lease.project_symbols(), source.clone(), instance)
+        .map_err(Box::new)?;
+    let admission = Arc::new(context.checked_deterministic_program(source)?);
+    let abi = admission.input_abi();
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"arcweft.compiler.selected-deterministic-program.v1\0");
+    hash.update(lease.program_hash().as_str().as_bytes());
+    hash.update(abi.definition_identity().runtime_identity().as_bytes());
+    match abi.instance_identity() {
+        None => {
+            hash.update(&[0]);
+        }
+        Some(CheckedLocalUseInstanceIdentity::ProjectFunction { instantiation, .. }) => {
+            hash.update(&[1]);
+            hash.update(instantiation.bytes());
+        }
+        Some(CheckedLocalUseInstanceIdentity::DisplayText { self_type, .. }) => {
+            hash.update(&[2]);
+            hash.update(self_type.as_bytes());
+        }
+    }
+    let program = RuntimePureProgramId::from_checked_digest(*hash.finalize().as_bytes());
+    let fact = project(
+        program,
+        admission,
+        lease.project_symbols(),
+        lease.registered_world(),
+        analysis,
+    )
+    .map_err(Box::new)?;
+    // No ordinary Flow/Entry root is selected. These empty roots and the
+    // actual program roots are both authenticated by the existing owner API.
+    let ordinary = super::project_program_reachability(
+        hir,
+        lease.project_symbols(),
+        analysis,
+        std::iter::empty::<&arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>(),
+    )
+    .map_err(Box::new)?;
+    let roots = super::project_program_reachability(
+        hir,
+        lease.project_symbols(),
+        analysis,
+        [fact.admission()],
+    )
+    .map_err(Box::new)?;
+    let fx = crate::fx_catalog::CompiledFxCatalog::lower(analysis).map_err(|error| {
+        DeterministicProgramCompileError::Fx {
+            reason: error.to_string(),
+        }
+    })?;
+    let facts = super::project_runtime_semantic_facts_with_programs_and_fx(
+        hir,
+        lease.project_symbols(),
+        lease.registered_world(),
+        analysis,
+        &ordinary,
+        &roots,
+        &[fact],
+        None,
+        &fx,
+        control,
+    )
+    .map_err(Box::new)?;
+    let lowered = arcweft_runtime_plan::flow::lower_runtime_plan_with_stats(
+        hir,
+        &facts,
+        &arcweft_runtime_plan::flow::RuntimeEntryLoweringInput::new(
+            hir,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ),
+    )
+    .map_err(
+        |diagnostics| DeterministicProgramCompileError::RuntimeLower {
+            diagnostics: diagnostics.into_boxed_slice(),
+        },
+    )?;
+    Ok(CompiledDeterministicProgram {
+        plan: Arc::new(lowered.plan.clone()),
+        program,
+        report: Arc::new(lowered),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RuntimePureProgramFact, RuntimeSemanticProjectionError, project};
@@ -280,6 +449,113 @@ mod tests {
     fn declared_program_executes_full_formal_inputs_through_native_and_awbc() {
         assert_declared_program(
             "pub fn root(value: i64, unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
+        );
+    }
+
+    #[test]
+    fn selected_unused_function_retains_full_formals_in_pure_aot_and_awbc() {
+        use arcweft_core::pure::{
+            AotPureFunctionBackend, PureFunctionBackend, PureFunctionRequest,
+            RuntimePureFunctionRef, VmPureFunctionBackend,
+        };
+
+        let compiled = crate::source::compile_source(
+            "pub fn root(value: i64, unused: i64) -> i64 { value + 1i64 }\nflow main() -> String { return \"ok\" }\n",
+        )
+        .unwrap();
+        let lease = &compiled.analysis;
+        let declaration = lease
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        let selected = lease
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &ProjectInstantiationControl::default(),
+            )
+            .unwrap();
+        let site = selected.function_site().unwrap();
+        let function = RuntimePureFunctionRef::resolve(selected.plan(), site).unwrap();
+        assert_eq!(function.inputs.len(), 2);
+        assert_eq!(
+            function.function_site().unwrap().parameter_inputs().count(),
+            2
+        );
+        assert!(selected.plan().pure_helpers().is_empty());
+        assert!(
+            PureFunctionRequest::try_new(
+                Arc::clone(selected.plan()),
+                site,
+                vec![RuntimeValue::i64(41)],
+            )
+            .is_err()
+        );
+        let arguments = [RuntimeValue::i64(41), RuntimeValue::i64(999)];
+        let request =
+            PureFunctionRequest::try_new(Arc::clone(selected.plan()), site, arguments.to_vec())
+                .unwrap();
+        assert_eq!(
+            VmPureFunctionBackend.evaluate(&request).unwrap().value,
+            RuntimeValue::i64(42)
+        );
+        let locals = function
+            .inputs
+            .iter()
+            .map(|input| input.local())
+            .collect::<Vec<_>>();
+        let aot = AotPureFunctionBackend::new()
+            .compile_i64_with_inputs(&request, locals.iter().copied())
+            .unwrap();
+        assert_eq!(aot.call_with_inputs(&[41, 999]).unwrap().0, 42);
+
+        let mut plan = selected.plan().as_ref().clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([71; 32]).unwrap(),
+        )
+        .unwrap();
+        let plan = Arc::new(plan);
+        let mut native = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        assert_eq!(
+            arcweft_core::pure::evaluate_pure_program_with_backend(
+                &plan,
+                selected.program(),
+                &arguments,
+                &mut native,
+            )
+            .unwrap(),
+            RuntimeValue::i64(42)
+        );
+        let awbc = Arc::new(
+            arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                &plan,
+                &selected.lowering_report().dialogue_content_catalog,
+                "selected-unused-formals.arcw",
+            )
+            .lower()
+            .unwrap()
+            .program,
+        );
+        let mut product = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        assert_eq!(
+            arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                &awbc,
+                selected.program(),
+                &arguments,
+                &mut product,
+            )
+            .unwrap(),
+            RuntimeValue::i64(42)
         );
     }
 

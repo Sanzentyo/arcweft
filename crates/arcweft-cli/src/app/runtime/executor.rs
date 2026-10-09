@@ -16,27 +16,28 @@ pub(in crate::app) struct RuntimeExecutorCore {
 }
 
 pub(in crate::app) struct RuntimeExecutorTemplate {
-    plan: RuntimePlan,
+    plan: Arc<RuntimePlan>,
     entry: EntryRuntimeId,
     tier: ArcweftExecutionTier,
 }
 
 impl RuntimeExecutorTemplate {
     pub(in crate::app) fn new(
-        plan: &RuntimePlan,
+        plan: Arc<RuntimePlan>,
         entry: EntryRuntimeId,
         tier: CliRuntimeExecutorTier,
     ) -> Self {
         Self {
-            plan: plan.clone(),
+            plan,
             entry,
             tier: arcweft_execution_tier(tier),
         }
     }
 
     pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, String> {
-        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(self.plan.clone(), self.tier)
-            .map_err(|error| error.to_string())?;
+        let mut executor =
+            ArcweftRuntimeExecutor::from_runtime_plan(Arc::clone(&self.plan), self.tier)
+                .map_err(|error| error.to_string())?;
         executor
             .start_structured_entry(&self.entry)
             .map_err(|error| error.to_string())?;
@@ -76,11 +77,9 @@ impl RuntimeExecutorInstance {
     ) -> Result<Self, String> {
         let plan = Arc::new(plan);
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan);
-        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(
-            Arc::unwrap_or_clone(plan),
-            arcweft_execution_tier(tier),
-        )
-        .map_err(|error| error.to_string())?;
+        let mut executor =
+            ArcweftRuntimeExecutor::from_runtime_plan(plan, arcweft_execution_tier(tier))
+                .map_err(|error| error.to_string())?;
         executor
             .start_structured_entry(entry)
             .map_err(|error| error.to_string())?;

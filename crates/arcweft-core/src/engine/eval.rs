@@ -822,7 +822,7 @@ impl Engine {
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
         out.resize(row_count, 0);
-        let helper = crate::pure::RuntimePureHelperRef::resolve(&self.plan, helper_id)?;
+        let helper = crate::pure::RuntimePureFunctionRef::resolve(&self.plan, helper_id)?;
         let batch_result = pure_backend.call_i64_flat_batch(helper, flat_inputs, arity, &mut out);
         if let Err(error) = batch_result {
             self.pure_i64_batch_outputs = out;

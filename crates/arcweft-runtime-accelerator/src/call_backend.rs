@@ -10,7 +10,7 @@ use super::{
     DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64, RuntimeEvalError,
     RuntimeExactInteger, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
     RuntimeIntrinsic, RuntimeMathCallBackend, RuntimePureAccelerator, RuntimePureBackendMode,
-    RuntimePureCacheEntry, RuntimePureCallBackend, RuntimePureCallStats, RuntimePureHelperRef,
+    RuntimePureCacheEntry, RuntimePureCallBackend, RuntimePureCallStats, RuntimePureFunctionRef,
     RuntimePureInputType, RuntimePureOutputType, RuntimePureScalarInteger, RuntimeValue,
     call_jit_exact_int_flat_batch, call_jit_exact_int_flat_batch_sum, call_jit_exact_int_slice,
     inference,
@@ -23,10 +23,10 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i8],
     ) -> Result<Option<i8>, RuntimeEvalError> {
-        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper) {
             validate_exact_int_slice_shape::<i8>(helper, args.len())?;
             self.stats.pure_calls += 1;
             self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
@@ -34,7 +34,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += 1;
             return compiled.call(args).map(Some).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -44,7 +44,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         out: &mut [i8],
@@ -53,7 +53,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += out.len();
             self.stats.flat_batch_calls += 1;
@@ -66,7 +66,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += out.len();
             return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -76,7 +76,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         rows: usize,
@@ -85,7 +85,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
             self.stats.flat_batch_calls += 1;
@@ -98,7 +98,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             return compiled
                 .call_flat_batch_sum(flat_inputs, rows)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 });
         }
@@ -107,10 +107,10 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i16],
     ) -> Result<Option<i16>, RuntimeEvalError> {
-        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper) {
             validate_exact_int_slice_shape::<i16>(helper, args.len())?;
             self.stats.pure_calls += 1;
             self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
@@ -118,7 +118,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += 1;
             return compiled.call(args).map(Some).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -128,7 +128,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         out: &mut [i16],
@@ -137,7 +137,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += out.len();
             self.stats.flat_batch_calls += 1;
@@ -150,7 +150,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += out.len();
             return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -160,7 +160,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         rows: usize,
@@ -169,7 +169,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
             self.stats.flat_batch_calls += 1;
@@ -182,7 +182,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             return compiled
                 .call_flat_batch_sum(flat_inputs, rows)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 });
         }
@@ -191,7 +191,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         out: &mut [i128],
@@ -201,7 +201,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
         if let Some(RuntimePureCacheEntry::JitI128Batch(compiled)) =
-            cache_entry(&self.cache, helper.id)
+            cache_entry(&self.cache, helper)
         {
             self.stats.batch_calls += 1;
             self.stats.batch_items += out.len();
@@ -215,7 +215,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += out.len();
             return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -225,7 +225,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         rows: usize,
@@ -235,7 +235,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
         if let Some(RuntimePureCacheEntry::JitI128Batch(compiled)) =
-            cache_entry(&self.cache, helper.id)
+            cache_entry(&self.cache, helper)
         {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
@@ -249,7 +249,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             return compiled
                 .call_flat_batch_sum(flat_inputs, rows)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 });
         }
@@ -258,7 +258,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI32Args,
     ) -> Result<Option<i32>, RuntimeEvalError> {
         self.stats.arg_stack_packs += 1;
@@ -268,7 +268,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
     ) -> Result<Option<i32>, RuntimeEvalError> {
         self.call_i32_slice_with_accounting(helper, args, true)
@@ -276,7 +276,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         out: &mut [i32],
@@ -286,13 +286,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitI32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -332,7 +332,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         rows: usize,
@@ -342,14 +342,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitI32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
                 compiled
                     .call_flat_batch_sum(flat_inputs, rows)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -388,7 +388,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u32],
     ) -> Result<Option<u32>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<u32>(helper, args.len())?;
@@ -397,7 +397,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -405,7 +405,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -432,7 +432,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                u32::try_from_runtime_value(&helper.name, value).map(Some)
+                u32::try_from_runtime_value(helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
@@ -443,17 +443,17 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                u32::try_from_runtime_value(&helper.name, value).map(Some)
+                u32::try_from_runtime_value(helper.name, value).map(Some)
             }
         }
     }
 
     fn call_u8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u8],
     ) -> Result<Option<u8>, RuntimeEvalError> {
-        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper) {
             validate_exact_int_slice_shape::<u8>(helper, args.len())?;
             self.stats.pure_calls += 1;
             self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
@@ -461,7 +461,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += 1;
             return compiled.call(args).map(Some).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -471,7 +471,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         out: &mut [u8],
@@ -480,7 +480,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += out.len();
             self.stats.flat_batch_calls += 1;
@@ -493,7 +493,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += out.len();
             return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -503,7 +503,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         rows: usize,
@@ -512,7 +512,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
             self.stats.flat_batch_calls += 1;
@@ -525,7 +525,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             return compiled
                 .call_flat_batch_sum(flat_inputs, rows)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 });
         }
@@ -534,10 +534,10 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u16],
     ) -> Result<Option<u16>, RuntimeEvalError> {
-        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper) {
             validate_exact_int_slice_shape::<u16>(helper, args.len())?;
             self.stats.pure_calls += 1;
             self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
@@ -545,7 +545,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += 1;
             return compiled.call(args).map(Some).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -555,7 +555,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         out: &mut [u16],
@@ -564,7 +564,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += out.len();
             self.stats.flat_batch_calls += 1;
@@ -577,7 +577,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             self.stats.jit_calls += out.len();
             return compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                 RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 }
             });
@@ -587,7 +587,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         rows: usize,
@@ -596,7 +596,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper.id) {
+        if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper) {
             self.stats.batch_calls += 1;
             self.stats.batch_items += rows;
             self.stats.flat_batch_calls += 1;
@@ -609,7 +609,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
             return compiled
                 .call_flat_batch_sum(flat_inputs, rows)
                 .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: helper.name.clone(),
+                    name: helper.name.to_owned(),
                     reason: error.to_string(),
                 });
         }
@@ -618,7 +618,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         out: &mut [u32],
@@ -628,13 +628,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -674,7 +674,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         rows: usize,
@@ -684,14 +684,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
                 compiled
                     .call_flat_batch_sum(flat_inputs, rows)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -742,7 +742,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u64],
     ) -> Result<Option<u64>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<u64>(helper, args.len())?;
@@ -751,7 +751,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -759,7 +759,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -786,7 +786,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                u64::try_from_runtime_value(&helper.name, value).map(Some)
+                u64::try_from_runtime_value(helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
@@ -797,14 +797,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                u64::try_from_runtime_value(&helper.name, value).map(Some)
+                u64::try_from_runtime_value(helper.name, value).map(Some)
             }
         }
     }
 
     fn call_u64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         out: &mut [u64],
@@ -814,13 +814,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -860,7 +860,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         rows: usize,
@@ -870,14 +870,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
                 compiled
                     .call_flat_batch_sum(flat_inputs, rows)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -928,7 +928,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         out: &mut [u128],
@@ -938,13 +938,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU128Batch(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -984,7 +984,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         rows: usize,
@@ -994,14 +994,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitU128Batch(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
                 compiled
                     .call_flat_batch_sum(flat_inputs, rows)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -1052,7 +1052,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         rows: usize,
@@ -1065,7 +1065,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
-        let entry = cache_entry(&self.cache, helper.id);
+        let entry = cache_entry(&self.cache, helper);
         if let Some(entry) = entry
             && let Some(result) =
                 call_jit_exact_int_flat_batch_sum(entry, helper, flat_inputs, rows)
@@ -1122,7 +1122,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_exact_int_slice<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[T],
     ) -> Result<Option<T>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<T>(helper, args.len())?;
@@ -1131,7 +1131,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        let entry = cache_entry(&self.cache, helper.id);
+        let entry = cache_entry(&self.cache, helper);
         if let Some(entry) = entry
             && let Some(result) = call_jit_exact_int_slice(entry, helper, args)
         {
@@ -1163,7 +1163,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                T::try_from_runtime_value(&helper.name, value).map(Some)
+                T::try_from_runtime_value(helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
@@ -1174,14 +1174,14 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     helper.id(),
                     args,
                 )?;
-                T::try_from_runtime_value(&helper.name, value).map(Some)
+                T::try_from_runtime_value(helper.name, value).map(Some)
             }
         }
     }
 
     fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         out: &mut [T],
@@ -1194,7 +1194,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        let entry = cache_entry(&self.cache, helper.id);
+        let entry = cache_entry(&self.cache, helper);
         if let Some(entry) = entry
             && let Some(result) = call_jit_exact_int_flat_batch(entry, helper, flat_inputs, out)
         {
@@ -1238,7 +1238,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
@@ -1247,13 +1247,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
                 compiled.call_i64_args(args).map(Some).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -1271,7 +1271,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     self.stats.jit_calls += 1;
                     compiled.call_i64_args(args).map(Some).map_err(|error| {
                         RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.clone(),
+                            name: helper.name.to_owned(),
                             reason: error.to_string(),
                         }
                     })
@@ -1313,12 +1313,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i64],
     ) -> Result<Option<i64>, RuntimeEvalError> {
         if args.len() > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: args.len(),
             });
@@ -1328,7 +1328,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -1336,7 +1336,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -1353,7 +1353,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     self.stats.jit_calls += 1;
                     compiled.call(args).map(Some).map_err(|error| {
                         RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.clone(),
+                            name: helper.name.to_owned(),
                             reason: error.to_string(),
                         }
                     })
@@ -1395,7 +1395,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
@@ -1404,7 +1404,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
@@ -1414,7 +1414,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
@@ -1424,7 +1424,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
@@ -1433,12 +1433,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError> {
         if args.len() > RuntimeFloat32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeFloat32Args::MAX,
                 found: args.len(),
             });
@@ -1448,7 +1448,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitF32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -1456,7 +1456,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -1491,7 +1491,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f32],
         arity: usize,
         out: &mut [f32],
@@ -1509,13 +1509,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitF32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -1555,12 +1555,12 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError> {
         if args.len() > RuntimeFloat64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeFloat64Args::MAX,
                 found: args.len(),
             });
@@ -1570,7 +1570,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitF64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -1578,7 +1578,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }
@@ -1613,7 +1613,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f64],
         arity: usize,
         out: &mut [f64],
@@ -1631,13 +1631,13 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_flat_batch(helper, out.len());
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitF64(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -1677,7 +1677,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_values(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.pure_calls += 1;

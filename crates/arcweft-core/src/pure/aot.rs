@@ -1,10 +1,10 @@
 use super::{
     AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionBackend,
     PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult, PureFunctionStats,
-    RuntimePureScalar, RuntimePureScalarInteger, evaluate_scalar_binary, evaluate_scalar_unary,
-    runtime_value_as_scalar,
+    RuntimePureFunctionRef, RuntimePureScalar, RuntimePureScalarInteger, evaluate_scalar_binary,
+    evaluate_scalar_unary, runtime_value_as_scalar,
 };
-use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
+use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
@@ -174,24 +174,24 @@ impl AotPureI64Plan {
         request: &PureFunctionRequest,
         input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<Self, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         validate_output_abi(helper, RuntimePureOutputType::I64)?;
         let input_locals = input_locals.into_iter().collect::<Vec<_>>();
         for &local in &input_locals {
             validate_input_abi(request, helper, local, RuntimePureInputType::I64)?;
         }
         let mut ctx = AotCompileContext::from_request(request)?;
-        let expr = compile_aot_i64_expr(&helper.name, &helper.expr, &mut ctx)?;
+        let expr = compile_aot_i64_expr(helper.name, helper.expr, &mut ctx)?;
         let slot_count = ctx.next_slot;
         let input_slots = input_locals
             .into_iter()
-            .map(|local| ctx.input_slot(&helper.name, local))
+            .map(|local| ctx.input_slot(helper.name, local))
             .collect::<Result<Vec<_>, _>>()?;
         let mut initial_slots = AotCompileContext::initial_slots(request)?;
         initial_slots.resize(slot_count, 0);
         Ok(Self {
             plan: std::sync::Arc::clone(request.plan()),
-            helper: request.helper_id(),
+            helper: request.function_id(),
             expr,
             initial_slots,
             input_slots,
@@ -281,9 +281,16 @@ impl AotPureI64Plan {
         Ok((value, evaluator.stats))
     }
 
-    /// Helper name captured from the original request.
+    /// Function name from the original admitted plan.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the compiled function cannot resolve through its retained
+    /// plan. Compilation and immutable plan ownership preserve this invariant.
     pub fn name(&self) -> &str {
-        self.plan.pure_helpers()[self.helper.0].name.as_str()
+        RuntimePureFunctionRef::resolve(&self.plan, self.helper)
+            .expect("compiled AOT body retains its admitted plan")
+            .name
     }
 }
 
@@ -294,18 +301,18 @@ impl AotPureScalarPlan {
         input_type: RuntimePureInputType,
         output_type: RuntimePureOutputType,
     ) -> Result<Self, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         validate_output_abi(helper, output_type)?;
         let input_locals = input_locals.into_iter().collect::<Vec<_>>();
         for &local in &input_locals {
             validate_input_abi(request, helper, local, input_type)?;
         }
         let mut ctx = AotCompileContext::from_scalar_request(request)?;
-        let expr = compile_aot_scalar_expr(&helper.name, &helper.expr, &mut ctx)?;
+        let expr = compile_aot_scalar_expr(helper.name, helper.expr, &mut ctx)?;
         let slot_count = ctx.next_slot;
         let input_slots = input_locals
             .into_iter()
-            .map(|local| ctx.input_slot(&helper.name, local))
+            .map(|local| ctx.input_slot(helper.name, local))
             .collect::<Result<Vec<_>, _>>()?;
         let mut initial_slots = AotCompileContext::initial_scalar_slots(request)?;
         initial_slots.resize(
@@ -314,7 +321,7 @@ impl AotPureScalarPlan {
         );
         Ok(Self {
             plan: std::sync::Arc::clone(request.plan()),
-            helper: request.helper_id(),
+            helper: request.function_id(),
             expr,
             initial_slots,
             input_slots,
@@ -460,15 +467,22 @@ impl AotPureScalarPlan {
         Ok((value, evaluator.stats))
     }
 
-    /// Helper name captured from the original request.
+    /// Function name from the original admitted plan.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the compiled function cannot resolve through its retained
+    /// plan. Compilation and immutable plan ownership preserve this invariant.
     pub fn name(&self) -> &str {
-        self.plan.pure_helpers()[self.helper.0].name.as_str()
+        RuntimePureFunctionRef::resolve(&self.plan, self.helper)
+            .expect("compiled AOT body retains its admitted plan")
+            .name
     }
 }
 
 impl AotCompileContext {
     fn from_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         let mut slots = BTreeMap::new();
         for binding in request.bindings() {
             if !matches!(
@@ -476,13 +490,13 @@ impl AotCompileContext {
                 RuntimeValue::Int(crate::value::RuntimeInt::I64(_))
             ) {
                 return Err(unsupported_aot(
-                    &helper.name,
+                    helper.name,
                     format!("local {} is not an i64 integer", binding.local),
                 ));
             }
             if slots.insert(binding.local, slots.len()).is_some() {
                 return Err(unsupported_aot(
-                    &helper.name,
+                    helper.name,
                     format!("local {} is duplicated", binding.local),
                 ));
             }
@@ -492,19 +506,19 @@ impl AotCompileContext {
     }
 
     fn initial_slots(request: &PureFunctionRequest) -> Result<Vec<i64>, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         request
             .bindings()
             .iter()
             .map(|binding| match binding.value {
                 RuntimeValue::Int(value) => value.exact_i64().ok_or_else(|| {
                     unsupported_aot(
-                        &helper.name,
+                        helper.name,
                         format!("local {} is not an i64 integer", binding.local),
                     )
                 }),
                 _ => Err(unsupported_aot(
-                    &helper.name,
+                    helper.name,
                     format!("local {} is not an i64 integer", binding.local),
                 )),
             })
@@ -512,18 +526,18 @@ impl AotCompileContext {
     }
 
     fn from_scalar_request(request: &PureFunctionRequest) -> Result<Self, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         let mut slots = BTreeMap::new();
         for binding in request.bindings() {
             if runtime_value_as_scalar(&binding.value).is_none() {
                 return Err(unsupported_aot(
-                    &helper.name,
+                    helper.name,
                     format!("local {} is not a scalar value", binding.local),
                 ));
             }
             if slots.insert(binding.local, slots.len()).is_some() {
                 return Err(unsupported_aot(
-                    &helper.name,
+                    helper.name,
                     format!("local {} is duplicated", binding.local),
                 ));
             }
@@ -535,14 +549,14 @@ impl AotCompileContext {
     fn initial_scalar_slots(
         request: &PureFunctionRequest,
     ) -> Result<Vec<RuntimePureScalar>, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         request
             .bindings()
             .iter()
             .map(|binding| {
                 runtime_value_as_scalar(&binding.value).ok_or_else(|| {
                     unsupported_aot(
-                        &helper.name,
+                        helper.name,
                         format!("local {} is not a scalar value", binding.local),
                     )
                 })
@@ -775,7 +789,7 @@ impl AotScalarEvaluator<'_> {
 
 fn validate_input_abi(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureFunctionRef<'_>,
     local: RuntimeLocalDeclarationId,
     expected: RuntimePureInputType,
 ) -> Result<(), RuntimeEvalError> {
@@ -791,7 +805,12 @@ fn validate_input_abi(
     else {
         return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
     };
-    if helper.inputs.get(position).map(|input| input.abi()) == Some(expected) {
+    if helper
+        .inputs
+        .get(position)
+        .map(super::RuntimePureFunctionInputRef::abi)
+        == Some(expected)
+    {
         Ok(())
     } else {
         Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()))
@@ -799,7 +818,7 @@ fn validate_input_abi(
 }
 
 fn validate_output_abi(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureFunctionRef<'_>,
     expected: RuntimePureOutputType,
 ) -> Result<(), RuntimeEvalError> {
     if helper.output_type == expected {

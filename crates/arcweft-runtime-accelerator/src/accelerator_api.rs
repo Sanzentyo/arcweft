@@ -12,8 +12,8 @@ use super::{
     AUTO_JIT_SCALAR_WORK_UNITS, CompiledPureI64Inputs, FlatBatchSumPolicy, FlatBatchSumShape,
     RuntimeBatchBackendKind, RuntimeEvalError, RuntimeI64Args, RuntimeMathPrepareCache,
     RuntimePlan, RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
-    RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelperId,
-    RuntimePureHelperRef, RuntimePureNativeKind, VmPureFunctionScratch, helper_native_kind,
+    RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureFunctionId,
+    RuntimePureFunctionRef, RuntimePureNativeKind, VmPureFunctionScratch, helper_native_kind,
     helper_summary_from_helpers, math, native_jit_enabled,
 };
 
@@ -46,24 +46,20 @@ impl RuntimePureAccelerator {
     ) -> Self {
         let started = std::time::Instant::now();
         let mut compile_stats = RuntimePureCompileStats::default();
-        let helpers = plan.pure_helpers();
-        let helper_summary = helper_summary_from_helpers(helpers);
-        let helper_work_units = helper_work_unit_slots(helpers);
+        let helpers = RuntimePureFunctionRef::eager_candidates(plan).collect::<Vec<_>>();
+        let helper_summary = helper_summary_from_helpers(&helpers);
+        let helper_work_units = helper_work_unit_slots(&helpers);
         let resolved_workers = resolve_worker_count(config.workers);
-        let mut cache = helper_cache_slots(helpers);
-        for helper in helpers {
+        let mut cache = helper_cache_slots(plan);
+        for helper in helpers.iter().copied() {
             let work_units = helper_work_units
-                .get(helper.id.0)
+                .get(&helper.id)
                 .copied()
-                .unwrap_or_else(|| runtime_expr_work_units(&helper.expr));
-            let helper_ref = RuntimePureHelperRef::resolve(plan, helper.id)
-                .expect("runtime plan admitted an unresolved pure helper");
-            cache[helper.id.0] = Some(compile_helper(
-                config.backend,
-                helper_ref,
-                work_units,
-                &mut compile_stats,
-            ));
+                .unwrap_or_else(|| runtime_expr_work_units(helper.expr));
+            cache.entries.insert(
+                helper.id,
+                compile_helper(config.backend, helper, work_units, &mut compile_stats),
+            );
         }
         if config.emit_object_artifacts {
             record_aot_object_artifact_bundle(plan, &cache, &mut compile_stats);
@@ -76,7 +72,7 @@ impl RuntimePureAccelerator {
             compile_stats,
             helper_summary,
             helper_work_units,
-            auto_scalar_work_units: vec![0; helpers.len()],
+            auto_scalar_work_units: helpers.iter().map(|helper| (helper.id, 0)).collect(),
             pool: None,
             resolved_workers,
             flat_i64_inputs: Vec::new(),
@@ -121,13 +117,13 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
         if rows.len() != out.len() {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure batch expected {} output slot(s), got {}",
                     rows.len(),
@@ -152,7 +148,7 @@ impl RuntimePureAccelerator {
         if wants_parallel {
             self.ensure_thread_pool();
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows.len();
@@ -218,7 +214,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
@@ -236,13 +232,13 @@ impl RuntimePureAccelerator {
         if wants_parallel {
             self.ensure_thread_pool();
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += out.len();
                 compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                     RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     }
                 })
@@ -270,7 +266,7 @@ impl RuntimePureAccelerator {
                     self.stats.jit_calls += out.len();
                     compiled.call_flat_batch(flat_inputs, out).map_err(|error| {
                         RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.clone(),
+                            name: helper.name.to_owned(),
                             reason: error.to_string(),
                         }
                     })
@@ -314,7 +310,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
@@ -342,7 +338,7 @@ impl RuntimePureAccelerator {
             wants_parallel,
             parallel_jobs: self.parallel_jobs(rows),
         };
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
@@ -415,13 +411,13 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
         if row.len() > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: row.len(),
             });
@@ -440,32 +436,32 @@ impl RuntimePureAccelerator {
             self.promote_auto_jit_for_flat_batch(helper, rows);
         }
         let rows_i64 = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
-            name: helper.name.clone(),
+            name: helper.name.to_owned(),
             reason: "pure repeated batch row count must fit i64".to_owned(),
         })?;
         let value = self.repeated_flat_batch_value(helper, row, rows)?;
         value
             .checked_mul(rows_i64)
             .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: "pure repeated batch sum overflowed i64".to_owned(),
             })
     }
 
     fn repeated_flat_batch_value(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
-        let value = match cache_entry(&self.cache, helper.id) {
+        let value = match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += rows;
                 compiled
                     .call(row)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })?
             }
@@ -483,7 +479,7 @@ impl RuntimePureAccelerator {
                     compiled
                         .call(row)
                         .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                            name: helper.name.clone(),
+                            name: helper.name.to_owned(),
                             reason: error.to_string(),
                         })?
                 } else {
@@ -532,8 +528,8 @@ impl RuntimePureAccelerator {
         Ok(value)
     }
 
-    pub(super) fn batch_backend_kind(&self, id: RuntimePureHelperId) -> RuntimeBatchBackendKind {
-        match cache_entry(&self.cache, id) {
+    pub(super) fn batch_backend_kind(&self, id: RuntimePureFunctionId) -> RuntimeBatchBackendKind {
+        match self.cache.entries.get(&id) {
             Some(
                 RuntimePureCacheEntry::Jit(_)
                 | RuntimePureCacheEntry::JitI8(_)
@@ -565,10 +561,10 @@ impl RuntimePureAccelerator {
 
     pub(super) fn promote_auto_jit_for_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: usize,
     ) {
-        if !native_jit_enabled() {
+        if !native_jit_enabled() || !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
             return;
         }
         let work_units = rows.saturating_mul(self.helper_work_units(helper));
@@ -587,12 +583,15 @@ impl RuntimePureAccelerator {
         self.promote_auto_native_jit(helper, kind);
     }
 
-    pub(super) fn promote_auto_jit_for_scalar_call(&mut self, helper: RuntimePureHelperRef<'_>) {
-        if !native_jit_enabled() || !self.has_promotable_auto_slot(helper.id) {
+    pub(super) fn promote_auto_jit_for_scalar_call(&mut self, helper: RuntimePureFunctionRef<'_>) {
+        if !native_jit_enabled()
+            || !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan())
+            || !self.has_promotable_auto_slot(helper.id)
+        {
             return;
         }
         let work_units = self.helper_work_units(helper);
-        let Some(accumulated) = self.auto_scalar_work_units.get_mut(helper.id.0) else {
+        let Some(accumulated) = self.auto_scalar_work_units.get_mut(&helper.id) else {
             return;
         };
         *accumulated = accumulated.saturating_add(work_units);
@@ -606,9 +605,9 @@ impl RuntimePureAccelerator {
         self.promote_auto_native_jit(helper, kind);
     }
 
-    pub(super) fn has_promotable_auto_slot(&self, id: RuntimePureHelperId) -> bool {
+    pub(super) fn has_promotable_auto_slot(&self, id: RuntimePureFunctionId) -> bool {
         matches!(
-            self.cache.get(id.0).and_then(Option::as_ref),
+            self.cache.entries.get(&id),
             Some(RuntimePureCacheEntry::AutoAot {
                 jit: None,
                 jit_failed: false,
@@ -619,9 +618,12 @@ impl RuntimePureAccelerator {
 
     pub(super) fn promote_auto_native_jit(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         kind: RuntimePureNativeKind,
     ) {
+        if !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
+            return;
+        }
         let request = compile_request(helper, || kind.zero_value());
         match compile_native_jit(kind, &request, helper, &mut self.compile_stats) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
@@ -636,12 +638,12 @@ impl RuntimePureAccelerator {
 
     pub(super) fn install_promoted_i64_jit(
         &mut self,
-        id: RuntimePureHelperId,
+        id: RuntimePureFunctionId,
         compiled: Box<CompiledPureI64Inputs>,
     ) {
         let Some(RuntimePureCacheEntry::AutoAot {
             jit, jit_failed, ..
-        }) = self.cache.get_mut(id.0).and_then(Option::as_mut)
+        }) = self.cache.entries.get_mut(&id)
         else {
             return;
         };
@@ -652,18 +654,18 @@ impl RuntimePureAccelerator {
 
     pub(super) fn install_promoted_jit_entry(
         &mut self,
-        id: RuntimePureHelperId,
+        id: RuntimePureFunctionId,
         entry: RuntimePureCacheEntry,
     ) {
-        if let Some(slot) = self.cache.get_mut(id.0) {
-            *slot = Some(entry);
+        if let Some(slot) = self.cache.entries.get_mut(&id) {
+            *slot = entry;
         }
         self.compile_stats.auto_jit_promotions += 1;
     }
 
-    pub(super) fn mark_auto_jit_failed(&mut self, id: RuntimePureHelperId) {
-        if let Some(Some(RuntimePureCacheEntry::AutoAot { jit_failed, .. })) =
-            self.cache.get_mut(id.0)
+    pub(super) fn mark_auto_jit_failed(&mut self, id: RuntimePureFunctionId) {
+        if let Some(RuntimePureCacheEntry::AutoAot { jit_failed, .. }) =
+            self.cache.entries.get_mut(&id)
         {
             *jit_failed = true;
         }
@@ -671,7 +673,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn should_parallelize_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: usize,
         backend: RuntimeBatchBackendKind,
     ) -> bool {
@@ -704,12 +706,12 @@ impl RuntimePureAccelerator {
         true
     }
 
-    pub(super) fn helper_work_units(&self, helper: RuntimePureHelperRef<'_>) -> usize {
+    pub(super) fn helper_work_units(&self, helper: RuntimePureFunctionRef<'_>) -> usize {
         self.helper_work_units
-            .get(helper.id.0)
+            .get(&helper.id)
             .copied()
             .filter(|weight| *weight > 0)
-            .unwrap_or_else(|| runtime_expr_work_units(&helper.expr))
+            .unwrap_or_else(|| runtime_expr_work_units(helper.expr))
     }
 
     pub(super) fn ensure_thread_pool(&mut self) {
@@ -744,7 +746,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn call_i32_slice_with_accounting(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
         count_borrowed_args: bool,
     ) -> Result<Option<i32>, RuntimeEvalError> {
@@ -756,7 +758,7 @@ impl RuntimePureAccelerator {
         if self.config.backend == RuntimePureBackendMode::Auto {
             self.promote_auto_jit_for_scalar_call(helper);
         }
-        match cache_entry(&self.cache, helper.id) {
+        match cache_entry(&self.cache, helper) {
             Some(RuntimePureCacheEntry::JitI32(compiled)) => {
                 self.compile_stats.cache_hits += 1;
                 self.stats.jit_calls += 1;
@@ -764,7 +766,7 @@ impl RuntimePureAccelerator {
                     .call(args)
                     .map(Some)
                     .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: error.to_string(),
                     })
             }

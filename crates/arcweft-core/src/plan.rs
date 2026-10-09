@@ -24,7 +24,7 @@ pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
 mod pure_programs;
-pub(crate) use pure_programs::RuntimePureProgramLookupError;
+pub use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
 mod type_kind;
 mod type_scope;
@@ -378,6 +378,14 @@ impl RuntimePlan {
     #[must_use]
     pub fn pure_programs(&self) -> &[RuntimePureProgramBinding] {
         self.inventory.pure_programs()
+    }
+
+    /// Resolves one accepted deterministic program in this immutable plan.
+    pub fn pure_program_binding(
+        &self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Result<&RuntimePureProgramBinding, RuntimePureProgramLookupError> {
+        self.inventory.resolve_pure_program(program)
     }
 
     #[must_use]

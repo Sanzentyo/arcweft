@@ -1,7 +1,7 @@
 use super::{
     RuntimeExternalCallBackend, RuntimeExternalCallContext, RuntimeFixedArgs, RuntimeFloat32Args,
     RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
-    RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalarInteger,
+    RuntimePureCallBackend, RuntimePureFunctionRef, RuntimePureScalarInteger,
     VmRuntimePureCallBackend,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
@@ -24,7 +24,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i8],
     ) -> Result<Option<i8>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -32,7 +32,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         out: &mut [i8],
@@ -42,7 +42,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         rows: usize,
@@ -52,7 +52,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i16],
     ) -> Result<Option<i16>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -60,7 +60,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         out: &mut [i16],
@@ -70,7 +70,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         rows: usize,
@@ -80,7 +80,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         out: &mut [i128],
@@ -90,7 +90,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         rows: usize,
@@ -100,7 +100,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i32(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI32Args,
     ) -> Result<Option<i32>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
@@ -115,12 +115,12 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
     ) -> Result<Option<i32>, RuntimeEvalError> {
         if args.len() > RuntimeI32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI32Args::MAX,
                 found: args.len(),
             });
@@ -136,21 +136,21 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         out: &mut [i32],
     ) -> Result<(), RuntimeEvalError> {
         if arity > RuntimeI32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI32Args::MAX,
                 found: arity,
             });
         }
         if flat_inputs.len() != out.len().saturating_mul(arity) {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure flat batch expected {} input value(s), got {}",
                     out.len().saturating_mul(arity),
@@ -190,21 +190,21 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
         if arity > RuntimeI32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI32Args::MAX,
                 found: arity,
             });
         }
         if flat_inputs.len() != rows.saturating_mul(arity) {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure flat batch expected {} input value(s), got {}",
                     rows.saturating_mul(arity),
@@ -241,7 +241,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u32],
     ) -> Result<Option<u32>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -249,7 +249,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u8],
     ) -> Result<Option<u8>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -257,7 +257,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         out: &mut [u8],
@@ -267,7 +267,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         rows: usize,
@@ -277,7 +277,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u16],
     ) -> Result<Option<u16>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -285,7 +285,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         out: &mut [u16],
@@ -295,7 +295,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         rows: usize,
@@ -305,7 +305,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         out: &mut [u128],
@@ -315,7 +315,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         rows: usize,
@@ -325,7 +325,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         out: &mut [u32],
@@ -335,7 +335,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         rows: usize,
@@ -345,7 +345,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u64],
     ) -> Result<Option<u64>, RuntimeEvalError> {
         self.call_exact_int_slice(helper, args)
@@ -353,7 +353,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         out: &mut [u64],
@@ -363,7 +363,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_u64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         rows: usize,
@@ -373,25 +373,24 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_exact_int_slice<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[T],
     ) -> Result<Option<T>, RuntimeEvalError> {
         if args.len() > RuntimeFixedArgs::<T>::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeFixedArgs::<T>::MAX,
                 found: args.len(),
             });
         }
-        if helper.declaration().output_type != T::OUTPUT_TYPE
+        if helper.output_type != T::OUTPUT_TYPE
             || !helper
-                .declaration()
                 .inputs
                 .iter()
                 .all(|input| input.abi() == T::INPUT_TYPE)
         {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: "exact integer call type does not match helper signature".to_owned(),
             });
         }
@@ -401,12 +400,12 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
         let value = self
             .scratch
             .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), args)?;
-        T::try_from_runtime_value(&helper.declaration().name, value).map(Some)
+        T::try_from_runtime_value(helper.name, value).map(Some)
     }
 
     fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         out: &mut [T],
@@ -426,7 +425,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 let value =
                     self.scratch
                         .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
-                *slot = T::try_from_runtime_value(&helper.declaration().name, value)?;
+                *slot = T::try_from_runtime_value(helper.name, value)?;
                 Ok(())
             });
         }
@@ -437,14 +436,14 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 let value =
                     self.scratch
                         .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
-                *slot = T::try_from_runtime_value(&helper.declaration().name, value)?;
+                *slot = T::try_from_runtime_value(helper.name, value)?;
                 Ok(())
             })
     }
 
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         rows: usize,
@@ -464,8 +463,8 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
                 let value =
                     self.scratch
                         .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
-                sum += T::try_from_runtime_value(&helper.declaration().name, value)?
-                    .try_sum_as_i64(&helper.declaration().name)?;
+                sum +=
+                    T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
             }
             return Ok(sum);
         }
@@ -473,15 +472,14 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             let value =
                 self.scratch
                     .evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
-            sum += T::try_from_runtime_value(&helper.declaration().name, value)?
-                .try_sum_as_i64(&helper.declaration().name)?;
+            sum += T::try_from_runtime_value(helper.name, value)?.try_sum_as_i64(helper.name)?;
         }
         Ok(sum)
     }
 
     fn call_i64(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
@@ -501,12 +499,12 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i64],
     ) -> Result<Option<i64>, RuntimeEvalError> {
         if args.len() > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: args.len(),
             });
@@ -527,13 +525,13 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
         if rows.len() != out.len() {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure batch expected {} output slot(s), got {}",
                     rows.len(),
@@ -571,21 +569,21 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
         if arity > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: arity,
             });
         }
         if flat_inputs.len() != out.len().saturating_mul(arity) {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure flat batch expected {} input value(s), got {}",
                     out.len().saturating_mul(arity),
@@ -643,21 +641,21 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
         if arity > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: arity,
             });
         }
         if flat_inputs.len() != rows.saturating_mul(arity) {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure flat batch expected {} input value(s), got {}",
                     rows.saturating_mul(arity),
@@ -714,13 +712,13 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
         if row.len() > RuntimeI64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeI64Args::MAX,
                 found: row.len(),
             });
@@ -746,25 +744,25 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
             value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
         };
         let rows = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: "pure repeated batch row count must fit i64".to_owned(),
         })?;
         value
             .checked_mul(rows)
             .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.declaration().name.clone(),
+                name: helper.name.to_owned(),
                 reason: "pure repeated batch sum overflowed i64".to_owned(),
             })
     }
 
     fn call_f32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError> {
         if args.len() > RuntimeFloat32Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeFloat32Args::MAX,
                 found: args.len(),
             });
@@ -780,7 +778,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_f32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f32],
         arity: usize,
         out: &mut [f32],
@@ -826,12 +824,12 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_f64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError> {
         if args.len() > RuntimeFloat64Args::MAX {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
+                helper: helper.name.to_owned(),
                 max: RuntimeFloat64Args::MAX,
                 found: args.len(),
             });
@@ -847,7 +845,7 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_f64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f64],
         arity: usize,
         out: &mut [f64],
@@ -893,13 +891,13 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_values(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if args.len() != helper.declaration().inputs.len() {
+        if args.len() != helper.inputs.len() {
             return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.declaration().name.clone(),
-                max: helper.declaration().inputs.len(),
+                helper: helper.name.to_owned(),
+                max: helper.inputs.len(),
                 found: args.len(),
             });
         }
@@ -1024,20 +1022,20 @@ impl<E: RuntimeExternalCallBackend> RuntimeExternalCallBackend for VmRuntimePure
 }
 
 fn runtime_value_into_i32_result(
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     value: RuntimeValue,
 ) -> Result<i32, RuntimeEvalError> {
-    i32::try_from_runtime_value(&helper.declaration().name, value)
+    i32::try_from_runtime_value(helper.name, value)
 }
 
 fn runtime_value_into_f32_result(
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     value: RuntimeValue,
 ) -> Result<f32, RuntimeEvalError> {
     match value {
         RuntimeValue::F32(value) => Ok(value),
         value => Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: format!(
                 "pure f32 result expected f32, got {}",
                 runtime_value_label(&value)
@@ -1047,13 +1045,13 @@ fn runtime_value_into_f32_result(
 }
 
 fn runtime_value_into_f64_result(
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     value: RuntimeValue,
 ) -> Result<f64, RuntimeEvalError> {
     match value {
         RuntimeValue::F64(value) => Ok(value),
         value => Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: format!(
                 "pure f64 result expected f64, got {}",
                 runtime_value_label(&value)
@@ -1063,33 +1061,32 @@ fn runtime_value_into_f64_result(
 }
 
 fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     flat_input_len: usize,
     arity: usize,
     rows: usize,
 ) -> Result<(), RuntimeEvalError> {
     if arity > RuntimeFixedArgs::<T>::MAX {
         return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.declaration().name.clone(),
+            helper: helper.name.to_owned(),
             max: RuntimeFixedArgs::<T>::MAX,
             found: arity,
         });
     }
-    if helper.declaration().output_type != T::OUTPUT_TYPE
+    if helper.output_type != T::OUTPUT_TYPE
         || !helper
-            .declaration()
             .inputs
             .iter()
             .all(|input| input.abi() == T::INPUT_TYPE)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: "exact integer batch type does not match helper signature".to_owned(),
         });
     }
     if flat_input_len != rows.saturating_mul(arity) {
         return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: format!(
                 "pure flat batch expected {} input value(s), got {}",
                 rows.saturating_mul(arity),
@@ -1101,7 +1098,7 @@ fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
 }
 
 fn validate_float_flat_batch_shape(
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     max_arity: usize,
@@ -1111,26 +1108,22 @@ fn validate_float_flat_batch_shape(
 ) -> Result<(), RuntimeEvalError> {
     if arity > max_arity {
         return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.declaration().name.clone(),
+            helper: helper.name.to_owned(),
             max: max_arity,
             found: arity,
         });
     }
-    if helper.declaration().output_type != output_type
-        || !helper
-            .declaration()
-            .inputs
-            .iter()
-            .all(|input| input.abi() == input_type)
+    if helper.output_type != output_type
+        || !helper.inputs.iter().all(|input| input.abi() == input_type)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: "float batch type does not match helper signature".to_owned(),
         });
     }
     if flat_input_len != rows.saturating_mul(arity) {
         return Err(RuntimeEvalError::UnsupportedPure {
-            name: helper.declaration().name.clone(),
+            name: helper.name.to_owned(),
             reason: format!(
                 "pure flat batch expected {} input value(s), got {}",
                 rows.saturating_mul(arity),

@@ -492,6 +492,15 @@ pub struct RuntimeFunctionSite {
 }
 
 impl RuntimeFunctionSite {
+    /// Ordinary expression bodies may be offered to a scalar backend. Other
+    /// callable roles keep their invocation and return ownership in the Engine.
+    #[must_use]
+    pub fn is_eager_pure_candidate(&self) -> bool {
+        self.role == RuntimeFunctionSemanticRole::Ordinary
+            && self.invocation_effects.is_empty()
+            && self.body.expression().is_some()
+    }
+
     /// Declared invocation permissions; execution effects remain on the body.
     #[must_use]
     pub const fn invocation_effects(&self) -> &super::RuntimeEffectSet {
@@ -573,6 +582,27 @@ impl RuntimeFunctionSiteTable {
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &RuntimeFunctionSite> {
         self.sites.iter().map(Arc::as_ref)
+    }
+
+    /// Iterates admitted site identities together with their original rows.
+    ///
+    /// # Panics
+    ///
+    /// Panics while iterating if a row has no representable nonzero `u32`
+    /// ordinal. Such a row violates the catalog admission invariant.
+    pub fn iter_with_ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (RuntimeFunctionSiteId, &RuntimeFunctionSite)> {
+        self.sites.iter().enumerate().map(|(index, site)| {
+            let ordinal = u32::try_from(index + 1)
+                .ok()
+                .and_then(NonZeroU32::new)
+                .expect("admitted function-site ordinal");
+            (
+                RuntimeFunctionSiteId::from_accepted_ordinal(ordinal),
+                site.as_ref(),
+            )
+        })
     }
 
     pub(crate) fn shared(&self, id: RuntimeFunctionSiteId) -> Option<Arc<RuntimeFunctionSite>> {

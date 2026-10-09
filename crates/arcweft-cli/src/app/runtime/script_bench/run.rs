@@ -289,8 +289,9 @@ fn run_bench_flow_section(
             return summary;
         }
     };
-    let executor_template = RuntimeExecutorTemplate::new(plan, entry, options.executor);
     let pure_plan = Arc::new(plan.clone());
+    let executor_template =
+        RuntimeExecutorTemplate::new(Arc::clone(&pure_plan), entry, options.executor);
     let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();

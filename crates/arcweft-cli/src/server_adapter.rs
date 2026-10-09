@@ -12,7 +12,6 @@ use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -189,9 +188,8 @@ fn run_route_flow(
     assertion_projector: &impl NativeHttpAssertionProjector,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
     let flow_parameter_bindings = request_bindings(route, params)?;
-    let plan = Arc::new(plan.clone());
-    let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan);
-    let invocation = match Arc::unwrap_or_clone(Arc::clone(&plan))
+    let invocation = match plan
+        .clone()
         .seal_flow_invocation(route.target.clone(), flow_parameter_bindings)
     {
         Ok(invocation) => invocation,
@@ -202,6 +200,7 @@ fn run_route_flow(
             ));
         }
     };
+    let mut pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
     let mut executor = match Engine::for_flow_invocation(invocation) {
         Ok(executor) => executor,
         Err(error) => {

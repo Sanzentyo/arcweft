@@ -1782,8 +1782,11 @@ impl Engine {
     /// Creates an engine bound to one host-owned generation slot. Runtime
     /// owners that can hot-swap plans must supply the active slot so stale
     /// task events cannot publish into a later generation.
-    pub fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
-        Self::new_with_shared_plan(Arc::new(plan), generation)
+    pub fn new_with_generation(
+        plan: impl Into<Arc<RuntimePlan>>,
+        generation: GenerationId,
+    ) -> Self {
+        Self::new_with_shared_plan(plan.into(), generation)
     }
 
     fn new_with_shared_plan(plan: Arc<RuntimePlan>, generation: GenerationId) -> Self {

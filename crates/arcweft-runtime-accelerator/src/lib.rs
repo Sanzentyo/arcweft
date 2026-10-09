@@ -14,16 +14,13 @@ mod tests;
 
 use arcweft_core::{
     math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64},
-    plan::{
-        RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-        RuntimePureInputType, RuntimePureOutputType,
-    },
+    plan::{RuntimePlan, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType},
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
         PureFunctionStats, RuntimeExternalCallBackend, RuntimeExternalCallContext,
         RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
-        RuntimeMathCallBackend, RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalar,
-        RuntimePureScalarInteger, VmPureFunctionScratch,
+        RuntimeMathCallBackend, RuntimePureCallBackend, RuntimePureFunctionId,
+        RuntimePureFunctionRef, RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     runtime_id::RuntimeLocalDeclarationId,
     step::RuntimePureCallStats,
@@ -42,7 +39,7 @@ use native_jit::{
     CompiledPureU128BatchInputs, CraneliftPureFunctionBackend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
-use std::fmt;
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 mod native_jit {
@@ -527,12 +524,12 @@ pub struct RuntimePureCompileStats {
 /// Compile-cache backed runtime pure helper accelerator.
 pub struct RuntimePureAccelerator {
     config: RuntimePureAcceleratorConfig,
-    cache: Vec<Option<RuntimePureCacheEntry>>,
+    cache: RuntimePureCache,
     stats: RuntimePureCallStats,
     compile_stats: RuntimePureCompileStats,
     helper_summary: RuntimePureAccelerationSummary,
-    helper_work_units: Vec<usize>,
-    auto_scalar_work_units: Vec<usize>,
+    helper_work_units: BTreeMap<RuntimePureFunctionId, usize>,
+    auto_scalar_work_units: BTreeMap<RuntimePureFunctionId, usize>,
     pool: Option<ThreadPool>,
     resolved_workers: usize,
     flat_i64_inputs: Vec<i64>,
@@ -541,6 +538,13 @@ pub struct RuntimePureAccelerator {
     vm_scratch: VmPureFunctionScratch,
     math: math::RuntimeMathAccelerator,
     math_prepare_cache: RuntimeMathPrepareCache,
+}
+
+/// Derived native state is pinned to the exact admitted immutable plan. A
+/// foreign function capability cannot select a numerically equal cached site.
+struct RuntimePureCache {
+    plan: Arc<RuntimePlan>,
+    entries: BTreeMap<RuntimePureFunctionId, RuntimePureCacheEntry>,
 }
 
 enum RuntimePureCacheEntry {
@@ -670,7 +674,10 @@ impl RuntimePureNativeKind {
     }
 }
 
-fn helper_native_kind(helper: RuntimePureHelperRef<'_>) -> Option<RuntimePureNativeKind> {
+fn helper_native_kind(helper: RuntimePureFunctionRef<'_>) -> Option<RuntimePureNativeKind> {
+    if !helper.supports_scalar_frame() {
+        return None;
+    }
     let kind = match helper.output_type {
         RuntimePureOutputType::I8 => RuntimePureNativeKind::I8,
         RuntimePureOutputType::I16 => RuntimePureNativeKind::I16,
@@ -697,7 +704,7 @@ fn helper_native_kind(helper: RuntimePureHelperRef<'_>) -> Option<RuntimePureNat
 
 fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     args: &[T],
 ) -> Option<Result<Option<T>, RuntimeEvalError>> {
     let value = match (T::exact_slice(args), entry) {
@@ -743,16 +750,16 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
     Some(
         value
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: error.to_string(),
             })
-            .and_then(|value| T::try_from_runtime_value(&helper.name, value).map(Some)),
+            .and_then(|value| T::try_from_runtime_value(helper.name, value).map(Some)),
     )
 }
 
 fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &[T],
     out: &mut [T],
 ) -> Option<Result<(), RuntimeEvalError>> {
@@ -770,14 +777,14 @@ fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         _ => return None,
     };
     Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
-        name: helper.name.clone(),
+        name: helper.name.to_owned(),
         reason: error.to_string(),
     }))
 }
 
 fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: RuntimePureHelperRef<'_>,
+    helper: RuntimePureFunctionRef<'_>,
     flat_inputs: &[T],
     rows: usize,
 ) -> Option<Result<i64, RuntimeEvalError>> {
@@ -791,7 +798,7 @@ fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         _ => return None,
     };
     Some(result.map_err(|error| RuntimeEvalError::UnsupportedPure {
-        name: helper.name.clone(),
+        name: helper.name.to_owned(),
         reason: error.to_string(),
     }))
 }
@@ -1182,11 +1189,11 @@ impl RuntimePureAotPlan {
 
     fn require_i64(
         &self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
     ) -> Result<&AotPureI64Plan, RuntimeEvalError> {
         self.i64_plan()
             .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: "AOT scalar plan cannot serve an i64 batch call".to_owned(),
             })
     }
@@ -1222,7 +1229,7 @@ impl RuntimePureAccelerator {
         let mut jit = 0;
         let mut aot = 0;
         let mut vm = 0;
-        for entry in self.cache.iter().filter_map(Option::as_ref) {
+        for entry in self.cache.entries.values() {
             match entry {
                 RuntimePureCacheEntry::Jit(_)
                 | RuntimePureCacheEntry::JitI8(_)
@@ -1256,10 +1263,12 @@ impl RuntimePureAccelerator {
     }
 }
 
-fn helper_summary_from_helpers(helpers: &[RuntimePureHelper]) -> RuntimePureAccelerationSummary {
+fn helper_summary_from_helpers(
+    helpers: &[RuntimePureFunctionRef<'_>],
+) -> RuntimePureAccelerationSummary {
     let annotated = helpers
         .iter()
-        .filter(|helper| helper.origin == RuntimePureHelperOrigin::Annotated)
+        .filter(|helper| helper.origin() == RuntimePureHelperOrigin::Annotated)
         .count();
     RuntimePureAccelerationSummary {
         annotated,

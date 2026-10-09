@@ -105,6 +105,20 @@ impl ProjectAnalysisLease {
             .map(CompiledProjectModule::syntax_warnings)
             .sum()
     }
+
+    /// Compiles an admitted value or body root using this exact semantic
+    /// generation and its complete free-input/whole-formal execution ABI.
+    pub fn compile_deterministic_program(
+        &self,
+        source: arcweft_lang_sema::final_analysis::CheckedExecutionSource,
+        instance: Option<arcweft_lang_sema::final_analysis::CheckedLocalUseInstantiation<'_>>,
+        control: &crate::lower::ProjectInstantiationControl,
+    ) -> Result<
+        crate::lower::CompiledDeterministicProgram,
+        crate::lower::DeterministicProgramCompileError,
+    > {
+        crate::lower::programs::compile_deterministic_program(self, source, instance, control)
+    }
 }
 
 impl std::fmt::Debug for ProjectAnalysisLease {

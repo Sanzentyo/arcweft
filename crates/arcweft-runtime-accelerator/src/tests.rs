@@ -29,7 +29,7 @@ use arcweft_core::{
         RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     program_types::RuntimeProgramTypes,
-    pure::{PureFunctionRequest, RuntimePureHelperRef},
+    pure::{PureFunctionRequest, RuntimePureFunctionRef},
     step::{RuntimeStepInput, RuntimeStepOptions},
     task::RuntimeProgramOwner,
     value::RuntimeRecordFieldId,
@@ -60,9 +60,9 @@ struct AdmittedHelper {
 }
 
 impl AdmittedHelper {
-    fn helper_ref(&self) -> RuntimePureHelperRef<'_> {
+    fn function_ref(&self) -> RuntimePureFunctionRef<'_> {
         self.request
-            .helper_ref()
+            .function_ref()
             .expect("admitted helper is resolved through its plan-qualified request")
     }
 
@@ -309,6 +309,198 @@ fn admit_helper(
         .expect("test helper is admitted");
     let plan = Arc::new(builder.finish().expect("test helper plan is sealed"));
     AdmittedHelper::from_plan(Arc::clone(&plan), plan.pure_helpers()[0].id)
+}
+
+fn admitted_ordinary_add_with_unused_formal(offset: i64) -> AdmittedHelper {
+    use arcweft_core::plan::{
+        RuntimeEffectSet, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
+        RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
+        RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind,
+        RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeLocalDeclarationSource,
+    };
+
+    let ty = helper_type_identity(RuntimePureInputType::I64);
+    let parameters = [
+        RuntimeFunctionParameterIdentity::from_accepted_identity([0x91; 32]),
+        RuntimeFunctionParameterIdentity::from_accepted_identity([0x92; 32]),
+    ];
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [helper_type_seed(RuntimePureInputType::I64)],
+            parameters.map(|parameter| {
+                RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Parameter(parameter),
+                    ty,
+                )
+            }),
+        )
+        .expect("ordinary whole formals are admitted");
+    let inputs = parameters
+        .into_iter()
+        .zip(admission.local_ids().iter().cloned())
+        .enumerate()
+        .map(
+            |(position, (parameter, local))| RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: u32::try_from(position).expect("two whole formals"),
+                    passing: RuntimeFunctionParameterPassing::Value,
+                },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    ty,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local,
+                    },
+                ),
+                ownership: Default::default(),
+                unrestricted_bindings: Box::new([]),
+            },
+        )
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    let site = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x81; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs,
+            result: ty,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .expect("ordinary function site is reserved");
+    builder
+        .define_function_site_seed(
+            &site,
+            RuntimeFunctionSiteBodySeed::Expression(binary_expr(
+                ty,
+                local_expr(
+                    ty,
+                    admission.local_ids()[0].clone(),
+                    RuntimeLocalReadMode::Copy,
+                ),
+                RuntimeBinaryOp::Add,
+                value_expr(ty, RuntimeValue::i64(offset)),
+            )),
+        )
+        .expect("ordinary function body is defined without helper copies");
+    let plan = Arc::new(builder.finish().expect("ordinary function plan is sealed"));
+    let site = plan
+        .function_sites()
+        .iter_with_ids()
+        .next()
+        .expect("ordinary source site")
+        .0;
+    let request =
+        PureFunctionRequest::try_new(plan, site, [RuntimeValue::i64(0), RuntimeValue::i64(0)])
+            .expect("complete ordinary function request");
+    AdmittedHelper { request }
+}
+
+#[test]
+fn aot_source_function_cache_refuses_foreign_plan_leases_with_colliding_site_ids() {
+    let owner = admitted_ordinary_add_with_unused_formal(1);
+    let changed = admitted_ordinary_add_with_unused_formal(10);
+    let cloned_plan = Arc::new(owner.plan().as_ref().clone());
+    let cloned = RuntimePureFunctionRef::resolve(&cloned_plan, owner.function_ref().id()).unwrap();
+    assert_eq!(owner.function_ref().id(), changed.function_ref().id());
+    assert_eq!(owner.function_ref().id(), cloned.id());
+    assert_eq!(owner.function_ref().inputs.len(), 2);
+    assert!(owner.plan().pure_helpers().is_empty());
+    assert!(
+        PureFunctionRequest::try_new(
+            Arc::clone(owner.plan()),
+            owner.function_ref().id(),
+            [RuntimeValue::i64(4)],
+        )
+        .is_err()
+    );
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, owner.plan());
+    assert_eq!(accelerator.summary().aot, 1);
+    let arguments = RuntimeI64Args::new([4, 999, 0, 0], 2);
+    assert_eq!(accelerator.call_i64(cloned, arguments).unwrap(), Some(5));
+    assert_eq!(accelerator.stats().vm_calls, 1);
+    assert_eq!(accelerator.stats().aot_calls, 0);
+    assert_eq!(
+        accelerator
+            .call_i64(changed.function_ref(), arguments)
+            .unwrap(),
+        Some(14)
+    );
+    assert_eq!(accelerator.stats().vm_calls, 2);
+    assert_eq!(accelerator.stats().aot_calls, 0);
+    assert_eq!(
+        accelerator
+            .call_i64(owner.function_ref(), arguments)
+            .unwrap(),
+        Some(5)
+    );
+    assert_eq!(accelerator.stats().vm_calls, 2);
+    assert_eq!(accelerator.stats().aot_calls, 1);
+    assert_eq!(accelerator.stats().jit_calls, 0);
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[test]
+fn auto_source_function_promotion_refuses_foreign_leases_and_promotes_the_owner() {
+    let owner = admitted_ordinary_add_with_unused_formal(1);
+    let foreign = admitted_ordinary_add_with_unused_formal(10);
+    assert_eq!(owner.function_ref().id(), foreign.function_ref().id());
+    assert_eq!(owner.function_ref().inputs.len(), 2);
+    let mut accelerator = RuntimePureAccelerator::with_config(
+        RuntimePureAcceleratorConfig {
+            backend: RuntimePureBackendMode::Auto,
+            workers: RuntimePureWorkerCount::Fixed(1),
+            batch_min_len: 1024,
+            ..RuntimePureAcceleratorConfig::default()
+        },
+        owner.plan(),
+    );
+    assert_eq!(accelerator.summary().aot, 1);
+    assert_eq!(accelerator.summary().jit, 0);
+    let attempts_before = accelerator.compile_stats().jit_attempts;
+    for _ in 0..1024 {
+        assert_eq!(
+            accelerator
+                .call_i64(
+                    foreign.function_ref(),
+                    RuntimeI64Args::new([4, 999, 0, 0], 2)
+                )
+                .unwrap(),
+            Some(14)
+        );
+    }
+    let flat_inputs = (0..128)
+        .flat_map(|value| [value, 999])
+        .collect::<Vec<i64>>();
+    let mut output = [0; 128];
+    accelerator
+        .call_i64_flat_batch(foreign.function_ref(), &flat_inputs, 2, &mut output)
+        .unwrap();
+    assert_eq!(output[0], 10);
+    assert_eq!(output[127], 137);
+    assert_eq!(accelerator.compile_stats().auto_jit_promotions, 0);
+    assert_eq!(accelerator.compile_stats().jit_attempts, attempts_before);
+    assert_eq!(accelerator.summary().aot, 1);
+    assert_eq!(accelerator.summary().jit, 0);
+    assert_eq!(accelerator.stats().jit_calls, 0);
+
+    accelerator.reset_runtime_counters();
+    accelerator
+        .call_i64_flat_batch(owner.function_ref(), &flat_inputs, 2, &mut output)
+        .unwrap();
+    assert_eq!(output[0], 1);
+    assert_eq!(output[127], 128);
+    assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
+    assert_eq!(accelerator.summary().jit, 1);
+    assert_eq!(accelerator.stats().jit_calls, 128);
+    assert_eq!(accelerator.stats().aot_calls, 0);
+    assert_eq!(accelerator.stats().vm_calls, 0);
 }
 
 fn local_expr(
@@ -1220,7 +1412,7 @@ fn auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation(
     let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
 
     let value = accelerator
-        .call_i64(helper.helper_ref(), RuntimeI64Args::new([3, 4, 0, 0], 2))
+        .call_i64(helper.function_ref(), RuntimeI64Args::new([3, 4, 0, 0], 2))
         .expect("accelerated call succeeds");
 
     assert_eq!(value, Some(18));
@@ -1276,22 +1468,22 @@ fn aot_scalar_preserves_i32_and_f32_without_vm_fallback() {
     );
 
     let i32_value = i32_accelerator
-        .call_i32_slice(i32_helper.helper_ref(), &[7, 9])
+        .call_i32_slice(i32_helper.function_ref(), &[7, 9])
         .expect("i32 AOT scalar succeeds");
     let f32_value = f32_accelerator
-        .call_f32_slice(f32_helper.helper_ref(), &[3.5, 2.0])
+        .call_f32_slice(f32_helper.function_ref(), &[3.5, 2.0])
         .expect("f32 AOT scalar succeeds");
     let mut i32_out = [0; 3];
     i32_accelerator
         .call_i32_flat_batch(
-            i32_helper.helper_ref(),
+            i32_helper.function_ref(),
             &[1, 2, 3, 4, 5, 6],
             2,
             &mut i32_out,
         )
         .expect("i32 AOT flat batch succeeds");
     let i32_sum = i32_accelerator
-        .call_i32_flat_batch_sum(i32_helper.helper_ref(), &[1, 2, 3, 4, 5, 6], 2, 3)
+        .call_i32_flat_batch_sum(i32_helper.function_ref(), &[1, 2, 3, 4, 5, 6], 2, 3)
         .expect("i32 AOT flat batch sum succeeds");
 
     assert_eq!(i32_value, Some(16));
@@ -1353,14 +1545,14 @@ fn explicit_jit_uses_native_i16_for_slice_and_flat_batch() {
         helper.plan(),
     );
     let value = accelerator
-        .call_i16_slice(helper.helper_ref(), &[30, 4])
+        .call_i16_slice(helper.function_ref(), &[30, 4])
         .expect("native i16 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_i16_flat_batch(helper.helper_ref(), &[30, 4, -20, 1, 70, 1], 2, &mut out)
+        .call_i16_flat_batch(helper.function_ref(), &[30, 4, -20, 1, 70, 1], 2, &mut out)
         .expect("native i16 JIT flat batch succeeds");
     let sum = accelerator
-        .call_i16_flat_batch_sum(helper.helper_ref(), &[30, 4, -20, 1, 70, 1], 2, 3)
+        .call_i16_flat_batch_sum(helper.function_ref(), &[30, 4, -20, 1, 70, 1], 2, 3)
         .expect("native i16 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(180));
@@ -1396,14 +1588,14 @@ fn explicit_jit_uses_native_i32_for_slice_and_flat_batch() {
     );
 
     let value = accelerator
-        .call_i32_slice(helper.helper_ref(), &[3, 4])
+        .call_i32_slice(helper.function_ref(), &[3, 4])
         .expect("native i32 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_i32_flat_batch(helper.helper_ref(), &[3, 4, 2, 99, 7, 1], 2, &mut out)
+        .call_i32_flat_batch(helper.function_ref(), &[3, 4, 2, 99, 7, 1], 2, &mut out)
         .expect("native i32 JIT flat batch succeeds");
     let sum = accelerator
-        .call_i32_flat_batch_sum(helper.helper_ref(), &[3, 4, 2, 99, 7, 1], 2, 3)
+        .call_i32_flat_batch_sum(helper.function_ref(), &[3, 4, 2, 99, 7, 1], 2, 3)
         .expect("native i32 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(18));
@@ -1437,12 +1629,12 @@ fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
     );
 
     let value = accelerator
-        .call_u32_slice(helper.helper_ref(), &[u32::MAX - 1, 1])
+        .call_u32_slice(helper.function_ref(), &[u32::MAX - 1, 1])
         .expect("native u32 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
         .call_u32_flat_batch(
-            helper.helper_ref(),
+            helper.function_ref(),
             &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4],
             2,
             &mut out,
@@ -1450,7 +1642,7 @@ fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
         .expect("native u32 JIT flat batch succeeds");
     let sum = accelerator
         .call_u32_flat_batch_sum(
-            helper.helper_ref(),
+            helper.function_ref(),
             &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4],
             2,
             3,
@@ -1488,14 +1680,14 @@ fn explicit_jit_uses_native_u64_for_slice_and_flat_batch() {
     );
 
     let value = accelerator
-        .call_u64_slice(helper.helper_ref(), &[8, 1])
+        .call_u64_slice(helper.function_ref(), &[8, 1])
         .expect("native u64 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_u64_flat_batch(helper.helper_ref(), &[8, 1, 3, 99, 10, 4], 2, &mut out)
+        .call_u64_flat_batch(helper.function_ref(), &[8, 1, 3, 99, 10, 4], 2, &mut out)
         .expect("native u64 JIT flat batch succeeds");
     let sum = accelerator
-        .call_u64_flat_batch_sum(helper.helper_ref(), &[8, 1, 3, 99, 10, 4], 2, 3)
+        .call_u64_flat_batch_sum(helper.function_ref(), &[8, 1, 3, 99, 10, 4], 2, 3)
         .expect("native u64 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(4));
@@ -1528,12 +1720,12 @@ fn explicit_jit_uses_native_f32_for_slice_and_flat_batch() {
     );
 
     let value = accelerator
-        .call_f32_slice(helper.helper_ref(), &[3.0, 4.0])
+        .call_f32_slice(helper.function_ref(), &[3.0, 4.0])
         .expect("native f32 JIT slice call succeeds");
     let mut out = [0.0; 3];
     accelerator
         .call_f32_flat_batch(
-            helper.helper_ref(),
+            helper.function_ref(),
             &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0],
             2,
             &mut out,
@@ -1580,12 +1772,12 @@ fn explicit_jit_uses_native_f64_for_slice_and_flat_batch() {
     );
 
     let value = accelerator
-        .call_f64_slice(helper.helper_ref(), &[3.0, 4.0])
+        .call_f64_slice(helper.function_ref(), &[3.0, 4.0])
         .expect("native f64 JIT slice call succeeds");
     let mut out = [0.0; 3];
     accelerator
         .call_f64_flat_batch(
-            helper.helper_ref(),
+            helper.function_ref(),
             &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0],
             2,
             &mut out,
@@ -1632,7 +1824,7 @@ fn auto_promotes_large_i32_flat_batch_to_native_jit() {
     let mut out = [0; 128];
 
     accelerator
-        .call_i32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_i32_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i32 flat batch");
 
     assert_eq!(out[0], 1);
@@ -1664,7 +1856,7 @@ fn auto_promotes_large_u32_flat_batch_to_native_jit() {
     let mut out = [0; 128];
 
     accelerator
-        .call_u32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_u32_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u32 flat batch");
 
     assert_eq!(out[0], 1);
@@ -1729,7 +1921,7 @@ where
     let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, helper.plan());
 
     let value = accelerator
-        .call_exact_int_slice::<T>(helper.helper_ref(), args)
+        .call_exact_int_slice::<T>(helper.function_ref(), args)
         .expect("generic exact-int call succeeds");
 
     assert_eq!(value, Some(expected));
@@ -1778,7 +1970,7 @@ fn auto_promotes_hot_scalar_exact_int_calls_to_native_jit() {
 
     for value in 0..160 {
         let actual = accelerator
-            .call_exact_int_slice::<i128>(helper.helper_ref(), &[value, 11])
+            .call_exact_int_slice::<i128>(helper.function_ref(), &[value, 11])
             .expect("hot scalar i128 call succeeds");
         assert_eq!(actual, Some(value + 12));
     }
@@ -1806,7 +1998,7 @@ fn auto_promotes_hot_scalar_float_calls_to_native_jit() {
     for value in 0_u16..160 {
         let base = f32::from(value);
         let actual = accelerator
-            .call_f32_slice(helper.helper_ref(), &[base, 11.0])
+            .call_f32_slice(helper.function_ref(), &[base, 11.0])
             .expect("hot scalar f32 call succeeds");
         assert_eq!(actual, Some(base + 12.0));
     }
@@ -1833,7 +2025,7 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
     let flat_inputs = (0..64).flat_map(|value| [value, 1]).collect::<Vec<i8>>();
     let mut out = [0; 64];
     accelerator
-        .call_i8_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_i8_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i8 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[63], 65);
@@ -1852,7 +2044,7 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<i16>>();
     let mut out = [0; 128];
     accelerator
-        .call_i16_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_i16_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i16 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1871,7 +2063,7 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u8>>();
     let mut out = [0; 128];
     accelerator
-        .call_u8_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_u8_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u8 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1890,7 +2082,7 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u16>>();
     let mut out = [0; 128];
     accelerator
-        .call_u16_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_u16_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u16 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1915,10 +2107,10 @@ fn auto_promotes_target_size_integer_flat_batches_to_native_jit() {
         .collect::<Vec<_>>();
     let mut out = [RuntimeISizeValue::new(0); 128];
     accelerator
-        .call_exact_int_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_exact_int_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large isize flat batch");
     let sum = accelerator
-        .call_exact_int_flat_batch_sum(helper.helper_ref(), &flat_inputs, 2, 128)
+        .call_exact_int_flat_batch_sum(helper.function_ref(), &flat_inputs, 2, 128)
         .expect("native isize flat batch sum succeeds");
     assert_eq!(out[0], RuntimeISizeValue::new(2));
     assert_eq!(out[127], RuntimeISizeValue::new(129));
@@ -1942,10 +2134,10 @@ fn auto_promotes_target_size_integer_flat_batches_to_native_jit() {
         .collect::<Vec<_>>();
     let mut out = [RuntimeUSizeValue::new(0); 128];
     accelerator
-        .call_exact_int_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_exact_int_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large usize flat batch");
     let sum = accelerator
-        .call_exact_int_flat_batch_sum(helper.helper_ref(), &flat_inputs, 2, 128)
+        .call_exact_int_flat_batch_sum(helper.function_ref(), &flat_inputs, 2, 128)
         .expect("native usize flat batch sum succeeds");
     assert_eq!(out[0], RuntimeUSizeValue::new(2));
     assert_eq!(out[127], RuntimeUSizeValue::new(129));
@@ -1973,7 +2165,7 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
         .collect::<Vec<i128>>();
     let mut out = [0; 128];
     accelerator
-        .call_i128_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_i128_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i128 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1994,7 +2186,7 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
         .collect::<Vec<u128>>();
     let mut out = [0; 128];
     accelerator
-        .call_u128_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_u128_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u128 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -2223,7 +2415,7 @@ fn auto_promotes_large_f32_flat_batch_to_native_jit() {
     let mut out = [0.0; 128];
 
     accelerator
-        .call_f32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_f32_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large f32 flat batch");
 
     assert_eq!(out[0].to_bits(), 4.0f32.to_bits());
@@ -2259,7 +2451,7 @@ fn auto_promotes_large_f64_flat_batch_to_native_jit() {
     let mut out = [0.0; 128];
 
     accelerator
-        .call_f64_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_f64_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large f64 flat batch");
 
     assert_eq!(out[0].to_bits(), 4.0f64.to_bits());
@@ -2296,7 +2488,7 @@ fn auto_accelerator_promotes_large_flat_batches_to_jit() {
     let mut out = [0; 128];
 
     accelerator
-        .call_i64_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
+        .call_i64_flat_batch(helper.function_ref(), &flat_inputs, 2, &mut out)
         .expect("large auto flat batch succeeds");
 
     assert_eq!(out[0], 4);
@@ -2353,26 +2545,26 @@ fn aot_accelerates_exact_width_scalar_calls_without_i64_widening() {
         RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, helpers[0].plan());
 
     let i32_value = accelerator
-        .call_i32_slice(helpers[0].helper_ref(), &[7, 11])
+        .call_i32_slice(helpers[0].function_ref(), &[7, 11])
         .expect("i32 AOT call succeeds");
     let u32_value = accelerator
-        .call_exact_int_slice::<u32>(helpers[1].helper_ref(), &[13, 17])
+        .call_exact_int_slice::<u32>(helpers[1].function_ref(), &[13, 17])
         .expect("u32 AOT call succeeds");
     let f32_value = accelerator
-        .call_f32_slice(helpers[2].helper_ref(), &[1.25, 2.5])
+        .call_f32_slice(helpers[2].function_ref(), &[1.25, 2.5])
         .expect("f32 AOT call succeeds");
     let f64_value = accelerator
-        .call_f64_slice(helpers[3].helper_ref(), &[3.0, 4.5])
+        .call_f64_slice(helpers[3].function_ref(), &[3.0, 4.5])
         .expect("f64 AOT call succeeds");
     let isize_value = accelerator
         .call_exact_int_slice::<RuntimeISizeValue>(
-            helpers[4].helper_ref(),
+            helpers[4].function_ref(),
             &[RuntimeISizeValue::new(19), RuntimeISizeValue::new(23)],
         )
         .expect("isize AOT call succeeds");
     let usize_value = accelerator
         .call_exact_int_slice::<RuntimeUSizeValue>(
-            helpers[5].helper_ref(),
+            helpers[5].function_ref(),
             &[RuntimeUSizeValue::new(29), RuntimeUSizeValue::new(31)],
         )
         .expect("usize AOT call succeeds");
@@ -2411,7 +2603,7 @@ fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
 
     let value = accelerator
         .call_values(
-            helper.helper_ref(),
+            helper.function_ref(),
             vec![RuntimeValue::String("ready".to_owned())],
         )
         .expect("VM value fallback succeeds");
@@ -2454,7 +2646,7 @@ fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
     let mut out = [0; 4];
 
     accelerator
-        .call_i64_batch(helper.helper_ref(), &rows, &mut out)
+        .call_i64_batch(helper.function_ref(), &rows, &mut out)
         .expect("batch succeeds");
 
     assert_eq!(out, [18, 15, 20, 14]);
@@ -2497,7 +2689,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
     let mut small_out = [0; 2];
 
     accelerator
-        .call_i64_batch(helper.helper_ref(), &small_rows, &mut small_out)
+        .call_i64_batch(helper.function_ref(), &small_rows, &mut small_out)
         .expect("small AOT batch succeeds without pool");
 
     assert_eq!(small_out, [18, 15]);
@@ -2508,7 +2700,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
 
     let mut small_flat_out = [0; 2];
     accelerator
-        .call_i64_flat_batch(helper.helper_ref(), &[3, 4, 5, 1], 2, &mut small_flat_out)
+        .call_i64_flat_batch(helper.function_ref(), &[3, 4, 5, 1], 2, &mut small_flat_out)
         .expect("small flat AOT batch reuses sequential scratch without pool");
 
     assert_eq!(small_flat_out, [18, 15]);
@@ -2527,7 +2719,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
     let mut large_out = [0; 5];
 
     accelerator
-        .call_i64_batch(helper.helper_ref(), &large_rows, &mut large_out)
+        .call_i64_batch(helper.function_ref(), &large_rows, &mut large_out)
         .expect("large AOT batch creates pool");
 
     assert_eq!(large_out, [18, 15, 20, 14, 27]);
@@ -2564,8 +2756,13 @@ fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
     ];
     let mut out = [0; 3];
 
-    RuntimePureCallBackend::call_i64_batch(&mut accelerator, helper.helper_ref(), &rows, &mut out)
-        .expect("JIT batch succeeds");
+    RuntimePureCallBackend::call_i64_batch(
+        &mut accelerator,
+        helper.function_ref(),
+        &rows,
+        &mut out,
+    )
+    .expect("JIT batch succeeds");
 
     assert_eq!(out, [18, 15, 20]);
     assert_eq!(accelerator.stats().batch_calls, 1);
@@ -2607,7 +2804,7 @@ fn jit_flat_batch_sum_avoids_output_copy() {
     );
 
     let sum = accelerator
-        .call_i64_flat_batch_sum(helper.helper_ref(), &[3, 4, 5, 1, 2, 8], 2, 3)
+        .call_i64_flat_batch_sum(helper.function_ref(), &[3, 4, 5, 1, 2, 8], 2, 3)
         .expect("JIT flat batch sum succeeds");
 
     assert_eq!(sum, 53);
@@ -2656,7 +2853,7 @@ fn vm_batch_uses_i64_args_without_value_vec_allocation() {
     let mut out = [0; 3];
 
     accelerator
-        .call_i64_batch(helper.helper_ref(), &rows, &mut out)
+        .call_i64_batch(helper.function_ref(), &rows, &mut out)
         .expect("VM batch succeeds");
 
     assert_eq!(out, [18, 15, 20]);

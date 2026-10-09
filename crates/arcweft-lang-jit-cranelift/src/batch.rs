@@ -126,7 +126,7 @@ where
         let value = lower_small_int_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
             kind,
         )?;
@@ -142,7 +142,7 @@ where
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
         kind,
@@ -150,7 +150,7 @@ where
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
         kind,
@@ -192,7 +192,7 @@ where
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
         kind,
@@ -200,7 +200,7 @@ where
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
         kind,

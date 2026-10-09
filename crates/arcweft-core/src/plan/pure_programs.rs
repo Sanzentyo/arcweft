@@ -16,9 +16,11 @@ enum ProgramPosition {
     Ambiguous,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum RuntimePureProgramLookupError {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum RuntimePureProgramLookupError {
+    #[error("the selected program is absent from its admitted plan")]
     Missing,
+    #[error("the selected program has more than one admitted binding")]
     Ambiguous,
 }
 

@@ -418,11 +418,11 @@ impl RuntimeFlowInvocation {
     pub(crate) fn into_parts(
         self,
     ) -> (
-        RuntimePlan,
+        Arc<RuntimePlan>,
         FlowRuntimeId,
         Box<[RuntimeFlowParameterBinding]>,
     ) {
-        (Arc::unwrap_or_clone(self.plan), self.flow, self.bindings)
+        (self.plan, self.flow, self.bindings)
     }
 }
 

@@ -364,7 +364,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let args = self.evaluate_call_args(args, pure_backend)?;
-        let helper = crate::pure::RuntimePureHelperRef::resolve(&self.plan, helper_id)?;
+        let helper = crate::pure::RuntimePureFunctionRef::resolve(&self.plan, helper_id)?;
         pure_backend.call_values(helper, args)
     }
 

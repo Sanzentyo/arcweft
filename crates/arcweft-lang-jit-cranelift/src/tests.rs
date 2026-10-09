@@ -363,9 +363,8 @@ fn cranelift_plan_qualified_i64_helper_matches_vm() {
     assert!(Arc::ptr_eq(request.plan(), &helper.plan));
     assert!(matches!(
         request
-            .helper_ref()
+            .function_ref()
             .expect("helper reference")
-            .declaration()
             .expr
             .kind(),
         RuntimeExprKind::If { .. }

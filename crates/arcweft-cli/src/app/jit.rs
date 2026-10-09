@@ -12,13 +12,13 @@ use arcweft_core::{
     plan::{
         RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
         RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder,
-        RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelper, RuntimePureHelperId,
-        RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
-        RuntimePureOutputType,
+        RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperOrigin,
+        RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
-        PureFunctionResult, PureFunctionStats, RuntimeI64Args, VmPureFunctionBackend,
+        PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureFunctionId,
+        RuntimePureFunctionInputs, RuntimePureFunctionRef, VmPureFunctionBackend,
         VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{
@@ -718,7 +718,13 @@ fn compile_jit_check_helpers(
 ) -> Result<JitCheckCompiledHelpers, ExitCode> {
     let aot_started = Instant::now();
     let aot = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(request, target.inputs().iter().map(|input| input.local()))
+        .compile_i64_with_inputs(
+            request,
+            target
+                .inputs()
+                .iter()
+                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+        )
         .map_err(|error| {
             eprintln!("error: failed to compile AOT helper: {error}");
             ExitCode::FAILURE
@@ -727,7 +733,13 @@ fn compile_jit_check_helpers(
 
     let jit_started = Instant::now();
     let jit = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(request, target.inputs().iter().map(|input| input.local()))
+        .compile_i64_with_inputs(
+            request,
+            target
+                .inputs()
+                .iter()
+                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+        )
         .map_err(|error| {
             eprintln!("error: failed to compile JIT helper: {error}");
             ExitCode::FAILURE
@@ -736,7 +748,13 @@ fn compile_jit_check_helpers(
 
     let jit_batch_started = Instant::now();
     let jit_batch = CraneliftPureFunctionBackend
-        .compile_i64_batch(request, target.inputs().iter().map(|input| input.local()))
+        .compile_i64_batch(
+            request,
+            target
+                .inputs()
+                .iter()
+                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+        )
         .map_err(|error| {
             eprintln!("error: failed to compile JIT batch helper: {error}");
             ExitCode::FAILURE
@@ -806,7 +824,7 @@ pub(in crate::app) struct JitCheckTarget {
     source_compiler: Option<JitCheckSourceCompilerReport>,
     input_labels: Vec<String>,
     plan: Arc<RuntimePlan>,
-    helper: RuntimePureHelperId,
+    helper: RuntimePureFunctionId,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -1001,31 +1019,44 @@ impl JitCheckTarget {
         )
     }
 
-    pub(in crate::app) fn from_candidate(
-        plan: Arc<RuntimePlan>,
-        candidate: &RuntimePureHelper,
-        source_compiler: Option<JitCheckSourceCompilerReport>,
+    fn from_program(
+        name: String,
+        compiled: &arcweft_compiler::lower::CompiledDeterministicProgram,
+        input_labels: Vec<String>,
+        source_compiler: JitCheckSourceCompilerReport,
     ) -> Result<Self, ExitCode> {
-        if candidate.inputs.len() > 4 {
+        let plan = Arc::clone(compiled.plan());
+        let site = compiled.function_site().map_err(|error| {
             eprintln!(
-                "error: pure helper `{}` has {} input(s); current JIT check supports at most 4",
-                candidate.name,
-                candidate.inputs.len()
+                "error: selected deterministic program has no unique admitted function: {error}"
+            );
+            ExitCode::FAILURE
+        })?;
+        let candidate = RuntimePureFunctionRef::resolve(&plan, site).map_err(|error| {
+            eprintln!("error: selected deterministic function is unavailable: {error}");
+            ExitCode::FAILURE
+        })?;
+        if candidate.inputs.len() > 4
+            || candidate.output_type != RuntimePureOutputType::I64
+            || !candidate.supports_scalar_frame()
+            || !candidate
+                .inputs
+                .iter()
+                .all(|input| input.abi() == RuntimePureInputType::I64)
+            || input_labels.len() != candidate.inputs.len()
+        {
+            eprintln!(
+                "error: function `{name}` requires a complete direct i64 ABI of at most four inputs for JIT check"
             );
             return Err(ExitCode::from(2));
         }
         Ok(Self {
-            name: candidate.name.clone(),
+            name,
             source: JitCheckHelperSource::Source,
-            source_compiler,
-            input_labels: candidate
-                .inputs
-                .iter()
-                .enumerate()
-                .map(|(index, _)| format!("arg{index}"))
-                .collect(),
+            source_compiler: Some(source_compiler),
+            input_labels,
             plan,
-            helper: candidate.id,
+            helper: site.into(),
         })
     }
 
@@ -1091,7 +1122,7 @@ impl JitCheckTarget {
             source: JitCheckHelperSource::Builtin,
             source_compiler: None,
             input_labels: input_labels.into_iter().map(str::to_owned).collect(),
-            helper: plan.pure_helpers()[0].id,
+            helper: plan.pure_helpers()[0].id.into(),
             plan,
         }
     }
@@ -1108,16 +1139,13 @@ impl JitCheckTarget {
         })
     }
 
-    fn helper(&self) -> &RuntimePureHelper {
-        self.plan
-            .pure_helpers()
-            .get(self.helper.0)
-            .filter(|candidate| candidate.id == self.helper)
-            .expect("JIT target retains an admitted helper")
+    fn helper(&self) -> RuntimePureFunctionRef<'_> {
+        RuntimePureFunctionRef::resolve(&self.plan, self.helper)
+            .expect("JIT target retains its exact admitted body and ABI")
     }
 
-    fn inputs(&self) -> &[arcweft_core::plan::RuntimeCallableParameter] {
-        &self.helper().inputs
+    fn inputs(&self) -> RuntimePureFunctionInputs<'_> {
+        self.helper().inputs
     }
 }
 
@@ -1231,40 +1259,142 @@ fn jit_check_source_target(
     path: &Path,
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
-    let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
-    let plan = Arc::new(checked.compiled.runtime_plan().plan.clone());
-    let candidate = select_jit_helper_candidate(plan.pure_helpers(), helper_name)?;
-    JitCheckTarget::from_candidate(
-        Arc::clone(&plan),
-        candidate,
-        Some(JitCheckSourceCompilerReport::from(&checked)),
-    )
-}
+    use arcweft_lang_hir::project::HirDeclarationBodyRootRole;
+    use arcweft_lang_sema::final_analysis::{
+        CheckedExecutionBodyOwner, CheckedExecutionSource, CheckedItemRole,
+    };
 
-fn select_jit_helper_candidate<'a>(
-    candidates: &'a [RuntimePureHelper],
-    helper_name: Option<&str>,
-) -> Result<&'a RuntimePureHelper, ExitCode> {
-    if let Some(name) = helper_name {
-        return candidates
+    let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
+    let lease = checked.compiled.analysis_lease();
+    let analysis = lease.final_analysis();
+    let hir = lease.hir_project().analysis_view().map_err(|error| {
+        eprintln!("error: selected source generation is not executable: {error}");
+        ExitCode::FAILURE
+    })?;
+    let mut candidates = Vec::new();
+    for body in analysis
+        .hir_topology()
+        .modules()
+        .iter()
+        .flat_map(arcweft_lang_hir::project::HirModuleEvaluationTopology::entries)
+        .filter_map(|entry| entry.body())
+    {
+        let declaration = body.declaration();
+        if !matches!(
+            analysis
+                .item(body.source_item())
+                .map(arcweft_lang_sema::final_analysis::CheckedItem::role),
+            Some(CheckedItemRole::Function { .. })
+        ) || !body
+            .roots()
             .iter()
-            .find(|candidate| candidate.name == name)
-            .ok_or_else(|| {
-                eprintln!("error: pure helper `{name}` was not found");
+            .any(|root| root.role() == HirDeclarationBodyRootRole::FunctionBody)
+            || helper_name.is_some_and(|name| name != declaration.name())
+        {
+            continue;
+        }
+        let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+            declaration: declaration.clone(),
+            role: HirDeclarationBodyRootRole::FunctionBody,
+        });
+        let context = analysis
+            .checked_execution_context(hir, lease.project_symbols(), source.clone(), None)
+            .map_err(|error| {
+                eprintln!("error: function execution context is unavailable: {error}");
                 ExitCode::FAILURE
-            });
+            })?;
+        if let Err(error) = context.checked_deterministic_program(source.clone()) {
+            if helper_name.is_some() {
+                eprintln!(
+                    "error: function `{}` is not deterministic: {error}",
+                    declaration.name()
+                );
+                return Err(ExitCode::FAILURE);
+            }
+            continue;
+        }
+        let callable = analysis
+            .checked_callables()
+            .project_callable(declaration)
+            .map_err(|error| {
+                use arcweft_lang_sema::callable::CheckedCallableLookupError;
+                let reason = match error {
+                    CheckedCallableLookupError::Missing => {
+                        "the function is absent from the accepted callable catalog"
+                    }
+                    CheckedCallableLookupError::CandidateMismatch => {
+                        "the selected candidate differs from the accepted function"
+                    }
+                    CheckedCallableLookupError::RecordPointerMismatch => {
+                        "the callable record belongs to another catalog instance"
+                    }
+                    CheckedCallableLookupError::WrongFamily => {
+                        "the accepted callable has a different family"
+                    }
+                    CheckedCallableLookupError::ForeignWorld => {
+                        "the callable belongs to another semantic world"
+                    }
+                    CheckedCallableLookupError::StaleProjectRevision => {
+                        "the callable belongs to an earlier project revision"
+                    }
+                    CheckedCallableLookupError::ForeignCatalogDigest => {
+                        "the callable belongs to another catalog generation"
+                    }
+                    CheckedCallableLookupError::StaleStandardVersion => {
+                        "the callable uses an earlier standard catalog"
+                    }
+                    CheckedCallableLookupError::ForeignDetachedSource => {
+                        "the callable belongs to another detached source"
+                    }
+                };
+                eprintln!("error: accepted function signature is unavailable: {reason}");
+                ExitCode::FAILURE
+            })?;
+        let labels = callable
+            .signature()
+            .groups()
+            .iter()
+            .flat_map(arcweft_lang_sema::callable::CallableParameterGroup::parameters)
+            .enumerate()
+            .map(|(index, parameter)| {
+                parameter
+                    .name()
+                    .map_or_else(|| format!("arg{index}"), |name| name.as_str().to_owned())
+            })
+            .collect::<Vec<_>>();
+        candidates.push((declaration.name().to_owned(), source, labels));
     }
-    match candidates {
-        [candidate] => Ok(candidate),
+    let (name, source, labels) = match candidates.as_slice() {
+        [_] => candidates
+            .pop()
+            .expect("one accepted deterministic candidate"),
         [] => {
-            eprintln!("error: no `#[pure] fn` helper candidates were found");
-            Err(ExitCode::FAILURE)
+            eprintln!(
+                "error: no accepted deterministic function matched the selected source target"
+            );
+            return Err(ExitCode::FAILURE);
         }
         _ => {
-            eprintln!("error: multiple `#[pure] fn` helper candidates found; pass --helper NAME");
-            Err(ExitCode::from(2))
+            eprintln!("error: multiple deterministic functions found; pass --helper NAME");
+            return Err(ExitCode::from(2));
         }
-    }
+    };
+    let compiled = lease
+        .compile_deterministic_program(
+            source,
+            None,
+            &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+        )
+        .map_err(|error| {
+            eprintln!("error: selected deterministic function compilation failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    JitCheckTarget::from_program(
+        name,
+        &compiled,
+        labels,
+        JitCheckSourceCompilerReport::from(&checked),
+    )
 }
 
 fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_seed: u64) {
@@ -1481,7 +1611,7 @@ fn julia_benchmark_source(
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
-    let expr = julia_i64_expr(&target.helper().expr, target.inputs(), &target.input_labels)
+    let expr = julia_i64_expr(target.helper().expr, target.inputs(), &target.input_labels)
         .map_err(|message| {
             eprintln!(
                 "error: Julia baseline cannot lower helper `{}`: {message}",
@@ -1552,7 +1682,7 @@ println("max_ns\t", elapsed[end])
 
 fn julia_i64_expr(
     expr: &RuntimeExpr,
-    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
+    inputs: RuntimePureFunctionInputs<'_>,
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
@@ -1623,7 +1753,7 @@ fn julia_i64_expr(
 
 fn julia_bool_expr(
     expr: &RuntimeExpr,
-    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
+    inputs: RuntimePureFunctionInputs<'_>,
     input_labels: &[String],
 ) -> Result<String, String> {
     match expr.kind() {
@@ -1651,7 +1781,7 @@ fn julia_bool_expr(
 
 fn julia_local_identifier(
     local: RuntimeLocalDeclarationId,
-    inputs: &[arcweft_core::plan::RuntimeCallableParameter],
+    inputs: RuntimePureFunctionInputs<'_>,
     input_labels: &[String],
 ) -> Result<String, String> {
     inputs

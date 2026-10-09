@@ -4,7 +4,7 @@ use super::{
     MatrixMatmulBiasShapeSignature, MatrixMatmulBiasValueSignature, PreparedMatrixAddCache,
     PreparedMatrixMatmulBiasAddCache, PreparedMatrixMatmulCache, PreparedTensorAddCache,
     RuntimeCallTarget, RuntimeEvalError, RuntimeExternalCallBackend, RuntimeExternalCallContext,
-    RuntimeI64Args, RuntimePureAccelerator, RuntimePureHelperRef, RuntimeValue,
+    RuntimeI64Args, RuntimePureAccelerator, RuntimePureFunctionRef, RuntimeValue,
     TensorBinaryShapeSignature, TensorBinaryValueSignature, VmPureFunctionScratch, fmt, math,
     runtime_sequence_dense_usize,
 };
@@ -252,7 +252,7 @@ pub(super) fn infer_runtime_error(name: &str, error: impl fmt::Display) -> Runti
 
 impl RuntimePureAccelerator {
     pub(super) fn cache_entries(&self) -> usize {
-        self.cache.iter().filter(|entry| entry.is_some()).count()
+        self.cache.entries.len()
     }
 
     pub(super) fn call_runtime_math_matmul_f32(
@@ -510,7 +510,7 @@ impl RuntimePureAccelerator {
     }
 
     pub(super) fn call_vm_i64(
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI64Args,
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
@@ -521,7 +521,7 @@ impl RuntimePureAccelerator {
     }
 
     pub(super) fn call_vm_i64_slice(
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i64],
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i64, RuntimeEvalError> {
@@ -532,7 +532,7 @@ impl RuntimePureAccelerator {
     }
 
     pub(super) fn call_vm_i32_slice(
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<i32, RuntimeEvalError> {
@@ -541,7 +541,7 @@ impl RuntimePureAccelerator {
                 value
                     .exact_i32()
                     .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                        name: helper.name.clone(),
+                        name: helper.name.to_owned(),
                         reason: format!("pure i32 result `{value}` is outside i32 range"),
                     })
             }
@@ -550,14 +550,14 @@ impl RuntimePureAccelerator {
     }
 
     pub(super) fn call_vm_f32_slice(
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f32],
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<f32, RuntimeEvalError> {
         match scratch.evaluate_f32_slice(helper.plan(), helper.id(), args)? {
             RuntimeValue::F32(value) => Ok(value),
             value => Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure f32 result expected f32, got {}",
                     runtime_value_kind(&value)
@@ -567,14 +567,14 @@ impl RuntimePureAccelerator {
     }
 
     pub(super) fn call_vm_f64_slice(
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f64],
         scratch: &mut VmPureFunctionScratch,
     ) -> Result<f64, RuntimeEvalError> {
         match scratch.evaluate_f64_slice(helper.plan(), helper.id(), args)? {
             RuntimeValue::F64(value) => Ok(value),
             value => Err(RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
+                name: helper.name.to_owned(),
                 reason: format!(
                     "pure f64 result expected f64, got {}",
                     runtime_value_kind(&value)

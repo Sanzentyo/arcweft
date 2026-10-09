@@ -225,17 +225,28 @@ impl VmPureFunctionScratch {
     pub(super) fn evaluate_values_with_external(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: Vec<RuntimeValue>,
         backend: &mut dyn RuntimeExternalCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings = prepare_helper_bindings(plan, helper, args)?;
+        let helper = resolve_validated_pure_function(plan, helper)?;
+        if let RuntimePureFunctionId::Function(site) = helper.id() {
+            let (captures, arguments) = helper.split_function_arguments(args)?;
+            plan.validate_function_site_inputs(site, &captures, &arguments)?;
+            self.env.replace_scopes_with_bindings([Vec::new()]);
+            let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+                .with_format_context(self.format_context.clone());
+            evaluator.external = Some(backend);
+            let result = evaluator.evaluate_function_site(site, captures, arguments);
+            self.env = evaluator.into_env();
+            return result;
+        }
+        let bindings = prepare_helper_bindings(helper, args)?;
         self.env.replace_scopes_with_bindings([bindings]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
         evaluator.external = Some(backend);
-        let result = validate_helper_result(plan, helper, evaluator.evaluate_expr(&helper.expr));
+        let result = validate_helper_result(helper, evaluator.evaluate_expr(helper.expr));
         self.env = evaluator.into_env();
         result
     }

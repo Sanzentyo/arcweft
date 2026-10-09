@@ -21,6 +21,7 @@ mod executable_types;
 pub(crate) mod fx;
 mod nominals;
 pub(crate) mod programs;
+pub use programs::{CompiledDeterministicProgram, DeterministicProgramCompileError};
 mod project_instances;
 #[path = "lower/reachability.rs"]
 mod reachability;

@@ -24,10 +24,9 @@ use lower::{
     sanitize_symbol_component, u32_bindings, u64_bindings, validate_input_locals,
 };
 
-use arcweft_core::plan::RuntimePureHelper;
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult,
-    PureFunctionStats, RuntimeI64Args,
+    PureFunctionStats, RuntimeI64Args, RuntimePureFunctionRef,
 };
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::value::{
@@ -49,10 +48,9 @@ use thiserror::Error;
 
 pub(crate) fn request_helper(
     request: &PureFunctionRequest,
-) -> Result<&RuntimePureHelper, CraneliftCodegenError> {
+) -> Result<RuntimePureFunctionRef<'_>, CraneliftCodegenError> {
     request
-        .helper_ref()
-        .map(|helper| helper.declaration())
+        .function_ref()
         .map_err(|error| CraneliftCodegenError::UnsupportedExpr(error.to_string()))
 }
 
@@ -521,7 +519,7 @@ impl PureFunctionBackend for CraneliftPureFunctionBackend {
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
         self.evaluate_jit(request)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: format!("pure#{}", request.helper_id().0),
+                name: format!("{:?}", request.function_id()),
                 reason: error.to_string(),
             })
     }
@@ -1094,7 +1092,7 @@ where
         let value = lower_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -1162,7 +1160,7 @@ where
         let value = lower_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -1177,14 +1175,14 @@ where
     let batch = define_i64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_i64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
@@ -1286,7 +1284,7 @@ where
         let value = lower_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -1329,7 +1327,7 @@ pub fn emit_object_bundle<'a>(
     for (index, helper) in helpers.into_iter().enumerate() {
         let symbol_prefix = format!(
             "arcweft_pure_bundle_{index}_{}",
-            sanitize_symbol_component(&request_helper(helper.request)?.name)
+            sanitize_symbol_component(request_helper(helper.request)?.name)
         );
         metadata.push(define_object_bundle_helper(
             &mut module,
@@ -1356,7 +1354,7 @@ fn define_object_bundle_helper<M>(
 where
     M: Module,
 {
-    let name = request_helper(helper.request)?.name.clone();
+    let name = request_helper(helper.request)?.name.to_owned();
     let kind = helper.kind;
     match kind {
         PureObjectInputKind::I64 => {
@@ -1551,7 +1549,7 @@ pub fn emit_object_i64_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
@@ -1566,7 +1564,7 @@ pub fn emit_object_i32_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_i32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
@@ -1581,7 +1579,7 @@ pub fn emit_object_u32_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_u32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
@@ -1596,7 +1594,7 @@ pub fn emit_object_u64_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_u64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
@@ -1611,7 +1609,7 @@ pub fn emit_object_f32_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_f32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     float_object_result(module, symbol_prefix, defined)
@@ -1626,7 +1624,7 @@ pub fn emit_object_f64_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_f64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     float_object_result(module, symbol_prefix, defined)
@@ -1694,7 +1692,7 @@ fn emit_object_small_int_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined =
         define_small_int_with_inputs(&mut module, &symbol_prefix, request, input_locals, kind)?;
@@ -1709,7 +1707,7 @@ fn emit_object_wide_int_batch_with_inputs(
     let mut module = object_module()?;
     let symbol_prefix = format!(
         "arcweft_pure_{}",
-        sanitize_symbol_component(&request_helper(request)?.name)
+        sanitize_symbol_component(request_helper(request)?.name)
     );
     let defined = define_small_int_batch_with_inputs(
         &mut module,
@@ -1832,7 +1830,7 @@ where
         let value = lower_i32_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -1847,14 +1845,14 @@ where
     let batch = define_i32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_i32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
@@ -1920,7 +1918,7 @@ where
         let value = lower_u32_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -1935,14 +1933,14 @@ where
     let batch = define_u32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_u32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
@@ -2008,7 +2006,7 @@ where
         let value = lower_u64_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -2023,14 +2021,14 @@ where
     let batch = define_u64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
     let batch_sum = define_u64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
@@ -2096,7 +2094,7 @@ where
         let value = lower_f32_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -2111,7 +2109,7 @@ where
     let batch = define_f32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;
@@ -2176,7 +2174,7 @@ where
         let value = lower_f64_expr(
             &mut builder,
             &bindings,
-            &request_helper(request)?.expr,
+            request_helper(request)?.expr,
             &mut stats,
         )?;
         builder.ins().return_(&[value]);
@@ -2191,7 +2189,7 @@ where
     let batch = define_f64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request_helper(request)?.expr,
+        request_helper(request)?.expr,
         &captured_bindings,
         &input_locals,
     )?;

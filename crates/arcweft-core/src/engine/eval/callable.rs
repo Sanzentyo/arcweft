@@ -8,11 +8,14 @@ use std::sync::Arc;
 
 use crate::pattern::match_runtime_pattern_owned;
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
+use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
+use crate::pure::{RuntimeFixedArgs, RuntimeI32Args, RuntimeI64Args, RuntimePureFunctionRef};
 use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableApplication,
-    RuntimeCallableBodyReference, RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
+    RuntimeCallableBodyReference, RuntimeCallableValue, RuntimeCallableValueError,
+    RuntimeExactInteger, RuntimeValue,
 };
 
 use super::{
@@ -181,6 +184,18 @@ impl Engine {
                     .to_owned(),
             });
         };
+        if declaration.is_eager_pure_candidate()
+            && let Ok(function) = RuntimePureFunctionRef::resolve(&plan, site)
+            && let Some(value) =
+                Self::evaluate_scalar_function_site(function, &captures, &arguments, backend)?
+        {
+            if !plan.value_matches_type(declaration.result(), &value)? {
+                return Err(RuntimeEvalError::InvalidExpressionType(
+                    declaration.result(),
+                ));
+            }
+            return Ok(value);
+        }
         let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
         let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
         let mut staged = Vec::new();
@@ -234,5 +249,154 @@ impl Engine {
         });
         self.fiber.env.pop_scope();
         value
+    }
+
+    /// The normal function ingress has already validated the complete packet.
+    /// Scalar backends borrow only a fixed physical pack derived from those
+    /// exact rows; every declared formal remains present, including discards.
+    fn evaluate_scalar_function_site(
+        function: RuntimePureFunctionRef<'_>,
+        captures: &[RuntimeValue],
+        arguments: &[RuntimeValue],
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let arity = function.inputs.len();
+        if arity > RuntimeFixedArgs::<i64>::MAX || !function.supports_scalar_frame() {
+            return Ok(None);
+        }
+        let value = |index: usize| -> Result<&RuntimeValue, RuntimeEvalError> {
+            let input = function
+                .inputs
+                .get(index)
+                .and_then(crate::pure::RuntimePureFunctionInputRef::function_input)
+                .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                    name: function.name.to_owned(),
+                    reason: "function input authority is absent".to_owned(),
+                })?;
+            let supplied = match input.source() {
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                    captures.get(position as usize)
+                }
+                RuntimeFunctionInputSource::Parameter { position, .. } => {
+                    arguments.get(position as usize)
+                }
+            };
+            supplied.ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: function.name.to_owned(),
+                reason: "complete function input packet is absent".to_owned(),
+            })
+        };
+        macro_rules! exact {
+            ($ty:ty, $abi:ident) => {{
+                if !function
+                    .inputs
+                    .iter()
+                    .all(|input| input.abi() == RuntimePureInputType::$abi)
+                {
+                    return Ok(None);
+                }
+                let mut pack = [<$ty>::default(); 4];
+                for (index, slot) in pack.iter_mut().take(arity).enumerate() {
+                    *slot = <$ty as RuntimeExactInteger>::try_from_runtime_value(
+                        function.name,
+                        value(index)?.clone(),
+                    )?;
+                }
+                backend
+                    .call_exact_int_slice::<$ty>(function, &pack[..arity])
+                    .map(|value| value.map(RuntimeExactInteger::into_runtime_value))
+            }};
+        }
+        match function.output_type {
+            RuntimePureOutputType::I8 => exact!(i8, I8),
+            RuntimePureOutputType::I16 => exact!(i16, I16),
+            RuntimePureOutputType::I128 => exact!(i128, I128),
+            RuntimePureOutputType::ISize => exact!(crate::value::RuntimeISizeValue, ISize),
+            RuntimePureOutputType::U8 => exact!(u8, U8),
+            RuntimePureOutputType::U16 => exact!(u16, U16),
+            RuntimePureOutputType::U32 => exact!(u32, U32),
+            RuntimePureOutputType::U64 => exact!(u64, U64),
+            RuntimePureOutputType::U128 => exact!(u128, U128),
+            RuntimePureOutputType::USize => exact!(crate::value::RuntimeUSizeValue, USize),
+            RuntimePureOutputType::I32 => {
+                if !function
+                    .inputs
+                    .iter()
+                    .all(|input| input.abi() == RuntimePureInputType::I32)
+                {
+                    return Ok(None);
+                }
+                let mut pack = [0i32; 4];
+                for (index, slot) in pack.iter_mut().take(arity).enumerate() {
+                    *slot = i32::try_from_runtime_value(function.name, value(index)?.clone())?;
+                }
+                backend
+                    .call_i32(function, RuntimeI32Args::new(pack, arity))
+                    .map(|value| value.map(RuntimeValue::i32))
+            }
+            RuntimePureOutputType::I64 => {
+                if !function
+                    .inputs
+                    .iter()
+                    .all(|input| input.abi() == RuntimePureInputType::I64)
+                {
+                    return Ok(None);
+                }
+                let mut pack = [0i64; 4];
+                for (index, slot) in pack.iter_mut().take(arity).enumerate() {
+                    let RuntimeValue::Int(integer) = value(index)? else {
+                        return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(value(
+                            index,
+                        )?)));
+                    };
+                    *slot = integer
+                        .exact_i64()
+                        .ok_or_else(|| RuntimeEvalError::ExpectedInt(integer.to_string()))?;
+                }
+                backend
+                    .call_i64(function, RuntimeI64Args::new(pack, arity))
+                    .map(|value| value.map(RuntimeValue::i64))
+            }
+            RuntimePureOutputType::F32 => {
+                if !function
+                    .inputs
+                    .iter()
+                    .all(|input| input.abi() == RuntimePureInputType::F32)
+                {
+                    return Ok(None);
+                }
+                let mut pack = [0f32; 4];
+                for (index, slot) in pack.iter_mut().take(arity).enumerate() {
+                    let RuntimeValue::F32(supplied) = value(index)? else {
+                        return Ok(None);
+                    };
+                    *slot = *supplied;
+                }
+                backend
+                    .call_f32_slice(function, &pack[..arity])
+                    .map(|value| value.map(RuntimeValue::F32))
+            }
+            RuntimePureOutputType::F64 => {
+                if !function
+                    .inputs
+                    .iter()
+                    .all(|input| input.abi() == RuntimePureInputType::F64)
+                {
+                    return Ok(None);
+                }
+                let mut pack = [0f64; 4];
+                for (index, slot) in pack.iter_mut().take(arity).enumerate() {
+                    let RuntimeValue::F64(supplied) = value(index)? else {
+                        return Ok(None);
+                    };
+                    *slot = *supplied;
+                }
+                backend
+                    .call_f64_slice(function, &pack[..arity])
+                    .map(|value| value.map(RuntimeValue::F64))
+            }
+            RuntimePureOutputType::Bool | RuntimePureOutputType::Value => Ok(None),
+        }
     }
 }

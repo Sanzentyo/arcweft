@@ -38,19 +38,23 @@ use crate::{
     program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
     task::RuntimeProgramOwner,
 };
-use std::ops::Deref;
 use std::sync::Arc;
 
 mod aot;
+mod function;
 mod program;
 mod runtime_backend;
+pub use function::{
+    RuntimePureFunctionId, RuntimePureFunctionInputIter, RuntimePureFunctionInputRef,
+    RuntimePureFunctionInputs, RuntimePureFunctionRef, RuntimePureFunctionView,
+};
 pub use program::evaluate_pure_program_with_backend;
 
 /// Request for evaluating a deterministic pure helper expression.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PureFunctionRequest {
     plan: Arc<RuntimePlan>,
-    helper: RuntimePureHelperId,
+    helper: RuntimePureFunctionId,
     bindings: Box<[RuntimeLocalBinding]>,
     format_context: crate::value::RuntimeFormatContext,
 }
@@ -324,68 +328,6 @@ pub struct RuntimeCompactPureHelper {
     pub scalar_eval_supported: bool,
 }
 
-/// Borrowed capability for one helper admitted by an exact runtime plan.
-///
-/// Backends receive this handle rather than a detached helper row, preserving
-/// the plan authority needed by typed expressions, local declarations, and
-/// nominal domains.
-#[derive(Clone, Copy, Debug)]
-pub struct RuntimePureHelperRef<'a> {
-    plan: &'a Arc<RuntimePlan>,
-    id: RuntimePureHelperId,
-    declaration: &'a RuntimePureHelper,
-}
-
-impl<'a> RuntimePureHelperRef<'a> {
-    fn new(
-        plan: &'a Arc<RuntimePlan>,
-        id: RuntimePureHelperId,
-        declaration: &'a RuntimePureHelper,
-    ) -> Self {
-        Self {
-            plan,
-            id,
-            declaration,
-        }
-    }
-
-    /// Resolves one helper through its exact admitted plan.
-    ///
-    /// This is the request-free capability boundary used by eager backends
-    /// that compile helper bodies before any concrete call arguments exist.
-    pub fn resolve(
-        plan: &'a Arc<RuntimePlan>,
-        id: RuntimePureHelperId,
-    ) -> Result<Self, RuntimeEvalError> {
-        let declaration = resolve_pure_helper(plan, id)?;
-        validate_pure_helper_contract(plan, declaration)?;
-        Ok(Self::new(plan, id, declaration))
-    }
-
-    #[must_use]
-    pub const fn plan(self) -> &'a Arc<RuntimePlan> {
-        self.plan
-    }
-
-    #[must_use]
-    pub const fn id(self) -> RuntimePureHelperId {
-        self.id
-    }
-
-    #[must_use]
-    pub const fn declaration(self) -> &'a RuntimePureHelper {
-        self.declaration
-    }
-}
-
-impl Deref for RuntimePureHelperRef<'_> {
-    type Target = RuntimePureHelper;
-
-    fn deref(&self) -> &Self::Target {
-        self.declaration
-    }
-}
-
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
     /// Records one accepted top-level compact-AWBC pure-program invocation.
@@ -396,13 +338,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_i8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i8],
     ) -> Result<Option<i8>, RuntimeEvalError>;
 
     fn call_i8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         out: &mut [i8],
@@ -410,7 +352,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         rows: usize,
@@ -418,13 +360,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_i16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i16],
     ) -> Result<Option<i16>, RuntimeEvalError>;
 
     fn call_i16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         out: &mut [i16],
@@ -432,7 +374,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         rows: usize,
@@ -440,7 +382,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         out: &mut [i128],
@@ -448,7 +390,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         rows: usize,
@@ -456,19 +398,19 @@ pub trait RuntimePureCallBackend {
 
     fn call_i32(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI32Args,
     ) -> Result<Option<i32>, RuntimeEvalError>;
 
     fn call_i32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i32],
     ) -> Result<Option<i32>, RuntimeEvalError>;
 
     fn call_i32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         out: &mut [i32],
@@ -476,7 +418,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         rows: usize,
@@ -484,19 +426,19 @@ pub trait RuntimePureCallBackend {
 
     fn call_u32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u32],
     ) -> Result<Option<u32>, RuntimeEvalError>;
 
     fn call_u8_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u8],
     ) -> Result<Option<u8>, RuntimeEvalError>;
 
     fn call_u8_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         out: &mut [u8],
@@ -504,7 +446,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u8_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         rows: usize,
@@ -512,13 +454,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_u16_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u16],
     ) -> Result<Option<u16>, RuntimeEvalError>;
 
     fn call_u16_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         out: &mut [u16],
@@ -526,7 +468,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u16_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         rows: usize,
@@ -534,7 +476,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u128_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         out: &mut [u128],
@@ -542,7 +484,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u128_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         rows: usize,
@@ -550,7 +492,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         out: &mut [u32],
@@ -558,7 +500,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u32_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         rows: usize,
@@ -566,13 +508,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_u64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[u64],
     ) -> Result<Option<u64>, RuntimeEvalError>;
 
     fn call_u64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         out: &mut [u64],
@@ -580,7 +522,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_u64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         rows: usize,
@@ -588,7 +530,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         rows: usize,
@@ -596,13 +538,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_exact_int_slice<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[T],
     ) -> Result<Option<T>, RuntimeEvalError>;
 
     fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         out: &mut [T],
@@ -610,26 +552,26 @@ pub trait RuntimePureCallBackend {
 
     fn call_i64(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError>;
 
     fn call_i64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[i64],
     ) -> Result<Option<i64>, RuntimeEvalError>;
 
     fn call_i64_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError>;
 
     fn call_i64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
@@ -637,7 +579,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i64_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
@@ -645,20 +587,20 @@ pub trait RuntimePureCallBackend {
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError>;
 
     fn call_f32_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError>;
 
     fn call_f32_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f32],
         arity: usize,
         out: &mut [f32],
@@ -666,13 +608,13 @@ pub trait RuntimePureCallBackend {
 
     fn call_f64_slice(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError>;
 
     fn call_f64_flat_batch(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         flat_inputs: &[f64],
         arity: usize,
         out: &mut [f64],
@@ -680,7 +622,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_values(
         &mut self,
-        helper: RuntimePureHelperRef<'_>,
+        helper: RuntimePureFunctionRef<'_>,
         args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError>;
 
@@ -794,7 +736,7 @@ impl<E> VmRuntimePureCallBackend<E> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AotPureI64Plan {
     plan: Arc<RuntimePlan>,
-    helper: RuntimePureHelperId,
+    helper: RuntimePureFunctionId,
     expr: aot::AotI64Expr,
     initial_slots: Vec<i64>,
     input_slots: Vec<usize>,
@@ -805,7 +747,7 @@ pub struct AotPureI64Plan {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AotPureScalarPlan {
     plan: Arc<RuntimePlan>,
-    helper: RuntimePureHelperId,
+    helper: RuntimePureFunctionId,
     expr: aot::AotScalarExpr,
     initial_slots: Vec<RuntimePureScalar>,
     input_slots: Vec<usize>,
@@ -830,31 +772,16 @@ impl PureFunctionRequest {
     /// evaluation authority.
     pub fn try_new(
         plan: Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: impl IntoIterator<Item = RuntimeValue>,
     ) -> Result<Self, RuntimeEvalError> {
+        let helper = helper.into();
         let args = args.into_iter().collect::<Vec<_>>();
-        let declaration = resolve_pure_helper(&plan, helper)?;
-        validate_pure_helper_contract(&plan, declaration)?;
-        if args.len() != declaration.inputs.len() {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: declaration.name.clone(),
-                max: declaration.inputs.len(),
-                found: args.len(),
-            });
-        }
+        let declaration = RuntimePureFunctionRef::resolve(&plan, helper)?;
+        validate_function_arguments(declaration, &args)?;
         let mut bindings = Vec::with_capacity(args.len());
         for (input, value) in declaration.inputs.iter().zip(args) {
             let local = input.local();
-            let local_declaration = plan
-                .local_declarations()
-                .get(local)
-                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-            if !plan.value_matches_type(local_declaration.ty(), &value)? {
-                return Err(RuntimeEvalError::InvalidExpressionType(
-                    local_declaration.ty(),
-                ));
-            }
             bindings.push(RuntimeLocalBinding { local, value });
         }
         Ok(Self {
@@ -877,12 +804,12 @@ impl PureFunctionRequest {
         &self.plan
     }
 
-    pub fn helper_ref(&self) -> Result<RuntimePureHelperRef<'_>, RuntimeEvalError> {
-        RuntimePureHelperRef::resolve(&self.plan, self.helper)
+    pub fn function_ref(&self) -> Result<RuntimePureFunctionRef<'_>, RuntimeEvalError> {
+        RuntimePureFunctionRef::resolve(&self.plan, self.helper)
     }
 
     #[must_use]
-    pub const fn helper_id(&self) -> RuntimePureHelperId {
+    pub const fn function_id(&self) -> RuntimePureFunctionId {
         self.helper
     }
 
@@ -902,11 +829,11 @@ fn resolve_pure_helper(
         .ok_or(RuntimeEvalError::UnknownPureHelper(helper.0))
 }
 
-fn resolve_validated_pure_helper(
+fn resolve_validated_pure_function(
     plan: &Arc<RuntimePlan>,
-    helper: RuntimePureHelperId,
-) -> Result<&RuntimePureHelper, RuntimeEvalError> {
-    Ok(RuntimePureHelperRef::resolve(plan, helper)?.declaration())
+    function: impl Into<RuntimePureFunctionId>,
+) -> Result<RuntimePureFunctionRef<'_>, RuntimeEvalError> {
+    RuntimePureFunctionRef::resolve(plan, function)
 }
 
 fn validate_pure_helper_contract(
@@ -1004,10 +931,18 @@ impl PureFunctionBackend for VmPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
-        let helper = request.helper_ref()?.declaration();
+        let helper = request.function_ref()?;
         let mut evaluator = PureEvaluator::new_ref(&request.plan, &request.bindings)
             .with_format_context(request.format_context.clone());
-        let value = evaluator.evaluate_expr(&helper.expr)?;
+        let value = match helper.id() {
+            RuntimePureFunctionId::Recipe(_) => evaluator.evaluate_expr(helper.expr)?,
+            RuntimePureFunctionId::Function(site) => {
+                let (captures, arguments) = helper.split_function_arguments(
+                    request.bindings.iter().map(|binding| binding.value.clone()),
+                )?;
+                evaluator.evaluate_function_site(site, captures, arguments)?
+            }
+        };
         Ok(PureFunctionResult {
             backend: self.kind(),
             value,
@@ -1020,7 +955,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_i32_args(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: RuntimeI32Args,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.evaluate_i32_slice(plan, helper, args.as_slice())
@@ -1029,7 +964,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_i32_slice(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[i32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
@@ -1039,7 +974,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_i64_args(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: RuntimeI64Args,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.evaluate_i64_slice(plan, helper, args.as_slice())
@@ -1048,7 +983,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_i64_slice(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[i64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
@@ -1058,7 +993,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_f32_slice(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[f32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
@@ -1068,7 +1003,7 @@ impl VmPureFunctionBackend {
     pub fn evaluate_f64_slice(
         &self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[f64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut scratch = VmPureFunctionScratch::default();
@@ -1123,7 +1058,7 @@ impl VmPureFunctionScratch {
     pub fn evaluate_i32_args(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: RuntimeI32Args,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.evaluate_i32_slice(plan, helper, args.as_slice())
@@ -1132,77 +1067,46 @@ impl VmPureFunctionScratch {
     pub fn evaluate_i32_slice(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[i32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings =
-            prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::i32))?;
-        self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
-            .with_format_context(self.format_context.clone());
-        let result = validate_helper_result(
+        self.evaluate_values(
             plan,
             helper,
-            if helper.scalar_eval_supported {
-                evaluator
-                    .evaluate_scalar_expr(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value)
-            } else {
-                evaluator.evaluate_expr(&helper.expr)
-            },
-        );
-        self.env = evaluator.into_env();
-        result
+            args.iter().copied().map(RuntimeValue::i32).collect(),
+        )
     }
 
     pub fn evaluate_exact_int_slice<T: RuntimePureScalarInteger>(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[T],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings = prepare_helper_bindings(
-            plan,
-            helper,
-            args.iter()
-                .copied()
-                .map(RuntimePureScalarInteger::into_pure_scalar)
-                .map(RuntimePureScalar::into_runtime_value),
-        )?;
+        let helper = resolve_validated_pure_function(plan, helper)?;
+        let values = args
+            .iter()
+            .copied()
+            .map(RuntimePureScalarInteger::into_pure_scalar)
+            .map(RuntimePureScalar::into_runtime_value)
+            .collect::<Vec<_>>();
+        validate_function_arguments(helper, &values)?;
         if helper.scalar_eval_supported {
-            let mut evaluator = PureScalarEvaluator::new_exact(&helper.inputs, args);
-            return validate_helper_result(
-                plan,
-                helper,
-                evaluator
-                    .evaluate(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value),
-            );
+            let mut evaluator = PureScalarEvaluator::new_exact(helper.inputs, args);
+            let result = evaluator
+                .evaluate(helper.expr)
+                .map(RuntimePureScalar::into_runtime_value);
+            if !matches!(result, Err(RuntimeEvalError::UnsupportedPure { .. })) {
+                return validate_helper_result(helper, result);
+            }
         }
-        self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
-            .with_format_context(self.format_context.clone());
-        let result = validate_helper_result(
-            plan,
-            helper,
-            if helper.scalar_eval_supported {
-                evaluator
-                    .evaluate_scalar_expr(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value)
-            } else {
-                evaluator.evaluate_expr(&helper.expr)
-            },
-        );
-        self.env = evaluator.into_env();
-        result
+        self.evaluate_values(plan, helper.id(), values)
     }
 
     pub fn evaluate_i64_args(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: RuntimeI64Args,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.evaluate_i64_slice(plan, helper, args.as_slice())
@@ -1211,104 +1115,71 @@ impl VmPureFunctionScratch {
     pub fn evaluate_i64_slice(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[i64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings =
-            prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::i64))?;
-        self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
-            .with_format_context(self.format_context.clone());
-        let result = validate_helper_result(
+        self.evaluate_values(
             plan,
             helper,
-            if helper.scalar_eval_supported {
-                evaluator
-                    .evaluate_scalar_expr(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value)
-            } else {
-                evaluator.evaluate_expr(&helper.expr)
-            },
-        );
-        self.env = evaluator.into_env();
-        result
+            args.iter().copied().map(RuntimeValue::i64).collect(),
+        )
     }
 
     pub fn evaluate_f32_slice(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[f32],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings =
-            prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::F32))?;
-        self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
-            .with_format_context(self.format_context.clone());
-        let result = validate_helper_result(
+        self.evaluate_values(
             plan,
             helper,
-            if helper.scalar_eval_supported {
-                evaluator
-                    .evaluate_scalar_expr(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value)
-            } else {
-                evaluator.evaluate_expr(&helper.expr)
-            },
-        );
-        self.env = evaluator.into_env();
-        result
+            args.iter().copied().map(RuntimeValue::F32).collect(),
+        )
     }
 
     pub fn evaluate_f64_slice(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: &[f64],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings =
-            prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::F64))?;
-        self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
-            .with_format_context(self.format_context.clone());
-        let result = validate_helper_result(
+        self.evaluate_values(
             plan,
             helper,
-            if helper.scalar_eval_supported {
-                evaluator
-                    .evaluate_scalar_expr(&helper.expr)
-                    .map(RuntimePureScalar::into_runtime_value)
-            } else {
-                evaluator.evaluate_expr(&helper.expr)
-            },
-        );
-        self.env = evaluator.into_env();
-        result
+            args.iter().copied().map(RuntimeValue::F64).collect(),
+        )
     }
 
     pub fn evaluate_values(
         &mut self,
         plan: &Arc<RuntimePlan>,
-        helper: RuntimePureHelperId,
+        helper: impl Into<RuntimePureFunctionId>,
         args: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let helper = resolve_validated_pure_helper(plan, helper)?;
-        let bindings = prepare_helper_bindings(plan, helper, args)?;
+        let helper = resolve_validated_pure_function(plan, helper)?;
+        if let RuntimePureFunctionId::Function(site) = helper.id() {
+            let (captures, arguments) = helper.split_function_arguments(args)?;
+            plan.validate_function_site_inputs(site, &captures, &arguments)?;
+            self.env.replace_scopes_with_bindings([Vec::new()]);
+            let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+                .with_format_context(self.format_context.clone());
+            let result = evaluator.evaluate_function_site(site, captures, arguments);
+            self.env = evaluator.into_env();
+            return result;
+        }
+        let bindings = prepare_helper_bindings(helper, args)?;
         self.env.replace_scopes_with_bindings([bindings]);
         let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
             .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
-            plan,
             helper,
             if helper.scalar_eval_supported {
                 evaluator
-                    .evaluate_scalar_expr(&helper.expr)
+                    .evaluate_scalar_expr(helper.expr)
                     .map(RuntimePureScalar::into_runtime_value)
             } else {
-                evaluator.evaluate_expr(&helper.expr)
+                evaluator.evaluate_expr(helper.expr)
             },
         );
         self.env = evaluator.into_env();
@@ -1317,44 +1188,58 @@ impl VmPureFunctionScratch {
 }
 
 fn prepare_helper_bindings(
-    plan: &RuntimePlan,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureFunctionRef<'_>,
     values: impl IntoIterator<Item = RuntimeValue>,
 ) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
     let values = values.into_iter().collect::<Vec<_>>();
-    validate_helper_arguments(plan, helper, &values)?;
+    validate_function_arguments(helper, &values)?;
     Ok(helper
         .inputs
         .iter()
-        .map(|input| input.local())
+        .map(RuntimePureFunctionInputRef::local)
         .zip(values)
         .map(|(local, value)| RuntimeLocalBinding { local, value })
         .collect())
 }
 
-fn validate_helper_arguments(
-    plan: &RuntimePlan,
-    helper: &RuntimePureHelper,
+fn validate_function_arguments(
+    function: RuntimePureFunctionRef<'_>,
     values: &[RuntimeValue],
 ) -> Result<(), RuntimeEvalError> {
-    if values.len() != helper.inputs.len() {
+    if values.len() != function.inputs.len() {
         return Err(RuntimeEvalError::TooManyPureArgs {
-            helper: helper.name.clone(),
-            max: helper.inputs.len(),
+            helper: function.name.to_owned(),
+            max: function.inputs.len(),
             found: values.len(),
         });
     }
-    helper
+    if let RuntimePureFunctionId::Function(site) = function.id() {
+        for (input, value) in function.inputs.iter().zip(values) {
+            if !value.ownership().permits_copy() {
+                return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
+            }
+        }
+        let (captures, arguments) = function.split_function_arguments(values.iter().cloned())?;
+        function
+            .plan()
+            .validate_function_site_inputs(site, &captures, &arguments)?;
+        return Ok(());
+    }
+    function
         .inputs
         .iter()
-        .map(|input| input.local())
         .zip(values)
-        .try_for_each(|(local, value)| {
-            let declaration = plan
+        .try_for_each(|(input, value)| {
+            let local = input.input_local();
+            let declaration = function
+                .plan()
                 .local_declarations()
                 .get(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-            if !plan.value_matches_type(declaration.ty(), value)? {
+            if !function
+                .plan()
+                .value_matches_type(declaration.ty(), value)?
+            {
                 return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
             }
             Ok(())
@@ -1362,12 +1247,11 @@ fn validate_helper_arguments(
 }
 
 fn validate_helper_result(
-    plan: &RuntimePlan,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureFunctionRef<'_>,
     result: Result<RuntimeValue, RuntimeEvalError>,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     let value = result?;
-    if !plan.value_matches_type(helper.expr.ty(), &value)? {
+    if !helper.plan().value_matches_type(helper.expr.ty(), &value)? {
         return Err(RuntimeEvalError::InvalidExpressionType(helper.expr.ty()));
     }
     Ok(value)
@@ -1751,7 +1635,7 @@ fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
 }
 
 struct PureScalarEvaluator<'a, T> {
-    inputs: &'a [crate::plan::RuntimeCallableParameter],
+    inputs: RuntimePureFunctionInputs<'a>,
     args: &'a [T],
     locals: Vec<(RuntimeLocalDeclarationId, RuntimePureScalar)>,
     scopes: Vec<PureScalarScopeFrame>,
@@ -1763,7 +1647,7 @@ struct PureScalarScopeFrame {
 }
 
 impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
-    fn new_exact(inputs: &'a [crate::plan::RuntimeCallableParameter], args: &'a [T]) -> Self {
+    fn new_exact(inputs: RuntimePureFunctionInputs<'a>, args: &'a [T]) -> Self {
         Self {
             inputs,
             args,
@@ -2620,10 +2504,10 @@ impl<'a> PureEvaluator<'a> {
         args: &[RuntimeCallArgument],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let values = self.evaluate_call_args(args)?;
-        let helper = resolve_validated_pure_helper(self.plan, helper_id)?;
-        let bindings = prepare_helper_bindings(self.plan, helper, values)?;
-        let expr = helper.expr.clone();
-        self.with_temp_bindings(bindings, |this| this.evaluate_expr(&expr))
+        let plan = Arc::clone(self.plan);
+        let helper = resolve_validated_pure_function(&plan, helper_id)?;
+        let bindings = prepare_helper_bindings(helper, values)?;
+        self.with_temp_bindings(bindings, |this| this.evaluate_expr(helper.expr))
     }
 
     fn evaluate_trait_call_expr(

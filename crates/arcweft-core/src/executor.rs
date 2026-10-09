@@ -151,7 +151,10 @@ impl VmExecutor {
         Self::new_with_generation(plan, GenerationId::new(0))
     }
 
-    pub(crate) fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
+    pub(crate) fn new_with_generation(
+        plan: impl Into<Arc<RuntimePlan>>,
+        generation: GenerationId,
+    ) -> Self {
         Self {
             engine: Engine::new_with_generation(plan, generation),
         }
@@ -199,7 +202,11 @@ impl AotExecutor {
         Self::new_with_generation(plan, GenerationId::new(0))
     }
 
-    pub(crate) fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
+    pub(crate) fn new_with_generation(
+        plan: impl Into<Arc<RuntimePlan>>,
+        generation: GenerationId,
+    ) -> Self {
+        let plan = plan.into();
         let program = AotProgram::from_runtime_plan(&plan);
         let vm = VmExecutor::new_with_generation(plan, generation);
         Self {
@@ -318,17 +325,18 @@ impl ArcweftRuntimeExecutor {
     }
 
     pub fn from_runtime_plan(
-        plan: RuntimePlan,
+        plan: impl Into<Arc<RuntimePlan>>,
         tier: ArcweftExecutionTier,
     ) -> Result<Self, ArcweftRuntimeExecutorBuildError> {
         Self::from_runtime_plan_with_generation(plan, tier, GenerationId::new(0))
     }
 
     pub fn from_runtime_plan_with_generation(
-        plan: RuntimePlan,
+        plan: impl Into<Arc<RuntimePlan>>,
         tier: ArcweftExecutionTier,
         generation: GenerationId,
     ) -> Result<Self, ArcweftRuntimeExecutorBuildError> {
+        let plan = plan.into();
         Ok(match tier {
             ArcweftExecutionTier::RuntimePlanVm => {
                 Self::from_inner(ArcweftRuntimeExecutorInner::RuntimePlanVm(
