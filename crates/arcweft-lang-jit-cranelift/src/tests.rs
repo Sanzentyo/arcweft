@@ -837,10 +837,18 @@ fn cranelift_unary_and_unsupported_typed_values_have_deterministic_boundaries() 
         RuntimeValue::i64(0),
         RuntimeValue::i64(1),
     ]);
+    let compiled = CraneliftPureFunctionBackend
+        .compile_i64_with_inputs(&unary_request, unary.input_locals().iter().copied())
+        .expect("the signed division shares the checked native outcome");
+    assert_eq!(compiled.call(&[21, 9, 3]).unwrap(), -4);
     assert!(matches!(
-        CraneliftPureFunctionBackend
-            .compile_i64_with_inputs(&unary_request, unary.input_locals().iter().copied()),
-        Err(CraneliftCodegenError::UnsupportedExpr(_))
+        compiled.call(&[21, 9, 0]),
+        Err(CraneliftCodegenError::Execution {
+            error: RuntimeEvalError::RecoverableExpression(
+                arcweft_core::value::RuntimeExpressionFailure::DivisionByZero
+            ),
+            completed_rows: 0,
+        })
     ));
     let values = [
         RuntimeValue::i64(21),
@@ -1332,7 +1340,7 @@ fn cranelift_executable_unsupported_child_retains_vm_and_aot_decline() {
 }
 
 #[test]
-fn cranelift_integer_division_declines_traps_and_retains_checked_core_results() {
+fn cranelift_signed_division_returns_checked_faults_and_wrapping_core_results() {
     use arcweft_core::pure::AotPureFunctionBackend;
     use arcweft_core::value::RuntimeExpressionFailure;
     let request = ordinary_executable_request(Scalar::I64, |ids| {
@@ -1349,10 +1357,20 @@ fn cranelift_integer_division_declines_traps_and_retains_checked_core_results() 
         .iter()
         .map(arcweft_core::pure::RuntimePureFunctionInputRef::local)
         .collect::<Vec<_>>();
+    let compiled = CraneliftPureFunctionBackend
+        .compile_i64_with_inputs(&request, locals.iter().copied())
+        .expect("checked signed division does not execute machine traps");
     assert!(matches!(
-        CraneliftPureFunctionBackend.compile_i64_with_inputs(&request, locals.iter().copied()),
-        Err(CraneliftCodegenError::UnsupportedExpr(_))
+        compiled.call(&[12, 0, 99]),
+        Err(CraneliftCodegenError::Execution {
+            error: RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero
+            ),
+            completed_rows: 0,
+        })
     ));
+    assert_eq!(compiled.call(&[i64::MIN, -1, 99]).unwrap(), i64::MIN);
+    assert_eq!(compiled.call(&[21, 3, 99]).unwrap(), 7);
     let aot = AotPureFunctionBackend
         .compile_i64_with_inputs(&request, locals)
         .unwrap();
@@ -1831,3 +1849,6 @@ fn native_wide_sum_refusal_uses_the_exact_typed_conversion_without_narrowing() {
     }
     assert_eq!(compiled.call_flat_batch_sum(&[1, 2, 3], 3).unwrap(), 6);
 }
+
+#[path = "tests/signed_division.rs"]
+mod signed_division;

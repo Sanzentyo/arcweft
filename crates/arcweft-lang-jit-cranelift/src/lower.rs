@@ -347,7 +347,7 @@ pub(super) fn lower_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
+                RuntimeBinaryOp::Div => Ok(crate::native_abi::signed_division(builder, lhs, rhs)),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the JIT subset"
                 ))),
@@ -438,7 +438,7 @@ pub(super) fn lower_i32_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
+                RuntimeBinaryOp::Div => Ok(crate::native_abi::signed_division(builder, lhs, rhs)),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the i32 JIT subset"
                 ))),
@@ -540,7 +540,9 @@ pub(super) fn lower_small_int_expr(
                 RuntimeBinaryOp::Add => Ok(builder.ins().iadd(lhs, rhs)),
                 RuntimeBinaryOp::Sub => Ok(builder.ins().isub(lhs, rhs)),
                 RuntimeBinaryOp::Mul => Ok(builder.ins().imul(lhs, rhs)),
-                RuntimeBinaryOp::Div if kind.signed() => Err(unsupported_integer_division()),
+                RuntimeBinaryOp::Div if kind.signed() => {
+                    Ok(crate::native_abi::signed_division(builder, lhs, rhs))
+                }
                 RuntimeBinaryOp::Div => Err(unsupported_integer_division()),
                 _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                     "binary operator `{op}` is outside the {} JIT subset",

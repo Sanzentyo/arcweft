@@ -133,6 +133,16 @@ AOT or VM. A failure counts the current invocation once, retains completed row
 outputs, and executes no unattempted suffix. Compilation rejection may still
 select another backend before execution.
 
+Signed native division preserves Core's wrapping result at every signed width
+(i8, i16, i32, i64, i128 and the fixed i64-backed isize). MIN divided by -1
+returns MIN successfully; it never reaches a trapping machine instruction.
+The i128 lowerer divides full-width magnitudes in a bounded bit loop and
+restores the sign, retaining pointer-based native input and result storage.
+Scalar, row, reduction and relocatable-object definitions share this lowerer
+and the existing checked outcome ABI version 1. Integer division remains
+fallible for general caller completion and source Map totality, even when a
+native backend can transport its fault.
+
 Direct integer batch reductions check every result against the existing
 `RuntimeExactInteger::try_sum_as_i64` authority before wrapping accumulation.
 A rejected wide result is transported at its original width and diagnosed by

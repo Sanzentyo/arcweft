@@ -3417,3 +3417,7 @@ fn ordinary_function_repeated_and_flat_sums_match_wrapping_core_reduction() {
         assert_eq!(backend.stats().result_bytes_copied, 0);
     }
 }
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+#[path = "tests/signed_division.rs"]
+mod signed_division;

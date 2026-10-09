@@ -70,18 +70,16 @@ pub(crate) fn return_success(builder: &mut FunctionBuilder<'_>) {
     builder.ins().return_(&[code]);
 }
 
-/// Emits a division only on the nonzero branch. Failure returns through the
-/// owning function's checked outcome ABI before any current-row output write.
-pub(crate) fn unsigned_division(
-    builder: &mut FunctionBuilder<'_>,
-    lhs: Value,
-    rhs: Value,
-) -> Value {
+/// Rejects zero through the owning checked status before an integer division
+/// can trap or any current-row output is initialized.
+fn require_nonzero_divisor(builder: &mut FunctionBuilder<'_>, rhs: Value) {
+    let ty = builder.func.dfg.value_type(rhs);
+    let zero = signed_constant(builder, ty, 0);
     let valid = builder.create_block();
     let failed = builder.create_block();
     let nonzero = builder
         .ins()
-        .icmp_imm(cranelift::prelude::IntCC::NotEqual, rhs, 0);
+        .icmp(cranelift::prelude::IntCC::NotEqual, rhs, zero);
     builder.ins().brif(nonzero, valid, &[], failed, &[]);
     builder.switch_to_block(failed);
     let code = builder
@@ -89,7 +87,126 @@ pub(crate) fn unsigned_division(
         .iconst(types::I8, NativePureCallOutcome::DivisionByZero as i64);
     builder.ins().return_(&[code]);
     builder.switch_to_block(valid);
+}
+
+/// Creates a small signed constant without an unsupported wide iconst.
+fn signed_constant(builder: &mut FunctionBuilder<'_>, ty: Type, value: i64) -> Value {
+    if ty.bits() > 64 {
+        let narrow = builder.ins().iconst(types::I64, value);
+        builder.ins().sextend(ty, narrow)
+    } else {
+        builder.ins().iconst(ty, value)
+    }
+}
+
+/// Emits unsigned division only after the common zero-fault guard.
+pub(crate) fn unsigned_division(
+    builder: &mut FunctionBuilder<'_>,
+    lhs: Value,
+    rhs: Value,
+) -> Value {
+    require_nonzero_divisor(builder, rhs);
     builder.ins().udiv(lhs, rhs)
+}
+
+/// Implements Core's exact-width wrapping signed division. MIN / -1 succeeds
+/// with MIN, while zero is a typed fault. A machine sdiv is issued only on the
+/// nonzero, nonoverflow branch.
+pub(crate) fn signed_division(builder: &mut FunctionBuilder<'_>, lhs: Value, rhs: Value) -> Value {
+    use cranelift::prelude::IntCC;
+
+    require_nonzero_divisor(builder, rhs);
+    let ty = builder.func.dfg.value_type(lhs);
+    let one = signed_constant(builder, ty, 1);
+    let minus_one = signed_constant(builder, ty, -1);
+    let minimum = builder.ins().ishl_imm(one, i64::from(ty.bits() - 1));
+    let lhs_is_minimum = builder.ins().icmp(IntCC::Equal, lhs, minimum);
+    let rhs_is_minus_one = builder.ins().icmp(IntCC::Equal, rhs, minus_one);
+    let wraps = builder.ins().band(lhs_is_minimum, rhs_is_minus_one);
+    let wrapping = builder.create_block();
+    let dividing = builder.create_block();
+    let finished = builder.create_block();
+    builder.append_block_param(finished, ty);
+    builder.ins().brif(wraps, wrapping, &[], dividing, &[]);
+    builder.switch_to_block(wrapping);
+    builder.ins().jump(finished, &[lhs.into()]);
+    builder.switch_to_block(dividing);
+    let quotient = if ty.bits() > 64 {
+        wide_signed_quotient(builder, lhs, rhs)
+    } else {
+        builder.ins().sdiv(lhs, rhs)
+    };
+    builder.ins().jump(finished, &[quotient.into()]);
+    builder.switch_to_block(finished);
+    builder.block_params(finished)[0]
+}
+
+/// Cranelift 0.121 has no scalar i128 sdiv lowering. Divide the exact-width
+/// magnitudes in 128 bounded iterations, then restore the signed result.
+/// Magnitudes are at most 2^127, so a remainder smaller than the divisor can
+/// be shifted left with the next bit without losing a carry. This is native
+/// lowering of one admitted numeric operation; it introduces no new source
+/// type, FFI representation, callback, or runtime execution model.
+fn wide_signed_quotient(builder: &mut FunctionBuilder<'_>, lhs: Value, rhs: Value) -> Value {
+    use cranelift::prelude::IntCC;
+
+    let ty = builder.func.dfg.value_type(lhs);
+    let zero = signed_constant(builder, ty, 0);
+    let lhs_negative = builder.ins().icmp(IntCC::SignedLessThan, lhs, zero);
+    let rhs_negative = builder.ins().icmp(IntCC::SignedLessThan, rhs, zero);
+    let negated_lhs = builder.ins().ineg(lhs);
+    let negated_rhs = builder.ins().ineg(rhs);
+    let magnitude = builder.ins().select(lhs_negative, negated_lhs, lhs);
+    let divisor = builder.ins().select(rhs_negative, negated_rhs, rhs);
+    let negative = builder.ins().bxor(lhs_negative, rhs_negative);
+
+    let dividing = builder.create_block();
+    builder.append_block_param(dividing, types::I64);
+    builder.append_block_param(dividing, ty);
+    builder.append_block_param(dividing, ty);
+    let finished = builder.create_block();
+    builder.append_block_param(finished, ty);
+    let iterations = builder.ins().iconst(types::I64, i64::from(ty.bits()));
+    builder.ins().jump(
+        dividing,
+        &[iterations.into(), magnitude.into(), zero.into()],
+    );
+    builder.switch_to_block(dividing);
+    let remaining = builder.block_params(dividing)[0];
+    let quotient = builder.block_params(dividing)[1];
+    let remainder = builder.block_params(dividing)[2];
+    let next_bit = builder.ins().ushr_imm(quotient, i64::from(ty.bits() - 1));
+    let shifted_quotient = builder.ins().ishl_imm(quotient, 1);
+    let shifted_remainder = builder.ins().ishl_imm(remainder, 1);
+    let candidate_remainder = builder.ins().bor(shifted_remainder, next_bit);
+    let subtract = builder.ins().icmp(
+        IntCC::UnsignedGreaterThanOrEqual,
+        candidate_remainder,
+        divisor,
+    );
+    let reduced_remainder = builder.ins().isub(candidate_remainder, divisor);
+    let next_remainder = builder
+        .ins()
+        .select(subtract, reduced_remainder, candidate_remainder);
+    let quotient_bit = builder.ins().uextend(ty, subtract);
+    let next_quotient = builder.ins().bor(shifted_quotient, quotient_bit);
+    let next_remaining = builder.ins().iadd_imm(remaining, -1);
+    let again = builder.ins().icmp_imm(IntCC::NotEqual, next_remaining, 0);
+    builder.ins().brif(
+        again,
+        dividing,
+        &[
+            next_remaining.into(),
+            next_quotient.into(),
+            next_remainder.into(),
+        ],
+        finished,
+        &[next_quotient.into()],
+    );
+    builder.switch_to_block(finished);
+    let magnitude = builder.block_params(finished)[0];
+    let negated = builder.ins().ineg(magnitude);
+    builder.ins().select(negative, negated, magnitude)
 }
 
 pub(crate) fn append_sum_signature(signature: &mut Signature, pointer: Type) {
