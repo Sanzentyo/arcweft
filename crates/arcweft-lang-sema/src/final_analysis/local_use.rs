@@ -277,6 +277,8 @@ pub enum CheckedLocalUseError {
         owner: CheckedSyntheticUseOwner,
         expression: ExprId,
     },
+    #[error("let-else statement {statement:?} requires a Never-typed failure branch")]
+    LetElseContinues { statement: StmtId },
     #[error("local-use source topology is inconsistent with checked facts")]
     InvalidTopology,
     #[error("local-use site {site:?} was projected twice")]
@@ -2421,6 +2423,14 @@ impl<'a> LocalUseChecker<'a> {
                 self.use_local(input.site(), input.local(), state)?;
             }
         }
+        if self
+            .analysis
+            .expression(owner)
+            .and_then(super::CheckedExpression::value_type)
+            == Some(&TypeKind::Never)
+        {
+            state.terminate();
+        }
         Ok(())
     }
 
@@ -2442,6 +2452,8 @@ impl<'a> LocalUseChecker<'a> {
         owner: StmtId,
         state: &mut Availability,
     ) -> Result<(), CheckedLocalUseError> {
+        let ownership_reachable = state.reachable;
+        let prefix_diverges = state.result_type == TypeKind::Never;
         if self.analysis.statement(owner).is_none() {
             return Ok(());
         }
@@ -2561,11 +2573,17 @@ impl<'a> LocalUseChecker<'a> {
             } => {
                 self.expression(initializer, state)?;
                 let mut failed = state.clone();
+                // Check this branch's control contract even when the outer
+                // ownership path is unreachable, without reviving its loans.
+                failed.result_type = TypeKind::Unit;
                 for statement in else_body {
                     self.statement(*statement, &mut failed)?;
                 }
-                // The failed pattern branch is required to diverge. Its
-                // moves cannot poison the successful continuation.
+                if failed.result_type != TypeKind::Never {
+                    return Err(CheckedLocalUseError::LetElseContinues { statement: owner });
+                }
+                // The proven divergent failure branch cannot consume a
+                // value on the successful continuation.
                 self.bind(success_locals, state);
             }
             HirStmtEvaluationPlan::While { condition, body } => {
@@ -2761,6 +2779,13 @@ impl<'a> LocalUseChecker<'a> {
                     }
                 }
             }
+        }
+        // Dead statements remain checked, but cannot revive either a Never
+        // prefix or an unreachable ownership path through a loop exit node.
+        if prefix_diverges {
+            state.terminate();
+        } else if !ownership_reachable {
+            state.keep_ownership_unreachable();
         }
         Ok(())
     }

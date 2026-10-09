@@ -6465,7 +6465,7 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/014_let_else_non_diverging_rejected.arcw",
-            "let-else else block must leave the current continuation",
+            "requires a Never-typed failure branch",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/015_break_value_in_while_rejected.arcw",

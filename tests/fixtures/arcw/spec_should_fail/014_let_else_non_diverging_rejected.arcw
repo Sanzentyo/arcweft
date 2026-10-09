@@ -1,10 +1,6 @@
-flow bad_let_else(opt: Option<Ref<Flow>>) {
-    let .Some(route) = opt else {
-        @flow.fallback
+flow bad_let_else(opt: Option<i64>) -> String {
+    let .Some(value) = opt else {
+        log.info("missing")
     }
-    goto route
-}
-
-flow fallback {
     return "done"
 }

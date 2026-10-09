@@ -108,7 +108,17 @@ let route = loop {
 
 ## `let ... else`
 
-The `else` part must diverge.
+The `else` block must have type `Never` (`!`), following the
+[Rust Reference let-statement contract](https://doc.rust-lang.org/reference/statements.html#let-statements).
+The checker derives this
+from the admitted control flow and expression types before publishing the
+success bindings. A normal `Unit` or value-producing continuation is rejected,
+even when the enclosing statement is unreachable.
+
+`return`, `goto`, `break`, and `continue` have type `Never` in the current
+continuation. A call whose result is `Never`, a loop with no reachable `break`,
+and an `if` or `match` whose every reachable arm has type `Never` satisfy the
+same requirement. No special spelling of the last statement is required.
 
 ```arcw
 let .Some(route) = state.route_override else {

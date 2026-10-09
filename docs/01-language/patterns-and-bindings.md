@@ -176,7 +176,10 @@ if let .Some(route) = state.route_override {
 // route is not visible here
 ```
 
-For `let ... else`, bindings are visible after the statement because the else branch must diverge.
+For `let ... else`, bindings are visible after the statement only when the
+else block is statically typed as `Never` (`!`). A failure branch with a
+normal continuation is rejected; all-branch divergence and a `Never`-returning
+expression are checked through the same control-flow and type rules.
 
 ```arcw
 let .Some(route) = state.route_override else {

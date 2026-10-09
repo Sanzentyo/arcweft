@@ -1658,3 +1658,121 @@ fn type_copy_capability_separates_carrier_evidence_from_affine_layouts() {
         }
     }
 }
+
+#[test]
+fn let_else_rejects_a_failure_branch_with_normal_continuation() {
+    for body in [
+        "()",
+        "loop { break }",
+        "if flag { return 0i64 }",
+        "if flag { return 0i64 } else { () }",
+    ] {
+        let source = format!(
+            "fn inspect(flag: bool, input: Option<i64>) -> i64 {{
+    let Some(value) = input else {{
+        {body}
+    }}
+    value
+}}"
+        );
+        let fixture = fixture(&source, None);
+        assert!(
+            matches!(
+                analyze(&fixture),
+                Err(FinalSemanticAnalysisError::LocalUse(
+                    CheckedLocalUseError::LetElseContinues { .. }
+                ))
+            ),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn let_else_admits_return_and_all_branch_divergence() {
+    for body in [
+        "return 0i64",
+        "if flag { return 0i64 } else { return 1i64 }",
+        "loop {}",
+    ] {
+        let source = format!(
+            "fn inspect(flag: bool, input: Option<i64>) -> i64 {{
+    let Some(value) = input else {{
+        {body}
+    }}
+    value
+}}"
+        );
+        let fixture = fixture(&source, None);
+        analyze(&fixture).unwrap_or_else(|error| panic!("{body}: {error:?}"));
+    }
+}
+
+#[test]
+fn let_else_checks_failure_divergence_after_unreachable_return() {
+    let fixture = fixture(
+        "fn inspect(input: Option<i64>) -> i64 {
+    return 0i64
+    let Some(value) = input else {
+        ()
+    }
+    value
+}",
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::LetElseContinues { .. }
+        ))
+    ));
+}
+
+#[test]
+fn let_else_admits_loop_break_and_continue_failure_paths() {
+    for body in ["break", "continue"] {
+        let source = format!(
+            "fn inspect(input: Option<i64>) -> i64 {{
+    loop {{
+        let Some(value) = input else {{
+            {body}
+        }}
+        return value
+    }}
+    0i64
+}}"
+        );
+        let fixture = fixture(&source, None);
+        analyze(&fixture).unwrap_or_else(|error| panic!("{body}: {error:?}"));
+    }
+}
+
+#[test]
+fn let_else_admits_a_never_returning_call() {
+    let fixture = fixture(
+        "fn diverge() -> Never { loop {} }
+fn inspect(input: Option<i64>) -> i64 {
+    let Some(value) = input else {
+        diverge()
+    }
+    value
+}",
+        None,
+    );
+    analyze(&fixture).expect("Never-returning call satisfies the failure-body contract");
+}
+
+#[test]
+fn let_else_never_prefix_is_not_revived_by_unreachable_loop_statements() {
+    let fixture = fixture(
+        "fn inspect(flag: bool, input: Option<i64>) -> i64 {
+    let Some(value) = input else {
+        return 0i64
+        loop { break }
+    }
+    value
+}",
+        None,
+    );
+    analyze(&fixture).expect("unreachable statements after return preserve Never");
+}

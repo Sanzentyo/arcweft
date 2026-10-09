@@ -8,6 +8,7 @@ use super::{
     CheckedPlaceInitialization, CheckedSyntheticUse, CheckedSyntheticUseOwner, ExprId, LocalId,
 };
 use crate::record_field::CheckedRecordFieldSemanticId;
+use crate::types::TypeKind;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -47,9 +48,11 @@ impl MovePath {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct NodeId(usize);
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct Availability {
     pub(super) reachable: bool,
+    // Unit denotes a normal continuation; Never denotes a divergent body.
+    pub(super) result_type: TypeKind,
     frontier: BTreeSet<NodeId>,
 }
 
@@ -57,21 +60,35 @@ impl Availability {
     pub(super) fn root() -> Self {
         Self {
             reachable: true,
+            result_type: TypeKind::Unit,
             frontier: BTreeSet::new(),
         }
     }
 
-    pub(super) fn join(mut self, other: Self) -> Self {
+    pub(super) fn join(mut self, mut other: Self) -> Self {
+        let result_type = if self.result_type == TypeKind::Never {
+            other.result_type.clone()
+        } else {
+            self.result_type.clone()
+        };
         if !self.reachable {
+            other.result_type = result_type;
             return other;
         }
         if other.reachable {
             self.frontier.extend(other.frontier);
         }
+        self.result_type = result_type;
         self
     }
 
     pub(super) fn terminate(&mut self) {
+        self.reachable = false;
+        self.result_type = TypeKind::Never;
+        self.frontier.clear();
+    }
+
+    pub(super) fn keep_ownership_unreachable(&mut self) {
         self.reachable = false;
         self.frontier.clear();
     }
@@ -79,6 +96,7 @@ impl Availability {
     pub(super) fn at(node: NodeId) -> Self {
         Self {
             reachable: true,
+            result_type: TypeKind::Unit,
             frontier: BTreeSet::from([node]),
         }
     }
