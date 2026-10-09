@@ -123,9 +123,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::SequencePush { place, value } => {
                 let value = self.lower(value);
-                let place = self.lower_mutable_place(place, "Vec.push");
+                let place = self.lower_mutable_place(place, "sequence append");
                 self.inventory
-                    .push_instruction(AwbcInstruction::VecPush { place, value });
+                    .push_instruction(AwbcInstruction::SequenceAppend { place, value });
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit, ty)
             }

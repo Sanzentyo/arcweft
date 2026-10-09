@@ -122,7 +122,7 @@ impl Engine {
             }
             RuntimeExprKind::SequencePush { place, value } => {
                 let value = self.evaluate_expr_with_backend(value, pure_backend)?;
-                self.fiber.env.push_vector_item(place, value)?;
+                self.fiber.env.push_sequence_item(place, value)?;
                 Ok(RuntimeValue::Unit)
             }
             RuntimeExprKind::SequencePopBack { place } => {

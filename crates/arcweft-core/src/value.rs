@@ -1704,7 +1704,7 @@ pub enum RuntimeExprKind {
     SequencePopFront {
         place: RuntimeMutablePlace,
     },
-    /// Appends one item to an admitted Vec place and returns `Unit`.
+    /// Appends one item to an admitted mutable Vec/Seq place and returns `Unit`.
     SequencePush {
         place: RuntimeMutablePlace,
         value: Box<RuntimeExpr>,

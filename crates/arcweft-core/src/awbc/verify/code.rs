@@ -27,7 +27,7 @@ use crate::plan::{
     RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableDefault,
     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
     RuntimeCallableRetainedRole, RuntimeCallableStateDefinition, RuntimeCallableTransition,
-    RuntimeFunctionInputOwnershipRequirement, RuntimePlanSequenceKind,
+    RuntimeFunctionInputOwnershipRequirement, RuntimePlanSequenceKind, RuntimeSequenceMutation,
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
@@ -823,13 +823,14 @@ fn merge_state(
     Ok(())
 }
 
-fn vec_place_item_type(
+fn sequence_place_item_type(
     verifier: &Verifier<'_, '_>,
     function: usize,
     block: usize,
     place: &AwbcMutablePlace,
     state: &FlowState,
     at: &str,
+    operation: RuntimeSequenceMutation,
 ) -> Result<(AwbcRegisterId, AwbcTypeId), AwbcVerifyError> {
     let program = verifier.program;
     let (base, sequence_ty) = mutable_place_type(
@@ -841,13 +842,13 @@ fn vec_place_item_type(
         MutablePlaceAccess::Read,
         at,
     )?;
-    let Some(AwbcRuntimeTypeShape::Sequence {
-        kind: RuntimePlanSequenceKind::Vec,
-        item,
-    }) = runtime_shape(program, sequence_ty)
+    let Some(AwbcRuntimeTypeShape::Sequence { kind, item }) = runtime_shape(program, sequence_ty)
     else {
-        return invalid_type(at, "Vec receiver place");
+        return invalid_type(at, "mutable sequence receiver place");
     };
+    if !kind.admits_mutation(operation) {
+        return invalid_type(at, "sequence family permitting the selected mutation");
+    }
     let item = *item;
     let receiver_role = function_layout(verifier, function)
         .slots
@@ -1152,7 +1153,15 @@ fn apply_instruction(
             }
         }
         AwbcInstruction::SequencePopFront { dst, place } => {
-            let (base, item) = vec_place_item_type(verifier, function, block, place, state, &at)?;
+            let (base, item) = sequence_place_item_type(
+                verifier,
+                function,
+                block,
+                place,
+                state,
+                &at,
+                RuntimeSequenceMutation::PopFront,
+            )?;
             if dst == &base {
                 return invalid_type(
                     &at,
@@ -1168,13 +1177,29 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
-        AwbcInstruction::VecPush { place, value } => {
-            let (_, item) = vec_place_item_type(verifier, function, block, place, state, &at)?;
+        AwbcInstruction::SequenceAppend { place, value } => {
+            let (_, item) = sequence_place_item_type(
+                verifier,
+                function,
+                block,
+                place,
+                state,
+                &at,
+                RuntimeSequenceMutation::Append,
+            )?;
             let value_ty = read_register(verifier, function, block, *value, state)?;
             require_compatible(program, item, value_ty, &at)?;
         }
         AwbcInstruction::VecPop { dst, place } => {
-            let (base, item) = vec_place_item_type(verifier, function, block, place, state, &at)?;
+            let (base, item) = sequence_place_item_type(
+                verifier,
+                function,
+                block,
+                place,
+                state,
+                &at,
+                RuntimeSequenceMutation::PopBack,
+            )?;
             if dst == &base {
                 return invalid_type(
                     &at,
@@ -2313,7 +2338,7 @@ fn apply_instruction_copy_and_move_effects(
             proof = append_sequence_proof(proof, state.copy_proofs[value.index()].clone());
             mutated_proof = Some(proof);
         }
-        AwbcInstruction::VecPush { place, value } => {
+        AwbcInstruction::SequenceAppend { place, value } => {
             consumed.push(*value);
             let base = place.base();
             mutated.push(base);

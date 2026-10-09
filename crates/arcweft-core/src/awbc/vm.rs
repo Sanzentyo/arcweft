@@ -1095,15 +1095,15 @@ fn execute_instruction(
                     "Vec.pop_front destination aliases its receiver".to_owned(),
                 ));
             }
-            let popped = mutable_vec_sequence(fiber.active_frame_mut()?, place, "Vec.pop_front")?
-                .pop_front();
+            let popped =
+                mutable_sequence(fiber.active_frame_mut()?, place, "Vec.pop_front")?.pop_front();
             let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
             fiber.active_frame_mut()?.set_register(*dst, result)?;
         }
-        AwbcInstruction::VecPush { place, value } => {
+        AwbcInstruction::SequenceAppend { place, value } => {
             let value = fiber.active_frame_mut()?.take_register(*value)?;
             let frame = fiber.active_frame_mut()?;
-            mutable_vec_sequence(frame, place, "Vec.push")?.push_vector_item(value);
+            mutable_sequence(frame, place, "sequence append")?.push_sequence_item(value);
         }
         AwbcInstruction::VecPop { dst, place } => {
             let base = place.base();
@@ -1114,7 +1114,7 @@ fn execute_instruction(
             }
             let popped = {
                 let frame = fiber.active_frame_mut()?;
-                mutable_vec_sequence(frame, place, "Vec.pop")?.pop_vector_item()
+                mutable_sequence(frame, place, "Vec.pop")?.pop_vector_item()
             };
             let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
             fiber.active_frame_mut()?.set_register(*dst, result)?;
@@ -3717,7 +3717,7 @@ fn require_runtime_type(
     }
 }
 
-fn mutable_vec_sequence<'a>(
+fn mutable_sequence<'a>(
     frame: &'a mut FiberFrame,
     place: &AwbcMutablePlace,
     operation: &str,

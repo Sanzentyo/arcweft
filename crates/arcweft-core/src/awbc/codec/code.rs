@@ -876,7 +876,7 @@ impl Wire for AwbcInstruction {
                 dst.write_wire(writer)?;
                 place.write_wire(writer)?;
             }
-            Self::VecPush { place, value } => {
+            Self::SequenceAppend { place, value } => {
                 place.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
@@ -1211,7 +1211,7 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 place: AwbcMutablePlace::read_wire(reader)?,
             },
-            AwbcOpcode::VecPush => Self::VecPush {
+            AwbcOpcode::SequenceAppend => Self::SequenceAppend {
                 place: AwbcMutablePlace::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
             },
@@ -1868,7 +1868,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::SequenceSlice
             | AwbcOpcode::SequencePush
             | AwbcOpcode::SequencePopFront
-            | AwbcOpcode::VecPush
+            | AwbcOpcode::SequenceAppend
             | AwbcOpcode::VecPop
             | AwbcOpcode::MakeRecord
             | AwbcOpcode::MakeVariant

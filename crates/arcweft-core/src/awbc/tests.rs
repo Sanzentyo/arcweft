@@ -772,7 +772,7 @@ fn sequence_vec_push_pop_program() -> AwbcProgram {
             dst: AwbcRegisterId(2),
             items: vec![AwbcRegisterId(1)],
         },
-        AwbcInstruction::VecPush {
+        AwbcInstruction::SequenceAppend {
             place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
             value: AwbcRegisterId(0),
         },
@@ -823,7 +823,7 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
             ty: AwbcTypeId(4),
             fields: vec![AwbcRegisterId(2)],
         },
-        AwbcInstruction::VecPush {
+        AwbcInstruction::SequenceAppend {
             place: place.clone(),
             value: AwbcRegisterId(0),
         },
@@ -835,7 +835,7 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
             dst: AwbcRegisterId(1),
             constant: AwbcConstantId(1),
         },
-        AwbcInstruction::VecPush {
+        AwbcInstruction::SequenceAppend {
             place: place.clone(),
             value: AwbcRegisterId(1),
         },
@@ -849,6 +849,74 @@ fn nominal_field_vec_push_pop_program() -> AwbcProgram {
         value: Some(AwbcRegisterId(5)),
     };
     program
+}
+
+#[test]
+fn seq_append_roundtrips_and_preserves_family_mutation_boundaries() {
+    let mut program = sequence_vec_push_pop_program();
+    program.runtime_types[3] = runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Seq,
+            item: AwbcTypeId(0),
+        },
+    );
+    program.signatures[0].result = Some(AwbcTypeId(3));
+    program.instructions.truncate(4);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 4);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded, program);
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64).unwrap();
+    let step = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        step.exit,
+        super::vm::VmExit::Returned(Some(crate::value::runtime_sequence_values(vec![
+            RuntimeValue::Bool(false),
+            RuntimeValue::Bool(true)
+        ])))
+    );
+
+    let mut slice_append = program.clone();
+    slice_append.runtime_types[3] = runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Slice,
+            item: AwbcTypeId(0),
+        },
+    );
+    assert!(
+        matches!(slice_append.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "sequence family permitting the selected mutation")
+    );
+    let mut seq_pop = sequence_vec_push_pop_program();
+    seq_pop.runtime_types[3] = runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Seq,
+            item: AwbcTypeId(0),
+        },
+    );
+    assert!(
+        matches!(seq_pop.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message == "sequence family permitting the selected mutation")
+    );
 }
 
 #[test]
@@ -951,7 +1019,7 @@ fn vec_push_and_pop_roundtrip_verify_and_mutate_nominal_field_places() {
     assert_eq!(decoded, program);
 
     let mut missing_field = program.clone();
-    if let AwbcInstruction::VecPush {
+    if let AwbcInstruction::SequenceAppend {
         place: AwbcMutablePlace::Fields { fields, .. },
         ..
     } = &mut missing_field.instructions[4]
@@ -2932,7 +3000,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::Binary, 0x14, Value),
         (AwbcOpcode::SpecializeCallable, 0x15, Value),
         (AwbcOpcode::SequencePopFront, 0x16, Value),
-        (AwbcOpcode::VecPush, 0x17, Value),
+        (AwbcOpcode::SequenceAppend, 0x17, Value),
         (AwbcOpcode::VecPop, 0x18, Value),
         (AwbcOpcode::ReadPlace, 0x19, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),

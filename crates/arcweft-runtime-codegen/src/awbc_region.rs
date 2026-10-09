@@ -214,7 +214,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::ProjectCall
         | AwbcOpcode::HostCall
         | AwbcOpcode::SequencePopFront
-        | AwbcOpcode::VecPush
+        | AwbcOpcode::SequenceAppend
         | AwbcOpcode::VecPop
         | AwbcOpcode::ReadPlace
         | AwbcOpcode::Await

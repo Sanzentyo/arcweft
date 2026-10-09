@@ -24,6 +24,17 @@ pub(super) struct ControlLocals {
     pub(super) guard_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) expression_final_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
+    pub(super) maps: BTreeMap<ExprId, MapLocalSeeds>,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct MapLocalSeeds {
+    pub(super) callable: Option<RuntimeLocalSeedId>,
+    pub(super) items: Vec<RuntimeLocalSeedId>,
+    pub(super) results: Vec<RuntimeLocalSeedId>,
+    pub(super) iterator: Option<RuntimeLocalSeedId>,
+    pub(super) next_iterator: Option<RuntimeLocalSeedId>,
+    pub(super) residual: Option<RuntimeLocalSeedId>,
 }
 
 enum ControlLocal {
@@ -33,6 +44,12 @@ enum ControlLocal {
     ExpressionValue,
     ExpressionFinalValue,
     GuardValue,
+    MapCallable,
+    MapItem,
+    MapResult,
+    MapIterator,
+    MapNextIterator,
+    MapResidual,
 }
 
 impl ControlLocals {
@@ -117,6 +134,81 @@ impl ControlLocals {
                     });
                 }
             }
+            if let Some(call) = facts.call(owner)
+                && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(
+                    crate::semantic_facts::RuntimeResolvedStaticCallTarget::StandardMap(map),
+                ) = call.dispatch()
+            {
+                let result = expression_value_type;
+                let Some(receiver) = facts.expression_source_type(map.receiver()) else {
+                    error.get_or_insert_with(|| {
+                        RuntimePlanLowerError::new("Map receiver has no checked type")
+                    });
+                    return;
+                };
+                let Some(mapping) = facts.expression_source_type(map.mapping()) else {
+                    error.get_or_insert_with(|| {
+                        RuntimePlanLowerError::new("Map callback has no checked type")
+                    });
+                    return;
+                };
+                let Some((input, output)) = map.item_types(receiver, result) else {
+                    error.get_or_insert_with(|| {
+                        RuntimePlanLowerError::new("Map family has inconsistent checked types")
+                    });
+                    return;
+                };
+                owners.push((owner, ControlLocal::MapCallable));
+                seeds.push(declaration(mapping, coordinate, Role::MapCallable));
+                let count =
+                    if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
+                        receiver.shape()
+                    {
+                        match length
+                            .constant()
+                            .and_then(|length| u32::try_from(length).ok())
+                        {
+                            Some(length) => length,
+                            None => {
+                                error.get_or_insert_with(|| {
+                                RuntimePlanLowerError::new(
+                                    "Map Array length does not fit its generated local inventory",
+                                )
+                            });
+                                return;
+                            }
+                        }
+                    } else {
+                        1
+                    };
+                for ordinal in 0..count {
+                    owners.push((owner, ControlLocal::MapItem));
+                    seeds.push(declaration(input, coordinate, Role::MapItem { ordinal }));
+                    owners.push((owner, ControlLocal::MapResult));
+                    seeds.push(declaration(output, coordinate, Role::MapResult { ordinal }));
+                }
+                if let Some(iteration) = map.iteration() {
+                    owners.push((owner, ControlLocal::MapIterator));
+                    seeds.push(declaration(
+                        iteration.iterator(),
+                        coordinate,
+                        Role::MapIterator,
+                    ));
+                    owners.push((owner, ControlLocal::MapNextIterator));
+                    seeds.push(declaration(
+                        iteration.iterator(),
+                        coordinate,
+                        Role::MapNextIterator,
+                    ));
+                }
+                if let crate::semantic_facts::RuntimeTypeShape::Result {
+                    error: residual, ..
+                } = receiver.shape()
+                {
+                    owners.push((owner, ControlLocal::MapResidual));
+                    seeds.push(declaration(residual, coordinate, Role::MapResidual));
+                }
+            }
         });
         facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
             if let Some(left) = facts.expression_type(pipe.left()) {
@@ -138,7 +230,13 @@ impl ControlLocals {
             return Err(error);
         }
         let admission = builder
-            .admit_type_batch([], seeds.into_iter().collect::<Result<Vec<_>, _>>()?)
+            .admit_type_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+                )],
+                seeds.into_iter().collect::<Result<Vec<_>, _>>()?,
+            )
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut admitted = admission.local_ids().iter().cloned();
         let mut result = Self::default();
@@ -180,6 +278,42 @@ impl ControlLocals {
                 ControlLocal::ExpressionFinalValue => result
                     .expression_final_values
                     .insert(owner, local)
+                    .is_some(),
+                ControlLocal::MapCallable => result
+                    .maps
+                    .entry(owner)
+                    .or_default()
+                    .callable
+                    .replace(local)
+                    .is_some(),
+                ControlLocal::MapItem => {
+                    result.maps.entry(owner).or_default().items.push(local);
+                    false
+                }
+                ControlLocal::MapResult => {
+                    result.maps.entry(owner).or_default().results.push(local);
+                    false
+                }
+                ControlLocal::MapIterator => result
+                    .maps
+                    .entry(owner)
+                    .or_default()
+                    .iterator
+                    .replace(local)
+                    .is_some(),
+                ControlLocal::MapNextIterator => result
+                    .maps
+                    .entry(owner)
+                    .or_default()
+                    .next_iterator
+                    .replace(local)
+                    .is_some(),
+                ControlLocal::MapResidual => result
+                    .maps
+                    .entry(owner)
+                    .or_default()
+                    .residual
+                    .replace(local)
                     .is_some(),
             };
             if duplicate {

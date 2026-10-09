@@ -113,7 +113,28 @@ impl<'a> CallableEffectGraph<'a> {
                 } => owner,
             };
             let selected = application.selected();
-            let producer = selected.exact_value_producer();
+            let immediate_map = selected
+                .next_group_for(application.completed_group())
+                .is_none()
+                && matches!(selected.schema().validator(),
+                    crate::callable::CallableValidator::StandardMap(family) if family.callback_is_immediate());
+            let producer = if immediate_map {
+                node.prefix()
+                    .record()
+                    .inputs()
+                    .mapping()
+                    .arguments()
+                    .iter()
+                    .flat_map(|argument| argument.slots())
+                    .find(|slot| {
+                        slot.coordinate().is_some_and(|coordinate| {
+                            coordinate.group().get() == 0 && coordinate.parameter().get() == 0
+                        })
+                    })
+                    .map(|slot| slot.source().owner())
+            } else {
+                selected.exact_value_producer()
+            };
             let known_target = if let Some(super::CheckedExpressionResolution::Value(
                 super::CheckedValueResolution::ProjectCallable(callable),
             )) = producer
@@ -153,7 +174,8 @@ impl<'a> CallableEffectGraph<'a> {
                         expressions: closure.expressions().collect(),
                     });
                 IndexedCallableSuspension::Closure(producer)
-            } else if selected.requires_value_callee()
+            } else if immediate_map
+                || selected.requires_value_callee()
                 || matches!(
                     selected.checked().map(CheckedCallableId::declaration),
                     Some(
@@ -185,6 +207,7 @@ impl<'a> CallableEffectGraph<'a> {
                     if selected.checked().and_then(|target| owners.get(target))
                         == Some(&CallableDeclarationOwner::Function)
                         || selected.requires_value_callee()
+                        || immediate_map
                     {
                         crate::final_analysis::CheckedExecutableControlRole::FlowRequired
                     } else {

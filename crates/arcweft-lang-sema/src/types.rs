@@ -895,6 +895,15 @@ impl CompileTimeScalarType {
 }
 
 impl StandardMapFamily {
+    /// Collection and variant Map applications invoke their callback in this
+    /// frame. Producer/parser transforms retain a latent callback instead.
+    pub(crate) const fn callback_is_immediate(self) -> bool {
+        matches!(
+            self,
+            Self::Vec | Self::Seq | Self::Array | Self::Slice | Self::Option | Self::Result
+        )
+    }
+
     pub const ALL: [Self; 9] = [
         Self::Vec,
         Self::Seq,

@@ -169,7 +169,25 @@ pub enum RuntimePlanSequenceKind {
     Seq,
 }
 
+/// Mutation policy is owned by the sequence family, shared by native and AWBC
+/// admission. A fixed array and a borrowed slice never grow through a place.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeSequenceMutation {
+    Append,
+    PopFront,
+    PopBack,
+}
+
 impl RuntimePlanSequenceKind {
+    pub(crate) const fn admits_mutation(self, operation: RuntimeSequenceMutation) -> bool {
+        match operation {
+            RuntimeSequenceMutation::Append => matches!(self, Self::Vec | Self::Seq),
+            RuntimeSequenceMutation::PopFront | RuntimeSequenceMutation::PopBack => {
+                matches!(self, Self::Vec)
+            }
+        }
+    }
+
     /// Canonical family tag shared by executable codecs and type transcripts.
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {

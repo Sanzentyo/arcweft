@@ -2119,7 +2119,7 @@ fn vec_push_and_pop_back_lower_to_place_mutation_instructions() {
             .iter()
             .any(|instruction| matches!(
                 instruction,
-                AwbcInstruction::VecPush {
+                AwbcInstruction::SequenceAppend {
                     place: AwbcMutablePlace::Local(_),
                     ..
                 }

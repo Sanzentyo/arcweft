@@ -1055,4 +1055,501 @@ mod tests {
                 if matches!(*error, arcweft_lang_sema::final_analysis::CheckedExecutionContextError::ForeignAuthority)
         ));
     }
+
+    fn authored_map_program(source: &str) -> super::CompiledDeterministicProgram {
+        let compiled = crate::source::compile_source(source).unwrap();
+        let lease = &compiled.analysis;
+        let declaration = lease
+            .final_analysis()
+            .hir_topology()
+            .modules()
+            .iter()
+            .flat_map(|module| module.entries())
+            .filter_map(|entry| entry.body())
+            .find(|body| body.declaration().name() == "root")
+            .unwrap()
+            .declaration()
+            .clone();
+        lease
+            .compile_deterministic_program(
+                CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                    declaration,
+                    role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+                }),
+                None,
+                &ProjectInstantiationControl::default(),
+            )
+            .unwrap()
+    }
+
+    enum AuthoredMapResultFamily {
+        Sequence(arcweft_core::plan::RuntimePlanSequenceKind),
+        Array(u64),
+        Option,
+        Result,
+    }
+
+    fn assert_authored_map_family(
+        selected: &super::CompiledDeterministicProgram,
+        expected: &AuthoredMapResultFamily,
+    ) {
+        use arcweft_core::plan::RuntimePlanTypeProjection as Projection;
+        let result = selected
+            .plan()
+            .function_sites()
+            .get(selected.function_site().unwrap())
+            .unwrap()
+            .result();
+        let actual = selected
+            .plan()
+            .type_table()
+            .get(result)
+            .unwrap()
+            .projection();
+        match (expected, actual) {
+            (AuthoredMapResultFamily::Sequence(expected), Projection::Sequence { kind, .. }) => {
+                assert_eq!(kind, expected)
+            }
+            (
+                AuthoredMapResultFamily::Array(expected),
+                Projection::Array {
+                    length: arcweft_core::plan::RuntimeArrayLength::Constant(actual),
+                    ..
+                },
+            ) => assert_eq!(actual, expected),
+            (AuthoredMapResultFamily::Option, Projection::Option { .. })
+            | (AuthoredMapResultFamily::Result, Projection::Result { .. }) => {}
+            _ => panic!("the accepted Map result has a different family: {actual:?}"),
+        }
+    }
+
+    fn assert_authored_map_value(actual: RuntimeValue, expected: &RuntimeValue) {
+        match (actual, expected) {
+            (RuntimeValue::Seq(actual), RuntimeValue::Seq(expected)) => {
+                assert_eq!(actual.len(), expected.len());
+                for ordinal in 0..expected.len() {
+                    assert_eq!(actual.value_at(ordinal), expected.value_at(ordinal));
+                }
+            }
+            (actual, expected) => assert_eq!(&actual, expected),
+        }
+    }
+
+    #[test]
+    fn authored_map_callbacks_share_native_and_awbc_function_return_authority() {
+        use AuthoredMapResultFamily as Family;
+        use arcweft_core::plan::RuntimePlanSequenceKind as Sequence;
+        use arcweft_core::value::runtime_sequence_values;
+        let sequence = || {
+            runtime_sequence_values(vec![
+                RuntimeValue::i64(1),
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+            ])
+        };
+        let mapped = || {
+            runtime_sequence_values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])
+        };
+        for (ty, result, family, argument, expected) in [
+            (
+                "Vec<i64>",
+                "Vec<i64>",
+                Family::Sequence(Sequence::Vec),
+                sequence(),
+                mapped(),
+            ),
+            (
+                "Seq<i64>",
+                "Seq<i64>",
+                Family::Sequence(Sequence::Seq),
+                sequence(),
+                mapped(),
+            ),
+            (
+                "Array<i64, 3>",
+                "Array<i64, 3>",
+                Family::Array(3),
+                sequence(),
+                mapped(),
+            ),
+            (
+                "Slice<i64>",
+                "Vec<i64>",
+                Family::Sequence(Sequence::Vec),
+                sequence(),
+                mapped(),
+            ),
+            (
+                "Option<i64>",
+                "Option<i64>",
+                Family::Option,
+                RuntimeValue::option_some(RuntimeValue::i64(1)),
+                RuntimeValue::option_some(RuntimeValue::i64(2)),
+            ),
+            (
+                "Option<i64>",
+                "Option<i64>",
+                Family::Option,
+                RuntimeValue::option_none(),
+                RuntimeValue::option_none(),
+            ),
+            (
+                "Result<i64, String>",
+                "Result<i64, String>",
+                Family::Result,
+                RuntimeValue::result_ok(RuntimeValue::i64(1)),
+                RuntimeValue::result_ok(RuntimeValue::i64(2)),
+            ),
+            (
+                "Result<i64, String>",
+                "Result<i64, String>",
+                Family::Result,
+                RuntimeValue::result_err(RuntimeValue::String("retained".to_owned())),
+                RuntimeValue::result_err(RuntimeValue::String("retained".to_owned())),
+            ),
+        ] {
+            let selected = authored_map_program(&format!(
+                "fn score(value: i64, unused: i64) -> i64 {{ return value + 1i64 }}\npub fn root(values: {ty}, unused: i64) -> {result} {{ values.map(|item| score(item, 9i64)) }}\nflow main() -> String {{ return \"ok\" }}\n"
+            ));
+            assert_eq!(
+                selected
+                    .plan()
+                    .function_sites()
+                    .get(selected.function_site().unwrap())
+                    .unwrap()
+                    .parameter_inputs()
+                    .count(),
+                2
+            );
+            assert!(
+                selected.plan().pure_helpers().is_empty(),
+                "source functions retain their actual sites"
+            );
+            assert_authored_map_family(&selected, &family);
+            let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+            let args = [argument.clone(), RuntimeValue::i64(70)];
+            assert_authored_map_value(
+                arcweft_core::pure::evaluate_pure_program_with_backend(
+                    selected.plan(),
+                    selected.program(),
+                    &args,
+                    &mut backend,
+                )
+                .unwrap(),
+                &expected,
+            );
+            let rejected = arcweft_core::engine::Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                vec![argument],
+            )
+            .err()
+            .expect("omitted full formal must be refused");
+            assert_eq!(
+                rejected.into_parts().1.len(),
+                1,
+                "omitted unused formal is refused before transfer"
+            );
+            let mut plan = selected.plan().as_ref().clone();
+            plan.bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([72; 32]).unwrap(),
+            )
+            .unwrap();
+            let product = Arc::new(
+                arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                    &plan,
+                    &selected.lowering_report().dialogue_content_catalog,
+                    "map-call-return.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            );
+            assert_authored_map_value(
+                arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                    &product,
+                    selected.program(),
+                    &args,
+                    &mut backend,
+                )
+                .unwrap(),
+                &expected,
+            );
+        }
+    }
+
+    #[test]
+    fn authored_map_callback_execution_survives_single_op_budget_and_native_rollback() {
+        let selected = authored_map_program(
+            "fn score(value: i64, unused: i64) -> i64 { return value + 1i64 }\npub fn root(values: Vec<i64>) -> Vec<i64> { values.map(|item| score(item, 9i64)) }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let values = arcweft_core::value::runtime_sequence_values(vec![
+            RuntimeValue::i64(1),
+            RuntimeValue::i64(2),
+            RuntimeValue::i64(3),
+        ]);
+        let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            vec![values],
+        )
+        .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        let mut steps = 0;
+        loop {
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                arcweft_core::step::RuntimeStepOptions {
+                    budget: arcweft_core::step::RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
+                &mut backend,
+            );
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            steps += 1;
+            if let Some((program, value)) = engine.take_program_result().unwrap() {
+                assert_eq!(program, selected.program());
+                assert_eq!(
+                    value,
+                    arcweft_core::value::runtime_sequence_values(vec![
+                        RuntimeValue::i64(2),
+                        RuntimeValue::i64(3),
+                        RuntimeValue::i64(4)
+                    ])
+                );
+                break;
+            }
+            assert!(
+                steps < 256,
+                "Map must resume instead of restarting a source operand"
+            );
+            // The public step transaction owns its inert rollback image.
+            // This integration keeps the budgeted continuation opaque; the
+            // image roundtrip itself is covered by Core owning tests.
+        }
+        assert!(steps > 3, "callbacks remain budgeted ordinary calls");
+        assert!(
+            engine.fiber().env.bindings_snapshot().is_empty(),
+            "completed callbacks and iterator scopes release all local bindings"
+        );
+    }
+
+    #[test]
+    fn authored_map_callback_failure_retains_its_owning_execution_and_no_result() {
+        let selected = authored_map_program(
+            "fn score(value: i64) -> i64 { return 12i64 / (value - 2i64) }\npub fn root(values: Vec<i64>) -> Vec<i64> { values.map(|item| score(item)) }\nflow main() -> String { return \"ok\" }\n",
+        );
+        let values = arcweft_core::value::runtime_sequence_values(vec![
+            RuntimeValue::i64(1),
+            RuntimeValue::i64(2),
+            RuntimeValue::i64(3),
+        ]);
+        let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+            Arc::clone(selected.plan()),
+            selected.program(),
+            vec![values],
+        )
+        .unwrap();
+        let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+        let mut diagnostics = Vec::new();
+        let mut terminal = false;
+        for _ in 0..256 {
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                arcweft_core::step::RuntimeStepOptions {
+                    budget: arcweft_core::step::RuntimeStepBudget { max_ops: 1 },
+                    ..Default::default()
+                },
+                &mut backend,
+            );
+            diagnostics.extend(step.output.diagnostics);
+            assert!(
+                engine.take_program_result().unwrap().is_none(),
+                "a failing callback cannot publish a Map result"
+            );
+            if !matches!(
+                engine.fiber().status,
+                arcweft_core::engine::FlowFiberStatus::Running
+            ) {
+                terminal = true;
+                break;
+            }
+        }
+        assert!(
+            terminal,
+            "Map callback did not reach terminal within256 one-op steps: status={:?}, diagnostics={diagnostics:?}",
+            engine.fiber().status
+        );
+        assert!(matches!(
+            engine.fiber().status,
+            arcweft_core::engine::FlowFiberStatus::Failed(_)
+        ));
+        assert!(!diagnostics.is_empty());
+        assert!(
+            engine.take_program_result().unwrap().is_none(),
+            "an incomplete Map result cannot escape its frame"
+        );
+        let arcweft_core::engine::FlowFiberStatus::Failed(failure) = &engine.fiber().status else {
+            panic!("the callback must fail in its owning frame");
+        };
+        let failure = failure.clone();
+        let bindings = engine.fiber().env.bindings_snapshot();
+        let cursor = engine.fiber().cursor;
+        let execution = engine.fiber().execution;
+        engine.step_with_pure_backend(
+            Default::default(),
+            arcweft_core::step::RuntimeStepOptions {
+                budget: arcweft_core::step::RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+            &mut backend,
+        );
+        assert!(matches!(&engine.fiber().status,
+            arcweft_core::engine::FlowFiberStatus::Failed(message) if message == &failure));
+        assert_eq!(
+            engine.fiber().env.bindings_snapshot(),
+            bindings,
+            "failed Map ownership is retained by the same public execution"
+        );
+        assert_eq!(engine.fiber().cursor, cursor);
+        assert_eq!(engine.fiber().execution, execution);
+        assert!(engine.take_program_result().unwrap().is_none());
+    }
+
+    #[test]
+    fn authored_sequence_equality_uses_checked_family_and_logical_elements_in_native_and_awbc() {
+        use arcweft_core::plan::{RuntimePlanSequenceKind, RuntimePlanTypeProjection};
+        use arcweft_core::value::{RuntimeSeq, runtime_sequence_values};
+        fn arguments(input: &[i64], expected: &[i64]) -> [RuntimeValue; 2] {
+            [
+                runtime_sequence_values(input.iter().copied().map(RuntimeValue::i64).collect()),
+                RuntimeValue::Seq(RuntimeSeq::values(
+                    expected.iter().copied().map(RuntimeValue::i64).collect(),
+                )),
+            ]
+        }
+        fn native_result(
+            selected: &super::CompiledDeterministicProgram,
+            arguments: [RuntimeValue; 2],
+        ) -> RuntimeValue {
+            let mut engine = arcweft_core::engine::Engine::for_program_invocation(
+                Arc::clone(selected.plan()),
+                selected.program(),
+                Vec::from(arguments),
+            )
+            .unwrap();
+            let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+            for _ in 0..256 {
+                let step = engine.step_with_pure_backend(
+                    Default::default(),
+                    arcweft_core::step::RuntimeStepOptions {
+                        budget: arcweft_core::step::RuntimeStepBudget { max_ops: 1 },
+                        ..Default::default()
+                    },
+                    &mut backend,
+                );
+                assert!(step.output.diagnostics.is_empty(), "{step:?}");
+                if let Some((program, value)) = engine.take_program_result().unwrap() {
+                    assert_eq!(program, selected.program());
+                    assert!(
+                        engine.fiber().env.bindings_snapshot().is_empty(),
+                        "native equality releases callback, iterator and root scopes"
+                    );
+                    return value;
+                }
+                assert!(
+                    matches!(
+                        engine.fiber().status,
+                        arcweft_core::engine::FlowFiberStatus::Running
+                    ),
+                    "native equality ended without a result: {:?}",
+                    engine.fiber().status
+                );
+            }
+            panic!(
+                "native source equality did not complete within256 one-op steps: {:?}",
+                engine.fiber().status
+            );
+        }
+        for (family, kind) in [
+            ("Vec<i64>", RuntimePlanSequenceKind::Vec),
+            ("Seq<i64>", RuntimePlanSequenceKind::Seq),
+        ] {
+            for (operator, equal_result) in [("==", true), ("!=", false)] {
+                let selected = authored_map_program(&format!(
+                    "fn score(value: i64, unused: i64) -> i64 {{ return value + 1i64 }}\npub fn root(values: {family}, expected: {family}) -> bool {{ let mapped: {family} = values.map(|item| score(item, 9i64)); mapped {operator} expected }}\nflow main() -> String {{ return \"ok\" }}\n"
+                ));
+                let site = selected
+                    .plan()
+                    .function_sites()
+                    .get(selected.function_site().unwrap())
+                    .unwrap();
+                assert!(matches!(
+                    selected
+                        .plan()
+                        .type_table()
+                        .get(site.result())
+                        .unwrap()
+                        .projection(),
+                    RuntimePlanTypeProjection::Bool
+                ));
+                assert_eq!(site.parameter_inputs().count(), 2);
+                for input in site.parameter_inputs() {
+                    let RuntimePlanTypeProjection::Sequence { kind: actual, .. } = selected
+                        .plan()
+                        .type_table()
+                        .get(input.pattern().ty())
+                        .unwrap()
+                        .projection()
+                    else {
+                        panic!("checked sequence input")
+                    };
+                    assert_eq!(actual, &kind);
+                }
+                let mut artifact_plan = selected.plan().as_ref().clone();
+                artifact_plan
+                    .bind_artifact(
+                        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([75; 32])
+                            .unwrap(),
+                    )
+                    .unwrap();
+                let product = Arc::new(
+                    arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                        &artifact_plan,
+                        &selected.lowering_report().dialogue_content_catalog,
+                        "sequence-equality.arcw",
+                    )
+                    .lower()
+                    .unwrap()
+                    .program,
+                );
+                for (input, expected, result) in [
+                    (vec![1, 2, 3], vec![2, 3, 4], equal_result),
+                    (vec![1, 2, 3], vec![2, 3, 9], !equal_result),
+                    (Vec::new(), Vec::new(), equal_result),
+                ] {
+                    assert_eq!(
+                        native_result(&selected, arguments(&input, &expected)),
+                        RuntimeValue::Bool(result)
+                    );
+                    let args = arguments(&input, &expected);
+                    let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+                    assert_eq!(
+                        arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+                            &product,
+                            selected.program(),
+                            &args,
+                            &mut backend
+                        )
+                        .unwrap(),
+                        RuntimeValue::Bool(result)
+                    );
+                }
+            }
+        }
+    }
 }

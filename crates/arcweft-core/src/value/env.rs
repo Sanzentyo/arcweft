@@ -420,12 +420,12 @@ impl RuntimeEnv {
         Ok(self.sequence_mut(place)?.pop_front())
     }
 
-    pub(crate) fn push_vector_item(
+    pub(crate) fn push_sequence_item(
         &mut self,
         place: &RuntimeMutablePlace,
         value: RuntimeValue,
     ) -> Result<(), RuntimeEvalError> {
-        self.sequence_mut(place)?.push_vector_item(value);
+        self.sequence_mut(place)?.push_sequence_item(value);
         Ok(())
     }
 
@@ -1463,7 +1463,7 @@ mod tests {
             base: local,
             fields: vec![field].into_boxed_slice(),
         };
-        assert_eq!(env.push_vector_item(&place, RuntimeValue::i32(3)), Ok(()));
+        assert_eq!(env.push_sequence_item(&place, RuntimeValue::i32(3)), Ok(()));
         assert_eq!(env.pop_vector_item(&place), Ok(Some(RuntimeValue::i32(3))));
         env.pop_scope();
         let place = RuntimeMutablePlace::Local(local);

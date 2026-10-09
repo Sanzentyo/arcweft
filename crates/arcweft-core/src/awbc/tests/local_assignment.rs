@@ -293,7 +293,7 @@ fn mutable_record_field_remains_usable_after_moving_its_sibling() {
             dst: AwbcRegisterId(2),
             constant: AwbcConstantId(0),
         },
-        AwbcInstruction::VecPush {
+        AwbcInstruction::SequenceAppend {
             place: AwbcMutablePlace::Fields {
                 base: AwbcRegisterId(0),
                 fields: vec![

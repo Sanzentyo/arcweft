@@ -111,6 +111,16 @@ impl RuntimeResolvedCallDispatch {
 impl RuntimeResolvedStaticCallTarget {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
+            Self::StandardMap(map) => {
+                if let Some(iteration) = map.iteration() {
+                    roots.extend([
+                        iteration.item(),
+                        iteration.iterator(),
+                        iteration.next_value(),
+                        iteration.step(),
+                    ]);
+                }
+            }
             Self::Declaration(callable) => callable.append_normalized_types(roots),
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
             Self::Host(host) => match host.owner() {
@@ -129,7 +139,6 @@ impl RuntimeResolvedStaticCallTarget {
             | Self::AgentDiagnosticsHasError
             | Self::Reduction(_)
             | Self::CharacterDialogue(_)
-            | Self::StandardMap(_)
             | Self::TraitMethod { .. }
             | Self::Line(_)
             | Self::Registered(_) => {}

@@ -4355,6 +4355,7 @@ pub struct RuntimeStandardMapCall {
     mapping: ExprId,
     receiver: ExprId,
     order: RuntimeStandardMapOperandOrder,
+    iteration: Option<Box<RuntimeBuiltinIteratorFact>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -4364,17 +4365,19 @@ pub enum RuntimeStandardMapOperandOrder {
 }
 
 impl RuntimeStandardMapCall {
-    pub const fn new(
+    pub fn new(
         family: RuntimeStandardMapFamily,
         mapping: ExprId,
         receiver: ExprId,
         order: RuntimeStandardMapOperandOrder,
+        iteration: Option<RuntimeBuiltinIteratorFact>,
     ) -> Self {
         Self {
             family,
             mapping,
             receiver,
             order,
+            iteration: iteration.map(Box::new),
         }
     }
 
@@ -4392,6 +4395,10 @@ impl RuntimeStandardMapCall {
 
     pub const fn order(&self) -> RuntimeStandardMapOperandOrder {
         self.order
+    }
+
+    pub fn iteration(&self) -> Option<&RuntimeBuiltinIteratorFact> {
+        self.iteration.as_deref()
     }
 }
 
@@ -12111,83 +12118,106 @@ fn runtime_standard_map_matches_operands(
     let [mapping_input] = parameters.as_ref() else {
         return false;
     };
-    let Some((receiver_input, result_output)) =
-        standard_map_item_types(map.family(), receiver.ty().shape(), result.shape())
-    else {
+    let Some((receiver_input, result_output)) = map.item_types(receiver.ty(), result) else {
         return false;
     };
-    mapping_input == receiver_input && mapping_result.as_ref() == result_output
+    let iteration_matches = match map.family() {
+        RuntimeStandardMapFamily::Vec
+        | RuntimeStandardMapFamily::Seq
+        | RuntimeStandardMapFamily::Slice => map.iteration().is_some_and(|iteration| {
+            iteration.item() == receiver_input
+                && matches!(
+                    (map.family(), iteration.family()),
+                    (
+                        RuntimeStandardMapFamily::Vec,
+                        arcweft_core::plan::RuntimeBuiltinIteratorFamily::Vec
+                    ) | (
+                        RuntimeStandardMapFamily::Seq,
+                        arcweft_core::plan::RuntimeBuiltinIteratorFamily::Seq
+                    ) | (
+                        RuntimeStandardMapFamily::Slice,
+                        arcweft_core::plan::RuntimeBuiltinIteratorFamily::Slice
+                    )
+                )
+        }),
+        RuntimeStandardMapFamily::Array
+        | RuntimeStandardMapFamily::Option
+        | RuntimeStandardMapFamily::Result => map.iteration().is_none(),
+    };
+    mapping_input == receiver_input && mapping_result.as_ref() == result_output && iteration_matches
 }
 
-fn standard_map_item_types<'a>(
-    family: RuntimeStandardMapFamily,
-    receiver: &'a RuntimeTypeShape,
-    result: &'a RuntimeTypeShape,
-) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
-    match (family, receiver, result) {
-        (
-            RuntimeStandardMapFamily::Vec,
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Vec,
-                item: input,
-            },
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Vec,
-                item: output,
-            },
-        )
-        | (
-            RuntimeStandardMapFamily::Seq,
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Seq,
-                item: input,
-            },
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Seq,
-                item: output,
-            },
-        )
-        | (
-            RuntimeStandardMapFamily::Slice,
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Slice,
-                item: input,
-            },
-            RuntimeTypeShape::Sequence {
-                kind: RuntimeSequenceKind::Vec,
-                item: output,
-            },
-        )
-        | (
-            RuntimeStandardMapFamily::Option,
-            RuntimeTypeShape::Option { item: input, .. },
-            RuntimeTypeShape::Option { item: output, .. },
-        ) => Some((input, output)),
-        (
-            RuntimeStandardMapFamily::Array,
-            RuntimeTypeShape::Array {
-                item: input,
-                length: input_length,
-            },
-            RuntimeTypeShape::Array {
-                item: output,
-                length: output_length,
-            },
-        ) if input_length == output_length => Some((input, output)),
-        (
-            RuntimeStandardMapFamily::Result,
-            RuntimeTypeShape::Result {
-                value: input,
-                error: input_error,
-                ..
-            },
-            RuntimeTypeShape::Result {
-                value: output,
-                error: output_error,
-                ..
-            },
-        ) if input_error == output_error => Some((input, output)),
-        _ => None,
+impl RuntimeStandardMapCall {
+    pub(crate) fn item_types<'a>(
+        &self,
+        receiver: &'a RuntimeNormalizedType,
+        result: &'a RuntimeNormalizedType,
+    ) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
+        match (self.family(), receiver.shape(), result.shape()) {
+            (
+                RuntimeStandardMapFamily::Vec,
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Vec,
+                    item: input,
+                },
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Vec,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Seq,
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Seq,
+                    item: input,
+                },
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Seq,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Slice,
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Slice,
+                    item: input,
+                },
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Vec,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Option,
+                RuntimeTypeShape::Option { item: input, .. },
+                RuntimeTypeShape::Option { item: output, .. },
+            ) => Some((input, output)),
+            (
+                RuntimeStandardMapFamily::Array,
+                RuntimeTypeShape::Array {
+                    item: input,
+                    length: input_length,
+                },
+                RuntimeTypeShape::Array {
+                    item: output,
+                    length: output_length,
+                },
+            ) if input_length == output_length => Some((input, output)),
+            (
+                RuntimeStandardMapFamily::Result,
+                RuntimeTypeShape::Result {
+                    value: input,
+                    error: input_error,
+                    ..
+                },
+                RuntimeTypeShape::Result {
+                    value: output,
+                    error: output_error,
+                    ..
+                },
+            ) if input_error == output_error => Some((input, output)),
+            _ => None,
+        }
     }
 }
 

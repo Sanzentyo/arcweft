@@ -910,9 +910,9 @@ impl RuntimeSeq {
         }
     }
 
-    /// Appends one already type-checked Vec item while preserving logical rows.
+    /// Appends one already type-checked item while preserving logical rows.
     /// Columnar storage is materialized once into owned values for this mutation.
-    pub(crate) fn push_vector_item(&mut self, value: RuntimeValue) {
+    pub(crate) fn push_sequence_item(&mut self, value: RuntimeValue) {
         if let Self::Values(values) = self {
             values.push(value);
             return;
@@ -2031,7 +2031,7 @@ mod mutation_tests {
         ];
         for mut sequence in sequences {
             let first = sequence.value_at(0);
-            sequence.push_vector_item(first.clone());
+            sequence.push_sequence_item(first.clone());
             assert_eq!(sequence.len(), 2);
             assert_eq!(sequence.pop_vector_item(), Some(first.clone()));
             assert_eq!(sequence.into_values(), vec![first]);
@@ -2039,7 +2039,7 @@ mod mutation_tests {
 
         let mut empty = RuntimeSeq::dense_i32(Vec::new());
         assert_eq!(empty.pop_vector_item(), None);
-        empty.push_vector_item(RuntimeValue::i32(4));
+        empty.push_sequence_item(RuntimeValue::i32(4));
         assert_eq!(empty.pop_vector_item(), Some(RuntimeValue::i32(4)));
     }
 

@@ -2307,7 +2307,7 @@ pub enum RuntimeExprSeedKind {
     SequencePopFront {
         place: RuntimeMutablePlaceSeed,
     },
-    /// Appends one exact item to an admitted Vec place and returns `Unit`.
+    /// Appends one exact item to an admitted mutable Vec/Seq place and returns `Unit`.
     SequencePush {
         place: RuntimeMutablePlaceSeed,
         value: Box<RuntimeExprSeed>,

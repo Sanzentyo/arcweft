@@ -27,6 +27,7 @@ mod pure_programs;
 pub use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
 mod type_kind;
+pub(crate) use type_kind::RuntimeSequenceMutation;
 mod type_scope;
 mod type_table;
 mod value_admission;

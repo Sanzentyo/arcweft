@@ -1384,6 +1384,16 @@ pub enum CheckedGeneratedLocalRole {
         parameter: arcweft_core::value::RuntimeFmtParameterId,
     },
     DialogueDisplaySource,
+    MapCallable,
+    MapItem {
+        ordinal: u32,
+    },
+    MapResult {
+        ordinal: u32,
+    },
+    MapIterator,
+    MapNextIterator,
+    MapResidual,
 }
 
 impl CheckedGeneratedLocalRole {
@@ -1402,11 +1412,20 @@ impl CheckedGeneratedLocalRole {
             Self::CallOperand { .. } => 10,
             Self::FormatOperand { .. } => 11,
             Self::DialogueDisplaySource => 12,
+            Self::MapCallable => 13,
+            Self::MapItem { .. } => 14,
+            Self::MapResult { .. } => 15,
+            Self::MapIterator => 16,
+            Self::MapNextIterator => 17,
+            Self::MapResidual => 18,
         };
         hasher.update(&[tag]);
         match self {
             Self::CallOperand { source_ordinal } => {
                 hasher.update(&source_ordinal.to_le_bytes());
+            }
+            Self::MapItem { ordinal } | Self::MapResult { ordinal } => {
+                hasher.update(&ordinal.to_le_bytes());
             }
             Self::FormatOperand { parameter } => {
                 // The closed fmt schema has nine stable coordinates, 0 through 8.

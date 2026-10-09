@@ -46,7 +46,7 @@ use super::super::{
     RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
     RuntimeLineOperation, RuntimeMatchArm, RuntimeMatchGuard, RuntimePlanRecordField,
     RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeSequenceMutation,
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
@@ -404,7 +404,11 @@ impl RuntimePlanBodyConstruction<'_> {
                 ))
             }
             RuntimeExprSeedKind::SequencePopFront { place } => {
-                let (place, item) = self.lower_vec_place(place, "Vec.pop_front place")?;
+                let (place, item) = self.lower_sequence_place(
+                    place,
+                    "Vec.pop_front place",
+                    RuntimeSequenceMutation::PopFront,
+                )?;
                 self.require_projection("Vec.pop_front result", ty, |projection| {
                     matches!(
                         projection,
@@ -414,10 +418,14 @@ impl RuntimePlanBodyConstruction<'_> {
                 RuntimeExprKind::SequencePopFront { place }
             }
             RuntimeExprSeedKind::SequencePush { place, value } => {
-                let (place, item) = self.lower_vec_place(place, "Vec.push place")?;
+                let (place, item) = self.lower_sequence_place(
+                    place,
+                    "sequence append place",
+                    RuntimeSequenceMutation::Append,
+                )?;
                 let value = self.lower_expression(*value)?;
-                require_same("Vec.push item", item, value.ty())?;
-                self.require_projection("Vec.push result", ty, |projection| {
+                require_same("sequence append item", item, value.ty())?;
+                self.require_projection("sequence append result", ty, |projection| {
                     matches!(projection, RuntimePlanTypeProjection::Unit)
                 })?;
                 RuntimeExprKind::SequencePush {
@@ -426,7 +434,11 @@ impl RuntimePlanBodyConstruction<'_> {
                 }
             }
             RuntimeExprSeedKind::SequencePopBack { place } => {
-                let (place, item) = self.lower_vec_place(place, "Vec.pop_back place")?;
+                let (place, item) = self.lower_sequence_place(
+                    place,
+                    "Vec.pop_back place",
+                    RuntimeSequenceMutation::PopBack,
+                )?;
                 self.require_projection("Vec.pop_back result", ty, |projection| {
                     matches!(
                         projection,
@@ -1882,17 +1894,19 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         Ok((place, place_type))
     }
 
-    fn lower_vec_place(
+    fn lower_sequence_place(
         &self,
         place: RuntimeMutablePlaceSeed,
         context: &'static str,
+        operation: RuntimeSequenceMutation,
     ) -> Result<(RuntimeMutablePlace, RuntimePlanTypeId), RuntimePlanBuildError> {
         let (place, sequence_type) = self.lower_mutable_place(place, context)?;
         let item = match self.projection(sequence_type)? {
-            RuntimePlanTypeProjection::Sequence {
-                kind: crate::plan::RuntimePlanSequenceKind::Vec,
-                item,
-            } => *item,
+            RuntimePlanTypeProjection::Sequence { kind, item }
+                if kind.admits_mutation(operation) =>
+            {
+                *item
+            }
             _ => return invalid_projection(context, sequence_type),
         };
         Ok((place, item))

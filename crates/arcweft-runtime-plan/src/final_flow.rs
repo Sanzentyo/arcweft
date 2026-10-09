@@ -15,6 +15,8 @@ mod line_plan;
 mod rust_defaults;
 #[path = "final_flow/scopes.rs"]
 mod scopes;
+#[path = "final_flow/standard_map.rs"]
+mod standard_map;
 #[path = "final_flow/trait_method.rs"]
 mod trait_method;
 #[path = "final_flow/value_branches.rs"]
@@ -7221,6 +7223,12 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.call(expression).is_some_and(|call| {
             call.project_function().is_some()
                 || matches!(call.dispatch(), RuntimeResolvedCallDispatch::Value { .. })
+                || matches!(
+                    call.dispatch(),
+                    RuntimeResolvedCallDispatch::Static(
+                        RuntimeResolvedStaticCallTarget::StandardMap(_)
+                    )
+                )
                 || call.need_producer().is_some()
         }) {
             return Ok(true);
@@ -7504,6 +7512,17 @@ impl<'a> FinalFlowLowerer<'a> {
         })?;
         if self.is_format_attempt_call(expression) {
             return self.lower_selected_format_attempt(expression, continuation, overrides);
+        }
+        let standard_map = self
+            .call(expression)
+            .and_then(|call| match call.dispatch() {
+                RuntimeResolvedCallDispatch::Static(
+                    RuntimeResolvedStaticCallTarget::StandardMap(map),
+                ) => Some(map.clone()),
+                _ => None,
+            });
+        if let Some(map) = standard_map {
+            return self.lower_standard_map_value(expression, map, continuation, overrides);
         }
         if self.call(expression).is_some_and(|call| {
             call.project_function().is_some()

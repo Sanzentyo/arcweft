@@ -9193,6 +9193,10 @@ fn runtime_standard_map_call(
     owner: ExprId,
     application: &CheckedCallApplication,
     family: StandardMapFamily,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+    lexical: RuntimeExecutableInstantiation<'_>,
 ) -> Result<RuntimeStandardMapCall, RuntimeSemanticProjectionError> {
     if !matches!(
         application.result(),
@@ -9237,8 +9241,69 @@ fn runtime_standard_map_call(
             });
         }
     };
+    let iteration = match family {
+        RuntimeStandardMapFamily::Vec
+        | RuntimeStandardMapFamily::Seq
+        | RuntimeStandardMapFamily::Slice => {
+            let operand = application
+                .core()
+                .runtime_operands()
+                .into_vec()
+                .into_iter()
+                .find(|operand| {
+                    operand
+                        .execution_source()
+                        .is_some_and(|source| source.owner() == mapping)
+                })
+                .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "standard map has no checked callback operand".to_owned(),
+                })?;
+            let TypeKind::Function { params, .. } = operand.inferred() else {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "standard map callback is not a checked function".to_owned(),
+                });
+            };
+            let [item] = params.as_slice() else {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "standard map callback does not have one complete parameter".to_owned(),
+                });
+            };
+            let (runtime_family, state_family) = match family {
+                RuntimeStandardMapFamily::Vec => {
+                    (RuntimeBuiltinIteratorFamily::Vec, IteratorStateKind::Vec)
+                }
+                RuntimeStandardMapFamily::Seq => {
+                    (RuntimeBuiltinIteratorFamily::Seq, IteratorStateKind::Seq)
+                }
+                RuntimeStandardMapFamily::Slice => (
+                    RuntimeBuiltinIteratorFamily::Slice,
+                    IteratorStateKind::Slice,
+                ),
+                _ => unreachable!("sequence map family selected above"),
+            };
+            let iterator = TypeKind::IteratorState {
+                family: state_family,
+                item: Box::new(item.clone()),
+            };
+            let next_value = TypeKind::Option(Box::new(item.clone()));
+            let step = TypeKind::Tuple(vec![iterator.clone(), next_value.clone()]);
+            Some(RuntimeBuiltinIteratorFact::new(
+                runtime_family,
+                lexical.runtime_type(item, symbols, world, analysis)?,
+                lexical.runtime_type(&iterator, symbols, world, analysis)?,
+                lexical.runtime_type(&next_value, symbols, world, analysis)?,
+                lexical.runtime_type(&step, symbols, world, analysis)?,
+            ))
+        }
+        RuntimeStandardMapFamily::Array
+        | RuntimeStandardMapFamily::Option
+        | RuntimeStandardMapFamily::Result => None,
+    };
     Ok(RuntimeStandardMapCall::new(
-        family, mapping, receiver, order,
+        family, mapping, receiver, order, iteration,
     ))
 }
 
@@ -9448,8 +9513,16 @@ fn runtime_call_target(
         ));
     }
     if let CallableValidator::StandardMap(family) = selected.schema().validator() {
-        return runtime_standard_map_call(owner, application, *family)
-            .map(RuntimeResolvedStaticCallTarget::StandardMap);
+        return runtime_standard_map_call(
+            owner,
+            application,
+            *family,
+            symbols,
+            world,
+            analysis,
+            lexical,
+        )
+        .map(RuntimeResolvedStaticCallTarget::StandardMap);
     }
     if matches!(selected.schema().validator(), CallableValidator::Format) {
         let checked =

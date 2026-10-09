@@ -1820,7 +1820,7 @@ impl<'a> PureEvaluator<'a> {
             }
             RuntimeExprKind::SequencePush { place, value } => {
                 let value = self.evaluate_expr(value)?;
-                self.env.push_vector_item(place, value)?;
+                self.env.push_sequence_item(place, value)?;
                 Ok(RuntimeValue::Unit)
             }
             RuntimeExprKind::SequencePopBack { place } => {
