@@ -9,11 +9,11 @@ use std::{collections::BTreeMap, sync::Arc};
 use arcweft_bundle::{
     BundleImageObject,
     resource_codec::{
-        SourceMapBuildError, SourceMapSection, ValidatedViewProduct, ViewDefinitionResource,
-        ViewInputResource, ViewInstructionSpan, ViewParameterResource, ViewProductBuildError,
-        ViewProductValidationError, ViewProductValidationLimits, ViewProgramResource,
-        ViewProgramStyleResources, ViewResourceMergeError, ViewTextBlockBounds,
-        ViewTextBlockResource, ViewTextResource, ViewValueInputResource,
+        SourceMapBuildError, SourceMapDocumentInput, SourceMapSection, ValidatedViewProduct,
+        ViewDefinitionResource, ViewInputResource, ViewInstructionSpan, ViewParameterResource,
+        ViewProductBuildError, ViewProductValidationError, ViewProductValidationLimits,
+        ViewProgramResource, ViewProgramStyleResources, ViewResourceMergeError,
+        ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewValueInputResource,
         view::{
             DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
             ViewDefinitionRef, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef,
@@ -214,6 +214,8 @@ pub(crate) enum ViewProjectLowerError {
     Product(#[from] ViewProductValidationError),
     #[error(transparent)]
     SourceMap(#[from] SourceMapBuildError),
+    #[error(transparent)]
+    ProjectSourcePath(#[from] arcweft_project::sources::ProjectSourcePathError),
     #[error(transparent)]
     Merge(#[from] ViewResourceMergeError),
     #[error(transparent)]
@@ -2671,10 +2673,22 @@ fn merge_view_text(mut standard: ViewTextResource, authored: ViewTextResource) -
     standard
 }
 
-fn project_source_map(project: &ProjectSources) -> Result<SourceMapSection, SourceMapBuildError> {
-    let documents = project
-        .modules()
-        .map(|source| source.document().as_ref())
-        .collect::<Vec<_>>();
-    SourceMapSection::try_from_documents(&documents)
+fn project_source_map(project: &ProjectSources) -> Result<SourceMapSection, ViewProjectLowerError> {
+    SourceMapSection::check_document_count(project.modules().len())?;
+    let root = project.root_module();
+    let sources = std::iter::once(root).chain(
+        project
+            .modules()
+            .filter(|source| source.module() != root.module()),
+    );
+    let inputs = sources
+        .map(|source| {
+            let path = project.authored_source_path(source.module())?;
+            Ok(SourceMapDocumentInput::for_project_file(
+                source.document(),
+                &path,
+            ))
+        })
+        .collect::<Result<Vec<_>, arcweft_project::sources::ProjectSourcePathError>>()?;
+    Ok(SourceMapSection::try_from_inputs(&inputs)?)
 }

@@ -114,9 +114,13 @@ pub fn compile_checked_agent_bundle(
     let pure_helpers = compiled.runtime_plan().plan.pure_helpers().len();
     let manifest =
         agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_roles)?;
-    let documents = agent_bundle_source_documents(compiled)?;
-    let source_map = SourceMapSection::try_from_documents(&documents)?;
-    let source_label = documents[0].identity().id().as_str();
+    let source_map = agent_bundle_source_map(compiled)?;
+    let source_label = source_map
+        .primary_document_id()
+        .ok_or_else(|| CompileAgentError::MissingSourceDocument {
+            module: "crate".to_owned(),
+        })?
+        .as_str();
     let awbc = AwbcLowerer::for_entry(
         &compiled.runtime_plan().plan,
         &compiled.runtime_plan().dialogue_content_catalog,
@@ -166,9 +170,9 @@ pub fn compile_checked_agent_bundle(
     })
 }
 
-fn agent_bundle_source_documents(
+fn agent_bundle_source_map(
     compiled: &CompiledProject,
-) -> Result<Vec<&arcweft_source::SourceDocument>, CompileAgentError> {
+) -> Result<SourceMapSection, CompileAgentError> {
     let root = compiled
         .analysis_lease()
         .modules()
@@ -179,18 +183,24 @@ fn agent_bundle_source_documents(
         })?
         .hir()
         .provenance()
-        .document();
-    let mut documents = Vec::with_capacity(compiled.analysis_lease().modules().len());
-    documents.push(root.as_ref());
-    documents.extend(
+        .source_identity();
+    SourceMapSection::check_document_count(compiled.analysis_lease().modules().len())?;
+    let mut identities = Vec::with_capacity(compiled.analysis_lease().modules().len());
+    identities.push(root);
+    identities.extend(
         compiled
             .analysis_lease()
             .modules()
             .iter()
             .filter(|module| !module.module().is_crate_root())
-            .map(|module| module.hir().provenance().document().as_ref()),
+            .map(|module| module.hir().provenance().source_identity()),
     );
-    Ok(documents)
+    compiled
+        .view_product()
+        .product()
+        .source_map()
+        .try_for_source_identities(&identities)
+        .map_err(Into::into)
 }
 
 fn validate_checked_agent_inputs<'a>(

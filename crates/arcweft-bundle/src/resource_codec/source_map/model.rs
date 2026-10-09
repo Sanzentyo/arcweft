@@ -1,9 +1,11 @@
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
+
+use arcweft_manifest_model::NormalizedProjectPath;
 
 use arcweft_source::{
     MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, MAX_REGISTRATION_SOURCE_BYTES, ProductSourceId,
-    ProductSourceIdentityError, ProductSourceRef, SourceDocument, SourceDocumentId, SourceName,
-    SourceRevision, SourceSetRevision, SourceSetRevisionError,
+    ProductSourceIdentityError, ProductSourceRef, SourceDocument, SourceDocumentId,
+    SourceDocumentIdentity, SourceName, SourceRevision, SourceSetRevision, SourceSetRevisionError,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -14,15 +16,87 @@ pub const MAX_SOURCE_DISPLAY_NAME_BYTES: usize = 4_096;
 pub const MAX_SOURCE_BYTES_PER_DOCUMENT: u64 = MAX_REGISTRATION_SOURCE_BYTES;
 pub const MAX_SOURCE_MAP_TOTAL_UTF8_BYTES: u64 = 67_108_864;
 
+/// Shared source-map admission before document inventories or text are copied.
+/// The caller supplies its complete document count before materializing records.
+pub(super) struct SourceMapAdmission {
+    total_utf8_bytes: u64,
+}
+
+impl SourceMapAdmission {
+    pub(super) fn try_new(document_count: usize) -> Result<Self, SourceMapBuildError> {
+        if document_count > MAX_SOURCE_MAP_DOCUMENTS {
+            return Err(SourceMapBuildError::TooManyDocuments {
+                actual: document_count,
+                limit: MAX_SOURCE_MAP_DOCUMENTS,
+            });
+        }
+        Ok(Self {
+            total_utf8_bytes: 0,
+        })
+    }
+
+    pub(super) fn admit_document(
+        &mut self,
+        id: &SourceDocumentId,
+        utf8_bytes: u64,
+    ) -> Result<(), SourceMapBuildError> {
+        if utf8_bytes > MAX_SOURCE_BYTES_PER_DOCUMENT {
+            return Err(SourceMapBuildError::DocumentTooLarge {
+                id: id.clone(),
+                bytes: utf8_bytes,
+                limit: MAX_SOURCE_BYTES_PER_DOCUMENT,
+            });
+        }
+        let total_utf8_bytes = self
+            .total_utf8_bytes
+            .checked_add(utf8_bytes)
+            .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
+        if total_utf8_bytes > MAX_SOURCE_MAP_TOTAL_UTF8_BYTES {
+            return Err(SourceMapBuildError::TotalBytesExceeded {
+                actual: total_utf8_bytes,
+                limit: MAX_SOURCE_MAP_TOTAL_UTF8_BYTES,
+            });
+        }
+        self.total_utf8_bytes = total_utf8_bytes;
+        Ok(())
+    }
+}
+
 /// Exact source document embedded in a canonical product source map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceMapDocument {
     id: ProductSourceId,
-    document_id: SourceDocumentId,
+    identity: SourceDocumentIdentity,
     display_name: SourceName,
-    revision: SourceRevision,
-    source_len: u64,
     utf8: Box<str>,
+}
+
+/// One accepted source document and its product-facing display metadata.
+///
+/// Product naming never changes the document identity, original diagnostic
+/// display name or exact source bytes. The section constructor validates names.
+#[derive(Clone, Debug)]
+pub struct SourceMapDocumentInput<'a> {
+    document: &'a SourceDocument,
+    display_name: Cow<'a, SourceName>,
+}
+
+impl<'a> SourceMapDocumentInput<'a> {
+    /// Retains an already portable or non-file source name.
+    pub fn for_document(document: &'a SourceDocument) -> Self {
+        Self {
+            document,
+            display_name: Cow::Borrowed(document.display_name()),
+        }
+    }
+
+    /// Publishes a package-owned authored file coordinate as product metadata.
+    pub fn for_project_file(document: &'a SourceDocument, path: &NormalizedProjectPath) -> Self {
+        Self {
+            document,
+            display_name: Cow::Owned(SourceName::path(path.as_str())),
+        }
+    }
 }
 
 /// One immutable, canonically ordered multi-source product section.
@@ -39,7 +113,11 @@ impl SourceMapDocument {
     }
 
     pub const fn document_id(&self) -> &SourceDocumentId {
-        &self.document_id
+        self.identity.id()
+    }
+
+    pub const fn source_identity(&self) -> &SourceDocumentIdentity {
+        &self.identity
     }
 
     pub const fn display_name(&self) -> &SourceName {
@@ -47,17 +125,17 @@ impl SourceMapDocument {
     }
 
     pub const fn revision(&self) -> SourceRevision {
-        self.revision
+        self.identity.revision()
     }
 
     pub const fn source_len(&self) -> u64 {
-        self.source_len
+        self.identity.source_len()
     }
 
     /// Projects the exact lower-layer product source reference retained by
     /// static product records.
     pub fn product_source_ref(&self) -> ProductSourceRef {
-        ProductSourceRef::new(self.id.clone(), self.revision, self.source_len)
+        ProductSourceRef::new(self.id.clone(), self.revision(), self.source_len())
     }
 
     pub fn text(&self) -> &str {
@@ -66,34 +144,92 @@ impl SourceMapDocument {
 }
 
 impl SourceMapSection {
+    /// Checks a complete inventory's count before a producer builds its metadata.
+    /// Constructors also validate their supplied inventory and exact UTF-8 extents.
+    pub fn check_document_count(document_count: usize) -> Result<(), SourceMapBuildError> {
+        SourceMapAdmission::try_new(document_count).map(|_| ())
+    }
+
     /// Builds one canonical source inventory whose first supplied document is
-    /// the semantic primary/root document.
+    /// the semantic primary/root document. File display names must be portable.
     ///
-    /// Document records are sorted by `ProductSourceId` for deterministic
-    /// lookup and encoding; that sort never changes the explicit primary.
+    /// Document records are sorted by `ProductSourceId` for deterministic lookup
+    /// and encoding; that sort never changes the explicit primary.
     pub fn try_from_documents(documents: &[&SourceDocument]) -> Result<Self, SourceMapBuildError> {
         Self::try_from_documents_with(documents, derive_product_source_id)
+    }
+
+    /// Projects exact source documents with owning product display metadata.
+    pub fn try_from_inputs(
+        inputs: &[SourceMapDocumentInput<'_>],
+    ) -> Result<Self, SourceMapBuildError> {
+        Self::try_from_inputs_with(inputs, derive_product_source_id)
     }
 
     fn try_from_documents_with(
         documents: &[&SourceDocument],
         derive_id: impl Fn(&SourceDocumentId) -> Result<ProductSourceId, SourceMapBuildError>,
     ) -> Result<Self, SourceMapBuildError> {
-        if documents.len() > MAX_SOURCE_MAP_DOCUMENTS {
-            return Err(SourceMapBuildError::TooManyDocuments {
-                actual: documents.len(),
-                limit: MAX_SOURCE_MAP_DOCUMENTS,
-            });
-        }
+        Self::check_document_count(documents.len())?;
+        let inputs = documents
+            .iter()
+            .map(|document| SourceMapDocumentInput::for_document(document))
+            .collect::<Vec<_>>();
+        Self::try_from_inputs_with(&inputs, derive_id)
+    }
 
-        let primary_document_id = documents
+    fn try_from_inputs_with(
+        inputs: &[SourceMapDocumentInput<'_>],
+        derive_id: impl Fn(&SourceDocumentId) -> Result<ProductSourceId, SourceMapBuildError>,
+    ) -> Result<Self, SourceMapBuildError> {
+        let mut admission = SourceMapAdmission::try_new(inputs.len())?;
+        // Bound source-byte copies before materializing immutable product records.
+        for input in inputs {
+            let identity = input.document.identity();
+            let display_bytes = input.display_name.display_name().len();
+            if display_bytes > MAX_SOURCE_DISPLAY_NAME_BYTES {
+                return Err(SourceMapBuildError::DisplayNameTooLong {
+                    id: identity.id().clone(),
+                    bytes: display_bytes,
+                    limit: MAX_SOURCE_DISPLAY_NAME_BYTES,
+                });
+            }
+            if let SourceName::Path(path) = input.display_name.as_ref() {
+                NormalizedProjectPath::new(path.as_str()).map_err(|source| {
+                    SourceMapBuildError::InvalidDisplayPath {
+                        id: identity.id().clone(),
+                        source,
+                    }
+                })?;
+            }
+            admission.admit_document(identity.id(), identity.source_len())?;
+        }
+        let primary_document_id = inputs
             .first()
-            .map(|document| document.identity().id().clone());
+            .map(|input| input.document.identity().id().clone());
+        let entries = inputs
+            .iter()
+            .map(|input| {
+                Ok(SourceMapDocument {
+                    id: derive_id(input.document.identity().id())?,
+                    identity: input.document.identity().clone(),
+                    display_name: input.display_name.clone().into_owned(),
+                    utf8: input.document.text().into(),
+                })
+            })
+            .collect::<Result<Vec<_>, SourceMapBuildError>>()?;
+        Self::try_from_entries(entries, primary_document_id)
+    }
+
+    fn try_from_entries(
+        mut documents: Vec<SourceMapDocument>,
+        primary_document_id: Option<SourceDocumentId>,
+    ) -> Result<Self, SourceMapBuildError> {
+        let mut admission = SourceMapAdmission::try_new(documents.len())?;
         let mut by_document = BTreeMap::<SourceDocumentId, ProductSourceId>::new();
         let mut by_product = BTreeMap::<ProductSourceId, SourceDocumentId>::new();
-        let mut total_bytes = 0_u64;
-        for document in documents {
-            let identity = document.identity();
+        for document in &documents {
+            let identity = document.source_identity();
             let id_bytes = identity.id().as_str().len();
             if id_bytes > MAX_PRODUCT_SOURCE_ID_INPUT_BYTES {
                 return Err(SourceMapBuildError::DocumentIdTooLong {
@@ -110,119 +246,119 @@ impl SourceMapSection {
                     limit: MAX_SOURCE_DISPLAY_NAME_BYTES,
                 });
             }
-            if identity.source_len() > MAX_SOURCE_BYTES_PER_DOCUMENT {
-                return Err(SourceMapBuildError::DocumentTooLarge {
-                    id: identity.id().clone(),
-                    bytes: identity.source_len(),
-                    limit: MAX_SOURCE_BYTES_PER_DOCUMENT,
-                });
+            if let SourceName::Path(path) = document.display_name() {
+                NormalizedProjectPath::new(path.as_str()).map_err(|source| {
+                    SourceMapBuildError::InvalidDisplayPath {
+                        id: identity.id().clone(),
+                        source,
+                    }
+                })?;
             }
-            total_bytes = total_bytes
-                .checked_add(identity.source_len())
-                .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
-            if total_bytes > MAX_SOURCE_MAP_TOTAL_UTF8_BYTES {
-                return Err(SourceMapBuildError::TotalBytesExceeded {
-                    actual: total_bytes,
-                    limit: MAX_SOURCE_MAP_TOTAL_UTF8_BYTES,
-                });
-            }
-            let product = derive_id(identity.id())?;
+            admission.admit_document(identity.id(), identity.source_len())?;
             if by_document
-                .insert(identity.id().clone(), product.clone())
+                .insert(identity.id().clone(), document.id.clone())
                 .is_some()
             {
                 return Err(SourceMapBuildError::DuplicateDocument(
                     identity.id().clone(),
                 ));
             }
-            if let Some(first) = by_product.insert(product.clone(), identity.id().clone()) {
+            if let Some(first) = by_product.insert(document.id.clone(), identity.id().clone()) {
                 return Err(SourceMapBuildError::ProductSourceIdCollision {
-                    product,
+                    product: document.id.clone(),
                     first,
                     second: identity.id().clone(),
                 });
             }
         }
-
         let source_set_revision = SourceSetRevision::try_for_identities(
-            documents.iter().map(|document| document.identity()),
+            documents.iter().map(SourceMapDocument::source_identity),
         )
         .map_err(map_source_set_error)?;
-        let mut entries = documents
-            .iter()
-            .map(|document| {
-                let identity = document.identity();
-                let id = by_document
-                    .get(identity.id())
-                    .cloned()
-                    .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
-                Ok(SourceMapDocument {
-                    id,
-                    document_id: identity.id().clone(),
-                    display_name: document.display_name().clone(),
-                    revision: identity.revision(),
-                    source_len: identity.source_len(),
-                    utf8: document.text().into(),
-                })
-            })
-            .collect::<Result<Vec<_>, SourceMapBuildError>>()?;
-        entries.sort_by(|left, right| left.id.cmp(&right.id));
+        documents.sort_by(|left, right| left.id.cmp(&right.id));
         Ok(Self {
             source_set_revision,
             primary_document_id,
-            documents: entries,
+            documents,
         })
     }
 
-    /// Adds one exact document and recomputes the deterministic source-set
-    /// revision, rejecting a reused document ID with different content.
-    pub fn try_with_document(self, document: &SourceDocument) -> Result<Self, SourceMapBuildError> {
+    /// Adds one exact document, preserving the existing admitted product names.
+    /// No source document or identity is reconstructed from product text.
+    pub fn try_with_document(
+        mut self,
+        document: &SourceDocument,
+    ) -> Result<Self, SourceMapBuildError> {
         if let Some(existing) = self
             .documents
             .iter()
             .find(|existing| existing.document_id() == document.identity().id())
         {
-            if existing.display_name() == document.display_name()
-                && existing.revision() == document.identity().revision()
-                && existing.source_len() == document.identity().source_len()
+            if existing.source_identity() == document.identity()
                 && existing.text() == document.text()
             {
+                // The accepted product name remains authoritative even when the
+                // exact original document has an absolute diagnostic label.
                 return Ok(self);
             }
             return Err(SourceMapBuildError::DuplicateDocument(
                 document.identity().id().clone(),
             ));
         }
-
         let document_count = self
             .documents
             .len()
             .checked_add(1)
             .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
-        if document_count > MAX_SOURCE_MAP_DOCUMENTS {
-            return Err(SourceMapBuildError::TooManyDocuments {
-                actual: document_count,
-                limit: MAX_SOURCE_MAP_DOCUMENTS,
-            });
+        let mut admission = SourceMapAdmission::try_new(document_count)?;
+        for existing in &self.documents {
+            admission.admit_document(existing.document_id(), existing.source_len())?;
         }
-
-        let primary_document_id = self.primary_document_id.clone();
-        let mut owned = self
+        admission.admit_document(document.identity().id(), document.identity().source_len())?;
+        let mut addition = Self::try_from_documents(&[document])?;
+        let added = addition
             .documents
+            .pop()
+            .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
+        let primary = self
+            .primary_document_id
+            .or_else(|| Some(document.identity().id().clone()));
+        self.documents.push(added);
+        Self::try_from_entries(self.documents, primary)
+    }
+
+    /// Selects an exact authored source set from this already admitted map.
+    /// The first requested identity remains the primary, independent of sorting.
+    pub fn try_for_source_identities(
+        &self,
+        identities: &[&SourceDocumentIdentity],
+    ) -> Result<Self, SourceMapBuildError> {
+        let mut admission = SourceMapAdmission::try_new(identities.len())?;
+        let selected = identities
             .iter()
-            .map(|existing| {
-                SourceDocument::try_new(
-                    existing.document_id().clone(),
-                    existing.display_name().clone(),
-                    existing.text().to_owned(),
-                )
-                .map_err(|_| SourceMapBuildError::ArithmeticOverflow)
+            .map(|identity| {
+                let id = derive_product_source_id(identity.id())?;
+                let source = self
+                    .get(&id)
+                    .ok_or_else(|| SourceMapBuildError::MissingDocument(identity.id().clone()))?;
+                if source.source_identity() != *identity {
+                    return Err(SourceMapBuildError::DocumentIdentityMismatch {
+                        expected: Box::new((*identity).clone()),
+                        actual: Box::new(source.source_identity().clone()),
+                    });
+                }
+                Ok(source)
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        owned.push(document.clone());
-        let mut rebuilt = Self::try_from_documents(&owned.iter().collect::<Vec<_>>())?;
-        rebuilt.primary_document_id = primary_document_id.or(rebuilt.primary_document_id);
-        Ok(rebuilt)
+            .collect::<Result<Vec<_>, SourceMapBuildError>>()?;
+        // Duplicate requests cannot force unbounded copies of an admitted document.
+        for source in &selected {
+            admission.admit_document(source.document_id(), source.source_len())?;
+        }
+        let documents = selected.into_iter().cloned().collect();
+        Self::try_from_entries(
+            documents,
+            identities.first().map(|identity| identity.id().clone()),
+        )
     }
 
     pub const fn source_set_revision(&self) -> SourceSetRevision {

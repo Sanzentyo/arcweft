@@ -5731,3 +5731,138 @@ fn borrowed_view_need() -> arcweft_core::task::RuntimeNeedHandle {
     })
     .unwrap()
 }
+
+fn portable_view_fixture(root: PathBuf, source_path: PathBuf) -> ProjectViewFixture {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://portable-view/story/opening.arcw")
+                .unwrap(),
+            SourceName::path(source_path.display().to_string()),
+            "view Opening() { Text(\"雪\") }\n",
+        )
+        .unwrap(),
+    );
+    let manifest = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://portable-view/arcw.toml").unwrap(),
+            SourceName::path(root.join("arcw.toml").display().to_string()),
+            "",
+        )
+        .unwrap(),
+    );
+    let project = ProjectSources::new(
+        root.join("arcw.toml"),
+        root,
+        PackageSpec {
+            id: PackageId::new("portable.view.tests").unwrap(),
+            version: PackageVersion::new("0.0.0").unwrap(),
+        },
+        BuildSpec::default(),
+        manifest,
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            source_path,
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .unwrap();
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(project.package().id.as_str()).unwrap(),
+        document.identity().id().clone(),
+        "portable-view-test",
+    )
+    .unwrap();
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    ProjectViewFixture {
+        project,
+        document,
+        context,
+    }
+}
+
+#[test]
+fn compiler_source_maps_use_project_coordinates_and_preserve_local_diagnostics() {
+    let prefix = PathBuf::from(std::path::MAIN_SEPARATOR.to_string());
+    let first_root = prefix.join("first-view-checkout");
+    let second_root = prefix.join("second-view-checkout");
+    let first = portable_view_fixture(first_root.clone(), first_root.join("story/opening.arcw"));
+    let second = portable_view_fixture(second_root.clone(), second_root.join("story/opening.arcw"));
+    let first_compiled = first.compile().unwrap();
+    let second_compiled = second.compile().unwrap();
+    let first_map = first_compiled.view_product().product().source_map();
+    let second_map = second_compiled.view_product().product().source_map();
+    let primary = first_map.primary_document().unwrap();
+    assert_eq!(
+        primary.display_name(),
+        &SourceName::path("story/opening.arcw")
+    );
+    assert_eq!(primary.source_identity(), first.document.identity());
+    assert_eq!(primary.text(), first.document.text());
+    assert_eq!(
+        first_map.documents().len(),
+        3,
+        "authored source plus the two exact engine-generated documents"
+    );
+    assert!(Arc::ptr_eq(
+        first_compiled.analysis_lease().modules()[0]
+            .hir()
+            .provenance()
+            .document(),
+        &first.document
+    ));
+    assert_eq!(
+        first_compiled.analysis_lease().modules()[0]
+            .hir()
+            .provenance()
+            .document()
+            .display_name(),
+        &SourceName::path(first_root.join("story/opening.arcw").display().to_string())
+    );
+    let bytes = first_map.encode_canonical_section().unwrap();
+    assert_eq!(bytes, second_map.encode_canonical_section().unwrap());
+    assert!(
+        !bytes
+            .windows(b"first-view-checkout".len())
+            .any(|value| value == b"first-view-checkout")
+    );
+    assert_eq!(
+        SourceMapSection::decode_canonical_section(&bytes).unwrap(),
+        *first_map
+    );
+}
+
+#[test]
+fn compiler_source_maps_reject_a_file_outside_the_accepted_project_root() {
+    let prefix = PathBuf::from(std::path::MAIN_SEPARATOR.to_string());
+    let root = prefix.join("accepted-view-checkout");
+    let fixture = portable_view_fixture(root, prefix.join("foreign/opening.arcw"));
+    let error = fixture.compile().unwrap_err();
+    assert_eq!(error.stage(), "view-lower");
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
+    assert_eq!(
+        diagnostic.diagnostic().code().map(|code| code.as_str()),
+        Some("compiler.view.lower")
+    );
+    assert!(
+        diagnostic
+            .diagnostic()
+            .message()
+            .contains("outside its project root")
+    );
+}

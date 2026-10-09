@@ -1238,3 +1238,129 @@ fn test_runtime_plan_artifact_key() -> RuntimePlanArtifactKey {
     })
     .expect("typed runtime-plan artifact key")
 }
+
+#[test]
+fn agent_bundle_reuses_portable_admitted_source_names_without_diagnostic_reconstruction() {
+    let source = r"
+fn controller() -> Result<Unit, AgentError> effects {} {
+    Ok(())
+}
+entry agent @entry.agent.portable {
+    controller = controller
+}
+";
+    let (old_project, _) = entry_project(
+        source,
+        "entry.agent.portable",
+        ProjectEntrySelectionKind::Agent,
+    );
+    let root = PathBuf::from(std::path::MAIN_SEPARATOR.to_string()).join("private-agent-checkout");
+    let path = root.join("controllers/main.arcw");
+    let document = Arc::new(
+        SourceDocument::try_new(
+            old_project.root_module().document().identity().id().clone(),
+            SourceName::path(path.display().to_string()),
+            source,
+        )
+        .unwrap(),
+    );
+    let project = ProjectSources::new(
+        root.join("arcw.toml"),
+        root,
+        old_project.package().clone(),
+        old_project.build().clone(),
+        Arc::clone(old_project.manifest_document()),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            path.clone(),
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .unwrap();
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(project.package().id.as_str()).unwrap(),
+        document.identity().id().clone(),
+        "portable-agent-test",
+    )
+    .unwrap();
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        None,
+        Some(ProjectEntrySelection::new(
+            PublicId::try_new("entry.agent.portable").unwrap(),
+            ProjectEntrySelectionKind::Agent,
+        )),
+    );
+    let compiled = compile_attached_project(&project, &context).unwrap();
+    let artifact = compile_agent_project_bundle(
+        &compiled,
+        &PublicId::try_new("entry.agent.portable").unwrap(),
+        &checked_project_index(&compiled),
+        test_runtime_plan_artifact_key(),
+    )
+    .unwrap();
+    assert_eq!(
+        artifact.bundle.source_display_name(),
+        "controllers/main.arcw"
+    );
+    assert_eq!(
+        artifact.bundle.source_map.documents().len(),
+        3,
+        "the existing bundle constructor links the two engine-generated sources"
+    );
+    let product_map = compiled.view_product().product().source_map();
+    let authored = product_map
+        .try_for_source_identities(&[document.identity()])
+        .unwrap();
+    assert_eq!(
+        authored.documents().len(),
+        1,
+        "the compiler input remains the exact authored source subset"
+    );
+    assert_eq!(
+        artifact
+            .bundle
+            .source_map
+            .try_for_source_identities(&[document.identity()])
+            .unwrap(),
+        authored
+    );
+    assert_eq!(artifact.bundle.source_map, *product_map);
+    assert_eq!(product_map.documents().len(), 3);
+    assert!(Arc::ptr_eq(
+        compiled.analysis_lease().modules()[0]
+            .hir()
+            .provenance()
+            .document(),
+        &document
+    ));
+    assert_eq!(
+        document.display_name(),
+        &SourceName::path(path.display().to_string())
+    );
+    let bytes = artifact
+        .bundle
+        .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+        .unwrap();
+    assert!(
+        !bytes
+            .windows(b"private-agent-checkout".len())
+            .any(|value| value == b"private-agent-checkout")
+    );
+    let decoded =
+        ArcweftBundle::from_format_slice(arcweft_bundle::BundleFormat::Awfb, &bytes).unwrap();
+    assert_eq!(decoded.source_map, artifact.bundle.source_map);
+    assert_eq!(decoded.source_display_name(), "controllers/main.arcw");
+    assert_eq!(decoded.agent.as_ref().unwrap().schema_version, 1);
+}

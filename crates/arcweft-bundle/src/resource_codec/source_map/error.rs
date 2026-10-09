@@ -1,4 +1,5 @@
-use arcweft_source::{ProductSourceId, SourceDocumentId, SourceRevision};
+use arcweft_manifest_model::NormalizedProjectPathError;
+use arcweft_source::{ProductSourceId, SourceDocumentId, SourceDocumentIdentity, SourceRevision};
 use thiserror::Error;
 
 use crate::resource_codec::SectionCodecError;
@@ -19,6 +20,19 @@ pub enum SourceMapBuildError {
         id: SourceDocumentId,
         bytes: usize,
         limit: usize,
+    },
+    #[error("source display path for {id} is not portable: {source}")]
+    InvalidDisplayPath {
+        id: SourceDocumentId,
+        #[source]
+        source: NormalizedProjectPathError,
+    },
+    #[error("requested source document is absent from the admitted map: {0}")]
+    MissingDocument(SourceDocumentId),
+    #[error("requested source identity {expected:?} does not match the admitted source {actual:?}")]
+    DocumentIdentityMismatch {
+        expected: Box<SourceDocumentIdentity>,
+        actual: Box<SourceDocumentIdentity>,
     },
     #[error("source document exceeds the per-document byte limit")]
     DocumentTooLarge {

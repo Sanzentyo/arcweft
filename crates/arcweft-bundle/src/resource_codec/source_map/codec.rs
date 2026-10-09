@@ -1,5 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
+use super::model::SourceMapAdmission;
 use super::{MAX_SOURCE_MAP_DOCUMENTS, SourceMapCodecError, SourceMapSection};
 use crate::resource_codec::budget::SectionCodecBudget;
 use crate::resource_codec::codec_io::{Cursor, u32_from_usize, usize_from_u32, usize_from_u64};
@@ -188,15 +189,9 @@ fn decode_transcript(
         return Err(SourceMapCodecError::RecordCountMismatch);
     }
     let count = usize_from_u32(count)?;
-    if count > MAX_SOURCE_MAP_DOCUMENTS {
-        return Err(super::SourceMapBuildError::TooManyDocuments {
-            actual: count,
-            limit: MAX_SOURCE_MAP_DOCUMENTS,
-        }
-        .into());
-    }
+    let mut admission = SourceMapAdmission::try_new(count)?;
     let documents = (0..count)
-        .map(|_| decode_document(&mut cursor, envelope))
+        .map(|_| decode_document(&mut cursor, envelope, &mut admission))
         .collect::<Result<Vec<_>, _>>()?;
     if cursor.remaining() != 0 {
         return Err(crate::resource_codec::SectionCodecError::TrailingBytes.into());
@@ -211,6 +206,7 @@ fn decode_transcript(
 fn decode_document(
     cursor: &mut Cursor<'_>,
     envelope: &ProductResourceEnvelope,
+    admission: &mut SourceMapAdmission,
 ) -> Result<SourceDocument, SourceMapCodecError> {
     let product_ref = PublicIdRef(cursor.read_u32()?);
     let document_ref = StringId(cursor.read_u32()?);
@@ -219,11 +215,14 @@ fn decode_document(
     let encoded_revision = read_array::<32>(cursor)?;
     let encoded_extent = read_u64(cursor)?;
     let utf8_len = read_u64(cursor)?;
-    let utf8 = cursor.read_bytes(usize_from_u64(utf8_len)?)?;
-    let text = std::str::from_utf8(utf8).map_err(|_| SourceMapCodecError::InvalidUtf8)?;
     let document_text = envelope.strings.get(document_ref)?.to_owned();
     let document_id = SourceDocumentId::try_new(document_text.clone())
         .map_err(|_| SourceMapCodecError::InvalidDocumentId(document_text))?;
+    // The generic envelope cap does not replace the source-map UTF-8 quotas.
+    // Charge the actual payload extent before borrowing or copying its text.
+    admission.admit_document(&document_id, utf8_len)?;
+    let utf8 = cursor.read_bytes(usize_from_u64(utf8_len)?)?;
+    let text = std::str::from_utf8(utf8).map_err(|_| SourceMapCodecError::InvalidUtf8)?;
     let display_name = decode_display_name(display_tag, display_ref, &envelope.strings)?;
     let product_text = envelope.public_ids.get(product_ref)?.to_owned();
     let actual_product = ProductSourceId::try_from_encoded(product_text.clone())

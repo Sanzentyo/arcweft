@@ -50,7 +50,7 @@ pub use runtime::{
 pub use source_map::{
     MAX_SOURCE_BYTES_PER_DOCUMENT, MAX_SOURCE_DISPLAY_NAME_BYTES, MAX_SOURCE_MAP_DOCUMENTS,
     MAX_SOURCE_MAP_TOTAL_UTF8_BYTES, SourceMapBuildError, SourceMapCodecError, SourceMapDocument,
-    SourceMapSection,
+    SourceMapDocumentInput, SourceMapSection,
 };
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{
