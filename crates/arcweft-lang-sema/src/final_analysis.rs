@@ -57,7 +57,9 @@ pub use execution_regions::{
     CheckedExecutionBodyOwner, CheckedExecutionOperation, CheckedExecutionRegion,
 };
 mod deterministic_program;
+mod entity_pattern;
 mod entity_value;
+pub use entity_pattern::{CheckedEntityPatternProjection, CheckedEntityPatternProjectionError};
 pub use entity_value::{CheckedEntityValueProjection, CheckedEntityValueProjectionError};
 mod execution_inputs;
 mod flow_execution;
@@ -189,11 +191,11 @@ pub use model::{
     CheckedFieldSelection, CheckedFunctionExecution, CheckedFunctionSiteBoundary,
     CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedImplicitCallableIdentity,
     CheckedImplicitCapture, CheckedImplicitCaptureOccurrence, CheckedImplicitParameter,
-    CheckedImplicitParameterOccurrence, CheckedIncludeFlowTarget, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact,
-    CheckedMatchSemanticDigest, CheckedMethodSelection, CheckedNonValueExpressionResult,
-    CheckedOrdinaryFunctionEmission, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe,
+    CheckedImplicitParameterOccurrence, CheckedImportedProjectEntity, CheckedIncludeFlowTarget,
+    CheckedItem, CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact,
+    CheckedMatchFact, CheckedMatchSemanticDigest, CheckedMethodSelection,
+    CheckedNonValueExpressionResult, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe,
     CheckedPipeBindingIdentity, CheckedPipeLeft, CheckedPipeLeftOccurrence, CheckedPlace,
     CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
     CheckedProjectNominalInstantiationError, CheckedRecordBindingSource,

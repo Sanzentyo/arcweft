@@ -57,8 +57,9 @@ use super::{
     source_index::CharacterDefinitionIndex,
 };
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegisteredExternalOwner {
+    ProjectEntity(crate::project_index::AcceptedProjectEntity),
     Character(CharacterId),
     Environment(RegisteredEnvironmentExternalOwner),
 }
@@ -77,6 +78,7 @@ pub struct RegisteredEnvironmentExternalOwner {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RegisteredExternalOwnerKind {
+    ProjectEntity,
     Character,
     Environment,
 }
@@ -583,6 +585,7 @@ impl RegisteredExternalOwner {
     pub const fn kind(&self) -> RegisteredExternalOwnerKind {
         match self {
             Self::Character(_) => RegisteredExternalOwnerKind::Character,
+            Self::ProjectEntity(_) => RegisteredExternalOwnerKind::ProjectEntity,
             Self::Environment(_) => RegisteredExternalOwnerKind::Environment,
         }
     }
@@ -695,6 +698,21 @@ impl ProjectRegistrationFacts {
         }
 
         for fact in &externals {
+            if let RegisteredExternalOwner::ProjectEntity(entity) = fact.target() {
+                let valid = project_entity_symbol_path(entity)
+                    .is_ok_and(|path| path == *fact.declaration().canonical_path())
+                    && entity.symbol().source().span() == fact.owner_source()
+                    && entity.symbol().source().span() == fact.declaration().declaration();
+                if !valid {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::UnknownOwner {
+                            owner: fact.target().into(),
+                        },
+                        fact.owner_source().clone(),
+                        [],
+                    ));
+                }
+            }
             validate_span(fact.declaration().declaration(), &by_id, &mut diagnostics);
             validate_span(fact.owner_source(), &by_id, &mut diagnostics);
             for binding in fact.declaration().direct_bindings() {
@@ -831,7 +849,7 @@ impl ProjectRegistrationFacts {
                         .range()
                         .cmp(&right.declaration().declaration().range())
                 })
-                .then_with(|| left.target().cmp(right.target()))
+                .then_with(|| left.target().registration_order(right.target()))
                 .then_with(|| {
                     left.owner_source()
                         .range()
@@ -908,6 +926,41 @@ impl ProjectRegistrationFacts {
         })
     }
 
+    /// Republishes the exact original external/environment inputs for a new
+    /// source root. The fresh world's normal registration validates all source
+    /// documents, nominal metadata, owners, callables and contracts again.
+    /// This does not derive declarations from a joined catalog or source text.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an immutable fact's owner contribution loses its admitted
+    /// external declaration seed, violating this carrier's constructor invariant.
+    pub fn try_for_source_project(
+        &self,
+        world: ProjectSymbolWorldId,
+        root: Arc<SourceDocument>,
+    ) -> Result<Self, CharacterRegistrationReport> {
+        let documents = self.documents.values().cloned().chain([root]).collect();
+        let externals = self
+            .external_owners
+            .iter()
+            .map(|owner| ExternalRegistrationFact {
+                declaration: self
+                    .external_declarations
+                    .declaration(owner.seed)
+                    .expect("registered external owners retain their original declaration seed")
+                    .clone(),
+                target: owner.target.clone(),
+                owner_source: owner.owner_source.clone(),
+            })
+            .collect();
+        let inputs = self
+            .environment_inputs
+            .iter()
+            .map(|input| input.input().clone())
+            .collect();
+        Self::try_new(world, documents, externals, self.catalogs.clone(), inputs)
+    }
     pub const fn world(&self) -> &ProjectSymbolWorldId {
         &self.world
     }
@@ -2132,5 +2185,137 @@ mod compile_time_scalar_tests {
             registered.semantic_digest(),
             changed_identity.semantic_digest()
         );
+    }
+}
+
+impl RegisteredExternalOwner {
+    fn registration_order(&self, other: &Self) -> std::cmp::Ordering {
+        self.kind()
+            .cmp(&other.kind())
+            .then_with(|| match (self, other) {
+                (Self::Character(left), Self::Character(right)) => left.cmp(right),
+                (Self::Environment(left), Self::Environment(right)) => left.cmp(right),
+                (Self::ProjectEntity(left), Self::ProjectEntity(right)) => {
+                    left.semantic_identity().cmp(&right.semantic_identity())
+                }
+                _ => std::cmp::Ordering::Equal,
+            })
+    }
+}
+
+pub(crate) fn project_entity_symbol_path(
+    entity: &crate::project_index::AcceptedProjectEntity,
+) -> Result<SymbolPath, arcweft_lang_syntax::ast::symbol_path::ProjectSymbolPathError> {
+    use arcweft_lang_syntax::ast::{
+        module_path::ModulePathRoot,
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+    };
+    let path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        entity
+            .symbol()
+            .public_id()
+            .as_str()
+            .split('.')
+            .map(|segment| ProjectSymbolSegment::try_new(segment.to_owned()))
+            .collect::<Result<Vec<_>, _>>()?,
+    )?;
+    SymbolPath::try_from(&path).map_err(|_| {
+        arcweft_lang_syntax::ast::symbol_path::ProjectSymbolPathError::InvalidSegment {
+            segment: entity.symbol().public_id().as_str().to_owned(),
+        }
+    })
+}
+
+impl ProjectRegistrationFacts {
+    /// Adds exact target-catalog entities before fresh symbol registration.
+    /// The ordinary fact constructor revalidates all source spans and owner
+    /// mappings; no source text or accepted environment is used as a resolver.
+    pub fn try_with_project_entities(
+        &self,
+        catalogs: &[Arc<crate::project_index::AcceptedProjectEntityCatalog>],
+    ) -> Result<Self, CharacterRegistrationReport> {
+        use arcweft_lang_hir::symbol::ProjectDirectBinding;
+        use arcweft_lang_syntax::ast::{
+            module_path::CanonicalModulePath,
+            symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+        };
+        let mut documents = self.documents.values().cloned().collect::<Vec<_>>();
+        let mut externals = self
+            .external_owners
+            .iter()
+            .map(|owner| ExternalRegistrationFact {
+                declaration: self
+                    .external_declarations
+                    .declaration(owner.seed)
+                    .expect("immutable owner keeps its admitted seed")
+                    .clone(),
+                target: owner.target.clone(),
+                owner_source: owner.owner_source.clone(),
+            })
+            .collect::<Vec<_>>();
+        for catalog in catalogs {
+            documents.extend(catalog.documents().cloned());
+            for identity in catalog.entities().keys() {
+                let entity = catalog
+                    .entity(identity)
+                    .expect("catalog identity comes from its exact entity inventory");
+                let source = entity.symbol().source().to_span();
+                let canonical = project_entity_symbol_path(&entity).map_err(|_| {
+                    CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::UnknownOwner {
+                                owner: (&RegisteredExternalOwner::ProjectEntity(entity.clone()))
+                                    .into(),
+                            },
+                            source.clone(),
+                            [],
+                        ),
+                    ])
+                })?;
+                let path = ProjectSymbolPath::new(
+                    arcweft_lang_syntax::ast::module_path::ModulePathRoot::ImplicitCrate,
+                    entity
+                        .symbol()
+                        .public_id()
+                        .as_str()
+                        .split('.')
+                        .map(|segment| ProjectSymbolSegment::try_new(segment.to_owned()))
+                        .collect::<Result<Vec<_>, _>>()
+                        .expect("typed catalog entity canonical path is already admitted"),
+                )
+                .expect("typed catalog entity canonical path has nonempty valid segments");
+                let binding = ProjectDirectBinding::try_new(
+                    CanonicalModulePath::crate_root(),
+                    path,
+                    None,
+                    source.clone(),
+                    false,
+                )
+                .expect("target entity publication is an implicit crate binding");
+                let declaration = ExternalDeclarationSeed::try_new(
+                    canonical,
+                    None,
+                    source.clone(),
+                    vec![binding],
+                )
+                .expect("target entity publication has its exact direct binding");
+                externals.push(ExternalRegistrationFact::new(
+                    declaration,
+                    RegisteredExternalOwner::ProjectEntity(entity),
+                    source,
+                ));
+            }
+        }
+        Self::try_new(
+            self.world.clone(),
+            documents,
+            externals,
+            self.catalogs.clone(),
+            self.environment_inputs
+                .iter()
+                .map(|input| input.input().clone())
+                .collect(),
+        )
     }
 }

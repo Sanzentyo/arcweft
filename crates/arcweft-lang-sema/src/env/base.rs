@@ -541,10 +541,13 @@ impl TypeCheckEnv {
         self
     }
 
-    pub(crate) fn take_statement_ingress_inputs(
-        &mut self,
-    ) -> Box<[StatementIngressTypePublicationInput]> {
-        std::mem::take(&mut self.statement_ingress_inputs)
+    /// Original typed publication rows remain on the immutable source
+    /// environment, including when a registered environment is reused as a
+    /// different project's base. Each registrar seals its own exact projection.
+    pub(crate) fn statement_ingress_publication_inputs(
+        &self,
+    ) -> &[StatementIngressTypePublicationInput] {
+        &self.statement_ingress_inputs
     }
 
     /// Creates the standard source type-checking environment.
@@ -2714,5 +2717,104 @@ fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind
                 .collect(),
         ),
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod statement_ingress_publication_tests {
+    use super::*;
+    use crate::registration::{RegisteredStatementIngressTypes, StatementIngressRegistrationError};
+
+    #[test]
+    fn statement_ingress_publication_retains_exact_rows_across_environment_clones() {
+        let environment = TypeCheckEnv::new();
+        let expected = environment.statement_ingress_publication_inputs().to_vec();
+        let cloned = environment.clone();
+        let first = RegisteredStatementIngressTypes::try_new(
+            environment
+                .statement_ingress_publication_inputs()
+                .to_vec()
+                .into_boxed_slice(),
+        )
+        .unwrap();
+        let second = RegisteredStatementIngressTypes::try_new(
+            cloned
+                .statement_ingress_publication_inputs()
+                .to_vec()
+                .into_boxed_slice(),
+        )
+        .unwrap();
+        assert_eq!(first, second);
+        assert_eq!(environment.statement_ingress_publication_inputs(), expected);
+        assert_eq!(cloned.statement_ingress_publication_inputs(), expected);
+        assert_eq!(
+            first.task(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::TaskEvent)
+        );
+        assert_eq!(
+            first.scope(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::ScopeExit)
+        );
+        assert_eq!(
+            first.frame(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::FrameBoundary)
+        );
+    }
+
+    #[test]
+    fn statement_ingress_publication_preserves_rejected_rows_without_a_standard_fallback() {
+        let exact = TypeCheckEnv::new()
+            .statement_ingress_publication_inputs()
+            .to_vec();
+        for (rows, expected) in [
+            (
+                Vec::new(),
+                StatementIngressRegistrationError::Missing {
+                    role: StatementIngressTypeRoleId::Task,
+                },
+            ),
+            (
+                vec![
+                    exact[0].clone(),
+                    exact[0].clone(),
+                    exact[1].clone(),
+                    exact[2].clone(),
+                ],
+                StatementIngressRegistrationError::Duplicate {
+                    role: StatementIngressTypeRoleId::Task,
+                },
+            ),
+            (
+                vec![
+                    StatementIngressTypePublicationInput::new(
+                        StatementIngressTypeRoleId::Task,
+                        StandardStatementIngressTypeId::ScopeExit,
+                    ),
+                    exact[1].clone(),
+                    exact[2].clone(),
+                ],
+                StatementIngressRegistrationError::Mismapped {
+                    role: StatementIngressTypeRoleId::Task,
+                    expected: StandardStatementIngressTypeId::TaskEvent,
+                    actual: StandardStatementIngressTypeId::ScopeExit,
+                },
+            ),
+        ] {
+            let environment = TypeCheckEnv {
+                statement_ingress_inputs: rows.clone().into_boxed_slice(),
+                ..Default::default()
+            };
+            let cloned = environment.clone();
+            let projection = cloned
+                .statement_ingress_publication_inputs()
+                .to_vec()
+                .into_boxed_slice();
+            assert_eq!(projection.as_ref(), rows);
+            assert_eq!(
+                RegisteredStatementIngressTypes::try_new(projection),
+                Err(expected)
+            );
+            assert_eq!(environment.statement_ingress_publication_inputs(), rows);
+        }
     }
 }

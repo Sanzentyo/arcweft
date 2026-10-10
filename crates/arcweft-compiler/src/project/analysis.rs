@@ -22,6 +22,7 @@ use super::{
 /// checked catalog and exact HIR/world generation on both success and failure.
 pub struct ProjectAnalysisLease {
     tooling: Arc<ProjectToolingLease>,
+    source_context: Arc<super::ProjectCompilationContext>,
     registered_world: Arc<RegisteredSemanticWorld>,
     assertion_build_profile: AssertionBuildProfile,
     final_analysis: Arc<FinalSemanticAnalysis>,
@@ -31,6 +32,7 @@ pub struct ProjectAnalysisLease {
 impl ProjectAnalysisLease {
     pub(super) fn new(
         tooling: Arc<ProjectToolingLease>,
+        source_context: Arc<super::ProjectCompilationContext>,
         registered_world: Arc<RegisteredSemanticWorld>,
         assertion_build_profile: AssertionBuildProfile,
         final_analysis: Arc<FinalSemanticAnalysis>,
@@ -38,6 +40,7 @@ impl ProjectAnalysisLease {
     ) -> Self {
         Self {
             tooling,
+            source_context,
             registered_world,
             assertion_build_profile,
             final_analysis,
@@ -45,6 +48,12 @@ impl ProjectAnalysisLease {
         }
     }
 
+    /// Original complete source publication context used for this generation.
+    /// A consumer starting a new project republishes its typed inputs instead
+    /// of treating an accepted catalog projection as a fresh source base.
+    pub const fn source_compilation_context(&self) -> &Arc<super::ProjectCompilationContext> {
+        &self.source_context
+    }
     pub fn modules(&self) -> &[CompiledProjectModule] {
         self.tooling.modules()
     }
@@ -172,5 +181,30 @@ impl ProjectCompilationLease {
             Self::Hir(_) | Self::Analyzed(_) => None,
             Self::Compiled(compiled) => Some(compiled),
         }
+    }
+}
+
+impl ProjectAnalysisLease {
+    /// Issues target entities only from this complete immutable source
+    /// analysis/index/HIR lease. Metadata index builders cannot substitute for
+    /// the final generation accepted here.
+    pub fn try_project_entity_catalog(
+        &self,
+    ) -> Result<
+        Arc<arcweft_lang_sema::project_index::AcceptedProjectEntityCatalog>,
+        arcweft_lang_sema::project_index::ProjectEntityPublicationError,
+    > {
+        let project = self.hir_project().analysis_view().map_err(|_| {
+            arcweft_lang_sema::project_index::ProjectEntityPublicationError::Generation(Box::new(
+                arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::InvalidOwner,
+            ))
+        })?;
+        arcweft_lang_sema::project_index::AcceptedProjectEntityCatalog::try_from_final_project(
+            Arc::clone(self.semantic_index()),
+            project,
+            self.project_symbols(),
+            self.final_analysis(),
+        )
+        .map(Arc::new)
     }
 }

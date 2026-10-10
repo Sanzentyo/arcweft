@@ -5,19 +5,20 @@ use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::proof_return::{
     HirProofReturnHeaderProjectView, HirProofReturnProjectGeneration,
 };
+use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_lang_sema::{
     assertion::AssertionBuildProfile,
     env::TypeCheckEnv,
     registration::{
-        CharacterRegistrar, CharacterRegistrationDiagnostic, ProjectRegistrationFacts,
-        ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest, RegisteredSemanticWorld,
-        RegisteredTypeCheckEnv,
+        CharacterRegistrar, CharacterRegistrationDiagnostic, CharacterRegistrationReport,
+        ProjectRegistrationFacts, ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest,
+        RegisteredSemanticWorld, RegisteredTypeCheckEnv,
     },
 };
 use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
 use arcweft_manifest_model::{ProfileId, ProjectLocaleSpec};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::SourceSetRevision;
+use arcweft_source::{SourceDocument, SourceSetRevision};
 use std::sync::Arc;
 
 /// Exact accepted launch objects supplied to one compiler transaction.
@@ -157,6 +158,23 @@ impl ProjectCompilationContext {
         }
     }
 
+    /// Creates one new source transaction from this exact original publication
+    /// context. Its source-backed facts are revalidated in the new world; the
+    /// pre-registration base and configured resources retain their owners.
+    pub fn try_for_source_project(
+        &self,
+        world: ProjectSymbolWorldId,
+        root: Arc<SourceDocument>,
+        entry: ProjectEntrySelection,
+    ) -> Result<Self, CharacterRegistrationReport> {
+        let facts = self.facts.try_for_source_project(world, root)?;
+        let mut next = self.clone();
+        next.facts = Arc::new(facts);
+        next.previous = None;
+        next.entry_selection = Some(entry);
+        next.accepted_launch_profile = None;
+        Ok(next)
+    }
     /// Supplies the immutable launch-profile objects accepted by the loader.
     #[must_use]
     pub fn with_accepted_launch_profile(mut self, input: AcceptedLaunchProfileInput) -> Self {
@@ -340,5 +358,18 @@ source = "src/main.arcw"
         assert_eq!(input.resolved_profile(), &resolved);
         assert_eq!(input.topology_source_revision(), topology_source_revision);
         assert!(Arc::ptr_eq(input.resource_types(), &resource_types));
+    }
+}
+
+impl ProjectCompilationContext {
+    /// Links admitted target entities before source symbol/type checking.
+    /// The complete original publication inputs remain in the same fresh
+    /// registration transaction and its ordinary strict owner validation.
+    pub fn try_with_project_entities(
+        mut self,
+        catalogs: &[Arc<arcweft_lang_sema::project_index::AcceptedProjectEntityCatalog>],
+    ) -> Result<Self, arcweft_lang_sema::registration::CharacterRegistrationReport> {
+        self.facts = Arc::new(self.facts.try_with_project_entities(catalogs)?);
+        Ok(self)
     }
 }

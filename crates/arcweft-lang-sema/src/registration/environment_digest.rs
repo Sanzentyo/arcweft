@@ -127,6 +127,20 @@ pub(super) fn derive(
         encoder.bytes(digest.as_bytes());
     }
 
+    let imported = world
+        .external_owners()
+        .values()
+        .filter_map(|owner| match owner {
+            super::model::RegisteredExternalOwner::ProjectEntity(entity) => Some(entity),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    encoder.len(imported.len());
+    for entity in imported {
+        encoder.bytes(entity.catalog().generation_digest());
+        encoder.bytes(&entity.semantic_identity());
+        encoder.bytes(entity.ty().semantic_identity_digest()?.as_bytes());
+    }
     encoder.bytes(character_digest.as_bytes());
     encoder.u64(character_revision.get());
     Ok(RegisteredEnvironmentDigest::from_bytes(encoder.finish()))

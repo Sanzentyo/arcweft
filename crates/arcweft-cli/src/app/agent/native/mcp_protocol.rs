@@ -1516,7 +1516,7 @@ pub(super) fn agent_mcp_call_signal_get(
     let value = serde_json::json!({
         "name": name,
         "found": signal.is_some(),
-        "value": signal.map(|signal| signal.value.as_str()),
+        "value": signal.map(|signal| &signal.value),
         "tick": report.tick,
         "state_hash": report.state_hash,
     });

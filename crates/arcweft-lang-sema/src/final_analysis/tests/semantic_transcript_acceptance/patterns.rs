@@ -210,7 +210,8 @@ impl PatternResolutionFamily {
         match resolution {
             CheckedPatternResolution::Structural => Self::Structural,
             CheckedPatternResolution::Literal(_) => Self::Literal,
-            CheckedPatternResolution::Entity(_) => Self::Entity,
+            CheckedPatternResolution::Entity(_)
+            | CheckedPatternResolution::ImportedProjectEntity(_) => Self::Entity,
             CheckedPatternResolution::Record(_) => Self::Record,
             CheckedPatternResolution::Variant(_) => Self::Variant,
             CheckedPatternResolution::TypedBinding(_) => Self::TypedBinding,

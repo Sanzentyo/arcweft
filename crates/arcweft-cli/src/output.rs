@@ -1021,20 +1021,20 @@ impl RuntimeStepRunSummary {
             observations: RuntimeObservationSummary {
                 signals: fiber
                     .observations
-                    .signals
+                    .signals()
                     .iter()
                     .map(|(target, value)| RuntimeObservedAssignment {
                         target: target.clone(),
-                        value: value.clone(),
+                        value: value.label(),
                     })
                     .collect(),
                 metrics: fiber
                     .observations
-                    .metrics
+                    .metrics()
                     .iter()
                     .map(|(target, value)| RuntimeObservedAssignment {
                         target: target.clone(),
-                        value: value.clone(),
+                        value: value.label(),
                     })
                     .collect(),
                 logs: fiber

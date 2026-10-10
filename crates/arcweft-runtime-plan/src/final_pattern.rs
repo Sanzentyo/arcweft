@@ -6,7 +6,7 @@ use arcweft_core::plan::{
     RuntimeLocalSeedId, RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
 };
-use arcweft_core::value::{RuntimeEntityReference, RuntimeValue};
+use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::identity::{LocalId, PatternId};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{
@@ -15,7 +15,7 @@ use arcweft_lang_hir::pattern::{
 
 use crate::semantic_facts::{
     RuntimeExecutableSemanticFactView, RuntimePlanSemanticFacts,
-    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectItem, RuntimeRecordPatternFact,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeRecordPatternFact,
     RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeResolvedVariant,
 };
 
@@ -57,10 +57,6 @@ impl<'hir> FinalPatternLowerer<'hir> {
 
     fn pattern_literal(&self, id: PatternId) -> Option<&RuntimeValue> {
         self.semantic_facts.pattern_literal(id)
-    }
-
-    fn pattern_item(&self, id: PatternId) -> Option<&RuntimeProjectItem> {
-        self.semantic_facts.pattern_item(id)
     }
 
     fn pattern_nominal_record(&self, id: PatternId) -> Option<&RuntimeRecordPatternFact> {
@@ -105,9 +101,12 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     .ok_or_else(|| format!("checked literal fact is missing for pattern {id:?}"))?,
             ),
             HirPatternKind::EntityReference(_) => RuntimePatternSeedKind::Entity(
-                project_entity_reference(self.pattern_item(id).ok_or_else(|| {
-                    format!("checked project-item fact is missing for entity pattern {id:?}")
-                })?),
+                self.semantic_facts
+                    .pattern_entity(id)
+                    .ok_or_else(|| {
+                        format!("checked entity fact is missing for entity pattern {id:?}")
+                    })?
+                    .runtime_reference(),
             ),
             HirPatternKind::Variant(variant) => {
                 let selected = self
@@ -272,12 +271,5 @@ impl<'hir> FinalPatternLowerer<'hir> {
         self.locals.get(&local).cloned().ok_or_else(|| {
             format!("runtime local seed handle is missing for accepted local {local:?}")
         })
-    }
-}
-
-pub(crate) fn project_entity_reference(item: &RuntimeProjectItem) -> RuntimeEntityReference {
-    RuntimeEntityReference::Project {
-        family: item.family(),
-        public_id: item.public_id().clone(),
     }
 }

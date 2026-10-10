@@ -580,7 +580,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub next_host_call_sequence: u64,
     pub next_audio_sequence: u64,
     pub compact_pure_stats: crate::step::RuntimePureCallStats,
-    pub observations: RuntimeObservationState,
+    pub observations: crate::observation::RuntimeObservationSaveSnapshot,
 }
 
 /// Inert rollback image of the complete AWBC Product owner, including the
@@ -1566,7 +1566,10 @@ impl AwbcProductExecutorSaveSnapshot {
             next_host_call_sequence: snapshot.next_host_call_sequence,
             next_audio_sequence: snapshot.next_audio_sequence,
             compact_pure_stats: snapshot.compact_pure_stats,
-            observations: snapshot.observations.clone(),
+            observations: crate::observation::RuntimeObservationSaveSnapshot::from_live(
+                &snapshot.observations,
+            )
+            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
         })
     }
 
@@ -1619,7 +1622,7 @@ impl AwbcProductExecutorSaveSnapshot {
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
-            observations: self.observations,
+            observations: self.observations.into_live_for_program(owner)?,
         })
     }
 }
@@ -2098,7 +2101,12 @@ impl AwbcProductStepExecutor {
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
-            observations: self.facade_fiber.observations.clone(),
+            observations:
+                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                    &self.facade_fiber.observations,
+                    &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                )
+                .map_err(invalid)?,
         })
     }
 
@@ -2228,6 +2236,9 @@ impl AwbcProductStepExecutor {
             child.fiber.visit_runtime_values(&mut visitor)?;
         }
         self.dialogues.visit_runtime_values(&mut visitor)?;
+        self.facade_fiber
+            .observations
+            .visit_runtime_values(&mut visitor)?;
         for launch in self.need_producers.launches() {
             for argument in launch.arguments() {
                 visit_runtime_value_graph(&argument.value, &mut visitor)?;
@@ -2348,7 +2359,7 @@ impl AwbcProductStepExecutor {
         snapshot: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
     ) -> Result<(), AwbcProductStepBuildError> {
-        self.validate_snapshot(&snapshot)?;
+        let observations = self.validate_snapshot(&snapshot)?;
         let deferred_children = expected_deferred_children(&snapshot)?;
         let program_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
@@ -2412,7 +2423,7 @@ impl AwbcProductStepExecutor {
         self.next_host_call_sequence = snapshot.next_host_call_sequence;
         self.next_audio_sequence = snapshot.next_audio_sequence;
         self.compact_pure_stats = snapshot.compact_pure_stats;
-        self.facade_fiber.observations = snapshot.observations;
+        self.facade_fiber.observations = observations;
         self.rebuild_facade_stream_states_from_compact();
         self.sync_facade();
         Ok(())
@@ -2698,7 +2709,15 @@ impl AwbcProductStepExecutor {
     pub(super) fn validate_snapshot(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
+    ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
+        let observations =
+            crate::observation::RuntimeObservationSaveSnapshot::from_live(&snapshot.observations)
+                .and_then(|saved| {
+                    saved.into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+                        self.program_arc(),
+                    ))
+                })
+                .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         if snapshot.fiber.root != self.fiber.root {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "saved fiber origin differs from the selected invocation".to_owned(),
@@ -3414,7 +3433,7 @@ impl AwbcProductStepExecutor {
             });
         }
         validate_task_publications(snapshot)?;
-        Ok(())
+        Ok(observations)
     }
 
     fn validate_child_owner(

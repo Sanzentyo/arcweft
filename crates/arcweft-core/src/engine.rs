@@ -230,7 +230,7 @@ struct FlowFiberRollbackImage {
     await_observer: Option<Box<AwaitStateRollbackImage>>,
     root_cleanups: Vec<FlowScopeCleanup>,
     env: crate::value::RuntimeEnvRollbackImage,
-    observations: RuntimeObservationState,
+    observations: crate::observation::RuntimeObservationSaveSnapshot,
     stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeStateRollbackImage>,
     selected_dialogue_result: Option<crate::value::AwbcRuntimeValueSnapshot>,
     id: FlowFiberId,
@@ -265,7 +265,11 @@ impl FlowFiber {
                 .transpose()?,
             root_cleanups: self.root_cleanups.clone(),
             env: self.env.inert_rollback_image(owner)?,
-            observations: self.observations.clone(),
+            observations:
+                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                    &self.observations,
+                    owner,
+                )?,
             stream_states: self
                 .stream_states
                 .iter()
@@ -312,7 +316,7 @@ impl FlowFiber {
                 .transpose()?,
             root_cleanups: image.root_cleanups,
             env: RuntimeEnv::from_rollback_image(image.env, owner)?,
-            observations: image.observations,
+            observations: image.observations.into_live_for_program(owner)?,
             stream_states: image
                 .stream_states
                 .into_iter()
@@ -4454,6 +4458,81 @@ mod rollback_tests {
                 crate::task::TaskOutcomeContract::program(unit)))
         ));
         assert_eq!(restored.latest_need_publications.len(), 1);
+    }
+
+    #[test]
+    fn native_observation_rollback_reconstructs_the_exact_plan_callable_owner() {
+        let plan = crate::tests::function_application::returning_function_plan(
+            crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+        );
+        let mut engine = Engine::new(plan);
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let state = crate::tests::function_application::returning_callable_state(&engine.plan);
+        let callable = crate::value::RuntimeCallableValue::try_new(owner.clone(), state, [])
+            .expect("the original Plan admits its callable");
+        engine
+            .fiber
+            .observations
+            .record_effect(&LineEffectRequest::SignalWrite(
+                crate::effect::RuntimeAssignment::try_new(
+                    "signal.callback".to_owned(),
+                    RuntimeValue::Tuple(vec![RuntimeValue::Callable(callable)]),
+                )
+                .expect("copyable callable is an unrestricted observation"),
+            ));
+        engine
+            .fiber
+            .observations
+            .record_effect(&LineEffectRequest::MetricWrite(
+                crate::effect::RuntimeAssignment::try_new(
+                    "metric.count".to_owned(),
+                    RuntimeValue::u64(u64::MAX),
+                )
+                .expect("unsigned metric remains typed"),
+            ));
+        let expected = crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+            &engine.fiber.observations,
+            &owner,
+        )
+        .expect("exact-owner observation image");
+        let image = engine
+            .inert_rollback_image()
+            .expect("complete native rollback image");
+        drop(engine);
+        let restored =
+            Engine::from_rollback_image(image).expect("the original native owner restores");
+        let RuntimeValue::Tuple(values) =
+            restored.fiber.observations.signals()["signal.callback"].value()
+        else {
+            panic!("the callable retains its enclosing typed tuple")
+        };
+        let RuntimeValue::Callable(callable) = &values[0] else {
+            panic!("the tuple retains its callable")
+        };
+        assert!(callable.owner().same_program(&owner));
+        assert_eq!(
+            crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                &restored.fiber.observations,
+                &owner,
+            )
+            .expect("restored image is admitted by the same owner"),
+            expected,
+        );
+
+        let foreign_owner = crate::task::RuntimeProgramOwner::Plan(Arc::new(
+            crate::tests::function_application::returning_function_plan(
+                crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+            ),
+        ));
+        let error = crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+            &restored.fiber.observations,
+            &foreign_owner,
+        )
+        .expect_err("an equal-looking Plan cannot capture another native lease");
+        assert_eq!(
+            error,
+            "observation 'signal.callback' cannot be saved: callable rollback image belongs to another program",
+        );
     }
 }
 

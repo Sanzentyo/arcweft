@@ -2801,10 +2801,17 @@ fn execute_terminator(
                     .resolve_flow_target_value(target)
                     .map(|(_, function)| function)
                     .map_err(VmError::DynamicTarget)?,
-                RuntimeValue::EntityRef(target) => program
-                    .resolve_flow_target_value(&target.runtime_label())
-                    .map(|(_, function)| function)
-                    .map_err(VmError::DynamicTarget)?,
+                RuntimeValue::EntityRef(target) => match target.exact_flow_identity() {
+                    Some(flow) => program.flow_function(flow).ok_or_else(|| {
+                        VmError::DynamicTarget(crate::plan::RuntimeFlowTargetError::Missing {
+                            target: flow.canonical_label(),
+                        })
+                    })?,
+                    None => program
+                        .resolve_flow_target_value(&target.runtime_label())
+                        .map(|(_, function)| function)
+                        .map_err(VmError::DynamicTarget)?,
+                },
                 _ => {
                     return Err(VmError::Runtime(format!(
                         "invalid dynamic goto target `{}`",

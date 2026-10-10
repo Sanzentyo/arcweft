@@ -791,3 +791,195 @@ mod catalog_reference_tests {
         }
     }
 }
+
+/// Closed value-reference families exported by an accepted project catalog.
+/// Declaration admission remains owned by `DeclarationIdentityFamily`; these
+/// values also cover source-owned graph and Agent entities.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum ProjectEntityReferenceFamily {
+    Agent,
+    Entry,
+    Flow,
+    Choice,
+    ChoiceOption,
+    Character,
+    View,
+    Action,
+    Activity,
+    DialogueLine,
+    Text,
+    Content,
+    Input,
+    Button,
+    Style,
+    Asset,
+    Image,
+    Animation,
+    Capture,
+    Hook,
+    Signal,
+    Metric,
+    Scene,
+    Test,
+    Bench,
+    Layer,
+    Voice,
+    Se,
+    Bgm,
+    AudioBus,
+    MixerSnapshot,
+    Ducking,
+    Motion,
+    Rig,
+    Slot,
+    Target,
+}
+
+impl ProjectEntityReferenceFamily {
+    pub const ALL: [Self; 36] = [
+        Self::Agent,
+        Self::Entry,
+        Self::Flow,
+        Self::Choice,
+        Self::ChoiceOption,
+        Self::Character,
+        Self::View,
+        Self::Action,
+        Self::Activity,
+        Self::DialogueLine,
+        Self::Text,
+        Self::Content,
+        Self::Input,
+        Self::Button,
+        Self::Style,
+        Self::Asset,
+        Self::Image,
+        Self::Animation,
+        Self::Capture,
+        Self::Hook,
+        Self::Signal,
+        Self::Metric,
+        Self::Scene,
+        Self::Test,
+        Self::Bench,
+        Self::Layer,
+        Self::Voice,
+        Self::Se,
+        Self::Bgm,
+        Self::AudioBus,
+        Self::MixerSnapshot,
+        Self::Ducking,
+        Self::Motion,
+        Self::Rig,
+        Self::Slot,
+        Self::Target,
+    ];
+
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::ALL.get(usize::from(tag)).copied()
+    }
+
+    pub fn from_prefix(prefix: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|family| family.prefix() == prefix)
+    }
+
+    pub const fn prefix(self) -> &'static str {
+        match self {
+            Self::Agent => "agent",
+            Self::Entry => "entry",
+            Self::Flow => "flow",
+            Self::Choice | Self::ChoiceOption => "choice",
+            Self::Character => "character",
+            Self::View => "view",
+            Self::Action => "action",
+            Self::Activity => "activity",
+            Self::DialogueLine => "say",
+            Self::Text => "text",
+            Self::Content => "content",
+            Self::Input => "input",
+            Self::Button => "button",
+            Self::Style => "style",
+            Self::Asset => "asset",
+            Self::Image => "image",
+            Self::Animation => "animation",
+            Self::Capture => "capture",
+            Self::Hook => "hook",
+            Self::Signal => "signal",
+            Self::Metric => "metric",
+            Self::Scene => "scene",
+            Self::Test => "test",
+            Self::Bench => "bench",
+            Self::Layer => "layer",
+            Self::Voice => "voice",
+            Self::Se => "se",
+            Self::Bgm => "bgm",
+            Self::AudioBus => "audio_bus",
+            Self::MixerSnapshot => "mixer_snapshot",
+            Self::Ducking => "ducking",
+            Self::Motion => "motion",
+            Self::Rig => "rig",
+            Self::Slot => "slot",
+            Self::Target => "target",
+        }
+    }
+
+    pub fn validate_public_id(self, id: &PublicId) -> Result<(), PublicIdFamilyError> {
+        if id.as_str().split('.').next() == Some(self.prefix()) {
+            Ok(())
+        } else {
+            Err(PublicIdFamilyError::WrongFamily {
+                expected: self.prefix(),
+                id: id.clone(),
+            })
+        }
+    }
+
+    pub const fn declaration_family(self) -> Option<DeclarationIdentityFamily> {
+        Some(match self {
+            Self::Asset => DeclarationIdentityFamily::Asset,
+            Self::Character => DeclarationIdentityFamily::Character,
+            Self::View => DeclarationIdentityFamily::View,
+            Self::Action => DeclarationIdentityFamily::Action,
+            Self::Activity => DeclarationIdentityFamily::Activity,
+            Self::Signal => DeclarationIdentityFamily::Signal,
+            Self::Metric => DeclarationIdentityFamily::Metric,
+            Self::Layer => DeclarationIdentityFamily::Layer,
+            Self::Flow => DeclarationIdentityFamily::Flow,
+            Self::Style => DeclarationIdentityFamily::Style,
+            Self::Agent
+            | Self::Entry
+            | Self::Choice
+            | Self::ChoiceOption
+            | Self::DialogueLine
+            | Self::Text
+            | Self::Content
+            | Self::Input
+            | Self::Button
+            | Self::Image
+            | Self::Animation
+            | Self::Capture
+            | Self::Hook
+            | Self::Scene
+            | Self::Test
+            | Self::Bench
+            | Self::Voice
+            | Self::Se
+            | Self::Bgm
+            | Self::AudioBus
+            | Self::MixerSnapshot
+            | Self::Ducking
+            | Self::Motion
+            | Self::Rig
+            | Self::Slot
+            | Self::Target => return None,
+        })
+    }
+}

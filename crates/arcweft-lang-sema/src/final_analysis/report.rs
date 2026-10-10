@@ -776,6 +776,7 @@ impl FinalAnalysisExecutionProjection<'_> {
                         ) || (matches!(
                             value,
                             super::CheckedValueResolution::ProjectItem(_)
+                                | super::CheckedValueResolution::ImportedProjectEntity(_)
                         ) && matches!(
                             expression.value_type(),
                             Some(TypeKind::Ref(_))
@@ -889,7 +890,8 @@ impl FinalAnalysisExecutionProjection<'_> {
                     super::CheckedPatternResolution::Literal(_) => {
                         CheckedExecutableRuntimePatternFactFamily::Literal
                     }
-                    super::CheckedPatternResolution::Entity(_) => {
+                    super::CheckedPatternResolution::Entity(_)
+                    | super::CheckedPatternResolution::ImportedProjectEntity(_) => {
                         CheckedExecutableRuntimePatternFactFamily::Entity
                     }
                     super::CheckedPatternResolution::Record(_) => {
@@ -1564,7 +1566,13 @@ impl FinalSemanticAnalysisPostEntryDraft {
             &coordinates,
         )?;
         control.check()?;
-        validate_patterns(symbols, &modules, &types, &patterns)?;
+        validate_patterns(
+            symbols,
+            evaluation_topology.generation(),
+            &modules,
+            &types,
+            &patterns,
+        )?;
         control.check()?;
         validate_statements(&modules, &locals, &expressions, &statements)?;
         for module in modules.values() {

@@ -698,7 +698,8 @@ fn audio_loop_and_microphone_constraints_enter_static_effect_metadata() {
         let mut meter = TaskSemanticMeter::new(1000, 10000);
         let mut encoder = TaskSemanticEncoder::new(b"audio-metadata.v1\0", &mut meter);
         crate::effect::LineEffectRequest::Audio(Box::new(command))
-            .encode_body_metadata(&mut encoder);
+            .encode_body_metadata(&mut encoder)
+            .expect("accepted audio metadata enters its canonical static effect encoding");
         encoder.finish().unwrap()
     };
     let expr = || {

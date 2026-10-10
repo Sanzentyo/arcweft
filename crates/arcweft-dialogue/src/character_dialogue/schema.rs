@@ -683,17 +683,16 @@ impl CharacterDialogueRuntimeSchema {
         if fields.len() != CHARACTER_DIALOGUE_FIELD_COUNT {
             return Err(CharacterDialogueValueError::OpaquePayload);
         }
-        let RuntimeValue::EntityRef(RuntimeEntityReference::Project {
-            family: DeclarationIdentityFamily::Character,
-            public_id,
-        }) = &fields[0]
-        else {
+        let RuntimeValue::EntityRef(reference) = &fields[0] else {
             return Err(field_shape(
                 "character_id",
                 "expected Character entity reference",
             ));
         };
-        let character = CharacterId::try_new(public_id.as_str())
+        let public_id = reference
+            .project_label(DeclarationIdentityFamily::Character)
+            .ok_or_else(|| field_shape("character_id", "expected Character entity reference"))?;
+        let character = CharacterId::try_new(public_id)
             .map_err(|error| field_shape("character_id", error.to_string()))?;
         if !self
             .look_source_authority
@@ -863,18 +862,21 @@ impl CharacterDialogueRuntimeSchema {
     }
 
     fn character_target(value: &RuntimeValue) -> Result<CharacterId, CharacterDialogueValueError> {
-        let RuntimeValue::EntityRef(RuntimeEntityReference::Project {
-            family: DeclarationIdentityFamily::Character,
-            public_id,
-        }) = value
-        else {
+        let RuntimeValue::EntityRef(reference) = value else {
             return Err(field_shape(
                 "target",
                 "factory target must be a Character entity reference",
             ));
         };
-        CharacterId::try_new(public_id.as_str())
-            .map_err(|error| field_shape("target", error.to_string()))
+        let public_id = reference
+            .project_label(DeclarationIdentityFamily::Character)
+            .ok_or_else(|| {
+                field_shape(
+                    "target",
+                    "factory target must be a Character entity reference",
+                )
+            })?;
+        CharacterId::try_new(public_id).map_err(|error| field_shape("target", error.to_string()))
     }
 
     fn apply_runtime_fields(
@@ -1048,15 +1050,13 @@ impl CharacterDialogueRuntimeSchema {
     }
 
     fn decode_view(value: &RuntimeValue) -> Result<ViewId, CharacterDialogueValueError> {
-        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = value
-        else {
+        let RuntimeValue::EntityRef(reference) = value else {
             return Err(field_shape("view", "expected View entity reference"));
         };
-        if *family != DeclarationIdentityFamily::View {
-            return Err(field_shape("view", "expected View entity reference"));
-        }
-        ViewId::parse_public(public_id.as_str())
-            .map_err(|error| field_shape("view", error.to_string()))
+        let public_id = reference
+            .project_label(DeclarationIdentityFamily::View)
+            .ok_or_else(|| field_shape("view", "expected View entity reference"))?;
+        ViewId::parse_public(public_id).map_err(|error| field_shape("view", error.to_string()))
     }
 
     fn decode_source_locale(
@@ -1371,7 +1371,7 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         fields: &[RuntimeValue],
     ) -> Result<CharacterDialogue, CharacterDialogueValueError> {
-        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = fields
+        let RuntimeValue::EntityRef(reference) = fields
             .first()
             .ok_or_else(|| field_shape("character_id", "expected EntityRef"))?
         else {
@@ -1380,13 +1380,10 @@ impl CharacterDialogueRuntimeSchema {
                 "expected Character entity reference",
             ));
         };
-        if *family != DeclarationIdentityFamily::Character {
-            return Err(field_shape(
-                "character_id",
-                "expected Character entity reference",
-            ));
-        }
-        let character = CharacterId::try_new(public_id.as_str())
+        let public_id = reference
+            .project_label(DeclarationIdentityFamily::Character)
+            .ok_or_else(|| field_shape("character_id", "expected Character entity reference"))?;
+        let character = CharacterId::try_new(public_id)
             .map_err(|error| field_shape("character_id", error.to_string()))?;
         let contract = CharacterDialogueContractIdentity::with_visual_manifest(
             Self::decode_visual_manifest(&fields[1])?,
@@ -1418,15 +1415,13 @@ impl CharacterDialogueRuntimeSchema {
         let cleanup = Self::decode_typed_option(&fields[10], "cleanup")?
             .map(CharacterDialogueCleanupValue::try_new)
             .transpose()?;
-        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) =
-            &fields[11]
-        else {
+        let RuntimeValue::EntityRef(reference) = &fields[11] else {
             return Err(field_shape("view", "expected View entity reference"));
         };
-        if *family != DeclarationIdentityFamily::View {
-            return Err(field_shape("view", "expected View entity reference"));
-        }
-        let view = ViewId::parse_public(public_id.as_str())
+        let public_id = reference
+            .project_label(DeclarationIdentityFamily::View)
+            .ok_or_else(|| field_shape("view", "expected View entity reference"))?;
+        let view = ViewId::parse_public(public_id)
             .map_err(|error| field_shape("view", error.to_string()))?;
         let source_locale = Self::decode_option(&fields[12], "source_locale")?
             .map(|value| {

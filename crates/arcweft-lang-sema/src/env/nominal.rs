@@ -1862,3 +1862,35 @@ impl Hasher for CatalogDigestHasher {
         }));
     }
 }
+
+pub(crate) fn standard_watch_record(
+    catalog: &AcceptedNominalCatalog,
+) -> Option<&AcceptedNominalRecord> {
+    let specification = RUNTIME_STANDARD_OPAQUE_TYPES
+        .iter()
+        .find(|specification| specification.path() == ["Watch"])?;
+    let identity = standard_nominal_id("Watch");
+    let record = catalog.exact(identity.canonical_path())?;
+    (record.id() == &identity
+        && record.arity() == specification.arity()
+        && matches!(record.semantics(), AcceptedNominalSemantics::Opaque(carrier)
+            if carrier.producer().as_str() == specification.producer()))
+    .then_some(record)
+}
+
+/// Fixed standard schema recipe; actual host publication selects the same row
+/// from its caller-supplied accepted catalog.
+///
+/// # Panics
+/// Panics only if the fixed Core Watch specification loses its accepted
+/// one-parameter nominal recipe.
+pub(crate) fn standard_watch_type(payload: TypeKind) -> TypeKind {
+    let specification = RUNTIME_STANDARD_OPAQUE_TYPES
+        .iter()
+        .find(|specification| specification.path() == ["Watch"])
+        .expect("Watch has one fixed standard opaque specification");
+    standard_opaque_record(*specification, AcceptedNominalOrigin::Domain)
+        .expect("Watch has fixed standard opaque evidence")
+        .try_instantiate([payload])
+        .expect("Watch accepts its one payload parameter")
+}

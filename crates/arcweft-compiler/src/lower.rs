@@ -266,6 +266,12 @@ pub enum RuntimeRecordExecutableOwner {
 /// fact vocabulary.
 #[derive(Debug, Error)]
 pub enum RuntimeSemanticProjectionError {
+    #[error("accepted entity pattern {owner:?} has no sealed runtime projection: {source}")]
+    EntityPattern {
+        owner: PatternId,
+        #[source]
+        source: arcweft_lang_sema::final_analysis::CheckedEntityPatternProjectionError,
+    },
     #[error("runtime program {program} projection failed: {reason}")]
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
@@ -1528,8 +1534,17 @@ fn project_runtime_semantic_fact_inventories(
                     runtime_variant(variant, symbols, world, analysis)?,
                 );
             }
-            CheckedPatternResolution::Entity(item) => {
-                input.push_pattern_item(owner, runtime_project_item(item)?);
+            CheckedPatternResolution::Entity(_)
+            | CheckedPatternResolution::ImportedProjectEntity(_) => {
+                input.push_pattern_entity(
+                    owner,
+                    analysis
+                        .entity_pattern_projection(owner)
+                        .map_err(|source| RuntimeSemanticProjectionError::EntityPattern {
+                            owner,
+                            source,
+                        })?,
+                );
             }
             CheckedPatternResolution::Structural | CheckedPatternResolution::TypedBinding(_) => {}
         }
@@ -5812,6 +5827,7 @@ fn runtime_value_resolution(
     Ok(Some(match value {
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
         CheckedValueResolution::CatalogAsset(_) | CheckedValueResolution::ProjectItem(_)
+        | CheckedValueResolution::ImportedProjectEntity(_)
             if matches!(ty, TypeKind::Ref(_)) => {
             let entity = analysis.entity_value_projection(owner).map_err(|error| error.to_string())?;
             if entity.resolution() != value || entity.ty() != ty {
@@ -5828,6 +5844,7 @@ fn runtime_value_resolution(
         CheckedValueResolution::ProjectCallable(_)
         | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::CatalogAsset(_)
+        | CheckedValueResolution::ImportedProjectEntity(_)
         | CheckedValueResolution::LineContext
         | CheckedValueResolution::CharacterField { .. }
         // Entry references are generation-bound tooling/selection identities;
@@ -8504,8 +8521,16 @@ fn runtime_executable_semantic_facts<'abi>(
             ),
             (
                 CheckedExecutableRuntimePatternFactFamily::Entity,
-                CheckedPatternResolution::Entity(item),
-            ) => RuntimeProjectFunctionPatternPayload::Entity(runtime_project_item(item)?),
+                CheckedPatternResolution::Entity(_)
+                | CheckedPatternResolution::ImportedProjectEntity(_),
+            ) => RuntimeProjectFunctionPatternPayload::Entity(
+                analysis
+                    .entity_pattern_projection(owner)
+                    .map_err(|source| RuntimeSemanticProjectionError::EntityPattern {
+                        owner,
+                        source,
+                    })?,
+            ),
             (
                 CheckedExecutableRuntimePatternFactFamily::NominalRecord,
                 CheckedPatternResolution::Record(record),

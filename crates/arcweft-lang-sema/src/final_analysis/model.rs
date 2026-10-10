@@ -559,6 +559,7 @@ pub enum CheckedValueResolution {
     },
     ProjectCallable(CheckedProjectCallable),
     ProjectItem(CheckedProjectItem),
+    ImportedProjectEntity(CheckedImportedProjectEntity),
     /// Catalog-owned resource identity. It is not a source declaration or a
     /// scalar String; bundle admission owns the final asset lookup.
     CatalogAsset(arcweft_id::AssetId),
@@ -576,6 +577,7 @@ impl CheckedValueResolution {
             Self::CharacterField { .. } => 0x0302,
             Self::ProjectCallable(_) => 0x0303,
             Self::ProjectItem(_) => 0x0304,
+            Self::ImportedProjectEntity(_) => 0x0309,
             Self::Entry(_) => 0x0305,
             Self::Registered(_) => 0x0306,
             Self::Constant(_) => 0x0307,
@@ -587,6 +589,10 @@ impl CheckedValueResolution {
     pub fn character(&self) -> Option<CharacterId> {
         match self {
             Self::ProjectItem(item) => item.character(),
+            Self::ImportedProjectEntity(entity) => (entity.target().family()
+                == arcweft_id::ProjectEntityReferenceFamily::Character)
+                .then(|| CharacterId::try_new(entity.target().symbol().public_id().as_str()).ok())
+                .flatten(),
             Self::Local(_)
             | Self::LineContext
             | Self::CharacterField { .. }
@@ -605,6 +611,7 @@ impl CheckedValueResolution {
         match self {
             Self::CharacterField { receiver, .. } => receiver.visit_types(visitor),
             Self::ProjectItem(item) => item.visit_types(visitor),
+            Self::ImportedProjectEntity(entity) => visitor(&entity.ty()),
             Self::Local(_)
             | Self::LineContext
             | Self::ProjectCallable(_)
@@ -2836,6 +2843,7 @@ pub enum CheckedPatternResolution {
     Structural,
     Literal(HirLiteral),
     Entity(CheckedProjectItem),
+    ImportedProjectEntity(CheckedImportedProjectEntity),
     Record(CheckedRecordPattern),
     Variant(CheckedVariantResolution),
     TypedBinding(CheckedTypedBinding),
@@ -2872,6 +2880,7 @@ impl CheckedPattern {
         visitor(self.ty())?;
         match self.resolution() {
             CheckedPatternResolution::Entity(item) => item.visit_types(visitor),
+            CheckedPatternResolution::ImportedProjectEntity(entity) => visitor(&entity.ty()),
             CheckedPatternResolution::Record(record) => record.visit_types(visitor),
             CheckedPatternResolution::Variant(variant) => variant.visit_types(visitor),
             CheckedPatternResolution::TypedBinding(binding) => visitor(binding.annotation()),
@@ -3240,5 +3249,63 @@ impl CheckedMatchRef {
             snapshot,
             owner: owner.into(),
         }
+    }
+}
+
+/// A target entity selected through one external declaration in this checking
+/// world. It retains its original target generation rather than inventing a
+/// local HIR owner or an executable Flow address.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedImportedProjectEntity {
+    declaration: ExternalDeclarationId,
+    target: crate::project_index::AcceptedProjectEntity,
+    generation: Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
+}
+
+impl CheckedImportedProjectEntity {
+    pub(crate) const fn new(
+        declaration: ExternalDeclarationId,
+        target: crate::project_index::AcceptedProjectEntity,
+        generation: Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
+    ) -> Self {
+        Self {
+            declaration,
+            target,
+            generation,
+        }
+    }
+    pub const fn declaration(&self) -> ExternalDeclarationId {
+        self.declaration
+    }
+    pub const fn target(&self) -> &crate::project_index::AcceptedProjectEntity {
+        &self.target
+    }
+    pub fn generation(&self) -> &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
+        &self.generation
+    }
+    pub fn ty(&self) -> TypeKind {
+        self.target.ty()
+    }
+    pub(crate) fn semantic_id(&self) -> AcceptedProjectItemSemanticId {
+        AcceptedProjectItemSemanticId(self.target.semantic_identity())
+    }
+    pub(crate) fn has_valid_symbol_binding(
+        &self,
+        symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+    ) -> bool {
+        self.generation.symbol_world() == symbols.world()
+            && self.generation.symbol_revision() == *symbols.revision()
+            && symbols.external(self.declaration).is_some_and(|external| {
+                crate::registration::project_entity_symbol_path(&self.target)
+                    .is_ok_and(|path| &path == external.canonical_path())
+                    && external.declaration_span() == self.target.symbol().source().span()
+            })
+    }
+    pub(crate) fn has_valid_analysis_binding(
+        &self,
+        symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+        generation: &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
+    ) -> bool {
+        self.has_valid_symbol_binding(symbols) && Arc::ptr_eq(&self.generation, generation)
     }
 }

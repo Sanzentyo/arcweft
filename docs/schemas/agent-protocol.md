@@ -132,3 +132,34 @@ when it is not materialized:
 observation or capture report is requested. `scroll_target` names the authored
 region accepted by the `scroll` action; an off-window item target does not by
 itself imply render geometry or an image capture.
+
+## Evaluated observation values
+
+The version 1 observation contract retains evaluated signal and metric data
+through the Core effect and observation owners. Those owners accept only
+unrestricted value graphs, so an observation copy cannot duplicate a live
+affine resource. Session saves use the existing inert runtime-value snapshot
+schema, and restoration validates values through the selected program and
+the required asset catalogue before committing the new state.
+
+Agent reports, their resources, MCP reads, and script envelopes use the same
+tagged Agent value grammar:
+
+```json
+{"name":"signal.current_flow","value":{"kind":"entity","value":"flow.opening"}}
+```
+
+A checked local or imported EntityRef is projected through its typed owner.
+The Core value keeps its declaration identity and imported source-generation
+digests; the Agent public ID is observation metadata and grants no execution
+capability. A literal string such as "@flow.opening", "true", or "42" remains
+a tagged string. Agent predicates compare these typed values directly.
+
+Signed values that fit i64 and unsigned values that fit u64 use those wire
+kinds regardless of their Core integer width. Finite f32 values widen to f64.
+Tuples and all sequence storage forms project to lists, and structural records
+project to maps. Unsupported values, non-finite numbers, out-of-range integers,
+and affine graphs fail projection without publishing a replacement report.
+Signal and metric rows share the existing envelope map, and duplicate canonical
+observation identities are rejected. CLI display summaries retain their explicit
+text rendering contract.

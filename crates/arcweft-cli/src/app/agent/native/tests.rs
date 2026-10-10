@@ -8,8 +8,8 @@ use super::mcp_rag::{AgentMcpRagCandidate, agent_mcp_rag_context_pack_from_candi
 use super::mcp_resources::agent_mcp_capture_time_seconds;
 use super::observe::{
     NativeAgentScriptSessionError, native_agent_invoke_input_events,
-    native_agent_observation_payload, native_runtime_input_event,
-    validate_agent_observe_output_extension,
+    native_agent_observation_envelope, native_agent_observation_payload,
+    native_runtime_input_event, validate_agent_observe_output_extension,
 };
 use super::repl::{
     AgentReplBinding, AgentReplConnection, AgentReplState, agent_repl_apply_connection,
@@ -461,7 +461,9 @@ fn agent_mcp_debug_read_tools_return_cached_observation_data() {
     report.final_status = "running".to_owned();
     report.signals.push(AgentAssignment {
         name: "signal.current_flow".to_owned(),
-        value: "flow.opening".to_owned(),
+        value: arcweft_agent_protocol::value::AgentValue::Entity(
+            arcweft_agent_protocol::ids::PublicId::new("flow.opening").unwrap(),
+        ),
     });
     report.logs.push(arcweft_core::effect::RuntimeLog {
         level: "info".to_owned(),
@@ -497,7 +499,7 @@ fn agent_mcp_debug_read_tools_return_cached_observation_data() {
     .expect("signal read succeeds");
     assert_eq!(
         mcp_text_json(&signal_result)["value"],
-        serde_json::json!("flow.opening")
+        serde_json::json!({"kind": "entity", "value": "flow.opening"})
     );
 
     let log_result = agent_mcp_call_log_query(
@@ -520,7 +522,9 @@ fn agent_mcp_debug_read_tools_enforce_max_privacy() {
     report.final_status = "running".to_owned();
     report.signals.push(AgentAssignment {
         name: "signal.current_flow".to_owned(),
-        value: "flow.opening".to_owned(),
+        value: arcweft_agent_protocol::value::AgentValue::Entity(
+            arcweft_agent_protocol::ids::PublicId::new("flow.opening").unwrap(),
+        ),
     });
     report.logs.push(arcweft_core::effect::RuntimeLog {
         level: "info".to_owned(),
@@ -785,7 +789,9 @@ fn agent_mcp_session_context_resource_redacts_source_and_enforces_privacy() {
     report.source = "C:\\Users\\sanze\\secret\\game.arcw".to_owned();
     report.signals.push(AgentAssignment {
         name: "signal.current_flow".to_owned(),
-        value: "flow.opening".to_owned(),
+        value: arcweft_agent_protocol::value::AgentValue::Entity(
+            arcweft_agent_protocol::ids::PublicId::new("flow.opening").unwrap(),
+        ),
     });
     let mut state = AgentMcpState {
         report: Some(report),
@@ -1087,7 +1093,9 @@ fn agent_mcp_rag_query_returns_explainable_context_pack() {
     report.final_status = "running".to_owned();
     report.signals.push(AgentAssignment {
         name: "signal.current_flow".to_owned(),
-        value: "flow.opening".to_owned(),
+        value: arcweft_agent_protocol::value::AgentValue::Entity(
+            arcweft_agent_protocol::ids::PublicId::new("flow.opening").unwrap(),
+        ),
     });
     report.logs.push(arcweft_core::effect::RuntimeLog {
         level: "info".to_owned(),
@@ -3298,4 +3306,216 @@ fn rgba_pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> &[u8] {
         .saturating_add(usize::try_from(x).unwrap())
         .saturating_mul(4);
     &rgba[index..index + 4]
+}
+
+#[test]
+fn native_observation_envelope_preserves_typed_assignments_and_metrics() {
+    let mut report = test_agent_observation_report(None);
+    report.signals = vec![
+        AgentAssignment {
+            name: "@signal.current_flow".to_owned(),
+            value: AgentValue::Entity(PublicId::new("flow.opening").unwrap()),
+        },
+        AgentAssignment {
+            name: "signal.literal".to_owned(),
+            value: AgentValue::String("flow.opening".to_owned()),
+        },
+        AgentAssignment {
+            name: "signal.prefixed".to_owned(),
+            value: AgentValue::String("@flow.opening".to_owned()),
+        },
+        AgentAssignment {
+            name: "signal.bool_text".to_owned(),
+            value: AgentValue::String("true".to_owned()),
+        },
+        AgentAssignment {
+            name: "signal.number_text".to_owned(),
+            value: AgentValue::String("42".to_owned()),
+        },
+        AgentAssignment {
+            name: "signal.ready".to_owned(),
+            value: AgentValue::Bool(true),
+        },
+        AgentAssignment {
+            name: "signal.count".to_owned(),
+            value: AgentValue::U64(u64::MAX),
+        },
+    ];
+    report.metrics.push(AgentAssignment {
+        name: "metric.fps".to_owned(),
+        value: AgentValue::F64(60.0),
+    });
+    let envelope = native_agent_observation_envelope(&report).unwrap();
+    assert_eq!(
+        envelope.signals.len(),
+        report.signals.len() + report.metrics.len()
+    );
+    for assignment in report.signals.iter().chain(&report.metrics) {
+        assert_eq!(
+            envelope.signals[assignment.name.trim_start_matches('@')],
+            assignment.value
+        );
+    }
+    assert_eq!(
+        envelope.signals["signal.current_flow"],
+        AgentValue::Entity(PublicId::new("flow.opening").unwrap())
+    );
+    assert_eq!(
+        envelope.signals["signal.literal"],
+        AgentValue::String("flow.opening".to_owned())
+    );
+    assert_eq!(envelope.signals["metric.fps"], AgentValue::F64(60.0));
+    let decoded: AgentObservationReport = serde_json::from_value(envelope.payload).unwrap();
+    assert_eq!(decoded.signals, report.signals);
+    assert_eq!(decoded.metrics, report.metrics);
+}
+
+#[test]
+fn native_observation_envelope_rejects_duplicate_assignment_identities() {
+    for cross_kind in [false, true] {
+        let mut report = test_agent_observation_report(None);
+        report.signals.push(AgentAssignment {
+            name: "signal.ready".to_owned(),
+            value: AgentValue::Bool(true),
+        });
+        let duplicate = AgentAssignment {
+            name: "@signal.ready".to_owned(),
+            value: AgentValue::Bool(false),
+        };
+        if cross_kind {
+            report.metrics.push(duplicate);
+        } else {
+            report.signals.push(duplicate);
+        }
+        let error = native_agent_observation_envelope(&report)
+            .expect_err("duplicates cannot select an arbitrary value");
+        assert!(
+            matches!(error, NativeAgentScriptSessionError::DuplicateObservationAssignment { target }
+            if target.as_str() == "signal.ready")
+        );
+    }
+    let mut report = test_agent_observation_report(None);
+    report.signals.push(AgentAssignment {
+        name: "@".to_owned(),
+        value: AgentValue::Bool(true),
+    });
+    assert!(matches!(
+        native_agent_observation_envelope(&report),
+        Err(
+            NativeAgentScriptSessionError::InvalidObservationAssignment {
+                source: arcweft_agent_protocol::ids::IdentifierError::Empty,
+                ..
+            }
+        )
+    ));
+    report.signals = ["signal.first", "signal.second"]
+        .into_iter()
+        .map(|name| AgentAssignment {
+            name: name.to_owned(),
+            value: AgentValue::String("same content".to_owned()),
+        })
+        .collect();
+    assert_eq!(
+        native_agent_observation_envelope(&report)
+            .unwrap()
+            .signals
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn native_assignment_predicates_preserve_kinds_and_metric_probes() {
+    use super::mcp_resources::{agent_mcp_compare_values, agent_mcp_probe_value};
+    let entity = AgentValue::Entity(PublicId::new("flow.opening").unwrap());
+    let string = AgentValue::String("flow.opening".to_owned());
+    assert!(agent_mcp_compare_values(&entity, CompareOp::Eq, &entity));
+    assert!(agent_mcp_compare_values(&string, CompareOp::Eq, &string));
+    for (left, right) in [(&entity, &string), (&string, &entity)] {
+        assert!(!agent_mcp_compare_values(left, CompareOp::Eq, right));
+        assert!(agent_mcp_compare_values(left, CompareOp::NotEq, right));
+    }
+    let mut report = test_agent_observation_report(None);
+    report.signals.push(AgentAssignment {
+        name: "signal.current_flow".to_owned(),
+        value: entity.clone(),
+    });
+    report.metrics.push(AgentAssignment {
+        name: "metric.fps".to_owned(),
+        value: AgentValue::F64(60.0),
+    });
+    for probe in [
+        Probe::Signal {
+            target: PublicId::new("signal.current_flow").unwrap(),
+        },
+        Probe::ObservationField {
+            path: arcweft_agent_protocol::predicate::ObservationFieldPath::new(
+                "signals.signal.current_flow",
+            )
+            .unwrap(),
+        },
+    ] {
+        assert_eq!(agent_mcp_probe_value(&probe, &report), Some(entity.clone()));
+    }
+    for probe in [
+        Probe::Metric {
+            target: PublicId::new("metric.fps").unwrap(),
+        },
+        Probe::ObservationField {
+            path: arcweft_agent_protocol::predicate::ObservationFieldPath::new(
+                "metrics.metric.fps",
+            )
+            .unwrap(),
+        },
+    ] {
+        assert_eq!(
+            agent_mcp_probe_value(&probe, &report),
+            Some(AgentValue::F64(60.0))
+        );
+        let actual = agent_mcp_probe_value(&probe, &report).unwrap();
+        assert!(!agent_mcp_compare_values(
+            &actual,
+            CompareOp::Eq,
+            &AgentValue::String("60".to_owned())
+        ));
+    }
+    report.signals.push(AgentAssignment {
+        name: "@signal.current_flow".to_owned(),
+        value: string,
+    });
+    assert_eq!(
+        agent_mcp_probe_value(
+            &Probe::Signal {
+                target: PublicId::new("signal.current_flow").unwrap()
+            },
+            &report
+        ),
+        None
+    );
+}
+
+#[test]
+fn native_wait_json_preserves_signal_and_metric_value_kinds() {
+    let mut report = test_agent_observation_report(None);
+    report.signals.push(AgentAssignment {
+        name: "signal.current_flow".to_owned(),
+        value: AgentValue::Entity(PublicId::new("flow.opening").unwrap()),
+    });
+    report.metrics.push(AgentAssignment {
+        name: "metric.fps".to_owned(),
+        value: AgentValue::F64(60.0),
+    });
+    let json = super::mcp_resources::agent_mcp_wait_report_value(&report, true, 1, 2);
+    assert_eq!(
+        json["signals"][0]["value"],
+        serde_json::json!({"kind": "entity", "value": "flow.opening"})
+    );
+    assert_eq!(
+        json["metrics"][0]["value"],
+        serde_json::json!({"kind": "f64", "value": 60.0})
+    );
+    assert_eq!(json["matched"], true);
+    assert_eq!(json["stable_seen_before"], 1);
+    assert_eq!(json["polls"], 2);
+    assert_eq!(json["state_hash"], report.state_hash);
 }

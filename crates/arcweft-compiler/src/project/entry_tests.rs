@@ -936,7 +936,7 @@ entry agent @entry.agent.controller {
 #[test]
 fn selected_agent_controller_lowers_typed_probe_comparison_into_wait_request() {
     let source = r"
-signal ready: bool
+signal ready: Watch<bool>
 
 fn controller() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }

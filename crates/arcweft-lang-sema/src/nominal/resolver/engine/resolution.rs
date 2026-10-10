@@ -687,7 +687,9 @@ impl Resolver<'_, '_> {
                     TypeKind::AcceptedNominal(nominal) => Some(nominal.clone()),
                     _ => None,
                 }),
-            RegisteredExternalOwner::Character(_) => None,
+            RegisteredExternalOwner::Character(_) | RegisteredExternalOwner::ProjectEntity(_) => {
+                None
+            }
         };
         let record = match self.lookup_external_record(
             site,

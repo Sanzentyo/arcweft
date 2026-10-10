@@ -1182,6 +1182,26 @@ impl EntityType {
     pub fn value(&self) -> Option<&TypeKind> {
         self.value.as_deref()
     }
+
+    /// Observable element from the exact accepted Signal/Metric carrier.
+    /// A same-spelled foreign nominal cannot impersonate a standard carrier.
+    pub fn observable_payload(&self) -> Option<&TypeKind> {
+        match self.kind() {
+            EntityKind::Signal => Some(self.value()?.signal_observable()?.payload()),
+            EntityKind::Metric => self.value(),
+            _ => None,
+        }
+    }
+
+    pub fn watch_payload(&self) -> Option<&TypeKind> {
+        if self.kind() != &EntityKind::Signal {
+            return None;
+        }
+        match self.value()?.signal_observable()? {
+            SignalObservableType::Watch(payload) => Some(payload),
+            SignalObservableType::Stream { .. } | SignalObservableType::Sample(_) => None,
+        }
+    }
 }
 
 impl TypeKind {
@@ -1819,4 +1839,48 @@ pub enum HandleState {
     Dropped,
     Detached,
     MovedOut,
+}
+
+/// Borrowed interpretation of the finite Signal declaration carrier domain.
+/// The original accepted type remains the stored entity type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SignalObservableType<'a> {
+    Watch(&'a TypeKind),
+    Stream {
+        item: &'a TypeKind,
+        error: &'a TypeKind,
+    },
+    Sample(&'a TypeKind),
+}
+
+impl<'a> SignalObservableType<'a> {
+    pub const fn payload(self) -> &'a TypeKind {
+        match self {
+            Self::Watch(payload) | Self::Sample(payload) => payload,
+            Self::Stream { item, .. } => item,
+        }
+    }
+}
+
+impl TypeKind {
+    pub fn signal_observable(&self) -> Option<SignalObservableType<'_>> {
+        match self {
+            Self::Stream { item, error } => Some(SignalObservableType::Stream { item, error }),
+            Self::AcceptedNominal(carrier) => {
+                let [payload] = carrier.arguments() else {
+                    return None;
+                };
+                if carrier.declaration() == &crate::env::nominal::standard_nominal_id("Watch") {
+                    Some(SignalObservableType::Watch(payload))
+                } else if carrier.declaration()
+                    == &crate::env::nominal::standard_nominal_id("Sample")
+                {
+                    Some(SignalObservableType::Sample(payload))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }

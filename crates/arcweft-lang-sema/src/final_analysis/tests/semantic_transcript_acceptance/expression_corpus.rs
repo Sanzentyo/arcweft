@@ -209,6 +209,7 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::CatalogAsset(_) => CatalogAsset => Accepted,
+    CheckedValueResolution::ImportedProjectEntity(_) => ImportedProjectEntity => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
     CheckedValueResolution::Registered(_) => Registered => Accepted,
     CheckedValueResolution::Constant(_) => Constant => Accepted,
@@ -386,12 +387,14 @@ enum ExpressionCorpusFixture {
     CharacterNominal,
     RegisteredI32Pair,
     RegisteredObservation,
+    ImportedHostSignal,
 }
 
 impl ExpressionCorpusFixture {
     fn build(self, source: &str) -> super::Fixture {
         match self {
             Self::Standard => super::fixture(source, None),
+            Self::ImportedHostSignal => super::fixture_with_host_target_signal(source),
             Self::ExternalCharacter => super::external_character_fixture(source),
             Self::CharacterNominal => super::character_nominal_fixture(source),
             Self::RegisteredI32Pair => super::fixture_with_base_environment(
@@ -778,6 +781,16 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
             resolutions: &[ExpressionResolutionFamily::Structural, ExpressionResolutionFamily::Value],
             values: &[ValueResolutionFamily::CatalogAsset],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "checked imported target signal",
+            exact_path_families: false,
+            source: "fn root(flag: bool) -> i64 { match flag { true => { let selected = @signal.fixture; 1i64 }, false => 0i64 } }".to_owned(),
+            fixture: ExpressionCorpusFixture::ImportedHostSignal,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural, ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::ImportedProjectEntity],
             selects: &[],
         },
         ExpressionCorpusRow {

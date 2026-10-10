@@ -2121,3 +2121,224 @@ fn manual_awbc_capture_origin(declaration: &str) -> arcweft_core::plan::RuntimeL
     hash.update(declaration.as_bytes());
     arcweft_core::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }
+
+fn session_save_with_observation_value(session: &BundleSession, value: RuntimeValue) -> Vec<u8> {
+    let mut observations = arcweft_core::observation::RuntimeObservationState::default();
+    observations.record_effect(&arcweft_core::effect::LineEffectRequest::SignalWrite(
+        arcweft_core::effect::RuntimeAssignment::try_new("signal.payload".to_owned(), value)
+            .expect("fixture observation is unrestricted"),
+    ));
+    let saved = arcweft_core::observation::RuntimeObservationSaveSnapshot::from_live(&observations)
+        .expect("fixture observations have an inert portable projection");
+    let mut payload = exported_session_json(session);
+    payload["executor"]["state"]["observations"] =
+        serde_json::to_value(saved).expect("the owning observation DTO serializes");
+    encode_session_json_value(&payload)
+}
+
+#[test]
+fn observation_only_asset_restore_requires_the_existing_catalog_validator() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let save = session_save_with_observation_value(
+        &session,
+        RuntimeValue::Tuple(vec![image_handle_for_bytes(b"saved image bytes")]),
+    );
+    let error = session
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("an observation-only asset still requires catalog validation");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::BundleAssetCatalogValidatorRequired {
+            role: RuntimeBundleAssetOpaqueRole::ImageHandle,
+        },
+    ));
+    assert_eq!(
+        session.snapshot_session().expect("session remains valid"),
+        before
+    );
+}
+
+#[test]
+fn observation_only_asset_catalog_refusal_restores_the_complete_prior_session() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let save = session_save_with_observation_value(
+        &session,
+        RuntimeValue::Tuple(vec![image_handle_for_bytes(b"forged image bytes")]),
+    );
+    let catalog_digest = RuntimeAssetContentDigest::try_for_bytes(b"catalog image bytes")
+        .expect("catalog digest fits");
+    let mut images_seen = 0;
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &save,
+            &arcweft_save::SaveDecodeOptions::default(),
+            |value| match arcweft_core::value::runtime_bundle_asset_opaque_role(value) {
+                Some(RuntimeBundleAssetOpaqueRole::ImageHandle) => {
+                    images_seen += 1;
+                    let image = RuntimeImageHandleValue::try_from_runtime_value(value)
+                        .map_err(|error| error.to_string())?;
+                    if image.binding().content_digest() == catalog_digest {
+                        Ok(())
+                    } else {
+                        Err(
+                            "observed image content digest differs from the accepted catalog"
+                                .into(),
+                        )
+                    }
+                }
+                Some(role) => Err(format!("unexpected bundle asset role {role:?}")),
+                None => Ok(()),
+            },
+        )
+        .expect_err("the observation-only image cannot bypass its actual catalog callback");
+    assert_eq!(images_seen, 1);
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::RuntimeValueValidation { message }
+            if message == "observed image content digest differs from the accepted catalog",
+    ));
+    assert_eq!(
+        session.snapshot_session().expect("session remains valid"),
+        before
+    );
+}
+
+#[test]
+fn cold_observation_callable_restore_binds_the_installed_current_program() {
+    let bytes = callable_product_awfb_bytes();
+    let session = product_session_from_bytes(&bytes);
+    let original_owner = session.program_owner();
+    let portable_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(callable_awbc_program()));
+    assert!(!portable_owner.same_program(&original_owner));
+    let save = session_save_with_observation_value(
+        &session,
+        RuntimeValue::Tuple(vec![captured_awbc_runtime_callable_value(portable_owner)]),
+    );
+    drop(session);
+    let mut restored = product_session_from_bytes(&bytes);
+    let current_owner = restored.program_owner();
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("portable AWBC callable state binds to the selected current program");
+    let step = restored.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+    let RuntimeValue::Tuple(values) = step.observations.signals()["signal.payload"].value() else {
+        panic!("the installed observation remains a typed tuple")
+    };
+    let RuntimeValue::Callable(callable) = &values[0] else {
+        panic!("the tuple retains its callable")
+    };
+    assert!(callable.owner().same_program(&current_owner));
+    assert!(!callable.owner().same_program(&original_owner));
+    assert_eq!(
+        callable.retained(),
+        &[RuntimeValue::String("saved value".to_owned())]
+    );
+
+    let before = restored
+        .snapshot_session()
+        .expect("current snapshot exports");
+    let mut invalid: serde_json::Value = serde_json::from_slice(
+        &arcweft_save::SaveEnvelope::decode_bytes(
+            &save,
+            &arcweft_save::SaveDecodeOptions::default(),
+        )
+        .expect("save envelope decodes")
+        .payload,
+    )
+    .expect("inert save JSON decodes");
+    invalid["executor"]["state"]["observations"]["signals"]["signal.payload"]["Tuple"][0]["Callable"]
+        ["state"] = serde_json::to_value(
+        RuntimeCallableStateId::from_zero_based(1).expect("unknown state is representable"),
+    )
+    .expect("inert state ID serializes");
+    let error = restored
+        .import_session_save_bytes(
+            &encode_session_json_value(&invalid),
+            &arcweft_save::SaveDecodeOptions::default(),
+        )
+        .expect_err("an observation callable cannot restore an absent state");
+    assert!(
+        matches!(
+            &error,
+            BundleSessionSaveError::Fiber { message }
+                if message.contains("observation 'signal.payload' cannot be restored")
+                    && message.contains("callable state 2 is absent from its program"),
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("rejection preserves the session"),
+        before
+    );
+}
+
+#[test]
+fn live_product_observation_restore_and_hotpatch_install_the_checked_program_owner() {
+    use arcweft_core::awbc::product_step::AwbcProductStepExecutor;
+
+    let first_program = std::sync::Arc::new(callable_awbc_program());
+    let first_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&first_program));
+    let mut executor = AwbcProductStepExecutor::for_entry_arc(
+        std::sync::Arc::clone(&first_program),
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+        64,
+    )
+    .expect("the original Product starts");
+    let mut snapshot = executor.snapshot().expect("the original Product snapshots");
+    let foreign_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(callable_awbc_program()));
+    assert!(!foreign_owner.same_program(&first_owner));
+    snapshot
+        .observations
+        .record_effect(&arcweft_core::effect::LineEffectRequest::SignalWrite(
+            arcweft_core::effect::RuntimeAssignment::try_new(
+                "signal.callback".to_owned(),
+                captured_awbc_runtime_callable_value(foreign_owner),
+            )
+            .expect("portable AWBC callable is unrestricted"),
+        ));
+    executor
+        .restore_snapshot(snapshot)
+        .expect("live snapshot admits and rebinds observations");
+    let RuntimeValue::Callable(callable) =
+        executor.fiber().observations.signals()["signal.callback"].value()
+    else {
+        panic!("installed observation is the checked callable")
+    };
+    assert!(callable.owner().same_program(&first_owner));
+
+    let next_program = std::sync::Arc::new(callable_awbc_program());
+    let next_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&next_program));
+    assert!(!next_owner.same_program(&first_owner));
+    executor
+        .replace_program_preserving_state_arc(next_program)
+        .expect("matching checked code admits the hotpatch");
+    let RuntimeValue::Callable(callable) =
+        executor.fiber().observations.signals()["signal.callback"].value()
+    else {
+        panic!("hotpatch retains its typed callable")
+    };
+    assert!(callable.owner().same_program(&next_owner));
+    assert!(!callable.owner().same_program(&first_owner));
+    assert_eq!(
+        callable.retained(),
+        &[RuntimeValue::String("saved value".to_owned())]
+    );
+}

@@ -1630,11 +1630,15 @@ impl AwbcProductStepExecutor {
                 })?;
         let previous_program = std::mem::replace(&mut self.program, program);
         let previous_proof = std::mem::replace(&mut self.plain_text_context_template_proof, proof);
-        if let Err(error) = self.validate_snapshot(&snapshot) {
-            self.program = previous_program;
-            self.plain_text_context_template_proof = previous_proof;
-            return Err(error);
-        }
+        let observations = match self.validate_snapshot(&snapshot) {
+            Ok(observations) => observations,
+            Err(error) => {
+                self.program = previous_program;
+                self.plain_text_context_template_proof = previous_proof;
+                return Err(error);
+            }
+        };
+        self.facade_fiber.observations = observations;
         self.artifact_fingerprint = fingerprint;
         self.rebuild_facade_stream_states_from_compact();
         self.sync_facade();

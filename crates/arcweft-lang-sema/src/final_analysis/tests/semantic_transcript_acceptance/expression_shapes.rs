@@ -325,7 +325,7 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
     let expression = digest("with { cancel on true {} }");
     let timeout = digest("with { cancel on timeout(1s) {} }");
     let signal = source_match_digest(&choice_match_source(
-        "signal ready: bool\n",
+        "signal ready: Watch<bool>\n",
         "with { cancel on signal(@signal.ready, value) { let observed = value } }",
     ));
     let formatted = source_match_digest(&choice_match_source(
@@ -355,7 +355,7 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
     }
     let invalid = super::fixture(
         &choice_match_source(
-            "signal ready: bool\n",
+            "signal ready: Watch<bool>\n",
             "with { cancel on signal(@signal.ready, \"wrong\") {} }",
         ),
         None,

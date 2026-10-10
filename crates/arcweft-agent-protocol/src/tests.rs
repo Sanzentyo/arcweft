@@ -294,7 +294,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
         logs: Vec::new(),
         signals: vec![AgentAssignment {
             name: "signal.ready".to_owned(),
-            value: "true".to_owned(),
+            value: crate::value::AgentValue::Bool(true),
         }],
         metrics: Vec::new(),
         events: Vec::new(),
@@ -1326,4 +1326,59 @@ fn canonical_looking_trace_uri_does_not_grant_publication_authority() {
     };
 
     assert!(!forged.has_canonical_public_uri());
+}
+
+#[test]
+fn observation_resources_preserve_typed_signal_and_metric_values() {
+    use crate::{ids::PublicId, value::AgentValue};
+    let mut report = test_mcp_observation_report();
+    report.signals.extend([
+        AgentAssignment {
+            name: "signal.current_flow".to_owned(),
+            value: AgentValue::Entity(PublicId::new("flow.opening").unwrap()),
+        },
+        AgentAssignment {
+            name: "signal.literal".to_owned(),
+            value: AgentValue::String("flow.opening".to_owned()),
+        },
+    ]);
+    report.metrics.push(AgentAssignment {
+        name: "metric.fps".to_owned(),
+        value: AgentValue::F64(60.0),
+    });
+    let json = serde_json::to_value(&report).unwrap();
+    assert_eq!(
+        json["signals"][0]["value"],
+        serde_json::json!({"kind": "bool", "value": true})
+    );
+    assert_eq!(
+        json["signals"][1]["value"],
+        serde_json::json!({"kind": "entity", "value": "flow.opening"})
+    );
+    assert_eq!(
+        json["signals"][2]["value"],
+        serde_json::json!({"kind": "string", "value": "flow.opening"})
+    );
+    assert_eq!(
+        json["metrics"][0]["value"],
+        serde_json::json!({"kind": "f64", "value": 60.0})
+    );
+    let decoded: AgentObservationReport = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(decoded.signals, report.signals);
+    assert_eq!(decoded.metrics, report.metrics);
+    let latest = report.observation_resource().unwrap();
+    let signals = report.signals_resource().unwrap();
+    assert_eq!(latest.hash, report.state_hash);
+    assert_eq!(signals.hash, report.state_hash);
+    let AgentResourceBody::Json(latest_body) = latest.body else {
+        panic!("latest resource is JSON");
+    };
+    let AgentResourceBody::Json(signals_body) = signals.body else {
+        panic!("signals resource is JSON");
+    };
+    assert_eq!(latest_body["signals"], json["signals"]);
+    assert_eq!(latest_body["metrics"], json["metrics"]);
+    assert_eq!(signals_body, json["signals"]);
+    let rows: Vec<AgentAssignment> = serde_json::from_value(signals_body).unwrap();
+    assert_eq!(rows, report.signals);
 }

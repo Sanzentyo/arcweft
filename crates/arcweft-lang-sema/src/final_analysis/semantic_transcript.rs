@@ -1346,6 +1346,10 @@ fn write_generic_pattern_resolution(
             // the transcript.
             write_literal(hasher, literal, ty)?;
         }
+        super::CheckedPatternResolution::ImportedProjectEntity(entity) => {
+            transcript_update!(hasher, &entity.target().semantic_identity());
+            transcript_update!(hasher, entity.ty().semantic_identity_digest()?.as_bytes());
+        }
         super::CheckedPatternResolution::Entity(item) => {
             transcript_update!(hasher, item.semantic_id().as_bytes());
             transcript_update!(hasher, item.value_type().as_bytes());
@@ -3103,6 +3107,11 @@ fn write_value_resolution(
             }
             transcript_update!(hasher, item.semantic_id().as_bytes());
             transcript_update!(hasher, item.value_type().as_bytes());
+        }
+        CheckedValueResolution::ImportedProjectEntity(entity) => {
+            transcript_update!(hasher, &entity.target().semantic_identity());
+            transcript_update!(hasher, entity.target().catalog().generation_digest());
+            transcript_update!(hasher, entity.ty().semantic_identity_digest()?.as_bytes());
         }
         CheckedValueResolution::CatalogAsset(asset) => {
             write_bytes(hasher, asset.as_public_id().canonical_identity_bytes())?;

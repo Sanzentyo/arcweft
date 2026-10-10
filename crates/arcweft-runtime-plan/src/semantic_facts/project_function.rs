@@ -29,11 +29,10 @@ use super::{
     RuntimeAssertionAdmission, RuntimeAssignmentFact, RuntimeAwaitFact, RuntimeCheckedCapture,
     RuntimeChoiceFact, RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
     RuntimeEvaluatedEffectFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
-    RuntimeNormalizedType, RuntimePipeFact, RuntimeProjectCallable, RuntimeProjectItem,
-    RuntimeRecordExpressionFact, RuntimeRecordPatternFact, RuntimeResolvedCall,
-    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeScopedExecutableSemanticFactView, RuntimeSequenceKind, RuntimeTraitMethodInstanceKey,
-    RuntimeTriggerAdmission, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeNormalizedType, RuntimePipeFact, RuntimeProjectCallable, RuntimeRecordExpressionFact,
+    RuntimeRecordPatternFact, RuntimeResolvedCall, RuntimeResolvedSelect, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeScopedExecutableSemanticFactView, RuntimeSequenceKind,
+    RuntimeTraitMethodInstanceKey, RuntimeTriggerAdmission, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_core::value::RuntimeValue;
 
@@ -1095,7 +1094,7 @@ impl RuntimeProjectFunctionExpressionSemanticFact {
 pub enum RuntimeProjectFunctionPatternPayload {
     Structural,
     Literal(RuntimeValue),
-    Entity(RuntimeProjectItem),
+    Entity(arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection),
     NominalRecord(RuntimeRecordPatternFact),
     Variant(RuntimeResolvedVariant),
     TypedBinding,
@@ -1867,6 +1866,32 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             }
         }
 
+        for row in &patterns {
+            if let RuntimeProjectFunctionPatternPayload::Entity(entity) = row.payload() {
+                if !entity.validate_authority(&local_uses, row.owner()) {
+                    return Err(
+                        RuntimeProjectFunctionFactError::InvalidEntityPatternOrigin {
+                            pattern: row.owner(),
+                        },
+                    );
+                }
+                let ty = type_projection
+                    .binary_search_by_key(
+                        &RuntimeProjectFunctionTypeOwner::Pattern(row.owner()),
+                        RuntimeProjectFunctionTypeProjection::owner,
+                    )
+                    .ok()
+                    .and_then(|index| type_projection[index].ty());
+                if ty.is_none_or(|ty| {
+                    ty.identity().as_bytes() != entity.type_identity().as_bytes()
+                        || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+                }) {
+                    return Err(RuntimeProjectFunctionFactError::InvalidEntityPatternType {
+                        pattern: row.owner(),
+                    });
+                }
+            }
+        }
         let expression_owners = expressions
             .iter()
             .map(RuntimeProjectFunctionExpressionSemanticFact::owner)
@@ -2185,7 +2210,10 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
     }
 
-    pub fn pattern_item(&self, owner: PatternId) -> Option<&RuntimeProjectItem> {
+    pub fn pattern_entity(
+        &self,
+        owner: PatternId,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection> {
         match self.pattern(owner)?.payload() {
             RuntimeProjectFunctionPatternPayload::Entity(value) => Some(value),
             _ => None,
@@ -3099,6 +3127,10 @@ pub enum RuntimeProjectFunctionFactError {
     InvalidEntityValueOrigin { expression: ExprId },
     #[error("closed entity value for {expression:?} has a different canonical Ref type")]
     InvalidEntityValueType { expression: ExprId },
+    #[error("closed entity pattern {pattern:?} belongs to another accepted owner or generation")]
+    InvalidEntityPatternOrigin { pattern: PatternId },
+    #[error("closed entity pattern {pattern:?} disagrees with its accepted canonical Ref type")]
+    InvalidEntityPatternType { pattern: PatternId },
     #[error("project-function semantic subcatalog does not match its sealed executable partition")]
     NonCanonicalSemanticFacts,
     #[error("project-function fact refers to a HIR owner in another module")]

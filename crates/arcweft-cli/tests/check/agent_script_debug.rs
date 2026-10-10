@@ -953,6 +953,8 @@ fn agent_script_run_native_source_resolves_project_entities() {
         .arg(agent_script_native_flow_wait_smoke_path())
         .arg("--native-source")
         .arg(agent_script_native_project_index_path())
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--trace-out")
         .arg(&trace_path)

@@ -220,7 +220,21 @@ fn parse(id: &str, path: &str, source: &str) -> (Arc<SourceDocument>, ParsedSour
 }
 
 pub(crate) fn fixture(root_source: &str, child_source: Option<&str>) -> Fixture {
-    fixture_with_environment_inputs(root_source, child_source, Vec::new())
+    try_fixture(root_source, child_source).expect("registered semantic world")
+}
+
+pub(crate) fn try_fixture(
+    root_source: &str,
+    child_source: Option<&str>,
+) -> Result<Fixture, crate::registration::CharacterRegistrationReport> {
+    try_fixture_with_all_registration_inputs_and_base(
+        root_source,
+        child_source,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        TypeCheckEnv::standard(),
+    )
 }
 
 fn fixture_with_environment_inputs(
@@ -319,11 +333,41 @@ fn try_fixture_with_all_registration_inputs_and_base(
     external_rows: Vec<ExternalRegistrationFact>,
     base: TypeCheckEnv,
 ) -> Result<Fixture, crate::registration::CharacterRegistrationReport> {
+    try_fixture_with_target_catalogs(
+        root_source,
+        child_source,
+        environment_rows,
+        character_rows,
+        external_rows,
+        base,
+        &[],
+    )
+}
+
+fn try_fixture_with_target_catalogs(
+    root_source: &str,
+    child_source: Option<&str>,
+    environment_rows: Vec<(
+        Arc<SourceDocument>,
+        SourceBackedEnvironmentRegistrationInput,
+    )>,
+    character_rows: Vec<(Arc<SourceDocument>, SourceBackedCharacterCatalog)>,
+    external_rows: Vec<ExternalRegistrationFact>,
+    base: TypeCheckEnv,
+    target_catalogs: &[Arc<crate::project_index::AcceptedProjectEntityCatalog>],
+) -> Result<Fixture, crate::registration::CharacterRegistrationReport> {
     let package = CallablePackageId::try_new("final-analysis-tests").expect("package");
     let root_path = CanonicalModulePath::crate_root();
     let mut database = HirDatabase::try_new().expect("HIR database");
-    let (root_document, root_parsed) =
-        parse("arcweft-test://sema/final/root", "root.arcw", root_source);
+    let root_id = if target_catalogs
+        .iter()
+        .any(|catalog| catalog.source_index().is_some())
+    {
+        "arcweft-test://sema/final/importing-controller"
+    } else {
+        "arcweft-test://sema/final/root"
+    };
+    let (root_document, root_parsed) = parse(root_id, "root.arcw", root_source);
     let mut staged = vec![(root_path.clone(), root_document, root_parsed)];
     if let Some(child_source) = child_source {
         let child_path = root_path.join(ModuleSegment::new("child").expect("module segment"));
@@ -369,6 +413,7 @@ fn try_fixture_with_all_registration_inputs_and_base(
             .collect(),
     )
     .expect("registration facts");
+    let facts = facts.try_with_project_entities(target_catalogs)?;
     let published = publish_fixture_modules(&mut database, &package, &staged, world, &facts);
     let rows = staged
         .into_iter()
@@ -9294,7 +9339,7 @@ effects { agent.observe, agent.wait }
     return Ok(())
 }
 
-signal ready: bool
+signal ready: Watch<bool>
 metric counter count: u64 {}
 
 entry agent @entry.agent.main { controller = composite_wait }
@@ -9394,7 +9439,7 @@ effects { agent.observe, agent.wait }
     wait(exists(ready), timeout = 5s)
     return Ok(())
 }
-signal ready: bool
+signal ready: Watch<bool>
 
 entry agent @entry.agent.main { controller = local_wait }
 ",
@@ -10399,4 +10444,416 @@ fn catalog_asset_reference_keeps_its_exact_ref_asset_type() {
             "catalog identity is a value, not a declaration callable"
         );
     }
+}
+
+fn host_target_catalog() -> Arc<crate::project_index::AcceptedProjectEntityCatalog> {
+    use crate::project_index::{AcceptedProjectEntityCatalog, HostSignalPublicationInput};
+    let environment = TypeCheckEnv::standard();
+    let document = source_document(
+        "arcweft-test://sema/explicit-host-signals",
+        "signals.json",
+        "{\"fixture\":1}",
+    );
+    let input = HostSignalPublicationInput::try_new(
+        environment.nominal_catalog(),
+        arcweft_id::PublicId::try_new("signal.fixture").expect("host signal ID"),
+        TypeKind::I64,
+        Arc::clone(&document),
+        document
+            .span(SourceRange::new(0, document.text().len()))
+            .expect("config span"),
+    )
+    .expect("explicit typed host signal");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("host-signal-tests").expect("package"),
+        document.identity().id().clone(),
+        "explicit-signals",
+    )
+    .expect("host signal world");
+    Arc::new(
+        AcceptedProjectEntityCatalog::try_from_host_signals(world, &[input])
+            .expect("host publication"),
+    )
+}
+
+fn fixture_with_host_target_signal(source: &str) -> Fixture {
+    try_fixture_with_target_catalogs(
+        source,
+        None,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        TypeCheckEnv::standard(),
+        &[host_target_catalog()],
+    )
+    .expect("target signal registration")
+}
+
+#[test]
+fn imported_target_entities_are_checked_before_controller_analysis_with_exact_original_owners() {
+    use crate::project_index::AcceptedProjectEntityCatalog;
+    let native = fixture(
+        "pub signal @signal.level Level: Watch<i64>\nflow @flow.opening opening() -> String { return \"opening\" }\nentry cli @entry.cli.primary { goto @flow.opening }\n",
+        None,
+    );
+    let native_analysis = analyze(&native).expect("native analysis");
+    let index = Arc::new(
+        ProjectSemanticIndex::try_from_final_project(
+            ProgramHash::new("native-entity-test"),
+            native.project.analysis_view().expect("native HIR"),
+            &native.symbols,
+            &native_analysis,
+        )
+        .expect("native index"),
+    );
+    let catalog = Arc::new(
+        AcceptedProjectEntityCatalog::try_from_final_project(
+            Arc::clone(&index),
+            native.project.analysis_view().expect("native HIR"),
+            &native.symbols,
+            &native_analysis,
+        )
+        .expect("native issuance"),
+    );
+    assert!(Arc::ptr_eq(
+        catalog.source_index().expect("source index lease"),
+        &index
+    ));
+    let controller = try_fixture_with_target_catalogs(
+        "fn controller() { let signal_ref = @signal.level; let flow_ref = @flow.opening; let entry_ref: Ref<Entry> = @entry:.cli.primary; () }\n",
+        None, Vec::new(), Vec::new(), Vec::new(), TypeCheckEnv::standard(), &[Arc::clone(&catalog)]).expect("controller registration");
+    let analysis = analyze(&controller).expect("imported target analysis");
+    let imported = analysis
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                entity,
+            )) => Some(entity),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(imported.len(), 3);
+    for entity in imported {
+        let original = index
+            .entity(entity.target().identity())
+            .expect("exact native inventory row");
+        assert_eq!(entity.target().symbol(), original);
+        assert_eq!(entity.ty(), TypeKind::Ref(original.ty().clone()));
+        assert_eq!(entity.target().symbol().source(), original.source());
+        assert_eq!(
+            entity.target().symbol().semantic_hash(),
+            original.semantic_hash()
+        );
+        assert!(
+            entity
+                .target()
+                .catalog()
+                .validate_generation(native_analysis.hir_generation())
+                .is_ok()
+        );
+        assert!(
+            entity
+                .target()
+                .catalog()
+                .validate_generation(analysis.hir_generation())
+                .is_err()
+        );
+        assert!(entity.has_valid_symbol_binding(&controller.symbols));
+        if let ProjectEntityId::StructuralFlow(flow) = entity.target().identity() {
+            assert_eq!(
+                entity
+                    .target()
+                    .runtime_reference()
+                    .flow()
+                    .expect("exact Flow")
+                    .canonical_label(),
+                arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                    flow.semantic_digest().into_bytes(),
+                    flow.public_id().as_str()
+                )
+                .expect("checked Flow identity")
+                .canonical_label()
+            );
+        }
+    }
+}
+
+#[test]
+fn imported_target_facts_reject_a_canonical_binding_collision_and_mismapped_seed() {
+    let catalog = host_target_catalog();
+    let report = try_fixture_with_target_catalogs(
+        "fn root() {}\n",
+        None,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        TypeCheckEnv::standard(),
+        &[Arc::clone(&catalog), Arc::clone(&catalog)],
+    )
+    .err()
+    .expect("duplicate exact canonical publication is rejected");
+    assert!(!report.diagnostics().is_empty());
+
+    let identity = catalog.entities().keys().next().expect("signal row");
+    let entity = catalog.entity(identity).expect("sealed signal owner");
+    let document = Arc::clone(
+        catalog
+            .documents()
+            .next()
+            .expect("original config document"),
+    );
+    let source = entity.symbol().source().to_span();
+    let wrong_binding_path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        vec![
+            ProjectSymbolSegment::try_new("signal").expect("family segment"),
+            ProjectSymbolSegment::try_new("other").expect("different entity segment"),
+        ],
+    )
+    .expect("wrong canonical binding path");
+    let wrong_path = SymbolPath::try_from(&wrong_binding_path).expect("wrong canonical identity");
+    let binding = ProjectDirectBinding::try_new(
+        CanonicalModulePath::crate_root(),
+        wrong_binding_path,
+        None,
+        source.clone(),
+        false,
+    )
+    .expect("valid implicit direct binding");
+    let seed = ExternalDeclarationSeed::try_new(wrong_path, None, source.clone(), vec![binding])
+        .expect("structurally valid mismapped external seed");
+    let expected = crate::registration::CharacterRegistrationDiagnosticKind::UnknownOwner {
+        owner: (&RegisteredExternalOwner::ProjectEntity(entity.clone())).into(),
+    };
+    let error = ProjectRegistrationFacts::try_new(
+        catalog.world().clone(),
+        vec![document],
+        vec![ExternalRegistrationFact::new(
+            seed,
+            RegisteredExternalOwner::ProjectEntity(entity),
+            source.clone(),
+        )],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect_err("sealed owner cannot be remapped to another canonical identity");
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one exact owner mapping rejection");
+    };
+    assert_eq!(diagnostic.kind(), &expected);
+    assert_eq!(diagnostic.primary(), &source);
+}
+
+#[test]
+fn imported_target_value_witness_cannot_be_used_with_a_foreign_controller_generation() {
+    let source = "fn root() { let selected = @signal.fixture; () }\n";
+    let left = fixture_with_host_target_signal(source);
+    let left_analysis = analyze(&left).expect("left analysis");
+    let witness = left_analysis
+        .expressions()
+        .find_map(|(_, row)| match row.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                entity,
+            )) => Some(entity),
+            _ => None,
+        })
+        .expect("issued imported witness");
+    let right = fixture_with_host_target_signal(source);
+    let right_analysis = analyze(&right).expect("right analysis");
+    assert!(
+        !witness
+            .generation()
+            .same_generation(right_analysis.hir_generation())
+    );
+    assert!(!witness.has_valid_analysis_binding(&right.symbols, right_analysis.hir_generation()));
+    assert!(witness.has_valid_analysis_binding(&left.symbols, left_analysis.hir_generation()));
+    assert!(witness.has_valid_symbol_binding(&left.symbols));
+}
+
+#[test]
+fn imported_target_entity_pattern_keeps_the_same_typed_owner_in_match_transcript() {
+    let fixture = fixture_with_host_target_signal(
+        "fn root() -> i64 { let selected = @signal.fixture; match selected { @signal.fixture => 1i64, _ => 0i64 } }\n",
+    );
+    let analysis = analyze(&fixture).expect("imported entity match");
+    let pattern = analysis
+        .patterns()
+        .find_map(|(_, row)| match row.resolution() {
+            CheckedPatternResolution::ImportedProjectEntity(entity) => Some((row, entity)),
+            _ => None,
+        })
+        .expect("sealed imported pattern owner");
+    assert_eq!(pattern.0.ty(), &pattern.1.ty());
+    assert_eq!(
+        pattern.1.target().symbol().public_id().as_str(),
+        "signal.fixture"
+    );
+    assert!(pattern.1.has_valid_symbol_binding(&fixture.symbols));
+    let value = analysis
+        .expressions()
+        .find_map(|(_, row)| match row.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                entity,
+            )) => Some(entity),
+            _ => None,
+        })
+        .expect("same target value owner");
+    assert_eq!(
+        pattern.1.target().semantic_identity(),
+        value.target().semantic_identity()
+    );
+    assert_eq!(
+        pattern.1.target().runtime_reference(),
+        value.target().runtime_reference()
+    );
+}
+
+#[test]
+fn signal_declaration_retains_each_exact_accepted_observable_carrier() {
+    use crate::types::SignalObservableType;
+    let fixture = fixture(
+        "signal watched: Watch<i64>\nsignal streamed: Stream<i64, String>\nsignal sampled: Sample<i64>\n",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("all maintained Signal carriers");
+    let index = ProjectSemanticIndex::try_from_final_project(
+        ProgramHash::new("observable-carriers"),
+        fixture.project.analysis_view().expect("HIR"),
+        &fixture.symbols,
+        &analysis,
+    )
+    .expect("typed Signal index");
+    let mut kinds = BTreeSet::new();
+    for entity in index
+        .entities()
+        .values()
+        .filter(|row| row.ty().kind() == &EntityKind::Signal)
+    {
+        let original = entity.ty().value().expect("stored source carrier");
+        match original
+            .signal_observable()
+            .expect("closed observable family")
+        {
+            SignalObservableType::Watch(payload) => {
+                assert_eq!(payload, &TypeKind::I64);
+                kinds.insert("Watch");
+            }
+            SignalObservableType::Stream { item, error } => {
+                assert_eq!(item, &TypeKind::I64);
+                assert_eq!(error, &TypeKind::String);
+                kinds.insert("Stream");
+            }
+            SignalObservableType::Sample(payload) => {
+                assert_eq!(payload, &TypeKind::I64);
+                kinds.insert("Sample");
+            }
+        }
+        assert_eq!(entity.ty().observable_payload(), Some(&TypeKind::I64));
+    }
+    assert_eq!(kinds, BTreeSet::from(["Watch", "Stream", "Sample"]));
+}
+
+#[test]
+fn signal_declaration_rejects_noncarrier_type_at_its_exact_authored_type_owner() {
+    for authored in ["bool", "Need<i64>"] {
+        let fixture = fixture(&format!("signal invalid: {authored}\n"), None);
+        let error = analyze(&fixture)
+            .expect_err("a raw payload or other standard opaque type is not a Signal carrier");
+        let FinalSemanticAnalysisError::SignalObservableType { owner, source_span } = &error else {
+            panic!("expected owning Signal carrier rejection, found {error:?}")
+        };
+        let project = fixture.project.analysis_view().expect("source HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module");
+        let expected = module
+            .source_anchor(HirSourceQuery::Type {
+                owner: *owner,
+                role: arcweft_lang_hir::source_index::HirTypeSourceRole::Whole,
+            })
+            .expect("typed owner lookup")
+            .expect("authored type span");
+        assert_eq!(source_span, &expected);
+        assert_eq!(
+            &fixture.root_document.text()[source_span.range().start()..source_span.range().end()],
+            authored
+        );
+        assert_eq!(error.diagnostic_code(), "sema.signal.observable_type");
+        let diagnostic = error
+            .source_diagnostic()
+            .expect("retained source diagnostic");
+        assert_eq!(diagnostic.labels().len(), 1);
+        assert_eq!(diagnostic.labels()[0].span(), source_span);
+        assert_eq!(
+            diagnostic.labels()[0].style(),
+            arcweft_source::DiagnosticLabelStyle::Primary
+        );
+    }
+}
+
+#[test]
+fn imported_native_watch_flow_signal_closes_agent_probe_payload_from_original_catalog() {
+    use crate::project_index::AcceptedProjectEntityCatalog;
+    let native = fixture(
+        "signal current_flow: Watch<Ref<Flow>>\nflow opening() -> String { return \"opening\" }\n",
+        None,
+    );
+    let native_analysis = analyze(&native).expect("native Signal and exact Flow");
+    let index = Arc::new(
+        ProjectSemanticIndex::try_from_final_project(
+            ProgramHash::new("native-wait"),
+            native.project.analysis_view().expect("HIR"),
+            &native.symbols,
+            &native_analysis,
+        )
+        .expect("index"),
+    );
+    let catalog = Arc::new(
+        AcceptedProjectEntityCatalog::try_from_final_project(
+            index,
+            native.project.analysis_view().expect("HIR"),
+            &native.symbols,
+            &native_analysis,
+        )
+        .expect("native issuer"),
+    );
+    let controller = try_fixture_with_target_catalogs(
+        "fn flow_wait() -> Result<Unit, AgentError> effects { agent.observe, agent.wait } {\nwait(signal(@signal.current_flow).eq(@flow.opening), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)\nreturn Ok(())\n}\nentry agent @entry.agent.main { controller = flow_wait }\n",
+        None, Vec::new(), Vec::new(), Vec::new(), TypeCheckEnv::standard(), &[catalog]).expect("native target publication");
+    let analysis = analyze(&controller)
+        .expect("original native wait controller has exact typed target inputs");
+    let signal = analysis
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| {
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Signal)
+            })
+        })
+        .expect("selected Signal probe");
+    let flow_type = TypeKind::entity_ref(EntityKind::Flow);
+    assert_eq!(
+        selected_application(signal).result().value_type(),
+        Some(&TypeKind::Probe(Box::new(flow_type.clone())))
+    );
+    let source_signal = analysis
+        .expressions()
+        .find_map(|(_, row)| match row.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                entity,
+            )) if entity.target().family() == arcweft_id::ProjectEntityReferenceFamily::Signal => {
+                Some(entity)
+            }
+            _ => None,
+        })
+        .expect("exact original native Signal");
+    assert_eq!(
+        source_signal.target().symbol().ty().watch_payload(),
+        Some(&flow_type)
+    );
+    assert!(matches!(
+        source_signal.target().symbol().ty().value(),
+        Some(TypeKind::AcceptedNominal(_))
+    ));
 }

@@ -157,30 +157,33 @@ impl AwbcEffectKind {
                     dynamic_fields(2, 1)
                 },
             }),
-            Self::SignalWrite => LineEffectRequest::SignalWrite(RuntimeAssignment {
-                target: if dynamic_args.is_empty() {
-                    string(0)
+            Self::SignalWrite | Self::MetricWrite => {
+                let values = if dynamic_args.is_empty() {
+                    static_args.as_slice()
                 } else {
-                    dynamic_string(0)
-                },
-                value: if dynamic_args.is_empty() {
-                    string(1)
+                    dynamic_args
+                };
+                let [target, value] = values else {
+                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Internal,
+                        "AWBC signal and metric writes require exactly two evaluated arguments",
+                    ));
+                };
+                let write = match RuntimeAssignment::try_copy(runtime_value_label(target), value) {
+                    Ok(write) => write,
+                    Err(error) => {
+                        return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Type,
+                            error.to_string(),
+                        ));
+                    }
+                };
+                if self == Self::SignalWrite {
+                    LineEffectRequest::SignalWrite(write)
                 } else {
-                    dynamic_string(1)
-                },
-            }),
-            Self::MetricWrite => LineEffectRequest::MetricWrite(RuntimeAssignment {
-                target: if dynamic_args.is_empty() {
-                    string(0)
-                } else {
-                    dynamic_string(0)
-                },
-                value: if dynamic_args.is_empty() {
-                    string(1)
-                } else {
-                    dynamic_string(1)
-                },
-            }),
+                    LineEffectRequest::MetricWrite(write)
+                }
+            }
             Self::EmitEvent => LineEffectRequest::EmitEvent(RuntimeEvent {
                 event: if dynamic_args.is_empty() {
                     string(0)
@@ -408,4 +411,175 @@ pub(super) fn source_diagnostic(
         });
     }
     diagnostic
+}
+
+#[cfg(test)]
+mod typed_assignment_tests {
+    use super::*;
+    use crate::awbc::schema::{AwbcConstantId, AwbcEffectPlan, AwbcSignatureId};
+    use crate::effect::RuntimeEffectExpr;
+    use crate::plan::{FlowRuntimeId, RuntimeFunctionSiteBodyKind};
+    use crate::value::{RuntimeEntityReference, RuntimeImportedProjectEntityReference};
+
+    fn native_materializer(kind: AwbcEffectKind) -> RuntimeEffectExpr {
+        // Materialization consumes evaluated arguments. Its expression shell
+        // borrows a real admitted expression rather than fabricating plan IDs.
+        let plan = crate::tests::function_application::returning_function_plan(
+            RuntimeFunctionSiteBodyKind::Expression,
+        );
+        let expression = plan
+            .function_sites()
+            .iter()
+            .find_map(|site| site.body().expression())
+            .unwrap()
+            .clone();
+        match kind {
+            AwbcEffectKind::SignalWrite => RuntimeEffectExpr::SignalWrite {
+                target: expression.clone(),
+                value: expression,
+            },
+            AwbcEffectKind::MetricWrite => RuntimeEffectExpr::MetricWrite {
+                target: expression.clone(),
+                value: expression,
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn native_and_awbc_assignment_materializers_retain_the_same_typed_values() {
+        let flow = FlowRuntimeId::from_checked_declaration_digest([7; 32], "flow.opening").unwrap();
+        let imported = RuntimeImportedProjectEntityReference::try_new(
+            arcweft_id::ProjectEntityReferenceFamily::Flow,
+            arcweft_id::PublicId::try_new("flow.opening").unwrap(),
+            [11; 32],
+            [12; 32],
+            [13; 32],
+            Some(flow.clone()),
+        )
+        .unwrap();
+        let cases = [
+            (RuntimeValue::Bool(true), AwbcConstant::Bool(true)),
+            (
+                RuntimeValue::i64(42),
+                AwbcConstant::Int {
+                    kind: crate::awbc::schema::AwbcSignedIntKind::I64,
+                    bits: 42_i128.to_le_bytes(),
+                },
+            ),
+            (
+                RuntimeValue::u64(u64::MAX),
+                AwbcConstant::UInt {
+                    kind: crate::awbc::schema::AwbcUnsignedIntKind::U64,
+                    bits: u128::from(u64::MAX).to_le_bytes(),
+                },
+            ),
+            (
+                RuntimeValue::F32(0.5),
+                AwbcConstant::F32Bits(0.5_f32.to_bits()),
+            ),
+            (
+                RuntimeValue::String("true".to_owned()),
+                AwbcConstant::String(AwbcStringId(1)),
+            ),
+            (
+                RuntimeValue::String("42".to_owned()),
+                AwbcConstant::String(AwbcStringId(2)),
+            ),
+            (
+                RuntimeValue::String("@flow.opening".to_owned()),
+                AwbcConstant::String(AwbcStringId(3)),
+            ),
+            (
+                RuntimeValue::EntityRef(RuntimeEntityReference::StructuralFlow(flow.clone())),
+                AwbcConstant::EntityRef(RuntimeEntityReference::StructuralFlow(flow)),
+            ),
+            (
+                RuntimeValue::EntityRef(RuntimeEntityReference::ImportedProject(imported.clone())),
+                AwbcConstant::EntityRef(RuntimeEntityReference::ImportedProject(imported)),
+            ),
+        ];
+        for kind in [AwbcEffectKind::SignalWrite, AwbcEffectKind::MetricWrite] {
+            for (value, constant) in &cases {
+                let target = if kind == AwbcEffectKind::SignalWrite {
+                    "signal.observed"
+                } else {
+                    "metric.observed"
+                };
+                let args = [RuntimeValue::String(target.to_owned()), value.clone()];
+                let native = native_materializer(kind)
+                    .materialize(&args)
+                    .unwrap()
+                    .unwrap();
+                let program = AwbcProgram {
+                    strings: vec![
+                        target.to_owned(),
+                        "true".to_owned(),
+                        "42".to_owned(),
+                        "@flow.opening".to_owned(),
+                    ],
+                    constants: vec![AwbcConstant::String(AwbcStringId(0)), constant.clone()],
+                    effect_plans: vec![AwbcEffectPlan {
+                        kind,
+                        signature: AwbcSignatureId(0),
+                        capability: None,
+                        audio: None,
+                        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+                        resources: Vec::new(),
+                    }],
+                    ..AwbcProgram::default()
+                };
+                for dynamic in [&[][..], &args[..]] {
+                    let MappedEffect::Line(awbc) =
+                        kind.map_product_effect(&program, AwbcEffectPlanId(0), dynamic)
+                    else {
+                        panic!("typed AWBC assignment must materialize");
+                    };
+                    assert_eq!(awbc, native);
+                    let mut state = crate::observation::RuntimeObservationState::default();
+                    state.record_effect(&awbc);
+                    let retained = if kind == AwbcEffectKind::SignalWrite {
+                        state.signals()
+                    } else {
+                        state.metrics()
+                    };
+                    assert_eq!(retained[target].value(), value);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn assignment_materializers_refuse_affine_values_before_observation_copy() {
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.observation")),
+        ]);
+        let args = [RuntimeValue::String("signal.current".to_owned()), value];
+        let native = native_materializer(AwbcEffectKind::SignalWrite).materialize(&args);
+        assert!(matches!(
+            native,
+            Err(crate::effect::RuntimeEffectMaterializeError::Assignment(
+                crate::effect::RuntimeAssignmentError::AffineValue,
+            )),
+        ));
+        let program = AwbcProgram {
+            effect_plans: vec![AwbcEffectPlan {
+                kind: AwbcEffectKind::SignalWrite,
+                signature: AwbcSignatureId(0),
+                capability: None,
+                audio: None,
+                static_args: Vec::new(),
+                resources: Vec::new(),
+            }],
+            ..AwbcProgram::default()
+        };
+        let MappedEffect::Unsupported(error) =
+            AwbcEffectKind::SignalWrite.map_product_effect(&program, AwbcEffectPlanId(0), &args)
+        else {
+            panic!("the AWBC adapter must refuse an affine observation");
+        };
+        assert_eq!(error.category, RuntimeDiagnosticCategory::Type);
+        assert!(!args[1].ownership().permits_copy());
+    }
 }

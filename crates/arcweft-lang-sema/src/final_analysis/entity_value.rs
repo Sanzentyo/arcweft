@@ -51,6 +51,7 @@ impl FinalSemanticAnalysis {
                 TypeKind::entity_ref(crate::types::EntityKind::Asset)
             }
             CheckedValueResolution::ProjectItem(item) => item.ty(),
+            CheckedValueResolution::ImportedProjectEntity(entity) => entity.ty(),
             _ => return Err(CheckedEntityValueProjectionError::NotEntity { owner }),
         };
         if ty != &expected || !matches!(ty, TypeKind::Ref(_)) {
@@ -96,10 +97,10 @@ impl CheckedEntityValueProjection {
                 family: DeclarationIdentityFamily::Asset,
                 public_id: asset.as_public_id().clone(),
             },
-            CheckedValueResolution::ProjectItem(item) => RuntimeEntityReference::Project {
-                family: item.family(),
-                public_id: item.public_id().clone(),
-            },
+            CheckedValueResolution::ProjectItem(item) => project_item_runtime_reference(item),
+            CheckedValueResolution::ImportedProjectEntity(entity) => {
+                entity.target().runtime_reference().into()
+            }
             _ => unreachable!("the private issuer admits only checked entity resolutions"),
         }
     }
@@ -108,6 +109,9 @@ impl CheckedEntityValueProjection {
     pub fn flow_runtime_identity(
         &self,
     ) -> Result<Option<FlowRuntimeId>, arcweft_core::runtime_id::RuntimeIdError> {
+        if let CheckedValueResolution::ImportedProjectEntity(entity) = &self.resolution {
+            return Ok(entity.target().runtime_reference().flow().cloned());
+        }
         let CheckedValueResolution::ProjectItem(item) = &self.resolution else {
             return Ok(None);
         };
@@ -182,5 +186,30 @@ mod tests {
         assert!(
             matches!(analysis.entity_value_projection(scalar), Err(CheckedEntityValueProjectionError::NotEntity { owner }) if owner == scalar)
         );
+    }
+}
+
+/// The checked declaration is the sole source of a structural Flow identity.
+///
+/// # Panics
+/// Panics only if a private checked Flow declaration no longer projects its
+/// admitted runtime identity.
+pub(super) fn project_item_runtime_reference(
+    item: &super::CheckedProjectItem,
+) -> RuntimeEntityReference {
+    match item.flow_owner() {
+        Some((arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(flow), _)) => {
+            RuntimeEntityReference::StructuralFlow(
+                FlowRuntimeId::from_checked_declaration_digest(
+                    flow.semantic_digest().into_bytes(),
+                    flow.public_id().as_str(),
+                )
+                .expect("accepted structural Flow retains its checked identity"),
+            )
+        }
+        _ => RuntimeEntityReference::Project {
+            family: item.family(),
+            public_id: item.public_id().clone(),
+        },
     }
 }

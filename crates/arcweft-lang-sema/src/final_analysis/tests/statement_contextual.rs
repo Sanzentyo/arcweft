@@ -27,7 +27,7 @@ use crate::{
         FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
         FinalSemanticCatalogs, PreparedStatementPayload,
     },
-    types::{EntityKind, TypeKind},
+    types::{EntityKind, SignalObservableType, TypeKind},
 };
 
 use super::{Fixture, analyze, fixture};
@@ -585,7 +585,7 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
     }
 
     let signal_fixture = fixture(
-        "signal ready: bool\nflow row {\n    on signal(@signal.ready) => defer ()\n    on signal(@signal.ready, value) => defer ()\n}\n",
+        "signal ready: Watch<bool>\nflow row {\n    on signal(@signal.ready) => defer ()\n    on signal(@signal.ready, value) => defer ()\n}\n",
         None,
     );
     let signal_report = analyze(&signal_fixture).expect("P03/P04 Signal rows");
@@ -609,7 +609,10 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
             .value_type()
             .expect("Signal target value");
         assert!(
-            matches!(target_type, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Signal && entity.value() == Some(&TypeKind::Bool))
+            matches!(target_type, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Signal
+                && entity.observable_payload() == Some(&TypeKind::Bool)
+                && matches!(entity.value().and_then(TypeKind::signal_observable),
+                    Some(SignalObservableType::Watch(payload)) if payload == &TypeKind::Bool))
         );
         let edges = signal_module
             .resolve_stmt(owner)
@@ -1130,7 +1133,7 @@ fn n10_signal_target_and_payload_must_be_signal_with_exact_value_type() {
     );
     assert_rejected_source(
         "N10 wrong Signal payload pattern",
-        "signal ready: bool\nflow row { on signal(@signal.ready, \"wrong\") => defer () }\n",
+        "signal ready: Watch<bool>\nflow row { on signal(@signal.ready, \"wrong\") => defer () }\n",
     );
 }
 
@@ -1158,4 +1161,238 @@ fn n12_select_trigger_without_one_choice_lifecycle_is_rejected() {
         analyze(&zero).is_err(),
         "N12 zero Choice lifecycle must reject {owner:?}"
     );
+}
+
+const SIGNAL_CARRIER_DECLARATIONS: &str = "signal watched: Watch<bool>\nsignal streamed: Stream<i64, String>\nsignal sampled: Sample<i64>\n";
+
+fn signal_carrier_target_catalog()
+-> std::sync::Arc<crate::project_index::AcceptedProjectEntityCatalog> {
+    let target = fixture(SIGNAL_CARRIER_DECLARATIONS, None);
+    let analysis = analyze(&target).expect("accepted original Signal carriers");
+    let index = std::sync::Arc::new(
+        crate::project_index::ProjectSemanticIndex::try_from_final_project(
+            crate::project_index::ProgramHash::new("signal-contextual-carriers"),
+            target.project.analysis_view().expect("target HIR"),
+            &target.symbols,
+            &analysis,
+        )
+        .expect("original typed Signal index"),
+    );
+    std::sync::Arc::new(
+        crate::project_index::AcceptedProjectEntityCatalog::try_from_final_project(
+            index,
+            target.project.analysis_view().expect("target HIR"),
+            &target.symbols,
+            &analysis,
+        )
+        .expect("original typed Signal catalogue"),
+    )
+}
+
+#[test]
+fn signal_triggers_seed_retained_and_imported_observable_payloads() {
+    use crate::final_analysis::CheckedValueResolution;
+
+    let catalog = signal_carrier_target_catalog();
+    let body = "flow row {\n    on signal(@signal.watched, watched_value) => defer ()\n    on signal(@signal.streamed, streamed_value) => defer ()\n    on signal(@signal.sampled, sampled_value) => defer ()\n}\n";
+    for imported in [false, true] {
+        let source = format!(
+            "{}{body}",
+            if imported {
+                ""
+            } else {
+                SIGNAL_CARRIER_DECLARATIONS
+            }
+        );
+        let world = if imported {
+            super::try_fixture_with_target_catalogs(
+                &source,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                crate::env::TypeCheckEnv::standard(),
+                &[std::sync::Arc::clone(&catalog)],
+            )
+            .expect("imported original Signal carriers")
+        } else {
+            fixture(&source, None)
+        };
+        let report = analyze(&world).expect("Signal handlers use carrier payloads");
+        let module = root_module(&world);
+        let rows = module
+            .statements()
+            .filter_map(|(owner, statement)| match statement.kind() {
+                HirStmtKind::On {
+                    trigger:
+                        HirTrigger::Signal {
+                            target,
+                            value: Some(value),
+                        },
+                    ..
+                } => Some((owner, *target, *value)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        let mut carriers = std::collections::BTreeSet::new();
+        for (owner, target, pattern) in rows {
+            assert_trigger_view(&report, owner, CheckedTriggerView::Signal);
+            let checked = report
+                .expression(target)
+                .expect("checked exact Signal target");
+            assert_eq!(
+                matches!(
+                    checked.resolution(),
+                    CheckedExpressionResolution::Value(
+                        CheckedValueResolution::ImportedProjectEntity(_)
+                    )
+                ),
+                imported,
+                "the controller must use the original accepted catalogue owner",
+            );
+            let TypeKind::Ref(entity) = checked.value_type().expect("Signal reference type") else {
+                panic!("Signal target must keep its entity type");
+            };
+            assert_eq!(entity.kind(), &EntityKind::Signal);
+            let expected = match entity
+                .value()
+                .expect("retained source carrier")
+                .signal_observable()
+                .expect("exact accepted Signal carrier")
+            {
+                SignalObservableType::Watch(payload) => {
+                    assert_eq!(payload, &TypeKind::Bool);
+                    carriers.insert("Watch");
+                    &TypeKind::Bool
+                }
+                SignalObservableType::Stream { item, error } => {
+                    assert_eq!(item, &TypeKind::I64);
+                    assert_eq!(error, &TypeKind::String);
+                    carriers.insert("Stream");
+                    &TypeKind::I64
+                }
+                SignalObservableType::Sample(payload) => {
+                    assert_eq!(payload, &TypeKind::I64);
+                    carriers.insert("Sample");
+                    &TypeKind::I64
+                }
+            };
+            assert_eq!(entity.observable_payload(), Some(expected));
+            assert_pattern_and_local_type(&report, module, pattern, expected);
+        }
+        assert_eq!(
+            carriers,
+            std::collections::BTreeSet::from(["Watch", "Stream", "Sample"])
+        );
+    }
+}
+
+#[test]
+fn choice_signal_cancel_patterns_seed_exact_payload_types() {
+    use crate::final_analysis::CheckedChoicePlanItem;
+
+    let catalog = signal_carrier_target_catalog();
+    for imported in [false, true] {
+        for (signal, authored_payload, expected) in [
+            ("watched", "bool", TypeKind::Bool),
+            ("streamed", "i64", TypeKind::I64),
+            ("sampled", "i64", TypeKind::I64),
+        ] {
+            // The existing authored Choice Match fixture is preserved here;
+            // the explicit body local exposes carrier-versus-payload seeding.
+            let prefix = if imported {
+                ""
+            } else {
+                SIGNAL_CARRIER_DECLARATIONS
+            };
+            let plan = format!(
+                "with {{ cancel on signal(@signal.{signal}, value) {{ let observed: {authored_payload} = value }} }}"
+            );
+            let source = format!(
+                "{prefix}flow done() -> String {{ return \"done\" }}\nflow main() {{\n    let selected = match true {{\n        true => choice @choice.main {{ @.go \"Go\" -> @flow.done }} {plan}\n        false => ()\n    }}\n}}\n"
+            );
+            let world = if imported {
+                super::try_fixture_with_target_catalogs(
+                    &source,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    crate::env::TypeCheckEnv::standard(),
+                    &[std::sync::Arc::clone(&catalog)],
+                )
+                .expect("imported cancellation Signal")
+            } else {
+                fixture(&source, None)
+            };
+            let report = analyze(&world).expect("Choice cancellation binds the observable payload");
+            let module = root_module(&world);
+            let choice = report
+                .expressions()
+                .find_map(|(_, checked)| match checked.resolution() {
+                    CheckedExpressionResolution::Choice(choice) => Some(choice),
+                    _ => None,
+                })
+                .expect("checked authored Choice");
+            assert!(matches!(
+                choice.plan().and_then(|plan| plan.items().first()),
+                Some(CheckedChoicePlanItem::Cancel(trigger))
+                    if matches!(trigger.view(), CheckedTriggerView::Signal)
+            ));
+            let (target, pattern) = module
+                .expressions()
+                .find_map(|(_, expression)| {
+                    let HirExprKind::Choice(choice) = expression.kind() else {
+                        return None;
+                    };
+                    choice.plan().and_then(|plan| {
+                        plan.items().iter().find_map(|item| match item {
+                            HirChoicePlanItem::Cancel {
+                                trigger:
+                                    HirTrigger::Signal {
+                                        target,
+                                        value: Some(pattern),
+                                    },
+                                ..
+                            } => Some((*target, *pattern)),
+                            _ => None,
+                        })
+                    })
+                })
+                .expect("authored Signal cancellation target and pattern");
+            let TypeKind::Ref(entity) = report
+                .expression(target)
+                .expect("Signal target")
+                .value_type()
+                .expect("exact entity reference")
+            else {
+                panic!("cancellation must retain its Signal carrier");
+            };
+            assert_eq!(entity.kind(), &EntityKind::Signal);
+            assert_eq!(entity.observable_payload(), Some(&expected));
+            match (signal, entity.value().and_then(TypeKind::signal_observable)) {
+                ("watched", Some(SignalObservableType::Watch(payload))) => {
+                    assert_eq!(payload, &TypeKind::Bool);
+                }
+                ("streamed", Some(SignalObservableType::Stream { item, error })) => {
+                    assert_eq!(item, &TypeKind::I64);
+                    assert_eq!(error, &TypeKind::String);
+                }
+                ("sampled", Some(SignalObservableType::Sample(payload))) => {
+                    assert_eq!(payload, &TypeKind::I64);
+                }
+                _ => panic!("cancellation preserves its original exact observable carrier"),
+            }
+            assert_pattern_and_local_type(&report, module, pattern, &expected);
+            let (observed, _) = module
+                .locals()
+                .find(|(_, local)| local.name().as_str() == "observed")
+                .expect("authored payload-typed body local");
+            assert_eq!(
+                report.local(observed).expect("checked body local").ty(),
+                &expected
+            );
+        }
+    }
 }

@@ -539,6 +539,9 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 CheckedPatternResolution::Entity(item) => {
                     entities.insert(item.semantic_id());
                 }
+                CheckedPatternResolution::ImportedProjectEntity(entity) => {
+                    entities.insert(entity.semantic_id());
+                }
                 CheckedPatternResolution::Structural
                 | CheckedPatternResolution::Record(_)
                 | CheckedPatternResolution::Variant(_)

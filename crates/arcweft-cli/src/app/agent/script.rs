@@ -8,11 +8,10 @@ use super::{
     AgentTraceRecord, AgentValue, ArcweftBundle, BTreeMap, BTreeSet, BundleKind, CaptureFormat,
     CaptureRequest, CaptureResult, DebugEvent, DebugEventKind, DebugEventSink, DebugScriptRun,
     DebugScriptRunFinish, DebugScriptRunOutcome, DebugSession, DebugSessionStatus, DebugStore,
-    DisabledRagService, EntityKind, EntitySymbol, EntityType, ExitCode, Infallible,
-    NativeAdapterRegistrar, ObservationEnvelope, ObserveRequest, Path, PathBuf,
-    ProjectSemanticIndex, RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId,
-    SemanticHash, SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent,
-    agent_project, fs, print_json,
+    DisabledRagService, EntityKind, EntitySymbol, ExitCode, Infallible, NativeAdapterRegistrar,
+    ObservationEnvelope, ObserveRequest, Path, PathBuf, ProjectSemanticIndex, RequiredEntity,
+    RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId, SessionId, StableHash, SystemTime,
+    TypeKind, UNIX_EPOCH, agent, agent_project, fs, print_json,
 };
 use arcweft_compiler::{
     incremental::{BuildSnapshotRequest, runtime_plan_artifact_key, snapshot_compiled_project},
@@ -75,9 +74,16 @@ pub(super) struct AgentScriptBuildReport {
 }
 
 #[derive(Clone)]
+enum AgentScriptRegistrationTarget {
+    Standalone(Arc<TypeCheckEnv>),
+    Native(Arc<ProjectCompilationContext>),
+}
+
+#[derive(Clone)]
 pub(super) struct AgentScriptCompileTarget {
-    typecheck_environment: Arc<TypeCheckEnv>,
+    registration: AgentScriptRegistrationTarget,
     target_entities: Vec<EntitySymbol>,
+    target_catalogs: Vec<Arc<arcweft_lang_sema::project_index::AcceptedProjectEntityCatalog>>,
     accepted_index: Option<Arc<ProjectSemanticIndex>>,
 }
 
@@ -151,31 +157,33 @@ pub(super) fn compile_agent_script_source(
         format!("agent-script:{}", selected_entry.as_str()),
     )
     .map_err(|error| error.to_string())?;
-    let facts = ProjectRegistrationFacts::try_new(
-        world,
-        vec![document],
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    )
-    .map_err(|report| {
-        report
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-            .collect::<Vec<_>>()
-            .join("; ")
-    })?;
-    let context = ProjectCompilationContext::new(
-        Arc::clone(&target.typecheck_environment),
-        Arc::new(facts),
-        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
-        None,
-        Some(ProjectEntrySelection::new(
-            selected_entry.clone(),
-            ProjectEntrySelectionKind::Agent,
-        )),
-    );
+    let entry =
+        ProjectEntrySelection::new(selected_entry.clone(), ProjectEntrySelectionKind::Agent);
+    let context = match &target.registration {
+        AgentScriptRegistrationTarget::Standalone(base) => {
+            let facts = ProjectRegistrationFacts::try_new(
+                world,
+                vec![Arc::clone(&document)],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .map_err(agent_registration_message)?;
+            ProjectCompilationContext::new(
+                Arc::clone(base),
+                Arc::new(facts),
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+                None,
+                Some(entry),
+            )
+        }
+        AgentScriptRegistrationTarget::Native(source) => source
+            .try_for_source_project(world, Arc::clone(&document), entry)
+            .map_err(agent_registration_message)?,
+    };
+    let context = context
+        .try_with_project_entities(&target.target_catalogs)
+        .map_err(agent_registration_message)?;
     let mut compilation_session =
         ProjectCompilationSession::try_new().map_err(|error| error.to_string())?;
     let compiled = compile_project(
@@ -215,6 +223,16 @@ pub(super) fn compile_agent_script_source(
     })
 }
 
+fn agent_registration_message(
+    report: arcweft_lang_sema::registration::CharacterRegistrationReport,
+) -> String {
+    report
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+        .collect::<Vec<_>>()
+        .join("; ")
+}
 fn project_compile_message(error: &ProjectCompileError) -> String {
     let stage = error
         .diagnostics()
@@ -327,43 +345,86 @@ fn agent_script_compile_target(
                 })?;
         let checked = load_and_check_selection(&selection, None)
             .map_err(|code| format!("failed to check native source for Agent Script: {code:?}"))?;
-        let typecheck_environment = Arc::new(
-            checked
-                .compiled
-                .analysis_lease()
-                .registered_environment()
-                .typecheck_env()
-                .clone(),
-        );
-        let mut project = checked
-            .compiled
-            .analysis_lease()
-            .semantic_index()
-            .as_ref()
-            .clone();
-        for signal in &options.signals {
-            let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
-            let identity = ProjectEntityId::public(id.clone());
-            if project.entity(&identity).is_none() {
-                project = project.with_entity(agent_script_signal_symbol(signal, id));
-            }
-        }
-        let target_entities = project.entities().values().cloned().collect();
-        return Ok(AgentScriptCompileTarget {
-            typecheck_environment,
-            target_entities,
-            accepted_index: Some(Arc::new(project)),
-        });
+        return agent_script_native_compile_target(&checked, &options.signals);
     }
     agent_script_standalone_compile_target(&options.signals)
 }
 
+#[cfg(feature = "native-capture")]
+fn agent_script_native_compile_target(
+    checked: &crate::app::project::CheckedModule,
+    signals: &[AgentScriptSignalArg],
+) -> Result<AgentScriptCompileTarget, String> {
+    let native_catalog = checked
+        .compiled
+        .analysis_lease()
+        .try_project_entity_catalog()
+        .map_err(|error| error.to_string())?;
+    native_catalog
+        .validate_generation(
+            checked
+                .compiled
+                .analysis_lease()
+                .final_analysis()
+                .hir_generation(),
+        )
+        .map_err(|error| error.to_string())?;
+    let mut project = checked
+        .compiled
+        .analysis_lease()
+        .semantic_index()
+        .as_ref()
+        .clone();
+    let mut supplemental_signals = Vec::new();
+    for signal in signals {
+        let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
+        let identity = ProjectEntityId::public(id.clone());
+        if let Some(existing) = project.entity(&identity) {
+            if existing.ty().kind() != &EntityKind::Signal
+                || existing.ty().watch_payload() != Some(&signal.ty)
+            {
+                return Err(format!(
+                    "explicit signal {} does not match the native entity's accepted observable type",
+                    signal.id
+                ));
+            }
+        } else {
+            supplemental_signals.push(signal.clone());
+        }
+    }
+    let host_catalog = agent_script_host_signal_catalog(
+        &supplemental_signals,
+        checked
+            .compiled
+            .analysis_lease()
+            .registered_environment()
+            .nominal_catalog(),
+    )?;
+    for entity in host_catalog.entities().values() {
+        project = project.with_entity(entity.clone());
+    }
+    let target_entities = project.entities().values().cloned().collect();
+    Ok(AgentScriptCompileTarget {
+        registration: AgentScriptRegistrationTarget::Native(Arc::clone(
+            checked
+                .compiled
+                .analysis_lease()
+                .source_compilation_context(),
+        )),
+        target_entities,
+        target_catalogs: vec![native_catalog, host_catalog],
+        accepted_index: Some(Arc::new(project)),
+    })
+}
 pub(super) fn agent_script_standalone_compile_target(
     signals: &[AgentScriptSignalArg],
 ) -> Result<AgentScriptCompileTarget, String> {
+    let environment = Arc::new(TypeCheckEnv::standard());
+    let catalog = agent_script_host_signal_catalog(signals, environment.nominal_catalog())?;
     Ok(AgentScriptCompileTarget {
-        typecheck_environment: Arc::new(TypeCheckEnv::standard()),
-        target_entities: agent_script_signal_symbols(signals)?,
+        registration: AgentScriptRegistrationTarget::Standalone(environment),
+        target_entities: catalog.entities().values().cloned().collect(),
+        target_catalogs: vec![catalog],
         accepted_index: None,
     })
 }
@@ -1977,45 +2038,58 @@ pub(super) fn agent_project_graph(
     agent_project::agent_project_graph_from_project(project).map_err(|error| error.to_string())
 }
 
-pub(super) fn agent_script_signal_symbols(
+fn agent_script_host_signal_catalog(
     signals: &[AgentScriptSignalArg],
-) -> Result<Vec<EntitySymbol>, String> {
-    signals
+    nominal_catalog: &arcweft_lang_sema::env::nominal::AcceptedNominalCatalog,
+) -> Result<Arc<arcweft_lang_sema::project_index::AcceptedProjectEntityCatalog>, String> {
+    use arcweft_lang_sema::project_index::{
+        AcceptedProjectEntityCatalog, HostSignalPublicationInput,
+    };
+    let config = signals
         .iter()
         .map(|signal| {
-            let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
-            Ok(agent_script_signal_symbol(signal, id))
+            serde_json::json!({
+                "id": signal.id, "value": signal.value, "type": signal.ty.to_string(),
+            })
         })
-        .collect()
-}
-
-pub(super) fn agent_script_signal_symbol(
-    signal: &AgentScriptSignalArg,
-    id: SemaPublicId,
-) -> EntitySymbol {
-    let document = arcweft_source::SourceDocument::try_new(
-        arcweft_source::SourceDocumentId::try_new(format!(
-            "arcweft-generated://cli-agent-signal/{}",
-            signal.id
-        ))
-        .expect("validated signal ids form generated document ids"),
-        arcweft_source::SourceName::Generated,
-        "",
-    )
-    .expect("empty generated source fits a source document");
-    let source = SourceAnchor::from_span(
-        document
-            .span(arcweft_source::SourceRange::new(0, 0))
-            .expect("the empty range belongs to the generated document"),
+        .collect::<Vec<_>>();
+    let text = serde_json::to_string(&config).map_err(|error| error.to_string())?;
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-agent-config://explicit-signals")
+                .map_err(|error| error.to_string())?,
+            SourceName::Generated,
+            text,
+        )
+        .map_err(|error| error.to_string())?,
     );
-    EntitySymbol::new(
-        ProjectEntityId::public(id),
-        EntityType::new(EntityKind::Signal, Some(signal.ty.clone())),
-        source,
-        SemanticHash::new(format!("cli-signal:{}", signal.id)),
+    let source = document
+        .span(arcweft_source::SourceRange::new(0, document.text().len()))
+        .map_err(|error| error.to_string())?;
+    let inputs = signals
+        .iter()
+        .map(|signal| {
+            HostSignalPublicationInput::try_new(
+                nominal_catalog,
+                SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?,
+                signal.ty.clone(),
+                Arc::clone(&document),
+                source.clone(),
+            )
+            .map_err(|error| error.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("org.arcweft.tool.agent-explicit-signals")
+            .map_err(|error| error.to_string())?,
+        document.identity().id().clone(),
+        "explicit-agent-signals",
     )
+    .map_err(|error| error.to_string())?;
+    AcceptedProjectEntityCatalog::try_from_host_signals(world, &inputs)
+        .map(Arc::new)
+        .map_err(|error| error.to_string())
 }
-
 #[derive(Debug)]
 pub(super) struct CliAgentSession {
     pub(super) program_hash: String,
@@ -2267,6 +2341,125 @@ mod removed_role_tests {
         assert_eq!(
             report.final_status.as_deref(),
             Some("Done(Return(\"done\"))")
+        );
+    }
+}
+
+#[cfg(all(test, feature = "native-capture"))]
+mod registered_environment_reuse_tests {
+    use super::*;
+
+    #[test]
+    fn native_registered_environment_republishes_exact_ingress_for_agent_controller_compilation() {
+        let native_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../samples/agent-script/native-project-index.arcw");
+        let selection = resolve_source_selection(
+            Some(&native_path),
+            &crate::app::project::ProfileOptions::default(),
+        )
+        .expect("native source selection");
+        let native = load_and_check_selection(&selection, None)
+            .expect("actual native source compiler supplies adapter policy and metadata");
+        let registered = native.compiled.analysis_lease().registered_environment();
+        let expected_ingress = registered.statement_ingress().clone();
+        let expected_metadata = registered.rust_metadata().clone();
+        let target =
+            agent_script_native_compile_target(&native, &[]).expect("native source target");
+        let expected_flow = target
+            .target_catalogs
+            .iter()
+            .find_map(|catalog| {
+                catalog.entities().iter().find_map(|(identity, symbol)| {
+                    (matches!(identity, ProjectEntityId::StructuralFlow(_))
+                        && symbol.public_id().as_str() == "flow.opening")
+                        .then(|| catalog.entity(identity).expect("issued exact native Flow"))
+                })
+            })
+            .expect("original structural Flow catalog owner");
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../samples/agent-script/native-flow-wait-smoke.awfagent"
+        ));
+        for _ in 0..2 {
+            let controller = compile_agent_script_source(
+                Path::new("native-flow-wait-smoke.awfagent"),
+                source.to_owned(),
+                "entry.agent.main",
+                &target,
+            )
+            .expect("the exact native publication is revalidated for the Agent controller");
+            let environment = controller.artifact.analysis.registered_environment();
+            assert_eq!(environment.statement_ingress(), &expected_ingress);
+            assert_eq!(
+                environment.rust_metadata(),
+                &expected_metadata,
+                "all original Rust metadata, including desktop CursorIcon, retains its exact source and owner"
+            );
+            assert_eq!(
+                controller
+                    .artifact
+                    .analysis
+                    .checked_entries()
+                    .entries()
+                    .filter(|entry| entry.agent().is_some())
+                    .count(),
+                1
+            );
+            let imported_flow = controller.artifact.analysis.final_analysis().expressions().find_map(|(_, fact)| {
+                match fact.resolution() {
+                    arcweft_lang_sema::final_analysis::CheckedExpressionResolution::Value(
+                        arcweft_lang_sema::final_analysis::CheckedValueResolution::ImportedProjectEntity(entity),
+                    ) if entity.target().identity() == expected_flow.identity() => Some(entity),
+                    _ => None,
+                }
+            }).expect("controller retains its exact imported native Flow authority");
+            assert!(Arc::ptr_eq(
+                imported_flow.target().catalog(),
+                expected_flow.catalog()
+            ));
+            assert!(Arc::ptr_eq(
+                imported_flow.generation(),
+                controller
+                    .artifact
+                    .analysis
+                    .final_analysis()
+                    .hir_generation()
+            ));
+            assert_eq!(
+                imported_flow.target().runtime_reference(),
+                expected_flow.runtime_reference()
+            );
+            let required = &controller
+                .artifact
+                .manifest
+                .project_binding
+                .required_entities;
+            assert!(
+                required
+                    .iter()
+                    .any(|entity| entity.public_id.as_str() == "signal.current_flow")
+            );
+            assert!(
+                required.iter().all(|entity| entity.public_id.as_str()
+                    != expected_flow.symbol().public_id().as_str()),
+                "public-ID compatibility rows cannot impersonate a structural Flow binding"
+            );
+        }
+        assert_eq!(
+            native
+                .compiled
+                .analysis_lease()
+                .registered_environment()
+                .rust_metadata(),
+            &expected_metadata
+        );
+        assert_eq!(
+            native
+                .compiled
+                .analysis_lease()
+                .registered_environment()
+                .statement_ingress(),
+            &expected_ingress
         );
     }
 }

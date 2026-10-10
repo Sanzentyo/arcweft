@@ -7,9 +7,9 @@ pub struct AgentAudioState {
     pub pending_events: Vec<String>,
 }
 
-/// Named observation value.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Named observation value in the shared typed Agent value grammar.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct AgentAssignment {
     pub name: String,
-    pub value: String,
+    pub value: crate::value::AgentValue,
 }

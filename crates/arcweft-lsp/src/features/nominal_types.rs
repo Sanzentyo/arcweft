@@ -367,7 +367,8 @@ pub(crate) fn completions(
                         RegisteredExternalOwner::Environment(owner) => {
                             environment.environment_binding(owner.value_binding())
                         }
-                        RegisteredExternalOwner::Character(_) => None,
+                        RegisteredExternalOwner::Character(_)
+                        | RegisteredExternalOwner::ProjectEntity(_) => None,
                     })
                     .and_then(|ty| match ty {
                         TypeKind::AcceptedNominal(nominal) => {

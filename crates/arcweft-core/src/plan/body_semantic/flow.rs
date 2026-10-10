@@ -121,7 +121,7 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder.count(option.effects.len());
                     for effect in &option.effects {
                         encoder.enter_element();
-                        effect.encode_body_metadata(encoder);
+                        effect.encode_body_metadata(encoder)?;
                     }
                 }
             }
@@ -190,7 +190,7 @@ impl RuntimeBodySemanticContext<'_> {
                 encoder.count(pending.len());
                 for effect in pending {
                     encoder.enter_element();
-                    effect.encode_body_metadata(encoder);
+                    effect.encode_body_metadata(encoder)?;
                 }
             }
             FlowOp::ProjectCall { site } => self.write_project_call(encoder, *site)?,
@@ -219,11 +219,11 @@ impl RuntimeBodySemanticContext<'_> {
             FlowOp::Break(value) => encoder.tag(u8::from(value.is_some())),
             FlowOp::Goto(target) => self.write_flow_target(encoder, target)?,
             FlowOp::Return(value) | FlowOp::CancelCleanup { key: value } => encoder.string(value),
-            FlowOp::Effect(effect) => effect.encode_body_metadata(encoder),
+            FlowOp::Effect(effect) => effect.encode_body_metadata(encoder)?,
             FlowOp::EvaluatedEffect(effect) => effect.encode_body_metadata(encoder),
             FlowOp::RegisterCleanup { key, effect } => {
                 encoder.string(key);
-                effect.encode_body_metadata(encoder);
+                effect.encode_body_metadata(encoder)?;
             }
             FlowOp::RegisterDefer {
                 site,

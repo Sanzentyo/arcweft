@@ -679,43 +679,7 @@ pub(crate) fn runtime_agent_value_map(
 }
 
 fn runtime_agent_value(value: &RuntimeValue) -> Result<AgentValue, String> {
-    match value {
-        RuntimeValue::Unit => Ok(AgentValue::Null),
-        RuntimeValue::Bool(value) => Ok(AgentValue::Bool(*value)),
-        RuntimeValue::Int(value) => value
-            .try_into_i64()
-            .map(AgentValue::I64)
-            .ok_or_else(|| format!("integer is out of i64 range: `{}`", value.label())),
-        RuntimeValue::UInt(value) => value
-            .exact_u64()
-            .or_else(|| {
-                value
-                    .try_into_i64()
-                    .and_then(|value| u64::try_from(value).ok())
-            })
-            .map(AgentValue::U64)
-            .ok_or_else(|| format!("integer is out of u64 range: `{}`", value.label())),
-        RuntimeValue::F32(value) => Ok(AgentValue::F64(f64::from(*value))),
-        RuntimeValue::F64(value) => Ok(AgentValue::F64(*value)),
-        RuntimeValue::String(value) => Ok(AgentValue::String(value.clone())),
-        RuntimeValue::EntityRef(value) => {
-            parse_public_id_arg(&value.runtime_label()).map(AgentValue::Entity)
-        }
-        RuntimeValue::Iterator(_) => Err("runtime iterator state is not an Agent value".to_owned()),
-        RuntimeValue::Tuple(values) => values
-            .iter()
-            .map(runtime_agent_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map(AgentValue::List),
-        RuntimeValue::Record(fields) => fields
-            .iter()
-            .map(|field| {
-                runtime_agent_value(field.value()).map(|value| (field.name().to_owned(), value))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()
-            .map(AgentValue::Map),
-        other => Err(format!("unsupported Agent value `{}`", value_label(other))),
-    }
+    AgentValue::try_from(value).map_err(|error| error.to_string())
 }
 
 pub(crate) fn value_label(value: &RuntimeValue) -> String {

@@ -1,4 +1,4 @@
-signal ready: bool
+signal ready: Watch<bool>
 
 fn composite_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }

@@ -1180,13 +1180,17 @@ impl Analyzer<'_, '_, '_> {
             HirExprKind::EntityReference(reference)
                 if reference
                     .as_resolved()
-                    .and_then(|reference| reference.absolute_family())
-                    == Some("entry") =>
+                    .and_then(|reference| {
+                        reference.project_entity_public_id(
+                            arcweft_id::ProjectEntityReferenceFamily::Entry,
+                        )
+                    })
+                    .is_some() =>
             {
                 let reference = reference.as_resolved().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                 })?;
-                self.prepare_entry_reference(owner, reference, expected)
+                self.prepare_entry_reference(module, owner, reference, expected)
                     .map(Some)
             }
             HirExprKind::ShortVariant(_) => self.prepare_variant_expression_kind(
@@ -1320,16 +1324,13 @@ impl Analyzer<'_, '_, '_> {
 
     fn prepare_entry_reference(
         &self,
+        module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
         expected: Option<&TypeKind>,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
-        let HirIdRef::Absolute(reference) = reference else {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::ValueResolutionFailed { owner },
-            ));
-        };
-        let public_id = arcweft_id::PublicId::try_new(reference.as_str()).map_err(|_| {
+        let family = arcweft_id::ProjectEntityReferenceFamily::Entry;
+        let public_id = reference.project_entity_public_id(family).ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
                 owner,
             })
@@ -1338,17 +1339,27 @@ impl Analyzer<'_, '_, '_> {
             let HirItemKind::Entry(entry) = item.item().kind() else {
                 return None;
             };
-            let HirIdRef::Absolute(candidate) = entry.id().value()?.as_resolved()? else {
-                return None;
-            };
-            (candidate == reference).then_some(item.id())
+            let candidate = entry
+                .id()
+                .value()?
+                .as_resolved()?
+                .project_entity_public_id(family)?;
+            (candidate == public_id).then_some(item.id())
         });
-        let lookup_owner = matches.next().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
-                owner,
-            })
-        })?;
-        if matches.next().is_some() {
+        let local = matches.next();
+        let imported = self
+            .imported_graph_candidate(
+                module,
+                reference,
+                expression_span(module, owner).map_err(AnalyzerExpressionError::fatal)?,
+                family,
+            )
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                    owner,
+                })
+            })?;
+        if matches.next().is_some() || local.is_some() && imported.is_some() {
             return Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::ValueResolutionFailed { owner },
             ));
@@ -1358,6 +1369,25 @@ impl Analyzer<'_, '_, '_> {
         } else {
             CheckedTypeSelection::Inferred
         };
+        if let Some(imported) = imported {
+            let ty = imported.ty();
+            if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+            return Ok(PreparedExpressionFact::from(CheckedExpression::value(
+                ty,
+                type_selection,
+                EffectSet::new(),
+                CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                    imported,
+                )),
+            )));
+        }
+        let lookup_owner = local.ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                owner,
+            })
+        })?;
         let prepared = super::PreparedEntryExpression::new(
             super::PreparedEntryReference::new(public_id, lookup_owner),
             type_selection,
@@ -3288,7 +3318,7 @@ impl Analyzer<'_, '_, '_> {
                     return Err(AnalyzerExpressionError::rejected(*target));
                 }
                 let payload = signal
-                    .value()
+                    .observable_payload()
                     .ok_or_else(|| AnalyzerExpressionError::rejected(*target))?;
                 if let Some(pattern) = value {
                     self.seed_choice_trigger_pattern(module, *pattern, payload)?;
@@ -3460,6 +3490,9 @@ impl Analyzer<'_, '_, '_> {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
                 }
             })?;
+        let target = target.into_local_item().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+        })?;
         (target.family() == arcweft_id::DeclarationIdentityFamily::Flow)
             .then_some(target)
             .ok_or_else(|| {
@@ -4579,7 +4612,7 @@ impl Analyzer<'_, '_, '_> {
                         if entity.kind() == &EntityKind::DialogueLine
                 ) {
                     return self
-                        .check_dialogue_line_reference(owner, reference, expected)
+                        .check_dialogue_line_reference(module, owner, reference, expected)
                         .map(Some)
                         .map_err(E::from);
                 }
@@ -4609,7 +4642,7 @@ impl Analyzer<'_, '_, '_> {
                     ty,
                     CheckedTypeSelection::Inferred,
                     EffectSet::new(),
-                    CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)),
+                    CheckedExpressionResolution::Value(item.into_value()),
                 ))
             }
             HirExprKind::PostfixBracket(postfix) => self
@@ -4629,17 +4662,45 @@ impl Analyzer<'_, '_, '_> {
 
     fn check_dialogue_line_reference(
         &self,
+        module: &HirModule,
         owner: ExprId,
         reference: &HirIdRef,
         expected: Option<&TypeKind>,
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
-        let HirIdRef::Absolute(reference) = reference else {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::ValueResolutionFailed { owner },
+        let family = arcweft_id::ProjectEntityReferenceFamily::DialogueLine;
+        let public_id = reference.project_entity_public_id(family).ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                owner,
+            })
+        })?;
+        let imported = self
+            .imported_graph_candidate(
+                module,
+                reference,
+                expression_span(module, owner).map_err(AnalyzerExpressionError::fatal)?,
+                family,
+            )
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
+                    owner,
+                })
+            })?;
+        if let Some(imported) = imported {
+            let ty = imported.ty();
+            if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+            return Ok(CheckedExpression::value(
+                ty,
+                CheckedTypeSelection::Expected,
+                EffectSet::new(),
+                CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+                    imported,
+                )),
             ));
-        };
+        }
         let target =
-            arcweft_id::dialogue::DialogueLineId::try_new(reference.as_str()).map_err(|_| {
+            arcweft_id::dialogue::DialogueLineId::try_new(public_id.as_str()).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ValueResolutionFailed {
                     owner,
                 })
@@ -4908,6 +4969,15 @@ impl Analyzer<'_, '_, '_> {
                                     CheckedProjectItem::new_external_character(
                                         symbol.declaration(),
                                         character.clone(),
+                                    ),
+                                )
+                            }
+                            RegisteredExternalOwner::ProjectEntity(entity) => {
+                                CheckedValueResolution::ImportedProjectEntity(
+                                    crate::final_analysis::CheckedImportedProjectEntity::new(
+                                        symbol.declaration(),
+                                        entity.clone(),
+                                        Arc::clone(self.topology.generation()),
                                     ),
                                 )
                             }

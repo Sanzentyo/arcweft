@@ -1371,7 +1371,26 @@ fn item_role(
         HirItemKind::View(_) => CheckedItemRole::View,
         HirItemKind::Action(_) => CheckedItemRole::Action,
         HirItemKind::Activity(_) => CheckedItemRole::Activity,
-        HirItemKind::Signal(_) => CheckedItemRole::Signal,
+        HirItemKind::Signal(signal) => {
+            let observable = signal.observable_type();
+            if types
+                .get(&observable)
+                .and_then(TypeKind::signal_observable)
+                .is_none()
+            {
+                return Err(FinalSemanticAnalysisError::SignalObservableType {
+                    owner: observable,
+                    source_span: source_span(
+                        module,
+                        HirSourceQuery::Type {
+                            owner: observable,
+                            role: arcweft_lang_hir::source_index::HirTypeSourceRole::Whole,
+                        },
+                    )?,
+                });
+            }
+            CheckedItemRole::Signal
+        }
         HirItemKind::Metric(_) => CheckedItemRole::Metric,
         HirItemKind::Layer(_) => CheckedItemRole::Layer,
         HirItemKind::Entry(_) => CheckedItemRole::Entry,

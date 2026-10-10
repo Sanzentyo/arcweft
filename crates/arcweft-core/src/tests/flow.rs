@@ -2270,3 +2270,99 @@ fn manual_local_source(
         ),
     }
 }
+
+#[test]
+fn imported_flow_goto_requires_exact_admitted_identity_and_never_falls_back_to_public_label() {
+    use crate::plan::{
+        FlowRuntimeId, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteDeclarationSeed,
+    };
+    use crate::value::{RuntimeEntityReference, RuntimeImportedProjectEntityReference};
+    use arcweft_id::{ProjectEntityReferenceFamily, PublicId};
+    let entry = flow_id("flow.entry");
+    let target = FlowRuntimeId::from_checked_declaration_digest([0x11; 32], "flow.opening")
+        .expect("local admitted target");
+    let foreign = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
+        .expect("same label, different declaration");
+    let reference_ty = RuntimeSemanticTypeId::from_bytes([0x73; 32]);
+    for (selected, accepted) in [(target.clone(), true), (foreign, false)] {
+        let reference = RuntimeImportedProjectEntityReference::try_new(
+            ProjectEntityReferenceFamily::Flow,
+            PublicId::try_new("flow.opening").expect("Flow ID"),
+            [1; 32],
+            [2; 32],
+            [3; 32],
+            Some(selected),
+        )
+        .expect("imported reference");
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
+                    RuntimePlanTypeSeed::new(
+                        reference_ty,
+                        RuntimePlanTypeProjection::EntityReference,
+                    ),
+                ],
+                [],
+            )
+            .expect("exact runtime type admissions");
+        for (flow, definition, ops) in [
+            (
+                entry.clone(),
+                [0x71; 32],
+                vec![RuntimeFlowOpSeed::GotoExpr(RuntimeExprSeed::new(
+                    reference_ty,
+                    RuntimeExprSeedKind::EntityRef(RuntimeEntityReference::ImportedProject(
+                        reference,
+                    )),
+                ))],
+            ),
+            (
+                target.clone(),
+                [0x72; 32],
+                vec![RuntimeFlowOpSeed::ReturnExpr(string_value("selected"))],
+            ),
+        ] {
+            builder
+                .push_flow_schema(flow_schema(&flow))
+                .expect("schema");
+            builder
+                .push_flow_seed(RuntimeFlowSeed::new(
+                    flow,
+                    RuntimeFunctionSiteDeclarationSeed::flow(
+                        RuntimeFunctionDefinitionIdentity::from_accepted_identity(definition),
+                        None,
+                        Box::new([]),
+                        string_type(),
+                        RuntimeEffectSet::empty(),
+                    ),
+                    RuntimeExecutableBodySeed {
+                        effects: RuntimeEffectSet::empty(),
+                        ops: ops.into_boxed_slice(),
+                    },
+                ))
+                .expect("admitted Flow");
+        }
+        let mut engine = Engine::for_flow(builder.finish().expect("plan"), &entry).expect("entry");
+        let output = drain(&mut engine);
+        if accepted {
+            assert!(output.diagnostics.is_empty());
+            assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+            assert!(
+                output.flow_events.iter().any(
+                    |event| matches!(event, FlowEvent::Return { value } if value == "selected")
+                )
+            );
+        } else {
+            assert!(matches!(engine.fiber().status, FlowFiberStatus::Failed(_)));
+            assert!(!output.diagnostics.is_empty());
+            assert!(
+                !output
+                    .flow_events
+                    .iter()
+                    .any(|event| matches!(event, FlowEvent::Return { .. }))
+            );
+        }
+    }
+}

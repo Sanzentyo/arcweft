@@ -748,6 +748,7 @@ where
             Ok((
                 Arc::new(ProjectAnalysisLease::new(
                     Arc::clone(&tooling),
+                    Arc::new(context.clone()),
                     registered_world,
                     context.assertion_build_profile(),
                     final_analysis,

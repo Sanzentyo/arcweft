@@ -2334,7 +2334,7 @@ fn effect_static_args(
         LineEffectRequest::SignalWrite(write) | LineEffectRequest::MetricWrite(write) => {
             vec![
                 inventory.constant_string(&write.target),
-                inventory.constant_string(&write.value),
+                inventory.constant_runtime_value(write.value()),
             ]
         }
         LineEffectRequest::EmitEvent(event) => {

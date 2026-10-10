@@ -451,6 +451,25 @@ impl RuntimeScalarView<'_> {
 impl RuntimeEntityReference {
     pub(crate) fn encode_body_identity(&self, encoder: &mut TaskSemanticEncoder<'_>) {
         match self {
+            Self::StructuralFlow(flow) => {
+                encoder.tag(4);
+                encoder.string(&flow.canonical_label());
+            }
+            Self::ImportedProject(value) => {
+                encoder.tag(3);
+                encoder.tag(value.family().semantic_tag());
+                encoder.string(value.public_id().as_str());
+                encoder.digest(value.target_generation());
+                encoder.digest(value.semantic_identity());
+                encoder.digest(value.value_type());
+                match value.flow() {
+                    None => encoder.tag(0),
+                    Some(flow) => {
+                        encoder.tag(1);
+                        encoder.string(&flow.canonical_label());
+                    }
+                }
+            }
             Self::Project { family, public_id } => {
                 encoder.tag(0);
                 encoder.tag(family.semantic_tag());

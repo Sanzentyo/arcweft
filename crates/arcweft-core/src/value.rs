@@ -45,7 +45,11 @@ mod expression_locals;
 mod expression_semantic;
 pub(crate) mod expression_tree;
 mod format_content;
+mod imported_entity;
 mod integer;
+pub use imported_entity::{
+    RuntimeImportedProjectEntityError, RuntimeImportedProjectEntityReference,
+};
 mod literal_semantic;
 mod nesting;
 mod nominal_record;
@@ -1513,8 +1517,10 @@ impl RuntimeMutablePlace {
 /// Checked runtime identity retained by an entity-reference expression or
 /// pattern. Project identities preserve their accepted declaration family;
 /// structural dialogue lines retain their typed runtime ID.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum RuntimeEntityReference {
+    StructuralFlow(crate::plan::FlowRuntimeId),
+    ImportedProject(RuntimeImportedProjectEntityReference),
     Project {
         family: DeclarationIdentityFamily,
         #[serde(with = "runtime_public_id")]
@@ -1699,6 +1705,8 @@ impl RuntimeEntityReference {
     pub const fn project_family(&self) -> Option<DeclarationIdentityFamily> {
         match self {
             Self::Project { family, .. } => Some(*family),
+            Self::ImportedProject(value) => value.family().declaration_family(),
+            Self::StructuralFlow(_) => Some(DeclarationIdentityFamily::Flow),
             Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
         }
     }
@@ -1712,7 +1720,10 @@ impl RuntimeEntityReference {
     )> {
         match self {
             Self::CharacterLook { character, look } => Some((character, look)),
-            Self::Project { .. } | Self::DialogueLine(_) => None,
+            Self::Project { .. }
+            | Self::ImportedProject(_)
+            | Self::StructuralFlow(_)
+            | Self::DialogueLine(_) => None,
         }
     }
 
@@ -1720,6 +1731,11 @@ impl RuntimeEntityReference {
     pub fn runtime_label(&self) -> String {
         match self {
             Self::Project { public_id, .. } => public_id.as_str().to_owned(),
+            Self::ImportedProject(value) => value.line().map_or_else(
+                || value.public_id().as_str().to_owned(),
+                RuntimeLineId::canonical_label,
+            ),
+            Self::StructuralFlow(flow) => flow.public_label().as_str().to_owned(),
             Self::DialogueLine(line) => line.canonical_label(),
             Self::CharacterLook { character, look } => {
                 format!("{character}.look.{}", look.as_str())
@@ -4229,6 +4245,108 @@ impl RuntimeIntrinsic {
             Self::MathTensorAddF64 => 89,
             Self::CoreSeqLen => 90,
             Self::CoreSeqSum => 91,
+        }
+    }
+}
+
+#[derive(Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum EntityReferenceLogicalIdentity<'a> {
+    Project(DeclarationIdentityFamily, &'a PublicId),
+    Graph(arcweft_id::ProjectEntityReferenceFamily, &'a PublicId),
+    Flow(&'a crate::plan::FlowRuntimeId),
+    Line(&'a crate::runtime_id::RuntimeIdPath),
+    Look(
+        &'a arcweft_character::id::CharacterId,
+        &'a arcweft_character::id::CharacterLookId,
+    ),
+}
+
+impl RuntimeEntityReference {
+    /// Borrowed logical identity. Admission provenance is retained in the
+    /// value/codec but is not mistaken for a second logical entity identity.
+    fn logical_identity(&self) -> EntityReferenceLogicalIdentity<'_> {
+        match self {
+            Self::Project { family, public_id } => {
+                EntityReferenceLogicalIdentity::Project(*family, public_id)
+            }
+            Self::StructuralFlow(flow) => EntityReferenceLogicalIdentity::Flow(flow),
+            Self::ImportedProject(entity) => {
+                if let Some(flow) = entity.flow() {
+                    return EntityReferenceLogicalIdentity::Flow(flow);
+                }
+                if let Some(line) = entity.line() {
+                    return EntityReferenceLogicalIdentity::Line(line.path());
+                }
+                match entity.family().declaration_family() {
+                    Some(family) => {
+                        EntityReferenceLogicalIdentity::Project(family, entity.public_id())
+                    }
+                    None => {
+                        EntityReferenceLogicalIdentity::Graph(entity.family(), entity.public_id())
+                    }
+                }
+            }
+            Self::DialogueLine(line) => EntityReferenceLogicalIdentity::Line(line.path()),
+            Self::CharacterLook { character, look } => {
+                EntityReferenceLogicalIdentity::Look(character, look)
+            }
+        }
+    }
+
+    /// Exact identity projection used by dynamic control. Display labels
+    /// remain host/UI selectors; they cannot recreate this owner.
+    pub fn exact_flow_identity(&self) -> Option<&crate::plan::FlowRuntimeId> {
+        match self {
+            Self::StructuralFlow(flow) => Some(flow),
+            Self::ImportedProject(entity) => entity.flow(),
+            Self::Project { .. } | Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
+        }
+    }
+
+    pub fn line_identity(&self) -> Option<&RuntimeLineId> {
+        match self {
+            Self::DialogueLine(line) => Some(line),
+            Self::ImportedProject(entity) => entity.line(),
+            Self::Project { .. } | Self::StructuralFlow(_) | Self::CharacterLook { .. } => None,
+        }
+    }
+}
+
+impl PartialEq for RuntimeEntityReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.logical_identity() == other.logical_identity()
+    }
+}
+impl Eq for RuntimeEntityReference {}
+impl std::hash::Hash for RuntimeEntityReference {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.logical_identity(), state);
+    }
+}
+impl Ord for RuntimeEntityReference {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.logical_identity().cmp(&other.logical_identity())
+    }
+}
+impl PartialOrd for RuntimeEntityReference {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl RuntimeEntityReference {
+    /// Borrows the admitted public label for an exact declaration family.
+    /// Imported provenance and structural Flow identity remain in this value;
+    /// a presentation consumer cannot turn this label into execution authority.
+    pub fn project_label(&self, expected: DeclarationIdentityFamily) -> Option<&str> {
+        if self.project_family() != Some(expected) {
+            return None;
+        }
+        match self {
+            Self::Project { public_id, .. } => Some(public_id.as_str()),
+            Self::StructuralFlow(flow) => Some(flow.public_label_ref().as_str()),
+            Self::ImportedProject(entity) => Some(entity.public_id().as_str()),
+            Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
         }
     }
 }

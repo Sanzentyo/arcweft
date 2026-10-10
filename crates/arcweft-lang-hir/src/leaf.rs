@@ -353,6 +353,29 @@ impl HirIdRef {
     ///
     /// This operation belongs to the typed ID boundary so consumers never
     /// reconstruct declaration identities from display labels or source text.
+    pub fn project_entity_public_id(
+        &self,
+        family: arcweft_id::ProjectEntityReferenceFamily,
+    ) -> Option<PublicId> {
+        let canonical = match self {
+            Self::Absolute(reference) => reference.as_str().to_owned(),
+            Self::FamilyRelative(relative)
+                if relative.family().as_str() == family.prefix()
+                    && relative.relative().parent_depth() == 0 =>
+            {
+                format!(
+                    "{}.{}",
+                    relative.family().as_str(),
+                    relative.relative().suffix().as_str()
+                )
+            }
+            Self::Relative(_) | Self::FamilyRelative(_) => return None,
+        };
+        let id = PublicId::try_new(canonical).ok()?;
+        family.validate_public_id(&id).ok()?;
+        Some(id)
+    }
+
     pub fn declaration_public_id(&self, family: DeclarationIdentityFamily) -> Option<PublicId> {
         let canonical = match self {
             Self::Absolute(reference) => reference.as_str().to_owned(),

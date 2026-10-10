@@ -32,8 +32,8 @@ use arcweft_core::plan::{
     RuntimeDialogueValueBinding,
 };
 use arcweft_core::value::{
-    RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeEntityReference,
-    RuntimeOpaqueValue, RuntimeValue,
+    RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeOpaqueValue,
+    RuntimeValue,
 };
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
 use arcweft_dialogue::{
@@ -213,11 +213,15 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
         {
             let config = value.dialogue().config();
             let style_sheet = match config.style().typed().value() {
-                RuntimeValue::EntityRef(RuntimeEntityReference::Project {
-                    family: DeclarationIdentityFamily::Style,
-                    public_id,
-                }) => {
-                    let sheet = ViewStyleSheetId::parse_public(public_id.as_str().to_owned())
+                RuntimeValue::EntityRef(reference)
+                    if reference.project_family() == Some(DeclarationIdentityFamily::Style) =>
+                {
+                    let label = reference
+                        .project_label(DeclarationIdentityFamily::Style)
+                        .ok_or_else(|| {
+                            reject("Style reference has another entity family".to_owned())
+                        })?;
+                    let sheet = ViewStyleSheetId::parse_public(label.to_owned())
                         .map_err(|error| reject(error.to_string()))?;
                     if !self
                         .style_program

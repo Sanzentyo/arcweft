@@ -7,6 +7,7 @@ mod environment_digest;
 mod environment_input;
 mod limits;
 mod model;
+pub(crate) use model::project_entity_symbol_path;
 mod registrar;
 mod source_index;
 pub use closed_enum::{
@@ -15,7 +16,8 @@ pub use closed_enum::{
 };
 pub use diagnostic::{
     CharacterRegistrationCode, CharacterRegistrationDiagnostic,
-    CharacterRegistrationDiagnosticKind, CharacterRegistrationReport, RequiredCharacterToken,
+    CharacterRegistrationDiagnosticKind, CharacterRegistrationReport,
+    RegisteredExternalOwnerDiagnosticIdentity, RequiredCharacterToken,
 };
 pub(crate) use environment_input::BoundEnvironmentRegistrationInput;
 pub use environment_input::{

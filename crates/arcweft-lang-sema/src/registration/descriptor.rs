@@ -192,7 +192,7 @@ impl RegisteredTypeCheckEnv {
     ) -> Result<CharacterId, ExternalOwnerLookupError> {
         match self.external_owner(symbols, declaration, RegisteredExternalOwnerKind::Character)? {
             RegisteredExternalOwner::Character(owner) => Ok(owner.clone()),
-            RegisteredExternalOwner::Environment(_) => {
+            RegisteredExternalOwner::Environment(_) | RegisteredExternalOwner::ProjectEntity(_) => {
                 unreachable!("typed external-owner lookup enforces the requested kind")
             }
         }
@@ -284,10 +284,11 @@ impl RegisteredTypeCheckEnv {
                         actual: actual.clone(),
                     });
                 }
-                RegisteredExternalOwner::Environment(_) => {
+                RegisteredExternalOwner::Environment(_)
+                | RegisteredExternalOwner::ProjectEntity(_) => {
                     return Err(CharacterInventoryIntegrityError::WrongOwnerKind {
                         declaration: *declaration,
-                        actual: RegisteredExternalOwnerKind::Environment,
+                        actual: actual.kind(),
                     });
                 }
             }

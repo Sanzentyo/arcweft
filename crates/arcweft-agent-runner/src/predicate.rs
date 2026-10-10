@@ -66,7 +66,8 @@ fn observation_value(probe: &Probe, observation: &ObservationEnvelope) -> Option
         Probe::ObservationField { path } => path
             .as_str()
             .strip_prefix("signals.")
-            .and_then(|signal| observation.signals.get(signal).cloned())
+            .or_else(|| path.as_str().strip_prefix("metrics."))
+            .and_then(|name| observation.signals.get(name).cloned())
             .or_else(|| {
                 json_path_value(&observation.payload, path.as_str()).and_then(agent_value_from_json)
             }),
@@ -108,8 +109,8 @@ fn agent_value_from_json(value: &serde_json::Value) -> Option<AgentValue> {
 
 fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> bool {
     match op {
-        CompareOp::Eq => agent_values_equal(actual, expected),
-        CompareOp::NotEq => !agent_values_equal(actual, expected),
+        CompareOp::Eq => actual == expected,
+        CompareOp::NotEq => actual != expected,
         CompareOp::Greater => {
             compare_numeric_values(actual, expected).is_some_and(i32::is_positive)
         }
@@ -120,14 +121,6 @@ fn compare_values(actual: &AgentValue, op: CompareOp, expected: &AgentValue) -> 
         CompareOp::LessOrEqual => {
             compare_numeric_values(actual, expected).is_some_and(|order| order <= 0)
         }
-    }
-}
-
-fn agent_values_equal(left: &AgentValue, right: &AgentValue) -> bool {
-    match (left, right) {
-        (AgentValue::Entity(left), AgentValue::String(right))
-        | (AgentValue::String(right), AgentValue::Entity(left)) => left.as_str() == right,
-        _ => left == right,
     }
 }
 

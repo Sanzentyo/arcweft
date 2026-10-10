@@ -4410,3 +4410,82 @@ fn source_project_entity_values_use_the_same_sealed_admission_as_catalog_assets(
         Some(&RuntimeResolvedValue::Entity(projection))
     );
 }
+
+#[test]
+fn entity_pattern_public_admission_retains_exact_pattern_and_rejects_payload_owner_or_generation_swap()
+ {
+    let source = "pub character alice {}\npub character bob {}\nfn root() { match @character.alice { @character.alice => (), @character.bob => (), _ => () } }\n";
+    let project = project_fixture("entity-pattern-owner", source);
+    let analysis = analyze_identity_fixture(&project);
+    let projections = analysis
+        .patterns()
+        .filter_map(|(owner, _)| {
+            analysis
+                .entity_pattern_projection(owner)
+                .ok()
+                .map(|projection| (owner, projection))
+        })
+        .collect::<Vec<_>>();
+    let [(first, alice), (_, bob)] = projections.as_slice() else {
+        panic!("two actual entity pattern owners")
+    };
+    assert_ne!(alice.runtime_reference(), bob.runtime_reference());
+    let input_with =
+        |chosen: &arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection,
+         wrong_type: bool| {
+            let mut input = checked_entity_value_input(&project, &analysis, |_, value| value);
+            for (owner, entity) in &projections {
+                let identity = if wrong_type && owner == first {
+                    arcweft_lang_sema::types::TypeKind::entity_ref(
+                        arcweft_lang_sema::types::EntityKind::Flow,
+                    )
+                    .semantic_identity_digest()
+                    .expect("wrong closed family")
+                } else {
+                    entity.type_identity()
+                };
+                input
+                    .pattern_types
+                    .iter_mut()
+                    .find(|(pattern, _)| pattern == owner)
+                    .expect("same pattern owner")
+                    .1 = super::RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes(*identity.as_bytes()),
+                    RuntimeTypeShape::EntityReference,
+                );
+                input.push_pattern_entity(
+                    *owner,
+                    if owner == first {
+                        chosen.clone()
+                    } else {
+                        entity.clone()
+                    },
+                );
+            }
+            input
+        };
+    let admitted = runtime_facts(&project, input_with(alice, false))
+        .expect("actual source pattern projections");
+    assert_eq!(admitted.pattern_entity(*first), Some(alice));
+    assert_eq!(
+        runtime_facts(&project, input_with(bob, false))
+            .expect_err("another accepted pattern cannot replace this source owner"),
+        RuntimeSemanticFactsError::InvalidEntityPatternOrigin { pattern: *first }
+    );
+    let foreign = project_fixture("entity-pattern-owner", source);
+    let foreign_analysis = analyze_identity_fixture(&foreign);
+    let foreign_projection = foreign_analysis
+        .patterns()
+        .find_map(|(owner, _)| foreign_analysis.entity_pattern_projection(owner).ok())
+        .expect("foreign actual pattern");
+    assert_eq!(
+        runtime_facts(&project, input_with(&foreign_projection, false))
+            .expect_err("same source in another accepted generation cannot replace this owner"),
+        RuntimeSemanticFactsError::InvalidEntityPatternOrigin { pattern: *first }
+    );
+    assert_eq!(
+        runtime_facts(&project, input_with(alice, true))
+            .expect_err("pattern keeps the exact canonical Ref family"),
+        RuntimeSemanticFactsError::InvalidEntityPatternType { pattern: *first }
+    );
+}

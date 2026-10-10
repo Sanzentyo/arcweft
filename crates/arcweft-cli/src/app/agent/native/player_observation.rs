@@ -257,7 +257,7 @@ pub(super) fn observe_native_player_runtime(
             task_request_count,
             virtual_ranges: runtime.session.view_virtualization().range_tables(),
         },
-    );
+    )?;
     runtime.prepared_frame = Some(prepared_runtime.prepared);
     Ok(NativePlayerObservedFrame {
         report,
@@ -548,7 +548,7 @@ fn player_observation_report(
     objects: Vec<AgentObservedObject>,
     options: &AgentObserveOptions,
     evidence: PlayerObservationEvidence<'_>,
-) -> AgentObservationReport {
+) -> Result<AgentObservationReport, ExitCode> {
     let PlayerObservationEvidence {
         step,
         mut diagnostics,
@@ -591,7 +591,7 @@ fn player_observation_report(
         )
         .as_bytes(),
     );
-    AgentObservationReport {
+    Ok(AgentObservationReport {
         status: if matches!(step.fiber_status, FlowFiberStatus::Failed(_)) {
             "failed".to_owned()
         } else {
@@ -622,24 +622,8 @@ fn player_observation_report(
             pending_events: Vec::new(),
         },
         logs: step.observations.logs.clone(),
-        signals: step
-            .observations
-            .signals
-            .iter()
-            .map(|(name, value)| AgentAssignment {
-                name: name.clone(),
-                value: value.clone(),
-            })
-            .collect(),
-        metrics: step
-            .observations
-            .metrics
-            .iter()
-            .map(|(name, value)| AgentAssignment {
-                name: name.clone(),
-                value: value.clone(),
-            })
-            .collect(),
+        signals: agent_assignments_from_runtime(step.observations.signals())?,
+        metrics: agent_assignments_from_runtime(step.observations.metrics())?,
         events: step.observations.events.clone(),
         diagnostics,
         steps: step.index.saturating_add(1),
@@ -647,7 +631,25 @@ fn player_observation_report(
         task_requests: task_request_count,
         final_status: step.status_label.clone(),
         overlay_svg: None,
-    }
+    })
+}
+
+fn agent_assignments_from_runtime(
+    rows: &BTreeMap<String, arcweft_core::value::RuntimePayload>,
+) -> Result<Vec<AgentAssignment>, ExitCode> {
+    rows.iter()
+        .map(|(name, value)| {
+            arcweft_agent_protocol::value::AgentValue::try_from(value.value())
+                .map(|value| AgentAssignment {
+                    name: name.clone(),
+                    value,
+                })
+                .map_err(|error| {
+                    eprintln!("error: observation '{name}' has no Agent value: {error}");
+                    ExitCode::FAILURE
+                })
+        })
+        .collect()
 }
 
 fn player_visual_evidence(

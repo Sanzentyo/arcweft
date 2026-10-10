@@ -8555,3 +8555,100 @@ fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move()
             .is_err()
     );
 }
+
+#[test]
+fn imported_flow_dynamic_goto_requires_exact_product_binding_despite_colliding_public_labels() {
+    use crate::plan::FlowRuntimeId;
+    use crate::value::{RuntimeEntityReference, RuntimeImportedProjectEntityReference};
+    use arcweft_id::{ProjectEntityReferenceFamily, PublicId};
+    let target = FlowRuntimeId::from_checked_declaration_digest([0x11; 32], "flow.opening")
+        .expect("local Flow");
+    let foreign = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
+        .expect("foreign Flow");
+    for (selected, accepted) in [(target.clone(), true), (foreign, false)] {
+        let mut program = goto_unwind_program(true);
+        let reference = RuntimeImportedProjectEntityReference::try_new(
+            ProjectEntityReferenceFamily::Flow,
+            PublicId::try_new("flow.opening").expect("Flow ID"),
+            [1; 32],
+            [2; 32],
+            [3; 32],
+            Some(selected.clone()),
+        )
+        .expect("imported reference");
+        program.runtime_types[1] = runtime_type(2, AwbcRuntimeTypeShape::EntityRef);
+        program.constants[1] =
+            AwbcConstant::EntityRef(RuntimeEntityReference::ImportedProject(reference));
+        let target_binding = program
+            .flow_bindings
+            .iter_mut()
+            .find(|binding| binding.function == AwbcFunctionId(2))
+            .expect("fixture target retains its exact typed Flow binding");
+        target_binding.flow = target.clone();
+        program.canonicalize_string_table();
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect("exact typed Product");
+        let encoded = program
+            .encode_canonical()
+            .expect("encode exact imported Flow target");
+        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+            .expect("decode exact imported Flow target");
+        assert_eq!(decoded, program);
+        let program = decoded;
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+        fiber
+            .push_call_frame_at(
+                &program,
+                AwbcFunctionId(1),
+                super::fiber::FiberReturnPoint::ordinary(
+                    super::fiber::FiberCursor {
+                        function: AwbcFunctionId(0),
+                        block: AwbcBlockId(0),
+                        instruction_offset: 0,
+                    },
+                    None,
+                ),
+                &[],
+            )
+            .expect("nested dynamic goto");
+        let result = super::vm::step(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        );
+        if accepted {
+            assert_eq!(
+                result.expect("exact target executes").exit,
+                super::vm::VmExit::Returned(None)
+            );
+            assert_eq!(
+                fiber.active_frame().expect("root target").function,
+                AwbcFunctionId(2)
+            );
+        } else {
+            let output = result.expect("foreign target is an admitted runtime trap");
+            let super::vm::VmExit::Trapped(trap) = &output.exit else {
+                panic!("foreign imported Flow must trap without a label fallback: {output:?}");
+            };
+            assert_eq!(trap.code, super::schema::AwbcTrapCode::MissingDynamicTarget);
+            let expected = crate::plan::RuntimeFlowTargetError::Missing {
+                target: selected.canonical_label(),
+            }
+            .to_string();
+            assert_eq!(trap.message.as_deref(), Some(expected.as_str()));
+            assert!(
+                !output.observations.iter().any(|observation| {
+                    matches!(observation, super::vm::VmObservation::Goto(_))
+                }),
+                "rejected foreign identity must not transfer to the matching public label"
+            );
+            assert_eq!(
+                fiber.active_frame().expect("caller remains").function,
+                AwbcFunctionId(1)
+            );
+        }
+    }
+}

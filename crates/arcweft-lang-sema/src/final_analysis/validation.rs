@@ -686,6 +686,13 @@ pub(super) fn validate_expressions(
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
+            if let CheckedExpressionResolution::Value(
+                CheckedValueResolution::ImportedProjectEntity(entity),
+            ) = fact.resolution()
+                && &entity.ty() != fact_type
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
             if let CheckedExpressionResolution::Value(CheckedValueResolution::Entry(entry)) =
                 fact.resolution()
                 && &entry.ty() != fact_type
@@ -1180,7 +1187,19 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::PipeLeft(pipe) => {
             validate_pipe_left(expressions, owner, ty, pipe)
         }
-        CheckedExpressionResolution::Value(value) => validate_value(symbols, modules, value),
+        CheckedExpressionResolution::Value(CheckedValueResolution::ImportedProjectEntity(
+            entity,
+        )) if entity.target().family()
+            == arcweft_id::ProjectEntityReferenceFamily::DialogueLine
+            && dialogue_lines.records().iter().any(|line| {
+                line.id().as_str() == entity.target().symbol().public_id().as_str()
+            }) =>
+        {
+            Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
+        CheckedExpressionResolution::Value(value) => {
+            validate_value(symbols, topology.generation(), modules, value)
+        }
         CheckedExpressionResolution::Select(select) => match select {
             CheckedSelectResolution::Method(method) => method
                 .has_valid_receiver_identity()
@@ -2020,6 +2039,7 @@ fn validate_pipe_left(
 
 fn validate_value(
     symbols: &ProjectSymbolTable,
+    generation: &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     value: &CheckedValueResolution,
 ) -> Result<(), FinalSemanticAnalysisError> {
@@ -2029,12 +2049,16 @@ fn validate_value(
             .map(|_| ())
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner),
         CheckedValueResolution::CharacterField { receiver, .. } => {
-            validate_value(symbols, modules, receiver)
+            validate_value(symbols, generation, modules, receiver)
         }
         CheckedValueResolution::ProjectCallable(callable) => {
             validate_callable(symbols, modules, callable)
         }
         CheckedValueResolution::ProjectItem(item) => validate_project_item(symbols, modules, item),
+        CheckedValueResolution::ImportedProjectEntity(entity) => entity
+            .has_valid_analysis_binding(symbols, generation)
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner),
         CheckedValueResolution::Entry(entry) => validate_entry_reference(modules, entry),
         CheckedValueResolution::CatalogAsset(asset) => arcweft_id::DeclarationIdentityFamily::Asset
             .validate_public_id(asset.as_public_id())
@@ -2065,6 +2089,7 @@ fn validate_entry_reference(
 
 pub(super) fn validate_patterns(
     symbols: &ProjectSymbolTable,
+    generation: &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     patterns: &BTreeMap<PatternId, CheckedPattern>,
@@ -2085,6 +2110,12 @@ pub(super) fn validate_patterns(
             }
             (HirPatternKind::EntityReference(_), CheckedPatternResolution::Entity(item)) => {
                 validate_project_item(symbols, modules, item).is_ok() && &item.ty() == fact.ty()
+            }
+            (
+                HirPatternKind::EntityReference(_),
+                CheckedPatternResolution::ImportedProjectEntity(entity),
+            ) => {
+                entity.has_valid_analysis_binding(symbols, generation) && &entity.ty() == fact.ty()
             }
             (HirPatternKind::Variant(_), CheckedPatternResolution::Variant(variant)) => {
                 validate_variant(symbols, modules, variant).is_ok()

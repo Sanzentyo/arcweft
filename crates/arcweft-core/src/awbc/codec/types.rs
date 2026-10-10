@@ -177,6 +177,25 @@ impl Wire for RuntimeArrayLength {
 impl Wire for RuntimeEntityReference {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
+            Self::StructuralFlow(flow) => {
+                writer.write_u8(4);
+                flow.write_wire(writer)?;
+            }
+            Self::ImportedProject(value) => {
+                writer.write_u8(3);
+                writer.write_u8(value.family().semantic_tag());
+                writer.write_str(value.public_id().as_str())?;
+                writer.write_bytes(value.target_generation());
+                writer.write_bytes(value.semantic_identity());
+                writer.write_bytes(value.value_type());
+                match value.flow() {
+                    None => writer.write_u8(0),
+                    Some(flow) => {
+                        writer.write_u8(1);
+                        flow.write_wire(writer)?;
+                    }
+                }
+            }
             Self::Project { family, public_id } => {
                 writer.write_u8(0);
                 writer.write_u8(family.semantic_tag());
@@ -249,6 +268,58 @@ impl Wire for RuntimeEntityReference {
                 })?;
                 Ok(Self::CharacterLook { character, look })
             }
+            3 => {
+                let family_tag = reader.read_u8()?;
+                let family = arcweft_id::ProjectEntityReferenceFamily::from_semantic_tag(
+                    family_tag,
+                )
+                .ok_or(AwbcCodecError::UnknownTag {
+                    kind: "imported entity family",
+                    tag: family_tag,
+                    offset,
+                })?;
+                let public_id =
+                    PublicId::try_new_engine_owned(reader.read_str()?).map_err(|error| {
+                        AwbcCodecError::InvalidMetadata {
+                            kind: "imported entity public ID",
+                            message: error.to_string(),
+                            offset,
+                        }
+                    })?;
+                let generation = reader
+                    .read_exact(32)?
+                    .try_into()
+                    .expect("exact 32-byte digest");
+                let semantic = reader
+                    .read_exact(32)?
+                    .try_into()
+                    .expect("exact 32-byte digest");
+                let value_type = reader
+                    .read_exact(32)?
+                    .try_into()
+                    .expect("exact 32-byte digest");
+                let flow = match reader.read_u8()? {
+                    0 => None,
+                    1 => Some(crate::plan::FlowRuntimeId::read_wire(reader)?),
+                    tag => {
+                        return Err(AwbcCodecError::UnknownTag {
+                            kind: "imported entity Flow identity",
+                            tag,
+                            offset,
+                        });
+                    }
+                };
+                crate::value::RuntimeImportedProjectEntityReference::try_new(
+                    family, public_id, generation, semantic, value_type, flow,
+                )
+                .map(Self::ImportedProject)
+                .map_err(|error| AwbcCodecError::InvalidMetadata {
+                    kind: "imported entity owner",
+                    message: error.to_string(),
+                    offset,
+                })
+            }
+            4 => crate::plan::FlowRuntimeId::read_wire(reader).map(Self::StructuralFlow),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "entity reference",
                 tag,
@@ -1635,5 +1706,77 @@ mod scope_kind_tests {
             matches!(AwbcScopeDefinition::read_wire(&mut reader),Err(AwbcCodecError::UnknownTag {kind:"scope frame kind",tag:7,offset:actual}) if actual==offset)
         );
         assert_eq!(crate::awbc::schema::AWBC_CODEC_VERSION, 1);
+    }
+}
+
+#[cfg(test)]
+mod imported_entity_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::value::RuntimeImportedProjectEntityReference;
+    use arcweft_id::ProjectEntityReferenceFamily;
+
+    #[test]
+    fn imported_entity_wire_preserves_closed_family_original_digests_and_flow_identity() {
+        for family in ProjectEntityReferenceFamily::ALL {
+            let id = PublicId::try_new(format!("{}.fixture", family.prefix()))
+                .expect("closed family ID");
+            let flow = (family == ProjectEntityReferenceFamily::Flow).then(|| {
+                crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x77; 32], id.as_str())
+                    .expect("Flow identity")
+            });
+            let original = RuntimeImportedProjectEntityReference::try_new(
+                family, id, [1; 32], [2; 32], [3; 32], flow,
+            )
+            .expect("closed imported owner");
+            let reference = RuntimeEntityReference::ImportedProject(original.clone());
+            let mut writer = Writer::default();
+            reference.write_wire(&mut writer).expect("encode owner");
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            let RuntimeEntityReference::ImportedProject(decoded) =
+                RuntimeEntityReference::read_wire(&mut reader).expect("decode owner")
+            else {
+                panic!("the wire must retain imported provenance, not just logical identity")
+            };
+            assert_eq!(decoded, original);
+            reader.finish().expect("exact wire consumption");
+        }
+    }
+
+    #[test]
+    fn imported_entity_wire_rejects_unknown_family_and_mismatched_public_id() {
+        let original = RuntimeEntityReference::ImportedProject(
+            RuntimeImportedProjectEntityReference::try_new(
+                ProjectEntityReferenceFamily::Signal,
+                PublicId::try_new("signal.fixture").expect("ID"),
+                [1; 32],
+                [2; 32],
+                [3; 32],
+                None,
+            )
+            .expect("owner"),
+        );
+        let mut writer = Writer::default();
+        original.write_wire(&mut writer).expect("encode");
+        let mut bytes = writer.into_bytes();
+        bytes[1] = 255;
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(matches!(
+            RuntimeEntityReference::read_wire(&mut reader),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "imported entity family",
+                ..
+            })
+        ));
+        bytes[1] = ProjectEntityReferenceFamily::Flow.semantic_tag();
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(matches!(
+            RuntimeEntityReference::read_wire(&mut reader),
+            Err(AwbcCodecError::InvalidMetadata {
+                kind: "imported entity owner",
+                ..
+            })
+        ));
     }
 }

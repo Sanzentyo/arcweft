@@ -133,7 +133,7 @@ impl<'a> StatementScrutineeTypeAuthority<'a> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         signal
-            .value()
+            .observable_payload()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
     }
 
@@ -588,7 +588,7 @@ pub(super) fn seed_dynamic_scrutinee(
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 signal
-                    .value()
+                    .observable_payload()
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
                     .clone()
             };

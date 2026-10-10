@@ -410,6 +410,7 @@ impl CharacterRegistrar {
             callable_builder.add_project_bindings(project, &symbols, |target| match target {
                 ProjectSymbolTargetId::External(declaration) => {
                     match nominal_world.external_owners().get(declaration) {
+                        Some(RegisteredExternalOwner::ProjectEntity(entity)) => Some(entity.ty()),
                         Some(RegisteredExternalOwner::Character(_)) => {
                             Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
                         }
@@ -849,6 +850,9 @@ impl CharacterRegistrar {
                 match target {
                     ProjectSymbolTargetId::External(declaration) => {
                         match nominal_world.external_owners().get(declaration) {
+                            Some(RegisteredExternalOwner::ProjectEntity(entity)) => {
+                                Some(entity.ty())
+                            }
                             Some(RegisteredExternalOwner::Character(_)) => {
                                 Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
                             }
@@ -1156,7 +1160,10 @@ fn accepted_external_environment(
     base.nominal_catalog()
         .validate_scopes_for(OpenNominalEnvironment::Accepted)?;
     let mut environment = base.as_ref().clone();
-    let statement_ingress_inputs = environment.take_statement_ingress_inputs();
+    let statement_ingress_inputs = environment
+        .statement_ingress_publication_inputs()
+        .to_vec()
+        .into_boxed_slice();
     let mut visible = BTreeMap::new();
     let mut inaccessible = BTreeMap::new();
     for input in facts.environment_inputs() {
@@ -1189,7 +1196,9 @@ fn accepted_external_environment(
             .declaration(seed_id)
             .expect("linked external seeds belong to the accepted registration facts");
         let (accepted_owner, semantics, origin) = match owner {
-            RegisteredExternalOwner::Environment(_) => continue,
+            RegisteredExternalOwner::Environment(_) | RegisteredExternalOwner::ProjectEntity(_) => {
+                continue;
+            }
             RegisteredExternalOwner::Character(character) => (
                 AcceptedNominalOwnerId::Character(character.clone()),
                 AcceptedNominalSemantics::Exact(TypeKind::Ref(EntityType::new(
@@ -1506,6 +1515,14 @@ fn build_external_owners(
         };
         let valid_owner = match &contribution.target {
             RegisteredExternalOwner::Character(owner) => manifests.contains_key(owner),
+            RegisteredExternalOwner::ProjectEntity(entity) => facts.documents().any(|document| {
+                entity
+                    .symbol()
+                    .source()
+                    .span()
+                    .validate_for(document)
+                    .is_ok()
+            }),
             RegisteredExternalOwner::Environment(owner) => {
                 base.environment_binding(owner.value_binding()).is_some()
                     || facts.declares_environment_binding(owner.value_binding())
@@ -1514,7 +1531,7 @@ fn build_external_owners(
         if !valid_owner {
             diagnostics.push(CharacterRegistrationDiagnostic::new(
                 CharacterRegistrationDiagnosticKind::UnknownOwner {
-                    owner: contribution.target.clone(),
+                    owner: (&contribution.target).into(),
                 },
                 contribution.owner_source.clone(),
                 [],
@@ -1529,7 +1546,7 @@ fn build_external_owners(
                 diagnostics.push(CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::ExternalDuplicate {
                         declaration,
-                        owner: contribution.target.clone(),
+                        owner: (&contribution.target).into(),
                     },
                     contribution.owner_source.clone(),
                     [link.table().external(declaration).map_or_else(
@@ -1542,8 +1559,8 @@ fn build_external_owners(
                 diagnostics.push(CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::ExternalConflict {
                         declaration,
-                        first: first.clone(),
-                        conflicting: contribution.target.clone(),
+                        first: first.into(),
+                        conflicting: (&contribution.target).into(),
                     },
                     contribution.owner_source.clone(),
                     [link.table().external(declaration).map_or_else(

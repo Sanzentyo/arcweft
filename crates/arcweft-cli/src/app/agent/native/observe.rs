@@ -162,6 +162,16 @@ pub(super) enum NativeAgentScriptSessionError {
     UnsupportedAction,
     #[error("native Agent Script observation could not be serialized")]
     ObservationSerialization(#[source] AgentHostResponseSerializationError),
+    #[error("native Agent Script observation assignment '{name}' has an invalid identity")]
+    InvalidObservationAssignment {
+        name: String,
+        #[source]
+        source: arcweft_agent_protocol::ids::IdentifierError,
+    },
+    #[error("native Agent Script observation has duplicate assignment '{target}'", target = .target.as_str())]
+    DuplicateObservationAssignment {
+        target: arcweft_agent_protocol::ids::PublicId,
+    },
 }
 
 pub(super) struct NativeAgentScriptSession<'a> {
@@ -566,6 +576,27 @@ impl AgentSession for NativeAgentScriptSession<'_> {
 pub(super) fn native_agent_observation_envelope(
     report: &AgentObservationReport,
 ) -> Result<ObservationEnvelope, NativeAgentScriptSessionError> {
+    let mut signals = BTreeMap::new();
+    for assignment in report.signals.iter().chain(&report.metrics) {
+        let target =
+            arcweft_agent_protocol::ids::PublicId::new(assignment.name.trim_start_matches('@'))
+                .map_err(
+                    |source| NativeAgentScriptSessionError::InvalidObservationAssignment {
+                        name: assignment.name.clone(),
+                        source,
+                    },
+                )?;
+        match signals.entry(target.as_str().to_owned()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(assignment.value.clone());
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {
+                return Err(
+                    NativeAgentScriptSessionError::DuplicateObservationAssignment { target },
+                );
+            }
+        }
+    }
     let payload = native_agent_observation_payload(report)?;
     Ok(ObservationEnvelope {
         tick: u64::try_from(report.tick).unwrap_or(u64::MAX),
@@ -573,16 +604,7 @@ pub(super) fn native_agent_observation_envelope(
         state_hash: report.state_hash.clone(),
         render_hash: report.render_hash.clone(),
         actions: report.actions.clone(),
-        signals: report
-            .signals
-            .iter()
-            .map(|signal| {
-                (
-                    signal.name.trim_start_matches('@').to_owned(),
-                    agent_assignment_value(signal),
-                )
-            })
-            .collect(),
+        signals,
         payload,
     })
 }
@@ -639,25 +661,6 @@ pub(super) fn native_agent_capture_kind(value: &str) -> AgentObserveCaptureKind 
         "object-id" | "object_id" => AgentObserveCaptureKind::ObjectId,
         "mask" => AgentObserveCaptureKind::Mask,
         _ => AgentObserveCaptureKind::Color,
-    }
-}
-
-pub(super) fn agent_assignment_value(
-    signal: &AgentAssignment,
-) -> arcweft_agent_protocol::value::AgentValue {
-    match signal.value.as_str() {
-        "true" => arcweft_agent_protocol::value::AgentValue::Bool(true),
-        "false" => arcweft_agent_protocol::value::AgentValue::Bool(false),
-        value if value.starts_with('@') => {
-            arcweft_agent_protocol::ids::PublicId::new(value.trim_start_matches('@')).map_or_else(
-                |_| arcweft_agent_protocol::value::AgentValue::String(value.to_owned()),
-                arcweft_agent_protocol::value::AgentValue::Entity,
-            )
-        }
-        value => value.parse::<i64>().map_or_else(
-            |_| arcweft_agent_protocol::value::AgentValue::String(value.to_owned()),
-            arcweft_agent_protocol::value::AgentValue::I64,
-        ),
     }
 }
 

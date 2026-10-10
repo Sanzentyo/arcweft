@@ -6037,3 +6037,88 @@ fn manual_awbc_capture_origin(declaration: &str) -> crate::plan::RuntimeLocalOri
     hash.update(declaration.as_bytes());
     crate::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }
+
+#[test]
+fn product_observation_visitor_includes_nested_asset_payloads_once() {
+    let mut executor = AwbcProductStepExecutor::for_entry(return_program(), AwbcEntryId(0), 64)
+        .expect("fixture Product starts");
+    let value = RuntimeValue::Tuple(vec![fixture_bundle_image_handle()]);
+    assert!(value.ownership().permits_copy());
+    executor
+        .facade_fiber
+        .observations
+        .record_effect(&LineEffectRequest::SignalWrite(
+            crate::effect::RuntimeAssignment::try_copy("signal.asset".to_owned(), &value)
+                .expect("the complete asset tuple is unrestricted"),
+        ));
+    let mut roles = Vec::new();
+    executor
+        .visit_live_runtime_values(|value| {
+            if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
+                roles.push(role);
+            }
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .expect("the Product visitor includes retained observations");
+    assert_eq!(
+        roles,
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
+    );
+}
+
+#[test]
+fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
+    let mut executor = AwbcProductStepExecutor::for_entry(return_program(), AwbcEntryId(0), 64)
+        .expect("fixture Product starts");
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::String("true".to_owned()),
+        fixture_bundle_image_handle(),
+    ]);
+    executor
+        .facade_fiber
+        .observations
+        .record_effect(&LineEffectRequest::SignalWrite(
+            crate::effect::RuntimeAssignment::try_copy("signal.asset".to_owned(), &value)
+                .expect("the complete retained tuple is unrestricted"),
+        ));
+    executor
+        .facade_fiber
+        .observations
+        .record_effect(&LineEffectRequest::MetricWrite(
+            crate::effect::RuntimeAssignment::try_new(
+                "metric.count".to_owned(),
+                RuntimeValue::u64(u64::MAX),
+            )
+            .expect("the unsigned metric is unrestricted"),
+        ));
+    let image = executor
+        .inert_rollback_image()
+        .expect("complete inert Product image");
+    let bytes = serde_json::to_vec(&image.product).expect("observation save is inert JSON");
+    let saved: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_slice(&bytes).expect("typed Product save decodes without live values");
+    let executor = executor
+        .restore_inert_snapshot_owned(saved)
+        .expect("the exact Product restores");
+    assert_eq!(
+        executor.fiber().observations.signals()["signal.asset"].value(),
+        &value
+    );
+    assert_eq!(
+        executor.fiber().observations.metrics()["metric.count"].value(),
+        &RuntimeValue::u64(u64::MAX),
+    );
+    let mut roles = Vec::new();
+    executor
+        .visit_live_runtime_values(|value| {
+            if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
+                roles.push(role);
+            }
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .expect("the restored graph remains fully visible");
+    assert_eq!(
+        roles,
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
+    );
+}

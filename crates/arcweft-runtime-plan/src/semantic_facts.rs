@@ -5438,7 +5438,10 @@ pub struct RuntimePlanSemanticFactInput {
     expression_literals: Vec<(ExprId, RuntimeValue)>,
     expression_residual_values: Vec<(ExprId, RuntimeResidualValue)>,
     pattern_literals: Vec<(PatternId, RuntimeValue)>,
-    pattern_items: Vec<(PatternId, RuntimeProjectItem)>,
+    pattern_items: Vec<(
+        PatternId,
+        arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection,
+    )>,
     values: Vec<(ExprId, RuntimeResolvedValue)>,
     checked_local_uses: Option<Arc<arcweft_lang_sema::final_analysis::CheckedLocalUseCatalog>>,
     selects: Vec<(ExprId, RuntimeResolvedSelect)>,
@@ -5669,7 +5672,11 @@ impl RuntimePlanSemanticFactInput {
         self.pattern_literals.push((owner, value));
     }
 
-    pub fn push_pattern_item(&mut self, owner: PatternId, item: RuntimeProjectItem) {
+    pub fn push_pattern_entity(
+        &mut self,
+        owner: PatternId,
+        item: arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection,
+    ) {
         self.pattern_items.push((owner, item));
     }
 
@@ -5950,7 +5957,8 @@ pub struct RuntimePlanSemanticFacts {
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
     expression_residual_values: BTreeMap<ExprId, RuntimeResidualValue>,
     pattern_literals: BTreeMap<PatternId, RuntimeValue>,
-    pattern_items: BTreeMap<PatternId, RuntimeProjectItem>,
+    pattern_items:
+        BTreeMap<PatternId, arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection>,
     values: BTreeMap<ExprId, RuntimeResolvedValue>,
     checked_local_uses: Option<Arc<arcweft_lang_sema::final_analysis::CheckedLocalUseCatalog>>,
     selects: BTreeMap<ExprId, RuntimeResolvedSelect>,
@@ -6640,10 +6648,13 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         }
     }
 
-    pub fn pattern_item(self, owner: PatternId) -> Option<&'facts RuntimeProjectItem> {
+    pub fn pattern_entity(
+        self,
+        owner: PatternId,
+    ) -> Option<&'facts arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection> {
         match self {
-            Self::Global(facts) => facts.pattern_item(owner),
-            Self::ProjectInstance(facts) => facts.pattern_item(owner),
+            Self::Global(facts) => facts.pattern_entity(owner),
+            Self::ProjectInstance(facts) => facts.pattern_entity(owner),
         }
     }
 
@@ -7666,7 +7677,12 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::PatternItem,
                 |kind| matches!(kind, HirPatternKind::EntityReference(_)),
             )?;
-            validate_project_item(&modules, item)?;
+            if !item.validate_owner(project, *pattern) {
+                return Err(RuntimeSemanticFactsError::InvalidEntityPatternOrigin {
+                    pattern: *pattern,
+                });
+            }
+            validate_entity_pattern_type(*pattern, pattern_types.get(pattern), item)?;
         }
 
         if let Some(catalog) = input.checked_local_uses.as_ref() {
@@ -9863,7 +9879,10 @@ impl RuntimePlanSemanticFacts {
         self.pattern_literals.get(&pattern)
     }
 
-    pub fn pattern_item(&self, pattern: PatternId) -> Option<&RuntimeProjectItem> {
+    pub fn pattern_entity(
+        &self,
+        pattern: PatternId,
+    ) -> Option<&arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection> {
         self.pattern_items.get(&pattern)
     }
 
@@ -10414,6 +10433,10 @@ pub enum RuntimeSemanticFactsError {
     InvalidEntityValueOrigin { expression: ExprId },
     #[error("entity value for {expression:?} disagrees with its accepted canonical Ref type")]
     InvalidEntityValueType { expression: ExprId },
+    #[error("entity pattern {pattern:?} belongs to another accepted owner or generation")]
+    InvalidEntityPatternOrigin { pattern: PatternId },
+    #[error("entity pattern {pattern:?} disagrees with its accepted canonical Ref type")]
+    InvalidEntityPatternType { pattern: PatternId },
     #[error("local {local:?} origin belongs to another owner or HIR allocation")]
     InvalidLocalOrigin { local: LocalId },
     #[error("Flow {item:?} definition does not belong to its exact accepted owner")]
@@ -13259,7 +13282,12 @@ fn validate_project_function_semantic_catalog(
                 if !matches!(hir, HirPatternKind::EntityReference(_)) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
-                validate_project_item(modules, item)?;
+                if !item.validate_authority(semantics.local_uses(), row.owner()) {
+                    return Err(RuntimeSemanticFactsError::InvalidEntityPatternOrigin {
+                        pattern: row.owner(),
+                    });
+                }
+                validate_entity_pattern_type(row.owner(), pattern_types.get(&row.owner()), item)?;
             }
             RuntimeProjectFunctionPatternPayload::NominalRecord(record) => {
                 if !matches!(hir, HirPatternKind::Record { .. }) {
@@ -14401,6 +14429,20 @@ fn validate_entity_value(
             || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
     }) {
         return Err(RuntimeSemanticFactsError::InvalidEntityValueType { expression });
+    }
+    Ok(())
+}
+
+fn validate_entity_pattern_type(
+    pattern: PatternId,
+    ty: Option<&RuntimeNormalizedType>,
+    projection: &arcweft_lang_sema::final_analysis::CheckedEntityPatternProjection,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if ty.is_none_or(|ty| {
+        ty.identity().as_bytes() != projection.type_identity().as_bytes()
+            || !matches!(ty.shape(), RuntimeTypeShape::EntityReference)
+    }) {
+        return Err(RuntimeSemanticFactsError::InvalidEntityPatternType { pattern });
     }
     Ok(())
 }

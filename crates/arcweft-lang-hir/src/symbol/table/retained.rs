@@ -367,14 +367,15 @@ fn entity_reference_projection(
                     parent_depth,
                 });
             }
-            let Some(family) = DeclarationIdentityFamily::from_prefix(relative.family().as_str())
+            let Some(family) =
+                arcweft_id::ProjectEntityReferenceFamily::from_prefix(relative.family().as_str())
             else {
                 return Err(ProjectEntityReferenceLookupError::Unknown {
                     reference: reference.clone(),
                     reference_span: reference_span.clone(),
                 });
             };
-            if family == DeclarationIdentityFamily::Asset {
+            if family == arcweft_id::ProjectEntityReferenceFamily::Asset {
                 return Err(ProjectEntityReferenceLookupError::CatalogOwned {
                     reference: reference.clone(),
                     reference_span: reference_span.clone(),

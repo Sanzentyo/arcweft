@@ -134,6 +134,34 @@ pub enum RequiredCharacterToken {
     ImportAlias,
 }
 
+/// Deterministic diagnostic identity projected from the exact registered owner.
+/// The execution lease remains on `RegisteredExternalOwner`; diagnostics retain
+/// its typed entity identity and complete admitted semantic fingerprint.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RegisteredExternalOwnerDiagnosticIdentity {
+    ProjectEntity {
+        identity: crate::project_index::ProjectEntityId,
+        semantic_identity: [u8; 32],
+    },
+    Character(CharacterId),
+    Environment(super::model::RegisteredEnvironmentExternalOwner),
+}
+
+impl From<&RegisteredExternalOwner> for RegisteredExternalOwnerDiagnosticIdentity {
+    fn from(owner: &RegisteredExternalOwner) -> Self {
+        match owner {
+            RegisteredExternalOwner::ProjectEntity(entity) => Self::ProjectEntity {
+                identity: entity.identity().clone(),
+                semantic_identity: entity.semantic_identity(),
+            },
+            RegisteredExternalOwner::Character(character) => Self::Character(character.clone()),
+            RegisteredExternalOwner::Environment(environment) => {
+                Self::Environment(environment.clone())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CharacterRegistrationDiagnosticKind {
     GenericScope {
@@ -174,7 +202,7 @@ pub enum CharacterRegistrationDiagnosticKind {
         conflicting: CharacterManifestFingerprint,
     },
     UnknownOwner {
-        owner: RegisteredExternalOwner,
+        owner: RegisteredExternalOwnerDiagnosticIdentity,
     },
     AliasCollision {
         spelling: SymbolPath,
@@ -226,12 +254,12 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     ExternalDuplicate {
         declaration: ExternalDeclarationId,
-        owner: RegisteredExternalOwner,
+        owner: RegisteredExternalOwnerDiagnosticIdentity,
     },
     ExternalConflict {
         declaration: ExternalDeclarationId,
-        first: RegisteredExternalOwner,
-        conflicting: RegisteredExternalOwner,
+        first: RegisteredExternalOwnerDiagnosticIdentity,
+        conflicting: RegisteredExternalOwnerDiagnosticIdentity,
     },
     ExternalWrongKind {
         declaration: ExternalDeclarationId,
@@ -490,4 +518,133 @@ fn span_key(span: &SourceSpan) -> (SourceDocumentId, SourceRevision, SourceRange
         span.source().revision(),
         span.range(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        final_analysis::tests::{analyze, fixture},
+        project_index::{
+            AcceptedProjectEntityCatalog, ProgramHash, ProjectEntityId, ProjectSemanticIndex,
+        },
+        registration::RegisteredExternalOwnerDiagnosticIdentity as OwnerIdentity,
+    };
+    use std::{cmp::Ordering, sync::Arc};
+
+    #[test]
+    fn project_entity_diagnostics_keep_source_generation_identity_and_canonical_input_order() {
+        let identity = ProjectEntityId::public(
+            arcweft_id::PublicId::try_new("signal.level").expect("same public identity"),
+        );
+        let catalogs = [
+            "pub signal @signal.level Level: Watch<i64>\nflow opening() -> String { return \"first\" }\n",
+            "pub signal @signal.level Level: Watch<i64>\nflow opening() -> String { return \"other\" }\n",
+        ]
+        .map(|source| {
+            let native = fixture(source, None);
+            let analysis = analyze(&native).expect("accepted original source generation");
+            let project = native.project.analysis_view().expect("accepted HIR");
+            let index = Arc::new(
+                ProjectSemanticIndex::try_from_final_project(
+                    ProgramHash::new("diagnostic-source-generations"),
+                    project,
+                    &native.symbols,
+                    &analysis,
+                )
+                .expect("exact source index"),
+            );
+            Arc::new(
+                AcceptedProjectEntityCatalog::try_from_final_project(
+                    index,
+                    project,
+                    &native.symbols,
+                    &analysis,
+                )
+                .expect("issued source catalog"),
+            )
+        });
+        let entities = catalogs
+            .each_ref()
+            .map(|catalog| catalog.entity(&identity).expect("same admitted Signal"));
+        assert_eq!(entities[0].identity(), entities[1].identity());
+        assert_eq!(
+            entities[0]
+                .ty()
+                .semantic_identity_digest()
+                .expect("closed type"),
+            entities[1]
+                .ty()
+                .semantic_identity_digest()
+                .expect("closed type"),
+        );
+        let left_source = entities[0].symbol().source().span();
+        let right_source = entities[1].symbol().source().span();
+        assert_eq!(left_source.source().id(), right_source.source().id());
+        assert_eq!(left_source.range(), right_source.range());
+        assert_ne!(
+            left_source.source().revision(),
+            right_source.source().revision()
+        );
+        assert_ne!(
+            catalogs[0].generation_digest(),
+            catalogs[1].generation_digest()
+        );
+        let primary = left_source.clone();
+        let owners = entities.map(RegisteredExternalOwner::ProjectEntity);
+        let identities = owners.each_ref().map(OwnerIdentity::from);
+        assert_ne!(identities[0], identities[1]);
+        assert_ne!(identities[0].cmp(&identities[1]), Ordering::Equal);
+        for (ordinal, (owner, diagnostic_identity)) in owners.iter().zip(&identities).enumerate() {
+            let RegisteredExternalOwner::ProjectEntity(entity) = owner else {
+                panic!("original admitted entity lease");
+            };
+            assert!(Arc::ptr_eq(entity.catalog(), &catalogs[ordinal]));
+            let OwnerIdentity::ProjectEntity {
+                identity: diagnostic_entity,
+                semantic_identity,
+            } = diagnostic_identity
+            else {
+                panic!("typed entity diagnostic identity");
+            };
+            assert_eq!(diagnostic_entity, entity.identity());
+            assert_eq!(*semantic_identity, entity.semantic_identity());
+        }
+        let diagnostics = identities.map(|owner| {
+            CharacterRegistrationDiagnostic::new(
+                CharacterRegistrationDiagnosticKind::UnknownOwner { owner },
+                primary.clone(),
+                [],
+            )
+        });
+        let rows = [
+            diagnostics[0].clone(),
+            diagnostics[1].clone(),
+            diagnostics[0].clone(),
+        ];
+        let canonical = CharacterRegistrationReport::from_diagnostics(rows.to_vec());
+        assert_eq!(
+            canonical.diagnostics().len(),
+            2,
+            "distinct generations survive deduplication"
+        );
+        assert_eq!(canonical.omitted_diagnostics(), 0);
+        assert!(canonical.diagnostics()[0].kind() < canonical.diagnostics()[1].kind());
+        for permutation in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let report = CharacterRegistrationReport::from_diagnostics(
+                permutation
+                    .into_iter()
+                    .map(|index| rows[index].clone())
+                    .collect(),
+            );
+            assert_eq!(report, canonical);
+        }
+    }
 }

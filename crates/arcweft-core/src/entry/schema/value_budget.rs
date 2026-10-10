@@ -118,6 +118,18 @@ impl ValueBudget {
                 }
             }
             RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(reference)) => match reference {
+                RuntimeEntityReference::StructuralFlow(flow) => {
+                    self.string(&flow.canonical_label())?
+                }
+                RuntimeEntityReference::ImportedProject(entity) => {
+                    self.string(entity.public_id().as_str())?;
+                    if let Some(flow) = entity.flow() {
+                        self.string(&flow.canonical_label())?;
+                    }
+                    if let Some(line) = entity.line() {
+                        self.string(&line.canonical_label())?;
+                    }
+                }
                 RuntimeEntityReference::Project { public_id, .. } => {
                     self.string(public_id.as_str())?
                 }

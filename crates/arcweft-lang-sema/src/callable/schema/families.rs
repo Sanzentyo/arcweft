@@ -1880,11 +1880,16 @@ fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSigna
         GenericParameterOwnerId::LanguageIntrinsic(owner),
         0,
     ));
+    let carrier = match kind {
+        EntityKind::Signal => crate::env::nominal::standard_watch_type(value.clone()),
+        EntityKind::Metric => value.clone(),
+        _ => unreachable!("only Signal and Metric own probe schemas"),
+    };
     schema_with_issuer(
         vec![required_positional(
             0,
             "entity",
-            TypeKind::entity_ref_with_value(kind, value.clone()),
+            TypeKind::entity_ref_with_value(kind, carrier),
         )],
         TypeKind::Probe(Box::new(value)),
         &["agent.observe"],
@@ -2464,8 +2469,19 @@ mod tests {
                 panic!("probe schema must accept one typed entity reference")
             };
             assert_eq!(entity.kind(), &kind);
+            match kind {
+                EntityKind::Signal => {
+                    let Some(TypeKind::AcceptedNominal(carrier)) = entity.value() else {
+                        panic!("Signal schema must retain the accepted Watch carrier")
+                    };
+                    assert_eq!(carrier.declaration(), &standard_nominal_id("Watch"));
+                    assert_eq!(carrier.arguments().len(), 1);
+                }
+                EntityKind::Metric => assert_eq!(entity.value(), entity.observable_payload()),
+                _ => unreachable!("the source table contains only observable entity families"),
+            }
             let Some(TypeKind::GenericParam(crate::types::GenericTypeReference::Free(parameter))) =
-                entity.value()
+                entity.observable_payload()
             else {
                 panic!("probe entity reference must retain its payload parameter")
             };

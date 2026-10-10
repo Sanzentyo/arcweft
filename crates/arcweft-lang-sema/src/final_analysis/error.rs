@@ -425,6 +425,11 @@ pub enum FinalSemanticAnalysisError {
     TypeResolutionInput { owner: TypeId },
     #[error("nominal type resolution did not produce one complete type for {owner:?}")]
     TypeResolutionFailed { owner: TypeId },
+    #[error("Signal observable type {owner:?} must be Watch<T>, Stream<T, E>, or Sample<T>")]
+    SignalObservableType {
+        owner: TypeId,
+        source_span: SourceSpan,
+    },
     #[error("nominal-resolution evidence disagrees with final type fact {owner:?}")]
     TypeResolutionReportMismatch { owner: TypeId },
     #[error("failed to construct the lexical generic scope for {owner:?}")]
@@ -691,6 +696,7 @@ impl FinalSemanticAnalysisError {
     pub const fn diagnostic_code(&self) -> &'static str {
         match self {
             Self::AssertionModeNotAllowed { .. } => "sema.assert.context",
+            Self::SignalObservableType { .. } => "sema.signal.observable_type",
             Self::ReturnBoundaryUnavailable { .. } => "sema.return.boundary",
             Self::ReturnValueTypeMismatch { .. } => "sema.return.value_type",
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
@@ -723,6 +729,17 @@ impl FinalSemanticAnalysisError {
     /// Source-backed semantic rejection retained by the final analyzer.
     pub fn source_diagnostic(&self) -> Option<Diagnostic> {
         match self {
+            Self::SignalObservableType { source_span, .. } => Some(
+                Diagnostic::new(
+                    DiagnosticSeverity::Error,
+                    "Signal observable type must be Watch<T>, Stream<T, E>, or Sample<T>",
+                )
+                .with_code(self.diagnostic_code())
+                .with_label(DiagnosticLabel::primary(
+                    source_span.clone(),
+                    Some("this type is not an accepted Signal carrier".to_owned()),
+                )),
+            ),
             Self::UnknownCallTarget {
                 kind,
                 name,

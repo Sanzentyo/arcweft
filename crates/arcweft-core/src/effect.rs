@@ -109,6 +109,8 @@ pub enum RuntimeEffectMaterializeError {
     ArgumentCount { expected: usize, actual: usize },
     #[error("runtime assertion condition must evaluate to Bool")]
     AssertionConditionNotBool,
+    #[error(transparent)]
+    Assignment(#[from] RuntimeAssignmentError),
 }
 
 /// Materialized policy applied to every affine handle leaf in one dropped
@@ -333,14 +335,12 @@ impl RuntimeEffectExpr {
                 message: labels[0].clone(),
                 fields: materialized_fields(fields, &labels[1..]),
             }),
-            Self::SignalWrite { .. } => LineEffectRequest::SignalWrite(RuntimeAssignment {
-                target: labels[0].clone(),
-                value: labels[1].clone(),
-            }),
-            Self::MetricWrite { .. } => LineEffectRequest::MetricWrite(RuntimeAssignment {
-                target: labels[0].clone(),
-                value: labels[1].clone(),
-            }),
+            Self::SignalWrite { .. } => LineEffectRequest::SignalWrite(
+                RuntimeAssignment::try_copy(labels[0].clone(), &values[1])?,
+            ),
+            Self::MetricWrite { .. } => LineEffectRequest::MetricWrite(
+                RuntimeAssignment::try_copy(labels[0].clone(), &values[1])?,
+            ),
             Self::EmitEvent { fields, .. } => LineEffectRequest::EmitEvent(RuntimeEvent {
                 event: labels[0].clone(),
                 fields: materialized_fields(fields, &labels[1..]),
@@ -369,10 +369,8 @@ impl RuntimeEffectExpr {
 }
 
 fn empty_runtime_assignment() -> RuntimeAssignment {
-    RuntimeAssignment {
-        target: String::new(),
-        value: String::new(),
-    }
+    RuntimeAssignment::try_new(String::new(), RuntimeValue::Unit)
+        .expect("an empty effect descriptor has an unrestricted Unit value")
 }
 
 fn empty_runtime_fields(fields: &[RuntimeEffectFieldExpr]) -> Vec<RuntimeField> {
@@ -529,10 +527,66 @@ pub struct RuntimeLog {
 }
 
 /// Assignment-like runtime request used by signal and metric updates.
+/// Observations borrow evaluated unrestricted data and never acquire a second
+/// owner for an affine resource.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(try_from = "RuntimeAssignmentParts")]
 pub struct RuntimeAssignment {
     pub target: String,
-    pub value: String,
+    value: crate::value::RuntimePayload,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeAssignmentParts {
+    target: String,
+    value: crate::value::RuntimePayload,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeAssignmentError {
+    #[error("signal and metric observations require an unrestricted value")]
+    AffineValue,
+}
+
+impl RuntimeAssignment {
+    pub fn try_new(target: String, value: RuntimeValue) -> Result<Self, RuntimeAssignmentError> {
+        if !value.ownership().permits_copy() {
+            return Err(RuntimeAssignmentError::AffineValue);
+        }
+        Ok(Self {
+            target,
+            value: crate::value::RuntimePayload::new(value),
+        })
+    }
+
+    /// Validates the complete borrowed graph before making an observation copy.
+    pub fn try_copy(target: String, value: &RuntimeValue) -> Result<Self, RuntimeAssignmentError> {
+        if !value.ownership().permits_copy() {
+            return Err(RuntimeAssignmentError::AffineValue);
+        }
+        Ok(Self {
+            target,
+            value: crate::value::RuntimePayload::new(value.clone()),
+        })
+    }
+
+    #[must_use]
+    pub const fn value(&self) -> &RuntimeValue {
+        self.value.value()
+    }
+
+    pub(crate) fn payload(&self) -> &crate::value::RuntimePayload {
+        &self.value
+    }
+}
+
+impl TryFrom<RuntimeAssignmentParts> for RuntimeAssignment {
+    type Error = RuntimeAssignmentError;
+
+    fn try_from(parts: RuntimeAssignmentParts) -> Result<Self, Self::Error> {
+        Self::try_new(parts.target, parts.value.into_value())
+    }
 }
 
 /// Structured event emission request.
@@ -617,7 +671,7 @@ impl LineEffectRequest {
     pub(crate) fn encode_body_metadata(
         &self,
         encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
-    ) {
+    ) -> Result<(), crate::plan::body_semantic::RuntimeBodySemanticError> {
         encoder.tag(match self {
             Self::Wait(_) => 0,
             Self::Audio(_) => 1,
@@ -662,7 +716,7 @@ impl LineEffectRequest {
             }
             Self::SignalWrite(value) | Self::MetricWrite(value) => {
                 encoder.string(&value.target);
-                encoder.string(&value.value);
+                value.value().encode_static_literal(encoder)?;
             }
             Self::EmitEvent(event) => {
                 encoder.string(&event.event);
@@ -717,5 +771,51 @@ impl LineEffectRequest {
                 }
             }
         }
+        encoder.status().map_err(Into::into)
+    }
+}
+
+#[cfg(test)]
+mod typed_assignment_tests {
+    use super::*;
+    use crate::plan::FlowRuntimeId;
+    use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
+    use crate::value::RuntimeEntityReference;
+
+    fn digest(value: RuntimeValue) -> blake3::Hash {
+        let mut meter = TaskSemanticMeter::new(1024, 16_384);
+        let mut encoder =
+            TaskSemanticEncoder::new(b"typed-observation-effect-test.v1\0", &mut meter);
+        LineEffectRequest::SignalWrite(
+            RuntimeAssignment::try_new("signal.current".to_owned(), value).unwrap(),
+        )
+        .encode_body_metadata(&mut encoder)
+        .unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn static_assignment_semantics_distinguish_value_types_and_exact_flow_owners() {
+        assert_ne!(
+            digest(RuntimeValue::Bool(true)),
+            digest(RuntimeValue::String("true".to_owned()))
+        );
+        assert_ne!(
+            digest(RuntimeValue::i64(42)),
+            digest(RuntimeValue::String("42".to_owned()))
+        );
+        let first =
+            FlowRuntimeId::from_checked_declaration_digest([7; 32], "flow.opening").unwrap();
+        let second =
+            FlowRuntimeId::from_checked_declaration_digest([8; 32], "flow.opening").unwrap();
+        assert_eq!(first.public_label(), second.public_label());
+        assert_ne!(
+            digest(RuntimeValue::EntityRef(
+                RuntimeEntityReference::StructuralFlow(first)
+            )),
+            digest(RuntimeValue::EntityRef(
+                RuntimeEntityReference::StructuralFlow(second)
+            )),
+        );
     }
 }

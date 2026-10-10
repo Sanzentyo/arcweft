@@ -146,13 +146,7 @@ impl RuntimeArcErrorFrame {
         mut self,
         flow: RuntimeEntityReference,
     ) -> Result<Self, RuntimeArcErrorValueError> {
-        if !matches!(
-            flow,
-            RuntimeEntityReference::Project {
-                family: DeclarationIdentityFamily::Flow,
-                ..
-            }
-        ) {
+        if flow.project_family() != Some(DeclarationIdentityFamily::Flow) {
             return Err(RuntimeArcErrorValueError::InvalidFlowReference);
         }
         self.flow = Some(flow);
@@ -164,7 +158,7 @@ impl RuntimeArcErrorFrame {
         mut self,
         line: RuntimeEntityReference,
     ) -> Result<Self, RuntimeArcErrorValueError> {
-        if !matches!(line, RuntimeEntityReference::DialogueLine(_)) {
+        if line.line_identity().is_none() {
             return Err(RuntimeArcErrorValueError::InvalidLineReference);
         }
         self.line = Some(line);
@@ -1146,21 +1140,17 @@ fn decode_frame(
 }
 
 fn validate_frame(frame: &RuntimeArcErrorFrame) -> Result<(), RuntimeArcErrorValueError> {
-    if frame.flow.as_ref().is_some_and(|flow| {
-        !matches!(
-            flow,
-            RuntimeEntityReference::Project {
-                family: DeclarationIdentityFamily::Flow,
-                ..
-            }
-        )
-    }) {
+    if frame
+        .flow
+        .as_ref()
+        .is_some_and(|flow| flow.project_family() != Some(DeclarationIdentityFamily::Flow))
+    {
         return Err(RuntimeArcErrorValueError::InvalidFlowReference);
     }
     if frame
         .line
         .as_ref()
-        .is_some_and(|line| !matches!(line, RuntimeEntityReference::DialogueLine(_)))
+        .is_some_and(|line| line.line_identity().is_none())
     {
         return Err(RuntimeArcErrorValueError::InvalidLineReference);
     }

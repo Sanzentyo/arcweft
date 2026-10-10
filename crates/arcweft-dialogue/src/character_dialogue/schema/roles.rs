@@ -6,9 +6,7 @@ use arcweft_core::{
         RuntimeSemanticTypeId,
     },
     program_types::RuntimeProgramTypes,
-    value::{
-        RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue,
-    },
+    value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue},
 };
 use arcweft_id::DeclarationIdentityFamily;
 
@@ -235,13 +233,7 @@ impl CharacterDialogueRuntimeSchema {
             .accepts_value(self.roles.value_type(role), value, Self::limits())?;
         let authored = if role == Role::Style {
             if let RuntimeValue::EntityRef(reference) = value {
-                if !matches!(
-                    reference,
-                    RuntimeEntityReference::Project {
-                        family: DeclarationIdentityFamily::Style,
-                        ..
-                    }
-                ) {
+                if reference.project_family() != Some(DeclarationIdentityFamily::Style) {
                     return Err(CharacterDialogueValueError::RoleType {
                         role,
                         reason: "Style reference has another entity family",

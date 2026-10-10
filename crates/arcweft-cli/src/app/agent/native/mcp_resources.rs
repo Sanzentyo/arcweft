@@ -145,10 +145,12 @@ pub(super) fn agent_mcp_assignment_value(
     assignments: &[AgentAssignment],
     name: &str,
 ) -> Option<AgentValue> {
-    assignments
+    let target = PublicId::new(name.trim_start_matches('@')).ok()?;
+    let mut matches = assignments
         .iter()
-        .find(|assignment| assignment.name.trim_start_matches('@') == name.trim_start_matches('@'))
-        .map(agent_assignment_value)
+        .filter(|assignment| assignment.name.trim_start_matches('@') == target.as_str());
+    let assignment = matches.next()?;
+    matches.next().is_none().then(|| assignment.value.clone())
 }
 
 pub(super) fn agent_mcp_compare_values(
@@ -157,8 +159,8 @@ pub(super) fn agent_mcp_compare_values(
     expected: &AgentValue,
 ) -> bool {
     match op {
-        CompareOp::Eq => agent_mcp_values_equal(actual, expected),
-        CompareOp::NotEq => !agent_mcp_values_equal(actual, expected),
+        CompareOp::Eq => actual == expected,
+        CompareOp::NotEq => actual != expected,
         CompareOp::Greater => {
             agent_mcp_compare_numeric_values(actual, expected).is_some_and(i32::is_positive)
         }
@@ -171,14 +173,6 @@ pub(super) fn agent_mcp_compare_values(
         CompareOp::LessOrEqual => {
             agent_mcp_compare_numeric_values(actual, expected).is_some_and(|order| order <= 0)
         }
-    }
-}
-
-pub(super) fn agent_mcp_values_equal(left: &AgentValue, right: &AgentValue) -> bool {
-    match (left, right) {
-        (AgentValue::Entity(left), AgentValue::String(right))
-        | (AgentValue::String(right), AgentValue::Entity(left)) => left.as_str() == right,
-        _ => left == right,
     }
 }
 

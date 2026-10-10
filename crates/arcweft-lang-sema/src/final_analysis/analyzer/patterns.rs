@@ -117,7 +117,7 @@ impl Analyzer<'_, '_, '_> {
                                 owner,
                             });
                         }
-                        CheckedPatternResolution::Entity(item)
+                        item.into_pattern()
                     }
                     HirPatternKind::TypedBinding { ty: annotation, .. } => {
                         let annotation = self.types.get(annotation).cloned().ok_or(

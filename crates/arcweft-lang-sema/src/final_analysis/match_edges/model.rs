@@ -44,11 +44,11 @@ const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 33] = [
     0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
-const VALUE_RESOLUTION_TAG_END: u16 = 0x0308;
-const VALUE_RESOLUTION_TAG_COUNT: u16 = 9;
+const VALUE_RESOLUTION_TAG_END: u16 = 0x0309;
+const VALUE_RESOLUTION_TAG_COUNT: u16 = 10;
 const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
-const PATTERN_RESOLUTION_TAG_END: u16 = 0x0605;
-const PATTERN_RESOLUTION_TAG_COUNT: u16 = 6;
+const PATTERN_RESOLUTION_TAG_END: u16 = 0x0606;
+const PATTERN_RESOLUTION_TAG_COUNT: u16 = 7;
 const _: () = {
     assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0222);
     assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
@@ -438,7 +438,8 @@ impl CheckedValueResolution {
             Self::Entry(_) => VALUE_RESOLUTION_TAG_BASE + 5,
             Self::Registered(_) => VALUE_RESOLUTION_TAG_BASE + 6,
             Self::Constant(_) => VALUE_RESOLUTION_TAG_BASE + 7,
-            Self::CatalogAsset(_) => VALUE_RESOLUTION_TAG_END,
+            Self::CatalogAsset(_) => VALUE_RESOLUTION_TAG_BASE + 8,
+            Self::ImportedProjectEntity(_) => VALUE_RESOLUTION_TAG_END,
         }
     }
 }
@@ -465,7 +466,8 @@ impl CheckedPatternResolution {
             Self::Entity(_) => PATTERN_RESOLUTION_TAG_BASE + 2,
             Self::Record(_) => PATTERN_RESOLUTION_TAG_BASE + 3,
             Self::Variant(_) => PATTERN_RESOLUTION_TAG_BASE + 4,
-            Self::TypedBinding(_) => PATTERN_RESOLUTION_TAG_END,
+            Self::TypedBinding(_) => PATTERN_RESOLUTION_TAG_BASE + 5,
+            Self::ImportedProjectEntity(_) => PATTERN_RESOLUTION_TAG_END,
         }
     }
 }
@@ -516,7 +518,7 @@ mod tests {
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));
-        assert_eq!(value, (0x0300_u16..=0x0308_u16).collect::<Vec<_>>());
+        assert_eq!(value, (0x0300_u16..=0x0309_u16).collect::<Vec<_>>());
         assert_unique(&value);
         assert_eq!(
             VALUE_RESOLUTION_TAG_END,
@@ -555,13 +557,13 @@ mod tests {
         let pattern =
             (PATTERN_RESOLUTION_TAG_BASE..=PATTERN_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(pattern.len(), usize::from(PATTERN_RESOLUTION_TAG_COUNT));
-        assert_eq!(pattern, (0x0600_u16..=0x0605_u16).collect::<Vec<_>>());
+        assert_eq!(pattern, (0x0600_u16..=0x0606_u16).collect::<Vec<_>>());
         assert_unique(&pattern);
         assert_eq!(
             PATTERN_RESOLUTION_TAG_END,
             PATTERN_RESOLUTION_TAG_BASE + PATTERN_RESOLUTION_TAG_COUNT - 1
         );
-        assert_eq!(PATTERN_RESOLUTION_TAG_END, 0x0605);
+        assert_eq!(PATTERN_RESOLUTION_TAG_END, 0x0606);
 
         let mut all = expression;
         all.extend(value);

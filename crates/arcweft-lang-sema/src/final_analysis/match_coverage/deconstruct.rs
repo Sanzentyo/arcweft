@@ -242,15 +242,19 @@ impl MatchCoverageAnalyzer<'_, '_> {
         expected: &TypeKind,
         site: &PatternSite,
     ) -> Result<DeconstructedPatternKind, CheckedMatchBuildError> {
-        let CheckedPatternResolution::Entity(item) = resolution else {
-            return Err(CheckedMatchBuildError::InvalidCheckedRow {
-                coordinate: site.semantic_coordinate(),
-            });
+        let identity = match resolution {
+            CheckedPatternResolution::Entity(item) => item.semantic_id(),
+            CheckedPatternResolution::ImportedProjectEntity(entity) => entity.semantic_id(),
+            _ => {
+                return Err(CheckedMatchBuildError::InvalidCheckedRow {
+                    coordinate: site.semantic_coordinate(),
+                });
+            }
         };
         Ok(DeconstructedPatternKind::Constructor {
             constructor: CoverageConstructorId::Entity {
                 owner: expected.semantic_identity_digest()?,
-                item: item.semantic_id(),
+                item: identity,
             },
             fields: Box::new([]),
         })

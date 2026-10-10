@@ -25,7 +25,12 @@ use arcweft_source::{SourceAnchor, SourceSpan};
 use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
+mod accepted_entities;
 mod entry_roles;
+pub use accepted_entities::{
+    AcceptedProjectEntity, AcceptedProjectEntityCatalog, HostSignalPublicationInput,
+    ProjectEntityPublicationError,
+};
 mod final_projection;
 mod nominal;
 

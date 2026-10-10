@@ -1335,6 +1335,16 @@ impl Engine {
     ) -> Result<FlowRuntimeId, RuntimeEvalError> {
         match self.evaluate_expr(expr)? {
             RuntimeValue::EntityRef(target) => {
+                if let Some(flow) = target.exact_flow_identity() {
+                    return self.flow_index(flow).map(|_| flow.clone()).ok_or_else(|| {
+                        RuntimeEvalError::InvalidEntityTarget {
+                            target: flow.canonical_label(),
+                            reason:
+                                "the exact Flow identity is absent from the current admitted plan"
+                                    .to_owned(),
+                        }
+                    });
+                }
                 let target = target.runtime_label();
                 self.plan
                     .resolve_flow_target_value(&target)

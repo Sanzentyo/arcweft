@@ -1850,13 +1850,20 @@ fn wait_requires_stable_predicate_matches() {
 }
 
 #[test]
-fn wait_matches_entity_probe_against_string_observation_id() {
+fn wait_matches_entity_probe_only_against_typed_entity_observation() {
     let session = TestSession {
-        observations: vec![observation_with_signal(
-            1,
-            "signal.current_flow",
-            AgentValue::String("flow.opening".to_owned()),
-        )],
+        observations: vec![
+            observation_with_signal(
+                1,
+                "signal.current_flow",
+                AgentValue::String("flow.opening".to_owned()),
+            ),
+            observation_with_signal(
+                2,
+                "signal.current_flow",
+                AgentValue::Entity(PublicId::new("flow.opening").unwrap()),
+            ),
+        ],
     };
     let mut runner = AgentRunner::new(
         session,
@@ -1885,7 +1892,7 @@ fn wait_matches_entity_probe_against_string_observation_id() {
 
     assert!(matches!(
         report.response,
-        AgentHostResponse::Observation(observation) if observation.tick == 1
+        AgentHostResponse::Observation(observation) if observation.tick == 2
     ));
 }
 
@@ -3870,4 +3877,127 @@ fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDec
             arcweft_core::plan::RuntimeLocalBindingStorage::Derived,
         ),
     }
+}
+
+#[test]
+fn wait_rejects_same_text_string_for_an_entity_probe() {
+    let mut runner = AgentRunner::new(
+        TestSession {
+            observations: vec![observation_with_signal(
+                1,
+                "signal.current_flow",
+                AgentValue::String("flow.opening".to_owned()),
+            )],
+        },
+        RecordingDebugSink::default(),
+        DisabledRagService,
+        RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
+        AgentRunnerConfig::new(SessionId::new("session.test").unwrap()),
+    );
+    let error = runner
+        .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+            predicate: Predicate::Compare {
+                probe: Probe::Signal {
+                    target: PublicId::new("signal.current_flow").unwrap(),
+                },
+                op: CompareOp::Eq,
+                value: Box::new(AgentValue::Entity(PublicId::new("flow.opening").unwrap())),
+            },
+            timeout_millis: 1,
+            stable_frames: 1,
+            poll_frames: 1,
+        })))
+        .expect_err("a literal String cannot satisfy an Entity wait");
+    assert!(matches!(
+        error,
+        AgentRunError::WaitTimeout { timeout_millis: 1 }
+    ));
+    assert!(runner.session_mut().observations.is_empty());
+    let observed = runner
+        .debug_mut()
+        .events
+        .iter()
+        .find(|event| event.kind == DebugEventKind::Observation)
+        .expect("the unsuccessful observed value is retained in the trace");
+    assert_eq!(
+        observed.payload["signals"]["signal.current_flow"],
+        serde_json::json!({
+            "kind": "string", "value": "flow.opening",
+        })
+    );
+}
+
+#[test]
+fn runner_predicate_equality_preserves_entity_and_string_kinds() {
+    let entity = AgentValue::Entity(PublicId::new("flow.opening").unwrap());
+    let string = AgentValue::String("flow.opening".to_owned());
+    for (actual, expected) in [(&entity, &string), (&string, &entity)] {
+        let observation = observation_with_signal(1, "signal.current_flow", actual.clone());
+        let compare = |op| Predicate::Compare {
+            probe: Probe::Signal {
+                target: PublicId::new("signal.current_flow").unwrap(),
+            },
+            op,
+            value: Box::new(expected.clone()),
+        };
+        assert!(!crate::predicate::predicate_matches(
+            &compare(CompareOp::Eq),
+            &observation
+        ));
+        assert!(crate::predicate::predicate_matches(
+            &compare(CompareOp::NotEq),
+            &observation
+        ));
+    }
+}
+
+#[test]
+fn wait_matches_metric_and_typed_metric_observation_field() {
+    let mut runner = AgentRunner::new(
+        TestSession {
+            observations: vec![
+                observation_with_signal(1, "metric.fps", AgentValue::String("60".to_owned())),
+                observation_with_signal(2, "metric.fps", AgentValue::F64(60.0)),
+            ],
+        },
+        NullDebugEventSink,
+        DisabledRagService,
+        RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
+        AgentRunnerConfig::new(SessionId::new("session.test").unwrap()),
+    );
+    let probes = [
+        Probe::Metric {
+            target: PublicId::new("metric.fps").unwrap(),
+        },
+        Probe::ObservationField {
+            path: ObservationFieldPath::new("metrics.metric.fps").unwrap(),
+        },
+    ];
+    let report = runner
+        .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
+            predicate: Predicate::All {
+                predicates: probes
+                    .into_iter()
+                    .map(|probe| Predicate::Compare {
+                        probe,
+                        op: CompareOp::Eq,
+                        value: Box::new(AgentValue::F64(60.0)),
+                    })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("two metric predicates fit the admitted operand domain"),
+            },
+            timeout_millis: 2,
+            stable_frames: 1,
+            poll_frames: 1,
+        })))
+        .expect("both metric probes use the same typed envelope map");
+    let AgentHostResponse::Observation(observation) = report.response else {
+        panic!("wait returns its matching observation");
+    };
+    assert_eq!(
+        observation.tick, 2,
+        "the numeric metric never matches the same-text String"
+    );
+    assert_eq!(observation.signals["metric.fps"], AgentValue::F64(60.0));
 }
