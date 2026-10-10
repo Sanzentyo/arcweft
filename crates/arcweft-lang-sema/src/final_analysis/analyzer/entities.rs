@@ -43,12 +43,6 @@ impl CheckedEntityReference {
             }
         }
     }
-    pub(super) fn into_local_item(self) -> Option<CheckedProjectItem> {
-        match self {
-            Self::Item(item) => Some(item),
-            Self::Imported(_) => None,
-        }
-    }
 }
 
 impl Analyzer<'_, '_, '_> {

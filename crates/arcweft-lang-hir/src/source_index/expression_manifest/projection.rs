@@ -300,12 +300,23 @@ fn choice_projection_matches(
     actual: &crate::expr::HirChoiceExpr,
     expected: &arcweft_lang_syntax::attachment::AttachedChoiceExpression,
 ) -> bool {
-    actual.id().is_some() == expected.id().is_some()
+    let identity = match (actual.id(), expected.id()) {
+        (None, None) => true,
+        (Some(actual), Some(expected)) => choice_id_projection_matches(actual, expected.value()),
+        _ => false,
+    };
+    identity
         && actual.required_expression_slots().len() == expected.required_expression_slots().len()
         && actual.plan().is_some() == expected.plan().is_some()
         && match expected.body() {
             arcweft_lang_syntax::attachment::AttachedRequiredChoiceBody::Present(body) => {
                 actual.body().items().len() == body.items().len()
+                    && actual
+                        .body()
+                        .items()
+                        .iter()
+                        .zip(body.items())
+                        .all(|(actual, expected)| choice_item_projection_matches(actual, expected))
             }
             arcweft_lang_syntax::attachment::AttachedRequiredChoiceBody::Missing(_) => {
                 actual.body().items().is_empty()
@@ -323,6 +334,55 @@ fn choice_projection_matches(
             },
             _ => false,
         }
+}
+
+fn choice_id_projection_matches(
+    actual: &HirIdRefValue,
+    expected: &arcweft_lang_syntax::id_ref::SyntaxIdRefSyntax,
+) -> bool {
+    crate::final_lowering::id_ref_projection::id_ref(expected)
+        .is_ok_and(|expected| &expected == actual)
+}
+
+fn choice_item_projection_matches(
+    actual: &crate::expr::HirChoiceItem,
+    expected: &arcweft_lang_syntax::attachment::AttachedChoiceItem,
+) -> bool {
+    use crate::expr::{HirChoiceCompactAction as Action, HirChoiceItem as Item};
+    use arcweft_lang_syntax::attachment::{
+        AttachedChoiceCompactAction as SyntaxAction, AttachedChoiceItem as SyntaxItem,
+        AttachedRequiredChoiceEntityReference,
+    };
+    match (actual, expected) {
+        (Item::CompactArm(actual), SyntaxItem::CompactArm(expected)) => {
+            choice_id_projection_matches(actual.id(), expected.id().value())
+                && match (actual.action(), expected.action()) {
+                    (Action::Goto(actual), SyntaxAction::Goto { target, .. }) => {
+                        match target.as_ref() {
+                            AttachedRequiredChoiceEntityReference::Reference(expected) => {
+                                choice_id_projection_matches(actual, expected.value())
+                            }
+                            AttachedRequiredChoiceEntityReference::Missing(_) => {
+                                matches!(actual, HirIdRefValue::Recovered(value)
+                                if value.shape() == crate::leaf::HirIdRefShape::Missing
+                                    && value.issue() == crate::leaf::HirIdRefIssue::Missing)
+                            }
+                        }
+                    }
+                    (Action::Out(_), SyntaxAction::Out { .. })
+                    | (Action::Missing, SyntaxAction::Missing(_)) => true,
+                    _ => false,
+                }
+        }
+        (Item::Let(_), SyntaxItem::Let(_))
+        | (Item::If(_), SyntaxItem::If(_))
+        | (Item::For(_), SyntaxItem::For(_))
+        | (Item::Match(_), SyntaxItem::Match(_))
+        | (Item::Option(_), SyntaxItem::Option(_))
+        | (Item::OptionFor(_), SyntaxItem::OptionFor(_))
+        | (Item::Error, SyntaxItem::Recovered(_)) => true,
+        _ => false,
+    }
 }
 
 fn postfix_bracket_projection_matches(

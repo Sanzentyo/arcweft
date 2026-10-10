@@ -1739,44 +1739,53 @@ fn validate_choice(
     owner: ExprId,
     choice: &CheckedChoice,
 ) -> Result<(), FinalSemanticAnalysisError> {
-    let expression = resolve_module(modules, owner.module())?
+    let module = resolve_module(modules, owner.module())?;
+    let expression = module
         .resolve_expr(owner)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
     let HirExprKind::Choice(authored) = expression.kind() else {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     };
-    if choice.option_ids().len() != authored.body().items().len()
-        || choice
-            .public_id()
-            .is_some_and(|id| id.as_str().split('.').next() != Some("choice"))
-        || choice
-            .option_ids()
-            .iter()
-            .any(|id| id.as_str().split('.').next() != Some("choice"))
+    let public_id = authored
+        .id()
+        .map(|id| super::choice_identity::public_id(symbols, module, expression.scope(), id))
+        .transpose()?;
+    if choice.public_id() != public_id.as_ref()
+        || choice.option_ids().len() != authored.body().items().len()
     {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
-    let mut previous = None;
-    for goto in choice.gotos() {
-        if previous.is_some_and(|previous| previous >= goto.arm()) {
+    let mut option_ids = BTreeSet::new();
+    let mut gotos = Vec::new();
+    for (ordinal, (authored, admitted)) in authored
+        .body()
+        .items()
+        .iter()
+        .zip(choice.option_ids())
+        .enumerate()
+    {
+        let arcweft_lang_hir::expr::HirChoiceItem::CompactArm(arm) = authored else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let index = usize::try_from(goto.arm())
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        if !matches!(
-            authored.body().items().get(index),
-            Some(arcweft_lang_hir::expr::HirChoiceItem::CompactArm(arm))
-                if matches!(
-                    arm.action(),
-                    arcweft_lang_hir::expr::HirChoiceCompactAction::Goto(_)
-                )
-        ) || goto.target().family() != arcweft_id::DeclarationIdentityFamily::Flow
+        };
+        let expected = super::choice_identity::option_id(arm.id(), public_id.as_ref())?;
+        if admitted != &expected
+            || Some(admitted) == public_id.as_ref()
+            || !option_ids.insert(admitted)
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        validate_project_item(symbols, modules, goto.target())?;
-        previous = Some(goto.arm());
+        if let arcweft_lang_hir::expr::HirChoiceCompactAction::Goto(reference) = arm.action() {
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+            let target = super::choice_identity::goto(symbols, module, owner, ordinal, reference)?;
+            validate_project_item(symbols, modules, &target)?;
+            gotos.push(super::CheckedChoiceGoto::new(ordinal, target));
+        }
     }
+    if choice.gotos() != gotos.as_slice() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+
     match (choice.plan(), authored.plan()) {
         (None, None) => {}
         (Some(checked), Some(authored)) if checked.items().len() == authored.items().len() => {
@@ -3187,3 +3196,7 @@ fn resolve_item<'a>(
         .resolve_item(owner)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
 }
+
+#[cfg(test)]
+#[path = "validation/choice_tests.rs"]
+mod choice_tests;

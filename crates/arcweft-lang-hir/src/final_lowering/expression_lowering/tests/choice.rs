@@ -244,3 +244,226 @@ fn choice_required_expression_one_over_limit_rolls_back_atomically() {
     assert_eq!(database.test_state(), before);
     assert!(database.current(&module_key(&parsed)).is_none());
 }
+
+#[test]
+fn choice_source_roles_keep_exact_id_arm_and_goto_coordinates() {
+    use crate::source_index::HirChoiceCompactArmSourcePart as Part;
+    let parsed = parsed_source(
+        "choice-source-roles",
+        &[
+            r#"(choice @choice.menu {
+            @.first "First" -> @flow.done
+            @.second "Second" => 2
+        })"#
+            .into(),
+            "(choice { @choice.absolute \"Only\" => 1 })".into(),
+        ],
+    );
+    let (module, owners, attached) = lower_and_publish(&parsed);
+    assert!(!expression(&module, owners[0]).is_poisoned());
+    let choice = attached[0].choice().unwrap();
+    let arcweft_lang_syntax::attachment::AttachedRequiredChoiceBody::Present(body) = choice.body()
+    else {
+        panic!("present compact body");
+    };
+    let arcweft_lang_syntax::attachment::AttachedChoiceItem::CompactArm(arm) = &body.items()[0]
+    else {
+        panic!("first compact arm");
+    };
+    let arcweft_lang_syntax::attachment::AttachedChoiceCompactAction::Goto { target, .. } =
+        arm.action()
+    else {
+        panic!("static goto");
+    };
+    let arcweft_lang_syntax::attachment::AttachedRequiredChoiceEntityReference::Reference(target) =
+        target.as_ref()
+    else {
+        panic!("present Flow target");
+    };
+    for (role, span) in [
+        (
+            HirExprSourceRole::ChoiceIdentity,
+            choice.id().unwrap().expression().whole_source_span(),
+        ),
+        (
+            HirExprSourceRole::ChoiceCompactArm {
+                arm: 0,
+                part: Part::Whole,
+            },
+            arm.syntax().source_span(),
+        ),
+        (
+            HirExprSourceRole::ChoiceCompactArm {
+                arm: 0,
+                part: Part::Identity,
+            },
+            arm.id().expression().whole_source_span(),
+        ),
+        (
+            HirExprSourceRole::ChoiceCompactArm {
+                arm: 0,
+                part: Part::GotoTarget,
+            },
+            target.expression().whole_source_span(),
+        ),
+    ] {
+        let lookup = module
+            .source_site(
+                parsed.document().identity(),
+                HirSourceQuery::Expr {
+                    owner: owners[0],
+                    role,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            lookup.presence(),
+            HirSourcePresence::Present(&HirSourceSite::Span(span))
+        );
+        assert_eq!(lookup.owner_status(), HirSourceOwnerStatus::Clean);
+    }
+    assert_eq!(
+        module
+            .source_site(
+                parsed.document().identity(),
+                HirSourceQuery::Expr {
+                    owner: owners[1],
+                    role: HirExprSourceRole::ChoiceIdentity,
+                }
+            )
+            .unwrap()
+            .presence(),
+        HirSourcePresence::AbsentOptional
+    );
+    let role = HirExprSourceRole::ChoiceCompactArm {
+        arm: 2,
+        part: Part::Identity,
+    };
+    assert_eq!(
+        module.source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr {
+                owner: owners[0],
+                role
+            }
+        ),
+        Err(HirSourceQueryError::ExprOrdinalOutOfBounds {
+            owner: owners[0],
+            role,
+            length: 2
+        })
+    );
+    let role = HirExprSourceRole::ChoiceCompactArm {
+        arm: 1,
+        part: Part::GotoTarget,
+    };
+    assert_eq!(
+        module.source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr {
+                owner: owners[0],
+                role
+            }
+        ),
+        Err(HirSourceQueryError::ExprRoleNotApplicable {
+            owner: owners[0],
+            role
+        })
+    );
+    let foreign = parsed_source("choice-source-foreign", &["1".into()]);
+    assert!(matches!(
+        module.source_site(
+            foreign.document().identity(),
+            HirSourceQuery::Expr {
+                owner: owners[0],
+                role: HirExprSourceRole::ChoiceIdentity,
+            }
+        ),
+        Err(HirSourceQueryError::WrongSourceDocument { .. })
+    ));
+    let plain = parsed_source("choice-source-wrong-family", &["1".into()]);
+    let (plain, plain_owners, _) = lower_and_publish(&plain);
+    assert!(matches!(
+        plain.source_site(
+            plain.provenance().source_identity(),
+            HirSourceQuery::Expr {
+                owner: plain_owners[0],
+                role: HirExprSourceRole::ChoiceIdentity,
+            }
+        ),
+        Err(HirSourceQueryError::ExprRoleNotApplicable { .. })
+    ));
+}
+
+#[test]
+fn choice_source_freeze_rejects_authored_header_option_and_goto_id_substitution() {
+    for changed in 0..3 {
+        assert_expression_source_freeze_rejects(
+            &format!("choice-authored-id-tamper-{changed}"),
+            "(choice @choice.menu { @choice.option \"First\" -> @flow.done })",
+            |transaction, root| {
+                let (scope, state, choice, body_scope, arm_id, label, condition, action, plan) = {
+                    let (slots, arenas) = transaction.storage_mut();
+                    let payload = arenas.expressions().resolve_staged(slots, root).unwrap();
+                    let HirExprKind::Choice(choice) = payload.kind() else {
+                        panic!("Choice root")
+                    };
+                    let [HirChoiceItem::CompactArm(arm)] = choice.body().items() else {
+                        panic!("one compact arm")
+                    };
+                    (
+                        payload.scope(),
+                        payload.state().clone(),
+                        choice.id().cloned(),
+                        choice.body().scope(),
+                        arm.id().clone(),
+                        arm.label(),
+                        arm.condition(),
+                        arm.action().clone(),
+                        choice.plan().cloned(),
+                    )
+                };
+                let forged = |id: &str| {
+                    crate::leaf::HirIdRefValue::Resolved(crate::leaf::HirIdRef::absolute(
+                        crate::leaf::HirEntityReference::try_new(id.into()).unwrap(),
+                    ))
+                };
+                let replacement = HirExpr::try_new(
+                    scope,
+                    HirExprKind::Choice(HirChoiceExpr::new(
+                        if changed == 0 {
+                            Some(forged("choice.foreign"))
+                        } else {
+                            choice
+                        },
+                        HirChoiceBody::new(
+                            body_scope,
+                            Box::new([HirChoiceItem::CompactArm(HirChoiceCompactArm::new(
+                                if changed == 1 {
+                                    forged("choice.foreign")
+                                } else {
+                                    arm_id
+                                },
+                                label,
+                                condition,
+                                if changed == 2 {
+                                    HirChoiceCompactAction::Goto(forged("flow.foreign"))
+                                } else {
+                                    action
+                                },
+                            ))]),
+                        ),
+                        plan,
+                    )),
+                    state,
+                )
+                .unwrap();
+                let (slots, arenas) = transaction.storage_mut();
+                arenas
+                    .expressions()
+                    .revise_finalized(slots, root, replacement)
+                    .unwrap();
+            },
+        );
+    }
+}

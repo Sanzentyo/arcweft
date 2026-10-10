@@ -3140,7 +3140,15 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         let public_id = choice
             .id()
-            .map(|id| self.resolve_choice_public_id(module, expression.scope(), id))
+            .map(|id| {
+                super::super::choice_identity::public_id(
+                    self.symbols,
+                    module,
+                    expression.scope(),
+                    id,
+                )
+                .map_err(AnalyzerExpressionError::fatal)
+            })
             .transpose()?;
         let mut option_ids = Vec::with_capacity(choice.body().items().len());
         let mut gotos = Vec::new();
@@ -3153,7 +3161,7 @@ impl Analyzer<'_, '_, '_> {
                 ));
             };
             option_ids.push(
-                resolve_choice_option_public_id(candidate.id(), public_id.as_ref())
+                super::super::choice_identity::option_id(candidate.id(), public_id.as_ref())
                     .map_err(AnalyzerExpressionError::fatal)?,
             );
             let label =
@@ -3166,10 +3174,19 @@ impl Analyzer<'_, '_, '_> {
             }
             match candidate.action() {
                 HirChoiceCompactAction::Goto(target) => {
-                    let target = target.as_resolved().ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+                    let ordinal = u32::try_from(arm).map_err(|_| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::AccountingOverflow,
+                        )
                     })?;
-                    let target = self.resolve_choice_goto(module, owner, target)?;
+                    let target = super::super::choice_identity::goto(
+                        self.symbols,
+                        module,
+                        owner,
+                        ordinal,
+                        target,
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)?;
                     gotos.push(CheckedChoiceGoto::new(
                         u32::try_from(arm).map_err(|_| {
                             AnalyzerExpressionError::fatal(
@@ -3470,114 +3487,6 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn resolve_choice_goto(
-        &self,
-        module: &HirModule,
-        owner: ExprId,
-        target: &HirIdRef,
-    ) -> Result<CheckedProjectItem, AnalyzerExpressionError> {
-        let target = self
-            .resolve_checked_entity_reference(
-                module,
-                target,
-                expression_span(module, owner).map_err(AnalyzerExpressionError::fatal)?,
-            )
-            .map_err(|error| match error {
-                EntityReferenceResolutionError::Lookup => AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::ValueResolutionFailed { owner },
-                ),
-                EntityReferenceResolutionError::WrongFamily => {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                }
-            })?;
-        let target = target.into_local_item().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-        })?;
-        (target.family() == arcweft_id::DeclarationIdentityFamily::Flow)
-            .then_some(target)
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })
-    }
-
-    fn resolve_choice_public_id(
-        &self,
-        module: &HirModule,
-        mut scope: ScopeId,
-        value: &arcweft_lang_hir::leaf::HirIdRefValue,
-    ) -> Result<arcweft_id::PublicId, AnalyzerExpressionError> {
-        let reference = value.as_resolved().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
-        })?;
-        if let HirIdRef::Absolute(value) = reference {
-            return checked_choice_public_id(value.as_str())
-                .map_err(AnalyzerExpressionError::fatal);
-        }
-
-        let mut named_scopes = Vec::new();
-        let item = loop {
-            let node = module.resolve_scope(scope).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-            })?;
-            if let HirScopeOwner::Item(owner) = node.owner() {
-                break *owner;
-            }
-            if let Some(named) = module.scope_namespace(scope).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-            })? {
-                named_scopes.push(named.name().as_str());
-            }
-            let Some(parent) = node.parent() else {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                ));
-            };
-            scope = parent;
-        };
-        named_scopes.reverse();
-
-        let symbol = self.symbols.flow_symbol_for_item(item).ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-        })?;
-        let CallableDeclarationKey::Flow(flow) = symbol.declaration() else {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::WrongPayloadFamily,
-            ));
-        };
-        let flow_path = flow
-            .public_id()
-            .as_str()
-            .strip_prefix("flow.")
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        let relative = match reference {
-            HirIdRef::Relative(relative) => relative,
-            HirIdRef::FamilyRelative(relative) if relative.family().as_str() == "choice" => {
-                relative.relative()
-            }
-            HirIdRef::FamilyRelative(_) | HirIdRef::Absolute(_) => {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                ));
-            }
-        };
-        if relative.parent_depth() > named_scopes.len() {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::WrongPayloadFamily,
-            ));
-        }
-        let retained_scope_count = named_scopes.len() - relative.parent_depth();
-        let mut value = String::from("choice.");
-        value.push_str(flow_path);
-        for name in &named_scopes[..retained_scope_count] {
-            value.push('.');
-            value.push_str(name);
-        }
-        value.push('.');
-        value.push_str(relative.suffix().as_str());
-        checked_choice_public_id(&value).map_err(AnalyzerExpressionError::fatal)
-    }
     /// Residualizes selected `rgb` calls after the candidate graph is sealed.
     /// At this cut the exact builtin application is available and the outer
     /// expression transaction can publish the prepared scalar replacement.
@@ -5169,45 +5078,6 @@ fn array_repeat_length(length: &PreparedExpressionFact) -> Option<usize> {
         return None;
     };
     magnitude.to_decimal_string().parse().ok()
-}
-
-fn checked_choice_public_id(
-    value: &str,
-) -> Result<arcweft_id::PublicId, FinalSemanticAnalysisError> {
-    let public_id = arcweft_id::PublicId::try_new(value.to_owned())
-        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    (public_id.as_str().split('.').next() == Some("choice"))
-        .then_some(public_id)
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
-}
-
-fn resolve_choice_option_public_id(
-    value: &arcweft_lang_hir::leaf::HirIdRefValue,
-    choice: Option<&arcweft_id::PublicId>,
-) -> Result<arcweft_id::PublicId, FinalSemanticAnalysisError> {
-    let reference = value
-        .as_resolved()
-        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
-    if let HirIdRef::Absolute(value) = reference {
-        return checked_choice_public_id(value.as_str());
-    }
-    let relative = match reference {
-        HirIdRef::Relative(relative) => relative,
-        HirIdRef::FamilyRelative(relative) if relative.family().as_str() == "choice" => {
-            relative.relative()
-        }
-        HirIdRef::FamilyRelative(_) | HirIdRef::Absolute(_) => {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-    };
-    let choice = choice.ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    let mut base = choice.as_str().split('.').collect::<Vec<_>>();
-    if relative.parent_depth() >= base.len() {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-    base.truncate(base.len() - relative.parent_depth());
-    base.extend(relative.suffix().as_str().split('.'));
-    checked_choice_public_id(&base.join("."))
 }
 
 fn break_targets_loop(

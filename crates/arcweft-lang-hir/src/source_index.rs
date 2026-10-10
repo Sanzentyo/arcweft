@@ -240,6 +240,14 @@ pub enum HirMatchArmSourcePart {
     Value,
 }
 
+/// Exact source components of one root compact Choice arm.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirChoiceCompactArmSourcePart {
+    Whole,
+    Identity,
+    GotoTarget,
+}
+
 /// Source component of one Dialogue content node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirDialogueNodeSourcePart {
@@ -367,6 +375,11 @@ pub enum HirExprSourceRole {
     MatchArm {
         arm: u32,
         part: HirMatchArmSourcePart,
+    },
+    ChoiceIdentity,
+    ChoiceCompactArm {
+        arm: u32,
+        part: HirChoiceCompactArmSourcePart,
     },
     ThreadModifier,
     ThreadName,

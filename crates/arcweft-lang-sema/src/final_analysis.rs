@@ -68,6 +68,7 @@ pub use flow_execution::CheckedFlowExecutionDefinition;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;
 pub(crate) use model::CheckedRecordFieldSlot;
+mod choice_identity;
 mod completion;
 mod fx_application;
 mod input;

@@ -532,10 +532,49 @@ pub(super) fn expression_requirements(
                 },
             );
         }
-        // Choice interior source is frozen by its specialized attached
-        // relation. Whole remains on slot metadata, so no generic expression
-        // component is declared here.
-        HirExprKind::Choice(_) => {}
+        HirExprKind::Choice(choice) => {
+            let ExpressionProjection::Choice = projection else {
+                return None;
+            };
+            add_expression_requirement(
+                &mut requirements,
+                HirExprSourceRole::ChoiceIdentity,
+                if choice.id().is_some() {
+                    Required
+                } else {
+                    Optional
+                },
+            );
+            for (ordinal, item) in choice.body().items().iter().enumerate() {
+                let crate::expr::HirChoiceItem::CompactArm(candidate) = item else {
+                    continue;
+                };
+                let arm = u32::try_from(ordinal).expect("bounded Choice arm ordinal fits u32");
+                for part in [
+                    crate::source_index::HirChoiceCompactArmSourcePart::Whole,
+                    crate::source_index::HirChoiceCompactArmSourcePart::Identity,
+                ] {
+                    add_expression_requirement(
+                        &mut requirements,
+                        HirExprSourceRole::ChoiceCompactArm { arm, part },
+                        Required,
+                    );
+                }
+                if matches!(
+                    candidate.action(),
+                    crate::expr::HirChoiceCompactAction::Goto(_)
+                ) {
+                    add_expression_requirement(
+                        &mut requirements,
+                        HirExprSourceRole::ChoiceCompactArm {
+                            arm,
+                            part: crate::source_index::HirChoiceCompactArmSourcePart::GotoTarget,
+                        },
+                        Required,
+                    );
+                }
+            }
+        }
         HirExprKind::Error(error) if error.issue() == HirGenericExprIssue::UnclassifiedSyntax => {
             add_expression_requirement(&mut requirements, HirExprSourceRole::Recovery, Required);
         }

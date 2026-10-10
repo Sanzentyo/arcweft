@@ -72,9 +72,150 @@ impl ProjectSemanticIndex {
         retained_entities(&mut index, project, symbols, analysis)?;
         entry_entities(&mut index, project, analysis, entries)?;
         flow_and_style_entities(&mut index, project, symbols, analysis)?;
+        choice_entities(&mut index, project, analysis)?;
         callable_dependencies(&mut index, symbols, analysis)?;
         validate_relation_endpoints(&index)?;
         Ok(index)
+    }
+}
+
+fn choice_entities(
+    index: &mut ProjectSemanticIndex,
+    project: HirAnalysisProjectView<'_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<(), ProjectSemanticIndexError> {
+    let modules = project
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::Choice(choice) = checked.resolution() else {
+            continue;
+        };
+        let module = modules
+            .get(&owner.module())
+            .copied()
+            .ok_or(ProjectSemanticIndexError::MissingFlowExpression { owner })?;
+        let public = choice
+            .public_id()
+            .map(|id| ProjectEntityId::public(id.clone()));
+        if let Some(identity) = &public {
+            let kind = EntityKind::Choice;
+            let source = choice_source(
+                module,
+                owner,
+                HirExprSourceRole::Whole,
+                identity.public_id(),
+            )?;
+            let hash =
+                entity_semantic_hash(identity.public_id(), &kind, None, checked.effects(), None)?;
+            insert_entity(
+                index,
+                EntitySymbol::new(
+                    identity.clone(),
+                    EntityType::new(kind, None),
+                    SourceAnchor::from_span(source),
+                    hash,
+                ),
+            )?;
+            let location = analysis
+                .accepted_root_catalog()
+                .topology()
+                .semantic_path(HirSemanticPathOwnerId::Expression(owner))
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+            if let HirSemanticPathRoot::Declaration(CallableDeclarationKey::Flow(flow)) =
+                location.root()
+                && matches!(
+                    location.path().steps().first(),
+                    Some(HirSemanticPathStep::DeclarationBody(_))
+                )
+            {
+                push_relation(
+                    index,
+                    ProjectGraphRelation::new(
+                        ProjectEntityId::structural_flow(flow.clone()),
+                        identity.clone(),
+                        ProjectGraphRelationKind::ContainsChoice,
+                    ),
+                );
+            }
+        }
+        let mut gotos = choice.gotos().iter().peekable();
+        for (ordinal, id) in choice.option_ids().iter().enumerate() {
+            let arm = u32::try_from(ordinal)
+                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+            let identity = ProjectEntityId::public(id.clone());
+            let goto = gotos.next_if(|goto| goto.arm() == arm);
+            let extra = goto.map(|goto| goto.target().semantic_id());
+            let kind = EntityKind::ChoiceOption;
+            let hash = entity_semantic_hash(
+                id,
+                &kind,
+                None,
+                checked.effects(),
+                extra.as_ref().map(|value| value.as_bytes().as_slice()),
+            )?;
+            let source = choice_source(
+                module,
+                owner,
+                HirExprSourceRole::ChoiceCompactArm {
+                    arm,
+                    part: arcweft_lang_hir::source_index::HirChoiceCompactArmSourcePart::Whole,
+                },
+                id,
+            )?;
+            insert_entity(
+                index,
+                EntitySymbol::new(
+                    identity.clone(),
+                    EntityType::new(kind, None),
+                    SourceAnchor::from_span(source),
+                    hash,
+                ),
+            )?;
+            if let Some(parent) = &public {
+                push_relation(
+                    index,
+                    ProjectGraphRelation::new(
+                        parent.clone(),
+                        identity.clone(),
+                        ProjectGraphRelationKind::ContainsChoiceOption,
+                    ),
+                );
+            }
+            if let Some(goto) = goto {
+                let Some((CallableDeclarationKey::Flow(flow), _)) = goto.target().flow_owner()
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
+                };
+                push_relation(
+                    index,
+                    ProjectGraphRelation::new(
+                        identity,
+                        ProjectEntityId::structural_flow(flow.clone()),
+                        ProjectGraphRelationKind::ChoiceOptionGoto,
+                    ),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn choice_source(
+    module: &HirModule,
+    owner: arcweft_lang_hir::identity::ExprId,
+    role: HirExprSourceRole,
+    id: &PublicId,
+) -> Result<SourceSpan, ProjectSemanticIndexError> {
+    let lookup = module.source_site(
+        module.provenance().source_identity(),
+        HirSourceQuery::Expr { owner, role },
+    )?;
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(source)) => Ok(source.clone()),
+        _ => Err(ProjectSemanticIndexError::MissingEntitySource { id: id.clone() }),
     }
 }
 
@@ -813,3 +954,7 @@ fn hash_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
     hasher.update(&(bytes.len() as u64).to_le_bytes());
     hasher.update(bytes);
 }
+
+#[cfg(test)]
+#[path = "final_projection/tests.rs"]
+mod tests;

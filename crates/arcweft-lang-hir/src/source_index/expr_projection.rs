@@ -182,10 +182,29 @@ impl HirExprKind {
                     HirExprSourceRole::ThreadModifier | HirExprSourceRole::ThreadName
                 ),
             ),
-            // Choice interior coordinates belong to its specialized attached
-            // owner. Generic expression queries retain only `Whole`, handled
-            // before this family match.
-            Self::Choice(_) => not_applicable(owner, role),
+            Self::Choice(choice) => match role {
+                HirExprSourceRole::ChoiceIdentity => Ok(()),
+                HirExprSourceRole::ChoiceCompactArm { arm, part } => {
+                    let Some(item) = choice.body().items().get(arm as usize) else {
+                        return ordinal_out_of_bounds(owner, role, choice.body().items().len());
+                    };
+                    let crate::expr::HirChoiceItem::CompactArm(arm) = item else {
+                        return not_applicable(owner, role);
+                    };
+                    admit(
+                        owner,
+                        role,
+                        match part {
+                            super::HirChoiceCompactArmSourcePart::Whole
+                            | super::HirChoiceCompactArmSourcePart::Identity => true,
+                            super::HirChoiceCompactArmSourcePart::GotoTarget => {
+                                matches!(arm.action(), crate::expr::HirChoiceCompactAction::Goto(_))
+                            }
+                        },
+                    )
+                }
+                _ => not_applicable(owner, role),
+            },
             Self::Range(_) => admit(
                 owner,
                 role,

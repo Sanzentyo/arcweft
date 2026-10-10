@@ -779,6 +779,63 @@ fn expression_component_sites(
         insert_expression_site(&mut sites, owner, role, site)?;
     }
 
+    if let HirExprKind::Choice(_) = payload
+        && let Some(choice) = attached.choice()
+    {
+        if let Some(identity) = choice.id() {
+            let span = identity.expression().whole_source_span();
+            validate_component_source(source, span.source())?;
+            insert_expression_site(
+                &mut sites,
+                owner,
+                HirExprSourceRole::ChoiceIdentity,
+                HirSourceSite::from_attached_span(parsed.document(), &span)?,
+            )?;
+        }
+        if let arcweft_lang_syntax::attachment::AttachedRequiredChoiceBody::Present(body) =
+            choice.body()
+        {
+            for (ordinal, item) in body.items().iter().enumerate() {
+                let arcweft_lang_syntax::attachment::AttachedChoiceItem::CompactArm(candidate) =
+                    item
+                else {
+                    continue;
+                };
+                let arm = u32::try_from(ordinal).expect("bounded Choice arm ordinal fits u32");
+                let mut parts = vec![
+                    (
+                        super::HirChoiceCompactArmSourcePart::Whole,
+                        candidate.syntax().source_span(),
+                    ),
+                    (
+                        super::HirChoiceCompactArmSourcePart::Identity,
+                        candidate.id().expression().whole_source_span(),
+                    ),
+                ];
+                if let arcweft_lang_syntax::attachment::AttachedChoiceCompactAction::Goto {
+                    target,
+                    ..
+                } = candidate.action()
+                {
+                    let span = match target.as_ref() {
+                        arcweft_lang_syntax::attachment::AttachedRequiredChoiceEntityReference::Reference(value) => value.expression().whole_source_span(),
+                        arcweft_lang_syntax::attachment::AttachedRequiredChoiceEntityReference::Missing(value) => value.source_span(),
+                    };
+                    parts.push((super::HirChoiceCompactArmSourcePart::GotoTarget, span));
+                }
+                for (part, span) in parts {
+                    validate_component_source(source, span.source())?;
+                    insert_expression_site(
+                        &mut sites,
+                        owner,
+                        HirExprSourceRole::ChoiceCompactArm { arm, part },
+                        HirSourceSite::from_attached_span(parsed.document(), &span)?,
+                    )?;
+                }
+            }
+        }
+    }
+
     // A ContentCall owns the invocation payload directly. When its target is
     // authored as a Call, that target has no separate HIR Call owner, so the
     // target Call's components are re-owned by the attached-content owner.
