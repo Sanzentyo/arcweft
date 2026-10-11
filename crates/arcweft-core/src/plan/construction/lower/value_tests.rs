@@ -97,6 +97,83 @@ fn exact_opaque_branches_keep_their_identities_under_a_producer_wide_result() {
     ));
 }
 
+#[test]
+fn dense_values_admit_only_their_exact_container_and_width_in_building_and_sealed_plans() {
+    use crate::math::{DenseMatrix, DenseTensor, RuntimeDenseNumericType};
+    use crate::pattern::RuntimeCheckedType;
+
+    let values = [
+        RuntimeValue::MatrixF32(DenseMatrix::new(1, 1, vec![1.0]).unwrap()),
+        RuntimeValue::MatrixF64(DenseMatrix::new(1, 1, vec![1.0]).unwrap()),
+        RuntimeValue::TensorF32(DenseTensor::new(vec![1], vec![1.0]).unwrap()),
+        RuntimeValue::TensorF64(DenseTensor::new(vec![1], vec![1.0]).unwrap()),
+    ];
+    let types = RuntimeDenseNumericType::ALL.map(|ty| {
+        RuntimePlanTypeSeed::new(
+            RuntimeCheckedType::DenseNumeric(ty).semantic_identity_digest(),
+            Type::DenseNumeric(ty),
+        )
+    });
+    let mut builder = RuntimePlanBuilder::new();
+    builder.admit_type_batch(types.clone(), []).unwrap();
+    let sealed = plan(types);
+    for (index, dense) in RuntimeDenseNumericType::ALL.into_iter().enumerate() {
+        let semantic = RuntimeCheckedType::DenseNumeric(dense).semantic_identity_digest();
+        let ty = sealed.type_table().id_for_semantic(semantic).unwrap();
+        for (value_index, value) in values.iter().enumerate() {
+            assert_eq!(
+                builder
+                    .lower_expression(RuntimeExprSeed::new(
+                        semantic,
+                        RuntimeExprSeedKind::Value(value.clone()),
+                    ))
+                    .is_ok(),
+                index == value_index,
+                "building {dense:?} with {value:?}"
+            );
+            assert_eq!(
+                sealed
+                    .accepts_value(
+                        ty,
+                        value,
+                        crate::entry::RuntimeSchemaLimits::engine_default()
+                    )
+                    .is_ok(),
+                index == value_index,
+                "sealed {dense:?} with {value:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn nonfinite_execution_values_admit_literals_live_values_and_snapshots_but_not_canonical_inputs() {
+    let types = [seed(1, Type::F32), seed(2, Type::F64)];
+    let mut builder = RuntimePlanBuilder::new();
+    builder.admit_type_batch(types.clone(), []).unwrap();
+    let sealed = plan(types);
+    for (tag, value) in [
+        (1, RuntimeValue::F32(f32::from_bits(0x7fc0_1234))),
+        (1, RuntimeValue::F32(f32::INFINITY)),
+        (2, RuntimeValue::F64(f64::from_bits(0x7ff8_0000_0000_1234))),
+        (2, RuntimeValue::F64(f64::NEG_INFINITY)),
+    ] {
+        assert!(
+            builder
+                .lower_expression(RuntimeExprSeed::new(
+                    semantic(tag),
+                    RuntimeExprSeedKind::Value(value.clone()),
+                ))
+                .is_ok()
+        );
+        let ty = sealed.type_table().id_for_semantic(semantic(tag)).unwrap();
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        assert!(sealed.validate_live_value(ty, &value, limits).is_ok());
+        assert!(sealed.validate_snapshot_value(ty, &value, limits).is_ok());
+        assert!(sealed.accepts_value(ty, &value, limits).is_err());
+    }
+}
+
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }

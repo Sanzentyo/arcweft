@@ -122,6 +122,38 @@ fn runtime_primitive_digests_use_the_core_checked_type_authority() {
         (TypeKind::Bytes, RuntimeCheckedType::Bytes),
         (TypeKind::Duration, RuntimeCheckedType::Duration),
         (TypeKind::Progress, RuntimeCheckedType::Progress),
+        (
+            TypeKind::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Matrix(
+                arcweft_core::math::RuntimeFloatWidth::F32,
+            )),
+            RuntimeCheckedType::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Matrix(
+                arcweft_core::math::RuntimeFloatWidth::F32,
+            )),
+        ),
+        (
+            TypeKind::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Matrix(
+                arcweft_core::math::RuntimeFloatWidth::F64,
+            )),
+            RuntimeCheckedType::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Matrix(
+                arcweft_core::math::RuntimeFloatWidth::F64,
+            )),
+        ),
+        (
+            TypeKind::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Tensor(
+                arcweft_core::math::RuntimeFloatWidth::F32,
+            )),
+            RuntimeCheckedType::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Tensor(
+                arcweft_core::math::RuntimeFloatWidth::F32,
+            )),
+        ),
+        (
+            TypeKind::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Tensor(
+                arcweft_core::math::RuntimeFloatWidth::F64,
+            )),
+            RuntimeCheckedType::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::Tensor(
+                arcweft_core::math::RuntimeFloatWidth::F64,
+            )),
+        ),
     ];
 
     let mut digests = BTreeSet::new();

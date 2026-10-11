@@ -3152,6 +3152,7 @@ fn type_copy_capability(
         | TypeKind::Bytes
         | TypeKind::Duration
         | TypeKind::Progress
+        | TypeKind::DenseNumeric(_)
         | TypeKind::Unit
         | TypeKind::Never
         | TypeKind::Ref(_)

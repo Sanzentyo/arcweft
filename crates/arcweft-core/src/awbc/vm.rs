@@ -4,6 +4,9 @@
 //! await-many and budget yields are surfaced as typed exits over `FiberState`.
 //! This module never falls back to the structured VM.
 
+#[cfg(test)]
+mod dense_numeric_tests;
+
 use super::fiber::{
     AwbcProjectCallSite, FiberAwaitManyState, FiberAwaitTarget, FiberCursor, FiberFrame,
     FiberResumeTarget, FiberReturnContinuation, FiberReturnPoint, FiberSafePoint,
@@ -4229,29 +4232,10 @@ pub(crate) fn constant_value(
                 .map_err(|error| VmError::Runtime(error.to_string()))
         }
         AwbcConstant::Bytes(bytes) => Ok(RuntimeValue::Seq(RuntimeSeq::dense_bytes(bytes.clone()))),
-        AwbcConstant::TensorF32 { shape, values } => crate::math::DenseTensorF32::new(
-            shape_to_usize_vec(shape)?,
-            values.iter().map(|value| f32::from_bits(*value)).collect(),
-        )
-        .map(RuntimeValue::TensorF32)
-        .map_err(|error| VmError::Runtime(error.to_string())),
-        AwbcConstant::TensorF64 { shape, values } => crate::math::DenseTensorF64::new(
-            shape_to_usize_vec(shape)?,
-            values.iter().map(|value| f64::from_bits(*value)).collect(),
-        )
-        .map(RuntimeValue::TensorF64)
-        .map_err(|error| VmError::Runtime(error.to_string())),
+        AwbcConstant::DenseNumeric(dense) => {
+            RuntimeValue::try_from(dense).map_err(|error| VmError::Runtime(error.to_string()))
+        }
     }
-}
-
-fn shape_to_usize_vec(shape: &[u32]) -> Result<Vec<usize>, VmError> {
-    shape
-        .iter()
-        .map(|value| {
-            usize::try_from(*value)
-                .map_err(|_| VmError::Runtime("tensor shape does not fit usize".to_owned()))
-        })
-        .collect()
 }
 
 fn signed_value(kind: AwbcSignedIntKind, bits: [u8; 16]) -> Result<RuntimeValue, VmError> {

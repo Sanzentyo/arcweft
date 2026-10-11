@@ -572,6 +572,7 @@ fn ensure_no_nested_need(ty: &AdapterTypeKind) -> Result<(), HostCallRuntimeType
         | AdapterTypeKind::USize
         | AdapterTypeKind::F32
         | AdapterTypeKind::F64
+        | AdapterTypeKind::DenseNumeric { .. }
         | AdapterTypeKind::String
         | AdapterTypeKind::Char
         | AdapterTypeKind::Bytes => Ok(()),
@@ -622,6 +623,9 @@ fn encode_adapter_semantic_type(
             .encode_semantic_identity(encoder),
         AdapterTypeKind::F32 => RuntimeCheckedType::F32.encode_semantic_identity(encoder),
         AdapterTypeKind::F64 => RuntimeCheckedType::F64.encode_semantic_identity(encoder),
+        AdapterTypeKind::DenseNumeric { ty } => {
+            RuntimeCheckedType::DenseNumeric(*ty).encode_semantic_identity(encoder)
+        }
         AdapterTypeKind::String => RuntimeCheckedType::String.encode_semantic_identity(encoder),
         AdapterTypeKind::Char => RuntimeCheckedType::Char.encode_semantic_identity(encoder),
         AdapterTypeKind::Bytes => RuntimeCheckedType::Bytes.encode_semantic_identity(encoder),
@@ -903,6 +907,20 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn dense_host_contract_types_use_the_core_checked_identity_authority() {
+        for ty in arcweft_core::math::RuntimeDenseNumericType::ALL {
+            assert_eq!(
+                super::adapter_type_semantic_identity(
+                    &arcweft_adapter_context::manifest::AdapterTypeKind::DenseNumeric { ty }
+                ),
+                arcweft_core::pattern::RuntimeCheckedType::DenseNumeric(ty)
+                    .semantic_identity_digest()
+            );
+        }
+    }
+
     use super::*;
     use arcweft_adapter_context::{
         manifest::{

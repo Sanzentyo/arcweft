@@ -737,6 +737,7 @@ fn adapter_type_node(
         AdapterTypeKind::USize => EnvironmentTypeProjectionKind::USize,
         AdapterTypeKind::F32 => EnvironmentTypeProjectionKind::F32,
         AdapterTypeKind::F64 => EnvironmentTypeProjectionKind::F64,
+        AdapterTypeKind::DenseNumeric { ty } => EnvironmentTypeProjectionKind::DenseNumeric(*ty),
         AdapterTypeKind::String => EnvironmentTypeProjectionKind::String,
         AdapterTypeKind::Char => EnvironmentTypeProjectionKind::Char,
         AdapterTypeKind::Bytes => EnvironmentTypeProjectionKind::Bytes,

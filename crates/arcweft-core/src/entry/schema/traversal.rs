@@ -185,6 +185,7 @@ impl<'a> Iterator for SchemaChildren<'a> {
             | Schema::Never
             | Schema::Duration
             | Schema::Progress
+            | Schema::DenseNumeric(_)
             | Schema::EntityReference
             | Schema::AgentValue
             | Schema::Bytes { .. }
@@ -290,6 +291,7 @@ impl RuntimeTypeSchema {
                 | Self::Never
                 | Self::Duration
                 | Self::Progress
+                | Self::DenseNumeric(_)
                 | Self::EntityReference
                 | Self::AgentValue
                 | Self::Bytes { .. }

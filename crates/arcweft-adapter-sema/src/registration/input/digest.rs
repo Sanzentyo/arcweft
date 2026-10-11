@@ -518,6 +518,7 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
         AdapterTypeKind::USize => 13,
         AdapterTypeKind::F32 => 14,
         AdapterTypeKind::F64 => 15,
+        AdapterTypeKind::DenseNumeric { .. } => 27,
         AdapterTypeKind::String => 16,
         AdapterTypeKind::Char => 17,
         AdapterTypeKind::Bytes => 25,
@@ -531,6 +532,9 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
     };
     hash_u16(hasher, tag);
     match ty {
+        AdapterTypeKind::DenseNumeric { ty } => {
+            hasher.update(&ty.semantic_parts());
+        }
         AdapterTypeKind::Vec { item }
         | AdapterTypeKind::Seq { item }
         | AdapterTypeKind::Option { item }
@@ -680,6 +684,16 @@ fn hash_str(hasher: &mut blake3::Hasher, value: &str) {
 mod tests {
     use super::*;
     use arcweft_adapter_context::manifest::AdapterEffectCapability;
+
+    #[test]
+    fn dense_type_input_digests_keep_every_container_and_scalar_role() {
+        let mut digests = std::collections::BTreeSet::new();
+        for ty in arcweft_core::math::RuntimeDenseNumericType::ALL {
+            let digest = type_digest(&AdapterTypeKind::DenseNumeric { ty });
+            assert!(digests.insert(digest));
+        }
+        assert_eq!(digests.len(), 4);
+    }
 
     #[test]
     fn manifest_digest_is_independent_of_set_insertion_order() {

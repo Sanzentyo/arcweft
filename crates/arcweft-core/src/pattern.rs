@@ -898,6 +898,7 @@ pub enum RuntimeCheckedType {
     Char,
     Duration,
     Progress,
+    DenseNumeric(crate::math::RuntimeDenseNumericType),
     EntityReference,
     AgentValue,
     Bytes,
@@ -1131,6 +1132,7 @@ impl RuntimeCheckedType {
             return false;
         }
         match (value, self) {
+            (RuntimeValueView::RuntimeOnly(value), Self::DenseNumeric(expected)) => value.dense_numeric_type() == Some(*expected),
             (RuntimeValueView::Scalar(RuntimeScalarView::Unit), Self::Unit)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), Self::Bool)
             | (RuntimeValueView::Scalar(RuntimeScalarView::F32(_)), Self::F32)
@@ -1322,6 +1324,12 @@ fn write_checked_type_identity(
         RuntimeCheckedType::Char => encoder.write_tag(8),
         RuntimeCheckedType::Duration => encoder.write_tag(9),
         RuntimeCheckedType::Progress => encoder.write_tag(10),
+        RuntimeCheckedType::DenseNumeric(dense) => {
+            encoder.write_tag(27);
+            for role in dense.semantic_parts() {
+                encoder.write_u8(role);
+            }
+        }
         RuntimeCheckedType::EntityReference => encoder.write_tag(11),
         RuntimeCheckedType::Bytes => encoder.write_tag(12),
         RuntimeCheckedType::Sequence(inner) => {
@@ -2593,6 +2601,7 @@ fn runtime_record_pattern_domain(
         | RuntimePlanTypeProjection::Bytes
         | RuntimePlanTypeProjection::Duration
         | RuntimePlanTypeProjection::Progress
+        | RuntimePlanTypeProjection::DenseNumeric(_)
         | RuntimePlanTypeProjection::EntityReference
         | RuntimePlanTypeProjection::AgentValue
         | RuntimePlanTypeProjection::Range(_)
@@ -2942,6 +2951,9 @@ fn runtime_value_matches_type_inner(
         return false;
     };
     match (declaration.projection(), value) {
+        (RuntimePlanTypeProjection::DenseNumeric(dense), value) => {
+            value.dense_numeric_type() == Some(*dense)
+        }
         (RuntimePlanTypeProjection::Unit, RuntimeValue::Unit)
         | (RuntimePlanTypeProjection::Bool, RuntimeValue::Bool(_))
         | (RuntimePlanTypeProjection::F32, RuntimeValue::F32(_))

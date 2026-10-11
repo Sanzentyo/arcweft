@@ -40,6 +40,7 @@ impl TypeKind {
             | Self::TextCluster
             | Self::Duration
             | Self::Progress
+            | Self::DenseNumeric(_)
             | Self::StageApi(_)
             | Self::LineContext
             | Self::StageActorHandle(_)

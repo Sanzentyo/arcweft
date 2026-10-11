@@ -501,11 +501,22 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     check_index(program.constants.len(), end.0, "constants", &at)?;
                 }
             }
-            AwbcConstant::TensorF32 { shape, values } => {
-                verify_tensor_shape(shape, values.len(), &at)?;
-            }
-            AwbcConstant::TensorF64 { shape, values } => {
-                verify_tensor_shape(shape, values.len(), &at)?;
+            AwbcConstant::DenseNumeric(dense) => {
+                let dimensions = dense
+                    .dimensions()
+                    .iter()
+                    .map(|dimension| usize::try_from(*dimension))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "dense dimension exceeds the platform shape domain".to_owned(),
+                    })?;
+                crate::math::TensorShape::new(dimensions)
+                    .and_then(|shape| shape.validate_element_count(dense.elements().len()))
+                    .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: error.to_string(),
+                    })?;
             }
             AwbcConstant::Unit
             | AwbcConstant::Bool(_)
@@ -604,24 +615,10 @@ fn verify_constant_graph_from(
         | AwbcConstant::DurationNanos(_)
         | AwbcConstant::EntityRef(_)
         | AwbcConstant::Bytes(_)
-        | AwbcConstant::TensorF32 { .. }
-        | AwbcConstant::TensorF64 { .. } => {}
+        | AwbcConstant::DenseNumeric(_) => {}
     }
     visiting.remove(&id);
     complete.insert(id);
-    Ok(())
-}
-
-fn verify_tensor_shape(shape: &[u32], value_len: usize, at: &str) -> Result<(), AwbcVerifyError> {
-    let elements = shape.iter().try_fold(1_usize, |total, dimension| {
-        total.checked_mul(*dimension as usize)
-    });
-    if elements != Some(value_len) {
-        return Err(AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: "tensor shape does not match element count".to_owned(),
-        });
-    }
     Ok(())
 }
 

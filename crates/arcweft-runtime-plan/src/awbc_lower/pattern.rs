@@ -401,6 +401,7 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Bytes => AwbcRuntimeTypeShape::Bytes,
         RuntimePlanTypeProjection::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimePlanTypeProjection::Progress => AwbcRuntimeTypeShape::Progress,
+        RuntimePlanTypeProjection::DenseNumeric(dense) => (*dense).into(),
         RuntimePlanTypeProjection::EntityReference => AwbcRuntimeTypeShape::EntityRef,
         RuntimePlanTypeProjection::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimePlanTypeProjection::Range(item) => {
@@ -741,6 +742,7 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Char => AwbcRuntimeTypeShape::Char,
         RuntimeCheckedType::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimeCheckedType::Progress => AwbcRuntimeTypeShape::Progress,
+        RuntimeCheckedType::DenseNumeric(dense) => (*dense).into(),
         RuntimeCheckedType::EntityReference => AwbcRuntimeTypeShape::EntityRef,
         RuntimeCheckedType::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimeCheckedType::Bytes => AwbcRuntimeTypeShape::Bytes,

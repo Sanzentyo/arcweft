@@ -778,18 +778,14 @@ impl AwbcInventory {
             AwbcRuntimeTypeShape::Dynamic => {
                 return Some(AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity());
             }
-            AwbcRuntimeTypeShape::MatrixF32 => {
-                return Some(AwbcSyntheticRuntimeTypeKind::MatrixF32.semantic_identity());
-            }
-            AwbcRuntimeTypeShape::MatrixF64 => {
-                return Some(AwbcSyntheticRuntimeTypeKind::MatrixF64.semantic_identity());
-            }
-            AwbcRuntimeTypeShape::TensorF32 => {
-                return Some(AwbcSyntheticRuntimeTypeKind::TensorF32.semantic_identity());
-            }
-            AwbcRuntimeTypeShape::TensorF64 => {
-                return Some(AwbcSyntheticRuntimeTypeKind::TensorF64.semantic_identity());
-            }
+            shape @ (AwbcRuntimeTypeShape::MatrixF32
+            | AwbcRuntimeTypeShape::MatrixF64
+            | AwbcRuntimeTypeShape::TensorF32
+            | AwbcRuntimeTypeShape::TensorF64) => RuntimeCheckedType::DenseNumeric(
+                shape
+                    .dense_numeric_type()
+                    .expect("matched dense type family"),
+            ),
             AwbcRuntimeTypeShape::Record { public_id, fields } => {
                 let public_id = public_id.map(|id| self.string(id).to_owned());
                 let fields = fields
@@ -1061,48 +1057,13 @@ impl AwbcInventory {
             RuntimeValue::Callable(_) => {
                 panic!("runtime callable state cannot be encoded as an AWBC constant")
             }
-            RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
-                shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
-                values: matrix
-                    .values()
-                    .iter()
-                    .map(|value| value.to_bits())
-                    .collect(),
-            },
-            RuntimeValue::MatrixF64(matrix) => AwbcConstant::TensorF64 {
-                shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
-                values: matrix
-                    .values()
-                    .iter()
-                    .map(|value| value.to_bits())
-                    .collect(),
-            },
-            RuntimeValue::TensorF32(tensor) => AwbcConstant::TensorF32 {
-                shape: tensor
-                    .shape()
-                    .dims()
-                    .iter()
-                    .map(|dim| table_index(*dim))
-                    .collect(),
-                values: tensor
-                    .values()
-                    .iter()
-                    .map(|value| value.to_bits())
-                    .collect(),
-            },
-            RuntimeValue::TensorF64(tensor) => AwbcConstant::TensorF64 {
-                shape: tensor
-                    .shape()
-                    .dims()
-                    .iter()
-                    .map(|dim| table_index(*dim))
-                    .collect(),
-                values: tensor
-                    .values()
-                    .iter()
-                    .map(|value| value.to_bits())
-                    .collect(),
-            },
+            value @ (RuntimeValue::MatrixF32(_)
+            | RuntimeValue::MatrixF64(_)
+            | RuntimeValue::TensorF32(_)
+            | RuntimeValue::TensorF64(_)) => AwbcConstant::DenseNumeric(
+                arcweft_core::math::RuntimeDenseNumericPayload::try_from(value)
+                    .expect("admitted dense value retains portable shape and storage"),
+            ),
         }
     }
 

@@ -894,6 +894,9 @@ impl Encoder {
             }
             TypeKind::ViewValue => self.tag(80),
             TypeKind::Progress => self.checked(&RuntimeCheckedType::Progress),
+            TypeKind::DenseNumeric(dense) => {
+                self.checked(&RuntimeCheckedType::DenseNumeric(*dense))
+            }
             TypeKind::StageApi(character) => {
                 self.tag(82);
                 self.string(character.as_str());

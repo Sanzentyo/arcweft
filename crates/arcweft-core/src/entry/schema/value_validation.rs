@@ -304,6 +304,11 @@ impl<'a> SchemaValueValidation<'a> {
             | (Schema::Duration, View::Scalar(Scalar::Duration(_)))
             | (Schema::Progress, View::Scalar(Scalar::Progress(_)))
             | (Schema::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            (Schema::DenseNumeric(expected), View::RuntimeOnly(value))
+                if value.dense_numeric_type() == Some(*expected) =>
+            {
+                Ok(Children::None)
+            }
             (Schema::AgentValue, value) if value.is_agent_value_node() => {
                 Ok(Children::Repeated(Expected::Schema(schema)))
             }

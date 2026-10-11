@@ -1169,6 +1169,12 @@ impl Wire for RuntimeTypeSchema {
             Self::Never => writer.write_u8(30),
             Self::Duration => writer.write_u8(31),
             Self::Progress => writer.write_u8(32),
+            Self::DenseNumeric(dense) => {
+                writer.write_u8(39);
+                for part in dense.semantic_parts() {
+                    writer.write_u8(part);
+                }
+            }
             Self::EntityReference => writer.write_u8(33),
             Self::AgentValue => writer.write_u8(34),
             Self::Choice(alternatives) => {
@@ -1264,6 +1270,18 @@ impl Wire for RuntimeTypeSchema {
                 },
                 37 => Self::Color,
                 38 => Self::ExecutableRef(RuntimeSemanticTypeId::read_wire(reader)?),
+                39 => {
+                    let dense = crate::math::RuntimeDenseNumericType::from_semantic_parts([
+                        reader.read_u8()?,
+                        reader.read_u8()?,
+                    ])
+                    .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                        kind: "dense numeric type",
+                        offset,
+                        message: "dense numeric type roles are invalid".to_owned(),
+                    })?;
+                    Self::DenseNumeric(dense)
+                }
                 tag => {
                     return Err(AwbcCodecError::UnknownTag {
                         kind: "runtime type schema",

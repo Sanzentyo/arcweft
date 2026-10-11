@@ -997,6 +997,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             TypeKind::TextCluster => self.classify_text(ty, path),
             TypeKind::Duration => copy(RuntimeCheckedType::Duration),
             TypeKind::Progress => checked(RuntimeCheckedType::Progress),
+            TypeKind::DenseNumeric(dense) => checked(RuntimeCheckedType::DenseNumeric(*dense)),
             TypeKind::StageApi(_)
             | TypeKind::LineContext
             | TypeKind::StageActorHandle(
@@ -2020,6 +2021,7 @@ fn validate_variant_cases(
         | RuntimeCheckedType::Char
         | RuntimeCheckedType::Duration
         | RuntimeCheckedType::Progress
+        | RuntimeCheckedType::DenseNumeric(_)
         | RuntimeCheckedType::EntityReference
         | RuntimeCheckedType::Bytes
         | RuntimeCheckedType::Sequence(_)

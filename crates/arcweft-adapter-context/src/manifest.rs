@@ -73,6 +73,10 @@ pub enum AdapterTypeKind {
     F32,
     /// 64-bit floating point value.
     F64,
+    /// Shared dense numeric container and scalar roles; never an adapter nominal.
+    DenseNumeric {
+        ty: arcweft_manifest_model::RuntimeDenseNumericType,
+    },
     /// UTF-8 string value.
     String,
     /// Unicode scalar value.
@@ -239,6 +243,9 @@ impl std::fmt::Display for AdapterId {
 impl AdapterTypeKind {
     /// Returns a primitive adapter type for a canonical label.
     pub fn primitive_name(name: &str) -> Option<Self> {
+        if let Some(ty) = arcweft_manifest_model::RuntimeDenseNumericType::from_source_label(name) {
+            return Some(Self::DenseNumeric { ty });
+        }
         match name {
             "Unit" => Some(Self::Unit),
             "Never" => Some(Self::Never),

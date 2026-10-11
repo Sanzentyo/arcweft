@@ -993,6 +993,7 @@ pub enum TypeKind {
     TextCluster,
     Duration,
     Progress,
+    DenseNumeric(arcweft_core::math::RuntimeDenseNumericType),
     /// Compile-time capability projected from one exact Character.
     StageApi(CharacterId),
     /// Compile-time capability available only inside one line activation.
@@ -1388,6 +1389,7 @@ impl TypeKind {
             Self::TextCluster => "TextCluster",
             Self::Duration => "Duration",
             Self::Progress => "Progress",
+            Self::DenseNumeric(dense) => dense.source_label(),
             Self::LineContext => "LineContext",
             Self::CueHandle => "CueHandle",
             Self::VoiceHandle => "VoiceHandle",
@@ -1637,6 +1639,9 @@ impl TypeKind {
 
     #[must_use]
     pub fn primitive_name(name: &str) -> Option<Self> {
+        if let Some(dense) = arcweft_core::math::RuntimeDenseNumericType::from_source_label(name) {
+            return Some(Self::DenseNumeric(dense));
+        }
         if let Some(builtin) = AgentBuiltinType::from_source_label(name) {
             return Some(Self::AgentBuiltin(builtin));
         }

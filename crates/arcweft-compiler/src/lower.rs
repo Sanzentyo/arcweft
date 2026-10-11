@@ -5242,6 +5242,7 @@ fn runtime_type_scoped_at(
         TypeKind::Bytes => RuntimeTypeShape::Bytes,
         TypeKind::Duration => RuntimeTypeShape::Duration,
         TypeKind::Progress => RuntimeTypeShape::Progress,
+        TypeKind::DenseNumeric(dense) => RuntimeTypeShape::DenseNumeric(*dense),
         TypeKind::StageActorHandle(handle) => RuntimeTypeShape::Opaque {
             producer: standard_line_handle_producer(RuntimeHandleKind::StageActor),
             admission: match handle {

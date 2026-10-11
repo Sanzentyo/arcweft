@@ -49,6 +49,7 @@ impl TypeKind {
                     stage_actor_handle_ordering(left, right)
                 }
                 (Self::StatementIngress(left), Self::StatementIngress(right)) => left.cmp(right),
+                (Self::DenseNumeric(left), Self::DenseNumeric(right)) => left.cmp(right),
                 (
                     Self::Array {
                         item: left_item,
@@ -466,6 +467,7 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::AgentBuiltin(_) => 78,
         TypeKind::ViewValue => 79,
         TypeKind::Progress => 80,
+        TypeKind::DenseNumeric(_) => 100,
         TypeKind::StageApi(_) => 81,
         TypeKind::LineContext => 82,
         TypeKind::StageActorHandle(_) => 83,

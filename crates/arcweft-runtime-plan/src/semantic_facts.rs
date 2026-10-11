@@ -221,6 +221,7 @@ pub enum RuntimeTypeShape {
     Bytes,
     Duration,
     Progress,
+    DenseNumeric(arcweft_core::math::RuntimeDenseNumericType),
     EntityReference,
     AgentValue,
     Range(Box<RuntimeNormalizedType>),
@@ -673,6 +674,9 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Bytes => RuntimePlanTypeProjection::Bytes,
             RuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,
             RuntimeTypeShape::Progress => RuntimePlanTypeProjection::Progress,
+            RuntimeTypeShape::DenseNumeric(dense) => {
+                RuntimePlanTypeProjection::DenseNumeric(*dense)
+            }
             RuntimeTypeShape::EntityReference => RuntimePlanTypeProjection::EntityReference,
             RuntimeTypeShape::AgentValue => RuntimePlanTypeProjection::AgentValue,
             RuntimeTypeShape::Range(item) => RuntimePlanTypeProjection::Range(child(item)),
@@ -855,6 +859,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
+            | RuntimeTypeShape::DenseNumeric(_)
             | RuntimeTypeShape::EntityReference
             | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Agent(_) => Vec::new(),
@@ -1059,6 +1064,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
+            | RuntimeTypeShape::DenseNumeric(_)
             | RuntimeTypeShape::EntityReference
             | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Range(_)
@@ -1095,6 +1101,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimeTypeShape::Duration => Some(RuntimeCheckedType::Duration),
             RuntimeTypeShape::Progress => Some(RuntimeCheckedType::Progress),
+            RuntimeTypeShape::DenseNumeric(dense) => Some(RuntimeCheckedType::DenseNumeric(*dense)),
             RuntimeTypeShape::EntityReference => Some(RuntimeCheckedType::EntityReference),
             RuntimeTypeShape::AgentValue => Some(RuntimeCheckedType::AgentValue),
             _ => None,
@@ -11371,6 +11378,8 @@ fn normalized_type_matches_schema(
                     format: RuntimeBytesFormat::Binary,
                 },
             ) => {}
+            (RuntimeTypeShape::DenseNumeric(expected), RuntimeTypeSchema::DenseNumeric(actual))
+                if expected == actual => {}
             (RuntimeTypeShape::Sequence { kind, item }, RuntimeTypeSchema::Seq(schema))
                 if !matches!(kind, RuntimeSequenceKind::Array) =>
             {
@@ -11645,6 +11654,7 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Bytes
         | RuntimeTypeShape::Duration
         | RuntimeTypeShape::Progress
+        | RuntimeTypeShape::DenseNumeric(_)
         | RuntimeTypeShape::EntityReference
         | RuntimeTypeShape::AgentValue
         | RuntimeTypeShape::Agent(

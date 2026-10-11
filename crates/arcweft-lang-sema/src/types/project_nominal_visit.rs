@@ -33,6 +33,7 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::TextCluster
         | TypeKind::Duration
         | TypeKind::Progress
+        | TypeKind::DenseNumeric(_)
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
         | TypeKind::StageActorHandle(_)

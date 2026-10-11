@@ -566,6 +566,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
             | (Type::Progress, View::Scalar(Scalar::Progress(_)))
             | (Type::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            (Type::DenseNumeric(expected), View::RuntimeOnly(value))
+                if value.dense_numeric_type() == Some(*expected) =>
+            {
+                Ok(Children::None)
+            }
             (Type::Need(item), View::RuntimeOnly(RuntimeValue::NeedHandle(handle)))
                 if handle.outcome().payload_semantic_identity().as_bytes()
                     == self

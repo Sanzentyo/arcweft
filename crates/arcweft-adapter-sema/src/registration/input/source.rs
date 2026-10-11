@@ -618,6 +618,7 @@ impl Renderer {
             AdapterTypeKind::USize => self.text.push_str("usize"),
             AdapterTypeKind::F32 => self.text.push_str("f32"),
             AdapterTypeKind::F64 => self.text.push_str("f64"),
+            AdapterTypeKind::DenseNumeric { ty } => self.text.push_str(ty.source_label()),
             AdapterTypeKind::String => self.text.push_str("String"),
             AdapterTypeKind::Char => self.text.push_str("char"),
             AdapterTypeKind::Bytes => self.text.push_str("Bytes"),

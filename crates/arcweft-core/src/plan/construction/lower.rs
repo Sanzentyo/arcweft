@@ -1749,6 +1749,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
             | RuntimePlanTypeProjection::Bytes
             | RuntimePlanTypeProjection::Duration
             | RuntimePlanTypeProjection::Progress
+            | RuntimePlanTypeProjection::DenseNumeric(_)
             | RuntimePlanTypeProjection::EntityReference => Some(Vec::new()),
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Sequence { .. }

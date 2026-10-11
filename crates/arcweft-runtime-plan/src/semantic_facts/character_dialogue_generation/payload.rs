@@ -82,6 +82,7 @@ impl PayloadProjection<'_> {
             RuntimePlanTypeProjection::Bytes => RuntimeTypeShape::Bytes,
             RuntimePlanTypeProjection::Duration => RuntimeTypeShape::Duration,
             RuntimePlanTypeProjection::Progress => RuntimeTypeShape::Progress,
+            RuntimePlanTypeProjection::DenseNumeric(dense) => RuntimeTypeShape::DenseNumeric(dense),
             RuntimePlanTypeProjection::Tuple(items) => RuntimeTypeShape::Tuple(items),
             RuntimePlanTypeProjection::Choice(items) => RuntimeTypeShape::Choice(items),
             RuntimePlanTypeProjection::Option { item, some_payload } => RuntimeTypeShape::Option {

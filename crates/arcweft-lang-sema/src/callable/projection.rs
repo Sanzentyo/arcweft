@@ -729,6 +729,7 @@ impl<'a> TypeProjector<'a> {
             EnvironmentTypeProjectionKind::USize => Ok(TypeKind::USize),
             EnvironmentTypeProjectionKind::F32 => Ok(TypeKind::F32),
             EnvironmentTypeProjectionKind::F64 => Ok(TypeKind::F64),
+            EnvironmentTypeProjectionKind::DenseNumeric(ty) => Ok(TypeKind::DenseNumeric(*ty)),
             EnvironmentTypeProjectionKind::String => Ok(TypeKind::String),
             EnvironmentTypeProjectionKind::Char => Ok(TypeKind::Char),
             EnvironmentTypeProjectionKind::Bytes => Ok(TypeKind::Bytes),

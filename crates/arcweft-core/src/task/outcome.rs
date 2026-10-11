@@ -223,6 +223,7 @@ impl TaskOutcomeContract {
                 | RuntimeCheckedType::Char
                 | RuntimeCheckedType::Duration
                 | RuntimeCheckedType::Progress
+                | RuntimeCheckedType::DenseNumeric(_)
                 | RuntimeCheckedType::EntityReference
                 | RuntimeCheckedType::AgentValue
                 | RuntimeCheckedType::Bytes

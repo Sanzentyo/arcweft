@@ -253,6 +253,9 @@ impl RuntimePlanInventory {
             RuntimePlanTypeProjection::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimePlanTypeProjection::Duration => Some(RuntimeCheckedType::Duration),
             RuntimePlanTypeProjection::Progress => Some(RuntimeCheckedType::Progress),
+            RuntimePlanTypeProjection::DenseNumeric(dense) => {
+                Some(RuntimeCheckedType::DenseNumeric(*dense))
+            }
             RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
             RuntimePlanTypeProjection::AgentValue => Some(RuntimeCheckedType::AgentValue),
             RuntimePlanTypeProjection::Sequence { item, .. } => self

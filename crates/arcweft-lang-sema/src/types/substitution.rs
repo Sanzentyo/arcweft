@@ -162,6 +162,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::TextCluster
         | TypeKind::Duration
         | TypeKind::Progress
+        | TypeKind::DenseNumeric(_)
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
         | TypeKind::StageActorHandle(_)

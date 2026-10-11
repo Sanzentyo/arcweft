@@ -2,6 +2,7 @@
 //! Arcweft project manifests and generated adapter metadata.
 
 mod canonical;
+mod dense_numeric_type;
 mod digest;
 mod identity;
 mod opaque_producer;
@@ -10,6 +11,7 @@ mod project_locale;
 mod schema;
 
 pub use canonical::{CanonicalJsonError, canonical_json_bytes};
+pub use dense_numeric_type::{RuntimeDenseNumericType, RuntimeFloatWidth};
 pub use digest::{DigestParseError, HostCallContractDigest, RawDigest, SemanticDigest};
 pub use identity::{
     ActivityId, ActivityImplementationId, AdapterExportId, AdapterProfileId, AdapterTypeName,

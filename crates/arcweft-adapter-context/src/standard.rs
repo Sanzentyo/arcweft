@@ -105,10 +105,14 @@ pub fn native_http_manifest() -> AdapterManifest {
 
 /// Optional forward-inference tensor manifest.
 pub fn inference_tensor_manifest() -> AdapterManifest {
-    let tensor = inference_nominal("TensorF32");
+    let tensor = AdapterTypeKind::DenseNumeric {
+        ty: arcweft_manifest_model::RuntimeDenseNumericType::Tensor(
+            arcweft_manifest_model::RuntimeFloatWidth::F32,
+        ),
+    };
     let manifest = declare_nominals(
         AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor"),
-        ["Conv2dApi", "InferApi", "TensorF32"],
+        ["Conv2dApi", "InferApi"],
         "arcweft.adapter.inference-tensor",
     )
     .with_symbol(adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")))
@@ -608,9 +612,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inference_tensor_manifest_injects_namespaced_methods_without_core_prelude() {
+    fn inference_tensor_manifest_binds_shared_dense_types_and_namespaced_methods() {
         let manifest = inference_tensor_manifest();
-        let tensor = inference_nominal("TensorF32");
+        assert_eq!(
+            manifest.nominal_declarations().len(),
+            2,
+            "only API receivers are nominal; TensorF32 is the shared primitive"
+        );
+        let tensor = AdapterTypeKind::DenseNumeric {
+            ty: arcweft_manifest_model::RuntimeDenseNumericType::Tensor(
+                arcweft_manifest_model::RuntimeFloatWidth::F32,
+            ),
+        };
 
         assert_eq!(
             manifest.symbols(),

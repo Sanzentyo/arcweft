@@ -292,6 +292,12 @@ impl TypeKind {
                 };
                 None
             }
+            Self::DenseNumeric(expected) => {
+                let Self::DenseNumeric(actual_dense) = actual else {
+                    unreachable!("equal discriminants");
+                };
+                (expected != actual_dense).then(|| TypeMismatch::outer(self, actual))
+            }
             Self::StageApi(expected) => {
                 let Self::StageApi(actual_character) = actual else {
                     unreachable!("equal discriminants")

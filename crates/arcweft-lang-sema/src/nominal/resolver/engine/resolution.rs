@@ -908,6 +908,7 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::USize
             | BuiltinTypeConstructor::F32
             | BuiltinTypeConstructor::F64
+            | BuiltinTypeConstructor::DenseNumeric(_)
             | BuiltinTypeConstructor::String
             | BuiltinTypeConstructor::Char
             | BuiltinTypeConstructor::Bytes
@@ -968,6 +969,7 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::USize => TypeKind::USize,
             BuiltinTypeConstructor::F32 => TypeKind::F32,
             BuiltinTypeConstructor::F64 => TypeKind::F64,
+            BuiltinTypeConstructor::DenseNumeric(dense) => TypeKind::DenseNumeric(dense),
             BuiltinTypeConstructor::String => TypeKind::String,
             BuiltinTypeConstructor::Char => TypeKind::Char,
             BuiltinTypeConstructor::Bytes => TypeKind::Bytes,

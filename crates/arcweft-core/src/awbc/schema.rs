@@ -1,3 +1,5 @@
+use crate::math::RuntimeDenseNumericPayload;
+
 use crate::entry::{
     EntryBindingIdentity, RuntimeCallableRole, RuntimeCodecUse,
     RuntimeDialogueContentTemplateDigest, RuntimeEntryRoles, RuntimeFlowExecutable, RuntimeMapKind,
@@ -658,8 +660,7 @@ fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&
         | AwbcConstant::Range { .. }
         | AwbcConstant::EntityRef(_)
         | AwbcConstant::Bytes(_)
-        | AwbcConstant::TensorF32 { .. }
-        | AwbcConstant::TensorF64 { .. }
+        | AwbcConstant::DenseNumeric(_)
         | AwbcConstant::Record { .. }
         | AwbcConstant::Variant { .. }
         | AwbcConstant::Opaque { .. } => {}
@@ -864,10 +865,6 @@ impl AwbcRuntimeType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AwbcSyntheticRuntimeTypeKind {
     Dynamic,
-    MatrixF32,
-    MatrixF64,
-    TensorF32,
-    TensorF64,
 }
 
 impl AwbcSyntheticRuntimeTypeKind {
@@ -878,10 +875,6 @@ impl AwbcSyntheticRuntimeTypeKind {
         let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
         match self {
             Self::Dynamic => encoder.write_tag(0xff00),
-            Self::MatrixF32 => encoder.write_tag(0xff01),
-            Self::MatrixF64 => encoder.write_tag(0xff02),
-            Self::TensorF32 => encoder.write_tag(0xff03),
-            Self::TensorF64 => encoder.write_tag(0xff04),
         }
         encoder.finish()
     }
@@ -1196,14 +1189,7 @@ pub enum AwbcConstant {
         inclusive: bool,
     },
     Bytes(Vec<u8>),
-    TensorF32 {
-        shape: Vec<u32>,
-        values: Vec<u32>,
-    },
-    TensorF64 {
-        shape: Vec<u32>,
-        values: Vec<u64>,
-    },
+    DenseNumeric(RuntimeDenseNumericPayload),
     /// Opaque payload stored behind its checked opaque runtime type.
     Opaque {
         ty: AwbcTypeId,
@@ -3764,4 +3750,29 @@ pub struct AwbcRouteBinding {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcRouteBindingSource {
     PathCapture(crate::plan::RouteCaptureCoordinate),
+}
+
+impl From<crate::math::RuntimeDenseNumericType> for AwbcRuntimeTypeShape {
+    fn from(dense: crate::math::RuntimeDenseNumericType) -> Self {
+        use crate::math::{RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width};
+        match dense {
+            Dense::Matrix(Width::F32) => Self::MatrixF32,
+            Dense::Matrix(Width::F64) => Self::MatrixF64,
+            Dense::Tensor(Width::F32) => Self::TensorF32,
+            Dense::Tensor(Width::F64) => Self::TensorF64,
+        }
+    }
+}
+
+impl AwbcRuntimeTypeShape {
+    pub fn dense_numeric_type(&self) -> Option<crate::math::RuntimeDenseNumericType> {
+        use crate::math::{RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width};
+        match self {
+            Self::MatrixF32 => Some(Dense::Matrix(Width::F32)),
+            Self::MatrixF64 => Some(Dense::Matrix(Width::F64)),
+            Self::TensorF32 => Some(Dense::Tensor(Width::F32)),
+            Self::TensorF64 => Some(Dense::Tensor(Width::F64)),
+            _ => None,
+        }
+    }
 }

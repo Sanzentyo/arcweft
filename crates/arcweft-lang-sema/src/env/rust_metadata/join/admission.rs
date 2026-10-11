@@ -215,6 +215,7 @@ impl Admission<'_, '_> {
                 | Kind::USize
                 | Kind::F32
                 | Kind::F64
+                | Kind::DenseNumeric(_)
                 | Kind::String
                 | Kind::Char
                 | Kind::Bytes

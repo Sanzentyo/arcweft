@@ -231,6 +231,14 @@ impl AwbcProgram {
             AwbcRuntimeTypeShape::Char => Ok(RuntimeCheckedType::Char),
             AwbcRuntimeTypeShape::Duration => Ok(RuntimeCheckedType::Duration),
             AwbcRuntimeTypeShape::Progress => Ok(RuntimeCheckedType::Progress),
+            shape @ (AwbcRuntimeTypeShape::MatrixF32
+            | AwbcRuntimeTypeShape::MatrixF64
+            | AwbcRuntimeTypeShape::TensorF32
+            | AwbcRuntimeTypeShape::TensorF64) => Ok(RuntimeCheckedType::DenseNumeric(
+                shape
+                    .dense_numeric_type()
+                    .expect("matched dense type family"),
+            )),
             AwbcRuntimeTypeShape::EntityRef => Ok(RuntimeCheckedType::EntityReference),
             AwbcRuntimeTypeShape::AgentValue => Ok(RuntimeCheckedType::AgentValue),
             AwbcRuntimeTypeShape::Bytes => Ok(RuntimeCheckedType::Bytes),
@@ -312,11 +320,7 @@ impl AwbcProgram {
                         result,
                     )))
                 }),
-            AwbcRuntimeTypeShape::MatrixF32
-            | AwbcRuntimeTypeShape::MatrixF64
-            | AwbcRuntimeTypeShape::TensorF32
-            | AwbcRuntimeTypeShape::TensorF64
-            | AwbcRuntimeTypeShape::Range(_)
+            AwbcRuntimeTypeShape::Range(_)
             | AwbcRuntimeTypeShape::Iterator(_)
             | AwbcRuntimeTypeShape::Need(_)
             | AwbcRuntimeTypeShape::Task(_)

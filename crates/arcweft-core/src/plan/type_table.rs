@@ -217,6 +217,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Bytes
             | RuntimePlanTypeProjection::Duration
             | RuntimePlanTypeProjection::Progress
+            | RuntimePlanTypeProjection::DenseNumeric(_)
             | RuntimePlanTypeProjection::EntityReference
             | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::Nominal { .. }
@@ -795,6 +796,7 @@ fn validate_codec_uses(
                     | RuntimePlanTypeProjection::Char
                     | RuntimePlanTypeProjection::Duration
                     | RuntimePlanTypeProjection::Progress
+                    | RuntimePlanTypeProjection::DenseNumeric(_)
                     | RuntimePlanTypeProjection::EntityReference
                     | RuntimePlanTypeProjection::AgentValue,
                     Use::Plain,

@@ -5667,11 +5667,10 @@ fn constant_matches_type(
         | (AwbcConstant::Char(_), AwbcRuntimeTypeShape::Char)
         | (AwbcConstant::DurationNanos(_), AwbcRuntimeTypeShape::Duration)
         | (AwbcConstant::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
-        | (AwbcConstant::Bytes(_), AwbcRuntimeTypeShape::Bytes)
-        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeTypeShape::MatrixF32)
-        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeTypeShape::TensorF32)
-        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeTypeShape::MatrixF64)
-        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeTypeShape::TensorF64) => true,
+        | (AwbcConstant::Bytes(_), AwbcRuntimeTypeShape::Bytes) => true,
+        (AwbcConstant::DenseNumeric(dense), expected) => {
+            expected.dense_numeric_type() == Some(dense.ty())
+        }
         (AwbcConstant::Int { kind, .. }, AwbcRuntimeTypeShape::Int(expected)) => *kind == *expected,
         (AwbcConstant::UInt { kind, .. }, AwbcRuntimeTypeShape::UInt(expected)) => {
             *kind == *expected

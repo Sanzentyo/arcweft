@@ -50,12 +50,9 @@ pub enum AwbcRuntimeValueSnapshot {
     Bool(bool),
     Int(super::RuntimeInt),
     UInt(super::RuntimeUInt),
-    F32(f32),
-    F64(f64),
-    MatrixF32(crate::math::DenseMatrixF32),
-    MatrixF64(crate::math::DenseMatrixF64),
-    TensorF32(crate::math::DenseTensorF32),
-    TensorF64(crate::math::DenseTensorF64),
+    F32(u32),
+    F64(u64),
+    DenseNumeric(crate::math::RuntimeDenseNumericPayload),
     String(String),
     Color(super::RuntimeColor),
     NeedHandle(crate::task::RuntimeNeedHandleSaveSnapshot),
@@ -98,7 +95,7 @@ pub enum AwbcRuntimeIteratorSnapshot {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcRuntimeSeqSnapshot {
     Values(Vec<AwbcRuntimeValueSnapshot>),
@@ -111,6 +108,46 @@ pub enum AwbcRuntimeSeqSnapshot {
         len: u64,
         fields: Vec<AwbcRuntimeRecordSeqFieldSnapshot>,
     },
+}
+
+impl PartialEq for AwbcRuntimeSeqSnapshot {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Values(left), Self::Values(right)) => left == right,
+            (Self::Dense(DenseSeq::F32(left)), Self::Dense(DenseSeq::F32(right))) => left
+                .as_slice()
+                .iter()
+                .map(|value| value.to_bits())
+                .eq(right.as_slice().iter().map(|value| value.to_bits())),
+            (Self::Dense(DenseSeq::F64(left)), Self::Dense(DenseSeq::F64(right))) => left
+                .as_slice()
+                .iter()
+                .map(|value| value.to_bits())
+                .eq(right.as_slice().iter().map(|value| value.to_bits())),
+            (Self::Dense(left), Self::Dense(right)) => left == right,
+            (
+                Self::TupleColumns {
+                    len: left_len,
+                    columns: left,
+                },
+                Self::TupleColumns {
+                    len: right_len,
+                    columns: right,
+                },
+            ) => left_len == right_len && left == right,
+            (
+                Self::RecordColumns {
+                    len: left_len,
+                    fields: left,
+                },
+                Self::RecordColumns {
+                    len: right_len,
+                    fields: right,
+                },
+            ) => left_len == right_len && left == right,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -300,12 +337,15 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::Bool(value) => Self::Bool(*value),
             RuntimeValue::Int(value) => Self::Int(*value),
             RuntimeValue::UInt(value) => Self::UInt(*value),
-            RuntimeValue::F32(value) => Self::F32(*value),
-            RuntimeValue::F64(value) => Self::F64(*value),
-            RuntimeValue::MatrixF32(value) => Self::MatrixF32(value.clone()),
-            RuntimeValue::MatrixF64(value) => Self::MatrixF64(value.clone()),
-            RuntimeValue::TensorF32(value) => Self::TensorF32(value.clone()),
-            RuntimeValue::TensorF64(value) => Self::TensorF64(value.clone()),
+            RuntimeValue::F32(value) => Self::F32(value.to_bits()),
+            RuntimeValue::F64(value) => Self::F64(value.to_bits()),
+            value @ (RuntimeValue::MatrixF32(_)
+            | RuntimeValue::MatrixF64(_)
+            | RuntimeValue::TensorF32(_)
+            | RuntimeValue::TensorF64(_)) => Self::DenseNumeric(
+                crate::math::RuntimeDenseNumericPayload::try_from(value)
+                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
+            ),
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::Color(value) => Self::Color(*value),
             RuntimeValue::NeedHandle(value) => Self::NeedHandle(
@@ -383,12 +423,10 @@ impl AwbcRuntimeValueSnapshot {
             Self::Bool(value) => RuntimeValue::Bool(value),
             Self::Int(value) => RuntimeValue::Int(value),
             Self::UInt(value) => RuntimeValue::UInt(value),
-            Self::F32(value) => RuntimeValue::F32(value),
-            Self::F64(value) => RuntimeValue::F64(value),
-            Self::MatrixF32(value) => RuntimeValue::MatrixF32(value),
-            Self::MatrixF64(value) => RuntimeValue::MatrixF64(value),
-            Self::TensorF32(value) => RuntimeValue::TensorF32(value),
-            Self::TensorF64(value) => RuntimeValue::TensorF64(value),
+            Self::F32(value) => RuntimeValue::F32(f32::from_bits(value)),
+            Self::F64(value) => RuntimeValue::F64(f64::from_bits(value)),
+            Self::DenseNumeric(value) => RuntimeValue::try_from(&value)
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
             Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live(program_owner)?),
@@ -1033,10 +1071,7 @@ fn collect_snapshot_line_handle_tokens(
         | AwbcRuntimeValueSnapshot::UInt(_)
         | AwbcRuntimeValueSnapshot::F32(_)
         | AwbcRuntimeValueSnapshot::F64(_)
-        | AwbcRuntimeValueSnapshot::MatrixF32(_)
-        | AwbcRuntimeValueSnapshot::MatrixF64(_)
-        | AwbcRuntimeValueSnapshot::TensorF32(_)
-        | AwbcRuntimeValueSnapshot::TensorF64(_)
+        | AwbcRuntimeValueSnapshot::DenseNumeric(_)
         | AwbcRuntimeValueSnapshot::String(_)
         | AwbcRuntimeValueSnapshot::Color(_)
         | AwbcRuntimeValueSnapshot::Char(_)

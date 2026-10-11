@@ -215,16 +215,34 @@ enum AdapterTypeKindFile {
     USize {},
     F32 {},
     F64 {},
+    DenseNumeric {
+        ty: arcweft_manifest_model::RuntimeDenseNumericType,
+    },
     String {},
     Char {},
     Bytes {},
-    Vec { item: Box<Self> },
-    Seq { item: Box<Self> },
-    Option { item: Box<Self> },
-    Result { ok: Box<Self>, error: Box<Self> },
-    Tuple { items: Vec<Self> },
-    Need { item: Box<Self> },
-    Nominal { nominal: AdapterNominalTypeRefFile },
+    Vec {
+        item: Box<Self>,
+    },
+    Seq {
+        item: Box<Self>,
+    },
+    Option {
+        item: Box<Self>,
+    },
+    Result {
+        ok: Box<Self>,
+        error: Box<Self>,
+    },
+    Tuple {
+        items: Vec<Self>,
+    },
+    Need {
+        item: Box<Self>,
+    },
+    Nominal {
+        nominal: AdapterNominalTypeRefFile,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -860,6 +878,7 @@ impl TypeConversionBudget {
             AdapterTypeKindFile::USize {} => AdapterTypeKind::USize,
             AdapterTypeKindFile::F32 {} => AdapterTypeKind::F32,
             AdapterTypeKindFile::F64 {} => AdapterTypeKind::F64,
+            AdapterTypeKindFile::DenseNumeric { ty } => AdapterTypeKind::DenseNumeric { ty },
             AdapterTypeKindFile::String {} => AdapterTypeKind::String,
             AdapterTypeKindFile::Char {} => AdapterTypeKind::Char,
             AdapterTypeKindFile::Bytes {} => AdapterTypeKind::Bytes,
@@ -967,6 +986,35 @@ fn effect_capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dense_adapter_manifest_decodes_the_shared_type_and_rejects_unknown_roles() {
+        for ty in arcweft_manifest_model::RuntimeDenseNumericType::ALL {
+            let source = serde_json::json!({
+                "schema_version": 1, "id": "dense", "display_name": "Dense",
+                "symbols": [{"name":"dense.value", "type":{"kind":"dense_numeric", "ty":ty}}]
+            });
+            let file = AdapterManifestFile::from_json(&source.to_string()).unwrap();
+            let manifest = file.into_manifest().unwrap();
+            assert_eq!(
+                manifest.symbols()[0].ty(),
+                &AdapterTypeKind::DenseNumeric { ty }
+            );
+            assert!(manifest.nominal_declarations().is_empty());
+            assert_eq!(
+                AdapterTypeKind::primitive_name(ty.source_label()),
+                Some(AdapterTypeKind::DenseNumeric { ty })
+            );
+            for invalid in [
+                serde_json::json!({"Matrix":"F16"}),
+                serde_json::json!({"Vector":"F32"}),
+            ] {
+                let mut forged = source.clone();
+                forged["symbols"][0]["type"]["ty"] = invalid;
+                assert!(AdapterManifestFile::from_json(&forged.to_string()).is_err());
+            }
+        }
+    }
 
     #[test]
     fn parses_toml_recursive_typed_adapter_manifest_file() {

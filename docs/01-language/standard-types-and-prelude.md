@@ -80,6 +80,16 @@ MatrixF64
 TensorF64
 ```
 
+These are four distinct primitive types. Adapter signatures use the same type
+identity as source declarations; an adapter must not declare a separate opaque
+`TensorF32` nominal. Semantic typing, canonical input schemas, native values, and
+AWBC products preserve both container kind and scalar width.
+
+Matrices have exactly two dimensions. Tensors have at least one dimension;
+zero-volume dimensions are allowed. Shape admission checks the dimension product
+for overflow and requires the stored element count to match it. Dense constants
+and saved values preserve scalar bits, including negative zero and NaN payloads.
+
 `math.matmul_f32`, `math.matrix_add_f32`, and `math.tensor_add_f32` operate on
 the `f32` types. `math.matmul_f64`, `math.matrix_add_f64`, and
 `math.tensor_add_f64` operate on the `f64` types. The `f64` forms keep `f64`

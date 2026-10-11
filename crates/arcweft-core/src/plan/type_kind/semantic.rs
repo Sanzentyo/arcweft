@@ -34,6 +34,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Bytes
             | Self::Duration
             | Self::Progress
+            | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
             | Self::Range(..)
@@ -96,6 +97,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Choice(..) => 33,
             Self::Opaque { .. } => 34,
             Self::Agent(..) => 35,
+            Self::DenseNumeric(_) => 36,
         }
     }
 }
@@ -127,6 +129,11 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
                 crate::value::RuntimeUnsignedIntWidth::U128 => 4,
                 crate::value::RuntimeUnsignedIntWidth::USize => 5,
             }),
+            Self::DenseNumeric(dense) => {
+                for role in dense.semantic_parts() {
+                    encoder.tag(role);
+                }
+            }
             Self::Sequence { kind, .. } => encoder.tag(kind.semantic_tag()),
             Self::Array { length, .. } => length.encode_semantic_length(encoder),
             Self::Map { kind, .. } => encoder.tag(kind.semantic_tag()),

@@ -528,6 +528,7 @@ impl<'a> NominalGraphProjection<'a> {
             },
             TypeKind::Duration => Schema::Duration,
             TypeKind::Progress => Schema::Progress,
+            TypeKind::DenseNumeric(dense) => Schema::DenseNumeric(*dense),
             TypeKind::Ref(_) => Schema::EntityReference,
             TypeKind::AgentValue => Schema::AgentValue,
             TypeKind::Vec(item) | TypeKind::Seq(item) | TypeKind::Slice(item) => {

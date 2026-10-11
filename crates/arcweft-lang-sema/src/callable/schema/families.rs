@@ -599,13 +599,20 @@ impl BuiltinCallableId {
                 )
             }
             Self::Math(id) => {
-                let ty = match id {
-                    MathCallableId::MatMulF32 | MathCallableId::MatrixAddF32 => "MatrixF32",
-                    MathCallableId::MatMulF64 | MathCallableId::MatrixAddF64 => "MatrixF64",
-                    MathCallableId::TensorAddF32 => "TensorF32",
-                    MathCallableId::TensorAddF64 => "TensorF64",
+                use arcweft_core::math::{
+                    RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width,
                 };
-                let ty = named(ty);
+                let dense = match id {
+                    MathCallableId::MatMulF32 | MathCallableId::MatrixAddF32 => {
+                        Dense::Matrix(Width::F32)
+                    }
+                    MathCallableId::MatMulF64 | MathCallableId::MatrixAddF64 => {
+                        Dense::Matrix(Width::F64)
+                    }
+                    MathCallableId::TensorAddF32 => Dense::Tensor(Width::F32),
+                    MathCallableId::TensorAddF64 => Dense::Tensor(Width::F64),
+                };
+                let ty = TypeKind::DenseNumeric(dense);
                 homogeneous(2, &ty, ty.clone(), validator)
             }
             Self::StdFloat(id) => std_float_schema(*id, validator),

@@ -11218,6 +11218,39 @@ Core reverse integration136 targetsはterminalで、exact実行1017=1016 PASS/1 
 この記録と選択差分をexplicit stage/complete cached diff確認後にcommit/pushする。全収束goalは未完で、CLI主要統合 → Generic Match残件 → retained View →all14 task-plan公開接続の順序を継続する。
 
 
+### 2026-10-10 — numerical cut配信後のStyle/CLI/Collection受入
+
+数値/scalar/scope/fault66＋記録1は既存mainへ `5d8ae1deaa8903c528955e7aaabc441cdee34ea7` としてcommit/pushした。remote同SHAと空index、選択blob一致を確認し、無関係WIPを保持した。
+
+Style36＋契約1を中央適用し、initial6 owning commandsは未移行cache facts.element参照でcompile失敗・実行0。rootはactual closed ViewStyleTargetKind::semantic_tagとcache consumerへ統合し、同一node Text/RichText/Buttonのmiss→hitと異なるcomputed revision検証を元のmatching値assertionsへ追加した。repaired6 owning groupsは24 exact casesすべてPASS（compiler4、scroll12を含む）。Style直接profile compile失敗は解消したが、全Style/CLI修復とは判定しない。
+
+consumer3（debug/profile/strict all-step scalar stats）とfront control/issued-URI/dash2を中央適用・formatし、元Style67＋追加11 exact IDsをunion78重複0で実行した。run `a428b890-ca6e-447f-a07c-d01a22f2f492`は106.670s、46 PASS/32 FAIL、355 skipped、selection missing/extra/duplicate0。Style67は以前と同じ42 PASS/25 FAILで、回復/回帰0。追加casesはdebug保存・issued URI/proxy照会・loop統計・AOT objectがPASS、profile/scalar257/jitCheck231/Mark/dash3は実失敗を保持してownerを調査中。新profileCLIはgeometry/font/extentを通りrawalphaで失敗。Marknameはnormalized suffixの確認が必要。fullCLI608の407/201は不変。receipt/log SHA-256 `d21b6997205500f441686c423004f16b0d69c116c1d3b7821174b3fd0217f06b`。
+
+完全Collection16＋SourceMap8の重複を閉じた23公開候補をrootが全functional diffと元module/test payload、既存published helper/source pipelineを照合し、workingfollowthrough16をWIPを保持して適用・formatした。最終complete23 patch SHA-256 `b2db951f4eadf9d420357216d3659a5ee91fded82f58593ed12c507faf1c596a`、working16 `d1ad4034cba40e66f075fba567396a1dbbfe7419deeae4628d2b421006cf9f1d`、receipt `61b4870cace25134e8806cbb6fd2272999dc413bf5ad497ff5a8f2249a58a184`。既存source wrapping Sum ownerへcanonical firstrejectを接続し、native/AWBC・constructor/verifierの全受入を揃える。中央owning29（Core12/Sema1/compiler3/CLI13）はsession61276でLIVE。反映済み・format済みは実行成功を意味しない。wide phase/native61/Choice indexは別候補のまま、all14task公開は変更していない。
+
+
+### 2026-10-10 — Collection parity修正とfollowthrough実績
+
+Core Collection12はrun `6edc1e9c-2656-4561-9db9-854ba6eeb102`で全PASS、Sema非整数Sum拒否1はrun `2ca6201c-304c-4f90-807c-aab6e6bf369f`でPASS。新SourceMapmoduleのVecargs.as_ref推論2箇所をas_sliceへ、FunctionRef非constderefを使うsupports_total_sumを通常runtimequeryへ直した。初回compile failuresは別receiptに保存し、成功へ置き換えない。compiler3初回run `a35fc6b8-48c3-4330-9f1b-f78c18b94ebe`はpureprogramをpublicentrypointとしてverifyしたMissingEntrypointのみ。既存pureprogramと同じrequire_entrypoint=falseへfixturecontextを揃え、canonicalcodec/types/signature/input/error/noReplay検証を保持した。run `e3c8b1da-bc9d-4e99-85f9-43f21504fb8f`で3/3 PASS、Collection16 owningはすべてPASS。SourceMap13は別で未完。
+
+Followthrough10 run `0ba593c5-b649-4348-9f8f-4a15bc4fc088`は7 PASS/3 FAIL。normalizedsync/mark0/count1、issuedproxyURI、authoredprofile exactgeometry/font/extent/rootBounds＋samecontextclusterrealalpha、profile rootgrammar、Scalar exact2opspositive/fullborrow16/zeroallocとoriginaldefault1/OneOpcontinuationはPASS。Dash3はcrop x593とobserved cluster bbox x618の投影差でFAIL、原assertionsを維持してactualcaptureownerを調査中。Windows firstContentからformattingLFだけ除いた元geometry受入run `a45f4af1-8b44-4a42-b92e-445306b656e7`はrange0..105を通り、次のglyphcount26vs30でFAIL。根拠なしcountrebaselineは行わない。
+
+SourceMap13実行run `280a6c5f-52df-45f6-90c7-09a3017b587b`は0 PASS/13 FAIL。dense専用APIでmaterializedValuesを読んだtesthelperをstrictlogical length/value_at/正確I64へ移した。値[4,8,12]/[-1]は保持しphysicalbatch assertionsを弱めない。typedplan/callable/fullformal/local/cursorの最小診断2 run `95e232c6-fb75-42c7-bcc1-5f8c327b7042`は0 PASS/2 FAIL、log SHA-256 `8297d4a55fe424affb4f4de1caa5df1a36fdb0d4ab394a60b3b395da73048c58`。captured logical valuesは確認できたがbatch counter0vs1、AWBCArrayはcursorが進むものの4096boundedstepsで結果を返さない。専任agentが実ownerboundaryをTEMPで追う。SOURCE_MAP診断printは未コミットで、公開前に除去する。
+
+Freshlockednative metadata617packages/97workspaceとalltargetCargo treeを照合した。Core alltargetreverse50、View41、nativefilteredだけではrender-web1packageを落とすためfeature/wasmtargetmatrixを維持する。大域reverse/gatesはSourceMapowner修正後の最終freezeで実行する。現在すべてのCargo sessionはterminal、Style/Collection/consumerの選択公開cutはまだ未commit。signedDivision/nativewide/importednative61/Choiceindexは別TEMP候補、overallgoalは未完。Astra再相談は行っていない。
+
+
+### 2026-10-10 — Style 公開 cut と残存 owner の実原因
+
+HEAD `5d8ae1deaa8903c528955e7aaabc441cdee34ea7`、main dirty、index empty のまま継続。Style owning24 PASSを再利用し、alltarget reverse41 libraries run `f08ed2cd-0ccb-4837-a34f-51a8a6fa5229`は3084=3083 PASS/1 FAIL。失敗は以前も観測したnative registered environment再公開ownerで、Style成功へ包含しない。126非CLIintegration targets、workspace check/Clippy、wasm、structureは現在実行中。CLI政策6 targetsは別途実行準備済み。source3582 inputsを凍結し、source/Cargo mutationsは完了まで保留。
+
+Style選択候補は40 Rust +1 maintained contract。独立査読で未公開のCheckedCompileTimeScalarExpression::length() owning accessor8行が必要と判明し、公開前にSema modelを追加した。旧40paths候補はsuperseded、新41paths patch SHA-256 `c8d80df43b0ed0d1a9a32c1efe7eaef15ddaffb4f7d8c0b8d3af09a25da7f42f`、cached apply check0。まだstage/commitしない。
+
+SourceMap batch0の実原因はchecked Let aliases17/18/19をforward projectionが拒否したこと。借用したsymbolic aliasesを既存RuntimePureControlBindingsへ載せ、exact_forwarding_control_opsのcost authorityを保持するTEMP修正中。named scopeからのclosure ReturnをUnitと誤推論する入口は、既存control-transfer/evaluation/never authorityに基づくshared typed continuationへ移行する。AWBCは128itemsのcursorが実際進むため、fixture完了上限をactual frame/instruction scheduleから導出し、runtime max_ops/OneOpの契約を変えない。
+
+訂正: Dash残件はxではなくy593と選択Cluster9 y618の差。source24..30を共有するCluster8をsource-overlap readerが混入させたowner identity不一致であり、actual cluster membershipへ修正する。Windows残件もglyph countではなくglyph bbox width26 vs旧expected30。standard View Contentのtyped font25_000/line34_000、actual logical25px cell、issued integer envelopeを照合してconsumerを移行する。fixed26へのrebaselineや根拠なしの30px authoringはしない。signed division7、nativewide/bridge、native publication61は別TEMP候補のまま。CLI主要統合→Generic Match→retained View→all14 task-planの順を維持し、Astra再相談/goal completeなし。
+
+
 ### 2026-10-10 — Typed Style target / Length 検証済み公開 cut
 
 基点main `5d8ae1deaa8903c528955e7aaabc441cdee34ea7`、無関係なdirty WIPを保持。40 Rust +1 maintained contractでStyle target/source/codec/property/matching/cacheをViewStyleTargetKindのregistryへ統一した。Text共通familyとRichText実payload/sourceをruntime/Playerで照合し、Button等のsemantic roleが実text kindを上書きしない。Style Lengthは既存checked compile-time scalar/登録型/shared literal reductionと借用accessorを使い、px・元resolution・source spanを保持する。obsolete element selector readerを削除、version1。root全差分/独立査読を完了した。
@@ -11228,6 +11261,20 @@ workspace alltargets/allfeatures check/Clippy、wasm player-web/render-web、str
 
 最終source+contract patch SHA-256 `8b36980cae395df71d2433fd4768f8800979afbc609815755447fa41d465e8b7`、TEMP `arcweft-1010-style-final-validation-receipt.json`とoriginal41/fixture2 independent receipts/full run/log identitiesを保持。この記録のみをHEADへ足し、source+contract41+note1をexplicit stage/blob/diff確認後commit/pushする。CLI主要統合の残件を閉じ、Generic Match→retained View .1.4→all14 task-plan public atomic connectionへ戻る。Astra一回は消費済み、再相談なし。goal全体completeではない。
 
+### 2026-10-10 CLI numeric/capture owning verification and SourceMap followthrough
+
+- Current delivered main remains `73c1f38e5535478ecd1d314ce512cc095ef05820`. The next independent Signed7 publication is under transitive reverse validation; current staging index remains empty. No new branch/worktree or additional clean/cache deletion was performed.
+- Initial owning run `7db29bb8-4c18-4b55-ba2e-f2d06b9c3a45`:28 executed,21 PASS/7 FAIL. Five new accelerator tests entered generic fallback batch methods instead of the actual width-specific native entry points; their shared test macro now selects the actual typed API without weakening values/faults/full-formals/no-retry/copy counters. Two new capture tests supplied only presentation metadata and omitted the authored vertical style stack; corrected fixtures feed one Style stack through the actual resolver and assert both resolved writing-mode fields.
+- Followthrough owning run `c85fcb45-722f-420e-96c7-71939b4486fd`:28/28 PASS (Signed17, protocol3, native capture4 and existing custody4). Original/new capture/font CLI run `82df70e2-3997-4a97-ac8a-9ffcfe7bd930`:12/13 PASS; after correcting the inter-character fixture to retain following text in the authored vertical scope, `c722e291-7be6-4dea-939d-4465b5a5ebf1`:14/14 PASS. These include real Dash3, Windows geometry1, compressed-punctuation4, grapheme/physical-glyph/ZWJ raw crops3, Ruby-under1 and inter-character geometry/raw2. Both 3,586-input frozen runs have zero source drift. Manual attachment tests are not GPU-alpha evidence; the separate real raw-crop tests provide that evidence.
+- SourceMap initial refined CLI run `6e74e6fa-0be1-44cf-aa2b-2d05803d8307`:Signed original test PASS, SourceMap original13/new2 all FAIL at type checking before runtime. The current implicit callable body already has a checked type but is not yet published in prepared expression facts; a guarded four-file followthrough borrows that exact current owner/type while retaining fatal rejection for missing nested facts. It is reviewed, TEMP-only and not yet compiled/executed/applied. Numeric totality remains independent of the finite AWBC test schedule; original budgets and physical assertions remain.
+- Sema completion run `cba208bc-8f35-4ec9-9ad1-d6889d29631e`:6/9 PASS. The followthrough preserves the existing typed unresolved Out diagnostic instead of flattening it to InvalidOwner, uses canonical required-operand `return ()` for Unit inference, and tests the existing admitted parenthesized empty Never Match expression inside a named scope and let-else else body. Required Return with an absent operand is rejected.
+- Generic Match priority residual: `final_lowering/statement_lowering.rs` and `expression_lowering/dialogue/candidate/block.rs` currently poison empty statement Match before Never-domain coverage. This is not repaired or declared unsupported by the CLI slice. On returning to Generic Match, connect both producers to the existing uninhabited/exhaustive checked Match authority, reject inhabited empty arms, and preserve Never/let-else divergence.
+- Signed transitive Cargo tree/metadata closure is exactly eight workspace packages. Broad library run `7f77458b-f3f2-4e8a-bba3-f11affb4734f`:661 executed,659 PASS/2 FAIL. One is the previously observed Native registered-environment publication failure at Expr21; Native61 remains pending. The other is an old existing Unary/Div compile-decline expectation, prepared for exact -4 value plus typed zero fault. LSP integration2, native-player integration10 and runtime-host integration12 all PASS. Remaining workspace/wasm gates are running; Signed is not yet committed.
+- The prior full CLI608 run was `--lib --bins --tests --all-features` across all CLI surfaces. This check-only inventory contains450 tests; targeted subsets do not constitute a new full-suite recovery count. Preserve original277 and full201 failure ledgers until a fresh matching full inventory/run.
+- Remaining typography is split by actual source/geometry:column capacity47 and Ruby long-expansion3/overheight1/collision1, with inter-character2 now verified recovered. Standard body font25px/line34px and actual capacity125.6px are explicit source/measured facts; a26px outward integer bbox is not a26px font. The formerly fixed21px expectation only implied a42px old assumption; no historical42px measurement is claimed. No global font/extent rebasing.
+- Native61 is TEMP-composed with GNU fuzz0 against current source; its only substantive additional preserved owners are SourceMap final_analysis/expressions and Collection engine/eval borrowed `&mut args`. It remains uncompiled/unexecuted/unapplied. Choice13 is root-reviewed but held for composition after SourceMap changes. Range67 and capture/font public owner closure remain pending.
+- Dependency order remains major CLI integration convergence → Generic Match residuals → retained View .1.4 → one exhaustive all14 task-plan public atomic connection → later nominal/scheduler/restore/full validation and obsolete-path deletion. Contract markers remain1; no fragmented task publication. The explicitly permitted context-cut Astra consultation was already consumed at `4b076ec754b45a86a28a6fa185131ccd9ef49136` and must not be repeated after compaction. Sol delegation remains6.1 Max. Goal remains incomplete; goal API is paused and the authorized continuation is tracked here.
+
 ### 2026-10-10 delivered: checked signed native division at all signed widths
 
 - Signed7 is an independent closed HEAD slice: native checked zero fault and successful Core wrapping MIN/-1 for i8/i16/i32/i64/i128/fixed-i64-backed isize, exact128-bit magnitude lowering, scalar/row/sum/object entry points, and existing ABI version1. Full original formals, selected-branch fault, committed row prefix, untouched failing row/suffix, exact sum refusal and no retry are retained. General division totality stays fallible.
@@ -11236,6 +11283,15 @@ workspace alltargets/allfeatures check/Clippy、wasm player-web/render-web、str
 - Workspace all-targets/all-features check, Clippy and format, wasm player/render checks all exit0. After the final test-only fixture change, owner all-targets/all-features check/Clippy and workspace format all exit0.3,586 input hashes are stable across both runs; no independent isolated selected-tree build is claimed.
 - Ownership review: native_abi337 LOC keeps one checked transport/instruction owner; new signed JIT365 LOC and accelerator266 LOC modules each cover one signed execution contract. Existing large lower/tests owners gain only delegation or focused contract updates. No Cargo edge, new unsafe boundary, public export for splitting, duplicate execution model, or contract-version bump.
 - Current CLI608 history denotes all CLI lib/bins/tests with all-features, not the check-only450 inventory. This is targeted recovery evidence only. SourceMap/Range/Native/Choice and unrelated task/View WIP are excluded from this staged cut. Goal remains incomplete; continue major CLI integration → Generic Match → retained View → one all14 public task-plan connection.
+
+
+### 2026-10-10 SourceMap selected-child/result authority followthrough
+
+HEAD/main/origin remain `70e74a22991f82cc673c2f8a6e9ae415c45be668`; Signed integer division is delivered. SourceMap is not published or complete. Selected-call validation ran Sema9 PASS (`6ca232aa-17cc-4d8a-9d53-e0fd4b21fcdc`) and CLI15 PASS (`f329ab2a-8746-4e0d-ac0f-19abdc092841`) with3586 frozen inputs/drift0. Actual reverse50 libraries ran4395=4388PASS/7FAIL (`8b581cc8-df59-483f-b804-468e2d93ddb5`); one Native ENV failure is known and six Sema failures were caused by the new completion query. Compiler23 integration targets ran348=344PASS/4FAIL (`508ff538-9d76-4b0f-9a55-af077e6ed76a`). Workspace check/Clippy/fmt and wasm player/render checks exited0; failed test runs remain failed evidence.
+
+HIR and the query now share selected semantic child edges and borrow the exact prepared expression fact. Source assertions were unchanged. Reverification ran Sema15=11PASS/4FAIL (`3ab2453b-46a3-423a-8bea-267593e3cd49`), compiler4=3PASS/1FAIL (`d07ce257-ae36-4b43-bef1-62c2903333bd`), and CLI15 PASS (`752d31a2-ec1b-47b8-9b0c-2d49d54dd64a`). One narrow diagnostic (`651e706e-16b4-4312-ac2d-15b7bf08bfa3`) proves Expr21 is the admitted `PreparedExpressionFact::ContentApplication` with shell `NonValue(ContentEmission(Language Strong))`, not an absent type fact. Its trace changes were exactly restored to SHA256 `30c327106a19d48c2a2622feaf61422c2e7d22940edda1a823c993095912d754`. Next repair uses the existing prepared/checked result grammar in the same normal-continuation algebra; it must not manufacture a Unit value or weaken rejected-candidate/error handling. Native61/Choice13 remain TEMP, unapplied and unexecuted.
+
+The metadata reverse union is now51 packages after adding the touched HIR owner; that expanded run has not executed. Typography45+paragraph2 repair and Ruby13 remain reviewed TEMP candidates, not acceptance passes. Ruby followthrough reviews exact indexed base-run projection, checked canonical index count, and sparse allocation ownership. Preserve all current WIP, use only existing main, publish coherent validated cuts, then follow the user order: major CLI integration → Generic Match remaining → retained View → task-plan complete all14 atomic public connection. Full convergence remains incomplete; the once-consumed Astra marker `4b076ec754b45a86a28a6fa185131ccd9ef49136` is unchanged and must never be repeated after compaction.
 
 
 ### 2026-10-10 Collection/SourceMap typed authority delivery
@@ -11252,6 +11308,16 @@ Remaining order: major CLI integration, including Native61 → Choice13 exact ty
 ### 2026-10-10 — Style metric fixture followthrough
 
 The existing RuntimePlan inactive-presentation/local-ID regression now authors Button gap as 2px/3px, matching the delivered typed Length field contract. Its original inactive fact filtering and contiguous LocalId assertions are unchanged. Only those two fixture literals are selected; the appended Native entity-pattern regression and all unrelated working changes remain unstaged. Actual cargo nextest run 1b806f6a-5e1a-4487-bc80-33f4e9f55e5a executed this exact existing case PASS on the current tested source bytes. The same owning run is still 27 executed =26PASS/1Core negative-case FAIL, and the separate native CLI run ddaeb973-9fab-46e8-8851-f9e43c7da124 remains FAIL on entity→string observation. Those Native failures are preserved and ongoing; this small fixture delivery does not claim Native/CLI convergence or goal completion. SourceMap parent remains 4a2f484b5613613a46b623339cc5c0bdc259c576. Contract markers1; existingmain only; one-shot Astra remains consumed. Continue Native typed entity/observation closure, Choice, Range/physical repairs and full CLI ledger, then Generic Match residuals → retained View → all14 task-plan atomic publication.
+
+## Native CLI の型付き観測と復元 owner の収束 — 2026-10-10
+
+確認した HEAD/origin/main は `3d0aa6457294651a740b0eb585632828afa357d8`。SourceMap と isolated Style fixture は公開済み。Native imported declaration/catalog の実装は未コミットで保持し、元の native CLI 統合テストの Entity golden を変更していない。
+
+`cargo nextest` の owning 27 件は run `1b806f6a-5e1a-4487-bc80-33f4e9f55e5a` で 26 PASS / 1 FAIL。残る Core fixture は VM の公開された typed trap を検証するよう修正し、run `810ed11e-94a3-4e2d-aaa9-9059909c7eec` で 1 PASS。これは先の run の失敗を上書きした結果でも、最終 tree の全件成功でもない。元の CLI run `ddaeb973-9fab-46e8-8851-f9e43c7da124` は native 起動が成功した後に entity の kind が string へ失われる実装欠陥で失敗している。
+
+現在は RuntimeAssignment / RuntimeObservationState に既存 RuntimePayload を保持し、native と AWBC の materialization、AgentValue の共有された fallible projection、metrics の公開、MCP/runner の typed equality まで接続する。unrestricted の完全な値 graph をコピー前に検証する。save と native rollback は既存 AwbcRuntimeValueSnapshot による inert な投影を使い、cold restore / live restore / hotpatch は検証済みの current-program owner を実際に公開する。観測値だけが持つ asset も既存の全値 visitor と catalog admission を通す。これらの draft は TEMP 内で分担中で、実装・検証の完了とは記録しない。
+
+CLI の主要な統合を収束・検証・commit/push した後は、ユーザー指定どおり Generic Match 残件、retained View .1.4、RuntimePlan/task-plan .1.3.1 の全 14 family に対する atomic publication へ戻る。closed zero-arm statement Match には HIR lowering 2 経路に加えて source-freeze validator 2 経路の EmptyMatch recovery が残っており、型に基づく uninhabited-domain admission と Never continuation の証拠を後続で閉じる。Range/geometry 等の既存 WIP と履歴の失敗結果を保持する。goal は未完。
 
 ## Native 宣言 authority と型付き観測の公開接続 — 2026-10-10
 
@@ -11273,6 +11339,11 @@ Corrected broad validation passed: reverse69 run `1c85dad1-34dd-47f0-bb18-d5d58b
 構造gateは2829 files /2699 Rust /97 packages /364 review triggers /blocking0。全90 pathの34 owner判断と修正5 pathの実測・責務を [Native entity/typed observation証拠](2026-10-10-native-entity-typed-observation-closure.md) に保存した。修正版90 patch SHA `4508438372648e01e3ee634d9ce61295202724a118deed9d48b4b505e287c964`、変更5のみ、残85と除外WIP90は byte exact。公開差分は Native64、型付き観測25、元 CLI の entry 指定2行だけの partial file の計90 path と、上記の構造・検証証拠およびこの選択済み goal note の計92 path から構成する。Range / geometry / 他の CLI WIP は stage しない。Choice、Range/geometry、fresh CLI taxonomy の主要統合を閉じた後、指定順に Generic Match 残件、retained View .1.4、task-plan の all14 atomic publication へ戻る。goal 全体は未完。
 
 
+## Native公開後のChoice統合 — 2026-10-10
+
+Native entity authority / typed observations を `5931e15eb9bf92c8b849216406687c44e348497b` で normal pushした。selected92の全HEAD blobとorigin/mainは一致、index空、既存WIPを保持。corrected reverse69は6472 PASS /0 FAIL、Compiler348・Driver33・owning67・元CLI1とworkspace/Clippy/wasm/gateが成功。Choice14を同じmainへ適用し、signal carrier/payload修正を保持した。現在は作者のChoice/option/goto証拠とProjectSemanticIndexの公開を検証中。Goal全体は未完で、主要CLI統合後にGeneric Match→retained View→task-planの順へ戻る。
+
+
 ## 2026-10-10 Choice source/index coherent closure
 
 Parent Native/typed delivery: `5931e15eb9bf92c8b849216406687c44e348497b`. Authored Choice header/option/goto coordinates now seal exact identity, structural Flow target and generation; ProjectSemanticIndex owns Choice/option/goto relations. Static source/index slice is closed, without claiming runtime Choice lifecycle. A private child Flow in two new positive fixtures caused the initial10PASS/2FAIL; corrected public fixture and an added private-target rejection preserve visibility and all original assertions. Final15 focused cases and remaining3930 reverse tests pass with exact list/run joins and source3593 drift0. Workspace check/Clippy, disabled-feature CLI, HIR/Sema wasm, fmt and canonicalgate exit0. Canonicalgate:2832 files/2702 Rust/97 packages/364 review triggers/blocking0; all6 selected ownership triggers reviewed.
@@ -11280,3 +11351,695 @@ Parent Native/typed delivery: `5931e15eb9bf92c8b849216406687c44e348497b`. Author
 Comparable CLI645 =492PASS/153 persistentFAIL, including exactRAG1 reused separately;23 unchanged ignored. All37 additionsPASS/nohistoricalPASS→FAIL. Historical201FAIL→48 recovered+153 remain; original277 ledger has47 recoveries plus its existing motion migration, with one extra MCP recovery outside277. Full root-cause taxonomy proceeds in parallel. Evidence: `docs/implementation/2026-10-10-choice-source-index-closure.md`.
 
 Next: close major CLI Range/geometry/grammar and reviewed JSON/Web consumer gaps, then Generic Match→retained View→task-plan14 public atomic publication and remaining convergence acceptance. Goal remains incomplete; no new branch/worktree or destructive Git action. Single Astra consultation `4b076ec754b45a86a28a6fa185131ccd9ef49136` is already consumed.
+
+
+### 2026-10-10: Choice publication and ordered Range/geometry validation
+
+Choice source/index closure was committed and pushed as `cb798c1d860ce2be6b4330a6e6c722431f73a3d1` (16 explicitly selected paths). Its owning15, reverse3930, feature/target checks and structural gate passed; the comparable current CLI normal645 accounts for 492 PASS and 153 persistent failures (including separately verified RAG reuse).
+
+After that CLI run, the ordered Range59, Capacity9, Ruby14, Objects3 and compact canonical wire quota/Web supplement were composed centrally across 75 paths; all guards and ordered patch replays matched. `cargo fmt --all` completed, and an independent complete formatter review verified all16 changed paths without semantic/literal/assertion changes. This is prepared source, not a Range/geometry test result. Fresh owning/actual reverse30, feature/target, real capture/GPU, standalone script and browser parity validation remain required. Original CLI153 classification must use its old frozen inputs, not these later geometry bytes. No goal completion is claimed; the existing Astra one-time consultation remains consumed.
+
+### 2026-10-11 — Explicit Cargo clean and end of cache evacuation
+
+Supersedes the earlier operational cache-evacuation approach and the exhausted previous one-clean authorization for this newly requested cleanup. The user explicitly requested cargo clean again and instructed that cache evacuation itself must stop. No cache move or cache backup was performed.
+
+Inspected existing main at cb798c1d860ce2be6b4330a6e6c722431f73a3d1. Before clean, D: had zero free bytes; workspace target held 663.228 GiB of logical file data, including incremental 338.601 GiB and deps 308.002 GiB. Separately measured vendor/glyphon target held 1.679 GiB, prior C: rescue directories 209.811 GiB, Cargo registry 1.710 GiB, Cargo git 0.307 GiB, and installed Rust toolchains 10.920 GiB.
+
+cargo clean --target-dir D:/git/arcweft/target completed with exit 0: 526,941 files / 663.2 GiB removed. Workspace target no longer exists. D: free space after completion was 692,916,359,168 bytes (645.33 GiB); C: free space was 580,339,986,432 bytes (540.48 GiB). Directory figures are logical file lengths, whereas free-space figures are actual volume measurements.
+
+All 150 preexisting modified/untracked paths retained their exact SHA-256 and existence state; git status before/after matched. No branch/index/source change occurred during clean. The separate vendor target and earlier rescue directories remain measured storage outside this workspace clean. No new test result is claimed; previous receipts retain their original-byte evidence, and removed executables must be rebuilt for new execution.
+
+Storage inventories, complete per-path WIP guards, clean log/exit and final drive readings are retained at C:/Users/sanze/AppData/Local/Temp/arcweft-1011-storage-clean-3bc9967f/clean-result.json and adjacent JSON/log files. The capacity blocker is resolved for the next Range vendor/native-Web validation and ordered CLI integration. Full convergence acceptance remains incomplete.
+
+### 2026-10-11 — Archived cache deletion request and blocked execution
+
+The user explicitly authorized deleting the remaining C: archived cache using an explicit array of absolute paths, without wildcard selection, and asked whether the test count explains the storage use. Native PowerShell deletion of the five named directories was rejected by automatic approval review before process creation; the only provided reason was "blocked by policy". No deletion ran.
+
+Fresh read-only enumeration verified the five actual cache roots contain 209.809 GiB, with zero reparse points and only the expected compiler-output extensions. Two earlier rescue directories now contain manifest files only (about 1.4 MiB) and are retained as historical movement evidence. Actual archived bytes are PDB125.270 GiB (398 files) and incremental-output84.540 GiB: .bin49.136 GiB, .o32.517 GiB, .rmeta2.888 GiB plus small lock/JSON files.
+
+Fresh Cargo metadata --no-deps reports 97 workspace packages and 212 declared integration-test targets, not 212 test cases or an actual compiled-target inventory. The source test profile already uses debug="line-tables-only"; no Cargo/profile/test setting was changed. Large PDB and incremental outputs, accumulated compiled variants and their archived copies are the demonstrated occupancy; the relative causal contribution of individual test cases has not been measured.
+
+The absolute five-path array, complete current cache inventory and extension totals are retained at C:/Users/sanze/AppData/Local/Temp/arcweft-1011-archive-delete-fe0e4209/explicit-full-path-targets.json and adjacent files. The exact deletion script is C:/Users/sanze/AppData/Local/Temp/arcweft-1011-archive-delete-fe0e4209/delete-archived-cache.ps1. Its preview successfully checked all five roots and every descendant for path confinement, expected cache extensions and absence of links; -Delete has not been executed. Current C: free space is approximately540 GiB and D:645 GiB. The remaining archived-cache action is unfulfilled; the independent convergence implementation and Range validation can proceed on the freed D: space.
+
+### 2026-10-11 — Archived cache removal completed and proposed goal wording
+
+Supersedes the previous pending/blocked execution status for the five archived-cache roots. Following the user's renewed explicit instruction to execute the previously reviewed script, that exact script ran with -Delete and exit 0; no escalation was required. All five literal full-path targets were individually removed and subsequently confirmed absent. Approximately209.81 GiB of logical cache files were deleted. C: free space is now805,109,309,440 bytes (749.82 GiB); D:692,913,111,040 bytes (645.33 GiB). The149 existing WIP paths outside this intentionally updated goal note retain their original hashes/existence state. No cache evacuation, profile change, branch/index operation or new test execution occurred.
+
+The actual execution and independent verification are retained in C:/Users/sanze/AppData/Local/Temp/arcweft-1011-archive-delete-fe0e4209/verified-delete-result.json and adjacent manual-delete-results.json / drive snapshots. Earlier manifest-only rescue records remain historical evidence. Cache/build-output evacuation is explicitly prohibited going forward. The user requested wording for the next goal; the goal API was observed unset in this turn, and this draft is not a claim that a goal was set.
+
+Proposed full objective:
+
+~~~text
+D:/git/arcweft の既存 main checkout で、前チャット 01a0f2b3-0f85-7bf1-b952-a20276132d1f の収束作業を引き継ぎ、docs/implementation/2026-09-08-convergence-goal-plan.md の全受入条件を維持して完了する。開始基点は cb798c1d860ce2be6b4330a6e6c722431f73a3d1。workspace の cargo clean と、フルパス配列で指定した C: の退避 cache 5ディレクトリ・約209.81 GiBの削除は完了済みとして扱う。公開済みの Native 型付き観測、Choice source/index、T01 statement/expression corpus、T06 body-root/default semantic matrix、既存 semantic/count/preflight substrate を再利用し、完了済み項目を無闇に再開しない。
+
+現在は未コミット Range/geometry/capture/context/wire の残検証と選択統合、未適用 CLI23 と G08/G06 ordered16・計39ファイル候補の適用・検証・統合を依存順に進める。vendor lint修正後の owning7/Clippy、実 native/Web capture・画像parityを閉じる。候補の base/hash/全差分と混在WIPを照合し、必要な先行修正を実証されたownerで完成させる。既存receiptと履歴277/153 ledgerを保存し、開始時のCLI645合成544 PASS/101 FAILを単一の新規full runと混同しない。主要CLIの独立した ingress/API/numeric/report/geometry を収束させ、View/task依存の残件は exact ID・原因・受入を保持して該当工程へ引き継ぐ。101件全ゼロをGeneric Match再開の前提にしない。
+
+主要CLI統合後、Generic Match C3/C5の残件を閉じる。zero-arm statement Matchの型に基づくuninhabited-domain admission、Never/let-else continuation、完全semantic transcript、exhaustive-only atomic publication、最終受入と旧経路削除を証明する。次にretained View .1.4のoperation/value-slot/capture、Need、実product・bundle/runtime/replacementを完成させる。RuntimePlan/task-plan .1.3.1では既存count/preflightを再実装せず、残るE14、共通F/Q/C・executable seal、expected-key検証、View capability、private codecを一つのtyped authorityへ接続する。全14 familyのproducer/builder/decoder/consumerを一度のatomic public switchで移行し、実生成物・native/AWBC・save/restoreまで閉じる。構造的nominal C1–C6の現在の不足を完成させ、scheduler/restore A–Fへ合流し、Sans-I/O scheduler・adapter・driver・失敗原子的保存復元と旧経路削除を完了する。
+
+再帰ジェネリック、異なる後段型を持つ共有prefix、関数値、効果、attached default、source order、capture、停止復帰を意味解析とnative/AWBCで確認する。layer方向とSans-I/Oを維持し、全producer/consumerを最終typed authorityへ移行する。置換されたreader/fallback/重複catalog/仮owner/旧成功経路を削除し、Arcweft-owned契約versionはすべて1を維持する。設計判断で解決可能な不足は契約と全consumerを一緒に完成させ、追加設計依頼や途中cutだけで作業を終えない。
+
+test policyに従い、actual Cargo metadataと推移的reverse dependenciesで必要な検証範囲を選び、nextest list/runの実対象・件数を照合する。focused/changed-crate/reverse依存のnextest、workspace check/Clippy/test-workspace、必要なdoctest・codec/golden・構造gate・該当Tier2を完了する。feature/target/profileを検証slice内で固定し、同じ入力の有効な証拠を再利用して重複検証を避ける。テスト数や生成物容量を理由にcoverage、assertion、実行量、batch/fusion/copy/capture条件を弱めない。pass/fail/blocked/not-run/reusedを区別し、局所成功を系列全体の完了と同一視しない。
+
+cache・ビルド生成物の容量確保を目的とする移動・コピー・別ディレクトリ／別ドライブへの退避を禁止する。不要な生成物は許可範囲で削除またはcargo cleanを行う。削除前に対象を列挙し、フルパスの固定配列で明示し、解決後の絶対パス・対象の種類・リンク・実行中プロセスを確認する。ワイルドカードを使わず、LiteralPathで対象ごとに削除し、結果と回復容量を検証する。無関係なWIP、source、fixture、候補patch、検証receipt、歴史的証拠をcacheとして削除しない。容量不足や権限不足は実際の未実施範囲として記録し、可能な独立作業を継続する。
+
+実績・設計判断・残件・full Git SHAをdocs/implementation/の既存記録へ反映する。検証済みcoherent cutで対象path/hunkを明示stageし、complete cached diffを確認してmainへnon-forced commit/pushし、公開commitと対象blobを照合する。無関係WIPを保持し、新規branch/worktree/checkoutやmainからの切替を行わない。Sol指定の相談・チャット・subagentにはgpt-6.1-solを用いる。Astra Maxは今回の初回精査を繰り返さず、goalの区切り等で極めて難しい設計に具体的不安がある場合だけ、履歴なしcontextで用いる。必須実装・検証・削除・公開が残る間はgoalをcompleteにしない。
+~~~
+
+### 2026-10-11 — Goal resumed, vendor lint closure and ordered CLI intake
+
+Existing main and inspected HEAD: `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`; the active goal was set in thread `01a128db-23d8-7212-87ce-d2136eb55f73`. Completed workspace clean and five archived-cache deletions are retained as completed. No cache evacuation, branch/worktree/checkout change, profile adjustment or Cargo build concurrency override was performed. Initial index was empty and 150 preexisting WIP paths were guarded.
+
+Range78 R3 current guards reconcile 78/78, all nine frozen artifacts match, and its three mixed CLI files remain governed by the existing selected partial patches. The earlier R3 3596-input receipt differs only in this operational goal note and the two new vendor lint repairs. Original receipts and 277/153 ledgers remain historical; CLI645 composed544 PASS/101 FAIL is not a new full run.
+
+Vendor `text_atlas.rs` formats the same rasterizer input without a redundant reference; `text_render.rs` borrows complete four-byte pixel arrays and reads the same alpha channel, retaining the discarded incomplete remainder. Strict vendor Clippy exits0 without a new suppression. Actual nextest list/run reconcile exactly7 cases, missing/unexpected0; run `90e46686-8478-40bd-82b1-5d2e55f46e24` passes7/7 (0.077s,0 skipped). Profile/default features and x86_64-pc-windows-msvc are fixed. Existing warning output elsewhere remains explicit.
+
+Real `just unified-text-visual-parity` and `just vertical-writing-style-sample` now get past capacity recovery and reach the current CLI. Both exit1 before capture: authored `samples/unified-text-visual-parity/src/main.arcw` and `samples/vertical-writing-style/src/main.arcw` fail profile topology admission with `syntax.view.invalid_value` / typed View expression grammar. The original authored layout, style, Ruby, text-combine and pixel assertions are retained; no capture or image-parity success is claimed. Source3596 drift0 across these actual attempts. Carry these exact sample/recipe acceptances into the retained View producer/grammar migration; independently executable Range/native capture remains required.
+
+CLI23 and G08/G06 ordered16 frozen artifacts and all39 current source guards match; candidate hashes are respectively `a83adf37c9464a7ee269b4228bf763f122e34d0054b6e8e8374d1fcab52b575c` and `18602c1a392d71e7c0a3e8ea41222e02352b9a3ea2ff963c4fb40a14d8ee1c89`. Fresh complete resolved metadata has845 nodes/97 workspace members. Actual all-feature reverse closures remain CLI50 and G08/G0652, with no package delta from the saved plans; vendor has7 workspace consumers. Fresh host-default and wasm metadata both exit0. The two guarded narrow aggregate patches were applied sequentially, with zero cross-candidate path overlap and exact post-apply bytes for39/39 files. Existing WIP was context-preserved, index untouched. This is applied implementation awaiting owning45 list/run and reverse/feature/contract validation, not an accepted/public delivery.
+
+Continuation evidence: `C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/`, including Range custody, source reconciliation, actual vendor7, capture recipe exits/logs, fresh metadata/reverse graph, candidate39 guards and apply receipt. Required Generic Match, retained View, all14 task-plan atomic publication, nominal C1–C6, scheduler/restore and final gates remain incomplete. Goal remains active.
+
+### 2026-10-11 — Actual ordered owning45 and change-caused repairs
+
+The exact owning inventory reconciled45/45, missing/unexpected0: Core/syntax/HIR9, compiler11 and CLI25 in three fixed all-feature/native/test-profile slices. Initial execution was9 PASS/0 FAIL,5 PASS/6 FAIL and23 PASS/2 FAIL (37 PASS/8 FAIL, not a full CLI run). Initial filter-construction rejection and the new G08 test's three moved-query compile errors are preserved separately. The latter was repaired by cloning only the immutable HIR query handle; every source/span/foreign-document/stale-revision assertion remains.
+
+Five G06 fixtures first failed before execution because ordinary bracket payloads such as `Ready[p]` can admit both Index and Dialogue syntax, while the reserved following `with` plan was only attached for the already-selected Dialogue case. The syntax owner now derives explicit line-plan context from the same closed bracket/lexer interval, publishes its real staged Dialogue graph, and retains ordinary semantic callee admission. It never fabricates a failed Index candidate. Numeric-only payloads keep their ordinary Index interpretation without `with`, and use explicit Dialogue grammar with it. Added tests cover both viable-candidate ambiguity, numeric Index preservation, full lossless source, the following statement, and missing-plan-body recovery preserving the following declaration. Initial mistaken numeric-ambiguity expectation and a test diagnostic-getter compile error are retained. Corrected whole syntax list/run has723 cases,723 PASS/0 FAIL (27.045s,0 skipped).
+
+The subsequent source/native/canonical-AWBC G06 run was5 PASS/2 FAIL. Exact budget preemption was then admitted by the existing Product snapshot owner as a suspended BudgetYield with no pending host request; restoring activation fibers still invokes their existing program-bound validation, and host-call/request mismatches retain rejection. Corrected G06 run is6 PASS/1 FAIL, including actual version1 inert save serialization, canonical decode, current-program reconstruction, restore, and equal subsequent cursor/budget/log/reveal results. This is specific activation evidence, not nominal C1–C6 or scheduler/restore A–F completion.
+
+Two original G08 CLI failures were diagnosed from the actual issued catalog. `RichTextTextSource` has no RubyBase variant; Ruby base ownership is the existing annotation's exact body-node/base-run intervals, and its visible run is ordinary Text. The assertion now verifies that exact interval/range/source/node relationship and preserves the original interpolation, hard-break and Ruby coordinates. Sideways `ABC` is one issued cluster14..17, with separate Glyph elements A/B/C; reuse the existing atomic-word helper to check all glyphs, parents, exact ranges, ink order and masks. The original TCU size/column/capture assertions remain, with an additional one-cell cross-column height bound. Both corrected real native CLI tests pass in run `53d088a0-a58d-4710-b663-128444b5b307` (2/2,3.211s). Authored sources were not changed.
+
+The remaining G06 `failed_dialogue_activation_never_publishes_the_reveal_frame` exposed a real producer shortcut: line-plan ordinary Let directly used scalar Expr lowering and could not consume project calls. `final_flow/line_plan.rs` now reuses the existing ordinary statement/continuation lowerer for non-line-capability bindings; line commands retain their own command/capture drafts. A separate program-reservation classification hypothesis did not fix this owner and was restored byte-exact; its attempted diff/result remain in TEMP. The fixture now compiles, but native `Engine::resume_dialogue_activation` rejects the emitted ProjectCall through its older operation whitelist (`InvalidActivationOperation`, "line activation contains an operation outside its admitted role",5 executed ops), before the intended divide-by-zero failure. Original division/failure/no-reveal/no-effect/cleanup assertions remain. Complete this actual activation execution owner through the existing common invocation/frame authority and inspect decoded AWBC independently; do not weaken the fixture or insert synchronous/label/source-reconstruction fallback.
+
+Current canonical structural gate exited0:2836 files/2706 Rust/97 packages/365 review triggers/blocking0; current ownership metrics are retained, and final changed-owner dispositions/gate/check/Clippy/reverse52/feature/codec/Tier2/publication still remain. Workspace fmt check passed before the later parser/line-binding changes; final fmt/Clippy are not yet claimed. Default `git diff --check` identified CR at the changed upstream CRLF vendor line; `git -c core.whitespace=cr-at-eol diff --check` accepts that existing line-ending style without changing repository configuration. Source/capture/test profile/concurrency/copy/capture/coverage requirements were not reduced. No required consumer check is hidden or marked passed.
+
+Remote fetch/readback confirms main/origin/main `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`,0/0. Index remains empty; no commit/push of these incomplete components occurred. Actual recipe failures on the two retained authored View samples remain required View producer/grammar acceptance, with original styles/geometry/pixel goldens intact. The maintained Dialogue View chapter explicitly supports their authored call/modifier forms; current diagnostic output is not evidence that those samples are obsolete. Keep the original277/153 ledger and composed CLI645544/101 baseline distinct from every new owning/followthrough result. Full convergence goal remains active.
+
+## 2026-10-11 — Native activation invocation frame and current Core evidence
+
+The starting source freeze reconciled3603/3603, drift0, with main/HEAD still `cb798c1d860ce2be6b4330a6e6c722431f73a3d1` and an empty index. Native pre-reveal execution had a distinct environment and no ordinary invocation stack. It now owns the same `NativeFlowExecutionFrame` as ordinary root/child fibers: environment, cursor, pending operations, control/function stack, suspension, cleanup and observations. `FlowFiber` keeps executor/persistent identities outside this frame. Executing the activation temporarily borrows the enclosing fiber identity while its caller frame stays suspended; no synthetic Flow, child owner, synchronous pure-call resolver, or copied environment was introduced. Frame rollback uses the same existing program-owned inert value/continuation reconstruction as ordinary execution. All current field consumers were migrated directly, including the AWBC facade and CLI/host/driver/compiler tests. Line commands, handle custody, registered line defer and reveal publication remain owned by the existing dialogue transaction. Ordinary op dispatch is shared; assignment and function invocation no longer have an activation-only successful interpreter arm. Output from ordinary execution is staged and merged only after the owning activation commit. The environment's drop authorization now admits the common operation boundary policy before line custody reconciliation. No contract marker was bumped.
+
+The original seven G06 source/native/canonical-decoded-AWBC cases all passed in actual run `g06-native-frame-run.log` (7/7,0.223s,36 filtered). The original division fixture remains unchanged and now fails for division-by-zero, with no reveal/unreachable log, no live child and a zero-op repeat failure. Existing one-op/budget/defer/portable-restore assertions remain. That run precedes the subsequent boundary-policy addition and is preserved as its exact earlier input evidence, not relabelled as a later full validation.
+
+Current Core all-feature/native/default-nextest/test-profile enumeration selected1211 tests across12 binaries, ignored0. Actual run `afd25c26-9e60-4afa-b704-c0898763cefc` passed1211/1211,0 skipped,94.459s. The initial lib-only list compile failure (two test-module type paths and two indexed child field references) is retained; all four were migrated, with no assertion removed. The all-target run contains existing call/rollback/codec/ownership/suspension coverage. Build warnings from the retained unfinished task/nominal substrate remain recorded; this is not a successful workspace Clippy result. Actual metadata shows syntax/HIR transitive dependency closures78/91 contain no Core package, so their unchanged accepted evidence is independent of this frame migration.
+
+An additional actual-source fixture exercises recursion, a function value capturing activation-local offset, and per-step OneOp execution before reveal. Its first8-case run was7 PASS/1 FAIL because the newly written ordinary string `"answer={answer}"` was a literal; the new fixture now observes exact numeric42 through a source-level conditional and retains the one-op/capture/reveal assertions. The failure receipt is preserved, and the corrected list has built; execution is still pending. A single current CLI all-feature full list is in progress; its future full run must remain distinct from the historical composed CLI645544/101 and277/153 ledgers.
+
+Ownership disposition: Core Engine still owns one native execution state machine, its immutable plan Arc, real identity and inert rollback; dialogue/store owns transaction/revision/line ledger and the borrowed continuation frame, with no I/O or dependency edge added. The new public frame is the actual state owner used by existing fiber consumers, not an API widened to split files. The common dispatcher stays cohesive around the closed FlowOp algebra. The accepted later immutable-block/continuation migration and deletion of old pending-op/synthetic-next representations remains mandatory; this cut does not mark the affine final contract, nominal C1–C6, scheduler/restore A–F, fourteen-family seal/public switch, View product/capture parity, or the complete goal finished. Complete diff/structural disposition, remaining consumer checks, final fmt/Clippy/reverse52/Tier2 and verified commit/push are still required. All receipts are under `C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d`; no cache/build output was evacuated or deleted during this continuation.
+
+### Single current CLI full run and line-work continuation
+
+Actual CLI run `b6da50c4-7a0d-4f48-a89b-5247ae0c5109` enumerated/executed661 cases across10 binaries and ended567 PASS/94 FAIL/23 ignored skips in469.923s, exit100. `cli-single-full661-result.json` reconciles all661 exact identities, including identical final-summary repeats without counting them twice, and records the log hash. This is one new full run. Comparing exact failure IDs to the original reverse receipt closes7 of its101 failures and introduces0 new failure IDs; the historical composed645544/101 record and277/153 ledgers remain intact. All25 exact owning CLI cases reconcile as PASS within this same run (`owning25-cli-from-full661.json`), not a second execution. Initial full-list compile failure on five borrowed `FlowFiber` observation/stream accesses in CLI output was repaired by migrating them to the common frame; the failed and corrected list receipts remain. Independent remaining batch case `arcweft-cli::check bench_json_measures_checked_in_large_map_pure_batch_fixture` still reports actual `pure_batch_calls_median=0` versus required1; original items4096/JIT4096/AOT0 and further copy/fusion assertions remain. It is an original failure and remains required Generic/call/backend evidence. The remaining94 exact IDs and raw causes stay available for independent-owner closure and View/task-stage transfer; they are not a zero-failure precondition for Generic Match.
+
+The recursive capture fixture's source-level Init conditional exposed a genuine syntax/HIR boundary mismatch: line work's root statements used ordinary nested block grammar, while HIR legitimately required typed Flow branch bodies. The grammar now carries a typed body context and a DialogueWork block-sequence policy: root Init/on/line-plan items retain their statement coordinates, and nested control bodies use the existing Thread/Flow grammar. Choice and ordinary statement contexts stay explicitly ordinary. G068/8 passed in run `30a3c734-c615-45c5-b2a4-69bda4750fc3` (0.337s); current compiler evaluated-effects44/44 passed (0.866s), including original source/native/AWBC and recursive generic attached-default cases. These runs precede the following inline-colon correction and are not relabelled as final input evidence.
+
+The first full syntax724 run was723 PASS/1 FAIL, confined to the newly added direct/Init/indent branch-body fixture. Its inline `alice()[...] with:` form was mistakenly intercepted as speaker-colon dialogue, and measured suite indentation from the inline `with` column. Reserved `with` now excludes that speaker-colon dispatch, and both interval measurement and plan emission use the existing physical-line owner coordinate. The unchanged direct/Init/inline-colon fixture subsequently passed. An additional missing-indent fixture preserves typed recovery and the following binding's exact source start. Final syntax725 list built; its full run is in progress. No source/fixture/old receipt was discarded to make this pass, and no cache/build output was moved or deleted. Broad current consumer/fmt/Clippy/reverse52/Tier2 and publication remain pending; goal remains active.
+
+### Current all-target checks, structural metrics and actual paging limit
+
+Final syntax725 run `061381aa-b343-450c-afa5-0156bf0abc21` passed725/725,0 skipped,27.299s. Formatting touched35 files, all within the current frame/line-work migration; exact before/after hashes are retained in `native-frame-format-delta.json`. Final workspace fmt check exited0. Current `cargo check --workspace --all-targets --all-features --locked` exited0 (dev profile,3m09s). Current workspace Clippy with those same selectors exited0 (2m15s) with warnings; it was not `-D warnings`. Canonical structural gate exited0:2836 files,2706 Rust files,1590731 physical Rust LOC,97 packages,365 review triggers,blocking0. The earlier gate and test receipts remain.
+
+Complete owner metrics against full start SHA are retained in `native-frame-owner-metrics.json`: engine4719 LOC/187792 bytes (base4554,growth165); dialogue3566/153998 (base3479,growth87); store1920/72922 (base1879,growth41); flow dispatcher1918/75683 (base1891,growth27); syntax statement2619/88599 (base2571,growth48). Existing engine/dialogue/store/dispatcher cohesion dispositions apply to these same state-machine owners; identity/frame separation and typed nested-body grammar add no dependency edge or I/O, and no physical-file split widened APIs. Their production/embedded-test boundaries remain existing responsibility modules. Frame/image state, invocation and publication coupling are explicit in the same owners.
+
+The actual reverse52 nextest list compiled with the full prepared52-package selector but exited101 before producing an admitted list: `arcweft-agent-mcp-client` could not mmap the agent-protocol rlib with Windows os error1455 (paging file too small), followed by missing rlib-form errors in LSP. This is a resource-failed list, not a test execution or pass. After all processes ended, Windows reported physical memory66860152 KiB/free37752136 KiB, total virtual73743244 KiB/free27860336 KiB; `C:/pagefile.sys` allocated6721 MiB, current900/peak1576 MiB. Observed free bytes were D578640855040/C803411050496. No OS paging configuration, Cargo jobs setting, feature/profile/target, assertion or execution coverage was reduced, and no cache/build output was moved or deleted. Continue through explicit sequential package/target slices with the complete52-package closure retained and exact list/run identity reconciliation; only this broad command's evidence is unavailable.
+
+Clippy's measured largest pre-reveal result variant is the HostCall request (848 bytes versus Reveal496), rather than ordinary execution output. It now owns a boxed host request only at actual request emission and moves the request out after the transaction commit; empty and ordinary opcode steps gain no heap allocation. Original host-request/reply/publication assertions remain. This private carrier repair follows the preceding checks and requires fresh affected evidence. Current source freeze and receipts retain exact ordering; no earlier pass is silently promoted to these later bytes. Goal remains active, index empty and main at the full starting SHA; implementation/deletion/remaining validation/publication are not complete.
+
+Boxed host-request affected enumeration/run selected20 exact Core dialogue/function-call tests and passed20/20 (0.217s,1139 filtered library cases), including original request-before-reply commit and typed program/function result/rollback custody. `native-frame-host-box-list.json` and `native-frame-host-box-run.log` retain actual identities and run output. Package-local build finished in26.86s without the earlier broad paging failure. No live Cargo/rustc/test handle remains at this cut. Source freeze `native-frame-host-box-source-freeze.json` covers3603 paths. Continue with current-source sequential reverse52 package/target slices, explicit no-test/ignored/reused distinctions, final formatting/lint/owner/family/codec/Tier2 and selective publication. Root main/HEAD remain `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`, index empty. The complete convergence goal remains active; no commit/push or completed goal is claimed.
+
+### 2026-10-11 — Sequential reverse evidence and retained capture diagnostics
+
+Inspected existing main/HEAD remains `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`, index empty. The paging-failed aggregate reverse52 list is followed by an explicit metadata-derived union of 52 packages and 206 test-capable targets. Each target lists and runs separately with its owning package's all features, locked dependencies, x86_64-pc-windows-msvc host, Cargo test profile and nextest default profile. This is a set of distinct package/target slices, not one successful aggregate command or the final workspace acceptance. No jobs/profile/feature reduction, OS paging change, cleanup or cache evacuation occurred. The failed Windows PowerShell native-stderr wrapper attempt is retained; the actual wrapper runs under pwsh7.
+
+Current completed prefix is 47 targets, 753 actual PASS, zero FAIL/ignored skips in that prefix; four no-test targets are explicitly not behavioral passes. `reverse52-sequential-targets-current-audit.json` reconciles every completed list/run identity, summary and log hash with missing/unexpected0. The real IME generator publishes deterministic controls and executable callbacks: one PASS in224.880s, run `fe00731d-b9b9-4e3d-8a7c-3f21b437b6a4`. Target48, the full CLI check binary's442 normal cases, has listed successfully and is running; its result is not yet claimed. The overall206-target validation remains LIVE in exec session13857.
+
+Original current CLI661 single run `b6da50c4-7a0d-4f48-a89b-5247ae0c5109` remains567 PASS/94 FAIL/23 ignored skips. `cli94-cause-triage.json` retains all94 exact IDs, original failure-block hashes/locations/messages and original source assertions, without changing the277/153 ledgers or composed645544/101 history. Its group names are triage only: semantic value10, expression4, nominal2, HIR recovery6, View grammar1, numeric bench ingress4, task collection callable2, pure callback/batch/fusion35, and30 requiring further owner inspection. They do not discharge acceptance or make all94 zero a prerequisite for Generic Match.
+
+Actual native `天3kg人` probe with the original1280x720/step4/max-ops128 inputs returned success, tick3. The issued cluster ranges are0..3,3..4,4..6,6..9; the `kg` cluster and `人` remain in the same column (x1169,y568 and593). The existing column-wrap expectations therefore require owner/controlled-fixture investigation; font, geometry, mask, object-id and capture assertions were not reduced. Three separate authored zero-arm statement probes (function Never, Flow Never and Flow bool) all reject at HIR recovery before sema. Current four lowering/source-projection `EmptyMatch` checks remain a specific C3/C5 repair target; these probes do not establish uninhabited admission or runtime acceptance. Unsafe negative fixtures019/020 likewise reject before their required audit obligation, while the old promotion schema still produces placeholder `Named("Promoted")`; record that owning semantic/nominal boundary, rather than substituting a weaker generic rejection assertion.
+
+The Fx CLI case exposed both stale consumer expectations and a real capture defect: `AgentRasterCapture` discarded diagnostics despite the exact prepared frame reporting `FxDiagnosticCode::MissingProvider`, severityError and the checked FxId. The existing `AgentImageFrameStore` now owns the same prepared frame's projected diagnostics together with its attachments, and viewport/scoped raster captures retain them. The consumer derives its expected definition ID from the issued text catalog's actual `FxApplication`, checks one complete typed `AgentDiagnostic` including step/source/code/severity/identity/message, and uses the issued layer URI for readback. It additionally covers the full1280x720 viewport. Four unused legacy diagnostic helpers were deleted. Authored shader source, step/budget inputs and image-content checks remain. Exactly four CLI source/test files changed; formatting outside the Fx function in the mixed sample file was restored to its guarded preimage. This repair is applied/list-compiled, awaiting actual execution and current lint; it is not yet a pass or public delivery.
+
+Actual locked Cargo metadata proves CLI has no reverse package consumers. All completed non-CLI slices therefore retain unchanged relevant production/test/dependency inputs; their original freeze is preserved. CLI target45 onward uses `native-capture-fx-source-freeze.json` (3603 paths); the four leaf-file delta is explicit. Current free bytes after the IME generator were C799368564736/D549534593024; no deletion or relocation was performed. Candidate/preimage/receipt files are source/evidence custody, not archived build caches. Remaining owning/family/codec/Tier2/wasm/final gates, selective publication, Generic Match, retained View, all14 task-plan atomic public switch, nominal and scheduler/restore acceptance stay required. Goal remains active and incomplete.
+
+### Retained capture diagnostic closure and current reverse prefix
+
+Supersedes the earlier four-file Fx pending description: current repair is seven explicit CLI leaf files. The first CLI check slice executed442 =348PASS/94FAIL,23 ignored skips in458.743s; all of its failures remain preserved under its first source epoch. Initial exact Fx retries exposed duplicate projected diagnostics and then the old image-to-report diagnostic re-addition. The single existing projection now covers runtime-step Fx evidence, final prepared-frame evidence and retained capture evidence, coalescing only equal complete AgentDiagnostic values. Different step, definition or message stays distinct. The obsolete capture-result-to-report diagnostic extension was deleted, together with the four unused old diagnostic helpers. No label/source fallback or parallel diagnostic catalog was added.
+
+Final actual native capture run `d5e11efd-cadb-41e9-843f-fe76d6667fcf` passes the exact original case1/1 in6.204s, with441 filtered and23 ignored cases separately accounted (nextest prints464 skipped). It checks the original shader source and step/budget inputs, full1280x720 viewport, scoped layer image and issued read-uri image; every diagnostic field and checked FxApplication definition identity matches exactly one record. Current projection regression run `3ff35cf5-a2e1-4119-9c42-08ce5f0d76a5` passes1/1 in0.094s,187 filtered, preserving distinct evidence and duplicate coalescence across calls. Earlier failures/source epochs and the pre-lint pass remain historical. Final current `cargo clippy -p arcweft-cli --all-targets --all-features --locked` exits0 in8.45s with warnings; the two measured new needless-borrow/fixture-clone warnings were repaired without suppression. `native-capture-fx-current-receipt.json` retains exact list/run identity reconciliation, current source freeze and final lint hash. This is focused closure of one former failure plus a new regression, not a new full CLI run or a silently recomposed zero-failure ledger.
+
+The reverse52 sequential prefix now has101/206 completed targets: actual3941PASS/94FAIL/31 ignored skips, missing/unexpected0. The94 failures are the preserved first-epoch CLI check failures. Current post-box Core is1211/1211 across its twelve targets, including1159 library cases; current HIR library948/948 passes with8 separately skipped production-limit cases (193.461s), and its final-HIR/project-symbol/public-API targets pass. Compiler's168 library,150 callable-execution,44 evaluated-effects and5 generic-continuation snapshot cases pass in their actual target slices. Relevant non-CLI source/dependency/test inputs stay unchanged by the CLI leaf repairs. The remaining105 targets are LIVE in exec session13857; no other validation process is active at this cut. Current normal passes do not discharge ignored/Tier2/native-Web or final workspace/feature/codec acceptance.
+
+Observed main/HEAD still `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`, index empty. Default diff-check flags the existing/new CRLF endings in the goal note; command-local `git -c core.whitespace=cr-at-eol diff --check` passes for the seven source/test paths and note without changing Git configuration. No cache/build artifacts were moved, copied or deleted. Selective integration/publication, remaining independent major CLI geometry/numeric/callback owners, Generic Match C3/C5, retained View, the fourteen-family atomic task-plan public switch, nominal C1-C6 and scheduler/restore acceptance remain required; goal is active and incomplete.
+
+### 2026-10-11 — Native consumer evidence and selected vendor publication
+
+Inspected main now publishes vendor-only commit `97d35e88d0be410184829a72410277b447f30270`, parent/start `cb798c1d860ce2be6b4330a6e6c722431f73a3d1`. Only `vendor/glyphon/src/text_atlas.rs` and `vendor/glyphon/src/text_render.rs` were explicitly staged, their complete cached diff inspected, command-local CRLF-aware diff check passed, and main pushed without force. Fetch/readback confirms origin/main at that full SHA and both published blobs equal the working files (`e687c30d01a5c44b50dd7c1e9b539fa5c2fc2e4e`, `04147564e88d74ccdff5f4c007ebafd0f571191e`). The unchanged vendor strict-Clippy and exact7/7 owner receipts are reused; their commands and existing too_many_arguments allowance remain explicit. Initial raw cached diff check flagged CRLF at text_atlas174; the command-local cr-at-eol check passed without configuration/source changes. Index is empty after this cut. Other in-scope and unrelated WIP was left in the existing checkout. `vendor-publication-receipt.json` records the public commit/blob comparison.
+
+Actual native consumer run `06a4930f-88b0-4704-b8e9-732a59e28cbd` passes3/3 in38.682s; nextest462 skips reconcile as439 filtered plus23 ignored, missing/unexpected0. Signal observation now checks the typed issued DialogueHostEvent Signal with exact `.sparkle` identity. The smoke fixture keeps its original source, MS Mincho, geometry, time0/60, step4/max64, hidden/visible and object-id assertions. Its retained vertical_lr Ruby belongs to displayed range23..26 and its real second TCU is cluster9/range29..33; obsolete offsets were corrected against the issued typed catalog. The first3-case attempt was2PASS/1FAIL: Ruby glyph selection was517 pixels inside a1014-pixel bounding box. The maintained capture contract defines content_pixels by mask-selected content, not the entire bbox. The final assertion rejects an opaque rectangle, retains exact byte/opaque-pixel/object-id/side geometry assertions, and additionally compares every alpha pixel plus crop metadata across mask, object-id and color for both Ruby objects; unselected RGBA must be zero and selected mask pixels exactly white/full alpha. This increases attachment coverage and does not weaken authored capture conditions. No native/Web parity success is implied. `native-observation-consumer-current-receipt.json` preserves list/run hashes and the tested source epoch; failed receipts remain.
+
+The independent headless-observation fixture now explicitly declares its actual event.emit effect. Its unchanged5-step OneOp run passes source/effect admission but still FAILS the original cumulative-observation assertion: the issued frames contain log at step0 and signal at step4, final_status running, and have not reached metric/event. Exact test `arcweft-cli::check run_json_reports_headless_observations`, run evidence `cli-headless-observation-effect-result.json`, remains required. No budget/mode/step or assertion was reduced or increased to manufacture a pass. Its continuation/lowering operation count is an owning task-plan investigation, not a report projection omission or completed acceptance. Numeric MatrixF32/MatrixF64 admission likewise still needs one real semantic/runtime type authority; current world-free Named schemas and synthetic AWBC math identities are identified replacement targets, not accepted final owners.
+
+Current reverse52 prefix148/206 reconciles 6699PASS/94FAIL/31ignored, missing/unexpected0. Original CLI failure epochs remain separate from later focused repairs. The remaining58 targets continue in session13857. CLI is a metadata-proven leaf; relevant non-CLI source inputs remain unchanged, including by vendor publication (commit identity changes no tested bytes). Current physical freeze is `cli-headless-observation-effect-source-freeze.json`; preceding capture/consumer source epochs are retained. No cache/build output was moved, copied or deleted. Range/candidate integration, remaining CLI owners, actual native/Web capture parity, Generic C3/C5, retained View, all14 task-plan publication, nominal C1-C6, scheduler/restore and final gates/deletions/publications remain required. Goal is active/incomplete.
+
+### 2026-10-11 — Frozen reverse completion and Generic statement Match owner closure
+
+The frozen metadata-derived52-package206-target run is TERMINAL:7578PASS/94FAIL/47ignored, missing/unexpected0 in `reverse52-sequential-targets-final-audit.json`. It remains separate package/target slices, not a new single full CLI run. All94 failures belong to preserved first-epoch CLI evidence; neither later focused repairs nor277/153/composed645 history was silently folded into it. Ruby final array-reference lint repair passes its exact original raw-crop case1/1 (37.229s,441filtered/23ignored); current CLI Clippy exits0,14.16s. The failed r2 comparison compile and all earlier attempts remain. No build/cache artifact was relocated or deleted. Main public HEAD remains `97d35e88d0be410184829a72410277b447f30270`, vendor-only; current implementation WIP is not yet public.
+
+Generic statement Match now reaches typed semantic admission: all four HIR lowering/source-projection empty-arm prohibitions and the obsolete EmptyMatch recovery variant/consumer are deleted. Missing/unclosed/recovered syntax paths remain. Statement semantic publication runs the same complete coverage/transcript transaction as expression Match, commits its checked Match digest in the existing version1 statement grammar, and refuses both direct and nested nonexhaustive products. No alternative coverage catalog or source reconstruction was introduced. Explicit statement fixtures cover Never function, Never Flow, tuple containing Never and let-else divergence; expression-tail ambiguity was corrected with semicolons in these new fixtures. Input ABI keeps its documented input-only role; its earlier negative assertion was placed at the actual checked semantic publication boundary instead. Runtime native/AWBC publication acceptance still needs direct evidence and is not claimed by an input ABI.
+
+Function-body result typing now consumes the existing source-ordered statement continuation, removing the last-Return spelling heuristic and its old preparation helper. A measured regression was1242/1266 with24 failures in retained rejected-call diagnostics. An explicit private FunctionResultTyping query keeps the exact issued diagnostic and constrains possible tail resumption without minting a checked expression result or execution edge; ordinary checked-result queries still reject unavailable facts. Existing no-execution assertions are preserved and expanded with rejected-call prefixes before direct Return and all-branch Return. Two remaining failures exposed compact numeric spread containers, whose logical literal slots deliberately have no expression IDs. The existing sealed mapper now identifies these data sources by exact argument ordinal, source and typed slot family; completion excludes their nonexistent expression continuations while leaving selected source ownership intact. It neither inserts Unit for missing facts nor synthesizes expression IDs, and lookup avoids a quadratic argument scan. A mistyped HIR edge variant caused a preserved r9 list failure; the actual Argument role is used.
+
+Final broad Sema R10 is1266/1266 library PASS (14.450s), plus14 API/4 nominal-mismatch/5 checked-Match-query/1 readonly-statement PASS, total1290. HIR R5 is948 library PASS/8ignored (166.956s) plus7 integration PASS, total955; actual graph proves HIR does not depend on the later Sema-only edits, and relevant HIR bytes are unchanged. Owner receipt reconciles all2245PASS/8ignored identities and hashes. Two new measured lint warnings were repaired by borrowing the private function-result type and equivalent if-let; final R11 focused5/5 PASS (0.160s,1261filtered) and current HIR/Sema Clippy exits0 (10.71s) with baseline warnings, not -D warnings. Earlier full24-fail and2-fail runs, failed lists, individual source freezes and logs remain historical. Broad R10 is not relabelled as a R11 full execution.
+
+New compiler counterexamples are applied: real native/AWBC let-else with a Never statement Match, and direct/nested inhabited empty Match refusing native-plan publication. Their exact2-case list/run is LIVE in session73910, not yet PASS. Actual transitive HIR/Sema reverse scope is23 packages; its coherent post-owner run, full transcript/C3/C5/compiler and executable seal/publication integration, native/AWBC save/restore and final structural/workspace/doctest/Tier2 gates remain. Range/candidate selective integration, independent numeric/report/callback owners, retained View operation/slot/capture/product, all14 task-plan atomic switch, nominal and scheduler/restore acceptance and obsolete-path deletion/publication remain mandatory. Goal ACTIVE/INCOMPLETE.
+
+Compiler actual first counterexample run was1PASS/1FAIL: native/AWBC Never let-else returned42, but a direct inhabited empty statement Match still published a native plan. The producer now checks every canonical expression/statement Match reachable by either runtime or extracted-program publication through the existing complete typed transaction, before runtime facts are produced. This repairs the general publication boundary rather than only empty arms. An initial missing HirStmtKind qualification caused a preserved list failure; the actual qualified type is used. Corrected actual run `Nextest run ID b5bfdff6-6f4d-4cb4-bc27-3364b5eafd96 with nextest profile: default` is2/2 PASS (Summary [   0.151s] 2 tests run: 2 passed, 5 skipped),5filtered, including real native execution, verified AWBC/AWFB runtime and its completed session snapshot. Direct and nested inhabited empty statements both refuse publication. This does not claim all14 final executable seals or C3/C5 matrix completion.
+
+Changed HIR/Sema owners are reused with their exact recorded epochs and relevant-source justification. The actual metadata-derived remaining reverse union is21 packages/102 test-capable targets, compiler first; session59731 is LIVE, currently3/102 complete. Compiler all-target/all-feature locked Clippy exits0 with baseline warnings. One new raw-string-hash warning in the new native/AWBC fixture is pending a guarded formatting repair after frozen consumer verification; the old neighboring raw-string warning is preexisting. No source-sensitive input is changed while this remaining run is active. Normalization/family/codec/native-Web/fullworkspace/structural/Tier2 and selective public integration still remain.
+
+Current canonical `just structure-audit-gate` exits0. files scanned: 2836; Rust files: 2706; Rust physical LOC: 1591101; workspace packages: 97; review triggers: 365; blocking violations: 0. Sixteen Generic source/test paths are guarded by exact preimages and source freezes; current owner metrics are retained in `generic-statement-match-owner-metrics.json`. Cohesion disposition: compiler projection owns the generation-bound runtime/program publication check (+35LOC on its existing semantic projection owner); statement transcript owns its complete Match certificate; completion owns the shared HIR control fold and an explicit declaration-result diagnostic purpose (+69LOC); function-body context uses that fold and removes the old last-Return helper. No I/O, unsafe, dependency edge, copied semantic catalog, fabricated expression identity or normal checked-result grant was added. New tests retain original execution budgets and expand the rejected-call/no-execution evidence. Existing large-file review triggers remain review obligations, not behavior gates or reasons to split cohesive owners arbitrarily.
+
+Current remaining reverse prefix24/102 is529PASS,0FAIL, exact reconciliation0 mismatches; full compiler24 targets are529PASS, including current native/AWBC and save/restore7, effect44 and callable150 cases. These are target slices and owner reuse, not a new single CLI full run. Session59731 continues; Rust inputs remain frozen and only this operational note differs. Current free bytes measured C798252158976/D429645778944; no cleanup/relocation was performed. Scope-owned source changes, Range/candidate selective stage/diff/publication, real native/Web capture parity, remaining CLI/numeric/report/batch, full Generic matrix, View/task-plan/all14/nominal/scheduler and final workspace/codec/doctest/Tier2/deletion obligations remain. Goal is active, not complete.
+
+
+## 2026-10-11 — Generic reverse21 terminal reconciliation and numeric owner continuation
+
+Observed existing dirty main at full HEAD/origin-main publication
+`97d35e88d0be410184829a72410277b447f30270`; the index remains empty.
+The vendor-only publication remains the last delivered commit. No branch,
+worktree, checkout switch, cache evacuation, or deletion occurred in this continuation.
+The user-confirmed workspace clean and C: five-cache deletion are not repeated.
+
+- PASS/FAIL/ignored: the frozen Generic statement Match reverse21 wrapper completed
+  all 102 metadata-selected target slices, with **2,288 PASS / 90 FAIL / 23 ignored**.
+  All list/run identities reconcile, missing/unexpected zero. Its Rust source freeze
+  has no drift; only this operational note changed while the run was live.
+  `generic-statement-match-reverse21-final-audit.json` retains every target, command,
+  run ID, selected identity, status, log hash, source epoch, and original failed receipt.
+  This is a composed target validation, not one aggregate nextest run.
+- The ten current CLI slices compose 662 normal cases, 572 PASS / 90 FAIL, with
+  23 ignored. The prior fresh single full CLI661 567 PASS / 94 FAIL is preserved.
+  Four old failure IDs now pass (vertical smoke geometry, vertical raw crops,
+  structured rich-text visual diagnostics, and signal/visual effects); new failure
+  IDs zero. The start CLI645 composed 544 PASS / 101 FAIL and historical 277/153
+  ledgers retain their own identities. No zero90 barrier is imposed on Generic work.
+- The new Generic compiler fixture raw-string delimiters were simplified without
+  changing the embedded Arcweft source. The adjacent older raw-string warning is
+  retained as pre-existing WIP. This formatting delta is not relabeled as a new
+  full Generic behavioral run.
+
+Numeric storage admission now belongs to Core's MatrixShape/TensorShape and
+DenseMatrix/DenseTensor constructors and deserializers. Shape multiplication
+rejects overflow; nonempty Tensor rank and exact storage length are checked on
+every decoder path. Zero-volume dimensions remain valid, including a zero after
+otherwise overflowing factors. Matrix zeros and scalar matmul reject unrepresentable
+output/allocation before construction. The public raw matmul validates all buffers
+before touching output and returns the structured owner error; no synchronous
+fallback, extra copy, raised execution budget, or weaker expectation was introduced.
+AWBC constant shape verification delegates to the same Core shape admission.
+The codec shape/field representation is retained with private checked wire DTOs,
+without a legacy reader or version increment.
+
+- PASS: Core focused nextest run `9551f07f-6fed-45c5-bffb-ecc8c98e99ba`,
+  10/10 in 0.097s; 1,155 explicitly filtered identities. Selected/run and excluded/
+  skipped identities both reconcile. `numeric-shape-boundary-current-receipt.json`
+  pins these original bytes, including all four float-width/container codec cases,
+  malformed storage, rank/overflow, zero volume, and raw-kernel failure atomicity.
+- PASS: Core Clippy --all-targets --all-features --locked exit 0, 54.53s, at that
+  shape-only epoch. Existing warnings remain (2,133 lib-test warnings including
+  duplicates); no new math warning or suppression. This is not a -D warnings pass.
+- Subsequent type migration is now in progress: Core owns the closed Matrix/Tensor
+  x F32/F64 algebra through RuntimeDenseNumericType. Sema primitive ingress,
+  structural equality/order/substitution/digest/ownership, Math schemas, normalized
+  runtime shapes, plan projections, checked admission, schema metadata codec, and
+  AWBC type reification share that owner. Four synthetic AWBC math identities and
+  world-free Named Math signatures were deleted. Shapes remain value properties.
+- PASS: Core type check (before schema expansion), Sema check r3, compiler check r2,
+  all --all-features --locked. Earlier r1/r2 compiler diagnostics are preserved as
+  migration evidence and were repaired; they are not acceptance passes.
+- NOT RUN for the expanded type epoch: focused behavior, compiler/CLI actual math,
+  native/AWBC artifacts and saves, Clippy, complete reverse scope, workspace gates,
+  final publication. The shape-only receipt above is not relabeled for these newer
+  bytes. Actual metadata identifies the Core transitive closure as **50 packages /
+  199 test-capable targets**; broad validation waits for the final type migration
+  freeze to avoid repeated invalidated runs.
+
+Next concrete numeric repair: the current AWBC constant producer encodes Matrix
+values as TensorF32/TensorF64; the VM consequently recreates Tensor values and the
+verifier admits those constants as either container. Replace this unreleased path
+atomically with a checked dense constant retaining the Core container/width owner,
+then migrate producer, codec, verifier, VM, and tests together. Do not preserve a
+dual reader or claim the generated artifact contract complete before execution.
+The original CLI math tests retain drain/one step/max-ops8, accelerated call counts,
+128 borrowed bytes and zero copied bytes. Bench authored dense construction,
+batch/fusion execution, View/task exact handoffs, Generic C3/C5/publication seals,
+all14 task switch, nominal C1–C6, scheduler/restore A–F, real native/Web parity,
+old-path deletion, required workspace/Tier2 checks, selected staging and main push
+remain required. The full convergence goal stays active.
+
+Cohesion disposition: Core math owns immutable shape/storage invariants and its
+own public error contract; the wire verifier consumes that authority. The dense
+type product is a shared Core leaf, not an accepted-nominal placeholder or copied
+catalog. All work remains Sans-I/O; no new dependency or unsafe was added. New
+size/growth measurements and structural gate will be refreshed at the final cut.
+Latest measured free bytes: C 798253678592, D 413464473600. No capacity/permission
+block is present; no source, fixture, patch, receipt, or historical evidence was
+treated as cache.
+
+
+## 2026-10-11 — Dense constant closure, real CLI Math admission, reverse50 started
+
+Supersedes the previous numeric "next concrete repair" statement: Matrix-to-Tensor
+constant erasure is now removed from the producer, schema, codec, verifier and VM.
+One checked AwbcDenseNumericConstant retains the Core Matrix/Tensor x F32/F64
+type, portable u64 dimensions and exact IEEE element bits. Its immutable fields
+and checked Serde constructor reject wrong rank, width, overflow and storage count.
+The wire reader checks shape/storage before allocating the element payload. The
+old TensorF32/TensorF64 constant variants, old reader/tag16 success path, two old
+writers, permissive Matrix-or-Tensor verifier matches and four synthetic math type
+identities are deleted. AWBC/runtime schemas and semantic domains remain version1.
+
+The first producer replacement used an incorrect end boundary and temporarily
+removed342 adjacent method lines. The preserved preimage restored only that exact
+segment; the complete inventory diff was reviewed. No user WIP was discarded and
+no bad intermediate code was published. The failed check and both before images
+remain in `numeric-producer-edit-boundary-repair.json` and its referenced evidence.
+Compiler check r3 then passed --all-features --locked.
+
+The first expanded Core focused run was11 PASS/3 FAIL: generic Wire<u64> encodes
+fixed little-endian words, so it violated the existing dimension-varint contract.
+Repair extended the existing canonical unsigned-varint owner with typed U32/U64
+widths and one decoding grammar. Dimensions now use canonical u64 varints; scalar
+IEEE bits remain fixed-width. Original u32 boundary/overflow/alternate/truncated
+assertions and tensor dimension rejection are retained. An invalid old tensor
+wire fixture had128 shape elements but only2 payload elements; it now supplies
+all128 elements while keeping the original first-two bit assertions. The replaced,
+production-unused decoder shim was deleted, and its tests call the width owner.
+
+- PASS: expanded Core focused nextest `a1741e34-1955-42b3-b120-027e1b4ebac5`,
+  28/28 in0.219s,1,140 filtered, ignored0, exact identities and source freeze.
+  `numeric-dense-current-core-receipt.json` pins that epoch. Four actual AWBC
+  canonical artifacts decode/materialize the correct container and scalar width,
+  preserving negative-zero, NaN payload and infinity bits. No full runtime or
+  save/restore milestone is inferred from this constant-materialization proof.
+- The first actual CLI Math probe still failed at nominal source TypeId7. The
+  final nominal resolver has its own typed BuiltinTypeConstructor ingress; it now
+  projects the Core dense inventory with arity0 and the exact same semantic type.
+  No accepted-nominal placeholder or source-name fallback was introduced.
+- PASS: unchanged CLI Math cases `run_json_executes_math_intrinsic_with_cli_matrix_bindings`
+  and `run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings`, nextest run
+  `84821c23-8675-4120-a0a3-e74ebf7bcf67`,2/2 in1.541s,440 filtered/23 ignored.
+  They retain drain, one step, max-ops8, actual backend/call counters,128 borrowed
+  bytes, zero copied bytes, final Return and path-redaction checks. These2 old90
+  failure IDs are closed by focused evidence; the full CLI90 ledger is historical
+  and has not been silently recomposed or presented as a new88-failure full run.
+- PASS: Sema constructor inventory/type digest authority cases, nextest run
+  `d76e11c7-10b8-426c-b30f-d638fb69ff78`,2/2 in0.028s,1,264 filtered, ignored0.
+  All four Core dense families have unique identical Sema/native checked identities
+  and complete source-constructor inventory. `numeric-consumer-focused-receipts.json`
+  reconciles both consumer runs' selected and excluded identities, missing/extra0.
+- PASS: owning5 (Core/Sema/runtime-plan/compiler/CLI) Clippy, --all-targets,
+  --all-features,--locked, exit0 in1m40s. Existing warnings are retained; no new
+  warning is reported in dense_type, checked dense constant, materialization test,
+  or canonical_varint owners. This is not a -D warnings claim.
+- PASS: canonical structure-audit-gate exit0:2,839 scanned files,2,709 Rust files,
+  1,592,166 physical Rust LOC,97 workspace packages,365 review triggers,blocking0.
+  Existing touched large owners remain cohesive type projections/encoding/resolution
+  contexts; the shared Core leaf replaces copied/fake identities without I/O,
+  unsafe, new dependencies or arbitrary size splitting. Targeted file formatting
+  and diff-check pass. Operational note mixed CRLFs were normalized without changing
+  historical content after diff-check reported them; the final doc check passes.
+
+Live complete reverse validation: actual unchanged Cargo metadata selects50 Core
+reverse packages/199 test-capable targets. Session19693 executes
+`numeric-dense-reverse50.ps1 -Execute`; package features are all selected owning
+package features, --locked, x86_64-pc-windows-msvc host, test/default profiles,
+explicit metadata lib/bin/integration/example selectors. Rust inputs are frozen in
+`numeric-dense-reverse50-source-freeze.json` (3,606 paths). The first full Core
+library slice is **1,168/1,168 PASS**,10.629s, no ignored; target2 API compile is
+live. `audit-numeric-reverse50.cjs` preserves exact list/run/status/summary/hash
+reconciliation without treating composed slices as one new full run. No worker
+restart or source edit is authorized by a missing/buffered log. Only this operational
+note may drift while the run is live.
+
+Still NOT RUN/IN PROGRESS for the final numeric migration: remaining reverse
+targets, workspace-wide check/Clippy, required final test-workspace/codec/doctest/
+Tier2 surfaces, authored dense bench construction and remaining batch/fusion paths,
+native/AWBC flow and save/restore acceptance beyond these focused proofs, and
+selected main staging/publication. All broader Generic/View/task-plan/all14/nominal/
+scheduler/capture/parity/deletion acceptance remains active. The existing dirty
+main and empty index are preserved at full HEAD
+`97d35e88d0be410184829a72410277b447f30270`. No cache relocation/deletion, branch,
+worktree, checkout switch, source/fixture removal or additional commit/push occurred.
+
+### 2026-10-11 — Dense numeric broad CLI evidence and View/task owner reconciliation
+
+Existing main and origin/main remain full SHA
+97d35e88d0be410184829a72410277b447f30270. Index remains empty; no source,
+candidate, historical receipt, cache or build output was deleted, moved or
+evacuated. Rust remains frozen for existing session19693. The latest exact audit
+is 52/199 completed targets,
+{"PASS":3742,"FAIL":88,"SKIP":23}, missing/unexpected mismatches0; only this
+operational goal note differs from the 3606-input freeze. Reuse preserved prior
+receipts for unchanged inputs; do not restart the active worker.
+
+The new single CLI check-target run
+2e3c52a3-8735-4e69-b253-0878fb72742c is 354PASS/88FAIL/23ignored in478.953s.
+Its442 normal cases reconcile exactly, missing/new IDs0 and introduced failure
+IDs0 against the preceding composed epoch. Both original matrix ingress IDs
+run_json_executes_math_intrinsic_with_cli_matrix_bindings and
+run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings now PASS in this
+broad run. The original drain/one-step/max-ops8 and native backend/call/borrowed
+byte/copy/final-result assertions remain. This is one target, not a new single
+full CLI run or a replacement of historical CLI645544PASS/101FAIL,661567PASS/
+94FAIL, or later composed662572PASS/90FAIL ledgers. Exact IDs/log hashes live in
+numeric-dense-cli-check-current-receipt.json under the existing evidence root.
+
+Actual bundle probes use the current executable and evidence-only authored
+sources/artifacts. Repeated numeric Fx expressions and repeated dependent
+defaults generate real AWFB artifacts successfully. Repeated conditional Unit
+branches (semicolon-terminated Text) and complete ViewValue then/else branches
+also succeed. Thus duplicate-expression program rejection is not demonstrated.
+A no-else value branch returning ViewValue mismatches the implicit Unit branch;
+that probe is not evidence that all accepted View conditionals are broken.
+String-plus has no verified language acceptance here and stops at Core's numeric
+arithmetic projection; do not silently authorize String concatenation from that
+probe or claim its repair complete.
+
+The unchanged unified-text parity sample still fails typed View grammar at its
+Panel container span661..1318. A minimal authored Panel(arguments){children}
+probe parses but is rejected as sema.call.non_callable_target; record-style
+children probes hit HIR recovery. These are concrete retained View producer/
+container admission seams. Original layout/font/Ruby/TCU/time/scope/pixel gates
+remain required; no native/Web capture parity PASS is inferred. Probe sources,
+stderr, exact source and artifact hashes are in view-accepted-expression-probes
+and view-container-grammar-probes receipts.
+
+Current task implementation already owns E0..E13 in executable_rows and private
+UnsealedRuntimePlanImage task definitions/expected-key assertions/count and
+child preflight. RuntimePlanBuilder.finish_with_seal_limits still publishes
+after inventory.verify alone, while the private task image has no public common
+F/Q/C+E14 final seal consumer. Reuse those real owners; no parallel executable
+catalog or digest-fed substitute is accepted. Required final View capability,
+private codec, all14-family atomic switch, real native/AWBC/save/restore and old
+success-path deletion remain active, as do Generic/nominal/scheduler gates.
+This progress note is not a completion or publication claim.
+
+### 2026-10-11 — Numeric fixed-source workspace gates and exact product ingress residual
+
+PASS: workspace check --workspace --all-targets --all-features --locked, host
+x86_64-pc-windows-msvc/dev, exit 0 in 2m28s. PASS: same workspace Clippy slice,
+exit 0 in 2m09s. Baseline warnings remain; this is not warning-free validation.
+PASS: explicit 50 numeric Rust paths, rustfmt --check --edition 2024 with
+skip_children=true, no file mutation. The complete 50-path HEAD/preimage diff
+review is retained in numeric-final-diff-review.json and its per-path files;
+three new typed numeric owners are included. Compiler lower.rs also contains the
+separate 35-line Generic Match publication hunk; that hunk must not be silently
+staged as part of a numeric-only cut. No staged path or additional commit exists.
+
+Current CLI metadata union is ten distinct target runs: 574 PASS / 88 FAIL /
+23 ignored, normal case inventory 662. Exact old/new case identities match and
+the two matrix ingress failure IDs close; introduced failure IDs 0. This composed
+union is preserved separately from the single 442-case check run and every
+historical 645/661/662 ledger. numeric-current-cli-composed-receipt.json contains
+the actual target run IDs, cases, selected/list/log hashes and remaining exact IDs.
+
+Actual unchanged-input CLI probes confirm four native dense flows (Matrix/Tensor
+times f32/f64) complete with drain, one step, max-ops 8, their selected glam/ndarray
+backend once, borrowed bytes 128/64/32/64, zero copied bytes and path redaction.
+The original probe incorrectly expected tensor ingress spelling in its return
+label: the maintained Core value label is tensor/f32/[2, 2] or tensor/f64/[2, 2].
+The initial receipt is retained and the corrected reconciliation reuses the same
+outputs; no runtime behavior or condition changed. These are native ingress
+proofs, not tensor element-result or save/restore proofs.
+
+Exact residual **DENSE-AWBC-INGRESS-01**: direct source Flow run with
+--executor awbc-product reports awbc_product, but CLI executor.rs
+arcweft_execution_tier maps AwbcProduct and BytecodeVm to RuntimePlanVm. The four
+requested-AWBC probe commands therefore ran native and do not establish AWBC
+execution. This is a demonstrated existing source executor/construction/report
+seam, not a successful product test. It also affects source entry/template users
+of the same mapping. Acceptance: the requested executor consumes the actual
+verified AWBC from SourceRuntimeProgram's existing bundle, resolves the exact
+typed Flow/Entry and complete canonical input ABI before execution, preserves
+ownership and failure-atomic admission, and reports its actual owner/tier.
+Native and real decoded AWBC must assert exact dense values/shape/width with
+equivalent inputs and original budgets; suspension/save/restore must retain them.
+Remove the old successful native mapping. Reuse existing product flow_bindings,
+Function root/argument preparation, bundle product program and common executor
+facade; do not mint a synthetic Entry or reconstruct source/another catalog.
+Complete this with the actual RuntimePlan/product/task authority migration;
+there is no unavailable external fact or permission blocker and no follow-up
+design request is needed. The required all14-family atomic switch remains intact.
+
+Existing worker19693 is still active. Additional fixed-source gates are wasm32
+Core+actual player-web library check in42626 (all selected package features,
+locked/dev) and affected public-API doctests Core/Sema/runtime-plan/compiler in
+45561 (all selected package features, locked/test). Neither has a completion
+claim yet. Current source freeze, all failed receipts and unrelated WIP are
+preserved; cache/build relocation/deletion has not occurred. The full goal stays
+active; actual capture parity, remaining CLI/Generic/View/task/nominal/scheduler,
+final gates, deletions and selected non-forced main publications remain required.
+
+### 2026-10-11 — Demonstrated adapter numeric regression and shared-owner repair
+
+The frozen reverse199 run demonstrates one introduced failure outside the 88
+known CLI failures: arcweft-lsp::session::tests::signature_help_uses_native_registered_adapter_candidate.
+LSP lib run 49f4486a-b8ec-4bf0-a544-08f0c8220789 is 220 PASS / 1 FAIL,
+221 actual cases, 5.657s. The same case passed in prior run
+b77d7c34-3002-4aa6-a68d-e78a3451cbf3. Source TensorF32 now resolves to the
+dense primitive, while the inference adapter still exposes a distinct opaque
+TensorF32 nominal; the exact diagnostic is sema.call.no_viable_signature.
+This change-caused repair is required before numeric publication.
+
+Prepared, not applied or validated: numeric-adapter-owner/receipt.json guards
+17 paths with full before/candidate hashes. The shared scalar/container descriptor
+belongs to existing lower Sans-I/O arcweft-manifest-model. Core reexports that
+same type and RuntimeValue owns value classification; adapters, codec DTOs,
+environment projection, source spelling, semantic digests, host identity and LSP
+labels consume the shared typed leaf. The obsolete Core private descriptor and
+inference TensorF32 nominal declaration are removed in the candidate. No Core
+upward dependency, copied enum, name-based fallback or contract version increment
+is added. Existing assertions remain, with new distinct-role codec/digest checks.
+Candidate formatting passed; executable validation remains NOT-RUN. Current
+Rust source remains frozen for worker19693. The guarded source-replacement script
+requires terminal exact199 receipts and no active Rust build/test process before
+applying. Actual locked all-feature Cargo metadata selects 53 packages / 205
+test-capable targets; this is a plan, not a PASS receipt, and metadata/source
+freeze must be refreshed after application.
+
+Additional frozen-source gates completed: Core and actual player-web libraries
+wasm32-unknown-unknown check --all-features --locked, exit0 in 1m45s; affected
+Core/Sema/runtime-plan/compiler doctests --all-features --locked, exit0 with four
+crates each reporting zero doctests. These are compile/empty-doc evidence and do
+not establish Web execution, image parity or positive doctest coverage. Workspace
+check/Clippy receipts remain the earlier frozen source epoch and must not be
+silently reused after the adapter source repair. HEAD remains
+97d35e88d0be410184829a72410277b447f30270; index empty, WIP and historical
+277/153 ledgers preserved. No new publication, cache movement or cleanup occurred.
+The complete goal remains active with all original required acceptance intact.
+
+### 2026-10-11 — Adapter regression closed; exact dense execution/save owner repair
+
+The original fixed-source reverse50 run is terminal: 199/199 metadata targets,
+5913 PASS / 89 FAIL / 39 ignored, selected/list/run count mismatches 0. Its final
+receipt is numeric-dense-reverse50-final-audit.json. Failures are precisely the
+88 existing CLI IDs and the introduced LSP signature-help ID; the script's exit0
+means all slices completed, not all tests passed. This receipt remains its own
+source/feature epoch and is not a new single full CLI run.
+
+Applied the guarded descriptor owner17 and removed the obsolete Core private
+dense_type.rs (fixed literal full path, file/non-link/process checks, preimage
+retained). Initial focused check exit101 exposed the Rust metadata admission
+visitor's missing dense leaf arm. Added that eighteenth consumer path, retaining
+the failed check/source receipts. Corrected owning check exit0; owner tests
+83 PASS and the exact prior LSP failure 1 PASS. LSP run
+670e75b9-c25d-4928-aab3-1371ad04524d; owner run
+919d2e6c-0bc9-479d-907f-c668be4468de. The LSP filtered cases are not ignored
+coverage. These receipts predate the later Core bit payload repair and are not
+silently reused as final-source validation.
+
+The new real product test keeps 4 distinct dense types, 2x2 dimensions and exact
+IEEE elements (one, negative zero, infinity and a specific NaN payload), executes
+native pure roots and canonical-decoded AWBC roots, and round-trips the terminal
+result through the actual save DTO/JSON/restore before consuming it exactly once.
+The test uncovered two production seams: RuntimePlan value admission had no dense
+primitive arm; then literal/live/snapshot float validation incorrectly reused
+canonical ingress's finite-float rule. The retained language contracts define
+Rust-like NaN/infinity values and ConstEval exact float bits. Connected dense
+admission to RuntimeValue's shared typed classification and the existing typed
+ValueEncoding context to IEEE bit encoding for executable/live/snapshot values.
+Canonical ingress/digest finite-float rejection and normalized-zero behavior
+remain; original finite-value assertions are retained. Added all16 dense type/value
+combinations in building/sealed plan admission and explicit nonfinite execution
+versus canonical-input checks. Budgets, collection/node/depth counts and admission
+limits are retained.
+
+After those repairs, actual run 7a692033-05aa-443c-9b11-811356a5a2f1 fails at
+save JSON decode: invalid type null, expected f32. Native and decoded AWBC reach
+the first dense result; JSON's raw float snapshot loses nonfinite bits. The first
+matrix fails before the other three loop cases run, so this is not a four-case
+PASS claim. Fixture-only initial compile Arc mismatch, wrong public-entry verify
+context for a pure library, and a mistaken field spelling are separately retained
+in r1/r4/r5 receipts. The final fixture uses the existing library verify context,
+asserts no public entries and exactly four real pure-program bindings; it does
+not mint a synthetic Entry or reduce executable verification.
+
+Applied numeric-dense-snapshot-owner/receipt.json, guarded11 paths, complete
+before/candidate review. One checked Core math RuntimeDenseNumericPayload now
+serves AWBC constants and dense save images, and RuntimeValue owns both portable
+bit/live-storage conversions. Removed the obsolete AWBC-private dense owner,
+the four direct-float dense snapshot variants, the duplicated producer arms and
+VM shape/materialization helper. The obsolete source was removed by its fixed
+full LiteralPath after file/link/process checks with preserved preimage. Further
+same-owner scalar snapshot fields use u32/u64 bits and dense float sequence serde
+keeps DenseSeq physical storage with exact bit elements; there is no Values
+fallback. A nested scalar/dense sequence JSON restore test retains each width,
+storage kind and special-bit element. All Arcweft-owned versions remain1; no
+legacy reader or compatibility alias is added.
+
+Current source is frozen for worker81597: Core/runtime-plan libraries plus the
+real product parity target, all selected package features, locked/test/default,
+Windows host. New metadata still selects 53 packages / 205 test-capable targets.
+The planned reverse check selects that complete union in one invocation with all
+53 package features unified, retaining exact metadata targets/list/cases/results.
+It is a fresh fixed-input slice, not reuse of the earlier per-package199 receipt.
+Its run, final workspace gates, final diff selection and numeric publication are
+NOT-RUN yet. Capture parity and DENSE-AWBC-INGRESS-01 remain separate actual
+product/CLI acceptance; the new pure-root test does not close them. HEAD remains
+97d35e88d0be410184829a72410277b447f30270, index empty, unrelated WIP and
+277/153 ledgers retained. No cache/build movement or cleanup occurred. Full goal
+acceptance remains active, including every required Generic/View/task/nominal/
+scheduler migration, validation, deletion and non-forced main publication.
+
+### 2026-10-11 — Numeric bit owner fixed-source gates and memory-adjusted reverse union
+
+PASS: numeric-dense-final-focused, run 95170f79-1525-47f5-9eb2-b3e8c6e8a07c, actual
+1296 tests / 3 binaries, 1296 PASS / 0 FAIL / 0 ignored, 13.160s. Exact list/run
+reconciliation is required in the receipt. It includes Core1171, runtime-plan116
+and product parity9, with all original assertions retained and the real four-role
+native/decoded-AWBC/JSON-save/restored-bit oracle passing. This source epoch
+precedes the final snapshot equality strengthening and is explicitly preserved
+as numeric-dense-final-focused-source-freeze.json. The final equality asserts
+identical NaN-bit snapshots compare equal, different payloads compare unequal,
+while ordinary runtime value equality retains Rust NaN semantics. Dense physical
+storage remains; no Values fallback or runtime condition reduction is used.
+
+Current final source gate receipts: workspace check --workspace --all-targets
+--all-features --locked exit0; same workspace Clippy exit0 with retained warnings;
+Core + actual player-web libraries wasm32-unknown-unknown check exit0; nine
+affected public API crate doctests exit0, each zero tests (no positive doctest
+coverage claim); structure-audit-gate exit0; read-only explicit70 Rust paths
+rustfmt --check exit0. These use numeric-adapter-reverse53-source-freeze.json.
+Complete current diff evidence covers73 paths (70 current Rust, one stable
+chapter, two deleted unpublished intermediate sources). Prior complete50 review
+is reused only for unchanged bytes; all changed/additional deltas are reviewed.
+Compiler lower.rs retains its separate Generic Match hunk and needs selective
+numeric-only staging. No Git index or publication exists yet.
+
+The fresh reverse53 union list/build initially exits101 before any test runs:
+Windows virtual-memory/paging error1455 prevents mmap of compiled bundle metadata,
+followed by E0786 and delayed import-resolution ICEs. Original command, complete
+stdout/stderr and results are preserved under numeric-adapter-union-r1-memory-failed-.
+This is failed validation environment/build evidence, not 205 target PASS or a
+test FAIL count. Observed OS memory (KiB): visible66860152, free32320692,
+virtual73743244, freevirtual21121472. No drive-capacity or permission blocker
+is observed; latest free bytes C786753712128 / D330975367168. No cache/build
+movement or cleanup occurred. The argument attempt using unsupported nextest
+--jobs exits2 before Cargo execution and is separately preserved as r2 argument
+NOT-RUN. Local nextest help confirms --build-jobs; current worker3858 retries the
+same53 packages, complete205 metadata targets, lib/bin/tests, all selected package
+features unified, locked/test/default/Windows with --build-jobs1. Only compile
+resource scheduling changes. Test threads, budgets, input, execution amount,
+batch/fusion/copy/capture conditions and ignored policy remain intact.
+
+Workspace Clippy also reports four new warnings in the new product fixture
+(long test/nested helper/two usize casts). These are identified for a test-only
+refactor after the frozen reverse input completes; no current Rust mutation is
+made during worker3858. Original oracle, 4 roles, IEEE bit inputs, verification,
+save/restore and consumption assertions must remain. A leaf-only supplement will
+replace that changed test input while unrelated identical production/reverse
+evidence stays reusable. Final checks, explicit stage/cache diff, non-forced main
+commit/push and public SHA/blob reconciliation remain required. HEAD remains
+97d35e88d0be410184829a72410277b447f30270; all unrelated WIP and 277/153
+history remain. CLI645/661/662 histories, the old per-package199 receipt and this
+planned single reverse union are separate. Full goal remains active with every
+original Generic/View/task/nominal/scheduler/capture/publication acceptance.
+
+### 2026-10-11 — Reverse53 actual inventory admitted without coverage reduction
+
+The --build-jobs1 retry's nextest list completed exit0. Actual205 binary targets
+match all205 Cargo metadata test-capable targets, missing/unexpected0. Exact
+inventory is6104 cases: 6065 normal and
+39 ignored. Same-input run is active in3858; no
+PASS/FAIL completion claim is made yet. The prior per-package199 receipt remains
+separate. Added64 current case IDs are retained in the union audit; the sole old
+removed ID is the dense payload admission test relocated from AWBC-private schema
+to its final Core math payload owner with all original rank/width/count/overflow/
+zero-volume/Serde assertions preserved. This is an explicit oracle-preserving
+owner migration, not a deleted test or weakened coverage.
+
+Read-only numeric-publication-plan.json prepares71 full paths plus only the
+DenseNumeric projection hunk of compiler lower.rs. The separate35-line Generic
+transcript publication hunk remains outside that planned cut. Index is still
+empty. After terminal exact validation, apply the prepared fixture-only lint
+refactor and validate its changed leaf with unchanged4-role inputs/oracles,
+regenerate final guarded publication hashes, inspect complete cached diff and
+publish main non-forced with full SHA/blob reconciliation. No new branch,
+worktree, source mutation during this run, cache relocation or cleanup occurred.
+HEAD remains97d35e88d0be410184829a72410277b447f30270; all unrelated WIP,
+receipts277/153 and original full goal acceptance remain active.
+
+### 2026-10-11 — Numeric authority coherent cut validation reconciled
+
+Fresh single reverse53 run 6a709a52-7d53-485a-ab0d-bfc70c688f5c is terminal-exact: 205 actual
+targets equal205 metadata targets, 6065 normal /39 ignored, 5977 PASS /88 FAIL /
+39 ignored, missing/unexpected test IDs0, summary/list/run counts exact, introduced
+failure IDs0. All88 remaining failures belong to arcweft-cli::check and match
+retained prior exact IDs. LSP signature-help failure closes. The full source was
+frozen; only this operational note drifted during the run. This is a real single
+reverse run, distinct from historical CLI645 composed544P/101F, CLI661 and all
+277/153 evidence; it is not a claim of complete CLI or full97-package workspace
+testing. Remaining CLI ingress/batch/bench/report/geometry and View/task-dependent
+IDs stay in the final receipt with their existing causes/acceptance.
+
+The fixture-only lint refactor has now applied after all broad handles became
+terminal. It retains the identical4-role IEEE inputs, dimensions, verified pure
+roots without synthetic Entry, actual native/decoded-AWBC/JSON-save/restore/one-time
+consumption oracles and budgets. Same53 selected package features are unified in
+the changed integration leaf supplement: check0, Clippy0, list0 and run0. Exact
+same9 test IDs all PASS, missing/added/unexpected0, run b8219286-00dd-4149-ba11-5ba4515ebda7.
+Four new fixture warnings (long/nested helper/two casts) are repaired; retained
+baseline warnings remain and no warning-free claim is made. Only the changed
+test leaf replaces its broad-run input; identical production and other204 binary
+target evidence is reused. Read-only70-path formatting passes on final source.
+Final workspace check/Clippy, wasm libraries, nine empty doctest crates and
+structure gate receipts remain valid for unchanged production, with the affected
+test check/Clippy/run supplement explicitly covering its final leaf. Full final
+test-workspace/Tier2/image parity and later whole-goal gates remain required.
+
+Final current numeric diffs are fully reviewed across70 Rust paths, the stable
+primitive contract chapter and this task note, with preserved preimages and
+candidate hashes. Shared lower manifest-model owns one dense scalar/container
+descriptor. Core math owns one checked portable bit payload for AWBC and snapshots;
+RuntimeValue owns live conversion/classification. Every touched Sema/adapter/host/
+schema/codec/plan/native/AWBC consumer uses that final typed authority. Removed
+opaque inference TensorF32, four synthetic AWBC dense identities, old tensor-only
+constant variants/readers, duplicate conversions and unpublished intermediate
+owners. Exact IEEE internal values/snapshots preserve signed zero/NaN while
+canonical ingress finite/digest rules and all existing limits/assertions remain.
+Arcweft-owned version markers stay1. DENSE-AWBC-INGRESS-01 is still the separate
+CLI source-executor selection seam; this cut's real AWBC proof does not silently
+close it or the retained all14-family atomic task-plan migration.
+
+Remote origin/main fetched and inspected at full
+97d35e88d0be410184829a72410277b447f30270, equal current local main/HEAD.
+Planned publication is71 explicit whole paths plus the numeric projection hunk
+in compiler lower.rs; the distinct35-line Generic publication hunk and all
+unrelated WIP remain unstaged. Next perform explicit stage, complete cached diff
+verification, non-forced main commit/push and published SHA/blob reconciliation.
+No publication is claimed yet. All handles are terminal, no permission or capacity
+blocker remains, and no cache/build relocation or cleanup occurred. Full goal
+remains active: outstanding Range/CLI/capture, Generic GM-T001..040/C3/C5,
+retained View, task fourteen-family authority/public switch, nominal C1-C6,
+scheduler/restore A-F, final validation/deletions/publications are still required.

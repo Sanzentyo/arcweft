@@ -159,6 +159,7 @@ pub enum EnvironmentTypeProjectionKind {
     USize,
     F32,
     F64,
+    DenseNumeric(arcweft_manifest_model::RuntimeDenseNumericType),
     String,
     Char,
     Bytes,
@@ -995,6 +996,7 @@ fn append_type_spans<'a>(root: &'a EnvironmentTypeProjectionNode, spans: &mut Ve
             | EnvironmentTypeProjectionKind::USize
             | EnvironmentTypeProjectionKind::F32
             | EnvironmentTypeProjectionKind::F64
+            | EnvironmentTypeProjectionKind::DenseNumeric(_)
             | EnvironmentTypeProjectionKind::String
             | EnvironmentTypeProjectionKind::Char
             | EnvironmentTypeProjectionKind::Bytes

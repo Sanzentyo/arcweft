@@ -115,6 +115,10 @@ pub(super) fn schema<S: CanonicalSink + ?Sized>(
                 RuntimeTypeSchema::Never => writer.u8(31)?,
                 RuntimeTypeSchema::Duration => writer.u8(32)?,
                 RuntimeTypeSchema::Progress => writer.u8(33)?,
+                RuntimeTypeSchema::DenseNumeric(dense) => {
+                    writer.u8(40)?;
+                    writer.extend(&dense.semantic_parts())?;
+                }
                 RuntimeTypeSchema::EntityReference => writer.u8(34)?,
                 RuntimeTypeSchema::AgentValue => writer.u8(35)?,
                 RuntimeTypeSchema::Choice(alternatives) => {

@@ -38,12 +38,14 @@ mod collection;
 mod color;
 pub(crate) use collection::evaluate_collection_intrinsic;
 mod data_shape;
+mod dense_numeric;
 mod env;
 pub(crate) use env::RuntimeEnvRollbackImage;
 mod expression_literals;
 mod expression_locals;
 mod expression_semantic;
 pub(crate) mod expression_tree;
+mod float_storage_serde;
 mod format_content;
 mod imported_entity;
 mod integer;
@@ -1318,8 +1320,8 @@ pub enum DenseSeq {
     U64(DenseSeqStorage<u64>),
     U128(DenseSeqStorage<u128>),
     USize(DenseSeqStorage<RuntimeUSizeValue>),
-    F32(DenseSeqStorage<f32>),
-    F64(DenseSeqStorage<f64>),
+    F32(#[serde(with = "float_storage_serde::width32")] DenseSeqStorage<f32>),
+    F64(#[serde(with = "float_storage_serde::width64")] DenseSeqStorage<f64>),
     Bool(DenseSeqStorage<bool>),
     Bytes(DenseSeqStorage<u8>),
     Chars(DenseSeqStorage<char>),
@@ -4347,6 +4349,20 @@ impl RuntimeEntityReference {
             Self::StructuralFlow(flow) => Some(flow.public_label_ref().as_str()),
             Self::ImportedProject(entity) => Some(entity.public_id().as_str()),
             Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
+        }
+    }
+}
+
+impl RuntimeValue {
+    /// Exact closed numeric descriptor of this value's actual owning container.
+    pub(crate) const fn dense_numeric_type(&self) -> Option<crate::math::RuntimeDenseNumericType> {
+        use crate::math::{RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width};
+        match self {
+            Self::MatrixF32(_) => Some(Dense::Matrix(Width::F32)),
+            Self::MatrixF64(_) => Some(Dense::Matrix(Width::F64)),
+            Self::TensorF32(_) => Some(Dense::Tensor(Width::F32)),
+            Self::TensorF64(_) => Some(Dense::Tensor(Width::F64)),
+            _ => None,
         }
     }
 }

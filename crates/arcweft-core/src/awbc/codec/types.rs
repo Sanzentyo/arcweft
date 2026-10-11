@@ -1122,8 +1122,10 @@ impl Wire for AwbcConstant {
                 writer.write_u8(14);
                 bytes.write_wire(writer)?;
             }
-            Self::TensorF32 { shape, values } => write_tensor_f32_constant(writer, shape, values)?,
-            Self::TensorF64 { shape, values } => write_tensor_f64_constant(writer, shape, values)?,
+            Self::DenseNumeric(dense) => {
+                writer.write_u8(15);
+                dense.write_wire(writer)?;
+            }
             Self::Opaque { ty, payload } => {
                 writer.write_u8(18);
                 ty.write_wire(writer)?;
@@ -1175,24 +1177,7 @@ impl Wire for AwbcConstant {
                 inclusive: bool::read_wire(reader)?,
             },
             14 => Self::Bytes(Vec::<u8>::read_wire(reader)?),
-            15 => {
-                let shape = Vec::<u32>::read_wire(reader)?;
-                let len = reader.read_len()?;
-                Reader::check_limit("tensor_elements", len, reader.budget().tensor_elements)?;
-                let values = (0..len)
-                    .map(|_| reader.read_f32_bits())
-                    .collect::<Result<Vec<_>, _>>()?;
-                Self::TensorF32 { shape, values }
-            }
-            16 => {
-                let shape = Vec::<u32>::read_wire(reader)?;
-                let len = reader.read_len()?;
-                Reader::check_limit("tensor_elements", len, reader.budget().tensor_elements)?;
-                let values = (0..len)
-                    .map(|_| reader.read_f64_bits())
-                    .collect::<Result<Vec<_>, _>>()?;
-                Self::TensorF64 { shape, values }
-            }
+            15 => Self::DenseNumeric(crate::math::RuntimeDenseNumericPayload::read_wire(reader)?),
             18 => Self::Opaque {
                 ty: AwbcTypeId::read_wire(reader)?,
                 payload: AwbcConstantId::read_wire(reader)?,
@@ -1208,32 +1193,74 @@ impl Wire for AwbcConstant {
     }
 }
 
-fn write_tensor_f32_constant(
-    writer: &mut Writer,
-    shape: &[u32],
-    values: &[u32],
-) -> Result<(), AwbcCodecError> {
-    writer.write_u8(15);
-    writer.write_table(shape)?;
-    writer.write_len(values.len())?;
-    for value in values {
-        writer.write_f32_bits(*value);
+impl Wire for crate::math::RuntimeDenseNumericPayload {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        for part in self.ty().semantic_parts() {
+            writer.write_u8(part);
+        }
+        writer.write_len(self.dimensions().len())?;
+        for dimension in self.dimensions() {
+            writer.write_u64_var(*dimension);
+        }
+        writer.write_len(self.elements().len())?;
+        match self.elements() {
+            crate::math::RuntimeDenseNumericElements::F32(values) => {
+                for value in values {
+                    writer.write_f32_bits(*value);
+                }
+            }
+            crate::math::RuntimeDenseNumericElements::F64(values) => {
+                for value in values {
+                    writer.write_f64_bits(*value);
+                }
+            }
+        }
+        Ok(())
     }
-    Ok(())
-}
 
-fn write_tensor_f64_constant(
-    writer: &mut Writer,
-    shape: &[u32],
-    values: &[u64],
-) -> Result<(), AwbcCodecError> {
-    writer.write_u8(16);
-    writer.write_table(shape)?;
-    writer.write_len(values.len())?;
-    for value in values {
-        writer.write_f64_bits(*value);
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let ty = crate::math::RuntimeDenseNumericType::from_semantic_parts([
+            reader.read_u8()?,
+            reader.read_u8()?,
+        ])
+        .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+            kind: "dense numeric constant",
+            offset,
+            message: "dense type roles are invalid".to_owned(),
+        })?;
+        let rank = reader.read_len()?;
+        Reader::check_limit("collection_items", rank, reader.budget().collection_items)?;
+        let dimensions = (0..rank)
+            .map(|_| reader.read_u64_var())
+            .collect::<Result<Vec<_>, _>>()?;
+        let len = reader.read_len()?;
+        Reader::check_limit("tensor_elements", len, reader.budget().tensor_elements)?;
+        Self::validate_shape(ty, &dimensions, len).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "dense numeric constant",
+                offset,
+                message: error.to_string(),
+            }
+        })?;
+        let elements = match ty.scalar_width() {
+            crate::math::RuntimeFloatWidth::F32 => crate::math::RuntimeDenseNumericElements::F32(
+                (0..len)
+                    .map(|_| reader.read_f32_bits())
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            crate::math::RuntimeFloatWidth::F64 => crate::math::RuntimeDenseNumericElements::F64(
+                (0..len)
+                    .map(|_| reader.read_f64_bits())
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        };
+        Self::try_new(ty, dimensions, elements).map_err(|error| AwbcCodecError::InvalidMetadata {
+            kind: "dense numeric constant",
+            offset,
+            message: error.to_string(),
+        })
     }
-    Ok(())
 }
 
 impl Wire for AwbcEffectSet {
@@ -1481,19 +1508,25 @@ mod opaque_wire_tests {
 
     #[test]
     fn tensor_shape_uses_canonical_varints_while_elements_remain_fixed_bits() {
-        let constant = AwbcConstant::TensorF32 {
-            shape: vec![1, 128],
-            values: vec![0x0102_0304, 0xa0b0_c0d0],
-        };
+        let mut values = vec![0; 128];
+        values[..2].copy_from_slice(&[0x0102_0304, 0xa0b0_c0d0]);
+        let constant = AwbcConstant::DenseNumeric(
+            crate::math::RuntimeDenseNumericPayload::try_new(
+                crate::math::RuntimeDenseNumericType::Tensor(crate::math::RuntimeFloatWidth::F32),
+                vec![1, 128],
+                crate::math::RuntimeDenseNumericElements::F32(values),
+            )
+            .unwrap(),
+        );
         let mut writer = Writer::default();
         constant
             .write_wire(&mut writer)
             .expect("encode tensor constant");
         let bytes = writer.into_bytes();
 
-        assert_eq!(&bytes[..6], &[15, 2, 1, 0x80, 0x01, 2]);
-        assert_eq!(&bytes[6..10], &0x0102_0304_u32.to_le_bytes());
-        assert_eq!(&bytes[10..14], &0xa0b0_c0d0_u32.to_le_bytes());
+        assert_eq!(&bytes[..9], &[15, 1, 0, 2, 1, 0x80, 0x01, 0x80, 0x01]);
+        assert_eq!(&bytes[9..13], &0x0102_0304_u32.to_le_bytes());
+        assert_eq!(&bytes[13..17], &0xa0b0_c0d0_u32.to_le_bytes());
 
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
         assert_eq!(
@@ -1505,14 +1538,38 @@ mod opaque_wire_tests {
 
     #[test]
     fn tensor_shape_rejects_noncanonical_dimension_varints() {
-        let bytes = [15, 2, 0x81, 0x00, 0x80, 0x01, 0];
+        let bytes = [15, 1, 0, 2, 0x81, 0x00, 0x80, 0x01, 0];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
 
         assert_eq!(
             AwbcConstant::read_wire(&mut reader)
                 .expect_err("overlong tensor dimension must reject"),
-            AwbcCodecError::NonCanonicalVarint { offset: 2 }
+            AwbcCodecError::NonCanonicalVarint { offset: 4 }
         );
+    }
+
+    #[test]
+    fn dense_constant_decoder_rejects_roles_and_storage_before_payload() {
+        for bytes in [
+            vec![15, 2, 0],             // Unknown container role.
+            vec![15, 0, 2],             // Unknown scalar role.
+            vec![15, 1, 0, 0, 1],       // Rank zero before a missing payload.
+            vec![15, 0, 0, 2, 1, 2, 1], // Shape/storage mismatch before a missing payload.
+        ] {
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert!(matches!(
+                AwbcConstant::read_wire(&mut reader),
+                Err(AwbcCodecError::InvalidMetadata {
+                    kind: "dense numeric constant",
+                    ..
+                })
+            ));
+        }
+        let mut reader = Reader::new(&[16], &AwbcDecodeBudget::default());
+        assert!(matches!(
+            AwbcConstant::read_wire(&mut reader),
+            Err(AwbcCodecError::UnknownTag { tag: 16, .. })
+        ));
     }
 
     #[test]

@@ -888,6 +888,7 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
         AdapterTypeKind::USize => "usize".to_owned(),
         AdapterTypeKind::F32 => "f32".to_owned(),
         AdapterTypeKind::F64 => "f64".to_owned(),
+        AdapterTypeKind::DenseNumeric { ty } => ty.source_label().to_owned(),
         AdapterTypeKind::String => "String".to_owned(),
         AdapterTypeKind::Char => "Char".to_owned(),
         AdapterTypeKind::Bytes => "Bytes".to_owned(),

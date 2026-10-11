@@ -21,6 +21,84 @@ use crate::{
 };
 
 #[test]
+fn float_snapshots_preserve_scalar_bits_and_dense_storage_in_nested_values() {
+    use crate::value::DenseSeqStorage;
+
+    let bits32 = [0x8000_0000, 0x7f80_0000, 0x7fc0_1234];
+    let bits64 = [
+        0x8000_0000_0000_0000,
+        0x7ff0_0000_0000_0000,
+        0x7ff8_0000_0000_1234,
+    ];
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::F32(f32::from_bits(bits32[2])),
+        RuntimeValue::F64(f64::from_bits(bits64[2])),
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F32(DenseSeqStorage::new(
+            bits32.map(f32::from_bits).to_vec(),
+        )))),
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F64(DenseSeqStorage::new(
+            bits64.map(f64::from_bits).to_vec(),
+        )))),
+    ]);
+    let image = AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
+    let bytes = serde_json::to_vec(&image).unwrap();
+    let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(image, decoded);
+    assert_ne!(
+        value, value,
+        "ordinary runtime equality retains NaN semantics"
+    );
+    let mut altered = image.clone();
+    let AwbcRuntimeValueSnapshot::Tuple(values) = &mut altered else {
+        unreachable!();
+    };
+    let AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::Dense(DenseSeq::F32(storage))) =
+        &mut values[2]
+    else {
+        unreachable!();
+    };
+    let changed = [bits32[0], bits32[1], bits32[2] ^ 1];
+    *storage = DenseSeqStorage::new(changed.map(f32::from_bits).to_vec());
+    assert_ne!(image, altered, "snapshot equality retains the NaN payload");
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+    let restored = decoded.into_runtime_value_for_program(&owner).unwrap();
+    let RuntimeValue::Tuple(values) = restored else {
+        panic!("tuple storage survives");
+    };
+    assert_eq!(values.len(), 4);
+    let RuntimeValue::F32(value) = values[0] else {
+        panic!("f32 scalar survives");
+    };
+    assert_eq!(value.to_bits(), bits32[2]);
+    let RuntimeValue::F64(value) = values[1] else {
+        panic!("f64 scalar survives");
+    };
+    assert_eq!(value.to_bits(), bits64[2]);
+    let RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F32(value))) = &values[2] else {
+        panic!("f32 dense storage survives");
+    };
+    assert_eq!(
+        value
+            .as_slice()
+            .iter()
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>(),
+        bits32
+    );
+    let RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F64(value))) = &values[3] else {
+        panic!("f64 dense storage survives");
+    };
+    assert_eq!(
+        value
+            .as_slice()
+            .iter()
+            .map(|v| v.to_bits())
+            .collect::<Vec<_>>(),
+        bits64
+    );
+}
+
+#[test]
 fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_live_clone() {
     let plan = Arc::new(crate::tests::function_application::returning_function_plan(
         crate::plan::RuntimeFunctionSiteBodyKind::Expression,

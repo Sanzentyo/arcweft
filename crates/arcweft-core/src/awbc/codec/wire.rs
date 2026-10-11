@@ -1,5 +1,5 @@
 use super::{AwbcCodecError, AwbcDecodeBudget};
-use crate::canonical_varint::{CanonicalU32VarintError, decode_u32, encode_u32};
+use crate::canonical_varint::{CanonicalVarintError, CanonicalVarintWidth, encode_u32, encode_u64};
 use crate::runtime_id::RuntimeIdPath;
 
 pub(super) trait Wire: Sized {
@@ -71,6 +71,11 @@ impl Writer {
 
     pub(super) fn write_u32_var(&mut self, value: u32) {
         let (encoded, length) = encode_u32(value);
+        self.write_bytes(&encoded[..length]);
+    }
+
+    pub(super) fn write_u64_var(&mut self, value: u64) {
+        let (encoded, length) = encode_u64(value);
         self.write_bytes(&encoded[..length]);
     }
 
@@ -234,15 +239,24 @@ impl<'a> Reader<'a> {
     }
 
     pub(super) fn read_u32_var(&mut self) -> Result<u32, AwbcCodecError> {
+        self.read_unsigned_var(CanonicalVarintWidth::U32)
+            .map(|value| u32::try_from(value).expect("u32 grammar bounded the payload"))
+    }
+
+    pub(super) fn read_u64_var(&mut self) -> Result<u64, AwbcCodecError> {
+        self.read_unsigned_var(CanonicalVarintWidth::U64)
+    }
+
+    fn read_unsigned_var(&mut self, width: CanonicalVarintWidth) -> Result<u64, AwbcCodecError> {
         let start = self.offset;
-        let (value, consumed) = match decode_u32(&self.bytes[start..]) {
+        let (value, consumed) = match width.decode(&self.bytes[start..]) {
             Ok(value) => value,
-            Err(CanonicalU32VarintError::Truncated { consumed }) => {
+            Err(CanonicalVarintError::Truncated { consumed }) => {
                 return Err(AwbcCodecError::Truncated {
                     offset: start + consumed,
                 });
             }
-            Err(CanonicalU32VarintError::NonCanonical) => {
+            Err(CanonicalVarintError::NonCanonical) => {
                 return Err(AwbcCodecError::NonCanonicalVarint { offset: start });
             }
         };

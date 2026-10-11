@@ -43,6 +43,7 @@ pub enum BuiltinTypeConstructor {
     USize,
     F32,
     F64,
+    DenseNumeric(arcweft_core::math::RuntimeDenseNumericType),
     String,
     Char,
     Bytes,
@@ -392,6 +393,10 @@ impl BuiltinTypeConstructor {
         Self::USize,
         Self::F32,
         Self::F64,
+        Self::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::ALL[0]),
+        Self::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::ALL[1]),
+        Self::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::ALL[2]),
+        Self::DenseNumeric(arcweft_core::math::RuntimeDenseNumericType::ALL[3]),
         Self::String,
         Self::Char,
         Self::Bytes,
@@ -441,6 +446,7 @@ impl BuiltinTypeConstructor {
             Self::USize => "usize",
             Self::F32 => "f32",
             Self::F64 => "f64",
+            Self::DenseNumeric(dense) => dense.source_label(),
             Self::String => "String",
             Self::Char => "char",
             Self::Bytes => "Bytes",
@@ -488,6 +494,7 @@ impl BuiltinTypeConstructor {
             | Self::USize
             | Self::F32
             | Self::F64
+            | Self::DenseNumeric(_)
             | Self::String
             | Self::Char
             | Self::Bytes
@@ -1068,6 +1075,26 @@ mod tests {
 
     #[test]
     fn builtin_table_has_contractual_spellings_and_arities() {
+        let dense = BuiltinTypeConstructor::ALL
+            .iter()
+            .filter_map(|constructor| {
+                if let BuiltinTypeConstructor::DenseNumeric(dense) = constructor {
+                    Some(*dense)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(dense, arcweft_core::math::RuntimeDenseNumericType::ALL);
+        for dense in dense {
+            let constructor = BuiltinTypeConstructor::DenseNumeric(dense);
+            assert_eq!(constructor.spelling(), dense.source_label());
+            assert_eq!(constructor.arity(), 0);
+            assert_eq!(
+                TypeKind::primitive_name(constructor.spelling()),
+                Some(TypeKind::DenseNumeric(dense))
+            );
+        }
         assert_eq!(
             BuiltinTypeConstructor::ALL
                 .iter()

@@ -462,7 +462,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                         value,
                         depth,
                         writer,
-                        budget.as_deref(),
+                        budget.as_deref_mut(),
                         &mut work,
                         validation,
                         Rc::new(V::admitted_children()),
@@ -608,7 +608,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                             value,
                             depth,
                             writer,
-                            budget.as_deref(),
+                            budget.as_deref_mut(),
                             &mut work,
                             validation,
                             Rc::new(children),
@@ -618,7 +618,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                             value,
                             depth,
                             writer,
-                            budget.as_deref(),
+                            budget.as_deref_mut(),
                             &mut work,
                             validation,
                             Rc::new(V::admitted_children()),
@@ -669,7 +669,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
     value: RuntimeValueView<'a>,
     depth: usize,
     writer: &mut CanonicalWriter<'_, S>,
-    budget: Option<&ValueBudget>,
+    budget: Option<&mut ValueBudget>,
     work: &mut Vec<Work<'a, V::Expected, V::Children, V::Alternatives>>,
     validation: &mut V,
     children: Rc<V::Children>,
@@ -677,9 +677,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
 ) -> Result<(), RuntimeSchemaError> {
     match value {
         RuntimeValueView::Scalar(value) => {
-            // A probe sink discards bytes, but scalar validation (notably
-            // finite floats) is identical for live, snapshot and digest use.
-            writer.scalar(value)?;
+            writer.scalar_for_encoding(value, encoding)?;
         }
         RuntimeValueView::Tuple(tuple) => {
             writer.u8(11)?;
@@ -766,7 +764,15 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 });
             }
             writer.u8(17)?;
-            agent_prefix(value, depth, writer, budget, work, validation, children)?;
+            agent_prefix(
+                value,
+                depth,
+                writer,
+                budget.as_deref(),
+                work,
+                validation,
+                children,
+            )?;
         }
         RuntimeValueView::Variant {
             owner,
@@ -788,6 +794,62 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                     Some(PathStep::Name(name)),
                 ));
             }
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF32(matrix)) => {
+            writer.dense_numeric(
+                crate::math::RuntimeDenseNumericType::Matrix(crate::math::RuntimeFloatWidth::F32),
+                &[matrix.rows(), matrix.cols()],
+                matrix
+                    .values()
+                    .iter()
+                    .copied()
+                    .map(crate::value::RuntimeScalarView::F32),
+                budget,
+                depth,
+                encoding,
+            )?;
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF64(matrix)) => {
+            writer.dense_numeric(
+                crate::math::RuntimeDenseNumericType::Matrix(crate::math::RuntimeFloatWidth::F64),
+                &[matrix.rows(), matrix.cols()],
+                matrix
+                    .values()
+                    .iter()
+                    .copied()
+                    .map(crate::value::RuntimeScalarView::F64),
+                budget,
+                depth,
+                encoding,
+            )?;
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF32(tensor)) => {
+            writer.dense_numeric(
+                crate::math::RuntimeDenseNumericType::Tensor(crate::math::RuntimeFloatWidth::F32),
+                tensor.shape().dims(),
+                tensor
+                    .values()
+                    .iter()
+                    .copied()
+                    .map(crate::value::RuntimeScalarView::F32),
+                budget,
+                depth,
+                encoding,
+            )?;
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF64(tensor)) => {
+            writer.dense_numeric(
+                crate::math::RuntimeDenseNumericType::Tensor(crate::math::RuntimeFloatWidth::F64),
+                tensor.shape().dims(),
+                tensor
+                    .values()
+                    .iter()
+                    .copied()
+                    .map(crate::value::RuntimeScalarView::F64),
+                budget,
+                depth,
+                encoding,
+            )?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::NeedHandle(handle))
             if !matches!(encoding, ValueEncoding::Literal) =>
@@ -966,4 +1028,62 @@ fn predicate_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         }
     }
     Ok(())
+}
+
+impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
+    fn scalar_for_encoding(
+        &mut self,
+        value: crate::value::RuntimeScalarView<'_>,
+        encoding: ValueEncoding,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::RuntimeScalarView as Scalar;
+        // Canonical ingress/digests retain finite floats and normalized zero.
+        // Executable literals, live values and snapshots retain exact IEEE bits.
+        match (encoding, value) {
+            (
+                ValueEncoding::Literal | ValueEncoding::Live | ValueEncoding::Snapshot,
+                Scalar::F32(value),
+            ) => {
+                self.u8(5)?;
+                self.fixed_u32(value.to_bits())
+            }
+            (
+                ValueEncoding::Literal | ValueEncoding::Live | ValueEncoding::Snapshot,
+                Scalar::F64(value),
+            ) => {
+                self.u8(6)?;
+                self.u64(value.to_bits())
+            }
+            (_, value) => self.scalar(value),
+        }
+    }
+
+    fn dense_numeric(
+        &mut self,
+        ty: crate::math::RuntimeDenseNumericType,
+        dimensions: &[usize],
+        values: impl ExactSizeIterator<Item = crate::value::RuntimeScalarView<'static>>,
+        mut budget: Option<&mut ValueBudget>,
+        depth: usize,
+        encoding: ValueEncoding,
+    ) -> Result<(), RuntimeSchemaError> {
+        if let Some(budget) = budget.as_deref() {
+            budget.collection(dimensions.len())?;
+            budget.collection(values.len())?;
+        }
+        self.u8(21)?;
+        self.extend(&ty.semantic_parts())?;
+        self.len(dimensions.len())?;
+        for dimension in dimensions {
+            self.len(*dimension)?;
+        }
+        self.len(values.len())?;
+        for value in values {
+            if let Some(budget) = budget.as_deref_mut() {
+                budget.node(depth + 1)?;
+            }
+            self.scalar_for_encoding(value, encoding)?;
+        }
+        Ok(())
+    }
 }

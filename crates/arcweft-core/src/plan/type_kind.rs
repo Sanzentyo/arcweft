@@ -233,6 +233,7 @@ pub enum RuntimePlanTypeProjection<R> {
     Bytes,
     Duration,
     Progress,
+    DenseNumeric(crate::math::RuntimeDenseNumericType),
     EntityReference,
     AgentValue,
     Range(R),
@@ -417,6 +418,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Bytes
             | Self::Duration
             | Self::Progress
+            | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
             | Self::Agent(_) => 0,
@@ -479,6 +481,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Bytes
             | Self::Duration
             | Self::Progress
+            | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
             | Self::Agent(_) => Box::new([]),
@@ -505,6 +508,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Bytes => RuntimePlanTypeProjection::Bytes,
             Self::Duration => RuntimePlanTypeProjection::Duration,
             Self::Progress => RuntimePlanTypeProjection::Progress,
+            Self::DenseNumeric(dense) => RuntimePlanTypeProjection::DenseNumeric(dense),
             Self::EntityReference => RuntimePlanTypeProjection::EntityReference,
             Self::AgentValue => RuntimePlanTypeProjection::AgentValue,
             Self::Range(child) => RuntimePlanTypeProjection::Range(map(child)?),
@@ -631,6 +635,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Bytes
             | Self::Duration
             | Self::Progress
+            | Self::DenseNumeric(_)
             | Self::EntityReference
             | Self::AgentValue
             | Self::BuiltinVariant { .. }

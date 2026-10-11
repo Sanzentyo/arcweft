@@ -265,6 +265,7 @@ impl Work {
             | RuntimeTypeSchema::Never
             | RuntimeTypeSchema::Duration
             | RuntimeTypeSchema::Progress
+            | RuntimeTypeSchema::DenseNumeric(_)
             | RuntimeTypeSchema::EntityReference
             | RuntimeTypeSchema::AgentValue
             | RuntimeTypeSchema::Bytes { .. }

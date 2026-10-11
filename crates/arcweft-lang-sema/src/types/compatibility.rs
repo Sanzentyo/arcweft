@@ -395,6 +395,9 @@ where
         | (TypeKind::ViewValue, TypeKind::ViewValue)
         | (TypeKind::Unit, TypeKind::Unit)
         | (TypeKind::Never, TypeKind::Never) => Ok(true),
+        (TypeKind::DenseNumeric(expected), TypeKind::DenseNumeric(actual)) => {
+            Ok(expected == actual)
+        }
         (TypeKind::StatementIngress(expected), TypeKind::StatementIngress(actual)) => {
             Ok(expected == actual)
         }

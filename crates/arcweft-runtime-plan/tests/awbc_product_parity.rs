@@ -1091,3 +1091,207 @@ fn manual_local_source(declaration: &str) -> arcweft_core::plan::RuntimeLocalDec
         ),
     }
 }
+
+#[test]
+fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results() {
+    use arcweft_core::awbc::product_step::{
+        AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor,
+    };
+    use arcweft_core::task::RuntimeProgramOwner;
+
+    let f32_bits = [0x3f80_0000, 0x8000_0000, 0x7f80_0000, 0x7fc0_1234];
+    let f64_bits = [
+        0x3ff0_0000_0000_0000,
+        0x8000_0000_0000_0000,
+        0x7ff0_0000_0000_0000,
+        0x7ff8_0000_0000_1234,
+    ];
+    let (plan, cases) = dense_constant_plan(f32_bits, f64_bits);
+    let encoded = lower(&plan).encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &encoded,
+        AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert!(decoded.entries.is_empty());
+    assert_eq!(decoded.pure_programs.len(), 4);
+    decoded
+        .verify(
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                ..AwbcVerifyContext::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+    let program = Arc::new(decoded);
+    let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
+    for (id, ty) in cases {
+        let mut native_backend = VmRuntimePureCallBackend::default();
+        let native = arcweft_core::pure::evaluate_pure_program_with_backend(
+            &plan,
+            id,
+            &[],
+            &mut native_backend,
+        )
+        .unwrap();
+        assert_dense_bits(&native, ty, &f32_bits, &f64_bits);
+        let mut executor = AwbcProductStepExecutor::for_program_invocation(
+            Arc::clone(&program),
+            id,
+            Vec::new(),
+            GenerationId::new(7),
+            64,
+        )
+        .unwrap();
+        let result = executor.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+        let save =
+            AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot().unwrap()).unwrap();
+        let bytes = serde_json::to_vec(&save).unwrap();
+        let decoded_save: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+        executor
+            .restore_snapshot(decoded_save.into_live_for_program(&owner).unwrap())
+            .unwrap();
+        let (returned_id, value) = executor.take_program_result().unwrap().unwrap();
+        assert_eq!(returned_id, id);
+        assert_dense_bits(&value, ty, &f32_bits, &f64_bits);
+        assert!(executor.take_program_result().unwrap().is_none());
+    }
+}
+
+fn dense_constant_plan(
+    f32_bits: [u32; 4],
+    f64_bits: [u64; 4],
+) -> (
+    Arc<RuntimePlan>,
+    Vec<(
+        RuntimePureProgramId,
+        arcweft_core::math::RuntimeDenseNumericType,
+    )>,
+) {
+    use arcweft_core::math::{
+        DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64,
+        RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width,
+    };
+    use arcweft_core::pattern::RuntimeCheckedType;
+
+    let values = [
+        RuntimeValue::MatrixF32(
+            DenseMatrixF32::new(2, 2, f32_bits.map(f32::from_bits).to_vec()).unwrap(),
+        ),
+        RuntimeValue::MatrixF64(
+            DenseMatrixF64::new(2, 2, f64_bits.map(f64::from_bits).to_vec()).unwrap(),
+        ),
+        RuntimeValue::TensorF32(
+            DenseTensorF32::new(vec![2, 2], f32_bits.map(f32::from_bits).to_vec()).unwrap(),
+        ),
+        RuntimeValue::TensorF64(
+            DenseTensorF64::new(vec![2, 2], f64_bits.map(f64::from_bits).to_vec()).unwrap(),
+        ),
+    ];
+    let types = [
+        Dense::Matrix(Width::F32),
+        Dense::Matrix(Width::F64),
+        Dense::Tensor(Width::F32),
+        Dense::Tensor(Width::F64),
+    ];
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            types.map(|ty| {
+                RuntimePlanTypeSeed::new(
+                    RuntimeCheckedType::DenseNumeric(ty).semantic_identity_digest(),
+                    RuntimePlanTypeProjection::DenseNumeric(ty),
+                )
+            }),
+            [],
+        )
+        .unwrap();
+    let mut cases = Vec::new();
+    for (index, (ty, value)) in types.into_iter().zip(values).enumerate() {
+        let marker = u8::try_from(index).expect("four dense roles fit the fixture marker");
+        let site = builder
+            .push_function_site_seed(
+                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [marker + 101; 32],
+                ),
+                arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
+                [],
+                RuntimeExprSeed::new(
+                    RuntimeCheckedType::DenseNumeric(ty).semantic_identity_digest(),
+                    RuntimeExprSeedKind::Value(value),
+                ),
+            )
+            .unwrap();
+        let program = RuntimePureProgramId::from_checked_digest([marker + 111; 32]);
+        builder
+            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
+            .unwrap();
+        cases.push((program, ty));
+    }
+    let plan = Arc::new(builder.finish().unwrap());
+    (plan, cases)
+}
+
+fn assert_dense_bits(
+    value: &RuntimeValue,
+    ty: arcweft_core::math::RuntimeDenseNumericType,
+    f32_bits: &[u32],
+    f64_bits: &[u64],
+) {
+    use arcweft_core::math::{RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width};
+    match (ty, value) {
+        (Dense::Matrix(Width::F32), RuntimeValue::MatrixF32(value)) => {
+            assert_eq!((value.rows(), value.cols()), (2, 2));
+            assert_eq!(
+                value
+                    .values()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                f32_bits
+            );
+        }
+        (Dense::Matrix(Width::F64), RuntimeValue::MatrixF64(value)) => {
+            assert_eq!((value.rows(), value.cols()), (2, 2));
+            assert_eq!(
+                value
+                    .values()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                f64_bits
+            );
+        }
+        (Dense::Tensor(Width::F32), RuntimeValue::TensorF32(value)) => {
+            assert_eq!(value.shape().dims(), &[2, 2]);
+            assert_eq!(
+                value
+                    .values()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                f32_bits
+            );
+        }
+        (Dense::Tensor(Width::F64), RuntimeValue::TensorF64(value)) => {
+            assert_eq!(value.shape().dims(), &[2, 2]);
+            assert_eq!(
+                value
+                    .values()
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<Vec<_>>(),
+                f64_bits
+            );
+        }
+        (ty, value) => panic!("dense kind/width changed: {ty:?} {value:?}"),
+    }
+}
