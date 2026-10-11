@@ -12,6 +12,7 @@ use crate::{
         RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema,
         TypeLayoutHash,
     },
+    pattern::RuntimeVariantIdentity,
     plan::{
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanBuilder,
         RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeVariantCaseSeed,
@@ -225,7 +226,7 @@ fn semantic(index: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([index; 32])
 }
 
-fn owners() -> [RuntimeProgramOwner; 2] {
+pub(in crate::value) fn owners() -> [RuntimeProgramOwner; 2] {
     let limits = RuntimeSchemaLimits::engine_default();
     let record = RuntimeNominalTypeId::try_new("snapshot.Record").unwrap();
     let event = RuntimeNominalTypeId::try_new("snapshot.Event").unwrap();
@@ -432,25 +433,44 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
         else {
             unreachable!()
         };
-        for defect in 0..5 {
+        assert_eq!(
+            serde_json::to_value(&saved.fields).unwrap(),
+            serde_json::json!([{"field": 1, "value": {"Bool": true}}])
+        );
+        let mut old_fields = serde_json::to_value(&saved).unwrap();
+        old_fields["fields"] = serde_json::json!([{"Bool": true}]);
+        assert!(serde_json::from_value::<AwbcRuntimeNominalRecordSnapshot>(old_fields).is_err());
+        for defect in 0..6 {
             let mut tampered = saved.clone();
             match defect {
                 0 => tampered.semantic_identity = semantic(2),
                 1 => tampered.type_id = RuntimeNominalTypeId::try_new("snapshot.Foreign").unwrap(),
                 2 => tampered.layout = TypeLayoutHash::from_bytes([199; 32]),
-                3 => tampered.fields.push(AwbcRuntimeValueSnapshot::Bool(false)),
+                3 => tampered.fields.push(AwbcRuntimeNominalFieldSnapshot {
+                    field: RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap(),
+                    value: AwbcRuntimeValueSnapshot::Bool(false),
+                }),
                 4 => {
-                    tampered.fields[0] =
+                    tampered.fields[0].value =
                         AwbcRuntimeValueSnapshot::String("wrong field type".to_owned())
+                }
+                5 => {
+                    tampered.fields[0].field =
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
+                    // The field coordinate must fail before this deliberately
+                    // foreign descendant is reconstructed.
+                    let mut foreign = saved.clone();
+                    foreign.semantic_identity = semantic(99);
+                    tampered.fields[0].value = AwbcRuntimeValueSnapshot::NominalRecord(foreign);
                 }
                 _ => unreachable!(),
             }
-            assert!(
-                AwbcRuntimeValueSnapshot::NominalRecord(tampered)
-                    .into_runtime_value_for_program(&owner)
-                    .is_err(),
-                "defect {defect}"
-            );
+            let error = AwbcRuntimeValueSnapshot::NominalRecord(tampered)
+                .into_runtime_value_for_program(&owner)
+                .expect_err("invalid nominal snapshot");
+            if defect == 5 {
+                assert!(error.to_string().contains("nominal snapshot field 0"));
+            }
         }
         let foreign = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             saved.type_id.clone(),
@@ -508,5 +528,135 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                 .is_err()
         );
         assert!(wrong_case.into_runtime_value_for_program(&owner).is_err());
+
+        let event = owner
+            .types()
+            .try_variant_value(
+                semantic(3),
+                1,
+                Some(RuntimeValue::Tuple(vec![record.clone()])),
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .unwrap();
+        assert!(serde_json::to_value(&record).is_err());
+        assert!(
+            serde_json::from_value::<RuntimeValue>(serde_json::json!({
+                "NominalRecord": {
+                    "type_id": saved.type_id,
+                    "semantic_identity": saved.semantic_identity,
+                    "layout": saved.layout,
+                    "type_instantiation": null,
+                    "fields": [{"Bool": true}]
+                }
+            }))
+            .is_err()
+        );
+        let image =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&event, &owner).unwrap();
+        for defect in 0..5 {
+            let mut candidate = image.clone();
+            let AwbcRuntimeValueSnapshot::Variant {
+                owner: identity,
+                ordinal,
+                name,
+                payload,
+                ..
+            } = &mut candidate
+            else {
+                unreachable!();
+            };
+            let mut foreign = saved.clone();
+            foreign.semantic_identity = semantic(99);
+            *payload = Some(Box::new(AwbcRuntimeValueSnapshot::NominalRecord(foreign)));
+            match defect {
+                0 => *name = "Unknown".to_owned(),
+                1 => *ordinal = 99,
+                2 => *payload = None,
+                3 => {
+                    let RuntimeVariantIdentity::Nominal { nominal, .. } = identity else {
+                        unreachable!();
+                    };
+                    *nominal = RuntimeNominalTypeId::try_new("snapshot.Foreign").unwrap();
+                }
+                4 => {
+                    let RuntimeVariantIdentity::Nominal { layout, .. } = identity else {
+                        unreachable!();
+                    };
+                    *layout = TypeLayoutHash::from_bytes([199; 32]);
+                }
+                _ => unreachable!(),
+            }
+            let error = candidate
+                .into_runtime_value_for_program(&owner)
+                .expect_err("invalid variant header precedes descendant restoration");
+            if defect != 1 {
+                assert!(error.to_string().contains("different snapshot header"));
+            }
+        }
     }
+}
+
+#[test]
+fn nominal_variant_construction_and_restore_reject_dangling_payload_type_without_panic() {
+    let [_, RuntimeProgramOwner::Awbc(mut program)] = owners() else {
+        unreachable!("fixture has one native and one AWBC owner");
+    };
+    let program = Arc::make_mut(&mut program);
+    let ordinal = program
+        .runtime_types
+        .iter()
+        .position(|ty| ty.semantic_identity() == semantic(3))
+        .unwrap();
+    let mut shape = program.runtime_types[ordinal].shape().clone();
+    let AwbcRuntimeTypeShape::Variant {
+        owner: AwbcVariantIdentity::Nominal { public_id, layout },
+        cases,
+        ..
+    } = &mut shape
+    else {
+        unreachable!("fixture nominal variant");
+    };
+    let nominal =
+        RuntimeNominalTypeId::try_new(program.strings[public_id.index()].clone()).unwrap();
+    let layout = TypeLayoutHash::from_bytes(*layout);
+    cases[1].payload = Some(AwbcTypeId(999));
+    program.runtime_types[ordinal] = AwbcRuntimeType::new(semantic(3), shape);
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(program.clone()));
+    let error = owner
+        .types()
+        .try_variant_value(
+            semantic(3),
+            1,
+            Some(RuntimeValue::Unit),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap_err();
+    let crate::program_types::RuntimeProgramValueConstructionError::ProgramType(
+        crate::program_types::RuntimeProgramTypeError::AwbcType(error),
+    ) = error
+    else {
+        panic!("expected typed AWBC child-reference error");
+    };
+    assert_eq!(
+        *error,
+        crate::awbc::type_projection::AwbcTypeProjectionError::RuntimeTypeOutOfBounds {
+            index: 999
+        }
+    );
+    let saved = AwbcRuntimeValueSnapshot::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal,
+            semantic_identity: semantic(3),
+            layout,
+        },
+        ordinal: 1,
+        name: "Set".into(),
+        payload: Some(Box::new(AwbcRuntimeValueSnapshot::Unit)),
+        type_instantiation: None,
+    };
+    let error = saved.into_runtime_value_for_program(&owner).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "AWBC runtime type index 999 is out of bounds"
+    );
 }

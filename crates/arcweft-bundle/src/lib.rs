@@ -130,7 +130,7 @@ pub struct BundleManifest {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BundleAwbcProgram {
     pub encoding: BundleAwbcEncoding,
-    pub program: AwbcProgram,
+    pub program: std::sync::Arc<AwbcProgram>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -949,7 +949,7 @@ impl ArcweftBundle {
         &self.product_awbc
     }
 
-    pub const fn product_awbc_program(&self) -> &AwbcProgram {
+    pub fn product_awbc_program(&self) -> &AwbcProgram {
         self.product_awbc.program()
     }
 

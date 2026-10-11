@@ -11,12 +11,12 @@ use thiserror::Error;
 /// Failure handling policy for one runtime interpolation expression.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum InlineFailurePolicy {
+pub enum InlineFailurePolicy<S = CharacterDialogueStyleValue> {
     #[default]
     FailLine,
     Discard,
     Fallback {
-        fallback: InlineFallback,
+        fallback: InlineFallback<S>,
     },
 }
 
@@ -38,16 +38,16 @@ pub enum InlineFailureSelection {
 /// Fallback rendering strategy for a failed runtime interpolation expression.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum InlineFallback {
+pub enum InlineFallback<S = CharacterDialogueStyleValue> {
     Text {
         text: String,
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     ExprSource {
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     CallSource {
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     ValuePlain,
 }
@@ -55,20 +55,108 @@ pub enum InlineFallback {
 /// Style behavior for fallback rendering.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FallbackStylePolicy {
+pub enum FallbackStylePolicy<S = CharacterDialogueStyleValue> {
     Plain,
     InheritSurrounding,
-    Apply {
-        styles: Vec<CharacterDialogueStyleValue>,
-    },
+    Apply { styles: Vec<S> },
+}
+
+impl<S> InlineFailurePolicy<S> {
+    /// Borrows every retained Style while preserving the owning policy cases.
+    pub fn borrow_styles(&self) -> InlineFailurePolicy<&S> {
+        match self {
+            Self::FailLine => InlineFailurePolicy::FailLine,
+            Self::Discard => InlineFailurePolicy::Discard,
+            Self::Fallback { fallback } => InlineFailurePolicy::Fallback {
+                fallback: fallback.borrow_styles(),
+            },
+        }
+    }
+
+    /// Moves Styles through one fallible projection without rebuilding policy
+    /// cases from display labels or a separate wire grammar.
+    pub fn try_map_styles<T, E>(
+        self,
+        map: &mut impl FnMut(S) -> Result<T, E>,
+    ) -> Result<InlineFailurePolicy<T>, E> {
+        Ok(match self {
+            Self::FailLine => InlineFailurePolicy::FailLine,
+            Self::Discard => InlineFailurePolicy::Discard,
+            Self::Fallback { fallback } => InlineFailurePolicy::Fallback {
+                fallback: fallback.try_map_styles(map)?,
+            },
+        })
+    }
+}
+
+impl<S> InlineFallback<S> {
+    pub fn borrow_styles(&self) -> InlineFallback<&S> {
+        match self {
+            Self::Text { text, style } => InlineFallback::Text {
+                text: text.clone(),
+                style: style.borrow_styles(),
+            },
+            Self::ExprSource { style } => InlineFallback::ExprSource {
+                style: style.borrow_styles(),
+            },
+            Self::CallSource { style } => InlineFallback::CallSource {
+                style: style.borrow_styles(),
+            },
+            Self::ValuePlain => InlineFallback::ValuePlain,
+        }
+    }
+
+    pub fn try_map_styles<T, E>(
+        self,
+        map: &mut impl FnMut(S) -> Result<T, E>,
+    ) -> Result<InlineFallback<T>, E> {
+        Ok(match self {
+            Self::Text { text, style } => InlineFallback::Text {
+                text,
+                style: style.try_map_styles(map)?,
+            },
+            Self::ExprSource { style } => InlineFallback::ExprSource {
+                style: style.try_map_styles(map)?,
+            },
+            Self::CallSource { style } => InlineFallback::CallSource {
+                style: style.try_map_styles(map)?,
+            },
+            Self::ValuePlain => InlineFallback::ValuePlain,
+        })
+    }
+}
+
+impl<S> FallbackStylePolicy<S> {
+    pub fn borrow_styles(&self) -> FallbackStylePolicy<&S> {
+        match self {
+            Self::Plain => FallbackStylePolicy::Plain,
+            Self::InheritSurrounding => FallbackStylePolicy::InheritSurrounding,
+            Self::Apply { styles } => FallbackStylePolicy::Apply {
+                styles: styles.iter().collect(),
+            },
+        }
+    }
+
+    pub fn try_map_styles<T, E>(
+        self,
+        map: &mut impl FnMut(S) -> Result<T, E>,
+    ) -> Result<FallbackStylePolicy<T>, E> {
+        Ok(match self {
+            Self::Plain => FallbackStylePolicy::Plain,
+            Self::InheritSurrounding => FallbackStylePolicy::InheritSurrounding,
+            Self::Apply { styles } => FallbackStylePolicy::Apply {
+                styles: styles.into_iter().map(map).collect::<Result<_, _>>()?,
+            },
+        })
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
-enum StrictInlineFailurePolicy {
+enum StrictInlineFailurePolicy<S> {
     FailLine {},
     Discard {},
-    Fallback { fallback: InlineFallback },
+    Fallback { fallback: InlineFallback<S> },
 }
 
 #[derive(Deserialize)]
@@ -80,31 +168,29 @@ enum StrictInlineFailureSelection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
-enum StrictInlineFallback {
+enum StrictInlineFallback<S> {
     Text {
         text: String,
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     ExprSource {
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     CallSource {
-        style: FallbackStylePolicy,
+        style: FallbackStylePolicy<S>,
     },
     ValuePlain {},
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
-enum StrictFallbackStylePolicy {
+enum StrictFallbackStylePolicy<S> {
     Plain {},
     InheritSurrounding {},
-    Apply {
-        styles: Vec<CharacterDialogueStyleValue>,
-    },
+    Apply { styles: Vec<S> },
 }
 
-impl<'de> Deserialize<'de> for InlineFailurePolicy {
+impl<'de, S: Deserialize<'de>> Deserialize<'de> for InlineFailurePolicy<S> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -135,7 +221,7 @@ impl<'de> Deserialize<'de> for InlineFailureSelection {
     }
 }
 
-impl<'de> Deserialize<'de> for InlineFallback {
+impl<'de, S: Deserialize<'de>> Deserialize<'de> for InlineFallback<S> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -149,7 +235,7 @@ impl<'de> Deserialize<'de> for InlineFallback {
     }
 }
 
-impl<'de> Deserialize<'de> for FallbackStylePolicy {
+impl<'de, S: Deserialize<'de>> Deserialize<'de> for FallbackStylePolicy<S> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,

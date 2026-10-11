@@ -988,14 +988,7 @@ impl AwbcFiberFrameSnapshot {
             registers: frame
                 .registers
                 .iter()
-                .map(|value| {
-                    value.validate_record_headers(owner).map_err(|message| {
-                        crate::value::AwbcRuntimeValueSnapshotError::Message { message }
-                    })?;
-                    value.try_map_ref(&mut |value| {
-                        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                    })
-                })
+                .map(|value| value.snapshot_for_owner(Some(owner)))
                 .collect::<Result<_, _>>()?,
             format: frame
                 .format
@@ -1038,14 +1031,7 @@ impl AwbcFiberFrameSnapshot {
             registers: self
                 .registers
                 .into_iter()
-                .map(|value| {
-                    let value =
-                        value.try_map(&mut |value| value.into_runtime_value_for_program(owner))?;
-                    value.validate_record_headers(owner).map_err(|message| {
-                        crate::value::AwbcRuntimeValueSnapshotError::Message { message }
-                    })?;
-                    Ok(value)
-                })
+                .map(|value| value.into_live_for_program(owner))
                 .collect::<AwbcSaveResult<_>>()?,
             format: self
                 .format

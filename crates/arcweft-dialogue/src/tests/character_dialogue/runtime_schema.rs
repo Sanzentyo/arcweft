@@ -390,6 +390,10 @@ struct Types {
     any_type: RuntimeSemanticTypeId,
 }
 
+pub(super) fn codec_program_owners() -> [RuntimeProgramOwner; 2] {
+    Types::new().program_owners()
+}
+
 impl Types {
     fn new() -> Self {
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();

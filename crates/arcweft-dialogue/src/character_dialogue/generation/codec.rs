@@ -13,11 +13,16 @@ use crate::{
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeDefault,
     CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
     CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
-    CharacterDialogueStageValue, CharacterDialogueStyleValue, CharacterDialogueValueError,
-    CharacterDialogueVoice,
+    CharacterDialogueStageValue, CharacterDialogueStyleValue, CharacterDialogueTypedValue,
+    CharacterDialogueValueError, CharacterDialogueVoice,
 };
 use arcweft_character::id::{CharacterId, CharacterLookId};
-use arcweft_core::{entry::RuntimeValueDigest, pattern::RuntimeSemanticTypeId};
+use arcweft_core::{
+    entry::RuntimeValueDigest,
+    pattern::RuntimeSemanticTypeId,
+    task::RuntimeProgramOwner,
+    value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError},
+};
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -56,9 +61,25 @@ pub enum CharacterDialogueGenerationDeclarationCodecError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Value(#[from] CharacterDialogueValueError),
+    Snapshot(#[from] AwbcRuntimeValueSnapshotError),
     #[error(transparent)]
-    Declaration(#[from] CharacterDialogueGenerationDeclarationError),
+    Value(Box<CharacterDialogueValueError>),
+    #[error(transparent)]
+    Declaration(Box<CharacterDialogueGenerationDeclarationError>),
+}
+
+impl From<CharacterDialogueValueError> for CharacterDialogueGenerationDeclarationCodecError {
+    fn from(error: CharacterDialogueValueError) -> Self {
+        Self::Value(Box::new(error))
+    }
+}
+
+impl From<CharacterDialogueGenerationDeclarationError>
+    for CharacterDialogueGenerationDeclarationCodecError
+{
+    fn from(error: CharacterDialogueGenerationDeclarationError) -> Self {
+        Self::Declaration(Box::new(error))
+    }
 }
 
 impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
@@ -68,6 +89,7 @@ impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
     /// the declaration content; it is never used as an input to hashing.
     pub fn encode_canonical_bytes(
         &self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<Vec<u8>, CharacterDialogueGenerationDeclarationCodecError> {
         let recomputed = CharacterDialogueGenerationDeclaration::try_new(
             self.characters
@@ -88,7 +110,7 @@ impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
             );
         }
 
-        let wire = WireGenerationRef::from_declaration(&recomputed);
+        let wire = WireGenerationRef::from_declaration(&recomputed, owner)?;
         let mut output = BoundedOutput::new(MAX_GENERATION_DECLARATION_CODEC_BYTES);
         match serde_json::to_writer(&mut output, &wire) {
             Ok(()) => Ok(output.bytes),
@@ -108,6 +130,7 @@ impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
     /// effective defaults have been reconstructed through `try_new`.
     pub fn decode_canonical_bytes(
         bytes: &[u8],
+        owner: &RuntimeProgramOwner,
     ) -> Result<Self, CharacterDialogueGenerationDeclarationCodecError> {
         if bytes.len() > MAX_GENERATION_DECLARATION_CODEC_BYTES {
             return Err(CharacterDialogueGenerationDeclarationCodecError::Limit {
@@ -122,7 +145,7 @@ impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
             );
         }
         let expected_digest = wire.digest;
-        let declaration = wire.into_declaration()?;
+        let declaration = wire.into_declaration(owner)?;
         if declaration.digest != expected_digest {
             return Err(
                 CharacterDialogueGenerationDeclarationCodecError::AdvertisedDigestMismatch {
@@ -131,7 +154,7 @@ impl CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId> {
                 },
             );
         }
-        if declaration.encode_canonical_bytes()? != bytes {
+        if declaration.encode_canonical_bytes(owner)? != bytes {
             return Err(CharacterDialogueGenerationDeclarationCodecError::NonCanonicalEncoding);
         }
         Ok(declaration)
@@ -190,21 +213,24 @@ struct WireGenerationRef<'a> {
 impl<'a> WireGenerationRef<'a> {
     fn from_declaration(
         declaration: &'a CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>,
-    ) -> Self {
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, CharacterDialogueGenerationDeclarationCodecError> {
         let characters = declaration
             .characters
             .iter()
-            .map(|(character, row)| WireCharacterRef {
-                character: character.as_str(),
-                dialogue_type: row.dialogue_type,
-                visual: WireVisualRef::from_visual(&row.visual),
-                defaults: WireDefaultRef {
-                    character: row.defaults.character(),
-                    config: WireConfigRef::from_config(row.defaults.config()),
-                    expected_digest: row.defaults.expected_digest(),
-                },
+            .map(|(character, row)| {
+                Ok(WireCharacterRef {
+                    character: character.as_str(),
+                    dialogue_type: row.dialogue_type,
+                    visual: WireVisualRef::from_visual(&row.visual),
+                    defaults: WireDefaultRef {
+                        character: row.defaults.character(),
+                        config: WireConfigRef::from_config(row.defaults.config(), owner)?,
+                        expected_digest: row.defaults.expected_digest(),
+                    },
+                })
             })
-            .collect();
+            .collect::<Result<_, CharacterDialogueGenerationDeclarationCodecError>>()?;
         let roles = Role::AUTHORED_BASE
             .into_iter()
             .zip(declaration.roles.authored_refs())
@@ -237,7 +263,7 @@ impl<'a> WireGenerationRef<'a> {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             version: GENERATION_DECLARATION_CODEC_VERSION,
             digest: declaration.digest,
             characters,
@@ -252,7 +278,7 @@ impl<'a> WireGenerationRef<'a> {
                 view_registry: declaration.presentation.view_registry_digest(),
                 style_resource: declaration.presentation.style_resource_digest(),
             },
-        }
+        })
     }
 }
 
@@ -306,41 +332,68 @@ struct WireDefaultRef<'a> {
 struct WireConfigRef<'a> {
     voice: Option<&'a CharacterDialogueVoice>,
     look: Option<&'a CharacterLookId>,
-    stage: Option<&'a CharacterDialogueStageValue>,
-    portrait: Option<&'a CharacterDialoguePortraitValue>,
-    focus: Option<&'a CharacterDialogueFocusValue>,
-    cleanup: Option<&'a CharacterDialogueCleanupValue>,
+    stage: Option<WireTypedValue>,
+    portrait: Option<WireTypedValue>,
+    focus: Option<WireTypedValue>,
+    cleanup: Option<WireTypedValue>,
     view: &'a ViewId,
     source_locale: Option<&'a crate::DialogueLocaleId>,
-    hooks: &'a [CharacterDialogueHookValue],
-    style: &'a CharacterDialogueStyleValue,
-    rich_text: &'a CharacterDialogueRichTextValue,
-    inline_failure: &'a crate::InlineFailurePolicy,
+    hooks: Vec<WireTypedValue>,
+    style: WireTypedValue,
+    rich_text: WireTypedValue,
+    inline_failure: crate::InlineFailurePolicy<WireTypedValue>,
     custom: Vec<WireConfigCustomRef<'a>>,
 }
 
 impl<'a> WireConfigRef<'a> {
-    fn from_config(config: &'a CharacterDialogueConfig) -> Self {
+    fn from_config(
+        config: &'a CharacterDialogueConfig,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, CharacterDialogueGenerationDeclarationCodecError> {
         let custom = config
             .custom()
             .iter()
-            .map(|(id, value)| WireConfigCustomRef { id, value })
-            .collect();
-        Self {
+            .map(|(id, value)| {
+                Ok(WireConfigCustomRef {
+                    id,
+                    value: WireTypedValue::capture(value.typed(), owner)?,
+                })
+            })
+            .collect::<Result<_, CharacterDialogueGenerationDeclarationCodecError>>()?;
+        Ok(Self {
             voice: config.voice(),
             look: config.look(),
-            stage: config.stage(),
-            portrait: config.portrait(),
-            focus: config.focus(),
-            cleanup: config.cleanup(),
+            stage: config
+                .stage()
+                .map(|v| WireTypedValue::capture(v.typed(), owner))
+                .transpose()?,
+            portrait: config
+                .portrait()
+                .map(|v| WireTypedValue::capture(v.typed(), owner))
+                .transpose()?,
+            focus: config
+                .focus()
+                .map(|v| WireTypedValue::capture(v.typed(), owner))
+                .transpose()?,
+            cleanup: config
+                .cleanup()
+                .map(|v| WireTypedValue::capture(v.typed(), owner))
+                .transpose()?,
             view: config.view(),
             source_locale: config.source_locale(),
-            hooks: config.hooks(),
-            style: config.style(),
-            rich_text: config.rich_text(),
-            inline_failure: config.inline_failure(),
+            hooks: config
+                .hooks()
+                .iter()
+                .map(|v| WireTypedValue::capture(v.typed(), owner))
+                .collect::<Result<_, _>>()?,
+            style: WireTypedValue::capture(config.style().typed(), owner)?,
+            rich_text: WireTypedValue::capture(config.rich_text().typed(), owner)?,
+            inline_failure: config
+                .inline_failure()
+                .borrow_styles()
+                .try_map_styles(&mut |style| WireTypedValue::capture(style.typed(), owner))?,
             custom,
-        }
+        })
     }
 }
 
@@ -348,7 +401,34 @@ impl<'a> WireConfigRef<'a> {
 #[serde(deny_unknown_fields)]
 struct WireConfigCustomRef<'a> {
     id: &'a CharacterDialogueCustomFieldId,
-    value: &'a CharacterDialogueCustomValue,
+    value: WireTypedValue,
+}
+
+/// The common Core DTO is the only recursive value grammar in this codec.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireTypedValue {
+    value: AwbcRuntimeValueSnapshot,
+}
+
+impl WireTypedValue {
+    fn capture(
+        value: &CharacterDialogueTypedValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, CharacterDialogueGenerationDeclarationCodecError> {
+        Ok(Self {
+            value: AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value.value(), owner)?,
+        })
+    }
+
+    fn restore<T>(
+        self,
+        owner: &RuntimeProgramOwner,
+        admit: impl FnOnce(CharacterDialogueTypedValue) -> Result<T, CharacterDialogueValueError>,
+    ) -> Result<T, CharacterDialogueGenerationDeclarationCodecError> {
+        let value = self.value.into_runtime_value_for_program(owner)?;
+        Ok(admit(CharacterDialogueTypedValue::try_new(value)?)?)
+    }
 }
 
 #[derive(Serialize)]
@@ -404,6 +484,7 @@ struct WireGenerationOwned {
 impl WireGenerationOwned {
     fn into_declaration(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<
         CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>,
         CharacterDialogueGenerationDeclarationCodecError,
@@ -411,7 +492,7 @@ impl WireGenerationOwned {
         let mut characters = Vec::with_capacity(self.characters.len());
         for row in self.characters {
             let character = CharacterId::try_new(row.character).map_err(|error| {
-                CharacterDialogueGenerationDeclarationCodecError::Value(
+                CharacterDialogueGenerationDeclarationCodecError::from(
                     CharacterDialogueValueError::Field {
                         field: "character_id",
                         reason: error.to_string(),
@@ -430,14 +511,14 @@ impl WireGenerationOwned {
             };
             let default_character =
                 CharacterId::try_new(row.defaults.character).map_err(|error| {
-                    CharacterDialogueGenerationDeclarationCodecError::Value(
+                    CharacterDialogueGenerationDeclarationCodecError::from(
                         CharacterDialogueValueError::Field {
                             field: "defaults.character_id",
                             reason: error.to_string(),
                         },
                     )
                 })?;
-            let config = row.defaults.config.into_config()?;
+            let config = row.defaults.config.into_config(owner)?;
             let defaults = match row.defaults.expected_digest {
                 Some(digest) => CharacterDialogueRuntimeDefault::with_expected_digest(
                     default_character,
@@ -544,22 +625,23 @@ struct WireDefaultOwned {
 struct WireConfigOwned {
     voice: Option<CharacterDialogueVoice>,
     look: Option<CharacterLookId>,
-    stage: Option<CharacterDialogueStageValue>,
-    portrait: Option<CharacterDialoguePortraitValue>,
-    focus: Option<CharacterDialogueFocusValue>,
-    cleanup: Option<CharacterDialogueCleanupValue>,
+    stage: Option<WireTypedValue>,
+    portrait: Option<WireTypedValue>,
+    focus: Option<WireTypedValue>,
+    cleanup: Option<WireTypedValue>,
     view: ViewId,
     source_locale: Option<crate::DialogueLocaleId>,
-    hooks: Vec<CharacterDialogueHookValue>,
-    style: CharacterDialogueStyleValue,
-    rich_text: CharacterDialogueRichTextValue,
-    inline_failure: crate::InlineFailurePolicy,
+    hooks: Vec<WireTypedValue>,
+    style: WireTypedValue,
+    rich_text: WireTypedValue,
+    inline_failure: crate::InlineFailurePolicy<WireTypedValue>,
     custom: Vec<WireConfigCustomOwned>,
 }
 
 impl WireConfigOwned {
     fn into_config(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<CharacterDialogueConfig, CharacterDialogueGenerationDeclarationCodecError> {
         let mut previous = None;
         let mut custom = BTreeMap::new();
@@ -575,18 +657,46 @@ impl WireConfigOwned {
                 );
             }
             previous = Some(row.id.clone());
-            custom.insert(row.id, row.value);
+            custom.insert(
+                row.id,
+                row.value
+                    .restore(owner, CharacterDialogueCustomValue::try_new)?,
+            );
         }
-        let mut config = CharacterDialogueConfig::try_new(self.view, self.style, self.rich_text)?;
+        let mut config = CharacterDialogueConfig::try_new(
+            self.view,
+            self.style
+                .restore(owner, CharacterDialogueStyleValue::try_new)?,
+            self.rich_text
+                .restore(owner, CharacterDialogueRichTextValue::try_new)?,
+        )?;
         config.voice = self.voice;
         config.look = self.look;
-        config.stage = self.stage;
-        config.portrait = self.portrait;
-        config.focus = self.focus;
-        config.cleanup = self.cleanup;
+        config.stage = self
+            .stage
+            .map(|v| v.restore(owner, CharacterDialogueStageValue::try_new))
+            .transpose()?;
+        config.portrait = self
+            .portrait
+            .map(|v| v.restore(owner, CharacterDialoguePortraitValue::try_new))
+            .transpose()?;
+        config.focus = self
+            .focus
+            .map(|v| v.restore(owner, CharacterDialogueFocusValue::try_new))
+            .transpose()?;
+        config.cleanup = self
+            .cleanup
+            .map(|v| v.restore(owner, CharacterDialogueCleanupValue::try_new))
+            .transpose()?;
         config.source_locale = self.source_locale;
-        config.hooks = self.hooks;
-        config.inline_failure = self.inline_failure;
+        config.hooks = self
+            .hooks
+            .into_iter()
+            .map(|v| v.restore(owner, CharacterDialogueHookValue::try_new))
+            .collect::<Result<_, _>>()?;
+        config.inline_failure = self.inline_failure.try_map_styles(&mut |style| {
+            style.restore(owner, CharacterDialogueStyleValue::try_new)
+        })?;
         config.custom = custom;
         config.validate()?;
         Ok(config)
@@ -597,7 +707,7 @@ impl WireConfigOwned {
 #[serde(deny_unknown_fields)]
 struct WireConfigCustomOwned {
     id: CharacterDialogueCustomFieldId,
-    value: CharacterDialogueCustomValue,
+    value: WireTypedValue,
 }
 
 #[derive(Deserialize)]

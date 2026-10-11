@@ -30,7 +30,6 @@ use arcweft_dialogue::{
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
-use std::sync::Arc;
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
@@ -214,7 +213,7 @@ pub(crate) fn with_generation(
     let view_runtime = BundleViewRuntime::try_new_with_awbc(
         product,
         bundle.view_text.clone(),
-        Arc::new(bundle.product_awbc.program.clone()),
+        bundle.product_awbc().program_lease(),
     )
     .expect("fixture View registry joins AWBC");
     let view_fingerprint = RuntimeValueDigest::from_bytes(

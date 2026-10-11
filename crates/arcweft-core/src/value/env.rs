@@ -80,12 +80,9 @@ impl RuntimeEnv {
                             .slots
                             .iter()
                             .map(|binding| {
-                                binding.try_map_ref(&mut |value| {
-                                    super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-                                        value, owner,
-                                    )
+                                binding
+                                    .snapshot_for_owner(Some(owner))
                                     .map_err(|error| error.to_string())
-                                })
                             })
                             .collect::<Result<_, String>>()?,
                     })
@@ -123,13 +120,9 @@ impl RuntimeEnv {
                             .slots
                             .into_iter()
                             .map(|binding| {
-                                let binding = binding.try_map(&mut |value| {
-                                    value
-                                        .into_runtime_value_for_program(owner)
-                                        .map_err(|error| error.to_string())
-                                })?;
-                                binding.value.validate_record_headers(owner)?;
-                                Ok(binding)
+                                binding
+                                    .into_live_for_program(owner)
+                                    .map_err(|error| error.to_string())
                             })
                             .collect::<Result<_, String>>()?,
                     })

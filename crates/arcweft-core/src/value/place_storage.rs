@@ -13,20 +13,45 @@ use crate::{
 
 /// Storage of one declaration or frame register. The same tree is mapped to
 /// inert value snapshots at persistence boundaries.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(try_from = "PlaceState<T>")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePlaceStorage<T> {
     state: PlaceState<T>,
 }
 
-impl<T: Serialize> Serialize for RuntimePlaceStorage<T> {
+impl Serialize for RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.state.serialize(serializer)
     }
 }
 
+impl<'de> Deserialize<'de> for RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::try_from(PlaceState::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for RuntimePlaceStorage<RuntimeValue> {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom(
+            "live place storage requires a program-bound snapshot",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimePlaceStorage<RuntimeValue> {
+    fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "live place storage requires program-bound restore",
+        ))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(bound(
+    serialize = "T: Serialize, RuntimePlaceStorage<T>: Serialize",
+    deserialize = "T: Deserialize<'de>, RuntimePlaceStorage<T>: Deserialize<'de>"
+))]
 enum PlaceState<T> {
     Vacant,
     Initialized(T),
@@ -68,6 +93,56 @@ impl<T> From<T> for RuntimePlaceStorage<T> {
 }
 
 impl<T> RuntimePlaceStorage<T> {
+    /// Resolves every retained nominal header before activating any child.
+    /// The same preflight applies to live capture and inert restore storage.
+    pub(crate) fn validate_record_headers(
+        &self,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> Result<(), String> {
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let mut pending = vec![(self, 0usize)];
+        let mut nodes = 0usize;
+        while let Some((storage, depth)) = pending.pop() {
+            nodes += 1;
+            if !limits.permits_depth(depth) || !limits.permits_nodes(nodes) {
+                return Err("partial record header traversal exceeds its work limits".to_owned());
+            }
+            if let Some((header, fields)) = storage.record_parts() {
+                let scheduled_nodes = nodes
+                    .checked_add(pending.len())
+                    .and_then(|count| count.checked_add(fields.len()));
+                if !scheduled_nodes.is_some_and(|count| limits.permits_nodes(count)) {
+                    return Err(
+                        "partial record header traversal exceeds its work limits".to_owned()
+                    );
+                }
+                if let RecordHeader::Nominal {
+                    nominal,
+                    semantic_identity,
+                    layout,
+                    type_instantiation,
+                } = header
+                {
+                    owner
+                        .ok_or_else(|| {
+                            "nominal place storage requires a program-bound snapshot".to_owned()
+                        })?
+                        .types()
+                        .require_nominal_record_snapshot_header(
+                            *semantic_identity,
+                            nominal,
+                            *layout,
+                            fields.len(),
+                            type_instantiation.as_deref(),
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                pending.extend(fields.iter().rev().map(|field| (field, depth + 1)));
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn record_parts(&self) -> Option<(&RecordHeader, &[Self])> {
         match &self.state {
             PlaceState::Record { header, fields } => Some((header, fields)),
@@ -133,7 +208,7 @@ impl<T> RuntimePlaceStorage<T> {
         values
     }
 
-    pub fn try_map<U, E>(
+    pub(crate) fn try_map<U, E>(
         self,
         mapper: &mut impl FnMut(T) -> Result<U, E>,
     ) -> Result<RuntimePlaceStorage<U>, E> {
@@ -152,7 +227,7 @@ impl<T> RuntimePlaceStorage<T> {
         })
     }
 
-    pub fn try_map_ref<U, E>(
+    pub(crate) fn try_map_ref<U, E>(
         &self,
         mapper: &mut impl FnMut(&T) -> Result<U, E>,
     ) -> Result<RuntimePlaceStorage<U>, E> {
@@ -202,6 +277,23 @@ impl<T> Default for PlaceState<T> {
 }
 
 impl RuntimePlaceStorage<RuntimeValue> {
+    pub(crate) fn snapshot_for_owner(
+        &self,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> Result<
+        RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot>,
+        super::AwbcRuntimeValueSnapshotError,
+    > {
+        self.validate_record_headers(owner)
+            .map_err(|message| super::AwbcRuntimeValueSnapshotError::Message { message })?;
+        self.try_map_ref(&mut |value| match owner {
+            Some(owner) => {
+                super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+            }
+            None => super::AwbcRuntimeValueSnapshot::from_standalone_value(value),
+        })
+    }
+
     /// Checks the sealed cleanup contour against drop flags. A record header
     /// counts as an initialized container even when a child has been moved.
     /// This is artifact/state validation; source access legality is static.
@@ -320,37 +412,6 @@ impl RuntimePlaceStorage<RuntimeValue> {
         true
     }
 
-    pub(crate) fn validate_record_headers(
-        &self,
-        owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<(), String> {
-        if let Some((header, fields)) = self.record_parts() {
-            if let RecordHeader::Nominal {
-                nominal,
-                semantic_identity,
-                layout,
-                type_instantiation,
-            } = header
-            {
-                owner
-                    .types()
-                    .require_nominal(*semantic_identity, nominal, *layout)
-                    .map_err(|error| error.to_string())?;
-                if !owner
-                    .types()
-                    .type_origin_is_valid(*semantic_identity, type_instantiation.as_deref())
-                {
-                    return Err(
-                        "partial nominal record has an invalid construction type origin".to_owned(),
-                    );
-                }
-            }
-            for field in fields {
-                field.validate_record_headers(owner)?;
-            }
-        }
-        Ok(())
-    }
     pub(crate) fn field(&self, path: &[RuntimeRecordFieldId]) -> Option<&RuntimeValue> {
         let Some((first, rest)) = path.split_first() else {
             return self.as_ref();
@@ -538,9 +599,35 @@ impl RuntimePlaceStorage<RuntimeValue> {
     }
 }
 
+impl RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
+    pub(crate) fn into_live_for_program(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimePlaceStorage<RuntimeValue>, super::AwbcRuntimeValueSnapshotError> {
+        self.validate_record_headers(Some(owner))
+            .map_err(|message| super::AwbcRuntimeValueSnapshotError::Message { message })?;
+        self.try_map(&mut |value| value.into_runtime_value_for_program(owner))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::AwbcRuntimeValueSnapshot;
     use super::*;
+
+    fn standalone_snapshot(
+        storage: &RuntimePlaceStorage<RuntimeValue>,
+    ) -> RuntimePlaceStorage<AwbcRuntimeValueSnapshot> {
+        storage
+            .try_map_ref(&mut AwbcRuntimeValueSnapshot::from_standalone_value)
+            .unwrap()
+    }
+
+    fn empty_owner() -> crate::task::RuntimeProgramOwner {
+        crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ))
+    }
 
     fn field(ordinal: usize) -> RuntimeRecordFieldId {
         RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap()
@@ -562,8 +649,14 @@ mod tests {
         assert!(storage.take().is_none());
         assert_eq!(storage.field(&[field(1)]), Some(&RuntimeValue::Bool(true)));
         assert_eq!(storage.values().count(), 1);
-        let encoded = serde_json::to_value(&storage).unwrap();
-        let restored: RuntimePlaceStorage<RuntimeValue> = serde_json::from_value(encoded).unwrap();
+        assert!(serde_json::to_value(&storage).is_err());
+        let encoded = serde_json::to_value(standalone_snapshot(&storage)).unwrap();
+        assert!(
+            serde_json::from_value::<RuntimePlaceStorage<RuntimeValue>>(encoded.clone()).is_err()
+        );
+        let restored: RuntimePlaceStorage<AwbcRuntimeValueSnapshot> =
+            serde_json::from_value(encoded).unwrap();
+        let restored = restored.into_live_for_program(&empty_owner()).unwrap();
         assert_eq!(restored, storage);
         storage = restored.try_map(&mut Ok::<_, ()>).unwrap();
         assert_eq!(
@@ -633,9 +726,19 @@ mod tests {
         .with_type_instantiation(Some(binding.clone()));
         let mut storage = RuntimePlaceStorage::from(RuntimeValue::NominalRecord(record));
         let moved = storage.take_field(&[field(0)]).unwrap();
-        let encoded = serde_json::to_vec(&storage).unwrap();
-        let mut restored: RuntimePlaceStorage<RuntimeValue> =
+        assert!(serde_json::to_vec(&storage).is_err());
+        let encoded = serde_json::to_vec(&standalone_snapshot(&storage)).unwrap();
+        let restored: RuntimePlaceStorage<AwbcRuntimeValueSnapshot> =
             serde_json::from_slice(&encoded).unwrap();
+        assert!(
+            restored
+                .clone()
+                .into_live_for_program(&empty_owner())
+                .is_err()
+        );
+        let mut restored = restored
+            .try_map(&mut |value| value.into_runtime_value_for_program(&empty_owner()))
+            .unwrap();
         let Some((
             RecordHeader::Nominal {
                 type_instantiation, ..
@@ -669,7 +772,7 @@ mod tests {
             .unwrap(),
         );
         storage.take_field(&[field(0)]).unwrap();
-        let valid = serde_json::to_value(storage).unwrap();
+        let valid = serde_json::to_value(standalone_snapshot(&storage)).unwrap();
         for malformed in [
             {
                 let mut value = valid.clone();
@@ -688,8 +791,113 @@ mod tests {
             },
         ] {
             assert!(
-                serde_json::from_value::<RuntimePlaceStorage<RuntimeValue>>(malformed).is_err()
+                serde_json::from_value::<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>(malformed)
+                    .is_err()
             );
         }
+    }
+
+    #[test]
+    fn partial_nominal_snapshot_preflights_the_program_header_before_children() {
+        for owner in super::super::awbc_save::tests::owners() {
+            let semantic = RuntimeSemanticTypeId::from_bytes([1; 32]);
+            let original = owner
+                .types()
+                .try_record_value(
+                    semantic,
+                    vec![RuntimeValue::Bool(true)],
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap();
+            let mut live = RuntimePlaceStorage::from(original.clone());
+            let moved = live.take_field(&[field(0)]).unwrap();
+            assert!(live.snapshot_for_owner(None).is_err());
+            let saved = live.snapshot_for_owner(Some(&owner)).unwrap();
+            let bytes = serde_json::to_vec(&saved).unwrap();
+            let decoded: RuntimePlaceStorage<AwbcRuntimeValueSnapshot> =
+                serde_json::from_slice(&bytes).unwrap();
+            let mut restored = decoded.into_live_for_program(&owner).unwrap();
+            assert!(
+                restored
+                    .assign_field(&[field(0)], moved)
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(restored.take(), Some(original));
+
+            let mut forged = saved.clone();
+            let PlaceState::Record {
+                header: RecordHeader::Nominal { layout, .. },
+                fields,
+            } = &mut forged.state
+            else {
+                panic!("nominal partial record")
+            };
+            *layout = TypeLayoutHash::from_bytes([255; 32]);
+            fields.push(RuntimePlaceStorage::from(
+                AwbcRuntimeValueSnapshot::Callable(super::super::AwbcRuntimeCallableSnapshot {
+                    state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                    retained: vec![],
+                }),
+            ));
+            let before = live.clone();
+            let error = forged
+                .into_live_for_program(&owner)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("layout"), "{error}");
+            assert!(!error.contains("callable"), "{error}");
+            assert_eq!(live, before);
+            assert_eq!(serde_json::to_vec(&saved).unwrap(), bytes);
+        }
+    }
+
+    #[test]
+    fn partial_record_header_work_limits_reject_exactly_one_over_without_activation() {
+        let owner = empty_owner();
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let mut deepest = RuntimePlaceStorage::<AwbcRuntimeValueSnapshot>::default();
+        for _ in 0..limits.max_depth {
+            deepest = RuntimePlaceStorage {
+                state: PlaceState::Record {
+                    header: RecordHeader::Structural {
+                        names: vec!["next".into()],
+                    },
+                    fields: vec![deepest],
+                },
+            };
+        }
+        assert!(deepest.validate_record_headers(Some(&owner)).is_ok());
+        let deeper = RuntimePlaceStorage {
+            state: PlaceState::Record {
+                header: RecordHeader::Structural {
+                    names: vec!["next".into()],
+                },
+                fields: vec![deepest],
+            },
+        };
+        assert!(deeper.validate_record_headers(Some(&owner)).is_err());
+
+        let children = (limits.max_nodes - 1) as usize;
+        let mut widest = RuntimePlaceStorage::<AwbcRuntimeValueSnapshot> {
+            state: PlaceState::Record {
+                header: RecordHeader::Structural {
+                    names: (0..children).map(|ordinal| format!("f{ordinal}")).collect(),
+                },
+                fields: vec![RuntimePlaceStorage::default(); children],
+            },
+        };
+        assert!(widest.validate_record_headers(Some(&owner)).is_ok());
+        let PlaceState::Record {
+            header: RecordHeader::Structural { names },
+            fields,
+        } = &mut widest.state
+        else {
+            unreachable!()
+        };
+        names.push(format!("f{children}"));
+        fields.push(RuntimePlaceStorage::default());
+        assert!(widest.validate_record_headers(Some(&owner)).is_err());
+        assert!(widest.values().next().is_none());
     }
 }

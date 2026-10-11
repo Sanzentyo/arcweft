@@ -418,7 +418,7 @@ fn run_bundle_runner_phase<T>(
 }
 
 struct BundleRunnerRuntimeProgram {
-    program: Box<AwbcProgram>,
+    program: Arc<AwbcProgram>,
     entry: AwbcEntryId,
 }
 
@@ -426,12 +426,9 @@ fn bundle_runner_runtime_program(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
 ) -> Result<BundleRunnerRuntimeProgram, BundleRunnerError> {
-    let program = bundle.product_awbc().program().clone();
+    let program = bundle.product_awbc().program_lease();
     let entry = selected_awbc_entry(&program, bundle, options)?;
-    Ok(BundleRunnerRuntimeProgram {
-        program: Box::new(program),
-        entry,
-    })
+    Ok(BundleRunnerRuntimeProgram { program, entry })
 }
 
 fn selected_awbc_entry(
@@ -645,7 +642,7 @@ impl RuntimeExecutorInstance {
                 .expect("empty runtime plan is valid"),
         );
         let mut executor =
-            ArcweftRuntimeExecutor::from_awbc_product(*program.program, program.entry)?;
+            ArcweftRuntimeExecutor::from_awbc_product_arc(program.program, program.entry)?;
         let format_context = RuntimeFormatContext::new(active_locale);
         executor.set_format_context(format_context.clone());
         let mut pure = RuntimePureAccelerator::with_config(

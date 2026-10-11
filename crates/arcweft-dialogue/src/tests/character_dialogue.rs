@@ -21,7 +21,6 @@ use arcweft_core::{
         RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition,
         RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
         RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema, RuntimeValueDigest,
-        TypeLayoutHash,
     },
     pattern::RuntimeSemanticTypeId,
     value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeRecordFieldId, RuntimeSeq, RuntimeValue},
@@ -799,12 +798,31 @@ fn typed_values_normalize_nested_negative_zero_and_preserve_record_order() {
 
 #[test]
 fn role_deserialization_revalidates_structured_limits() {
-    let generic = nested_nominal(9);
-    let serialized = serde_json::to_value(generic).expect("serialize generic typed value");
+    let nominal = nested_nominal(9);
+    assert!(serde_json::to_value(&nominal).is_err());
     assert!(
-        serde_json::from_value::<CharacterDialogueStyleValue>(serialized).is_err(),
-        "transparent role deserialization must call the role constructor"
+        matches!(
+            CharacterDialogueStyleValue::try_new(nominal),
+            Err(CharacterDialogueValueError::Limit {
+                limit: "structured_depth",
+                maximum: 8,
+            })
+        ),
+        "the original depth-nine nominal role still rejects"
     );
+    for depth in [8, 9] {
+        let value = (0..depth).fold(RuntimeValue::Unit, |value, _| {
+            RuntimeValue::try_record(vec![("inner".to_owned(), value)]).unwrap()
+        });
+        let generic = CharacterDialogueTypedValue::try_new(value).unwrap();
+        let serialized = serde_json::to_value(generic).expect("standalone structural data");
+        let decoded = serde_json::from_value::<CharacterDialogueStyleValue>(serialized);
+        assert_eq!(
+            decoded.is_ok(),
+            depth == 8,
+            "transparent role deserialization must revalidate depth {depth}"
+        );
+    }
 }
 
 #[test]
@@ -935,7 +953,7 @@ fn inline_failure_policies_are_strict_manifest_values_at_the_dialogue_owner() {
     }
 
     assert_eq!(
-        InlineFailurePolicy::default(),
+        InlineFailurePolicy::<CharacterDialogueStyleValue>::default(),
         InlineFailurePolicy::FailLine
     );
 

@@ -350,114 +350,211 @@ fn declaration_rejects_a_caller_supplied_default_digest_that_does_not_match() {
 
 #[test]
 fn generation_declaration_codec_round_trips_canonical_version_one_bytes() {
+    for owner in runtime_schema::codec_program_owners() {
+        let (base, _, views, _) = fixture();
+        let character_a = base.character().clone();
+        let character_b = CharacterId::try_new("character.beta").expect("Character ID");
+        let declaration = declaration(
+            [
+                character_row(
+                    character_a,
+                    base.config().clone(),
+                    CharacterDialogueVisualType::Absent,
+                ),
+                character_row(
+                    character_b.clone(),
+                    base.config().clone(),
+                    CharacterDialogueVisualType::Present {
+                        manifest: RuntimeValueDigest::from_bytes([0x21; 32]),
+                        look_type: CharacterNominalType::Look {
+                            character: character_b,
+                        }
+                        .runtime_semantic_identity(),
+                    },
+                ),
+            ],
+            &views,
+        );
+
+        let bytes = declaration
+            .encode_canonical_bytes(&owner)
+            .expect("encode generation declaration");
+        let wire: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
+        assert_eq!(wire["version"], 1);
+
+        let decoded =
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&bytes, &owner)
+                .expect("decode generation declaration");
+        assert_eq!(decoded.digest(), declaration.digest());
+        assert_eq!(decoded.characters().len(), 2);
+        assert_eq!(decoded.roles(), declaration.roles());
+        assert_eq!(
+            decoded
+                .encode_canonical_bytes(&owner)
+                .expect("re-encode generation declaration"),
+            bytes
+        );
+    }
+}
+
+#[test]
+fn generation_codec_uses_program_bound_nominal_defaults_and_fallback_styles() {
+    let nominal = CharacterDialogueCustomValue::try_new(nominal_typed(
+        vec![RuntimeValue::Bool(true)],
+        vec![RuntimeTypeSchema::Bool],
+    ))
+    .unwrap();
     let (base, _, views, _) = fixture();
-    let character_a = base.character().clone();
-    let character_b = CharacterId::try_new("character.beta").expect("Character ID");
-    let declaration = declaration(
-        [
-            character_row(
-                character_a,
-                base.config().clone(),
-                CharacterDialogueVisualType::Absent,
+    let custom_id =
+        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.nominal").unwrap();
+    let fallback_style = base.config().style().clone();
+    let base = base
+        .patched(
+            &CharacterDialoguePatch::default()
+                .with_custom(custom_id.clone(), PatchField::Set(nominal))
+                .with_inline_failure(PatchField::Set(InlineFailurePolicy::Fallback {
+                    fallback: InlineFallback::Text {
+                        text: "fallback".to_owned(),
+                        style: FallbackStylePolicy::Apply {
+                            styles: vec![fallback_style],
+                        },
+                    },
+                })),
+        )
+        .unwrap();
+    let declaration = CharacterDialogueGenerationDeclaration::try_new(
+        [character_row(
+            base.character().clone(),
+            base.config().clone(),
+            CharacterDialogueVisualType::Absent,
+        )],
+        crate::CharacterDialogueType::any().runtime_semantic_identity(),
+        semantic(39),
+        role_types(),
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new([
+            CharacterDialogueRuntimeCustomFieldDescriptor::new(
+                custom_id,
+                runtime_schema::test_payload_descriptor().1,
+                true,
+                BTreeSet::from([base.config().view().clone()]),
             ),
-            character_row(
-                character_b.clone(),
-                base.config().clone(),
-                CharacterDialogueVisualType::Present {
-                    manifest: RuntimeValueDigest::from_bytes([0x21; 32]),
-                    look_type: CharacterNominalType::Look {
-                        character: character_b,
-                    }
-                    .runtime_semantic_identity(),
-                },
-            ),
-        ],
-        &views,
-    );
-
-    let bytes = declaration
-        .encode_canonical_bytes()
-        .expect("encode generation declaration");
-    let wire: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
-    assert_eq!(wire["version"], 1);
-
-    let decoded = CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&bytes)
-        .expect("decode generation declaration");
-    assert_eq!(decoded.digest(), declaration.digest());
-    assert_eq!(decoded.characters().len(), 2);
-    assert_eq!(decoded.roles(), declaration.roles());
-    assert_eq!(
-        decoded
-            .encode_canonical_bytes()
-            .expect("re-encode generation declaration"),
-        bytes
-    );
+        ])
+        .unwrap(),
+        presentation_contract(&views, DialoguePresentationProfile::engine_default(), None),
+    )
+    .unwrap();
+    let mut canonical = None;
+    for owner in runtime_schema::codec_program_owners() {
+        let bytes = declaration.encode_canonical_bytes(&owner).unwrap();
+        if let Some(previous) = &canonical {
+            assert_eq!(
+                previous, &bytes,
+                "native and AWBC use the same inert value grammar"
+            );
+        }
+        canonical = Some(bytes.clone());
+        let decoded =
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&bytes, &owner).unwrap();
+        assert_eq!(decoded.digest(), declaration.digest());
+        assert_eq!(
+            decoded.characters()[base.character()].defaults().config(),
+            base.config()
+        );
+        assert_eq!(decoded.encode_canonical_bytes(&owner).unwrap(), bytes);
+        let wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(
+            wire.pointer(
+                "/characters/0/defaults/config/inline_failure/fallback/style/styles/0/value/Opaque"
+            )
+            .is_some()
+        );
+        let path =
+            "/characters/0/defaults/config/custom/0/value/value/NominalRecord/fields/0/field";
+        assert_eq!(wire.pointer(path), Some(&serde_json::json!(1)));
+        let mut invalid = wire.clone();
+        *invalid.pointer_mut(path).unwrap() = serde_json::json!(2);
+        let invalid = serde_json::to_vec(&invalid).unwrap();
+        assert!(matches!(
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&invalid, &owner),
+            Err(crate::CharacterDialogueGenerationDeclarationCodecError::Snapshot(_))
+        ));
+    }
 }
 
 #[test]
 fn generation_declaration_codec_rejects_tampered_digest_and_noncanonical_rows() {
-    let (base, _, views, _) = fixture();
-    let character_a = base.character().clone();
-    let character_b = CharacterId::try_new("character.beta").expect("Character ID");
-    let declaration = declaration(
-        [
-            character_row(
-                character_a,
-                base.config().clone(),
-                CharacterDialogueVisualType::Absent,
+    for owner in runtime_schema::codec_program_owners() {
+        let (base, _, views, _) = fixture();
+        let character_a = base.character().clone();
+        let character_b = CharacterId::try_new("character.beta").expect("Character ID");
+        let declaration = declaration(
+            [
+                character_row(
+                    character_a,
+                    base.config().clone(),
+                    CharacterDialogueVisualType::Absent,
+                ),
+                character_row(
+                    character_b,
+                    base.config().clone(),
+                    CharacterDialogueVisualType::Absent,
+                ),
+            ],
+            &views,
+        );
+        let bytes = declaration
+            .encode_canonical_bytes(&owner)
+            .expect("encode generation declaration");
+
+        let mut tampered_digest: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("JSON wire");
+        let digest = tampered_digest["digest"]
+            .as_array_mut()
+            .expect("digest is a byte array");
+        let first = u8::try_from(digest[0].as_u64().expect("digest byte"))
+            .expect("digest array elements fit a byte");
+        digest[0] = serde_json::Value::from(first ^ 1);
+        let tampered_digest = serde_json::to_vec(&tampered_digest).expect("tampered wire");
+        assert!(matches!(
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(
+                &tampered_digest,
+                &owner
             ),
-            character_row(
-                character_b,
-                base.config().clone(),
-                CharacterDialogueVisualType::Absent,
-            ),
-        ],
-        &views,
-    );
-    let bytes = declaration
-        .encode_canonical_bytes()
-        .expect("encode generation declaration");
+            Err(
+                crate::CharacterDialogueGenerationDeclarationCodecError::AdvertisedDigestMismatch { .. }
+            )
+        ));
 
-    let mut tampered_digest: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
-    let digest = tampered_digest["digest"]
-        .as_array_mut()
-        .expect("digest is a byte array");
-    let first = u8::try_from(digest[0].as_u64().expect("digest byte"))
-        .expect("digest array elements fit a byte");
-    digest[0] = serde_json::Value::from(first ^ 1);
-    let tampered_digest = serde_json::to_vec(&tampered_digest).expect("tampered wire");
-    assert!(matches!(
-        CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&tampered_digest),
-        Err(
-            crate::CharacterDialogueGenerationDeclarationCodecError::AdvertisedDigestMismatch { .. }
-        )
-    ));
+        let mut reordered: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
+        reordered["characters"]
+            .as_array_mut()
+            .expect("character rows")
+            .reverse();
+        let reordered = serde_json::to_vec(&reordered).expect("reordered wire");
+        assert!(matches!(
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&reordered, &owner),
+            Err(crate::CharacterDialogueGenerationDeclarationCodecError::NonCanonicalEncoding)
+        ));
 
-    let mut reordered: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
-    reordered["characters"]
-        .as_array_mut()
-        .expect("character rows")
-        .reverse();
-    let reordered = serde_json::to_vec(&reordered).expect("reordered wire");
-    assert!(matches!(
-        CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&reordered),
-        Err(crate::CharacterDialogueGenerationDeclarationCodecError::NonCanonicalEncoding)
-    ));
-
-    let mut unsupported: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
-    unsupported["version"] = serde_json::Value::from(2);
-    let unsupported = serde_json::to_vec(&unsupported).expect("versioned wire");
-    assert!(matches!(
-        CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&unsupported),
-        Err(crate::CharacterDialogueGenerationDeclarationCodecError::UnsupportedVersion(2))
-    ));
+        let mut unsupported: serde_json::Value = serde_json::from_slice(&bytes).expect("JSON wire");
+        unsupported["version"] = serde_json::Value::from(2);
+        let unsupported = serde_json::to_vec(&unsupported).expect("versioned wire");
+        assert!(matches!(
+            CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&unsupported, &owner),
+            Err(crate::CharacterDialogueGenerationDeclarationCodecError::UnsupportedVersion(2))
+        ));
+    }
 }
 
 #[test]
 fn generation_declaration_codec_rejects_input_over_the_byte_limit_before_parsing() {
+    let owner = runtime_schema::codec_program_owners()
+        .into_iter()
+        .next()
+        .unwrap();
     let oversized = vec![b' '; 64 * 1024 * 1024 + 1];
     assert!(matches!(
-        CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&oversized),
+        CharacterDialogueGenerationDeclaration::decode_canonical_bytes(&oversized, &owner),
         Err(
             crate::CharacterDialogueGenerationDeclarationCodecError::Limit {
                 limit: "generation_declaration_codec_bytes",

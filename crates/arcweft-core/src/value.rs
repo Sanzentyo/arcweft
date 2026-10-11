@@ -2360,6 +2360,10 @@ enum RuntimeScopeTypeContext {
 /// One declaration identity and its current complete or partial place storage.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[serde(bound(
+    serialize = "RuntimePlaceStorage<T>: Serialize",
+    deserialize = "RuntimePlaceStorage<T>: Deserialize<'de>"
+))]
 pub struct RuntimeLocalSlot<T = RuntimeValue> {
     local: RuntimeLocalDeclarationId,
     value: RuntimePlaceStorage<T>,
@@ -2381,22 +2385,28 @@ impl<T> RuntimeLocalSlot<T> {
     pub fn into_values(self) -> Vec<T> {
         self.value.into_values()
     }
-    pub(crate) fn try_map<U, E>(
-        self,
-        mapper: &mut impl FnMut(T) -> Result<U, E>,
-    ) -> Result<RuntimeLocalSlot<U>, E> {
+}
+
+impl RuntimeLocalSlot {
+    pub(crate) fn snapshot_for_owner(
+        &self,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> Result<RuntimeLocalSlot<AwbcRuntimeValueSnapshot>, AwbcRuntimeValueSnapshotError> {
         Ok(RuntimeLocalSlot::new(
             self.local,
-            self.value.try_map(mapper)?,
+            self.value.snapshot_for_owner(owner)?,
         ))
     }
-    pub(crate) fn try_map_ref<U, E>(
-        &self,
-        mapper: &mut impl FnMut(&T) -> Result<U, E>,
-    ) -> Result<RuntimeLocalSlot<U>, E> {
+}
+
+impl RuntimeLocalSlot<AwbcRuntimeValueSnapshot> {
+    pub(crate) fn into_live_for_program(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimeLocalSlot, AwbcRuntimeValueSnapshotError> {
         Ok(RuntimeLocalSlot::new(
             self.local,
-            self.value.try_map_ref(mapper)?,
+            self.value.into_live_for_program(owner)?,
         ))
     }
 }

@@ -9,7 +9,7 @@ use arcweft_character::{
 use arcweft_compiler::project::{
     CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
 };
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId, task::RuntimeProgramOwner};
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
 use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision,
     character_presentation::{
@@ -453,7 +453,7 @@ compression = "none"
         })
         .transpose()
         .expect("accepted Style digest");
-    let owner = RuntimeProgramOwner::Awbc(Arc::new(restored.product_awbc_program().clone()));
+    let owner = restored.product_awbc().program_owner();
     restored
         .character_dialogue_generation
         .as_ref()

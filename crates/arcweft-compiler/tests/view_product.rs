@@ -281,7 +281,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
     let mut runtime = BundleViewRuntime::try_new_with_awbc(
         runtime_product,
         decoded.view_text.clone(),
-        Arc::new(decoded.product_awbc_program().clone()),
+        decoded.product_awbc().program_lease(),
     )
     .expect("decoded handler catalog joins Product AWBC");
     let authored_view = ViewId::try_new("view.Main").expect("authored View ID");
@@ -1074,7 +1074,10 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
                     forged["NominalRecord"]["type_id"] = serde_json::to_value(nominal).unwrap();
                     forged["NominalRecord"]["semantic_identity"] = serde_json::to_value(semantic).unwrap();
                     forged["NominalRecord"]["layout"] = serde_json::to_value(layout).unwrap();
-                    forged["NominalRecord"]["fields"] = serde_json::to_value(fields.iter().map(|value| arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, &owner).unwrap()).collect::<Vec<_>>()).unwrap();
+                    forged["NominalRecord"]["fields"] = serde_json::Value::Array(fields.iter().enumerate().map(|(ordinal, value)| serde_json::json!({
+                        "field": arcweft_core::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap(),
+                        "value": arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, &owner).unwrap(),
+                    })).collect());
                     let forged: arcweft_core::value::AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
                     assert!(forged.into_runtime_value_for_program(&owner).is_err());
                 }

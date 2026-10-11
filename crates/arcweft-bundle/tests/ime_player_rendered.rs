@@ -184,9 +184,7 @@ fn ime_generator_publishes_deterministic_controls_and_executable_callbacks() {
     );
     let mut missing = bundle.clone();
     let removed = *programs.first().unwrap();
-    missing
-        .product_awbc
-        .program
+    std::sync::Arc::make_mut(&mut missing.product_awbc.program)
         .pure_programs
         .retain(|binding| binding.program != removed);
     assert!(

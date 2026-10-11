@@ -205,8 +205,12 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
     let content = required_content_catalog(&view, external_sections)?;
     let character_presentation = optional_locale_catalog(&view, external_sections)?;
     let (character_dialogue_generation, character_packages) =
-        optional_character_dialogue_generation(&view, external_sections)?
-            .unwrap_or((None, Vec::new()));
+        optional_character_dialogue_generation(
+            &view,
+            external_sections,
+            &product_awbc.program_owner(),
+        )?
+        .unwrap_or((None, Vec::new()));
     if content.dialogue_content.records().is_empty() != character_presentation.is_none() {
         return Err(BundleCodecError::DecodeAwfb {
             message: "AWFB dialogue content and LocaleCatalog presence disagree".to_owned(),
@@ -427,6 +431,7 @@ fn optional_character_dialogue_generation_section(
     let bytes = encode_character_dialogue_generation_section(
         bundle.character_dialogue_generation.as_ref(),
         &bundle.character_packages,
+        &bundle.product_awbc.program_owner(),
     )?;
     Ok(Some(required_section(
         BundleSectionKind::CharacterDialogueGeneration,
@@ -437,6 +442,7 @@ fn optional_character_dialogue_generation_section(
 fn optional_character_dialogue_generation(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
+    owner: &arcweft_core::task::RuntimeProgramOwner,
 ) -> Result<
     Option<(
         Option<RuntimeGeneration>,
@@ -448,7 +454,7 @@ fn optional_character_dialogue_generation(
         view,
         external_sections,
         BundleSectionKind::CharacterDialogueGeneration,
-        decode_character_dialogue_generation_section,
+        |bytes| decode_character_dialogue_generation_section(bytes, owner),
     )
 }
 
@@ -727,7 +733,7 @@ fn optional_compact_payload<T, E>(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
     kind: BundleSectionKind,
-    decode: fn(&[u8]) -> Result<T, E>,
+    decode: impl FnOnce(&[u8]) -> Result<T, E>,
 ) -> Result<Option<T>, BundleCodecError>
 where
     E: std::fmt::Display,

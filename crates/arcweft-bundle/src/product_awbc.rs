@@ -58,12 +58,22 @@ impl BundleAwbcProgram {
     pub fn new(program: AwbcProgram) -> Self {
         Self {
             encoding: BundleAwbcEncoding::AwbcV1,
-            program,
+            program: std::sync::Arc::new(program),
         }
     }
 
-    pub const fn program(&self) -> &AwbcProgram {
+    pub fn program(&self) -> &AwbcProgram {
         &self.program
+    }
+
+    /// Retains the bundle's executable without cloning its program tables.
+    pub fn program_lease(&self) -> std::sync::Arc<AwbcProgram> {
+        std::sync::Arc::clone(&self.program)
+    }
+
+    /// Shares the exact immutable executable used by bundle codec admission.
+    pub fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        arcweft_core::task::RuntimeProgramOwner::Awbc(self.program_lease())
     }
 
     pub fn encode_product_section(&self) -> Result<Vec<u8>, BundleCodecError> {

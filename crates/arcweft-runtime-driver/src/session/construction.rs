@@ -359,7 +359,7 @@ pub(super) fn build_session_runtime(
                 message: error.to_string(),
             })?;
 
-    let program = Arc::new(bundle.product_awbc_program().clone());
+    let program = bundle.product_awbc().program_lease();
     let entry = selected_awbc_entry(&program, bundle, options)?;
     ensure_session_awbc_entry_selects_flow(&program, entry)?;
     validate_root_command_host_call_catalog(&program, entry, &options.root_command_host_calls)?;

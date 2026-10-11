@@ -21,7 +21,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum AwbcRuntimeValueSnapshotError {
@@ -173,7 +173,15 @@ pub struct AwbcRuntimeNominalRecordSnapshot {
     pub semantic_identity: RuntimeSemanticTypeId,
     pub layout: crate::entry::TypeLayoutHash,
     pub type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
-    pub fields: Vec<AwbcRuntimeValueSnapshot>,
+    pub fields: Vec<AwbcRuntimeNominalFieldSnapshot>,
+}
+
+/// One defining-order nominal field in the inert snapshot grammar.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcRuntimeNominalFieldSnapshot {
+    pub field: super::RuntimeRecordFieldId,
+    pub value: AwbcRuntimeValueSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -503,49 +511,70 @@ impl AwbcRuntimeValueSnapshot {
             Self::Callable(value) => {
                 RuntimeValue::Callable(Self::callable_into_live(value, program_owner)?)
             }
-            Self::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            } => {
-                let semantic_identity = match &owner {
-                    super::RuntimeVariantIdentity::Nominal {
-                        semantic_identity, ..
-                    } => Some(*semantic_identity),
-                    super::RuntimeVariantIdentity::Builtin(_) => None,
-                };
-                let value = RuntimeValue::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload: payload
-                        .map(|value| {
-                            value
-                                .into_runtime_value_for_program(program_owner)
-                                .map(Box::new)
-                        })
-                        .transpose()?,
-                    type_instantiation: type_instantiation.map(std::sync::Arc::new),
-                };
-                if let Some(semantic_identity) = semantic_identity {
-                    program_owner
-                        .types()
-                        .validate_snapshot_value(
-                            semantic_identity,
-                            &value,
-                            crate::entry::RuntimeSchemaLimits::engine_default(),
-                        )
-                        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
-                } else if value.builtin_variant_case().is_none() {
-                    return Err(AwbcRuntimeValueSnapshotError::new(
-                        "invalid builtin variant snapshot",
-                    ));
-                }
-                value
-            }
+            value @ Self::Variant { .. } => value.variant_into_live(program_owner)?,
         })
+    }
+
+    fn variant_into_live(
+        self,
+        program_owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        let Self::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+            type_instantiation,
+        } = self
+        else {
+            unreachable!("variant restore is selected by the closed value dispatch");
+        };
+        if let super::RuntimeVariantIdentity::Nominal {
+            semantic_identity, ..
+        } = &owner
+        {
+            let authority = program_owner.types();
+            authority
+                .require_variant_snapshot_header(
+                    *semantic_identity,
+                    &owner,
+                    ordinal,
+                    &name,
+                    payload.is_some(),
+                    type_instantiation.as_ref(),
+                )
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+            return authority
+                .try_snapshot_variant_value(
+                    *semantic_identity,
+                    ordinal,
+                    payload
+                        .map(|value| value.into_runtime_value_for_program(program_owner))
+                        .transpose()?,
+                    type_instantiation.map(std::sync::Arc::new),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()));
+        }
+        let value = RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload: payload
+                .map(|value| {
+                    value
+                        .into_runtime_value_for_program(program_owner)
+                        .map(Box::new)
+                })
+                .transpose()?,
+            type_instantiation: type_instantiation.map(std::sync::Arc::new),
+        };
+        if value.builtin_variant_case().is_none() {
+            return Err(AwbcRuntimeValueSnapshotError::new(
+                "invalid builtin variant snapshot",
+            ));
+        }
+        Ok(value)
     }
 
     fn iterator_from_live(
@@ -692,7 +721,15 @@ impl AwbcRuntimeValueSnapshot {
             fields: value
                 .fields()
                 .iter()
-                .map(|value| Self::from_live_with_owner(value, owner))
+                .enumerate()
+                .map(|(ordinal, field_value)| {
+                    Ok::<_, AwbcRuntimeValueSnapshotError>(AwbcRuntimeNominalFieldSnapshot {
+                        field: value.field_id(ordinal).ok_or_else(|| {
+                            AwbcRuntimeValueSnapshotError::new("nominal field identity overflow")
+                        })?,
+                        value: Self::from_live_with_owner(field_value, owner)?,
+                    })
+                })
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -701,32 +738,38 @@ impl AwbcRuntimeValueSnapshot {
         value: AwbcRuntimeNominalRecordSnapshot,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeNominalRecordValue, AwbcRuntimeValueSnapshotError> {
-        let semantic_identity = value.semantic_identity;
-        let value = RuntimeValue::NominalRecord(
-            RuntimeNominalRecordValue::new(
-                value.type_id,
-                semantic_identity,
+        let authority = program_owner.types();
+        authority
+            .require_nominal_record_snapshot_header(
+                value.semantic_identity,
+                &value.type_id,
                 value.layout,
+                value.fields.len(),
+                value.type_instantiation.as_ref(),
+            )
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+        for (ordinal, field) in value.fields.iter().enumerate() {
+            let expected = super::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+            if field.field != expected {
+                return Err(AwbcRuntimeValueSnapshotError::new(format!(
+                    "nominal snapshot field {ordinal} has identity {:?}, expected {expected:?}",
+                    field.field
+                )));
+            }
+        }
+        authority
+            .try_snapshot_record_value(
+                value.semantic_identity,
                 value
                     .fields
                     .into_iter()
-                    .map(|value| value.into_runtime_value_for_program(program_owner))
+                    .map(|field| field.value.into_runtime_value_for_program(program_owner))
                     .collect::<Result<_, _>>()?,
-            )
-            .with_type_instantiation(value.type_instantiation.map(std::sync::Arc::new)),
-        );
-        program_owner
-            .types()
-            .validate_snapshot_value(
-                semantic_identity,
-                &value,
+                value.type_instantiation.map(std::sync::Arc::new),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             )
-            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
-        let RuntimeValue::NominalRecord(value) = value else {
-            unreachable!()
-        };
-        Ok(value)
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
     fn opaque_from_live(
@@ -1049,8 +1092,8 @@ fn collect_snapshot_line_handle_tokens(
             _ => collect_snapshot_sequence_line_handles(sequence, depth + 1, tokens)?,
         },
         AwbcRuntimeValueSnapshot::NominalRecord(record) => {
-            for value in &record.fields {
-                next(value, tokens)?;
+            for field in &record.fields {
+                next(&field.value, tokens)?;
             }
         }
         AwbcRuntimeValueSnapshot::Opaque(opaque) => {

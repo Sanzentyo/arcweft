@@ -12,6 +12,7 @@ use arcweft_character::{
 };
 use arcweft_core::awbc::schema::AwbcRuntimeTypeShape;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::RuntimeCharacterDialogueProducerId;
 use arcweft_dialogue::{CharacterDialogueGenerationDeclaration, CharacterDialogueVisualType};
 use std::{collections::BTreeMap, sync::Arc};
@@ -189,6 +190,7 @@ fn invalid_generation(message: impl Into<String>) -> BundleCodecError {
 pub(crate) fn encode_section(
     generation: Option<&RuntimeGeneration>,
     packages: &[BundleCharacterPackage],
+    owner: &RuntimeProgramOwner,
 ) -> Result<Vec<u8>, BundleCodecError> {
     if packages.len() > MAX_PACKAGES {
         return Err(encode_error("too many Character package rows"));
@@ -196,7 +198,7 @@ pub(crate) fn encode_section(
     let declaration = generation
         .map(|generation| {
             generation
-                .encode_canonical_bytes()
+                .encode_canonical_bytes(owner)
                 .map_err(|error| encode_error(error.to_string()))
         })
         .transpose()?;
@@ -226,6 +228,7 @@ pub(crate) fn encode_section(
 
 pub(crate) fn decode_section(
     bytes: &[u8],
+    owner: &RuntimeProgramOwner,
 ) -> Result<(Option<RuntimeGeneration>, Vec<BundleCharacterPackage>), BundleCodecError> {
     if bytes.len() > MAX_SECTION_BYTES {
         return Err(decode_error(
@@ -250,7 +253,7 @@ pub(crate) fn decode_section(
     }
     let declaration = cursor.blob()?;
     let generation = (!declaration.is_empty())
-        .then(|| RuntimeGeneration::decode_canonical_bytes(declaration))
+        .then(|| RuntimeGeneration::decode_canonical_bytes(declaration, owner))
         .transpose()
         .map_err(|error| decode_error(error.to_string()))?;
     let mut packages = Vec::with_capacity(count);

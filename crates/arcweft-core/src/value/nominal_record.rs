@@ -245,7 +245,7 @@ impl RuntimeNominalRecordLayoutField {
 ///
 /// Unlike [`RuntimeValue::Record`], the fields have no source names and retain
 /// their defining nominal type and exact layout identity.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNominalRecordValue {
     type_id: RuntimeNominalTypeId,
     semantic_identity: RuntimeSemanticTypeId,
@@ -253,6 +253,22 @@ pub struct RuntimeNominalRecordValue {
     type_instantiation:
         Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     fields: Vec<RuntimeValue>,
+}
+
+impl Serialize for RuntimeNominalRecordValue {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom(
+            "nominal record values require a program-bound snapshot",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeNominalRecordValue {
+    fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom(
+            "nominal record values require program-bound restore",
+        ))
+    }
 }
 
 /// Failure to use a nominal record under an expected runtime schema.

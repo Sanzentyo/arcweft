@@ -3211,11 +3211,7 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             RuntimeScheduledCaptureCustody::LineScope(bindings) => Self::LineScope(
                 bindings
                     .iter()
-                    .map(|binding| {
-                        binding.try_map_ref(&mut |value| {
-                            snapshot_runtime_value_for_owner(value, owner)
-                        })
-                    })
+                    .map(|binding| binding.snapshot_for_owner(owner))
                     .collect::<Result<_, _>>()?,
             ),
         })
@@ -3235,17 +3231,7 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             Self::LineScope(bindings) => RuntimeScheduledCaptureCustody::LineScope(
                 bindings
                     .into_iter()
-                    .map(|binding| {
-                        let binding = binding
-                            .try_map(&mut |value| value.into_runtime_value_for_program(owner))?;
-                        binding
-                            .storage()
-                            .validate_record_headers(owner)
-                            .map_err(|message| {
-                                crate::value::AwbcRuntimeValueSnapshotError::Message { message }
-                            })?;
-                        Ok(binding)
-                    })
+                    .map(|binding| binding.into_live_for_program(owner))
                     .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()?
                     .into_boxed_slice(),
             ),

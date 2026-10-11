@@ -41,6 +41,23 @@ pub enum RuntimeProgramValueConstructionError {
         semantic_type: RuntimeSemanticTypeId,
         ordinal: u32,
     },
+    #[error("selected type {semantic_type:?} has an invalid construction type origin")]
+    InvalidTypeOrigin {
+        semantic_type: RuntimeSemanticTypeId,
+    },
+    #[error("selected variant {semantic_type:?} case {ordinal} has a different snapshot header")]
+    VariantSnapshotHeader {
+        semantic_type: RuntimeSemanticTypeId,
+        ordinal: u32,
+    },
+}
+
+/// An ephemeral source-ordered case resolved from the selected executable.
+/// It is never a second type catalog or a published runtime carrier.
+struct ProgramVariantCase {
+    owner: RuntimeVariantIdentity,
+    name: String,
+    payload: Option<RuntimeSemanticTypeId>,
 }
 
 impl RuntimeProgramTypes<'_> {
@@ -50,16 +67,28 @@ impl RuntimeProgramTypes<'_> {
         &self,
         semantic_type: RuntimeSemanticTypeId,
     ) -> Result<Option<crate::entry::RuntimeNominalRecordShape>, RuntimeProgramTypeError> {
+        Ok(self
+            .nominal_record_metadata(semantic_type)?
+            .map(|(shape, _)| shape))
+    }
+
+    fn nominal_record_metadata(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+    ) -> Result<Option<(crate::entry::RuntimeNominalRecordShape, usize)>, RuntimeProgramTypeError>
+    {
         self.require_type(semantic_type)?;
         Ok(match self {
             Self::Plan(plan) => plan
                 .type_table()
                 .id_for_semantic(semantic_type)
                 .and_then(|ty| plan.nominal_record_domains().get(ty))
-                .map(|domain| domain.shape()),
+                .map(|domain| (domain.shape(), domain.fields().len())),
             Self::Awbc(program) => {
                 match program.runtime_types[self.awbc_type(semantic_type)?.index()].shape() {
-                    AwbcRuntimeTypeShape::NominalRecord { shape, .. } => Some(*shape),
+                    AwbcRuntimeTypeShape::NominalRecord { shape, fields, .. } => {
+                        Some((*shape, fields.len()))
+                    }
                     _ => None,
                 }
             }
@@ -73,6 +102,73 @@ impl RuntimeProgramTypes<'_> {
         semantic_type: RuntimeSemanticTypeId,
         values: Vec<RuntimeValue>,
         limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
+        let value = self.record_candidate(semantic_type, values)?;
+        self.validate_live_value(semantic_type, &value, limits)?;
+        Ok(value)
+    }
+
+    /// Resolves a nominal snapshot header before any descendant is restored.
+    pub(crate) fn require_nominal_record_snapshot_header(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        nominal: &RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
+        fields: usize,
+        binding: Option<&super::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), RuntimeProgramValueConstructionError> {
+        self.require_nominal(semantic_type, nominal, layout)?;
+        let (_, expected) = self.nominal_record_metadata(semantic_type)?.ok_or(
+            RuntimeProgramValueConstructionError::TypeShape {
+                semantic_type,
+                expected: "nominal record",
+            },
+        )?;
+        if expected != fields {
+            return Err(RuntimeProgramValueConstructionError::FieldCount {
+                semantic_type,
+                expected,
+                actual: fields,
+            });
+        }
+        if !self.type_origin_is_valid(semantic_type, binding) {
+            return Err(RuntimeProgramValueConstructionError::InvalidTypeOrigin { semantic_type });
+        }
+        Ok(())
+    }
+
+    /// Admits a private restored record using the selected program's original
+    /// row and snapshot rules, including persistable affine descendants.
+    pub(crate) fn try_snapshot_record_value(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        values: Vec<RuntimeValue>,
+        binding: Option<std::sync::Arc<super::RuntimeFunctionEffectInstantiation>>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeNominalRecordValue, RuntimeProgramValueConstructionError> {
+        let RuntimeValue::NominalRecord(record) = self.record_candidate(semantic_type, values)?
+        else {
+            return Err(RuntimeProgramValueConstructionError::TypeShape {
+                semantic_type,
+                expected: "nominal record",
+            });
+        };
+        let value = RuntimeValue::NominalRecord(record.with_type_instantiation(binding));
+        self.validate_snapshot_value(semantic_type, &value, limits)?;
+        let RuntimeValue::NominalRecord(record) = value else {
+            unreachable!();
+        };
+        Ok(record)
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one descriptor-derived candidate constructor preserves defining field order and header evidence for native and AWBC record families"
+    )]
+    fn record_candidate(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        values: Vec<RuntimeValue>,
     ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
         self.require_type(semantic_type)?;
         let check_count = |expected| {
@@ -197,7 +293,6 @@ impl RuntimeProgramTypes<'_> {
                 }
             }
         };
-        self.validate_live_value(semantic_type, &value, limits)?;
         Ok(value)
     }
 
@@ -210,15 +305,85 @@ impl RuntimeProgramTypes<'_> {
         payload: Option<RuntimeValue>,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
+        let case = self.variant_case(semantic_type, ordinal)?;
+        let value = RuntimeValue::Variant {
+            owner: case.owner,
+            ordinal,
+            name: case.name,
+            payload: payload.map(Box::new),
+            type_instantiation: None,
+        };
+        self.validate_live_value(semantic_type, &value, limits)?;
+        Ok(value)
+    }
+
+    pub(crate) fn require_variant_snapshot_header(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        owner: &RuntimeVariantIdentity,
+        ordinal: u32,
+        name: &str,
+        has_payload: bool,
+        binding: Option<&super::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), RuntimeProgramValueConstructionError> {
+        let case = self.variant_case(semantic_type, ordinal)?;
+        if case.owner != *owner || case.name != name || case.payload.is_some() != has_payload {
+            return Err(
+                RuntimeProgramValueConstructionError::VariantSnapshotHeader {
+                    semantic_type,
+                    ordinal,
+                },
+            );
+        }
+        if !self.type_origin_is_valid(semantic_type, binding) {
+            return Err(RuntimeProgramValueConstructionError::InvalidTypeOrigin { semantic_type });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn try_snapshot_variant_value(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        ordinal: u32,
+        payload: Option<RuntimeValue>,
+        binding: Option<std::sync::Arc<super::RuntimeFunctionEffectInstantiation>>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
+        let case = self.variant_case(semantic_type, ordinal)?;
+        let value = RuntimeValue::Variant {
+            owner: case.owner,
+            ordinal,
+            name: case.name,
+            payload: payload.map(Box::new),
+            type_instantiation: binding,
+        };
+        self.validate_snapshot_value(semantic_type, &value, limits)?;
+        Ok(value)
+    }
+
+    fn variant_case(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        ordinal: u32,
+    ) -> Result<ProgramVariantCase, RuntimeProgramValueConstructionError> {
         self.require_type(semantic_type)?;
-        let (owner, name) = match self {
+        Ok(match self {
             Self::Plan(plan) => {
                 let ty = plan
                     .type_table()
                     .id_for_semantic(semantic_type)
                     .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?;
                 let case = plan.variant_case(ty, ordinal)?;
-                (case.owner().clone(), case.name().to_owned())
+                ProgramVariantCase {
+                    owner: case.owner().clone(),
+                    name: case.name().to_owned(),
+                    payload: case.payload().map(|ty| {
+                        plan.type_table()
+                            .get(ty)
+                            .expect("admitted variant case payload row")
+                            .semantic_identity()
+                    }),
+                }
             }
             Self::Awbc(program) => {
                 let ty = self.awbc_type(semantic_type)?;
@@ -266,17 +431,27 @@ impl RuntimeProgramTypes<'_> {
                         }
                     }
                 };
-                (owner, string(case.name, "variant case")?)
+                ProgramVariantCase {
+                    owner,
+                    name: string(case.name, "variant case")?,
+                    payload: case
+                        .payload
+                        .map(|ty| {
+                            program
+                                .runtime_types
+                                .get(ty.index())
+                                .map(crate::awbc::schema::AwbcRuntimeType::semantic_identity)
+                                .ok_or_else(|| {
+                                    RuntimeProgramTypeError::from(
+                                        AwbcTypeProjectionError::RuntimeTypeOutOfBounds {
+                                            index: ty.0,
+                                        },
+                                    )
+                                })
+                        })
+                        .transpose()?,
+                }
             }
-        };
-        let value = RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload: payload.map(Box::new),
-            type_instantiation: None,
-        };
-        self.validate_live_value(semantic_type, &value, limits)?;
-        Ok(value)
+        })
     }
 }
