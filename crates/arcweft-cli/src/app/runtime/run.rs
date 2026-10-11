@@ -261,6 +261,7 @@ fn runtime_run_bench_selection(
         warmup: 0,
         samples: 5,
         input_seed: 0,
+        values: options.values.clone(),
         executor: options.executor,
         pure_backend: options.pure_backend,
         pure_workers: options.pure_workers,

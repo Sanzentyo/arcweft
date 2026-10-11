@@ -249,6 +249,8 @@ pub(in crate::app) struct ScriptBenchOptions {
     pub(in crate::app) samples: usize,
     #[arg(long, default_value_t = 0)]
     pub(in crate::app) input_seed: u64,
+    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }

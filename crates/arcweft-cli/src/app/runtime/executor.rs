@@ -16,30 +16,27 @@ pub(in crate::app) struct RuntimeExecutorCore {
 }
 
 pub(in crate::app) struct RuntimeExecutorTemplate {
-    plan: Arc<RuntimePlan>,
-    entry: EntryRuntimeId,
+    invocation: RuntimeFlowInvocation,
     tier: ArcweftExecutionTier,
 }
 
 impl RuntimeExecutorTemplate {
     pub(in crate::app) fn new(
-        plan: Arc<RuntimePlan>,
-        entry: EntryRuntimeId,
+        invocation: RuntimeFlowInvocation,
         tier: CliRuntimeExecutorTier,
     ) -> Self {
         Self {
-            plan,
-            entry,
+            invocation,
             tier: arcweft_execution_tier(tier),
         }
     }
 
     pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, String> {
-        let mut executor =
-            ArcweftRuntimeExecutor::from_runtime_plan(Arc::clone(&self.plan), self.tier)
-                .map_err(|error| error.to_string())?;
-        executor
-            .start_structured_entry(&self.entry)
+        let invocation = self
+            .invocation
+            .try_repeat_unrestricted()
+            .map_err(|error| error.to_string())?;
+        let executor = ArcweftRuntimeExecutor::from_runtime_flow_invocation(invocation, self.tier)
             .map_err(|error| error.to_string())?;
         Ok(RuntimeExecutorCore { executor })
     }
