@@ -1,5 +1,4 @@
 use crate::geometry::{AgentBBox, AgentCoordinateSpace, AgentPoint};
-use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
 use crate::serde_helpers::{is_zero, is_zero_u32};
 use arcweft_layout::{
@@ -8,7 +7,57 @@ use arcweft_layout::{
 };
 use arcweft_text_model::RichTextNodeIndex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+
+/// Closed raw pixel representation carried by the actual capture producer.
+/// Encoded PNG/SVG resources carry no pixel format or row stride.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentImagePixelFormat {
+    Rgba8Unorm,
+}
+
+#[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
+pub enum AgentImageFormatError {
+    #[error("image extent {width}x{height} is empty or cannot describe its pixel buffer")]
+    InvalidExtent { width: u32, height: u32 },
+    #[error("image MIME type {mime_type} disagrees with the declared raw pixel format")]
+    MimeType { mime_type: String },
+    #[error("image row stride does not match its declared pixel format and extent")]
+    RowStride,
+}
+
+impl AgentImagePixelFormat {
+    pub fn row_stride_bytes(self, width: u32, height: u32) -> Result<u32, AgentImageFormatError> {
+        let stride = width.checked_mul(4).filter(|_| width != 0 && height != 0);
+        let bytes = usize::try_from(width)
+            .ok()
+            .zip(usize::try_from(height).ok())
+            .and_then(|(width, height)| width.checked_mul(height)?.checked_mul(4));
+        match (stride, bytes) {
+            (Some(stride), Some(_)) => Ok(stride),
+            _ => Err(AgentImageFormatError::InvalidExtent { width, height }),
+        }
+    }
+}
+
+pub fn validate_agent_image_format(
+    pixel_format: Option<AgentImagePixelFormat>,
+    mime_type: &str,
+    width: u32,
+    height: u32,
+) -> Result<Option<u32>, AgentImageFormatError> {
+    if width == 0 || height == 0 {
+        return Err(AgentImageFormatError::InvalidExtent { width, height });
+    }
+    if pixel_format.is_some() != (mime_type == "application/octet-stream") {
+        return Err(AgentImageFormatError::MimeType {
+            mime_type: mime_type.to_owned(),
+        });
+    }
+    pixel_format
+        .map(|format| format.row_stride_bytes(width, height))
+        .transpose()
+}
 
 /// Capture resources addressable for one observed view boundary.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -22,6 +71,8 @@ pub struct AgentViewCaptureRef {
     pub kind: AgentImageKind,
     pub uri: String,
     pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_format: Option<AgentImagePixelFormat>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
     pub width: u32,
@@ -43,6 +94,8 @@ pub struct AgentObjectCaptureRef {
     pub kind: AgentImageKind,
     pub uri: String,
     pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_format: Option<AgentImagePixelFormat>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
     pub width: u32,
@@ -63,6 +116,8 @@ pub struct AgentLayerCaptureRef {
     pub kind: AgentImageKind,
     pub uri: String,
     pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_format: Option<AgentImagePixelFormat>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
     pub width: u32,
@@ -687,6 +742,8 @@ pub struct AgentImageResource {
     pub capture_time_millis: u32,
     pub uri: String,
     pub mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_format: Option<AgentImagePixelFormat>,
     pub width: u32,
     pub height: u32,
     pub hash: String,
@@ -711,47 +768,80 @@ pub struct AgentImageResource {
 }
 
 /// Machine-readable image metadata attached to image resources.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AgentImageMetadata {
     pub kind: AgentImageKind,
     pub renderer: AgentImageRenderer,
     pub scope: AgentImageScope,
     pub composition: AgentImageComposition,
-    #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
-    #[serde(default, skip_serializing_if = "is_zero")]
     pub capture_step: usize,
-    #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub capture_time_millis: u32,
     pub width: u32,
     pub height: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crop_origin: Option<AgentImageCropOrigin>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pixel_format: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pixel_format: Option<AgentImagePixelFormat>,
     pub row_stride_bytes: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_bbox: Option<AgentImageContentBBox>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_viewport_bbox: Option<AgentImageContentBBox>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_pixels: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<AgentImageObjectRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<AgentImageViewRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_capture: Option<AgentSelectedCaptureMetadata>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<crate::diagnostic::AgentDiagnostic>,
+    pub text_contexts: Option<crate::text_context::AgentTextContextCatalog>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(remote = "AgentImageMetadata")]
+struct AgentImageMetadataWire {
+    kind: AgentImageKind,
+    renderer: AgentImageRenderer,
+    scope: AgentImageScope,
+    composition: AgentImageComposition,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    page: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    capture_step: usize,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    capture_time_millis: u32,
+    width: u32,
+    height: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    crop_origin: Option<AgentImageCropOrigin>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pixel_format: Option<AgentImagePixelFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    row_stride_bytes: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_bbox: Option<AgentImageContentBBox>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_viewport_bbox: Option<AgentImageContentBBox>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_pixels: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object: Option<AgentImageObjectRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    view: Option<AgentImageViewRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    selected_capture: Option<AgentSelectedCaptureMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<crate::diagnostic::AgentDiagnostic>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text_contexts: Option<crate::text_context::AgentTextContextCatalog>,
 }
 
 impl AgentImageMetadata {
-    pub(crate) fn from_image_resource(image: &AgentImageResource) -> Self {
-        let is_raw_rgba = image.mime_type == "application/octet-stream"
-            && image.uri.rsplit('.').next() == Some("rgba");
-        Self {
+    pub(crate) fn from_image_resource(
+        image: &AgentImageResource,
+        text_contexts: Option<crate::text_context::AgentTextContextCatalog>,
+    ) -> Result<Self, AgentImageFormatError> {
+        let row_stride_bytes = validate_agent_image_format(
+            image.pixel_format,
+            &image.mime_type,
+            image.width,
+            image.height,
+        )?;
+        Ok(Self {
             kind: image.kind,
             renderer: image.renderer,
             scope: image.scope.clone(),
@@ -762,8 +852,8 @@ impl AgentImageMetadata {
             width: image.width,
             height: image.height,
             crop_origin: image.crop_origin,
-            pixel_format: is_raw_rgba.then(|| "rgba8_unorm".to_owned()),
-            row_stride_bytes: is_raw_rgba.then(|| image.width.saturating_mul(4)),
+            pixel_format: image.pixel_format,
+            row_stride_bytes,
             content_bbox: image.content_bbox,
             content_viewport_bbox: image.content_viewport_bbox,
             content_pixels: image.content_pixels,
@@ -771,12 +861,14 @@ impl AgentImageMetadata {
             view: image.view.clone(),
             selected_capture: image.selected_capture.clone(),
             diagnostics: image.diagnostics.clone(),
-        }
+            text_contexts,
+        })
     }
 
     /// Removes free-form object/diagnostic metadata and internal scope ids before
     /// this metadata is attached to an externally visible resource.
     pub fn scrub_for_external_publication(&mut self, opaque_scope_id: &str) {
+        self.text_contexts = None;
         self.scope = self.scope.with_opaque_id(opaque_scope_id);
         self.object = None;
         self.view = None;
@@ -806,6 +898,7 @@ impl AgentImageMetadata {
 
 /// Observed object metadata preserved on an image resource that captures an object.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentImageObjectRef {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -823,47 +916,46 @@ pub struct AgentImageObjectRef {
     pub object_depth: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_context: Option<crate::text_context::AgentTextContextReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_ref: Option<AgentImageObjectContentRef>,
-}
-
-/// Image payload summary preserved on object-scoped capture resources.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AgentImageObjectContentRef {
-    pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub asset: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame_index: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub local_time_millis: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opacity_milli: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fit: Option<AgentImageFit>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alignment: Option<AgentImageAlignment>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub transform: Option<AgentImageTransform>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intrinsic_width: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intrinsic_height: Option<u32>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub actions: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub params: BTreeMap<String, AgentImageObjectParam>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub proxies: Vec<AgentPresentationObjectProxyRef>,
+    pub content: crate::object::AgentObservedObjectContent,
 }
 
 impl AgentImageObjectRef {
+    pub fn validate_text_context(
+        &self,
+        catalog: &crate::text_context::AgentTextContextCatalog,
+    ) -> Result<(), crate::text_context::AgentTextContextError> {
+        self.content
+            .validate_text_context_family(&self.id, self.text_context.as_ref(), catalog)?;
+        if let Some(reference) = &self.text_context {
+            if self.parent_id
+                != catalog
+                    .resolve(reference)?
+                    .element_parent_id(self.rich_text_ref.as_ref())?
+            {
+                return Err(crate::text_context::AgentTextContextError::ObjectOwner {
+                    object_id: self.id.clone(),
+                });
+            }
+            catalog.validate_element(
+                &self.id,
+                reference,
+                self.rich_text_ref.as_ref(),
+                self.text.as_deref(),
+            )?;
+        } else if self.rich_text_ref.is_some() {
+            return Err(
+                crate::text_context::AgentTextContextError::MissingObjectContext {
+                    object_id: self.id.clone(),
+                },
+            );
+        }
+        Ok(())
+    }
+
     /// Copies stable object identity and typed object payload links into image metadata.
     pub fn from_observed(object: &crate::object::AgentObservedObject) -> Self {
         Self {
@@ -878,8 +970,9 @@ impl AgentImageObjectRef {
             object_layer: object.resolved_object_layer(),
             object_depth: object.resolved_object_depth(),
             text: object.text.clone(),
+            text_context: object.text_context.clone(),
             rich_text_ref: object.rich_text_ref.clone(),
-            image_ref: object.image_content_ref(),
+            content: object.content.clone(),
         }
     }
 }
@@ -912,24 +1005,97 @@ impl AgentImageViewRef {
     }
 }
 
-impl From<&crate::object::AgentObservedImageContent> for AgentImageObjectContentRef {
-    fn from(content: &crate::object::AgentObservedImageContent) -> Self {
-        Self {
-            source: content.source.clone(),
-            object: content.object.clone(),
-            target: content.target.clone(),
-            asset: content.asset.clone(),
-            frame_index: content.frame_index,
-            local_time_millis: content.local_time_millis,
-            opacity_milli: content.opacity_milli,
-            fit: content.fit,
-            alignment: content.alignment,
-            transform: content.transform.clone(),
-            intrinsic_width: content.intrinsic_width,
-            intrinsic_height: content.intrinsic_height,
-            actions: content.actions.clone(),
-            params: content.params.clone(),
-            proxies: content.proxies.clone(),
+impl AgentImageMetadata {
+    pub fn decode_json(bytes: &[u8]) -> Result<Self, crate::text_context::AgentTextContextError> {
+        crate::text_context::decode_text_context_envelope(bytes)
+    }
+
+    pub fn validate_text_contexts(&self) -> Result<(), crate::text_context::AgentTextContextError> {
+        if self.width == 0 || self.height == 0 {
+            return Err(AgentImageFormatError::InvalidExtent {
+                width: self.width,
+                height: self.height,
+            }
+            .into());
         }
+        if self.row_stride_bytes
+            != self
+                .pixel_format
+                .map(|format| format.row_stride_bytes(self.width, self.height))
+                .transpose()?
+        {
+            return Err(AgentImageFormatError::RowStride.into());
+        }
+        if let Some(object) = &self.object {
+            if object.text_context.is_some()
+                && !matches!(&self.scope, AgentImageScope::Object { id } if id == &object.id)
+            {
+                return Err(crate::text_context::AgentTextContextError::ObjectOwner {
+                    object_id: object.id.clone(),
+                });
+            }
+            match &self.text_contexts {
+                Some(catalog) => {
+                    object.validate_text_context(catalog)?;
+                    if let Some(reference) = &object.text_context {
+                        let entry = catalog.resolve(reference)?;
+                        if catalog.scope().tick.checked_add(1) != Some(self.capture_step) {
+                            return Err(crate::text_context::AgentTextContextError::ScopeMismatch);
+                        }
+                        if self.page != entry.content.display_stage().map_or(0, |stage| stage.frame().page_index)
+                            || self.selected_capture.as_ref().is_some_and(|selected| {
+                                !matches!(&selected.source, AgentCaptureSourceIdentity::Object { id, parent_id, rich_text, .. }
+                                    if id == &object.id && parent_id == &object.parent_id && rich_text.as_ref() == object.rich_text_ref.as_ref().map(AgentCaptureRichTextIdentity::from).as_ref())
+                            })
+                        {
+                            return Err(crate::text_context::AgentTextContextError::ObjectOwner { object_id: object.id.clone() });
+                        }
+                    }
+                    if catalog
+                        .scope()
+                        .capture_time_millis
+                        .is_some_and(|time| time != self.capture_time_millis)
+                    {
+                        return Err(crate::text_context::AgentTextContextError::ScopeMismatch);
+                    }
+                }
+                None if object.content.requires_text_context()
+                    || object.text_context.is_some()
+                    || object.rich_text_ref.is_some() =>
+                {
+                    return Err(
+                        crate::text_context::AgentTextContextError::MissingObjectContext {
+                            object_id: object.id.clone(),
+                        },
+                    );
+                }
+                None => {}
+            }
+        } else if self
+            .text_contexts
+            .as_ref()
+            .is_some_and(|catalog| catalog.entries().len() != 0)
+        {
+            return Err(crate::text_context::AgentTextContextError::ScopeMismatch);
+        }
+        crate::text_context::validate_text_context_envelope(|writer| {
+            AgentImageMetadataWire::serialize(self, &mut serde_json::Serializer::new(writer))
+        })
+    }
+}
+impl Serialize for AgentImageMetadata {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.validate_text_contexts()
+            .map_err(serde::ser::Error::custom)?;
+        AgentImageMetadataWire::serialize(self, serializer)
+    }
+}
+impl<'de> Deserialize<'de> for AgentImageMetadata {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let metadata = AgentImageMetadataWire::deserialize(deserializer)?;
+        metadata
+            .validate_text_contexts()
+            .map_err(serde::de::Error::custom)?;
+        Ok(metadata)
     }
 }

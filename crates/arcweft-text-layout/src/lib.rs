@@ -30,8 +30,9 @@ pub use shaping::{
     TextShapeRequest, TextShaper,
 };
 pub use text_layout::{
-    TextLayout, TextLayoutGlyph, TextLayoutGlyphSource, TextLayoutHash, TextLayoutLine,
-    TextLayoutRuby, TextLayoutRubyGlyph, TextLayoutRun, TextLayoutSourceMap,
+    TextLayout, TextLayoutBodyAllocation, TextLayoutContextError, TextLayoutGlyph,
+    TextLayoutGlyphSource, TextLayoutHash, TextLayoutLine, TextLayoutRuby, TextLayoutRubyGlyph,
+    TextLayoutRun, TextLayoutSourceMap,
 };
 pub use vertical_break::{
     MAX_VERTICAL_BREAK_CLUSTERS, VERTICAL_BREAK_UNITS_PER_EM, VerticalBreakCluster,

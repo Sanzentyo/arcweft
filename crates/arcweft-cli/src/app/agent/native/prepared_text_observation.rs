@@ -3,7 +3,7 @@
 mod owner;
 mod view;
 
-pub(super) use owner::{PreparedTextObservationOwner, PreparedTextOwnerSelectionError};
+pub(super) use owner::PreparedTextObservationOwner;
 pub(super) use view::agent_view_prepared_text_objects;
 
 use super::image_mapping::{
@@ -12,89 +12,156 @@ use super::image_mapping::{
 };
 use super::*;
 use arcweft_agent_protocol::rich_text::{AgentGlyphOrientation, AgentGlyphVerticalForm};
-use arcweft_glyphon::PreparedTextItem;
+use arcweft_agent_protocol::text_context::{AgentTextContextCatalog, AgentTextContextEntry};
+use arcweft_glyphon::{PreparedTextGeometry, PreparedTextItem};
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
+use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 use arcweft_text_model::{
     LineDisplayStageProjection, RichTextNodeIndex, RichTextObjectProxy, RichTextPresentation,
     RichTextTextRun, RichTextTextSource,
 };
 
+pub(super) fn agent_prepared_text_context_catalog(
+    prepared: &PreparedFrame,
+    scope: arcweft_agent_protocol::text_context::AgentTextContextScope,
+) -> Result<arcweft_agent_protocol::text_context::AgentTextContextCatalog, ExitCode> {
+    use arcweft_agent_protocol::text_context::{
+        AgentTextContextCatalog, AgentTextContextContent, AgentTextContextEntry,
+        AgentTextContextOwner,
+    };
+    let mut entries = Vec::new();
+    for (ordinal, prepared_owner) in prepared.prepared_text_owners().iter().enumerate() {
+        let owner = PreparedTextObservationOwner::new(prepared_owner);
+        let item = prepared
+            .text
+            .get(prepared_owner.text)
+            .expect("admitted owner has an actual prepared item");
+        let content = match &prepared_owner.context {
+            arcweft_text_model::PreparedTextContext::DisplayStage { context } => {
+                AgentTextContextContent::DisplayStage {
+                    context: std::sync::Arc::clone(context),
+                    layout: std::sync::Arc::clone(&item.layout),
+                }
+            }
+            arcweft_text_model::PreparedTextContext::Document { context } => {
+                AgentTextContextContent::PreparedDocument {
+                    context: *context,
+                    text: item.interaction.text.clone(),
+                    layout: std::sync::Arc::clone(&item.layout),
+                }
+            }
+        };
+        entries.push(AgentTextContextEntry {
+            owner_ordinal: u32::try_from(ordinal).map_err(|error| {
+                eprintln!("error: prepared owner ordinal: {error}");
+                ExitCode::FAILURE
+            })?,
+            owner: AgentTextContextOwner {
+                root_id: owner.root_id().to_owned(),
+                parent_id: prepared_owner.parent_id.as_ref().map(ToString::to_string),
+                semantic_id: prepared_owner.semantic_id.to_string(),
+                prepared_text: prepared_owner.text.index(),
+                kind: prepared_owner.kind,
+            },
+            content,
+        });
+    }
+    AgentTextContextCatalog::try_new(scope, entries).map_err(|error| {
+        eprintln!("error: prepared text catalog: {error}");
+        ExitCode::FAILURE
+    })
+}
+
 pub(super) fn agent_dialogue_prepared_text_objects(
     capture_step: usize,
-    dialogue: usize,
-    entry: usize,
-    frame: LineDisplayStageProjection,
+    owner: &PreparedTextObservationOwner<'_>,
+    reference: arcweft_agent_protocol::text_context::AgentTextContextReference,
+    catalog: &AgentTextContextCatalog,
     prepared: &PreparedFrame,
+    geometry: &PreparedTextGeometry,
     viewport: &AgentViewport,
 ) -> Result<Vec<AgentObservedObject>, ExitCode> {
-    let owner = PreparedTextObservationOwner::select(prepared.prepared_text_owners(), |owner| {
-        matches!(
-            owner.prepared().kind,
-            PreparedTextOwnerKind::DialogueView {
-                dialogue: owner_dialogue,
-                entry: owner_entry,
-                ..
-            } if owner_dialogue == u64::try_from(dialogue).unwrap_or(u64::MAX)
-                && owner_entry == u64::try_from(entry).unwrap_or(u64::MAX)
-        )
-    })
-    .map_err(|error| {
-        eprintln!(
-            "error: dialogue {dialogue} entry {entry} prepared-text selection failed: {error}"
-        );
-        ExitCode::FAILURE
-    })?;
-    let Some(item) = prepared.text.get(owner.prepared().text) else {
-        eprintln!(
-            "error: dialogue prepared-text owner references missing item {}",
-            owner.prepared().text.index()
-        );
-        return Err(ExitCode::FAILURE);
-    };
-    let parent_id = prepared
-        .dialogue_views()
-        .iter()
-        .find(|state| {
-            state.dialogue == u64::try_from(dialogue).unwrap_or(u64::MAX)
-                && state.entry == u64::try_from(entry).unwrap_or(u64::MAX)
-        })
-        .map(|state| format!("view.mount.{}", state.mount.get()));
-    let dialogue_object = dialogue_view_object(capture_step, frame, &owner, parent_id, viewport)?;
-    let mut objects = vec![dialogue_object.clone()];
+    let item = prepared
+        .text
+        .get(owner.prepared().text)
+        .expect("admitted text owner has its item");
+    let stage = owner
+        .prepared()
+        .context
+        .stage()
+        .expect("stage observer receives an admitted stage context");
+    let frame = stage.frame();
+    let entry = catalog
+        .resolve(&reference)
+        .expect("issued reference resolves to the actual prepared owner");
+    let root = dialogue_view_object(
+        capture_step,
+        frame,
+        owner,
+        reference,
+        geometry,
+        entry,
+        viewport,
+    )?;
+    let mut objects = vec![root.clone()];
     objects.extend(dialogue_children(
         capture_step,
-        dialogue,
-        entry,
-        &dialogue_object,
+        &root,
+        frame,
         owner.prepared(),
         item,
+        geometry,
+        entry,
         viewport,
     ));
-    repair_child_parents(&dialogue_object, &mut objects[1..]);
     Ok(objects)
 }
 
 fn dialogue_view_object(
     capture_step: usize,
-    frame: LineDisplayStageProjection,
+    frame: &LineDisplayStageProjection,
     owner: &PreparedTextObservationOwner<'_>,
-    parent_id: Option<String>,
+    reference: arcweft_agent_protocol::text_context::AgentTextContextReference,
+    geometry: &PreparedTextGeometry,
+    entry: &AgentTextContextEntry,
     viewport: &AgentViewport,
 ) -> Result<AgentObservedObject, ExitCode> {
-    let bbox =
-        agent_bbox_from_hit_rect(owner.prepared().object_bounds, viewport).ok_or_else(|| {
-            eprintln!("error: dialogue prepared-text owner has empty viewport geometry");
-            ExitCode::FAILURE
-        })?;
+    let owner_bounds = owner.prepared().object_bounds;
+    let bounds = LayoutRect::new(
+        owner_bounds.x,
+        owner_bounds.y,
+        owner_bounds.width,
+        owner_bounds.height,
+    );
+    let bounds = geometry
+        .bounds()
+        .map_or(bounds, |painted| bounds.union(painted));
+    let bbox = agent_bbox_from_layout(bounds, viewport).ok_or_else(|| {
+        eprintln!("error: prepared-text owner has empty viewport geometry");
+        ExitCode::FAILURE
+    })?;
     let object_id = owner.root_id().to_owned();
+    let parent_id = owner.prepared().parent_id.as_ref().map(ToString::to_string);
+    let dialogue = matches!(
+        owner.prepared().kind,
+        arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+            role: arcweft_text_model::DialoguePreparedTextRole::Content,
+            ..
+        }
+    );
+    let layer = if dialogue { "dialogue" } else { "view.text" };
+    let role = if dialogue {
+        AGENT_ROLE_DIALOGUE_VIEW
+    } else {
+        "rich_text_view"
+    };
     let source = AgentCaptureSourceIdentity::Object {
         id: object_id.clone(),
         parent_id: parent_id.clone(),
         entity: Some(frame.character.id.as_str().to_owned()),
-        layer: "dialogue".to_owned(),
-        role: AGENT_ROLE_DIALOGUE_VIEW.to_owned(),
+        layer: layer.to_owned(),
+        role: role.to_owned(),
         object_layer: None,
         object_depth: None,
         rich_text: None,
@@ -103,70 +170,68 @@ fn dialogue_view_object(
         id: object_id.clone(),
         parent_id,
         entity: Some(frame.character.id.as_str().to_owned()),
-        layer: "dialogue".to_owned(),
-        role: AGENT_ROLE_DIALOGUE_VIEW.to_owned(),
+        layer: layer.to_owned(),
+        role: role.to_owned(),
         visible: true,
         enabled: true,
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
-        capture_refs: agent_object_capture_refs_with_source(
-            "cli",
+        capture_refs: agent_text_object_capture_refs(
             capture_step,
             &object_id,
             &bbox,
             source,
+            entry,
         ),
         object_layer: None,
         object_depth: None,
         text: Some(frame.text.clone()),
+        text_context: Some(reference),
         rich_text_ref: None,
-        content: AgentObservedObjectContent::RichText {
-            frame: Box::new(frame),
-        },
+        content: AgentObservedObjectContent::RichText(
+            arcweft_agent_protocol::object::AgentTextObjectContent::default(),
+        ),
     })
 }
 
 fn dialogue_children(
     capture_step: usize,
-    dialogue_id: usize,
-    entry: usize,
     dialogue_object: &AgentObservedObject,
+    frame: &LineDisplayStageProjection,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
+    geometry: &PreparedTextGeometry,
+    entry: &AgentTextContextEntry,
     viewport: &AgentViewport,
 ) -> Vec<AgentObservedObject> {
-    let Some(frame) = dialogue_object.rich_text_frame() else {
-        return Vec::new();
-    };
     let context = DialogueProjection {
         capture_step,
-        dialogue_id,
-        entry,
         dialogue_object,
         frame,
         page_index: frame.page_index,
         owner,
         item,
+        geometry,
+        entry,
         viewport,
-        run_geometry: dialogue_run_geometry(frame, owner, item, viewport),
+        run_geometry: dialogue_run_geometry(frame, owner, item, geometry, viewport),
     };
     let mut children = dialogue_page_objects(&context);
     children.extend(dialogue_line_objects(&context));
     children.extend(dialogue_run_objects(&context));
     children.extend(dialogue_ruby_objects(&context));
     children.extend(dialogue_glyph_objects(&context));
-    dedupe_objects(children)
+    children
 }
-
 struct DialogueProjection<'a> {
     capture_step: usize,
-    dialogue_id: usize,
-    entry: usize,
     dialogue_object: &'a AgentObservedObject,
     frame: &'a LineDisplayStageProjection,
     page_index: usize,
     owner: &'a PreparedTextOwner,
     item: &'a PreparedTextItem,
+    geometry: &'a PreparedTextGeometry,
+    entry: &'a AgentTextContextEntry,
     viewport: &'a AgentViewport,
     run_geometry: Vec<(usize, &'a RichTextTextRun, RichTextRange, AgentBBox)>,
 }
@@ -179,9 +244,16 @@ struct PreparedBodyCluster<'a> {
     representative: &'a TextLayoutGlyph,
 }
 
-fn prepared_body_clusters(item: &PreparedTextItem) -> Vec<PreparedBodyCluster<'_>> {
+fn prepared_body_clusters<'a>(
+    item: &'a PreparedTextItem,
+    geometry: &PreparedTextGeometry,
+) -> Vec<PreparedBodyCluster<'a>> {
     let mut clusters = BTreeMap::<u32, PreparedBodyCluster<'_>>::new();
-    for glyph in &item.layout.glyphs {
+    for (index, glyph) in item.layout.glyphs.iter().enumerate() {
+        let bounds = geometry
+            .glyph(index)
+            .expect("admitted body glyph geometry")
+            .logical_bounds;
         clusters
             .entry(glyph.cluster_index)
             .and_modify(|cluster| {
@@ -192,13 +264,13 @@ fn prepared_body_clusters(item: &PreparedTextItem) -> Vec<PreparedBodyCluster<'_
                     cluster.source_range.start.min(glyph.source_range.start),
                     cluster.source_range.end.max(glyph.source_range.end),
                 );
-                cluster.bounds = cluster.bounds.union(glyph.layout_bounds);
+                cluster.bounds = cluster.bounds.union(bounds);
             })
             .or_insert(PreparedBodyCluster {
                 index: glyph.cluster_index,
                 run_index: glyph.run_index,
                 source_range: glyph.source_range,
-                bounds: glyph.layout_bounds,
+                bounds,
                 representative: glyph,
             });
     }
@@ -206,15 +278,12 @@ fn prepared_body_clusters(item: &PreparedTextItem) -> Vec<PreparedBodyCluster<'_
 }
 
 fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedObject> {
-    let visible_range = RichTextRange::new(
-        0,
-        context
-            .item
-            .interaction
-            .text
-            .len()
-            .min(context.frame.text.len()),
-    );
+    let visible_range = context
+        .owner
+        .context
+        .ranges()
+        .prepared_to_display(context.owner.context.ranges().prepared_range())
+        .expect("admitted prepared range has its display extent");
     let page = context.page_index;
     let Some(text) = text_for_range(context.frame, visible_range) else {
         return Vec::new();
@@ -231,13 +300,11 @@ fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         visible_range,
         &context.run_geometry,
     ));
-    let id = page_object_id(context.dialogue_id, context.entry, page);
     vec![dialogue_child_object(
         context.capture_step,
         context.dialogue_object,
+        context.entry,
         DialogueChildSpec {
-            id: &id,
-            parent_id: Some(context.dialogue_object.id.clone()),
             role: "rich_text_page",
             text: text.to_owned(),
             bbox: &context.dialogue_object.bbox,
@@ -275,17 +342,19 @@ fn dialogue_line_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         else {
             continue;
         };
-        let Some(bbox) = agent_bbox_from_layout(line.bounds, context.viewport) else {
+        let Some(bbox) = context
+            .geometry
+            .line(line_index)
+            .and_then(|bounds| agent_bbox_from_layout(bounds, context.viewport))
+        else {
             continue;
         };
         let page = context.page_index;
-        let id = line_object_id(context.dialogue_id, context.entry, line_index);
         children.push(dialogue_child_object(
             context.capture_step,
             context.dialogue_object,
+            context.entry,
             DialogueChildSpec {
-                id: &id,
-                parent_id: Some(page_object_id(context.dialogue_id, context.entry, page)),
                 role: "rich_text_line",
                 text: text.to_owned(),
                 bbox: &bbox,
@@ -305,7 +374,12 @@ fn dialogue_line_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
                     object_layer: object_layer_for_range(context.frame, range),
                     object_depth: object_depth_for_range(context.frame, range),
                     hit_test: true,
-                    hit_regions: vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)],
+                    hit_regions: {
+                        let mut regions =
+                            vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)];
+                        regions.extend(proxy_hit_regions_for_range(range, &context.run_geometry));
+                        regions
+                    },
                 },
             },
         ));
@@ -325,17 +399,11 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
             continue;
         }
         let page = context.page_index;
-        let id = run_object_id(context.dialogue_id, context.entry, *original_index);
-        let parent_id = layout_line_for_range(context.owner, context.item, *range).map_or_else(
-            || page_object_id(context.dialogue_id, context.entry, page),
-            |line| line_object_id(context.dialogue_id, context.entry, line),
-        );
         children.push(dialogue_child_object(
             context.capture_step,
             context.dialogue_object,
+            context.entry,
             DialogueChildSpec {
-                id: &id,
-                parent_id: Some(parent_id),
                 role: "rich_text_run",
                 text: text.to_owned(),
                 bbox,
@@ -353,8 +421,6 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
         children.extend(dialogue_proxy_objects(
             context,
             &DialogueRunProjection {
-                id: &id,
-                original_index: *original_index,
                 run,
                 range: *range,
                 bbox,
@@ -367,8 +433,6 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
 }
 
 struct DialogueRunProjection<'a> {
-    id: &'a str,
-    original_index: usize,
     run: &'a RichTextTextRun,
     range: RichTextRange,
     bbox: &'a AgentBBox,
@@ -387,17 +451,12 @@ fn dialogue_proxy_objects(
         .iter()
         .enumerate()
         .map(|(proxy_index, proxy)| {
-            let proxy_id = format!(
-                "object.dialogue.{}.{}.proxy.{}.{}",
-                context.dialogue_id, context.entry, projection.original_index, proxy_index
-            );
             let presentation = proxy_presentation(&projection.run.presentation, proxy);
             dialogue_child_object(
                 context.capture_step,
                 context.dialogue_object,
+                context.entry,
                 DialogueChildSpec {
-                    id: &proxy_id,
-                    parent_id: Some(projection.id.to_owned()),
                     role: "rich_text_proxy",
                     text: projection.text.to_owned(),
                     bbox: projection.bbox,
@@ -438,6 +497,24 @@ fn dialogue_proxy_objects(
 
 fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedObject> {
     let mut children = Vec::new();
+    let annotations = context
+        .frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .enumerate()
+        .map(|(index, ruby)| {
+            (
+                (
+                    ruby.owner_node.get(),
+                    ruby.base_range.start,
+                    ruby.base_range.end,
+                    ruby.ruby.as_str(),
+                ),
+                (index, ruby),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     for layout_ruby in &context.item.layout.ruby {
         let Some(range) = global_range(
             context.owner,
@@ -446,46 +523,33 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         ) else {
             continue;
         };
-        let Some((ruby_index, ruby)) = context
-            .frame
-            .display_map
-            .ruby_annotations
-            .iter()
-            .enumerate()
-            .find(|(_, ruby)| {
-                ruby.owner_node == layout_ruby.owner_node
-                    && ruby.base_range == range
-                    && ruby.ruby == layout_ruby.text
-            })
-        else {
+        let Some(&(ruby_index, ruby)) = annotations.get(&(
+            layout_ruby.owner_node.get(),
+            range.start,
+            range.end,
+            layout_ruby.text.as_str(),
+        )) else {
             continue;
         };
-        let Some(base_bbox) = agent_bbox_from_layout(layout_ruby.base_bounds, context.viewport)
-        else {
+        let Some(geometry) = context.geometry.ruby(layout_ruby.ruby_index) else {
+            continue;
+        };
+        let Some(base_bbox) = agent_bbox_from_layout(geometry.base_bounds, context.viewport) else {
             continue;
         };
         let Some(annotation_bbox) =
-            agent_bbox_from_layout(layout_ruby.ruby_bounds, context.viewport)
+            agent_bbox_from_layout(geometry.annotation_bounds, context.viewport)
         else {
             continue;
         };
         let bbox = agent_union_bbox(&base_bbox, &annotation_bbox);
         let page = context.page_index;
-        let id = format!(
-            "object.dialogue.{}.{}.ruby.{ruby_index}",
-            context.dialogue_id, context.entry
-        );
-        let parent_id = layout_line_for_range(context.owner, context.item, range).map_or_else(
-            || page_object_id(context.dialogue_id, context.entry, page),
-            |line| line_object_id(context.dialogue_id, context.entry, line),
-        );
         let base_text = text_for_range(context.frame, range).unwrap_or_default();
         children.push(dialogue_child_object(
             context.capture_step,
             context.dialogue_object,
+            context.entry,
             DialogueChildSpec {
-                id: &id,
-                parent_id: Some(parent_id),
                 role: "rich_text_ruby",
                 text: format!("{base_text} ({})", ruby.ruby),
                 bbox: &bbox,
@@ -528,7 +592,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         else {
             continue;
         };
-        let Some((run_index, run)) = find_run(context.frame, range) else {
+        let Some((_, run)) = find_run(context.frame, range) else {
             continue;
         };
         let Some(text) =
@@ -536,21 +600,19 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         else {
             continue;
         };
-        let Some(bbox) = agent_bbox_from_layout(glyph.layout_bounds, context.viewport) else {
+        let Some(bbox) = context
+            .geometry
+            .glyph(glyph_index)
+            .and_then(|glyph| agent_bbox_from_layout(glyph.logical_bounds, context.viewport))
+        else {
             continue;
         };
         let page = context.page_index;
-        let parent_id = run_object_id(context.dialogue_id, context.entry, run_index);
-        let glyph_id = format!(
-            "object.dialogue.{}.{}.glyph.{glyph_index}.{}.{}",
-            context.dialogue_id, context.entry, range.start, range.end
-        );
         children.push(dialogue_child_object(
             context.capture_step,
             context.dialogue_object,
+            context.entry,
             DialogueChildSpec {
-                id: &glyph_id,
-                parent_id: Some(parent_id.clone()),
                 role: "rich_text_glyph",
                 text: text.to_owned(),
                 bbox: &bbox,
@@ -567,7 +629,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
             },
         ));
     }
-    for cluster in prepared_body_clusters(context.item) {
+    for cluster in prepared_body_clusters(context.item, context.geometry) {
         let Some(range) = global_range(
             context.owner,
             cluster.source_range,
@@ -575,7 +637,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         ) else {
             continue;
         };
-        let Some((run_index, run)) = find_run(context.frame, range) else {
+        let Some((_, run)) = find_run(context.frame, range) else {
             continue;
         };
         let Some(text) =
@@ -587,18 +649,12 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
             continue;
         };
         let page = context.page_index;
-        let parent_id = run_object_id(context.dialogue_id, context.entry, run_index);
         let cluster_index = usize::try_from(cluster.index).unwrap_or(usize::MAX);
-        let cluster_id = format!(
-            "object.dialogue.{}.{}.cluster.{cluster_index}.{}.{}",
-            context.dialogue_id, context.entry, range.start, range.end
-        );
         children.push(dialogue_child_object(
             context.capture_step,
             context.dialogue_object,
+            context.entry,
             DialogueChildSpec {
-                id: &cluster_id,
-                parent_id: Some(parent_id),
                 role: "rich_text_cluster",
                 text: text.to_owned(),
                 bbox: &bbox,
@@ -622,17 +678,21 @@ fn dialogue_run_geometry<'a>(
     frame: &'a LineDisplayStageProjection,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
+    geometry: &PreparedTextGeometry,
     viewport: &AgentViewport,
 ) -> Vec<(usize, &'a RichTextTextRun, RichTextRange, AgentBBox)> {
     let mut by_run = BTreeMap::<usize, (RichTextRange, AgentBBox)>::new();
-    for run in &item.layout.runs {
+    for (layout_index, run) in item.layout.runs.iter().enumerate() {
         let Some(range) = global_range(owner, run.source_range, frame.text.len()) else {
             continue;
         };
         let Some((index, _)) = find_run(frame, range) else {
             continue;
         };
-        let Some(bbox) = agent_bbox_from_layout(run.bounds, viewport) else {
+        let Some(bbox) = geometry
+            .run(layout_index)
+            .and_then(|bounds| agent_bbox_from_layout(bounds, viewport))
+        else {
             continue;
         };
         by_run
@@ -720,8 +780,6 @@ fn glyph_reference(
 }
 
 struct DialogueChildSpec<'a> {
-    id: &'a str,
-    parent_id: Option<String>,
     role: &'a str,
     text: String,
     bbox: &'a AgentBBox,
@@ -731,106 +789,65 @@ struct DialogueChildSpec<'a> {
 fn dialogue_child_object(
     step: usize,
     dialogue: &AgentObservedObject,
+    entry: &AgentTextContextEntry,
     spec: DialogueChildSpec<'_>,
 ) -> AgentObservedObject {
+    let id = entry
+        .element_id(&spec.reference)
+        .expect("observed element belongs to its admitted context");
+    let parent_id = entry
+        .element_parent_id(Some(&spec.reference))
+        .expect("admitted element has its owning parent");
+    let layer = format!("{}.rich_text", dialogue.layer);
     let source = AgentCaptureSourceIdentity::Object {
-        id: spec.id.to_owned(),
-        parent_id: spec.parent_id.clone().or_else(|| Some(dialogue.id.clone())),
+        id: id.clone(),
+        parent_id: parent_id.clone(),
         entity: dialogue.entity.clone(),
-        layer: "dialogue.rich_text".to_owned(),
+        layer: layer.clone(),
         role: spec.role.to_owned(),
         object_layer: spec.reference.object_layer.clone(),
         object_depth: spec.reference.object_depth,
         rich_text: Some((&spec.reference).into()),
     };
     AgentObservedObject {
-        id: spec.id.to_owned(),
-        parent_id: spec.parent_id.or_else(|| Some(dialogue.id.clone())),
+        id: id.clone(),
+        parent_id,
         entity: dialogue.entity.clone(),
-        layer: "dialogue.rich_text".to_owned(),
+        layer,
         role: spec.role.to_owned(),
         visible: dialogue.visible,
         enabled: dialogue.enabled,
         bbox: spec.bbox.clone(),
         polygon: spec.bbox.polygon(),
-        capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, spec.id, spec.bbox, source,
-        ),
+        capture_refs: agent_text_object_capture_refs(step, &id, spec.bbox, source, entry),
         object_layer: spec.reference.object_layer.clone(),
         object_depth: spec.reference.object_depth,
         text: Some(spec.text.clone()),
+        text_context: dialogue.text_context.clone(),
         rich_text_ref: Some(spec.reference),
-        content: AgentObservedObjectContent::RichText {
-            frame: Box::new(child_projection(
-                dialogue
-                    .rich_text_frame()
-                    .expect("dialogue child keeps its parent frame"),
-                spec.text,
-            )),
-        },
+        content: dialogue.content.clone(),
     }
 }
 
-fn child_projection(
-    parent: &LineDisplayStageProjection,
-    text: String,
-) -> LineDisplayStageProjection {
-    LineDisplayStageProjection {
-        line: parent.line.clone(),
-        character: parent.character.clone(),
-        text_key: parent.text_key.clone(),
-        effective: parent.effective.clone(),
-        text: text.clone(),
-        base_styles: parent.base_styles.clone(),
-        style_contributions: parent.style_contributions.clone(),
-        display_map: arcweft_text_model::RichTextDisplayMap {
-            source_node_count: arcweft_text_model::RichTextNodeCount::new(1),
-            text_runs: (!text.is_empty())
-                .then(|| RichTextTextRun {
-                    range: RichTextRange::new(0, text.len()),
-                    source: RichTextTextSource::Text,
-                    node_index: RichTextNodeIndex::new(0),
-                    styles: parent.base_styles.clone(),
-                    presentation: RichTextPresentation::default(),
-                })
-                .into_iter()
-                .collect(),
-            ..arcweft_text_model::RichTextDisplayMap::default()
-        },
-        stage_index: parent.stage_index,
-        page_index: parent.page_index,
-        reveal_start: 0,
-        end: parent.end,
-        host_events: Vec::new(),
-        inline_failures: Vec::new(),
-        unresolved: Vec::new(),
-        content: parent.content.clone(),
-    }
-}
-
-fn repair_child_parents(dialogue: &AgentObservedObject, children: &mut [AgentObservedObject]) {
-    let mut ids = children
-        .iter()
-        .map(|child| child.id.clone())
-        .collect::<BTreeSet<_>>();
-    ids.insert(dialogue.id.clone());
-    for child in children {
-        if !child
-            .parent_id
-            .as_ref()
-            .is_some_and(|parent| ids.contains(parent))
-        {
-            child.parent_id = Some(dialogue.id.clone());
+fn agent_text_object_capture_refs(
+    step: usize,
+    id: &str,
+    bbox: &AgentBBox,
+    source: AgentCaptureSourceIdentity,
+    entry: &AgentTextContextEntry,
+) -> AgentObjectCaptureRefs {
+    let page = entry
+        .content
+        .display_stage()
+        .map_or(0, |stage| stage.frame().page_index);
+    let mut refs = agent_object_capture_refs_with_source("cli", step, id, bbox, source);
+    for capture in &mut refs.captures {
+        capture.page = page;
+        if page != 0 {
+            capture.uri.push_str(&format!("?page={page}"));
         }
     }
-}
-
-fn dedupe_objects(objects: Vec<AgentObservedObject>) -> Vec<AgentObservedObject> {
-    let mut ids = BTreeSet::new();
-    objects
-        .into_iter()
-        .filter(|object| ids.insert(object.id.clone()))
-        .collect()
+    refs
 }
 
 fn global_range(
@@ -846,10 +863,7 @@ fn global_range_unbounded(
     owner: &PreparedTextOwner,
     range: RichTextRange,
 ) -> Option<RichTextRange> {
-    Some(RichTextRange::new(
-        range.start.checked_sub(owner.source_origin)?,
-        range.end.checked_sub(owner.source_origin)?,
-    ))
+    owner.context.ranges().source_to_display(range).ok()
 }
 
 fn valid_range(range: RichTextRange, text_len: usize) -> Option<std::ops::Range<usize>> {
@@ -864,47 +878,15 @@ fn find_run(
     frame: &LineDisplayStageProjection,
     range: RichTextRange,
 ) -> Option<(usize, &RichTextTextRun)> {
-    frame
-        .display_map
-        .text_runs
-        .iter()
-        .enumerate()
-        .find(|(_, run)| range.start >= run.range.start && range.end <= run.range.end)
-        .or_else(|| {
-            frame
-                .display_map
-                .text_runs
-                .iter()
-                .enumerate()
-                .find(|(_, run)| ranges_overlap(run.range, range))
-        })
-}
-
-fn layout_line_for_range(
-    owner: &PreparedTextOwner,
-    item: &PreparedTextItem,
-    range: RichTextRange,
-) -> Option<usize> {
-    item.layout.lines.iter().position(|line| {
-        global_range_unbounded(owner, line.source_range)
-            .is_some_and(|line_range| ranges_overlap(line_range, range))
-    })
+    let runs = &frame.display_map.text_runs;
+    let index = runs.partition_point(|run| run.range.end <= range.start);
+    runs.get(index)
+        .filter(|run| range.start >= run.range.start && range.end <= run.range.end)
+        .map(|run| (index, run))
 }
 
 fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
     left.start < right.end && right.start < left.end
-}
-
-fn page_object_id(dialogue: usize, entry: usize, page: usize) -> String {
-    format!("object.dialogue.{dialogue}.{entry}.page.{page}")
-}
-
-fn line_object_id(dialogue: usize, entry: usize, line: usize) -> String {
-    format!("object.dialogue.{dialogue}.{entry}.line.{line}")
-}
-
-fn run_object_id(dialogue: usize, entry: usize, run: usize) -> String {
-    format!("object.dialogue.{dialogue}.{entry}.run.{run}")
 }
 
 fn range_node_index(frame: &LineDisplayStageProjection, range: RichTextRange) -> RichTextNodeIndex {
@@ -1109,13 +1091,6 @@ fn agent_glyph_vertical_form(value: GlyphVerticalForm) -> AgentGlyphVerticalForm
     }
 }
 
-fn agent_bbox_from_hit_rect(rect: HitRect, viewport: &AgentViewport) -> Option<AgentBBox> {
-    agent_bbox_from_layout(
-        LayoutRect::new(rect.x, rect.y, rect.width, rect.height),
-        viewport,
-    )
-}
-
 fn agent_bbox_from_layout(rect: LayoutRect, viewport: &AgentViewport) -> Option<AgentBBox> {
     if !rect.x.is_finite()
         || !rect.y.is_finite()
@@ -1137,4 +1112,13 @@ fn agent_bbox_from_layout(rect: LayoutRect, viewport: &AgentViewport) -> Option<
         width: right.saturating_sub(x).max(1),
         height: bottom.saturating_sub(y).max(1),
     })
+}
+
+fn prepared_text_for_source<'a>(
+    owner: &PreparedTextOwner,
+    item: &'a PreparedTextItem,
+    source: RichTextRange,
+) -> Option<&'a str> {
+    let range = owner.context.ranges().source_to_prepared(source).ok()?;
+    item.interaction.text.get(range.start..range.end)
 }

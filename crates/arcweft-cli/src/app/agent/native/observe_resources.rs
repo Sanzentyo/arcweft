@@ -108,7 +108,7 @@ pub(super) fn agent_observe_resource(
             AgentObserveResourceOutput::One(Box::new(resource))
         }
         AgentObserveResourceKind::Image => {
-            let Some(resource) = agent_observe_image_resource(report, image_output) else {
+            let Some(resource) = agent_observe_image_resource(report, image_output)? else {
                 eprintln!("error: --resource image requires --image");
                 return Err(ExitCode::from(2));
             };
@@ -192,21 +192,21 @@ pub(super) fn agent_observe_list_resources(
     for layer in &report.layers {
         for capture in &layer.capture_refs.captures {
             if known.insert(capture.uri.clone()) {
-                resources.push(agent_layer_capture_ref_resource(report, layer, capture));
+                resources.push(agent_layer_capture_ref_resource(report, layer, capture)?);
             }
         }
     }
     for view in &report.views {
         for capture in &view.capture_refs.captures {
             if known.insert(capture.uri.clone()) {
-                resources.push(agent_view_capture_ref_resource(report, view, capture));
+                resources.push(agent_view_capture_ref_resource(report, view, capture)?);
             }
         }
     }
     for object in &report.objects {
         for capture in &object.capture_refs.captures {
             if known.insert(capture.uri.clone()) {
-                resources.push(agent_object_capture_ref_resource(report, object, capture));
+                resources.push(agent_object_capture_ref_resource(report, object, capture)?);
             }
         }
     }
@@ -243,7 +243,7 @@ pub(super) fn agent_observe_base_resources(
     if let Some(overlay) = report.overlay_svg_resource() {
         resources.push(overlay);
     }
-    if let Some(image) = agent_observe_image_resource(report, image_output) {
+    if let Some(image) = agent_observe_image_resource(report, image_output)? {
         resources.push(image);
     }
     Ok(resources)
@@ -253,12 +253,13 @@ pub(super) fn agent_layer_capture_ref_resource(
     report: &AgentObservationReport,
     layer: &AgentObservedLayer,
     capture: &AgentLayerCaptureRef,
-) -> AgentResource {
+) -> Result<AgentResource, ExitCode> {
     agent_capture_ref_resource(
         report,
         AgentCaptureRefResourceSpec {
             uri: &capture.uri,
             mime_type: &capture.mime_type,
+            pixel_format: capture.pixel_format,
             kind: capture.kind,
             scope: AgentImageScope::Layer {
                 id: layer.id.clone(),
@@ -277,12 +278,13 @@ pub(super) fn agent_view_capture_ref_resource(
     report: &AgentObservationReport,
     view: &AgentObservedView,
     capture: &AgentViewCaptureRef,
-) -> AgentResource {
+) -> Result<AgentResource, ExitCode> {
     agent_capture_ref_resource(
         report,
         AgentCaptureRefResourceSpec {
             uri: &capture.uri,
             mime_type: &capture.mime_type,
+            pixel_format: capture.pixel_format,
             kind: capture.kind,
             scope: AgentImageScope::View {
                 id: view.id.clone(),
@@ -301,12 +303,13 @@ pub(super) fn agent_object_capture_ref_resource(
     report: &AgentObservationReport,
     object: &AgentObservedObject,
     capture: &AgentObjectCaptureRef,
-) -> AgentResource {
+) -> Result<AgentResource, ExitCode> {
     agent_capture_ref_resource(
         report,
         AgentCaptureRefResourceSpec {
             uri: &capture.uri,
             mime_type: &capture.mime_type,
+            pixel_format: capture.pixel_format,
             kind: capture.kind,
             scope: AgentImageScope::Object {
                 id: object.id.clone(),
@@ -324,6 +327,7 @@ pub(super) fn agent_object_capture_ref_resource(
 pub(super) struct AgentCaptureRefResourceSpec<'a> {
     pub(super) uri: &'a str,
     pub(super) mime_type: &'a str,
+    pub(super) pixel_format: Option<arcweft_agent_protocol::image::AgentImagePixelFormat>,
     pub(super) kind: AgentImageKind,
     pub(super) scope: AgentImageScope,
     pub(super) page: usize,
@@ -337,27 +341,48 @@ pub(super) struct AgentCaptureRefResourceSpec<'a> {
 pub(super) fn agent_capture_ref_resource(
     report: &AgentObservationReport,
     spec: AgentCaptureRefResourceSpec<'_>,
-) -> AgentResource {
-    AgentResource {
+) -> Result<AgentResource, ExitCode> {
+    let row_stride_bytes = arcweft_agent_protocol::image::validate_agent_image_format(
+        spec.pixel_format,
+        spec.mime_type,
+        spec.width,
+        spec.height,
+    )
+    .map_err(|error| {
+        eprintln!("error: capture reference format: {error}");
+        ExitCode::FAILURE
+    })?;
+    let text_contexts = spec
+        .object
+        .as_ref()
+        .and_then(|object| object.text_context.as_ref())
+        .map(|reference| {
+            report
+                .text_contexts
+                .selected([reference])
+                .expect("capture reference belongs to the observation catalog")
+        });
+    Ok(AgentResource {
         uri: AgentResourceUri::new(spec.uri).expect("capture reference URI is nonempty"),
         kind: AgentResourceKind::Image,
         mime_type: spec.mime_type.to_owned(),
         hash: report.render_hash.clone(),
         image: Some(AgentImageMetadata {
+            text_contexts,
             kind: spec.kind,
             renderer: AgentImageRenderer::Native,
             scope: spec.scope,
             composition: spec.kind.default_capture_composition(),
             page: spec.page,
-            capture_step: 0,
-            capture_time_millis: report.capture_time_millis.unwrap_or_default(),
+            capture_step: report.steps,
+            capture_time_millis: agent_capture_time_millis(agent_report_capture_time_seconds(
+                report,
+            )),
             width: spec.width,
             height: spec.height,
             crop_origin: None,
-            pixel_format: (spec.mime_type == "application/octet-stream")
-                .then(|| "rgba8_unorm".to_owned()),
-            row_stride_bytes: (spec.mime_type == "application/octet-stream")
-                .then(|| spec.width.saturating_mul(4)),
+            pixel_format: spec.pixel_format,
+            row_stride_bytes,
             content_bbox: None,
             content_viewport_bbox: None,
             content_pixels: None,
@@ -367,32 +392,43 @@ pub(super) fn agent_capture_ref_resource(
             diagnostics: Vec::new(),
         }),
         body: AgentResourceBody::Text(String::new()),
-    }
+    })
 }
 
 pub(super) fn agent_observe_image_resource(
     report: &AgentObservationReport,
     image_output: Option<&AgentImageOutput>,
-) -> Option<AgentResource> {
-    let image = report.images.first()?;
-    let output = image_output?;
+) -> Result<Option<AgentResource>, ExitCode> {
+    let (Some(image), Some(output)) = (report.images.first(), image_output) else {
+        return Ok(None);
+    };
     if image.uri != output.uri {
-        return None;
+        return Ok(None);
     }
-    Some(report.image_resource(image, agent_binary_resource_body(&output.bytes)))
+    report
+        .image_resource(image, agent_binary_resource_body(&output.bytes))
+        .map(Some)
+        .map_err(|error| agent_json_error(&error))
 }
 
 pub(super) fn agent_observe_cached_image_resource(
     report: &AgentObservationReport,
     image_output: Option<&AgentImageOutput>,
     uri: &str,
-) -> Option<AgentResource> {
-    let output = image_output?;
+) -> Result<Option<AgentResource>, ExitCode> {
+    let Some(output) = image_output else {
+        return Ok(None);
+    };
     if output.uri != uri {
-        return None;
+        return Ok(None);
     }
-    let image = report.images.iter().find(|image| image.uri == uri)?;
-    Some(report.image_resource(image, agent_binary_resource_body(&output.bytes)))
+    let Some(image) = report.images.iter().find(|image| image.uri == uri) else {
+        return Ok(None);
+    };
+    report
+        .image_resource(image, agent_binary_resource_body(&output.bytes))
+        .map(Some)
+        .map_err(|error| agent_json_error(&error))
 }
 
 pub(super) fn agent_json_error(error: &serde_json::Error) -> ExitCode {

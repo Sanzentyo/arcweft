@@ -14,7 +14,7 @@ pub(super) fn agent_observe_command(
         agent_observe_image_output(&mut observed.report, options, &observed.image_frames)?;
     if let Some(uri) = &options.read_uri {
         let resource =
-            agent_observe_cached_image_resource(&observed.report, image_output.as_ref(), uri)
+            agent_observe_cached_image_resource(&observed.report, image_output.as_ref(), uri)?
                 .map_or_else(
                     || {
                         agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
@@ -444,14 +444,28 @@ pub(super) fn native_agent_advance_text_presentation_input(
     });
     let target = action
         .and_then(|action| {
+            let object = report
+                .objects
+                .iter()
+                .find(|object| object.id == action.target && object.rich_text_ref.is_none())?;
+            object.validate_text_context(&report.text_contexts).ok()?;
+            let context = report
+                .text_contexts
+                .resolve(object.text_context.as_ref()?)
+                .ok()?;
+            let arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+                dialogue: owner_dialogue,
+                entry: owner_entry,
+                role: arcweft_text_model::DialoguePreparedTextRole::Content,
+                ..
+            } = context.owner.kind
+            else {
+                return None;
+            };
             presentation.dialogue.iter().find_map(|dialogue| {
                 let target = dialogue.advance_target()?;
-                let object = format!(
-                    "object.dialogue.{}.{}",
-                    target.dialogue.get(),
-                    target.entry.get()
-                );
-                (action.target == object).then_some(target)
+                (target.dialogue.get() == owner_dialogue && target.entry.get() == owner_entry)
+                    .then_some(target)
             })
         })
         .ok_or(NativeAgentScriptSessionError::ActionUnavailable)?;
@@ -769,6 +783,13 @@ pub(super) fn agent_hit_test_report(
     for (rank, hit) in hits.iter_mut().enumerate() {
         hit.rank = rank;
     }
+    let text_contexts = report
+        .text_contexts
+        .selected(
+            hits.iter()
+                .filter_map(|hit| hit.object.text_context.as_ref()),
+        )
+        .expect("hit objects refer to their admitted observation catalog");
     AgentHitTestReport {
         status: "ok".to_owned(),
         session_id: report.session_id.clone(),
@@ -779,6 +800,7 @@ pub(super) fn agent_hit_test_report(
         y,
         top_object_id: hits.first().map(|hit| hit.object_id.clone()),
         hits,
+        text_contexts,
     }
 }
 
@@ -865,20 +887,11 @@ pub(super) fn agent_image_or_generic_hit_regions(
 }
 
 pub(super) fn agent_generic_object_hit_region(object: &AgentObservedObject) -> AgentHitRegion {
-    AgentHitRegion {
-        kind: AgentHitRegionKind::Object,
-        bbox: object.bbox.clone(),
-        range: RichTextRange::new(0, 0),
-        proxy_id: None,
-        proxy_type: None,
-        proxy_declaration: None,
-        proxy_schema: None,
-        proxy_fields: Vec::new(),
-        proxy_role: None,
-        proxy_layer: object.resolved_object_layer(),
-        depth: object.resolved_object_depth(),
-        proxy_params: BTreeMap::new(),
-    }
+    AgentHitRegion::for_object(
+        &object.bbox,
+        object.resolved_object_layer().as_deref(),
+        object.resolved_object_depth(),
+    )
 }
 
 pub(super) fn agent_image_proxy_hit_region(

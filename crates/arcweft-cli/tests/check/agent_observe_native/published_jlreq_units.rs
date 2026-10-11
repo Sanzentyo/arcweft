@@ -50,18 +50,23 @@ flow main {{
         "native-{writing_mode}-strict-jlreq-style-split-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(9, 12),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.9.12")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -171,7 +176,7 @@ fn observe_native_published_jlreq_european_numeral_sequence_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天地2026502671234人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[天地2026502671234人]][p]
 }}
 "#
         ),
@@ -196,7 +201,7 @@ fn assert_native_published_jlreq_european_numeral_sequence_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[天地2026502671234人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[天地2026502671234人]][p]
 }}
 "#
         ),
@@ -206,18 +211,23 @@ flow main {{
         "native-{writing_mode}-published-jlreq-european-numerals-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 5,
+                    range: arcweft_text_model::RichTextRange::new(18, 19),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.5.18.19")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -380,7 +390,7 @@ fn observe_native_published_jlreq_numeric_separator_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -427,7 +437,7 @@ fn assert_native_published_jlreq_numeric_separator_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -439,18 +449,13 @@ flow main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -637,7 +642,7 @@ struct NativeNumericSeparatorCase {
     following_range: (u64, u64),
     crop_text: &'static str,
     crop_range: (u64, u64),
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     next_range: (u64, u64),
     description: &'static str,
     crop_description: &'static str,
@@ -659,7 +664,14 @@ const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSepar
             following_range: (5, 8),
             crop_text: ",",
             crop_range: (4, 5),
-            object_id: "object.dialogue.0.0.cluster.2.4.5",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(4, 5),
+                },
+            ),
             next_range: (8, 11),
             description: "comma",
             crop_description: "separator",
@@ -678,7 +690,14 @@ const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSepar
             following_range: (5, 7),
             crop_text: ".",
             crop_range: (4, 5),
-            object_id: "object.dialogue.0.0.cluster.2.4.5",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(4, 5),
+                },
+            ),
             next_range: (7, 10),
             description: "decimal point",
             crop_description: "separator",
@@ -697,7 +716,14 @@ const fn native_published_jlreq_numeric_separator_cases() -> [NativeNumericSepar
             following_range: (6, 9),
             crop_text: "345",
             crop_range: (6, 9),
-            object_id: "object.dialogue.0.0.cluster.3.6.9",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(6, 9),
+                },
+            ),
             next_range: (9, 12),
             description: "space place",
             crop_description: "following digit chunk",
@@ -806,7 +832,7 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
     writing_mode: &str,
     label: &str,
 ) -> serde_json::Value {
-    let text = native_published_jlreq_numeric_abbreviation_text(label);
+    let (text, font_points) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
     let (path, entry) = temp_main_cli_fixture(
         &format!(
             "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}"
@@ -816,7 +842,7 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{text}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_points}pt)[{text}]][p]
 }}
 "#
         ),
@@ -831,10 +857,10 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
     next_column_moves_right: bool,
     mark: &str,
     label: &str,
-    object_id: &str,
+    capture_target: NativeTextCaptureTarget,
     capture_kind: &str,
 ) {
-    let text = native_published_jlreq_numeric_abbreviation_text(label);
+    let (text, font_points) = native_published_jlreq_numeric_abbreviation_fixture_source(label);
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}"
     );
@@ -845,7 +871,7 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{text}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size({font_points}pt)[{text}]][p]
 }}
 "#
         ),
@@ -855,18 +881,13 @@ flow main {{
         "native-{writing_mode}-published-jlreq-numeric-abbreviation-{label}-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1006,15 +1027,15 @@ fn assert_native_published_jlreq_numeric_abbreviation_crop_pixels(
     }
 }
 
-fn native_published_jlreq_numeric_abbreviation_text(label: &str) -> &'static str {
+fn native_published_jlreq_numeric_abbreviation_fixture_source(label: &str) -> (&'static str, u32) {
     match label {
-        "$" | "prefix" => "天$123人",
-        "cent-prefix" => "天¢123人",
-        "%" | "suffix" => "天50%人",
-        "temperature-suffix" => "天25℃人",
-        "temperature-suffix-decomposed" => "天25°C人",
-        "prefix-ideographic" => "天$五人",
-        "suffix-ideographic" => "天五%人",
+        "$" | "prefix" => ("天$123人", 36),
+        "cent-prefix" => ("天¢123人", 36),
+        "%" | "suffix" => ("天50%人", 36),
+        "temperature-suffix" => ("天25℃人", 36),
+        "temperature-suffix-decomposed" => ("天25°C人", 30),
+        "prefix-ideographic" => ("天$五人", 36),
+        "suffix-ideographic" => ("天五%人", 36),
         _ => panic!("unknown native published JLREQ numeric abbreviation label {label}"),
     }
 }
@@ -1317,7 +1338,7 @@ fn observe_native_published_jlreq_reference_mark_fixture(writing_mode: &str) -> 
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[本¹²。人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[本¹²。人]][p]
 }}
 "#
         ),
@@ -1353,7 +1374,7 @@ fn assert_native_published_jlreq_reference_mark_target_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[本¹²。人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(36pt)[本¹²。人]][p]
 }}
 "#
         ),
@@ -1364,18 +1385,13 @@ flow main {{
         target.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, target.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(target.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1510,7 +1526,7 @@ struct NativeReferenceMarkTarget {
     label: &'static str,
     text: &'static str,
     range: (u64, u64),
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     description: &'static str,
 }
 
@@ -1520,14 +1536,28 @@ const fn native_published_jlreq_reference_mark_targets() -> [NativeReferenceMark
             label: "second-mark",
             text: "²",
             range: (5, 7),
-            object_id: "object.dialogue.0.0.cluster.2.5.7",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(5, 7),
+                },
+            ),
             description: "second digit",
         },
         NativeReferenceMarkTarget {
             label: "full-stop",
             text: "。",
             range: (7, 10),
-            object_id: "object.dialogue.0.0.cluster.3.7.10",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(7, 10),
+                },
+            ),
             description: "full stop",
         },
     ]
@@ -1562,7 +1592,7 @@ fn observe_native_published_jlreq_parenthesized_reference_mark_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[本⁽¹⁾。人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[本⁽¹⁾。人]][p]
 }}
 "#
         ),
@@ -1609,7 +1639,7 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[本⁽¹⁾。人][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[本⁽¹⁾。人]][p]
 }}
 "#
         ),
@@ -1620,18 +1650,13 @@ flow main {{
         target.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, target.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(target.object_id)
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1784,7 +1809,7 @@ struct NativeParenthesizedReferenceMarkTarget {
     label: &'static str,
     text: &'static str,
     range: (u64, u64),
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     description: &'static str,
 }
 
@@ -1795,14 +1820,28 @@ const fn native_published_jlreq_parenthesized_reference_mark_targets()
             label: "closing",
             text: "⁾",
             range: (8, 11),
-            object_id: "object.dialogue.0.0.cluster.3.8.11",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(8, 11),
+                },
+            ),
             description: "closing",
         },
         NativeParenthesizedReferenceMarkTarget {
             label: "full-stop",
             text: "。",
             range: (11, 14),
-            object_id: "object.dialogue.0.0.cluster.4.11.14",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 4,
+                    range: arcweft_text_model::RichTextRange::new(11, 14),
+                },
+            ),
             description: "full stop",
         },
     ]
@@ -1865,18 +1904,23 @@ flow main {{
         "native-{writing_mode}-published-jlreq-latin-unit-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(4, 5),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.glyph.2.4.5")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2033,18 +2077,23 @@ flow main {{
         "native-{writing_mode}-published-jlreq-western-word-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(5, 6),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.glyph.3.5.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2231,18 +2280,13 @@ flow main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2341,13 +2385,22 @@ fn assert_native_published_jlreq_numeric_unit_objects<'report>(
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
     let digits = find_rich_text_cluster_object(json, "3", 3, 4);
-    let unit_start = find_rich_text_cluster_object(
+    let unit_text = format!("{}{}", case.unit_start, case.unit_end);
+    let unit = assert_atomic_sideways_word(
         json,
-        case.unit_start,
+        &unit_text,
         case.unit_start_range.0,
-        case.unit_start_range.1,
+        case.unit_end_range.1,
+        &[
+            (
+                case.unit_start,
+                case.unit_start_range.0,
+                case.unit_start_range.1,
+            ),
+            (case.unit_end, case.unit_end_range.0, case.unit_end_range.1),
+        ],
     );
-    let unit_end = find_rich_text_cluster_object(
+    let unit_end = find_rich_text_glyph_object(
         json,
         case.unit_end,
         case.unit_end_range.0,
@@ -2361,16 +2414,11 @@ fn assert_native_published_jlreq_numeric_unit_objects<'report>(
     );
     assert_vertical_cluster_after(
         digits,
-        unit_start,
+        unit,
         "published JLREQ unit symbol should stay with the preceding digit",
     );
-    assert_vertical_cluster_after(
-        unit_start,
-        unit_end,
-        "published JLREQ numeric unit letters should stay together",
-    );
     assert_next_paragraph_column(
-        unit_end,
+        unit,
         next_body,
         next_column_moves_right,
         "body text after the numeric unit symbol should continue in the next column",
@@ -2390,7 +2438,7 @@ struct NativeNumericUnitCase {
     unit_start_range: (u64, u64),
     unit_end: &'static str,
     unit_end_range: (u64, u64),
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     next_range: (u64, u64),
 }
 
@@ -2403,7 +2451,14 @@ const fn native_published_jlreq_numeric_unit_cases() -> [NativeNumericUnitCase; 
             unit_start_range: (4, 5),
             unit_end: "g",
             unit_end_range: (5, 6),
-            object_id: "object.dialogue.0.0.cluster.3.5.6",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(5, 6),
+                },
+            ),
             next_range: (6, 9),
         },
         NativeNumericUnitCase {
@@ -2413,7 +2468,14 @@ const fn native_published_jlreq_numeric_unit_cases() -> [NativeNumericUnitCase; 
             unit_start_range: (4, 6),
             unit_end: "m",
             unit_end_range: (6, 7),
-            object_id: "object.dialogue.0.0.cluster.3.6.7",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(6, 7),
+                },
+            ),
             next_range: (7, 10),
         },
     ]
@@ -2482,11 +2544,18 @@ flow main {{
         "native-{writing_mode}-published-jlreq-hyphenated-western-word-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(6, 7),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2494,8 +2563,6 @@ flow main {{
         .arg(capture_kind)
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.4.6.7")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2572,29 +2639,21 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let first = find_rich_text_cluster_object(json, "W", 3, 4);
-    let second = find_rich_text_cluster_object(json, "e", 4, 5);
-    let before_hyphen = find_rich_text_cluster_object(json, "b", 5, 6);
+    let before_hyphen =
+        assert_atomic_sideways_word(json, "Web", 3, 6, &[("W", 3, 4), ("e", 4, 5), ("b", 5, 6)]);
     let hyphen = find_rich_text_cluster_object(json, "-", 6, 7);
-    let after_hyphen = find_rich_text_cluster_object(json, "T", 7, 8);
-    let after_hyphen_second = find_rich_text_cluster_object(json, "e", 8, 9);
-    let after_hyphen_third = find_rich_text_cluster_object(json, "s", 9, 10);
-    let last = find_rich_text_cluster_object(json, "t", 10, 11);
+    let after_hyphen = assert_atomic_sideways_word(
+        json,
+        "Test",
+        7,
+        11,
+        &[("T", 7, 8), ("e", 8, 9), ("s", 9, 10), ("t", 10, 11)],
+    );
     let next_body = find_rich_text_cluster_object(json, "人", 11, 14);
     assert_vertical_cluster_after(
         body,
-        first,
-        "published JLREQ hyphenated Western word should start after body text",
-    );
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ hyphenated Western word first letters should stay together",
-    );
-    assert_vertical_cluster_after(
-        second,
         before_hyphen,
-        "published JLREQ hyphenated Western word letters before hyphen should stay together",
+        "published JLREQ hyphenated Western word should start after body text",
     );
     assert_vertical_cluster_after(
         before_hyphen,
@@ -2606,23 +2665,8 @@ fn assert_native_published_jlreq_hyphenated_western_word_objects<'report>(
         after_hyphen,
         "published JLREQ letters after a word-internal hyphen should stay attached",
     );
-    assert_vertical_cluster_after(
-        after_hyphen,
-        after_hyphen_second,
-        "published JLREQ letters after a word-internal hyphen should stay together",
-    );
-    assert_vertical_cluster_after(
-        after_hyphen_second,
-        after_hyphen_third,
-        "published JLREQ letters after a word-internal hyphen should stay together",
-    );
-    assert_vertical_cluster_after(
-        after_hyphen_third,
-        last,
-        "published JLREQ letters after a word-internal hyphen should stay together",
-    );
     assert_next_paragraph_column(
-        last,
+        after_hyphen,
         next_body,
         next_column_moves_right,
         "body text after the hyphenated Western word should continue in the next column",
@@ -2669,7 +2713,7 @@ fn observe_native_published_jlreq_apostrophe_western_word_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -2712,7 +2756,7 @@ fn assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -2724,18 +2768,13 @@ flow main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2863,7 +2902,7 @@ struct NativeApostropheWesternWordCase {
     label: &'static str,
     text: &'static str,
     apostrophe: &'static str,
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     apostrophe_start: u64,
     apostrophe_end: u64,
     after_start: u64,
@@ -2879,7 +2918,14 @@ const fn native_published_jlreq_apostrophe_western_word_cases()
             label: "ascii",
             text: "天O'K人",
             apostrophe: "'",
-            object_id: "object.dialogue.0.0.cluster.2.4.5",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(4, 5),
+                },
+            ),
             apostrophe_start: 4,
             apostrophe_end: 5,
             after_start: 5,
@@ -2891,7 +2937,14 @@ const fn native_published_jlreq_apostrophe_western_word_cases()
             label: "typographic",
             text: "天O’K人",
             apostrophe: "’",
-            object_id: "object.dialogue.0.0.cluster.2.4.7",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(4, 7),
+                },
+            ),
             apostrophe_start: 4,
             apostrophe_end: 7,
             after_start: 7,
@@ -2957,18 +3010,23 @@ flow main {{
         "native-{writing_mode}-published-jlreq-accented-latin-word-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 4,
+                    range: arcweft_text_model::RichTextRange::new(6, 8),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.4.6.8")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3037,33 +3095,22 @@ fn assert_native_published_jlreq_accented_latin_word_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let first = find_rich_text_cluster_object(json, "c", 3, 4);
-    let second = find_rich_text_cluster_object(json, "a", 4, 5);
-    let before_accent = find_rich_text_cluster_object(json, "f", 5, 6);
-    let accented = find_rich_text_cluster_object(json, "é", 6, 8);
+    let word = assert_atomic_sideways_word(
+        json,
+        "café",
+        3,
+        8,
+        &[("c", 3, 4), ("a", 4, 5), ("f", 5, 6), ("é", 6, 8)],
+    );
+    let accented = find_rich_text_glyph_object(json, "é", 6, 8);
     let next_body = find_rich_text_cluster_object(json, "人", 8, 11);
     assert_vertical_cluster_after(
         body,
-        first,
+        word,
         "published JLREQ accented Latin word should start after body text",
     );
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ accented Latin word letters should stay together",
-    );
-    assert_vertical_cluster_after(
-        second,
-        before_accent,
-        "published JLREQ accented Latin word letters should stay together",
-    );
-    assert_vertical_cluster_after(
-        before_accent,
-        accented,
-        "published JLREQ accented Latin grapheme should stay with preceding Latin letters",
-    );
     assert_next_paragraph_column(
-        accented,
+        word,
         next_body,
         writing_mode == "vertical_lr",
         "body text after the accented Latin word should continue after the word",
@@ -3126,18 +3173,23 @@ flow main {{
         "native-{writing_mode}-published-jlreq-greek-latin-unit-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(5, 6),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.5.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3212,21 +3264,16 @@ fn assert_native_published_jlreq_greek_latin_unit_objects<'report>(
         "normal"
     );
     let body = find_rich_text_cluster_object(json, "天", 0, 3);
-    let greek_unit = find_rich_text_cluster_object(json, "μ", 3, 5);
-    let latin_unit = find_rich_text_cluster_object(json, "m", 5, 6);
+    let unit = assert_atomic_sideways_word(json, "μm", 3, 6, &[("μ", 3, 5), ("m", 5, 6)]);
+    let latin_unit = find_rich_text_glyph_object(json, "m", 5, 6);
     let next_body = find_rich_text_cluster_object(json, "人", 6, 9);
     assert_vertical_cluster_after(
         body,
-        greek_unit,
+        unit,
         "published JLREQ Greek+Latin unit should start after body text",
     );
-    assert_vertical_cluster_after(
-        greek_unit,
-        latin_unit,
-        "published JLREQ Latin unit suffix should stay attached to Greek unit symbol",
-    );
     assert_next_paragraph_column(
-        latin_unit,
+        unit,
         next_body,
         writing_mode == "vertical_lr",
         "body text after the Greek+Latin unit should continue after the unit",
@@ -3272,7 +3319,7 @@ fn observe_native_published_jlreq_subscript_object_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -3315,7 +3362,7 @@ fn assert_native_published_jlreq_subscript_object_case_raw_crop(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.normal)[{}][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[#size(30pt)[{}]][p]
 }}
 "#,
             case.text
@@ -3327,18 +3374,13 @@ flow main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3470,7 +3512,7 @@ struct NativeSubscriptObjectCase {
     mark_range: (u64, u64),
     following_base: &'static str,
     following_base_range: (u64, u64),
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     next_range: (u64, u64),
 }
 
@@ -3485,7 +3527,14 @@ const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObje
             mark_range: (4, 7),
             following_base: "O",
             following_base_range: (7, 8),
-            object_id: "object.dialogue.0.0.cluster.3.7.8",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(7, 8),
+                },
+            ),
             next_range: (8, 11),
         },
         NativeSubscriptObjectCase {
@@ -3497,7 +3546,14 @@ const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObje
             mark_range: (5, 8),
             following_base: "β",
             following_base_range: (8, 10),
-            object_id: "object.dialogue.0.0.cluster.3.8.10",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(8, 10),
+                },
+            ),
             next_range: (10, 13),
         },
         NativeSubscriptObjectCase {
@@ -3509,7 +3565,14 @@ const fn native_published_jlreq_subscript_object_cases() -> [NativeSubscriptObje
             mark_range: (5, 7),
             following_base: "β",
             following_base_range: (7, 9),
-            object_id: "object.dialogue.0.0.cluster.3.7.9",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(7, 9),
+                },
+            ),
             next_range: (9, 12),
         },
     ]
@@ -3568,18 +3631,23 @@ flow main {{
         "native-{writing_mode}-strict-jlreq-ruby-text-combine-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 1,
+                    range: arcweft_text_model::RichTextRange::new(3, 7),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.1.3.7")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3750,18 +3818,23 @@ flow main {{
         "native-{writing_mode}-strict-jlreq-hard-break-segment-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(10, 13),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.10.13")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3860,6 +3933,42 @@ fn assert_native_jlreq_paragraph_overview(json: &serde_json::Value) {
         json,
         "天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終",
     );
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+    use arcweft_agent_protocol::rich_text::AgentRichTextElementKind;
+    use arcweft_text_model::RichTextRange;
+
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).expect("issued paragraph catalog");
+    let (context, element) = checked_observed_text_element(&catalog, run);
+    assert_eq!(element.kind, AgentRichTextElementKind::TextRun);
+    assert_eq!(element.range, RichTextRange::new(0, 87));
+    let owner = catalog.resolve(&context).expect("issued paragraph owner");
+    let layout = owner.content.layout();
+    let styled = &layout.runs[element.index];
+    assert_eq!(styled.source_range, RichTextRange::new(0, 87));
+    assert_eq!(styled.style.font_size_milli(), 30_000);
+    assert_eq!(styled.style.line_height_milli(), 40_500);
+    assert_eq!(layout.glyphs.len(), 29);
+    for glyph in &layout.glyphs {
+        assert_eq!(glyph.shape_key.font_size_bits, 30.0_f32.to_bits());
+        assert_eq!(glyph.layout_bounds.width, 30.0);
+        assert_eq!(
+            glyph.advance.height,
+            if matches!(glyph.source_range.start, 24 | 42 | 69) { 15.0 } else { 30.0 }
+        );
+        assert_eq!(glyph.layout_bounds.height, glyph.advance.height);
+    }
+    // This source's actual 30pt glyph advances and admitted text-container
+    // capacity are covered by the owning balanced_v1 planner regression.
+    let expected_offsets = vec![0, 12, 21, 33, 45, 54, 60, 72, 84];
+    assert_eq!(
+        layout.lines.iter().map(|line| line.source_range.start).collect::<Vec<_>>(),
+        expected_offsets
+    );
+    assert_eq!(
+        rich_text_vertical_column_start_byte_offsets(json),
+        vec![0, 12, 21, 33, 45, 54, 60, 72, 84]
+    );
     assert!(
         run["bbox"]["width"].as_u64().unwrap() >= 300
             && run["bbox"]["height"].as_u64().unwrap() >= 120,
@@ -3944,22 +4053,24 @@ fn assert_native_jlreq_paragraph_grouping_and_leaders(
         dash,
         "paragraph dash mark stays with its preceding cluster",
     );
-    assert_next_paragraph_column(
+    assert_vertical_cluster_after(
         dash,
         center,
-        next_column_moves_right,
-        "paragraph text after an overhanging dash-mark suffix should continue in the next column",
+        "balanced paragraph keeps the ordinary ideograph after the non-hanging dash in this column",
     );
 
     let middle_dot = find_rich_text_cluster_object(json, "・", 69, 72);
     let outside = find_rich_text_cluster_object(json, "外", 72, 75);
-    assert_eq!(
-        middle_dot["bbox"]["x"], outside["bbox"]["x"],
-        "text after a middle dot should remain in the same paragraph column"
+    assert_vertical_cluster_after(
+        center,
+        middle_dot,
+        "paragraph middle dot remains with its preceding cluster",
     );
-    assert!(
-        agent_json_bbox_y(&outside["bbox"]) > agent_json_bbox_y(&middle_dot["bbox"]),
-        "middle-dot compression should still advance paragraph text downward"
+    assert_next_paragraph_column(
+        middle_dot,
+        outside,
+        next_column_moves_right,
+        "balanced paragraph chooses the legal boundary after the complete middle-dot suffix",
     );
 
     let first_leader = find_rich_text_cluster_object(json, "…", 75, 78);
@@ -4003,7 +4114,7 @@ fn assert_next_paragraph_column(
 }
 
 fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_json::Value {
-    let path = temp_arcw(
+    let path = temp_authored_native_cli_fixture(
         &format!("agent-observe-native-jlreq-{label}"),
         &format!(
             r##"
@@ -4012,10 +4123,11 @@ entry cli @entry.main {{ goto @flow.main }}
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.vertical_rl, jlreq=.{strictness})[#font("MS Mincho")[天地。」人山川海。『火水木]][p]
+    alice: #layout(.vertical_rl, jlreq=.{strictness})[#size(30pt)[#font("MS Mincho")[天地。」人山川海。『火水木]]][p]
 }}
 "##
         ),
+        "entry.main",
     );
     let entry =
         EntryRuntimeId::from_source_entity_body("entry.main").expect("test entry ID is valid");
@@ -4096,7 +4208,7 @@ fn observe_native_jlreq_closing_opening_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.{strictness})[天地。「人山川海][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(30pt)[天地。「人山川海]][p]
 }}
 "#
         ),
@@ -4114,7 +4226,7 @@ fn assert_native_strict_jlreq_closing_opening_raw_crop(writing_mode: &str, captu
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode}, jlreq=.strict)[天地。「人山川海][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(30pt)[天地。「人山川海]][p]
 }}
 "#
         ),
@@ -4126,18 +4238,23 @@ flow main {{
         "native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(9, 12),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.9.12")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")

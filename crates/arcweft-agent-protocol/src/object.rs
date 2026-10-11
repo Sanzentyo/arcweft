@@ -1,13 +1,15 @@
 use crate::geometry::{AgentBBox, AgentPoint};
 use crate::image::{
-    AgentImageAlignment, AgentImageFit, AgentImageObjectContentRef, AgentImageObjectParam,
-    AgentImageTransform, AgentLayerCaptureRefs, AgentObjectCaptureRefs, AgentViewCaptureRefs,
+    AgentImageAlignment, AgentImageFit, AgentImageObjectParam, AgentImageTransform,
+    AgentLayerCaptureRefs, AgentObjectCaptureRefs, AgentViewCaptureRefs,
 };
 use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
 use crate::serde_helpers::default_true;
+use crate::text_context::{
+    AgentTextContextCatalog, AgentTextContextError, AgentTextContextReference,
+};
 use arcweft_layout::stage_placement::{ResolvedStagePlacement, StagePlacement};
-use arcweft_text_model::LineDisplayStageProjection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -57,6 +59,8 @@ pub struct AgentObservedObject {
     pub object_depth: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_context: Option<AgentTextContextReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rich_text_ref: Option<AgentRichTextElementRef>,
     pub content: AgentObservedObjectContent,
@@ -66,34 +70,69 @@ pub struct AgentObservedObject {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentObservedObjectContent {
-    RichText {
-        frame: Box<LineDisplayStageProjection>,
-    },
+    RichText(AgentTextObjectContent),
+    ViewText(AgentTextObjectContent),
     Image(Box<AgentObservedImageContent>),
-    Custom {
-        object_type: String,
-    },
+    Custom { object_type: String },
 }
+
+/// Strict text-family marker; the issued catalog owns the complete context.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentTextObjectContent {}
 
 impl AgentObservedObjectContent {
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::RichText { .. } => "rich_text",
+            Self::RichText(_) => "rich_text",
+            Self::ViewText(_) => "view_text",
             Self::Image(_) => "image",
             Self::Custom { .. } => "custom",
         }
     }
 
-    /// Text that must be evaluated before this object is published to an Agent.
-    pub fn policy_text(&self) -> Option<&str> {
-        match self {
-            Self::RichText { frame } => Some(frame.text.as_str()),
-            Self::Image(_) | Self::Custom { .. } => None,
-        }
-    }
-
     pub const fn requires_visual_policy(&self) -> bool {
         matches!(self, Self::Image(_) | Self::Custom { .. })
+    }
+
+    pub const fn requires_text_context(&self) -> bool {
+        matches!(self, Self::RichText(_) | Self::ViewText(_))
+    }
+
+    pub(crate) fn validate_text_context_family(
+        &self,
+        object_id: &str,
+        reference: Option<&AgentTextContextReference>,
+        catalog: &AgentTextContextCatalog,
+    ) -> Result<(), AgentTextContextError> {
+        let Some(reference) = reference else {
+            return if self.requires_text_context() {
+                Err(AgentTextContextError::MissingObjectContext {
+                    object_id: object_id.to_owned(),
+                })
+            } else {
+                Ok(())
+            };
+        };
+        match self {
+            Self::RichText(_) | Self::ViewText(_) => {
+                let is_stage = catalog
+                    .resolve(reference)?
+                    .content
+                    .display_stage()
+                    .is_some();
+                if matches!(self, Self::RichText(_)) == is_stage {
+                    Ok(())
+                } else {
+                    Err(AgentTextContextError::ContentFamily {
+                        owner: reference.owner(),
+                    })
+                }
+            }
+            Self::Image(_) | Self::Custom { .. } => Err(AgentTextContextError::ObjectOwner {
+                object_id: object_id.to_owned(),
+            }),
+        }
     }
 }
 
@@ -136,23 +175,48 @@ pub struct AgentObservedImageContent {
 }
 
 impl AgentObservedObject {
-    pub fn rich_text_frame(&self) -> Option<&LineDisplayStageProjection> {
-        match &self.content {
-            AgentObservedObjectContent::RichText { frame } => Some(frame.as_ref()),
-            AgentObservedObjectContent::Image(_) | AgentObservedObjectContent::Custom { .. } => {
-                None
+    pub fn validate_text_context(
+        &self,
+        catalog: &AgentTextContextCatalog,
+    ) -> Result<(), AgentTextContextError> {
+        if self.rich_text_ref.is_some() && self.text_context.is_none() {
+            return Err(AgentTextContextError::MissingObjectContext {
+                object_id: self.id.clone(),
+            });
+        }
+        self.content
+            .validate_text_context_family(&self.id, self.text_context.as_ref(), catalog)?;
+        if let Some(reference) = &self.text_context {
+            let entry = catalog.resolve(reference)?;
+            if self.parent_id != entry.element_parent_id(self.rich_text_ref.as_ref())? {
+                return Err(AgentTextContextError::ObjectOwner {
+                    object_id: self.id.clone(),
+                });
+            }
+            catalog.validate_element(
+                &self.id,
+                reference,
+                self.rich_text_ref.as_ref(),
+                self.text.as_deref(),
+            )?;
+            for capture in &self.capture_refs.captures {
+                if capture.page
+                    != entry
+                        .content
+                        .display_stage()
+                        .map_or(0, |stage| stage.frame().page_index)
+                    || capture.selected_capture.as_ref().is_some_and(|selected| {
+                        selected.source
+                            != crate::image::AgentCaptureSourceIdentity::from_object(self)
+                    })
+                {
+                    return Err(AgentTextContextError::ObjectOwner {
+                        object_id: self.id.clone(),
+                    });
+                }
             }
         }
-    }
-
-    pub fn image_content_ref(&self) -> Option<AgentImageObjectContentRef> {
-        match &self.content {
-            AgentObservedObjectContent::Image(content) => {
-                Some(AgentImageObjectContentRef::from(content.as_ref()))
-            }
-            AgentObservedObjectContent::RichText { .. }
-            | AgentObservedObjectContent::Custom { .. } => None,
-        }
+        Ok(())
     }
 
     pub fn resolved_object_layer(&self) -> Option<String> {

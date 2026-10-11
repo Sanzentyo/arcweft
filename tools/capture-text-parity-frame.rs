@@ -10,6 +10,7 @@ arcweft-player-scene = { path = "../crates/arcweft-player-scene" }
 arcweft-player-web = { path = "../crates/arcweft-player-web" }
 arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
+arcweft-text-model = { path = "../crates/arcweft-text-model" }
 png = "0.18.1"
 pollster = "0.4.0"
 serde_json = "1.0.150"
@@ -461,7 +462,7 @@ fn write_frame_report(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut report = serde_json::to_value(WebFrameObservationReport::from_prepared_frame(frame))?;
+    let mut report = serde_json::to_value(WebFrameObservationReport::from_prepared_frame(frame)?)?;
     let object = report
         .as_object_mut()
         .ok_or("canonical frame report did not serialize as an object")?;
@@ -519,7 +520,9 @@ fn write_text_scope_capture(
         .find(|owner| {
             matches!(
                 owner.kind,
-                arcweft_render_wgpu::geometry::PreparedTextOwnerKind::DialogueView { .. }
+                arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+                    role: arcweft_text_model::DialoguePreparedTextRole::Content, ..
+                }
             )
         })
         .ok_or("prepared frame has no dialogue View content capture owner")?;

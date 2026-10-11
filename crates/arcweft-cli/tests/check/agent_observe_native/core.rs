@@ -27,15 +27,36 @@ fn assert_agent_observe_object_capture_refs(object: &serde_json::Value) {
     }));
 }
 
-fn assert_agent_observe_rich_text_display_map(object: &serde_json::Value) {
-    let rich_text = observed_object_rich_text_frame(object);
+fn assert_agent_observe_rich_text_display_map(
+    report: &serde_json::Value,
+    object: &serde_json::Value,
+) {
+    let rich_text = observed_object_rich_text_frame(report, object);
     let text_runs = rich_text["display_map"]["text_runs"].as_array().unwrap();
     assert!(text_runs.iter().any(|run| run["source"] == "interpolation"
         && run["range"]["start"] == 6
         && run["range"]["end"] == 9));
-    assert!(text_runs.iter().any(|run| run["source"] == "ruby_base"
-        && run["range"]["start"] == 10
-        && run["range"]["end"] == 13));
+    let ruby = rich_text["display_map"]["ruby_annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|ruby| ruby["ruby"] == "ゆめ")
+        .expect("the authored ruby keeps its annotation owner");
+    assert_eq!(ruby["base_range"]["start"], 10);
+    assert_eq!(ruby["base_range"]["end"], 13);
+    let base_start = usize::try_from(ruby["base_runs"]["start"].as_u64().unwrap()).unwrap();
+    let base_end = usize::try_from(ruby["base_runs"]["end"].as_u64().unwrap()).unwrap();
+    let base = text_runs
+        .get(base_start..base_end)
+        .expect("owned base runs");
+    assert_eq!(base.len(), 1);
+    assert_eq!(base[0]["source"], "text");
+    assert_eq!(base[0]["range"], ruby["base_range"]);
+    assert_eq!(base[0]["node_index"], ruby["body_nodes"]["start"]);
+    assert_eq!(
+        ruby["body_nodes"]["end"].as_u64().unwrap(),
+        ruby["body_nodes"]["start"].as_u64().unwrap() + 1
+    );
     assert!(
         text_runs
             .iter()
@@ -68,21 +89,38 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
             .as_str()
             .is_some_and(|svg| svg.contains("Hello Aoi"))
     );
-    let object = &json["objects"][0];
-    let rich_text = observed_object_rich_text_frame(object);
+    let object = find_dialogue_view_object(json);
+    let rich_text = observed_object_rich_text_frame(json, object);
     assert_eq!(object["role"], "dialogue_view");
     assert_eq!(object["bbox"]["space"], "viewport");
     assert_eq!(object["text"], "Hello Aoi 夢\n");
     assert_agent_observe_object_capture_refs(object);
-    assert_eq!(rich_text["base_styles"].as_array().unwrap().len(), 4);
+    for run in rich_text_text_runs(json, object) {
+        assert!(
+            run["styles"]
+                .as_array()
+                .is_some_and(|styles| styles.iter().any(|style| {
+                    style["kind"] == "color"
+                        && style["value"]["kind"] == "rgba8"
+                        && style["value"]["value"] == serde_json::json!([48, 49, 50, 255])
+                })),
+            "the content color must survive each display-map run: {run}"
+        );
+    }
     assert!(
-        rich_text["nodes"]
+        rich_text["display_map"]["ruby_annotations"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|node| node["kind"] == "ruby")
+            .any(|ruby| ruby["ruby"] == "ゆめ"
+                && ruby["body_nodes"]["start"].as_u64()
+                    == ruby["owner_node"].as_u64().map(|owner| owner + 1)
+                && ruby["body_nodes"]["end"].as_u64().is_some_and(|end| end
+                    <= rich_text["display_map"]["source_node_count"]
+                        .as_u64()
+                        .unwrap()))
     );
-    assert_agent_observe_rich_text_display_map(object);
+    assert_agent_observe_rich_text_display_map(json, object);
     assert!(
         rich_text["host_events"]
             .as_array()
@@ -91,15 +129,15 @@ fn assert_agent_observe_rich_text_display_report(json: &serde_json::Value) {
             .any(|event| event["kind"] == "voice")
     );
     assert_eq!(json["actions"][0]["action"], "advance_text");
-    let objects = json["objects"].as_array().expect("objects are listed");
-    assert_agent_observe_rich_text_child_objects(objects);
+    assert_agent_observe_rich_text_child_objects(json);
 }
 
-fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
-    let page_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.page.0")
-        .expect("text page is observable as an element");
+fn assert_agent_observe_rich_text_child_objects(report: &serde_json::Value) {
+    let objects = report["objects"].as_array().expect("objects are listed");
+    let page_object = find_native_text_target_object(
+        report,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Page(0)),
+    );
     assert_eq!(page_object["role"], "rich_text_page");
     assert_eq!(page_object["layer"], "dialogue.rich_text");
     assert_eq!(page_object["text"], "Hello Aoi 夢\n");
@@ -123,10 +161,10 @@ fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
     );
     assert_agent_observe_object_capture_refs(page_object);
 
-    let line_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.line.0")
-        .expect("text line is observable as an element");
+    let line_object = find_native_text_target_object(
+        report,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Line(0)),
+    );
     assert_eq!(line_object["role"], "rich_text_line");
     assert_eq!(line_object["layer"], "dialogue.rich_text");
     assert!(
@@ -152,10 +190,10 @@ fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
     assert_rich_text_hit_region_matches_bbox(line_object, "text_line", line_start, line_end);
     assert_agent_observe_object_capture_refs(line_object);
 
-    let run_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.run.1")
-        .expect("interpolation run is observable as an element");
+    let run_object = find_native_text_target_object(
+        report,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Run(1)),
+    );
     assert_eq!(run_object["role"], "rich_text_run");
     assert_eq!(run_object["layer"], "dialogue.rich_text");
     assert_eq!(run_object["text"], "Aoi");
@@ -184,10 +222,10 @@ fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
     assert_rich_text_hit_region_matches_bbox(cluster_object, "glyph_cluster", 0, 1);
     assert_agent_observe_object_capture_refs(cluster_object);
 
-    let ruby_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.ruby.0")
-        .expect("ruby annotation is observable as an element");
+    let ruby_object = find_native_text_target_object(
+        report,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
+    );
     assert_eq!(ruby_object["role"], "rich_text_ruby");
     assert_eq!(ruby_object["text"], "夢 (ゆめ)");
     assert_eq!(ruby_object["rich_text_ref"]["kind"], "ruby");
@@ -200,21 +238,19 @@ fn assert_agent_observe_rich_text_child_objects(objects: &[serde_json::Value]) {
 
 #[test]
 fn agent_observe_json_reports_rich_text_display_objects() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-rich-text",
         r##"
 pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
-    alice(color=rgb("#303132")): Hello #[player] |[夢](ゆめ)[r][voice auto][p]
+    alice: #color(rgb("#303132"))[Hello #[player] |[夢](ゆめ)[r][voice auto][p]]
 }
 "##,
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("overlay")
@@ -245,7 +281,7 @@ flow main {
 
 #[test]
 fn agent_hit_test_reports_depth_sorted_rich_text_proxy() {
-    let path = temp_arcw(
+    let path = temp_authored_native_cli_fixture(
         "agent-hit-test-rich-text-proxy",
         r#"
 #[text_proxy(role="keyword", hit_test=true, depth=4px, channel="choice")]
@@ -266,6 +302,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 "#,
+        "entry.main",
     );
     let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -299,10 +336,8 @@ entry cli @entry.main {
     let x = agent_json_bbox_x(&hover["bbox"]) + agent_json_bbox_width(&hover["bbox"]) / 2;
     let y = agent_json_bbox_y(&hover["bbox"]) + agent_json_bbox_height(&hover["bbox"]) / 2;
 
-    let hit_test = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("hit-test")
-        .arg(&path)
+    let hit_test = path
+        .agent_command("hit-test")
         .arg("--x")
         .arg(x.to_string())
         .arg("--y")
@@ -407,9 +442,26 @@ fn assert_text_proxy_field(region: &serde_json::Value, name: &str, value: &str) 
     assert!(region.get("proxy_params").is_none());
 }
 
+fn text_proxy_field<'a>(proxy: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    let field = proxy["fields"]
+        .as_array()
+        .expect("typed proxy fields are listed")
+        .iter()
+        .find(|field| field["name"] == name)
+        .unwrap_or_else(|| panic!("typed proxy field {name} is present: {proxy}"));
+    let schema_field = proxy["schema"]["fields"]
+        .as_array()
+        .expect("typed proxy schema fields are listed")
+        .iter()
+        .find(|field| field["name"] == name)
+        .unwrap_or_else(|| panic!("typed proxy schema field {name} is present: {proxy}"));
+    assert_eq!(field["id"], schema_field["id"]);
+    &field["value"]
+}
+
 #[test]
 fn agent_observe_reports_explicit_rich_text_proxy_struct_metadata() {
-    let path = temp_arcw(
+    let path = temp_authored_native_cli_fixture(
         "agent-observe-explicit-rich-text-proxy",
         r#"
 #[rich_text_proxy(role="quest", hit_test=true, depth=6px, layer="hud", channel="quest")]
@@ -428,6 +480,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 "#,
+        "entry.main",
     );
     let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -454,9 +507,10 @@ entry cli @entry.main {
 
     let dialogue_view = find_dialogue_view_object(&observe_json);
     assert!(rich_text_text_run_has_object_proxy(
+        &observe_json,
         dialogue_view,
         |proxy| {
-            proxy["id"] == "QuestHit"
+            proxy["id"] == "quest"
                 && proxy["type_name"] == "QuestHit"
                 && proxy["declaration"]["struct_name"] == "QuestHit"
                 && proxy["declaration"]["attribute"] == "rich_text_proxy"
@@ -464,12 +518,12 @@ entry cli @entry.main {
                 && proxy["layer"] == "hud"
                 && proxy["depth"] == 6000
                 && proxy["hit_test"] == true
-                && proxy["params"]["channel"]["value"] == "quest"
-                && proxy["params"]["state"]["value"] == "active"
+                && text_proxy_field(proxy, "channel")["value"] == "quest"
+                && text_proxy_field(proxy, "state")["value"] == "active"
         }
     ));
 
-    let proxy = find_rich_text_proxy_object(&observe_json, "QuestHit", "Quest");
+    let proxy = find_rich_text_proxy_object(&observe_json, "quest", "Quest");
     assert_eq!(proxy["role"], "rich_text_proxy");
     assert_eq!(proxy["rich_text_ref"]["kind"], "text_object_proxy");
     assert_eq!(proxy["rich_text_ref"]["object_layer"], "hud");
@@ -483,7 +537,7 @@ entry cli @entry.main {
         &path, proxy, "hud", 6000,
     );
 
-    assert_agent_presentation_tree_filters_rich_text_proxy_struct(&path);
+    assert_agent_presentation_tree_filters_rich_text_proxy_struct(&path, &observe_json);
 
     let hit_json = hit_test_center_of_observed_object(&path, proxy);
     fs::remove_file(&path).expect("remove temp explicit rich-text proxy source");
@@ -492,7 +546,7 @@ entry cli @entry.main {
     assert_eq!(hit_json["top_object_id"], proxy["id"]);
     assert_eq!(hit_json["hits"][0]["role"], "rich_text_proxy");
     assert_eq!(hit_json["hits"][0]["region"]["kind"], "text_object_proxy");
-    assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "QuestHit");
+    assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "quest");
     assert_eq!(hit_json["hits"][0]["region"]["proxy_type"], "QuestHit");
     assert_text_proxy_declaration_with_attribute(
         &hit_json["hits"][0]["region"]["proxy_declaration"],
@@ -506,7 +560,7 @@ entry cli @entry.main {
 }
 
 fn assert_agent_observe_proxy_object_image_metadata_carries_struct_declaration(
-    path: &Path,
+    path: &NativeCliFixture,
     proxy: &serde_json::Value,
     object_layer: &str,
     object_depth: i32,
@@ -519,36 +573,50 @@ fn assert_agent_observe_proxy_object_image_metadata_carries_struct_declaration(
     );
 }
 
-fn assert_agent_presentation_tree_filters_rich_text_proxy_struct(path: &Path) {
-    let proxy_struct_tree = read_agent_presentation_tree_resource(
-        path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_struct=QuestHit",
-        "rich-text-proxy-struct",
-    );
+fn assert_agent_presentation_tree_filters_rich_text_proxy_struct(
+    path: &NativeCliFixture,
+    report: &serde_json::Value,
+) {
+    let report: arcweft_agent_protocol::observation::AgentObservationReport =
+        serde_json::from_value(report.clone())
+            .expect("the observation carries an admitted context catalog");
+    let resource = report
+        .presentation_tree_resource()
+        .expect("the owning report issues its presentation-tree resource");
+    let proxy_struct_uri = arcweft_agent_protocol::ids::AgentResourceUri::new(format!(
+        "{}?proxy_struct=QuestHit",
+        resource.uri.as_str(),
+    ))
+    .expect("caller-authored query uses the issued resource address");
+    let proxy_struct_tree =
+        read_agent_presentation_tree_resource(path, &proxy_struct_uri, "rich-text-proxy-struct");
     assert!(presentation_tree_has_object_proxy(
         &proxy_struct_tree,
         |proxy| {
             proxy["type_name"] == "QuestHit"
                 && proxy["declaration"]["attribute"] == "rich_text_proxy"
-                && proxy["params"]["channel"]["value"] == "quest"
+                && text_proxy_field(proxy, "channel")["value"] == "quest"
         }
     ));
-    let proxy_param_tree = read_agent_presentation_tree_resource(
-        path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.state=active",
-        "rich-text-proxy-param",
-    );
+    let proxy_param_uri = arcweft_agent_protocol::ids::AgentResourceUri::new(format!(
+        "{}?proxy_param.state=active",
+        resource.uri.as_str(),
+    ))
+    .expect("caller-authored query uses the issued resource address");
+    let proxy_param_tree =
+        read_agent_presentation_tree_resource(path, &proxy_param_uri, "rich-text-proxy-param");
     assert!(presentation_tree_has_object_proxy(
         &proxy_param_tree,
         |proxy| {
-            proxy["type_name"] == "QuestHit" && proxy["params"]["state"]["value"] == "active"
+            proxy["type_name"] == "QuestHit"
+                && text_proxy_field(proxy, "state")["value"] == "active"
         }
     ));
 }
 
 #[test]
 fn agent_observe_reports_text_presentation_z_index_depth() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-rich-text-z-index-depth",
         r#"
 pub character alice { display = "Alice" }
@@ -558,10 +626,8 @@ flow main {
 }
 "#,
     );
-    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let observe = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -650,7 +716,7 @@ flow main {
 }
 
 fn assert_agent_observe_line_hit_test_carries_object_layer(
-    path: &Path,
+    path: &NativeCliFixture,
     line: &serde_json::Value,
     object_layer: &str,
     object_depth: i32,
@@ -669,7 +735,7 @@ fn assert_agent_observe_line_hit_test_carries_object_layer(
 }
 
 fn assert_agent_observe_child_text_object_image_metadata_carries_object_layer(
-    path: &Path,
+    path: &NativeCliFixture,
     observe_json: &serde_json::Value,
     object_layer: &str,
     object_depth: i32,
@@ -703,13 +769,11 @@ fn assert_agent_observe_child_text_object_image_metadata_carries_object_layer(
     );
 }
 
-fn assert_agent_observe_captures_presentation_layer(path: &Path) {
+fn assert_agent_observe_captures_presentation_layer(path: &NativeCliFixture) {
     let layer_dir = temp_dir("agent-observe-rich-text-layer-capture");
     let layer_png = layer_dir.join("hud-layer.png");
-    let layer_capture = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+    let layer_capture = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -735,7 +799,7 @@ fn assert_agent_observe_captures_presentation_layer(path: &Path) {
 }
 
 fn assert_agent_observe_object_image_metadata_carries_object_layer(
-    path: &Path,
+    path: &NativeCliFixture,
     object: &serde_json::Value,
     object_layer: &str,
     object_depth: i32,
@@ -743,10 +807,8 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
     let object_id = object["id"].as_str().expect("observed object id");
     let dir = temp_dir("agent-observe-rich-text-object-image-metadata");
     let object_png = dir.join("object.png");
-    let capture = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+    let capture = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -803,16 +865,14 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
 }
 
 fn read_agent_presentation_tree_resource(
-    path: &Path,
-    uri: &str,
+    path: &NativeCliFixture,
+    uri: &arcweft_agent_protocol::ids::AgentResourceUri,
     context: &str,
 ) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+    let output = path
+        .agent_command("observe")
         .arg("--read-uri")
-        .arg(uri)
+        .arg(uri.as_str())
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -826,8 +886,18 @@ fn read_agent_presentation_tree_resource(
         "agent observe {context} presentation tree read should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|error| panic!("{context} tree read is JSON: {error}"))
+    let resource: arcweft_agent_protocol::resource::AgentResource =
+        serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|error| panic!("{context} tree read is a typed resource: {error}"));
+    assert_eq!(&resource.uri, uri);
+    assert_eq!(
+        resource.kind,
+        arcweft_agent_protocol::resource::AgentResourceKind::PresentationTree,
+    );
+    assert_eq!(resource.mime_type, "application/json");
+    assert!(resource.image.is_none());
+    serde_json::to_value(resource)
+        .unwrap_or_else(|error| panic!("{context} typed tree resource serializes: {error}"))
 }
 
 fn presentation_tree_has_object_proxy(
@@ -846,15 +916,13 @@ fn presentation_tree_has_object_proxy(
 }
 
 fn hit_test_center_of_observed_object(
-    path: &Path,
+    path: &NativeCliFixture,
     object: &serde_json::Value,
 ) -> serde_json::Value {
     let center_x = agent_json_bbox_x(&object["bbox"]) + agent_json_bbox_width(&object["bbox"]) / 2;
     let center_y = agent_json_bbox_y(&object["bbox"]) + agent_json_bbox_height(&object["bbox"]) / 2;
-    let hit_test = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("hit-test")
-        .arg(path)
+    let hit_test = path
+        .agent_command("hit-test")
         .arg("--x")
         .arg(center_x.to_string())
         .arg("--y")
@@ -879,7 +947,7 @@ fn hit_test_center_of_observed_object(
 
 #[test]
 fn agent_hit_test_capture_time_follows_animated_text_proxy_bounds() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-hit-test-animated-rich-text-proxy",
         r#"
 #[text_proxy(role="keyword", hit_test=true, depth=4px, channel="choice")]
@@ -890,7 +958,7 @@ pub struct KeywordHit {
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #object(id = @.hotspot, type = KeywordHit)[#fx(wave(amplitude=60px, direction=vec2(0.0, 1.0), target=.content))[Hit]][p]
+    alice: #object(id = @.hotspot, type = KeywordHit)[#fx(wave(amplitude=60px, period=1.0, direction=vec2(0.0, 1.0), target=.content))[Hit]][p]
 }
 "#,
     );
@@ -939,11 +1007,11 @@ flow main {
         late_proxy,
         "mask_attachment",
     );
-    assert_eq!(
-        mask_json["images"][0]["object"]["rich_text_ref"]["presentation"]["object_proxies"][0]["params"]
-            ["channel"]["value"],
-        "choice"
-    );
+    let proxy =
+        &mask_json["images"][0]["object"]["rich_text_ref"]["presentation"]["object_proxies"][0];
+    let channel = text_proxy_field(proxy, "channel");
+    assert_eq!(channel["kind"], "text");
+    assert_eq!(channel["value"], "choice");
 
     let object_id_path = dir.join("animated-proxy-object-id.rgba");
     let (object_id_json, object_id_bytes) =
@@ -968,11 +1036,12 @@ flow main {
     fs::remove_file(&path).expect("remove temp animated hit-test source");
 }
 
-fn observe_animated_proxy_hit_test_source(path: &Path, capture_time: &str) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+fn observe_animated_proxy_hit_test_source(
+    path: &NativeCliFixture,
+    capture_time: &str,
+) -> serde_json::Value {
+    let output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -993,16 +1062,14 @@ fn observe_animated_proxy_hit_test_source(path: &Path, capture_time: &str) -> se
 }
 
 fn capture_animated_proxy_raw_at(
-    path: &Path,
+    path: &NativeCliFixture,
     object_id: &str,
     capture_kind: &str,
     raw_path: &Path,
     capture_time: &str,
 ) -> (serde_json::Value, Vec<u8>) {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+    let output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1070,15 +1137,13 @@ fn assert_animated_proxy_capture_uses_late_bounds(
 }
 
 fn hit_test_animated_proxy_source_at(
-    path: &Path,
+    path: &NativeCliFixture,
     x: u64,
     y: u64,
     capture_time: &str,
 ) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("hit-test")
-        .arg(path)
+    let output = path
+        .agent_command("hit-test")
         .arg("--x")
         .arg(x.to_string())
         .arg("--y")
@@ -1103,13 +1168,10 @@ fn hit_test_animated_proxy_source_at(
 }
 
 fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_json::Value) {
-    let objects = observe_json["objects"]
-        .as_array()
-        .expect("observed objects are listed");
-    let page = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.page.0")
-        .expect("proxy text page object is observed");
+    let page = find_native_text_target_object(
+        observe_json,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Page(0)),
+    );
     assert_eq!(page["rich_text_ref"]["object_layer"], "view");
     assert_eq!(page["rich_text_ref"]["object_depth"], 7000);
     let page_hover_hit = rich_text_proxy_hit_region(page, "hover", 0, 3);
@@ -1118,10 +1180,10 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
     assert_eq!(page_hover_hit["proxy_layer"], "view");
     assert_eq!(page_hover_hit["depth"], 7000);
 
-    let line = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.line.0")
-        .expect("proxy text line object is observed");
+    let line = find_native_text_target_object(
+        observe_json,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Line(0)),
+    );
     assert_eq!(line["rich_text_ref"]["object_layer"], "view");
     assert_eq!(line["rich_text_ref"]["object_depth"], 7000);
     let line_keyword_hit = rich_text_proxy_hit_region(line, "hotspot", 0, 3);
@@ -1133,7 +1195,7 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
 
 #[test]
 fn agent_observe_json_reports_rich_text_reset_controls_and_host_markers() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-rich-text-controls",
         r##"
 pub character alice { display = "Alice" }
@@ -1143,10 +1205,8 @@ flow main {
 }
 "##,
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -1165,9 +1225,9 @@ flow main {
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("agent observe controls output is JSON");
-    let object = &json["objects"][0];
+    let object = find_dialogue_view_object(&json);
     assert_eq!(object["text"], "HotCool");
-    let runs = observed_object_rich_text_frame(object)["display_map"]["text_runs"]
+    let runs = observed_object_rich_text_frame(&json, object)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are listed");
     let hot = runs
@@ -1189,7 +1249,7 @@ flow main {
         cool["styles"].as_array().unwrap().is_empty(),
         "reset should clear active inline styles for following display runs"
     );
-    let controls = observed_object_rich_text_frame(object)["display_map"]["controls"]
+    let controls = observed_object_rich_text_frame(&json, object)["display_map"]["controls"]
         .as_array()
         .expect("control markers are listed");
     assert!(
@@ -1197,12 +1257,43 @@ flow main {
             .iter()
             .any(|control| control["control"]["kind"] == "reset")
     );
-    assert!(controls.iter().any(|control| {
-        control["control"]["kind"] == "timed_wait" && control["control"]["value"] == "time=500ms"
-    }));
-    assert!(controls.iter().any(|control| {
-        control["control"]["kind"] == "mark" && control["control"]["name"] == ".sync"
-    }));
+    let typed_controls = controls
+        .iter()
+        .map(|control| {
+            serde_json::from_value::<arcweft_text_model::RichTextControl>(
+                control["control"].clone(),
+            )
+            .expect("the issued frame retains a typed text control")
+        })
+        .collect::<Vec<_>>();
+    assert!(typed_controls.iter().any(|control| matches!(
+        control,
+        arcweft_text_model::RichTextControl::TimedWait {
+            duration_millis: 500,
+        }
+    )));
+    let expected_mark = arcweft_core::runtime_id::RuntimeDialogueMarkId::from_zero_based(0)
+        .expect("the fixture authors its first and only mark");
+    let typed_marks = typed_controls
+        .iter()
+        .filter_map(|control| match control {
+            arcweft_text_model::RichTextControl::Mark {
+                mark,
+                diagnostic_name,
+            } => Some((*mark, diagnostic_name.as_str())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        typed_marks.len(),
+        1,
+        "the fixture publishes one exact typed mark",
+    );
+    assert_eq!(
+        typed_marks[0],
+        (expected_mark, "sync"),
+        "the source-owned mark has its canonical ordinal and normalized local suffix",
+    );
     assert!(
         controls
             .iter()
@@ -1214,7 +1305,7 @@ flow main {
             .any(|control| control["control"]["kind"] == "page")
     );
     assert!(
-        observed_object_rich_text_frame(object)["display_map"]["host_events"]
+        observed_object_rich_text_frame(&json, object)["display_map"]["host_events"]
             .as_array()
             .unwrap()
             .iter()

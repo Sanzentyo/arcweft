@@ -1,8 +1,10 @@
-use arcweft_glyphon::{PreparedTextItem, TextCaretPaint, TextCompositionUnderline};
+use arcweft_glyphon::{
+    PreparedTextItem, TextCaretPaint, TextCompositionUnderline, TextGlyphTransform,
+};
 use arcweft_presentation::{
     fx::{
         FiniteF32, FxColor, Length, Opacity, ResolvedFxGlyphPass, ResolvedFxMask,
-        ResolvedFxOffscreenPass, ResolvedFxPostProcess,
+        ResolvedFxOffscreenPass, ResolvedFxPostProcess, Transform2D,
     },
     hit::HitRect,
 };
@@ -663,4 +665,162 @@ fn empty_scene() -> RenderScene {
         choice_scroll: ChoiceScroll::default(),
         scroll_regions: Vec::new(),
     }
+}
+
+#[test]
+fn evaluated_paint_and_actual_view_context_share_observed_and_capture_geometry() {
+    use arcweft_render_wgpu::offscreen::{
+        CaptureCropPolicy, CaptureRegion, CaptureScope, PreparedTextSelection,
+    };
+    let mut planner = SharedFramePlanContext::new();
+    planner.register_font_bytes(TEST_FONT.to_vec()).unwrap();
+    let mut item = prepare_item(&mut planner, "夢", HitRect::new(30.0, 40.0, 180.0, 90.0));
+    let layout = std::sync::Arc::clone(&item.layout);
+    let transform = Transform2D {
+        translate_x: Length::try_pixels(14.0).unwrap(),
+        translate_y: Length::try_pixels(9.0).unwrap(),
+        scale_x: FiniteF32::try_new(1.25).unwrap(),
+        scale_y: FiniteF32::try_new(0.8).unwrap(),
+        ..Transform2D::default()
+    }
+    .resolve()
+    .unwrap();
+    for paint in &mut item.paint.glyphs {
+        paint.transform = TextGlyphTransform::new(transform);
+    }
+    let mut frame = planner.prepare(&empty_scene()).unwrap();
+    let text = frame.text.push(item).unwrap();
+    let mut scene = ViewScene::new(viewport().logical_width, viewport().logical_height);
+    scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text }));
+    let context = ViewSceneContext {
+        transform: ViewAffine2D {
+            m11: 1.0,
+            m12: 0.15,
+            m21: 0.25,
+            m22: 1.0,
+            tx: 70.0,
+            ty: 30.0,
+        },
+        opacity: 1.0,
+        clip: None,
+        primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
+    };
+    scene.push_paint_node(ViewPaintNode::Group(
+        ViewCompositingGroup::new(
+            HitRect::new(0.0, 0.0, 640.0, 360.0),
+            ViewCompositingEffects::default(),
+        )
+        .with_children(vec![ViewPaintNode::Direct(context.clone())]),
+    ));
+    frame.push_view_scene(PreparedViewScene::new(scene));
+    let geometry = frame
+        .prepared_text_geometries()
+        .unwrap()
+        .remove(&text)
+        .unwrap();
+    let actual = frame.text.get(text).unwrap();
+    assert!(std::sync::Arc::ptr_eq(&actual.layout, &layout));
+    let independent = actual
+        .painted_geometry([context.prepared_text_affine([0.0, 0.0]).unwrap()])
+        .unwrap();
+    assert_eq!(geometry, independent);
+    let bounds = geometry.bounds().unwrap();
+    assert!(bounds.x > layout.bounds.unwrap().x + 60.0);
+    assert!(bounds.y > layout.bounds.unwrap().y + 20.0);
+    let region = CaptureRegion::prepared_text(
+        arcweft_id::PublicId::try_new("object.geometry.actual").unwrap(),
+        HitRect::new(bounds.x, bounds.y, bounds.width, bounds.height),
+        [1, 2, 3, 255],
+        PreparedTextSelection::try_new(
+            text,
+            (0..actual.glyphs.len()).map(|index| u32::try_from(index).unwrap()),
+        )
+        .unwrap(),
+    );
+    let mut capture = pollster::block_on(SharedOffscreenCapture::new(
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ))
+    .unwrap();
+    capture.register_font_bytes(TEST_FONT.to_vec()).unwrap();
+    let mask = capture
+        .capture(
+            &frame,
+            &CaptureRequest::new(
+                [CaptureAttachment::Mask],
+                CaptureScope::Regions(vec![region]),
+                CaptureCropPolicy::FullFrame,
+            ),
+        )
+        .unwrap();
+    let pixels = mask.attachment_rgba(CaptureAttachment::Mask).unwrap();
+    assert!(
+        pixels.chunks_exact(4).any(|pixel| pixel[3] > 0),
+        "actual transformed glyph coverage survives capture"
+    );
+    let width = usize::try_from(mask.width).unwrap();
+    for (index, pixel) in pixels
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, pixel)| pixel[3] > 0)
+    {
+        let x = f32::from(u16::try_from(index % width).unwrap()) / 2.0;
+        let y = f32::from(u16::try_from(index / width).unwrap()) / 2.0;
+        assert!(
+            x >= bounds.x - 1.0
+                && x <= bounds.right() + 1.0
+                && y >= bounds.y - 1.0
+                && y <= bounds.bottom() + 1.0,
+            "renderer coverage ({x}, {y}) is inside the owning paint geometry {bounds:?}: {pixel:?}"
+        );
+    }
+}
+
+#[test]
+fn final_view_graph_repeated_occurrences_are_unioned_and_absent_contexts_reject() {
+    let mut planner = SharedFramePlanContext::new();
+    planner.register_font_bytes(TEST_FONT.to_vec()).unwrap();
+    let item = prepare_item(&mut planner, "夢", HitRect::new(20.0, 30.0, 100.0, 80.0));
+    let original = item.layout.bounds.unwrap();
+    let mut frame = planner.prepare(&empty_scene()).unwrap();
+    let text = frame.text.push(item).unwrap();
+    let mut scene = ViewScene::new(640.0, 360.0);
+    scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text }));
+    for offset in [0.0, 100.0] {
+        scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
+            transform: ViewAffine2D {
+                tx: offset,
+                ..ViewAffine2D::IDENTITY
+            },
+            opacity: 1.0,
+            clip: None,
+            primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
+        }));
+    }
+    assert!(
+        scene.contexts().is_empty(),
+        "geometry must borrow the final graph, not the obsolete flat context inventory"
+    );
+    frame.push_view_scene(PreparedViewScene::new(scene.clone()));
+    let geometry = frame
+        .prepared_text_geometries()
+        .unwrap()
+        .remove(&text)
+        .unwrap();
+    assert_eq!(
+        geometry.bounds(),
+        Some(original.union(LayoutRect::new(
+            original.x + 100.0,
+            original.y,
+            original.width,
+            original.height
+        )))
+    );
+    scene.replace_paint_nodes(Vec::new());
+    let frame = frame.with_view_scenes(vec![PreparedViewScene::new(scene)]);
+    assert!(matches!(
+        frame.prepared_text_geometries(),
+        Err(arcweft_render_wgpu::geometry::FramePlanError::PreparedText(
+            arcweft_glyphon::PreparedTextError::MissingPainterContext
+        ))
+    ));
 }

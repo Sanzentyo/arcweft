@@ -20,6 +20,7 @@ pub mod proxy;
 pub mod resource;
 pub mod rich_text;
 pub mod session;
+pub mod text_context;
 pub mod trace;
 pub mod value;
 pub mod verified_effects;

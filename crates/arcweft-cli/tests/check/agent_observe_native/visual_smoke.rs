@@ -159,7 +159,12 @@ fn visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata() {
     let mask_image = visual_smoke_image(&mask);
     assert_eq!(mask_image["kind"], "mask");
     assert_eq!(mask_image["mime_type"], "application/octet-stream");
-    assert_visual_smoke_selected_capture(mask_image, "object", &dialogue_view_id, &["mask_attachment"]);
+    assert_visual_smoke_selected_capture(
+        mask_image,
+        "object",
+        &dialogue_view_id,
+        &["mask_attachment"],
+    );
     assert_visual_smoke_raw_len_matches_image(&mask_path, mask_image);
     let mask_bytes = fs::read(&mask_path).expect("read visual smoke mask RGBA");
     let opaque_pixels = mask_bytes
@@ -198,8 +203,8 @@ fn visual_smoke_object_id_and_mask_captures_have_debug_pixels_and_metadata() {
     fs::remove_dir_all(&dir).expect("remove temp visual smoke debug dir");
 }
 
-fn visual_smoke_source(label: &str) -> PathBuf {
-    temp_arcw(
+fn visual_smoke_source(label: &str) -> NativeCliFixture {
+    temp_authored_native_cli_fixture(
         label,
         r#"
 entry cli @entry.main { goto @flow.main }
@@ -211,11 +216,12 @@ flow main {
     alice: Hello #[player] |[夢](ゆめ)[r][r]#layout(.vertical_rl)[吾輩は猫である。ABC 123 2026。][p]
 }
 "#,
+        "entry.main",
     )
 }
 
 fn visual_smoke_capture(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     out_path: &Path,
     image_kind: &str,
     capture_kind: Option<&str>,

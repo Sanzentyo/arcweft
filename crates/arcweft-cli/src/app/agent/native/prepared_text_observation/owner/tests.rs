@@ -2,66 +2,47 @@ use super::*;
 use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::view_scene::PreparedTextId;
 
-fn dialogue_owner(index: u32, entry: u64, role: DialoguePreparedTextRole) -> PreparedTextOwner {
+fn dialogue_owner(
+    index: u32,
+    entry: u64,
+    mount: u64,
+    role: DialoguePreparedTextRole,
+) -> PreparedTextOwner {
     PreparedTextOwner::new(
         PreparedTextId::from_index(index),
         arcweft_id::PublicId::try_new(format!("view.dialogue.text{index}")).unwrap(),
         PreparedTextOwnerKind::DialogueView {
             dialogue: 7,
             entry,
-            mount: 11,
+            mount,
             role,
         },
-        0,
+        arcweft_text_model::PreparedTextContext::document(0, 0).unwrap(),
         HitRect::new(0.0, 0.0, 10.0, 10.0),
     )
 }
 
 #[test]
-fn dialogue_children_resolve_to_content_independently_of_prepared_order() {
-    let speaker = dialogue_owner(1, 9, DialoguePreparedTextRole::CharacterDisplayName);
-    let content = dialogue_owner(2, 9, DialoguePreparedTextRole::Content);
-    let other_entry = dialogue_owner(3, 90, DialoguePreparedTextRole::Content);
-    for owners in [
-        [speaker.clone(), content.clone(), other_entry.clone()],
-        [other_entry.clone(), content.clone(), speaker.clone()],
-    ] {
-        let selected = PreparedTextObservationOwner::select(&owners, |owner| {
-            owner.contains_object("object.dialogue.7.9.ruby.0")
-        })
-        .unwrap();
-        assert_eq!(selected.prepared().text, content.text);
-        assert_eq!(selected.root_id(), "object.dialogue.7.9");
-    }
-    let owners = [speaker, other_entry];
-    assert!(matches!(
-        PreparedTextObservationOwner::select(&owners, |owner| owner
-            .contains_object("object.dialogue.7.9.ruby.0")),
-        Err(PreparedTextOwnerSelectionError::Missing)
-    ));
-}
-
-#[test]
-fn duplicate_content_is_rejected_for_observation_and_capture_queries() {
+fn dialogue_owner_identity_distinguishes_speaker_content_entry_mount_and_text_target() {
     let owners = [
-        dialogue_owner(1, 9, DialoguePreparedTextRole::CharacterDisplayName),
-        dialogue_owner(2, 9, DialoguePreparedTextRole::Content),
-        dialogue_owner(3, 9, DialoguePreparedTextRole::Content),
+        dialogue_owner(1, 9, 11, DialoguePreparedTextRole::CharacterDisplayName),
+        dialogue_owner(2, 9, 11, DialoguePreparedTextRole::Content),
+        dialogue_owner(3, 90, 11, DialoguePreparedTextRole::Content),
+        dialogue_owner(2, 9, 12, DialoguePreparedTextRole::Content),
+        dialogue_owner(4, 9, 11, DialoguePreparedTextRole::Content),
     ];
-    assert!(matches!(
-        PreparedTextObservationOwner::select(&owners, |owner| matches!(
-            owner.prepared().kind,
-            PreparedTextOwnerKind::DialogueView {
-                dialogue: 7,
-                entry: 9,
-                ..
-            }
-        )),
-        Err(PreparedTextOwnerSelectionError::Ambiguous { count: 2 })
-    ));
-    assert!(matches!(
-        PreparedTextObservationOwner::select(&owners, |owner| owner
-            .contains_object("object.dialogue.7.9.ruby.0")),
-        Err(PreparedTextOwnerSelectionError::Ambiguous { count: 2 })
-    ));
+    let roots = owners
+        .iter()
+        .map(PreparedTextObservationOwner::new)
+        .map(|owner| owner.root_id().to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(roots.len(), owners.len());
+    for prepared in &owners {
+        let owner = PreparedTextObservationOwner::new(prepared);
+        assert!(std::ptr::eq(owner.prepared(), prepared));
+        assert_eq!(
+            owner.root_id(),
+            PreparedTextObservationOwner::new(prepared).root_id()
+        );
+    }
 }

@@ -129,7 +129,9 @@ fn agent_mcp_script_run_rejects_unknown_arguments() {
     }
 }
 
-fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObservationReport {
+pub(super) fn test_agent_observation_report(
+    capture_time_millis: Option<u32>,
+) -> AgentObservationReport {
     AgentObservationReport {
         status: "ok".to_owned(),
         session_id: "cli".to_owned(),
@@ -147,6 +149,15 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         layers: Vec::new(),
         views: Vec::new(),
         objects: Vec::new(),
+        text_contexts: arcweft_agent_protocol::text_context::AgentTextContextCatalog::empty(
+            arcweft_agent_protocol::text_context::AgentTextContextScope {
+                session_id: "cli".to_owned(),
+                frame_id: "frame.3".to_owned(),
+                tick: 3,
+                capture_time_millis,
+            },
+        )
+        .unwrap(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),
@@ -265,7 +276,7 @@ fn agent_observe_layout_scene_graph_records_raw_content_rect() {
     assert_eq!(metadata["content_rect"]["height"], serde_json::json!(720.0));
 }
 
-fn test_line_display_frame() -> LineDisplayFrame {
+pub(super) fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
         line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.test")
             .expect("runtime line id"),
@@ -2823,6 +2834,7 @@ fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
         hash: "blake3:raw-rgba-test".to_owned(),
         image: Some(AgentImageMetadata {
             kind,
+            text_contexts: None,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Object {
                 id: "object.customer.secret".to_owned(),
@@ -2834,7 +2846,7 @@ fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
             width: 1,
             height: 1,
             crop_origin: None,
-            pixel_format: Some("rgba8_unorm".to_owned()),
+            pixel_format: Some(arcweft_agent_protocol::image::AgentImagePixelFormat::Rgba8Unorm),
             row_stride_bytes: Some(4),
             content_bbox: None,
             content_viewport_bbox: None,
@@ -2966,9 +2978,10 @@ fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> Ag
         object_layer: None,
         object_depth: None,
         text: None,
+        text_context: None,
         rich_text_ref: None,
-        content: AgentObservedObjectContent::RichText {
-            frame: Box::new(test_line_display_frame().into()),
+        content: AgentObservedObjectContent::Custom {
+            object_type: "test_panel".to_owned(),
         },
     }
 }
@@ -3047,7 +3060,7 @@ fn shared_capture_mask_filters_a_view_to_its_member_objects() {
             scope: AgentCaptureScope::View("view.panel".to_owned()),
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &frames,
     )
@@ -3094,7 +3107,7 @@ fn shared_capture_object_id_preserves_supplied_painter_order() {
             scope: AgentCaptureScope::Viewport,
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &frames,
     )
@@ -3136,7 +3149,7 @@ fn shared_layer_object_id_uses_direct_object_identity_for_descendant_coverage() 
             scope: AgentCaptureScope::Layer("dialogue".to_owned()),
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &frames,
     )
@@ -3169,9 +3182,15 @@ fn shared_capture_viewport_color_is_the_exact_retained_frame() {
         expected.extend_from_slice(&[index, index.wrapping_add(1), 31, 255]);
     }
     let (_, object_id, mask) = test_attachment_bytes(&report);
-    let frames =
-        AgentImageFrameStore::from_full_attachments(4, 3, expected.clone(), object_id, mask)
-            .unwrap();
+    let frames = AgentImageFrameStore::from_full_attachments(
+        report.text_contexts.scope().clone(),
+        4,
+        3,
+        expected.clone(),
+        object_id,
+        mask,
+    )
+    .unwrap();
 
     let result = agent_capture_image(
         &report,
@@ -3182,7 +3201,7 @@ fn shared_capture_viewport_color_is_the_exact_retained_frame() {
             scope: AgentCaptureScope::Viewport,
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &frames,
     )
@@ -3214,7 +3233,7 @@ fn shared_capture_scoped_color_uses_the_object_id_attachment_as_its_mask() {
             scope: AgentCaptureScope::Object("object.selected".to_owned()),
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &frames,
     )
@@ -3243,7 +3262,7 @@ fn raster_capture_requires_retained_prepared_frame_attachments() {
             scope: AgentCaptureScope::Viewport,
             page: 0,
             capture_step: 3,
-            capture_time_seconds: 0.0,
+            capture_time_seconds: 60.0,
         },
         &AgentImageFrameStore::default(),
     );
@@ -3257,6 +3276,7 @@ fn test_shared_attachment_store(
 ) -> AgentImageFrameStore {
     let (pixel_count, object_id, mask) = test_attachment_bytes(report);
     AgentImageFrameStore::from_full_attachments(
+        report.text_contexts.scope().clone(),
         report.viewport.width,
         report.viewport.height,
         color.repeat(pixel_count),

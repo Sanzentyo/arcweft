@@ -14,7 +14,7 @@ use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
 use serde::{Deserialize, Serialize};
 
 /// One Agent Debug Bus observation frame.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AgentObservationReport {
     pub status: String,
     pub session_id: String,
@@ -28,6 +28,7 @@ pub struct AgentObservationReport {
     pub layers: Vec<AgentObservedLayer>,
     pub views: Vec<AgentObservedView>,
     pub objects: Vec<AgentObservedObject>,
+    pub text_contexts: crate::text_context::AgentTextContextCatalog,
     pub presentation_tree: AgentPresentationTree,
     pub actions: Vec<AgentActionTarget>,
     /// Authored Scroll targets with non-actionable viewport/content parts.
@@ -43,15 +44,97 @@ pub struct AgentObservationReport {
     pub events: Vec<RuntimeEvent>,
     pub diagnostics: Vec<AgentDiagnostic>,
     pub steps: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capture_time_millis: Option<u32>,
     pub task_requests: usize,
     pub final_status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub overlay_svg: Option<String>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(remote = "AgentObservationReport")]
+struct AgentObservationReportWire {
+    status: String,
+    session_id: String,
+    tick: usize,
+    frame_id: String,
+    state_hash: String,
+    render_hash: String,
+    source: String,
+    viewport: AgentViewport,
+    images: Vec<AgentImageResource>,
+    layers: Vec<AgentObservedLayer>,
+    views: Vec<AgentObservedView>,
+    objects: Vec<AgentObservedObject>,
+    text_contexts: crate::text_context::AgentTextContextCatalog,
+    presentation_tree: AgentPresentationTree,
+    actions: Vec<AgentActionTarget>,
+    /// Authored Scroll targets with non-actionable viewport/content parts.
+    scroll_regions: Vec<AgentObservedScrollRegion>,
+    /// Stable range tables for mounted lazy lists, including off-window items.
+    virtual_lists: Vec<AgentObservedVirtualList>,
+    view_tree: AgentViewTree,
+    scene_graph: Vec<serde_json::Value>,
+    audio_state: AgentAudioState,
+    logs: Vec<RuntimeLog>,
+    signals: Vec<AgentAssignment>,
+    metrics: Vec<AgentAssignment>,
+    events: Vec<RuntimeEvent>,
+    diagnostics: Vec<AgentDiagnostic>,
+    steps: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    capture_time_millis: Option<u32>,
+    task_requests: usize,
+    final_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overlay_svg: Option<String>,
+}
+
+impl Serialize for AgentObservationReport {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.validate_text_contexts()
+            .map_err(serde::ser::Error::custom)?;
+        AgentObservationReportWire::serialize(self, serializer)
+    }
+}
+impl<'de> Deserialize<'de> for AgentObservationReport {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let report = AgentObservationReportWire::deserialize(deserializer)?;
+        report
+            .validate_text_contexts()
+            .map_err(serde::de::Error::custom)?;
+        Ok(report)
+    }
 }
 
 impl AgentObservationReport {
+    pub fn decode_json(bytes: &[u8]) -> Result<Self, crate::text_context::AgentTextContextError> {
+        crate::text_context::decode_text_context_envelope(bytes)
+    }
+
+    pub fn validate_text_contexts(&self) -> Result<(), crate::text_context::AgentTextContextError> {
+        let scope = self.text_contexts.scope();
+        if scope.session_id != self.session_id
+            || scope.frame_id != self.frame_id
+            || scope.tick != self.tick
+            || scope.capture_time_millis != self.capture_time_millis
+        {
+            return Err(crate::text_context::AgentTextContextError::ScopeMismatch);
+        }
+        self.text_contexts.validate_objects(&self.objects)?;
+        for image in &self.images {
+            crate::image::validate_agent_image_format(
+                image.pixel_format,
+                &image.mime_type,
+                image.width,
+                image.height,
+            )?;
+            if let Some(object) = &image.object {
+                object.validate_text_context(&self.text_contexts)?;
+            }
+        }
+        crate::text_context::validate_text_context_envelope(|writer| {
+            AgentObservationReportWire::serialize(self, &mut serde_json::Serializer::new(writer))
+        })
+    }
     /// Builds the MCP-style latest observation JSON resource.
     pub fn observation_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
@@ -78,7 +161,10 @@ impl AgentObservationReport {
             mime_type: "application/json".to_owned(),
             hash: self.render_hash.clone(),
             image: None,
-            body: AgentResourceBody::Json(serde_json::to_value(&self.objects)?),
+            body: AgentResourceBody::Json(serde_json::to_value(AgentObjectsReport {
+                text_contexts: self.text_contexts.clone(),
+                objects: self.objects.clone(),
+            })?),
         })
     }
 
@@ -153,15 +239,30 @@ impl AgentObservationReport {
         &self,
         image: &AgentImageResource,
         body: AgentBinaryResourceBody,
-    ) -> AgentResource {
-        AgentResource {
+    ) -> Result<AgentResource, serde_json::Error> {
+        if let Some(object) = &image.object {
+            object
+                .validate_text_context(&self.text_contexts)
+                .map_err(text_context_json_error)?;
+        }
+        let contexts = image
+            .object
+            .as_ref()
+            .and_then(|object| object.text_context.as_ref())
+            .map(|reference| self.text_contexts.selected(std::iter::once(reference)))
+            .transpose()
+            .map_err(text_context_json_error)?;
+        Ok(AgentResource {
             uri: resource_uri(image.uri.clone()),
             kind: AgentResourceKind::Image,
             mime_type: image.mime_type.clone(),
             hash: image.hash.clone(),
-            image: Some(crate::image::AgentImageMetadata::from_image_resource(image)),
+            image: Some(
+                crate::image::AgentImageMetadata::from_image_resource(image, contexts)
+                    .map_err(|error| <serde_json::Error as serde::ser::Error>::custom(error))?,
+            ),
             body: AgentResourceBody::BytesBase64(body),
-        }
+        })
     }
 
     /// Builds the MCP-style signals JSON resource.
@@ -215,4 +316,50 @@ impl AgentObservationReport {
 
 fn resource_uri(value: String) -> AgentResourceUri {
     AgentResourceUri::new(value).expect("generated observation resource URI is nonempty")
+}
+
+fn text_context_json_error(error: crate::text_context::AgentTextContextError) -> serde_json::Error {
+    <serde_json::Error as serde::ser::Error>::custom(error)
+}
+
+/// Self-contained observed Objects resource body.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentObjectsReport {
+    pub text_contexts: crate::text_context::AgentTextContextCatalog,
+    pub objects: Vec<AgentObservedObject>,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(remote = "AgentObjectsReport", deny_unknown_fields)]
+struct AgentObjectsReportWire {
+    text_contexts: crate::text_context::AgentTextContextCatalog,
+    objects: Vec<AgentObservedObject>,
+}
+impl Serialize for AgentObjectsReport {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.validate_text_contexts()
+            .map_err(serde::ser::Error::custom)?;
+        AgentObjectsReportWire::serialize(self, serializer)
+    }
+}
+impl AgentObjectsReport {
+    /// Validate exact object contexts and the complete compact JSON envelope.
+    pub fn validate_text_contexts(&self) -> Result<(), crate::text_context::AgentTextContextError> {
+        self.text_contexts.validate_objects(&self.objects)?;
+        crate::text_context::validate_text_context_envelope(|writer| {
+            AgentObjectsReportWire::serialize(self, &mut serde_json::Serializer::new(writer))
+        })
+    }
+
+    pub fn decode_json(bytes: &[u8]) -> Result<Self, crate::text_context::AgentTextContextError> {
+        crate::text_context::decode_text_context_envelope(bytes)
+    }
+}
+impl<'de> Deserialize<'de> for AgentObjectsReport {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let report = AgentObjectsReportWire::deserialize(deserializer)?;
+        report
+            .validate_text_contexts()
+            .map_err(serde::de::Error::custom)?;
+        Ok(report)
+    }
 }

@@ -280,7 +280,10 @@ shared renderer input contract. It also includes structured `scope`
 `masked_framebuffer_crop`, or `debug_geometry`), so clients do not need to
 parse the URI to know what was captured or which shared path produced it. Raw
 RGBA metadata includes `pixel_format = "rgba8_unorm"` and `row_stride_bytes =
-width * 4` so tools can decode the blob without guessing. Raster metadata also
+width * 4` from the producer's closed pixel-format value. PNG/SVG resources omit
+raw pixel format and stride; URI suffixes do not select an encoding. Zero or
+overflowing raw extents and contradictory stride/MIME values are rejected.
+Raster metadata also
 includes image-local `content_bbox`, viewport-space `content_viewport_bbox`,
 and `content_pixels`, derived from the retained ObjectId/Mask attachment, to
 expose empty crops and bbox drift without background-color guessing. Cropped layer/object
@@ -295,16 +298,17 @@ matches `images[0].uri`, so framebuffer, masked layer/object crop, and
 object-id/mask attachment captures keep their original bytes and metadata on
 readback. Other reads are derived only from the retained Color/ObjectId/Mask
 attachments for that exact `PreparedFrame`; no alternate renderer is started.
-Capture exposes the current runtime page/stage only. A non-zero historical
-`?page=N` request is rejected; clients advance the runtime to the desired stage
-and use the capture refs from that observation. This prevents stale page
+Capture exposes the current runtime page/stage only. An issued non-zero
+`?page=N` is accepted when it names the current admitted context's page.
+A historical or mismatched page request is rejected; clients advance the runtime
+to the desired stage and use its issued capture refs. This prevents stale page
 geometry from being re-laid out against a different frame.
 `--layer` crops to the selected layer's object bounds; `--object` crops to one
 observed object's bbox. PNG/raw output is produced by `SharedOffscreenCapture`
 from the normal `SharedRenderer` framebuffer. Full viewport, layer bbox
 crops, and object bbox crops are supported. Rich-text child object crops use
-the retained `TextLayout` bounds for text runs, ruby annotations, glyphs, and
-logical clusters.
+the prepared item's evaluated paint and actual View affine for text runs, ruby
+annotations, glyphs, and logical clusters.
 The implemented object slice is focused on rich-text/dialogue-View debugging: each
 observed layer includes a viewport bbox, object count, and stable
 `capture_refs` for color/object-id/mask PNG and raw RGBA images. Each
@@ -313,6 +317,13 @@ host events, inline interpolation failures, base styles, viewport bbox, polygon,
 object-local `capture_refs` for color/object-id/mask PNG and raw RGBA crops, the
 object-id debug color used in object-id images, rich-text `display_map` ranges
 for text/interpolation/ruby/control output, and a semantic `advance_text` action.
+The observation carries a version-1 `text_contexts` catalog with each owner's
+complete stage/document context and shaped layout once. Every text object carries
+a scoped `text_context` reference and a strict `rich_text` or `view_text` marker.
+The Objects resource body wraps `objects` and `text_contexts`; hit-test reports
+and standalone image metadata include their selected rows. These references
+preserve exact owner, parent, session, tick, and visual sample identities.
+Capture also checks the actual current prepared context and layout allocations.
 Visible rich-text pages, authored lines, text runs, text glyphs, ruby
 annotations, and glyph clusters are also exposed as `dialogue.rich_text` child
 objects with their own bbox,
@@ -328,7 +339,7 @@ hard breaks and page boundaries; their captures are restricted to the native
 text/ruby elements that overlap that line range. For child objects on later
 rendered pages, `rich_text_ref.page` records the page and capture refs include a
 matching `?page=N` query plus `capture_refs[].page` metadata. Child object
-bboxes come from the native text layout metrics used by native image capture
+bboxes come from the same evaluated prepared geometry used by native image capture
 where an object maps to concrete glyph/ruby elements, so image crop origins and
 observed child bboxes describe the same glyph, ruby, and cluster geometry.
 Text-glyph and glyph-cluster refs also report renderer-facing `orientation` and

@@ -398,3 +398,135 @@ const fn half_cluster(text: &str) -> VerticalBreakCluster<'_> {
         break_allowed_before: true,
     }
 }
+
+#[test]
+fn numeral_decimal_and_place_separators_preserve_one_unbreakable_unit() {
+    for separator in [".", ",", " "] {
+        let clusters = ["天", "12", separator, "345", "人"].map(cluster);
+        for strictness in [
+            JlreqStrictness::Loose,
+            JlreqStrictness::Normal,
+            JlreqStrictness::Strict,
+        ] {
+            let selected = plan(&clusters, 0.0, 0.0, 125.6, strictness);
+            assert_eq!(selected.break_offsets(), &[4]);
+            assert!(!selected.breaks_before(2));
+            assert!(!selected.breaks_before(3));
+            assert_eq!(selected.explain().rejected.jlreq_keep_together, 2);
+            assert_eq!(selected.explain().status, VerticalBreakPlanStatus::Normal);
+        }
+    }
+}
+
+#[test]
+fn ordinary_spaces_and_unpaired_numeric_separators_remain_breakable() {
+    for texts in [
+        ["天", " ", "人"],
+        ["12", " ", "word"],
+        ["word", " ", "12"],
+        ["12", ",", "word"],
+        ["word", ".", "12"],
+    ] {
+        let selected = plan(&texts.map(cluster), 0.0, 0.0, 60.0, JlreqStrictness::Normal);
+        assert_eq!(selected.break_offsets(), &[2]);
+        assert_eq!(selected.explain().rejected.jlreq_keep_together, 0);
+        assert_eq!(selected.explain().status, VerticalBreakPlanStatus::Normal);
+    }
+}
+
+#[test]
+fn numeral_separator_unit_uses_the_existing_bounded_forced_overflow_escape() {
+    let clusters = ["12", " ", "345"].map(cluster);
+    let selected = plan(&clusters, 0.0, 0.0, 60.0, JlreqStrictness::Normal);
+    assert!(selected.break_offsets().is_empty());
+    assert_eq!(selected.explain().rejected.jlreq_keep_together, 2);
+    assert_eq!(
+        selected.explain().status,
+        VerticalBreakPlanStatus::ForcedOverflow
+    );
+    assert_eq!(selected.explain().score.forced_overflow_columns, 1);
+    assert!(selected.explain().score.forced_overflow_units > 0);
+}
+
+#[test]
+fn repeated_numeral_separator_groups_are_admitted_without_breaking_the_unit() {
+    let clusters = ["12", " ", "345", ",", "678", ".", "9"].map(cluster);
+    let selected = plan(&clusters, 0.0, 0.0, 90.0, JlreqStrictness::Normal);
+    assert!(selected.break_offsets().is_empty());
+    assert_eq!(selected.explain().rejected.jlreq_keep_together, 6);
+    assert_eq!(
+        selected.explain().status,
+        VerticalBreakPlanStatus::ForcedOverflow
+    );
+}
+
+#[test]
+fn measured_jlreq_paragraph_uses_balanced_quality_after_its_required_groups() {
+    // Captured font30_000/line40_500 physical advances from the actual native
+    // issued layout, at the standard View's Layout-consumer height125_600.
+    // The same owned planner chooses optional boundaries; this test does not
+    // reproduce its objective or infer container capacity from used bounds.
+    let text = "天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終";
+    let opportunities = crate::vertical_clusters::line_break_offsets(text);
+    let source = text
+        .char_indices()
+        .map(|(start, character)| (start, start + character.len_utf8()))
+        .collect::<Vec<_>>();
+    let clusters = source
+        .iter()
+        .map(|&(start, end)| VerticalBreakCluster {
+            text: &text[start..end],
+            advance: if matches!(start, 24 | 42 | 69) {
+                15.0
+            } else {
+                30.0
+            },
+            break_allowed_before: opportunities.contains(&start),
+        })
+        .collect::<Vec<_>>();
+    let selected = plan_vertical_breaks(
+        &clusters,
+        0.0,
+        0.0,
+        125.6,
+        JlreqStrictness::Normal,
+        VerticalBreakPolicy::BalancedV1,
+    )
+    .expect("actual measured paragraph admits a balanced plan");
+    assert_eq!(selected.break_offsets(), &[4, 7, 11, 15, 18, 20, 24, 28]);
+    let offsets = std::iter::once(0)
+        .chain(
+            selected
+                .break_offsets()
+                .iter()
+                .map(|&index| source[index].0),
+        )
+        .collect::<Vec<_>>();
+    assert_eq!(offsets, [0, 12, 21, 33, 45, 54, 60, 72, 84]);
+    let explain = selected.explain();
+    assert_eq!(explain.policy, VerticalBreakPolicy::BalancedV1);
+    assert_eq!(explain.reference_advance_bits, 30.0_f32.to_bits());
+    assert_eq!(explain.score.forced_overflow_units, 0);
+    assert_eq!(explain.score.forced_overflow_columns, 0);
+    assert_eq!(explain.score.column_count, 9);
+    assert_eq!(explain.status, VerticalBreakPlanStatus::Normal);
+    for index in [10, 13, 14, 16, 19, 21, 23, 26, 27] {
+        assert!(
+            !selected.breaks_before(index),
+            "required group split at {}",
+            source[index].0
+        );
+    }
+    assert!(
+        !selected.breaks_before(22),
+        "a dash does not require the following ideograph to restart"
+    );
+    assert!(
+        selected.breaks_before(24),
+        "the middle dot permits the following ordinary ideograph to restart"
+    );
+    assert!(
+        selected.breaks_before(28),
+        "the leader chain ends before the final ideograph"
+    );
+}

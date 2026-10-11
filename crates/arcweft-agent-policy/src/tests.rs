@@ -81,6 +81,7 @@ fn raw_rgba_resource(kind: AgentImageKind, pixels: Vec<u8>) -> AgentResource {
         hash: "raw".to_owned(),
         image: Some(AgentImageMetadata {
             kind,
+            text_contexts: None,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Object {
                 id: "internal.customer.object".to_owned(),
@@ -92,7 +93,7 @@ fn raw_rgba_resource(kind: AgentImageKind, pixels: Vec<u8>) -> AgentResource {
             width: 1,
             height: 1,
             crop_origin: None,
-            pixel_format: Some("rgba8_unorm".to_owned()),
+            pixel_format: Some(arcweft_agent_protocol::image::AgentImagePixelFormat::Rgba8Unorm),
             row_stride_bytes: Some(4),
             content_bbox: None,
             content_viewport_bbox: None,
@@ -143,6 +144,11 @@ fn gate_masks_image_before_publication() {
         .image
         .as_ref()
         .expect("image metadata remains");
+    assert_eq!(
+        metadata.pixel_format,
+        Some(arcweft_agent_protocol::image::AgentImagePixelFormat::Rgba8Unorm)
+    );
+    assert_eq!(metadata.row_stride_bytes, Some(4));
     assert!(matches!(
         &metadata.scope,
         AgentImageScope::Object { id } if id.starts_with("object.")
@@ -150,6 +156,48 @@ fn gate_masks_image_before_publication() {
     ));
     assert!(metadata.object.is_none());
     assert!(metadata.diagnostics.is_empty());
+}
+
+#[test]
+fn policy_raw_decode_uses_declared_pixel_format_with_a_query_uri() {
+    let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
+    resource.uri = resource_uri("arcweft://session/test/frame/0/capture.png?page=1");
+    let decoded =
+        crate::decode::decode_agent_image(&resource).expect("closed raw metadata owns decoding");
+    assert_eq!(
+        decoded.input_encoding,
+        crate::decode::AgentImageEncoding::RawRgba
+    );
+    assert_eq!(decoded.image.pixels(), [1, 2, 3, 255]);
+}
+
+#[test]
+fn policy_image_decode_rejects_missing_format_bad_stride_and_extent() {
+    use arcweft_agent_protocol::image::AgentImageFormatError;
+    for change in 0..4 {
+        let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
+        let metadata = resource.image.as_mut().unwrap();
+        match change {
+            0 => metadata.pixel_format = None,
+            1 => metadata.row_stride_bytes = Some(8),
+            2 => metadata.height = 0,
+            _ => metadata.width = u32::MAX,
+        }
+        let Err(error) = crate::decode::decode_agent_image(&resource) else {
+            panic!("invalid format/extent must be refused before publication");
+        };
+        match (change, error) {
+            (0, crate::AgentPolicyError::ImageFormat(AgentImageFormatError::MimeType { .. }))
+            | (1, crate::AgentPolicyError::ImageFormat(AgentImageFormatError::RowStride))
+            | (
+                2 | 3,
+                crate::AgentPolicyError::ImageFormat(AgentImageFormatError::InvalidExtent {
+                    ..
+                }),
+            ) => {}
+            (_, error) => panic!("unexpected format refusal: {error}"),
+        }
+    }
 }
 
 #[test]
@@ -222,6 +270,9 @@ fn failed_image_decode_is_withheld() {
     ));
     let mut resource = raw_rgba_resource(AgentImageKind::Color, vec![1, 2, 3, 255]);
     resource.mime_type = "image/png".to_owned();
+    let metadata = resource.image.as_mut().unwrap();
+    metadata.pixel_format = None;
+    metadata.row_stride_bytes = None;
     resource.body = AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
         encoding: AgentBinaryEncoding::Base64,
         data: STANDARD.encode(b"not a png"),

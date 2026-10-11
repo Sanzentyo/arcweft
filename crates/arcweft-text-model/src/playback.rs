@@ -231,69 +231,10 @@ impl LineDisplayFrame {
     /// The check covers UTF-8 boundaries, authored ordering, typed control and
     /// host-event coherence, and the ranges derived for input-gated stages.
     pub fn validate(&self) -> Result<(), LineDisplayFrameValidationError> {
-        let mut covered_end = 0;
-        for (index, run) in self.display_map.text_runs.iter().enumerate() {
-            validate_range(&self.text, "text run", index, run.range, true)?;
-            if run.range.start != covered_end {
-                return Err(LineDisplayFrameValidationError::TextRunDiscontinuity {
-                    index,
-                    expected_start: covered_end,
-                    actual_start: run.range.start,
-                });
-            }
-            covered_end = run.range.end;
-        }
-        if covered_end != self.text.len() {
-            return Err(LineDisplayFrameValidationError::IncompleteTextCoverage {
-                covered_end,
-                text_len: self.text.len(),
-            });
-        }
-
+        validate_resolved_display_map(&self.text, &self.display_map, &self.host_events)?;
         let source_node_count = self.display_map.source_node_count.as_usize();
-        validate_display_map_node_bounds(self, source_node_count)?;
-        validate_ruby_annotations(self, source_node_count)?;
-
-        for (index, marker) in self.display_map.controls.iter().enumerate() {
-            validate_offset(&self.text, "control", index, marker.text_offset)?;
-            if let Some(range) = marker.range {
-                validate_range(&self.text, "control", index, range, true)?;
-                if range.start != marker.text_offset {
-                    return Err(LineDisplayFrameValidationError::ControlRangeStartMismatch {
-                        index,
-                        text_offset: marker.text_offset,
-                        range_start: range.start,
-                    });
-                }
-            }
-            validate_control(&self.text, &self.display_map.text_runs, marker, index)?;
-        }
-
-        if self.display_map.host_events.len() != self.host_events.len() {
-            return Err(LineDisplayFrameValidationError::HostEventCountMismatch {
-                marker_count: self.display_map.host_events.len(),
-                event_count: self.host_events.len(),
-            });
-        }
-        for (index, marker) in self.display_map.host_events.iter().enumerate() {
-            validate_offset(&self.text, "host event", index, marker.text_offset)?;
-            if marker.event_index != index {
-                return Err(LineDisplayFrameValidationError::HostEventIndexMismatch {
-                    marker_index: index,
-                    expected: index,
-                    actual: marker.event_index,
-                });
-            }
-            if self.host_events.get(index) != Some(&marker.event) {
-                return Err(LineDisplayFrameValidationError::HostEventPayloadMismatch {
-                    marker_index: index,
-                    event_index: marker.event_index,
-                });
-            }
-        }
 
         validate_resolved_tree(self, source_node_count)?;
-        self.validate_authored_order()?;
         let stages = self.stage_descriptors();
         if stages.is_empty() {
             return Err(LineDisplayFrameValidationError::MissingStage);
@@ -451,74 +392,6 @@ impl LineDisplayFrame {
 
     fn valid_control_offset(&self, marker: &RichTextControlMarker) -> bool {
         marker.text_offset <= self.text.len() && self.text.is_char_boundary(marker.text_offset)
-    }
-
-    fn validate_authored_order(&self) -> Result<(), LineDisplayFrameValidationError> {
-        let mut entries = BTreeMap::<RichTextNodeIndex, Vec<MappedExtent>>::new();
-        for (index, run) in self.display_map.text_runs.iter().enumerate() {
-            entries
-                .entry(run.node_index)
-                .or_default()
-                .push(MappedExtent {
-                    kind: "text run",
-                    index,
-                    anchor: run.range.start,
-                    end: run.range.end,
-                });
-        }
-        for (index, marker) in self.display_map.controls.iter().enumerate() {
-            entries
-                .entry(marker.node_index)
-                .or_default()
-                .push(MappedExtent {
-                    kind: "control",
-                    index,
-                    anchor: marker.text_offset,
-                    end: marker.range.map_or(marker.text_offset, |range| range.end),
-                });
-        }
-        for (index, marker) in self.display_map.host_events.iter().enumerate() {
-            entries
-                .entry(marker.node_index)
-                .or_default()
-                .push(MappedExtent {
-                    kind: "host event",
-                    index,
-                    anchor: marker.text_offset,
-                    end: marker.text_offset,
-                });
-        }
-
-        let mut previous_end = 0;
-        for (node_index, node_entries) in entries {
-            let expected = node_entries[0].anchor;
-            for entry in &node_entries {
-                if entry.anchor != expected {
-                    return Err(LineDisplayFrameValidationError::NodeAnchorMismatch {
-                        kind: entry.kind,
-                        index: entry.index,
-                        node_index: node_index.as_usize(),
-                        expected,
-                        actual: entry.anchor,
-                    });
-                }
-                if entry.anchor < previous_end {
-                    return Err(LineDisplayFrameValidationError::AuthoredOrderRegression {
-                        kind: entry.kind,
-                        index: entry.index,
-                        node_index: node_index.as_usize(),
-                        anchor: entry.anchor,
-                        previous_end,
-                    });
-                }
-            }
-            previous_end = node_entries
-                .iter()
-                .map(|entry| entry.end)
-                .max()
-                .unwrap_or(previous_end);
-        }
-        Ok(())
     }
 }
 
@@ -725,7 +598,152 @@ impl<'a> LineDisplayStage<'a> {
     }
 }
 
+fn validate_resolved_display_map(
+    text: &str,
+    display_map: &RichTextDisplayMap,
+    host_events: &[DialogueHostEvent],
+) -> Result<(), LineDisplayFrameValidationError> {
+    let mut covered_end = 0;
+    for (index, run) in display_map.text_runs.iter().enumerate() {
+        validate_range(text, "text run", index, run.range, true)?;
+        if run.range.start != covered_end {
+            return Err(LineDisplayFrameValidationError::TextRunDiscontinuity {
+                index,
+                expected_start: covered_end,
+                actual_start: run.range.start,
+            });
+        }
+        covered_end = run.range.end;
+    }
+    if covered_end != text.len() {
+        return Err(LineDisplayFrameValidationError::IncompleteTextCoverage {
+            covered_end,
+            text_len: text.len(),
+        });
+    }
+
+    let source_node_count = display_map.source_node_count.as_usize();
+    validate_display_map_node_bounds(display_map, source_node_count)?;
+    validate_ruby_annotations(text, display_map, source_node_count)?;
+
+    for (index, marker) in display_map.controls.iter().enumerate() {
+        validate_offset(text, "control", index, marker.text_offset)?;
+        if let Some(range) = marker.range {
+            validate_range(text, "control", index, range, true)?;
+            if range.start != marker.text_offset {
+                return Err(LineDisplayFrameValidationError::ControlRangeStartMismatch {
+                    index,
+                    text_offset: marker.text_offset,
+                    range_start: range.start,
+                });
+            }
+        }
+        validate_control(text, &display_map.text_runs, marker, index)?;
+    }
+
+    if display_map.host_events.len() != host_events.len() {
+        return Err(LineDisplayFrameValidationError::HostEventCountMismatch {
+            marker_count: display_map.host_events.len(),
+            event_count: host_events.len(),
+        });
+    }
+    for (index, marker) in display_map.host_events.iter().enumerate() {
+        validate_offset(text, "host event", index, marker.text_offset)?;
+        if marker.event_index != index {
+            return Err(LineDisplayFrameValidationError::HostEventIndexMismatch {
+                marker_index: index,
+                expected: index,
+                actual: marker.event_index,
+            });
+        }
+        if host_events.get(index) != Some(&marker.event) {
+            return Err(LineDisplayFrameValidationError::HostEventPayloadMismatch {
+                marker_index: index,
+                event_index: marker.event_index,
+            });
+        }
+    }
+
+    validate_display_map_authored_order(display_map)?;
+    Ok(())
+}
+
+fn validate_display_map_authored_order(
+    display_map: &RichTextDisplayMap,
+) -> Result<(), LineDisplayFrameValidationError> {
+    let mut entries = BTreeMap::<RichTextNodeIndex, Vec<MappedExtent>>::new();
+    for (index, run) in display_map.text_runs.iter().enumerate() {
+        entries
+            .entry(run.node_index)
+            .or_default()
+            .push(MappedExtent {
+                kind: "text run",
+                index,
+                anchor: run.range.start,
+                end: run.range.end,
+            });
+    }
+    for (index, marker) in display_map.controls.iter().enumerate() {
+        entries
+            .entry(marker.node_index)
+            .or_default()
+            .push(MappedExtent {
+                kind: "control",
+                index,
+                anchor: marker.text_offset,
+                end: marker.range.map_or(marker.text_offset, |range| range.end),
+            });
+    }
+    for (index, marker) in display_map.host_events.iter().enumerate() {
+        entries
+            .entry(marker.node_index)
+            .or_default()
+            .push(MappedExtent {
+                kind: "host event",
+                index,
+                anchor: marker.text_offset,
+                end: marker.text_offset,
+            });
+    }
+
+    let mut previous_end = 0;
+    for (node_index, node_entries) in entries {
+        let expected = node_entries[0].anchor;
+        for entry in &node_entries {
+            if entry.anchor != expected {
+                return Err(LineDisplayFrameValidationError::NodeAnchorMismatch {
+                    kind: entry.kind,
+                    index: entry.index,
+                    node_index: node_index.as_usize(),
+                    expected,
+                    actual: entry.anchor,
+                });
+            }
+            if entry.anchor < previous_end {
+                return Err(LineDisplayFrameValidationError::AuthoredOrderRegression {
+                    kind: entry.kind,
+                    index: entry.index,
+                    node_index: node_index.as_usize(),
+                    anchor: entry.anchor,
+                    previous_end,
+                });
+            }
+        }
+        previous_end = node_entries
+            .iter()
+            .map(|entry| entry.end)
+            .max()
+            .unwrap_or(previous_end);
+    }
+    Ok(())
+}
+
 impl LineDisplayStageProjection {
+    /// Checks the resolved projection without inventing an authored node tree.
+    pub fn validate(&self) -> Result<(), LineDisplayFrameValidationError> {
+        validate_resolved_display_map(&self.text, &self.display_map, &self.host_events)?;
+        validate_offset(&self.text, "stage reveal", 0, self.reveal_start)
+    }
     #[must_use]
     pub const fn stage_index(&self) -> usize {
         self.stage_index
@@ -908,10 +926,10 @@ fn validate_control(
 }
 
 fn validate_display_map_node_bounds(
-    frame: &LineDisplayFrame,
+    display_map: &RichTextDisplayMap,
     source_node_count: usize,
 ) -> Result<(), LineDisplayFrameValidationError> {
-    for run in &frame.display_map.text_runs {
+    for run in &display_map.text_runs {
         if run.node_index.as_usize() >= source_node_count {
             return Err(LineDisplayFrameValidationError::NodeIndexOutOfBounds {
                 kind: "text run",
@@ -920,7 +938,7 @@ fn validate_display_map_node_bounds(
             });
         }
     }
-    for marker in &frame.display_map.controls {
+    for marker in &display_map.controls {
         if marker.node_index.as_usize() >= source_node_count {
             return Err(LineDisplayFrameValidationError::NodeIndexOutOfBounds {
                 kind: "control",
@@ -929,7 +947,7 @@ fn validate_display_map_node_bounds(
             });
         }
     }
-    for marker in &frame.display_map.host_events {
+    for marker in &display_map.host_events {
         if marker.node_index.as_usize() >= source_node_count {
             return Err(LineDisplayFrameValidationError::NodeIndexOutOfBounds {
                 kind: "host event",
@@ -938,7 +956,7 @@ fn validate_display_map_node_bounds(
             });
         }
     }
-    for annotation in &frame.display_map.ruby_annotations {
+    for annotation in &display_map.ruby_annotations {
         if annotation.owner_node.as_usize() >= source_node_count {
             return Err(LineDisplayFrameValidationError::NodeIndexOutOfBounds {
                 kind: "ruby owner",
@@ -951,18 +969,13 @@ fn validate_display_map_node_bounds(
 }
 
 fn validate_ruby_annotations(
-    frame: &LineDisplayFrame,
+    text: &str,
+    display_map: &RichTextDisplayMap,
     source_node_count: usize,
 ) -> Result<(), LineDisplayFrameValidationError> {
-    let annotations = &frame.display_map.ruby_annotations;
+    let annotations = &display_map.ruby_annotations;
     for (index, annotation) in annotations.iter().enumerate() {
-        validate_range(
-            &frame.text,
-            "ruby annotation",
-            index,
-            annotation.base_range,
-            true,
-        )?;
+        validate_range(text, "ruby annotation", index, annotation.base_range, true)?;
         if annotation.ruby.is_empty() {
             return Err(LineDisplayFrameValidationError::EmptyRange {
                 kind: "ruby annotation text",
@@ -984,7 +997,7 @@ fn validate_ruby_annotations(
         }
         let run_start = annotation.base_runs.start as usize;
         let run_end = annotation.base_runs.end as usize;
-        if run_start >= run_end || run_end > frame.display_map.text_runs.len() {
+        if run_start >= run_end || run_end > display_map.text_runs.len() {
             return Err(LineDisplayFrameValidationError::RubyRunRangeInvalid {
                 index,
                 start: run_start,
@@ -992,7 +1005,7 @@ fn validate_ruby_annotations(
             });
         }
         let mut covered_end = annotation.base_range.start;
-        for run in &frame.display_map.text_runs[run_start..run_end] {
+        for run in &display_map.text_runs[run_start..run_end] {
             if run.node_index.as_usize() < body_start || run.node_index.as_usize() >= body_end {
                 return Err(LineDisplayFrameValidationError::RubyRunSliceMismatch { index });
             }

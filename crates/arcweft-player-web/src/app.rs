@@ -633,7 +633,8 @@ fn redraw(
             .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
     }
 
-    let frame_report = WebFrameObservationReport::from_prepared_frame(candidate.prepared());
+    let frame_report = WebFrameObservationReport::from_prepared_frame(candidate.prepared())
+        .map_err(|error| WebPlayerError::Report(error.to_string()))?;
     let frame_json = serde_json::to_string(&frame_report)
         .map_err(|error| WebPlayerError::Report(error.to_string()))?;
     let registered_font_bytes = state.frame_planner.stats().registered_font_bytes;

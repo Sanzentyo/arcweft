@@ -48,6 +48,13 @@ pub(crate) fn layout_hash(
         hasher.update(&annotation.base_runs.end.to_le_bytes());
         hash_range(&mut hasher, annotation.base_range);
         put_bytes(&mut hasher, annotation.text.as_bytes());
+        hasher
+            .update(&saturating_allocation_count(annotation.base_allocations.len()).to_le_bytes());
+        for allocation in &annotation.base_allocations {
+            hasher.update(&allocation.glyph_range.start.to_le_bytes());
+            hasher.update(&allocation.glyph_range.end.to_le_bytes());
+            hash_rect(&mut hasher, allocation.bounds);
+        }
         hash_rect(&mut hasher, annotation.base_bounds);
         hash_rect(&mut hasher, annotation.ruby_bounds);
         hasher.update(&[writing_mode_tag(annotation.writing_mode)]);
@@ -65,6 +72,10 @@ pub(crate) fn layout_hash(
         }
     }
     TextLayoutHash::from_bytes(*hasher.finalize().as_bytes())
+}
+
+fn saturating_allocation_count(count: usize) -> u64 {
+    u64::try_from(count).unwrap_or(u64::MAX)
 }
 
 fn hash_glyph(hasher: &mut blake3::Hasher, glyph: &TextLayoutGlyph) {

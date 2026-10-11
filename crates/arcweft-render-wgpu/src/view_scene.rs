@@ -30,5 +30,6 @@ pub use core::{
     ViewAffine2D, ViewBorder, ViewClip, ViewColorRgba8, ViewCornerRadii, ViewCornerRadius,
     ViewGradientStop, ViewImagePrimitive, ViewImageUvRect, ViewLinearGradient, ViewPrimitive,
     ViewPrimitiveRange, ViewRoundedRect, ViewScene, ViewSceneContext, ViewSolidRect,
-    ViewSurfaceBackground, ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint, ViewTextPrimitive,
+    ViewSurfaceBackground, ViewSurfaceBorder, ViewSurfaceClip, ViewSurfacePaint,
+    ViewTextContextError, ViewTextPrimitive,
 };

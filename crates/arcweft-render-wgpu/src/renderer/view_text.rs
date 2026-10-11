@@ -7,7 +7,7 @@ use crate::view_compositor::{
 };
 use crate::view_direct_renderer::WgpuViewDirectPrimitiveRenderer;
 use crate::view_scene::{PreparedTextId, ViewAffine2D, ViewClip, ViewColorRgba8, ViewSolidRect};
-use arcweft_glyphon::{GlyphonTextEngine, PreparedTextAffine, PreparedTextPhysicalBounds};
+use arcweft_glyphon::{GlyphonTextEngine, PreparedTextPhysicalBounds};
 use arcweft_text_layout::LayoutRect;
 use glyphon::{Cache, TextAtlas, TextRenderer};
 
@@ -64,18 +64,10 @@ impl ViewTextRenderer for WgpuViewPreparedTextRenderer<'_> {
                 text_index: text.index(),
             })?;
         let transform = frame.context.transform;
-        let affine = PreparedTextAffine::try_new(
-            [
-                transform.m11,
-                transform.m12,
-                transform.m21,
-                transform.m22,
-                transform.tx - frame.target.origin_logical[0],
-                transform.ty - frame.target.origin_logical[1],
-            ],
-            frame.context.opacity,
-        )
-        .map_err(text_error)?;
+        let affine = frame
+            .context
+            .prepared_text_affine(frame.target.origin_logical)
+            .map_err(text_error)?;
         let clip = resolved_clip(
             item.clip,
             transform,

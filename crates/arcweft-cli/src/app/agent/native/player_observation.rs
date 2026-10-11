@@ -3,9 +3,7 @@ mod capture;
 use super::image_mapping::{
     agent_image_geometry_from_render_quad, agent_object_capture_refs_with_source,
 };
-use super::prepared_text_observation::{
-    PreparedTextObservationOwner, PreparedTextOwnerSelectionError,
-};
+use super::prepared_text_observation::PreparedTextObservationOwner;
 use super::{
     AgentImageFrameStore, AgentObservationState, AgentObserveOptions, ExitCode,
     NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge, agent_action_targets,
@@ -233,9 +231,15 @@ pub(super) fn observe_native_player_runtime(
     } = advance_player_runtime(runtime, options, step_input)?;
     let prepared_runtime = prepare_player_runtime_frame(runtime, &step.presentation, options)?;
     let prepared = &prepared_runtime.prepared;
-    append_frame_fx_diagnostics(&mut diagnostics, &prepared.frame, step.index);
+    append_fx_diagnostics(&mut diagnostics, &prepared.frame.fx_diagnostics, step.index);
     let viewport = player_observed_viewport(prepared);
-    let mut objects = player_observed_objects(prepared, &step.presentation, step.index, &viewport)?;
+    let (mut objects, text_contexts) = player_observed_objects(
+        prepared,
+        &step.presentation,
+        step.index,
+        &viewport,
+        agent_observe_report_capture_time_millis(options),
+    )?;
     objects.extend(player_observed_image_objects(
         prepared,
         &step.presentation,
@@ -245,11 +249,24 @@ pub(super) fn observe_native_player_runtime(
             agent_observe_capture_time_seconds(options),
         )),
     ));
-    let image_frames = capture_player_observation_frame(runtime, prepared, &objects)?;
+    let expected_capture_scope = arcweft_agent_protocol::text_context::AgentTextContextScope {
+        session_id: "cli".to_owned(),
+        frame_id: format!("frame.{}", step.index),
+        tick: step.index,
+        capture_time_millis: agent_observe_report_capture_time_millis(options),
+    };
+    let image_frames = capture_player_observation_frame(
+        runtime,
+        prepared,
+        &objects,
+        &text_contexts,
+        &expected_capture_scope,
+    )?;
     let report = player_observation_report(
         &runtime.source_path,
         prepared,
         objects,
+        text_contexts,
         options,
         PlayerObservationEvidence {
             step: &step,
@@ -334,11 +351,7 @@ fn advance_player_runtime(
                     message,
                 }),
         );
-        diagnostics.extend(
-            fx_diagnostics
-                .iter()
-                .map(|diagnostic| agent_fx_diagnostic(step.index, diagnostic)),
-        );
+        append_fx_diagnostics(&mut diagnostics, fx_diagnostics, step.index);
         task_request_count = task_request_count.saturating_add(step.requested_tasks.len());
         runtime.task_events = if finished {
             Vec::new()
@@ -420,28 +433,17 @@ fn agent_fx_diagnostic(step: usize, diagnostic: &FxDiagnostic) -> AgentDiagnosti
     }
 }
 
-fn append_frame_fx_diagnostics(
+fn append_fx_diagnostics(
     diagnostics: &mut Vec<AgentDiagnostic>,
-    frame: &PreparedFrame,
+    effects: &[FxDiagnostic],
     step: usize,
 ) {
-    let additions = frame
-        .fx_diagnostics
-        .iter()
-        .filter(|diagnostic| {
-            !diagnostics.iter().any(|existing| {
-                existing.code.as_deref() == Some(diagnostic.code.as_str())
-                    && existing.effect_id
-                        == diagnostic
-                            .context
-                            .definition
-                            .as_ref()
-                            .map(ToString::to_string)
-            })
-        })
-        .map(|diagnostic| agent_fx_diagnostic(step, diagnostic))
-        .collect::<Vec<_>>();
-    diagnostics.extend(additions);
+    for diagnostic in effects {
+        let diagnostic = agent_fx_diagnostic(step, diagnostic);
+        if !diagnostics.contains(&diagnostic) {
+            diagnostics.push(diagnostic);
+        }
+    }
 }
 
 fn complete_player_runtime_tasks(
@@ -546,6 +548,7 @@ fn player_observation_report(
     source_path: &Path,
     prepared: &PlayerPreparedFrame,
     objects: Vec<AgentObservedObject>,
+    text_contexts: arcweft_agent_protocol::text_context::AgentTextContextCatalog,
     options: &AgentObserveOptions,
     evidence: PlayerObservationEvidence<'_>,
 ) -> Result<AgentObservationReport, ExitCode> {
@@ -608,6 +611,7 @@ fn player_observation_report(
         layers: layers.clone(),
         views,
         objects,
+        text_contexts,
         presentation_tree,
         actions,
         scroll_regions,
@@ -791,8 +795,29 @@ fn player_observed_objects(
     presentation: &BundlePresentationSnapshot,
     step: usize,
     viewport: &AgentViewport,
-) -> Result<Vec<AgentObservedObject>, ExitCode> {
-    let mut objects = agent_view_prepared_text_objects(step, &prepared.frame, viewport);
+    capture_time_millis: Option<u32>,
+) -> Result<
+    (
+        Vec<AgentObservedObject>,
+        arcweft_agent_protocol::text_context::AgentTextContextCatalog,
+    ),
+    ExitCode,
+> {
+    let catalog = super::prepared_text_observation::agent_prepared_text_context_catalog(
+        &prepared.frame,
+        arcweft_agent_protocol::text_context::AgentTextContextScope {
+            session_id: "cli".to_owned(),
+            frame_id: format!("frame.{step}"),
+            tick: step,
+            capture_time_millis,
+        },
+    )?;
+    let geometries = prepared.frame.prepared_text_geometries().map_err(|error| {
+        eprintln!("error: prepared text painted geometry: {error}");
+        ExitCode::FAILURE
+    })?;
+    let mut objects =
+        agent_view_prepared_text_objects(step, &prepared.frame, &catalog, &geometries, viewport);
     let view_by_target = player_runtime_view_by_target(presentation);
     objects.extend(
         prepared
@@ -809,24 +834,50 @@ fn player_observed_objects(
                 player_semantic_object(step, node, control, &view_by_target)
             }),
     );
-    for (dialogue, entry, stage) in presentation.dialogue.iter().filter_map(|dialogue| {
-        let entry = dialogue.active_entry()?;
-        Some((dialogue, entry, entry.current_stage()?))
-    }) {
-        let mut dialogue_objects = agent_dialogue_prepared_text_objects(
+    for (ordinal, prepared_owner) in prepared.frame.prepared_text_owners().iter().enumerate() {
+        if prepared_owner.context.stage().is_none() {
+            continue;
+        }
+        let owner = PreparedTextObservationOwner::new(prepared_owner);
+        let reference = catalog
+            .reference(u32::try_from(ordinal).expect("admitted catalog ordinal"))
+            .expect("catalog contains every owner");
+        let mut stage_objects = agent_dialogue_prepared_text_objects(
             step,
-            usize::try_from(dialogue.id().get()).unwrap_or(usize::MAX),
-            usize::try_from(entry.id().get()).unwrap_or(usize::MAX),
-            stage.projection(),
+            &owner,
+            reference,
+            &catalog,
             &prepared.frame,
+            geometries
+                .get(&prepared_owner.text)
+                .expect("every actual prepared item has painted geometry"),
             viewport,
         )?;
-        for object in &mut dialogue_objects {
-            object.enabled = entry.is_waiting_for_advance();
+        if let arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+            dialogue,
+            entry,
+            role: arcweft_text_model::DialoguePreparedTextRole::Content,
+            ..
+        } = prepared_owner.kind
+        {
+            let enabled = presentation
+                .dialogue
+                .iter()
+                .find(|value| value.id().get() == dialogue)
+                .and_then(|value| {
+                    value
+                        .entries()
+                        .iter()
+                        .find(|value| value.id().get() == entry)
+                })
+                .is_some_and(|value| value.is_waiting_for_advance());
+            for object in &mut stage_objects {
+                object.enabled = enabled;
+            }
         }
-        objects.extend(dialogue_objects);
+        objects.extend(stage_objects);
     }
-    Ok(objects)
+    Ok((objects, catalog))
 }
 
 fn player_runtime_view_by_target(
@@ -927,6 +978,7 @@ fn player_observed_image_object(
         object_layer: Some(layer),
         object_depth,
         text: None,
+        text_context: None,
         rich_text_ref: None,
         content: AgentObservedObjectContent::Image(Box::new(AgentObservedImageContent {
             source: image.id.clone(),
@@ -1067,6 +1119,7 @@ fn player_semantic_object(
         object_layer: None,
         object_depth: None,
         text,
+        text_context: None,
         rich_text_ref: None,
         content: AgentObservedObjectContent::Custom {
             object_type: player_semantic_object_type(node.role()).to_owned(),

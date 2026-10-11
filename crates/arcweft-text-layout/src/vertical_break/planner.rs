@@ -634,7 +634,14 @@ fn break_boundaries(
             Some(VerticalBreakHardConstraint::JlreqLineEndProhibited)
         } else if jlreq_punctuation::is_line_head_prohibited_cluster(right.text) {
             Some(VerticalBreakHardConstraint::JlreqLineHeadProhibited)
-        } else if pair.keep_together {
+        } else if pair.keep_together
+            || jlreq_punctuation::is_unbreakable_numeric_separator_boundary(
+                index.checked_sub(2).map(|previous| clusters[previous].text),
+                left.text,
+                right.text,
+                clusters.get(index + 1).map(|next| next.text),
+            )
+        {
             Some(VerticalBreakHardConstraint::JlreqKeepTogether)
         } else {
             None

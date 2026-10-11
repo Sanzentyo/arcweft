@@ -357,9 +357,14 @@ pub(super) fn agent_mcp_call_resource_read(
         return Err("arcweft.resource.read requires a prior arcweft.observe call or arcweft.trace.read call".to_owned());
     };
     let image_output = state.image_output.clone();
-    let resource = if let Some(resource) = agent_mcp_cached_capture_resource(state, uri)
-        .or_else(|| agent_observe_cached_image_resource(&report, image_output.as_ref(), uri))
-    {
+    let cached_capture = agent_mcp_cached_capture_resource(state, uri);
+    let cached_image = if cached_capture.is_none() {
+        agent_observe_cached_image_resource(&report, image_output.as_ref(), uri)
+            .map_err(|_| format!("failed to build Agent image resource `{uri}`"))?
+    } else {
+        None
+    };
+    let resource = if let Some(resource) = cached_capture.or(cached_image) {
         resource
     } else {
         agent_mcp_uncached_resource_by_uri(&report, uri, state)

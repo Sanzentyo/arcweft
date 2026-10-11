@@ -1,6 +1,6 @@
 //! Frame-local text preparation shared by native, Web, and headless paths.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_presentation::{
     fx::{
@@ -61,7 +61,7 @@ pub struct PreparedGlyph {
 /// One canonical layout plus paint, interaction, clipping, and raster keys.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedTextItem {
-    pub layout: TextLayout,
+    pub layout: Arc<TextLayout>,
     pub glyphs: Vec<PreparedGlyph>,
     pub paint: TextPaintPlan,
     pub interaction: TextInteractionPlan,
@@ -146,9 +146,68 @@ pub struct PreparedTextAffine {
     opacity: f32,
 }
 
+/// Geometry derived once from one prepared item's evaluated paint. It shares
+/// the shaped layout and remains independent of glyph visibility, so a hidden
+/// typewriter stage has the same selection/capture extent as its revealed stage.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PreparedTextGeometry {
+    body: Vec<PreparedGlyphGeometry>,
+    lines: Vec<Option<LayoutRect>>,
+    runs: Vec<Option<LayoutRect>>,
+    ruby: BTreeMap<u32, PreparedRubyGeometry>,
+    bounds: Option<LayoutRect>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreparedGlyphGeometry {
+    pub logical_bounds: LayoutRect,
+    /// Physical glyph geometry remains separate from its allocated Ruby space.
+    pub allocated_bounds: LayoutRect,
+    pub visual_bounds: LayoutRect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreparedRubyGeometry {
+    pub base_bounds: LayoutRect,
+    pub annotation_bounds: LayoutRect,
+}
+
+impl PreparedTextGeometry {
+    #[must_use]
+    pub fn glyph(&self, index: usize) -> Option<PreparedGlyphGeometry> {
+        self.body.get(index).copied()
+    }
+
+    #[must_use]
+    pub fn line(&self, index: usize) -> Option<LayoutRect> {
+        self.lines.get(index).copied().flatten()
+    }
+
+    #[must_use]
+    pub fn run(&self, index: usize) -> Option<LayoutRect> {
+        self.runs.get(index).copied().flatten()
+    }
+
+    #[must_use]
+    pub fn ruby(&self, index: u32) -> Option<PreparedRubyGeometry> {
+        self.ruby.get(&index).copied()
+    }
+
+    #[must_use]
+    pub const fn bounds(&self) -> Option<LayoutRect> {
+        self.bounds
+    }
+}
+
 /// Structured prepared-text construction failure.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum PreparedTextError {
+    #[error("prepared glyph {index} has no admitted paint geometry")]
+    MissingGlyphGeometry { index: usize },
+    #[error("prepared glyph {index} has non-finite transformed geometry")]
+    InvalidGlyphGeometry { index: usize },
+    #[error("prepared text geometry has no actual painter context")]
+    MissingPainterContext,
     #[error("prepared text batch contains more than u32::MAX items")]
     TooManyItems,
     #[error("paint plan has {actual} glyphs but layout requires {expected}")]
@@ -226,7 +285,9 @@ impl PreparedTextAffine {
 
     fn linear_affine(self) -> Affine2 {
         let [m11, m12, m21, m22, _, _] = self.matrix;
-        Affine2::new([m11, m12, m21, m22, 0.0, 0.0])
+        // View/CSS stores the two column vectors; glyphon's six values are
+        // row-major. Origin, advance, and raster shape must use one transform.
+        Affine2::new([m11, m21, m12, m22, 0.0, 0.0])
     }
 }
 
@@ -509,7 +570,7 @@ impl GlyphonTextEngine {
             }
         }
         Ok(PreparedTextItem {
-            layout,
+            layout: Arc::new(layout),
             glyphs,
             paint,
             interaction,
@@ -583,6 +644,248 @@ impl GlyphonTextEngine {
 }
 
 impl PreparedTextItem {
+    /// Derives bounds under every actual View painter occurrence. The layout
+    /// already owns orientation and text-combine placement; evaluated paint is
+    /// applied about the same raster origin as `submission_with_affine`.
+    pub fn painted_geometry(
+        &self,
+        affines: impl IntoIterator<Item = PreparedTextAffine>,
+    ) -> Result<PreparedTextGeometry, PreparedTextError> {
+        self.paint.validate(self.glyphs.len())?;
+        let mut geometry = Vec::<PreparedGlyphGeometry>::new();
+        let mut ruby_base_allocations = BTreeMap::<u32, LayoutRect>::new();
+        for affine in affines {
+            for (index, glyph) in self.glyphs.iter().enumerate() {
+                let logical_bounds =
+                    self.painted_glyph_bounds(index, glyph.layout_bounds, affine, [0.0, 0.0])?;
+                let mut visual_bounds = logical_bounds.union(self.painted_glyph_bounds(
+                    index,
+                    glyph.ink_bounds,
+                    affine,
+                    [0.0, 0.0],
+                )?);
+                for pass in &self.paint.glyphs[index].effects {
+                    visual_bounds = visual_bounds.union(self.painted_glyph_bounds(
+                        index,
+                        glyph.ink_bounds,
+                        affine,
+                        [pass.offset_x.pixels(), pass.offset_y.pixels()],
+                    )?);
+                }
+                if let Some(existing) = geometry.get_mut(index) {
+                    existing.logical_bounds = existing.logical_bounds.union(logical_bounds);
+                    existing.allocated_bounds = existing.allocated_bounds.union(logical_bounds);
+                    existing.visual_bounds = existing.visual_bounds.union(visual_bounds);
+                } else {
+                    geometry.push(PreparedGlyphGeometry {
+                        logical_bounds,
+                        allocated_bounds: logical_bounds,
+                        visual_bounds,
+                    });
+                }
+            }
+            for annotation in &self.layout.ruby {
+                for allocation in &annotation.base_allocations {
+                    for body_index in allocation.glyph_range.clone() {
+                        let index = usize::try_from(body_index).map_err(|_| {
+                            PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                        })?;
+                        let glyph = self
+                            .layout
+                            .glyphs
+                            .get(index)
+                            .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+                        let bounds = self
+                            .painted_glyph_bounds(index, allocation.bounds, affine, [0.0, 0.0])?
+                            .union(self.painted_glyph_bounds(
+                                index,
+                                glyph.ink_bounds,
+                                affine,
+                                [0.0, 0.0],
+                            )?);
+                        let body_geometry = geometry
+                            .get_mut(index)
+                            .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+                        body_geometry.allocated_bounds =
+                            body_geometry.allocated_bounds.union(bounds);
+                        ruby_base_allocations
+                            .entry(annotation.ruby_index)
+                            .and_modify(|current| *current = current.union(bounds))
+                            .or_insert(bounds);
+                    }
+                }
+            }
+        }
+        if geometry.len() != self.glyphs.len() {
+            return Err(PreparedTextError::MissingPainterContext);
+        }
+        let body = geometry[..self.layout.glyphs.len()].to_vec();
+        let mut lines = vec![None; self.layout.lines.len()];
+        let mut runs = vec![None; self.layout.runs.len()];
+        for (glyph, bounds) in self.layout.glyphs.iter().zip(&body) {
+            for slot in
+                [
+                    lines.get_mut(usize::try_from(glyph.line_index).map_err(|_| {
+                        PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                    })?),
+                    runs.get_mut(usize::try_from(glyph.run_index).map_err(|_| {
+                        PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                    })?),
+                ]
+            {
+                let slot =
+                    slot.ok_or(PreparedTextError::MissingGlyphGeometry { index: usize::MAX })?;
+                let allocated = bounds.visual_bounds.union(bounds.allocated_bounds);
+                *slot =
+                    Some(slot.map_or(allocated, |current: LayoutRect| current.union(allocated)));
+            }
+        }
+        let mut ruby = BTreeMap::new();
+        let mut annotation_glyphs = BTreeMap::<u32, LayoutRect>::new();
+        for (glyph, bounds) in self.glyphs.iter().zip(&geometry) {
+            if let PreparedGlyphSource::Ruby { ruby_index, .. } = glyph.source {
+                annotation_glyphs
+                    .entry(ruby_index)
+                    .and_modify(|current| *current = current.union(bounds.visual_bounds))
+                    .or_insert(bounds.visual_bounds);
+            }
+        }
+        for annotation in &self.layout.ruby {
+            let mut base_bounds = ruby_base_allocations.get(&annotation.ruby_index).copied();
+            // Offscreen/raster passes remain the actual body glyph's geometry;
+            // allocation whitespace is projected only through its owning paint.
+            for allocation in &annotation.base_allocations {
+                for index in allocation.glyph_range.clone() {
+                    let index = usize::try_from(index).map_err(|_| {
+                        PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                    })?;
+                    let bounds = body
+                        .get(index)
+                        .ok_or(PreparedTextError::MissingGlyphGeometry { index })?
+                        .visual_bounds;
+                    base_bounds = Some(base_bounds.map_or(bounds, |current| current.union(bounds)));
+                }
+            }
+            if let (Some(base_bounds), Some(annotation_bounds)) = (
+                base_bounds,
+                annotation_glyphs.get(&annotation.ruby_index).copied(),
+            ) {
+                if let Some(allocation) = annotation.base_allocations.first() {
+                    let index = usize::try_from(allocation.glyph_range.start).map_err(|_| {
+                        PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                    })?;
+                    let first = self
+                        .layout
+                        .glyphs
+                        .get(index)
+                        .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+                    let line_index = usize::try_from(first.line_index).map_err(|_| {
+                        PreparedTextError::MissingGlyphGeometry { index: usize::MAX }
+                    })?;
+                    let line = lines
+                        .get_mut(line_index)
+                        .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+                    let bounds = base_bounds.union(annotation_bounds);
+                    *line = Some(line.map_or(bounds, |current| current.union(bounds)));
+                }
+                ruby.insert(
+                    annotation.ruby_index,
+                    PreparedRubyGeometry {
+                        base_bounds,
+                        annotation_bounds,
+                    },
+                );
+            }
+        }
+        let bounds = geometry
+            .iter()
+            .map(|glyph| glyph.visual_bounds)
+            .chain(ruby.values().map(|ruby| ruby.base_bounds))
+            .reduce(LayoutRect::union);
+        Ok(PreparedTextGeometry {
+            body,
+            lines,
+            runs,
+            ruby,
+            bounds,
+        })
+    }
+
+    /// Logical cell geometry after the already-evaluated glyph paint and View
+    /// affine. Layout bounds already include the glyph's orientation; it must
+    /// not be applied a second time while deriving observation geometry.
+    pub fn painted_glyph_layout_bounds(
+        &self,
+        index: usize,
+        affine: PreparedTextAffine,
+    ) -> Result<LayoutRect, PreparedTextError> {
+        let glyph = self
+            .glyphs
+            .get(index)
+            .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+        self.painted_glyph_bounds(index, glyph.layout_bounds, affine, [0.0, 0.0])
+    }
+
+    fn painted_glyph_bounds(
+        &self,
+        index: usize,
+        bounds: LayoutRect,
+        affine: PreparedTextAffine,
+        effect_offset: [f32; 2],
+    ) -> Result<LayoutRect, PreparedTextError> {
+        let glyph = self
+            .glyphs
+            .get(index)
+            .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+        let paint = self
+            .paint
+            .glyphs
+            .get(index)
+            .ok_or(PreparedTextError::MissingGlyphGeometry { index })?;
+        let [m11, m12, m21, m22] = paint.transform.resolved().matrix().map(FiniteF32::get);
+        let [tx, ty] = paint
+            .transform
+            .resolved()
+            .translation()
+            .map(|value| value.pixels());
+        let corners = [
+            Point::new(bounds.x, bounds.y),
+            Point::new(bounds.right(), bounds.y),
+            Point::new(bounds.x, bounds.bottom()),
+            Point::new(bounds.right(), bounds.bottom()),
+        ]
+        .map(|point| {
+            let x = point.x - glyph.origin.x;
+            let y = point.y - glyph.origin.y;
+            affine.point(Point::new(
+                glyph.origin.x + effect_offset[0] + m11.mul_add(x, m12.mul_add(y, tx)),
+                glyph.origin.y + effect_offset[1] + m21.mul_add(x, m22.mul_add(y, ty)),
+            ))
+        });
+        if corners
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite())
+        {
+            return Err(PreparedTextError::InvalidGlyphGeometry { index });
+        }
+        let min_x = corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
+        let min_y = corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+        let max_x = corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_y = corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let width = max_x - min_x;
+        let height = max_y - min_y;
+        if !width.is_finite() || !height.is_finite() {
+            return Err(PreparedTextError::InvalidGlyphGeometry { index });
+        }
+        Ok(LayoutRect::new(min_x, min_y, width, height))
+    }
+
     /// Checked physical clip prepared alongside this item's logical clip.
     #[must_use]
     pub const fn physical_clip_bounds(&self) -> Option<PreparedTextPhysicalBounds> {
@@ -856,5 +1159,22 @@ mod tests {
             PreparedTextAffine::try_new([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 1.1),
             Err(PreparedTextError::InvalidSubmissionOpacity { .. })
         ));
+    }
+
+    #[test]
+    fn view_shear_uses_the_same_matrix_for_origin_and_raster_shape() {
+        let affine = PreparedTextAffine::try_new([2.0, 3.0, 5.0, 7.0, 11.0, 13.0], 1.0).unwrap();
+        assert_eq!(
+            affine.point(Point::new(10.0, 20.0)),
+            Point::new(131.0, 183.0)
+        );
+        assert_eq!(
+            affine.vector(Vector::new(4.0, 6.0)),
+            Vector::new(38.0, 54.0)
+        );
+        assert_eq!(
+            affine.linear_affine().values,
+            [2.0, 5.0, 3.0, 7.0, 0.0, 0.0]
+        );
     }
 }

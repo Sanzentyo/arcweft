@@ -101,6 +101,38 @@ the canonical layout formula. `ruby-overhang` remains an inline-axis edge
 effect: it can share space with adjacent content but never authorizes annotation
 ink to collide with the contents of its own base.
 
+### Measured vertical Ruby geometry
+
+Vertical layout shapes each annotation once with its resolved font before
+choosing body column breaks. The resolved annotation cell advances determine the needed
+inline footprint and the continuation tracks that fit the actual View text
+container height. Track reservation includes the measured ink width, `gap`, and
+`collision_gap`; continuation tracks grow outward on the selected `over` or
+`under` side. An over-height annotation is continued across tracks instead of
+being emitted as one track beyond the container.
+
+Body glyph cells keep their resolved font size, orientation, source range, and
+physical glyph identity. The Ruby base owns separate allocated whitespace.
+`TextLayoutRuby.base_allocations` binds each allocated rectangle to its complete
+actual body-glyph interval; `base_bounds` includes those allocations and the
+actual body ink. The inline footprint participates in column planning before
+body positions become immutable. The base allocation can use the configured
+maximum inline overhang while the surrounding flow retains space for the
+annotation.
+
+Preparation projects each allocation through the same admitted glyph paint
+and every actual View affine used for rendering. Runs, lines, Ruby hit regions,
+and capture bounds consume that projection. Capturing a base uses the issued
+body-glyph intervals; whitespace does not manufacture raster glyphs or alpha
+pixels. Transported allocation metadata is structurally checked against the
+same run, cluster, and source identities and does not admit prepared Core data.
+
+With the default `collision_gap = 0px`, neighboring logical annotation bounds
+may share an edge. Their outward integer pixel envelopes can then overlap by
+one pixel. A fixture or author that requires separate integer envelopes supplies
+a positive collision gap at its output scale; the layout does not silently add
+a renderer-specific pixel margin.
+
 ### Horizontal wrapping
 
 `horizontal_tb` RichText wraps inside its View container width by default.
@@ -138,8 +170,18 @@ Closing punctuation and middle dots may use at most half of their already
 resolved cluster advance as hanging. Hanging is a bounded soft cost; overflow
 beyond that allowance is a forced-overflow escape and is considered only for
 the shortest legal fragment from a column start. The generated JLREQ tables
-remain the sole source of punctuation class, keep-together, and pair-penalty
-facts.
+own static punctuation classes, pair keep-together rules, and pair penalties.
+The same JLREQ classification owner derives contextual numeric-unit boundaries;
+the shared planner consumes both through that owner.
+
+European numeral sequences keep their decimal or place separator (`.`, `,`,
+or U+0020 space) with the digit clusters on both sides, as required by
+[JLREQ 3.1.10](https://www.w3.org/TR/jlreq/#unbreakable_character_sequences).
+The shared planner consumes those roles from the shaped cluster sequence and
+records the boundary as `JlreqKeepTogether`. Ordinary word spaces and
+separators without digits on both sides retain their UAX/JLREQ opportunities.
+An overheight numeric unit uses the existing shortest-fragment forced-overflow
+escape; its contents are never split to reduce the overflow score.
 
 The request carries only the closed `balanced_v1` identity. Unknown serialized
 policy names are rejected, arbitrary weights are not authored, and the policy

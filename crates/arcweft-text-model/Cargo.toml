@@ -16,7 +16,7 @@ arcweft-rich-text-schema = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }
 blake3.workspace = true
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true
 thiserror.workspace = true
 

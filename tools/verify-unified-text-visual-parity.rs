@@ -4,6 +4,7 @@
 edition = "2024"
 
 [dependencies]
+arcweft-text-model = { path = "../crates/arcweft-text-model" }
 serde_json = "1.0.150"
 ---
 
@@ -176,6 +177,8 @@ fn verify_backend_pair(
         )?;
     }
     let native_body = body(native)?;
+    verify_painted_context(native_body)?;
+    verify_painted_context(body(web)?)?;
     require(
         native_body
             .get("runs")
@@ -204,6 +207,41 @@ fn verify_backend_pair(
         format!("{checkpoint}: Native/Web images are not pixel-exact"),
     )?;
     Ok(())
+}
+
+fn verify_painted_context(body: &Value) -> Result<(), Box<dyn Error>> {
+    let context: arcweft_text_model::PreparedTextContext = serde_json::from_value(body["text_context"].clone())?;
+    let owner: arcweft_text_model::PreparedTextOwnerKind = serde_json::from_value(body["owner"]["kind"].clone())?;
+    let text = str_field(body, "text")?;
+    context.validate_owner(owner, text)?;
+    require(valid_painted_bounds(&body["painted_bounds"]), "missing painted body extent")?;
+    for glyph in array(body, "glyphs")? {
+        let range = arcweft_text_model::RichTextRange::new(
+            usize::try_from(u64_field(glyph, "source_start")?)?,
+            usize::try_from(u64_field(glyph, "source_end")?)?,
+        );
+        context.ranges().validate_prepared_range(context.ranges().source_to_prepared(range)?, text)?;
+        require(valid_painted_bounds(&glyph["painted_bounds"]) && valid_painted_bounds(&glyph["painted_visual_bounds"]), "missing painted glyph cell/ink extent")?;
+    }
+    for collection in ["runs", "lines"] {
+        for element in array(body, collection)? {
+            if element["glyph_start"] != element["glyph_end"] {
+                require(valid_painted_bounds(&element["painted_bounds"]), format!("missing painted {collection} extent"))?;
+            }
+        }
+    }
+    for ruby in array(body, "ruby")? {
+        if u64_field(ruby, "glyph_count")? > 0 {
+            require(valid_painted_bounds(&ruby["painted_base_bounds"]) && valid_painted_bounds(&ruby["painted_annotation_bounds"]), "missing painted ruby base/annotation extent")?;
+        }
+    }
+    Ok(())
+}
+
+fn valid_painted_bounds(bounds: &Value) -> bool {
+    ["x_milli", "y_milli", "width_milli", "height_milli"].into_iter().all(|field| bounds[field].as_i64().is_some())
+        && bounds["width_milli"].as_i64().is_some_and(|value| value >= 0)
+        && bounds["height_milli"].as_i64().is_some_and(|value| value >= 0)
 }
 
 fn verify_vertical_rl(body: &Value) -> Result<(), Box<dyn Error>> {
@@ -440,6 +478,12 @@ fn glyphs_for_literal<'a>(body: &'a Value, literal: &str) -> Vec<&'a Value> {
         return Vec::new();
     };
     let end = start + literal.len();
+    let Ok(context) = serde_json::from_value::<arcweft_text_model::PreparedTextContext>(body["text_context"].clone()) else {
+        return Vec::new();
+    };
+    let Ok(source) = context.ranges().prepared_to_source(arcweft_text_model::RichTextRange::new(start, end)) else {
+        return Vec::new();
+    };
     body.get("glyphs")
         .and_then(Value::as_array)
         .into_iter()
@@ -447,7 +491,7 @@ fn glyphs_for_literal<'a>(body: &'a Value, literal: &str) -> Vec<&'a Value> {
         .filter(|glyph| {
             let glyph_start = glyph.get("source_start").and_then(Value::as_u64);
             let glyph_end = glyph.get("source_end").and_then(Value::as_u64);
-            matches!((glyph_start, glyph_end), (Some(a), Some(b)) if a >= start as u64 && b <= end as u64)
+            matches!((glyph_start, glyph_end), (Some(a), Some(b)) if a >= source.start as u64 && b <= source.end as u64)
         })
         .collect()
 }
@@ -458,9 +502,10 @@ fn body(report: &Value) -> Result<&Value, Box<dyn Error>> {
         .and_then(Value::as_array)
         .and_then(|items| {
             items.iter().find(|item| {
-                item.pointer("/owner/kind")
-                    .and_then(Value::as_str)
-                    .is_some_and(|kind| kind.starts_with("dialogue:"))
+                serde_json::from_value::<arcweft_text_model::PreparedTextOwnerKind>(item["owner"]["kind"].clone())
+                    .is_ok_and(|kind| matches!(kind, arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+                        role: arcweft_text_model::DialoguePreparedTextRole::Content, ..
+                    }))
             })
         })
         .ok_or_else(|| failure("frame report has no dialogue View content"))

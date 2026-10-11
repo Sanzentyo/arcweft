@@ -80,6 +80,31 @@ pub struct AgentHitRegion {
     pub proxy_params: BTreeMap<String, RichTextParam>,
 }
 
+impl AgentHitRegion {
+    /// Exact root-object region shared by hit production and envelope validation.
+    #[must_use]
+    pub fn for_object(
+        bbox: &AgentBBox,
+        object_layer: Option<&str>,
+        object_depth: Option<i32>,
+    ) -> Self {
+        Self {
+            kind: AgentHitRegionKind::Object,
+            bbox: bbox.clone(),
+            range: RichTextRange::new(0, 0),
+            proxy_id: None,
+            proxy_type: None,
+            proxy_declaration: None,
+            proxy_schema: None,
+            proxy_fields: Vec::new(),
+            proxy_role: None,
+            proxy_layer: object_layer.map(str::to_owned),
+            depth: object_depth,
+            proxy_params: BTreeMap::new(),
+        }
+    }
+}
+
 /// Semantic role for a rich-text hit-test region.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]

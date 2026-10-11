@@ -1,4 +1,7 @@
 use crate::gate::AgentPolicyError;
+use arcweft_agent_protocol::image::{
+    AgentImageFormatError, AgentImagePixelFormat, validate_agent_image_format,
+};
 use arcweft_agent_protocol::resource::{
     AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
 };
@@ -40,16 +43,9 @@ impl AgentImageEncoding {
         }
     }
 
-    pub(crate) const fn pixel_format(self) -> Option<&'static str> {
+    pub(crate) const fn pixel_format(self) -> Option<AgentImagePixelFormat> {
         match self {
-            Self::RawRgba => Some("rgba8_unorm"),
-            Self::Png | Self::Jpeg => None,
-        }
-    }
-
-    pub(crate) const fn row_stride_bytes(self, width: u32) -> Option<u32> {
-        match self {
-            Self::RawRgba => Some(width.saturating_mul(4)),
+            Self::RawRgba => Some(AgentImagePixelFormat::Rgba8Unorm),
             Self::Png | Self::Jpeg => None,
         }
     }
@@ -78,19 +74,21 @@ pub(crate) fn decode_agent_image(
     let AgentResourceBody::BytesBase64(body) = &resource.body else {
         return Err(AgentPolicyError::MissingImageBytes);
     };
+    let stride = validate_agent_image_format(
+        metadata.pixel_format,
+        &resource.mime_type,
+        metadata.width,
+        metadata.height,
+    )?;
+    if metadata.row_stride_bytes != stride {
+        return Err(AgentImageFormatError::RowStride.into());
+    }
     let bytes = decode_agent_binary_body(body)?;
     match resource.mime_type.as_str() {
-        "application/octet-stream" => {
-            if metadata.pixel_format.as_deref() != Some("rgba8_unorm") {
-                return Err(AgentPolicyError::UnsupportedImageEncoding(
-                    resource.mime_type.clone(),
-                ));
-            }
-            Ok(DecodedAgentImage {
-                image: RgbaImage::new(metadata.width, metadata.height, bytes)?,
-                input_encoding: AgentImageEncoding::RawRgba,
-            })
-        }
+        "application/octet-stream" => Ok(DecodedAgentImage {
+            image: RgbaImage::new(metadata.width, metadata.height, bytes)?,
+            input_encoding: AgentImageEncoding::RawRgba,
+        }),
         "image/png" | "image/jpeg" => {
             let format = if resource.mime_type == "image/png" {
                 ImageFormat::Png

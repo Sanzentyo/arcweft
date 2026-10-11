@@ -287,7 +287,7 @@ pub(super) fn agent_action_targets_for_object(
     object: &AgentObservedObject,
 ) -> Vec<AgentActionTarget> {
     match &object.content {
-        AgentObservedObjectContent::RichText { .. } if agent_is_dialogue_view(object) => {
+        AgentObservedObjectContent::RichText(_) if agent_is_dialogue_view(object) => {
             vec![AgentActionTarget {
                 id: format!("action.advance_text.{}", object.id),
                 target: object.id.clone(),
@@ -311,9 +311,9 @@ pub(super) fn agent_action_targets_for_object(
                 enabled: object.visible && object.enabled,
             })
             .collect(),
-        AgentObservedObjectContent::RichText { .. } | AgentObservedObjectContent::Custom { .. } => {
-            Vec::new()
-        }
+        AgentObservedObjectContent::RichText(_)
+        | AgentObservedObjectContent::ViewText(_)
+        | AgentObservedObjectContent::Custom { .. } => Vec::new(),
     }
 }
 
@@ -366,6 +366,7 @@ pub(super) fn agent_observe_image_output(
                 )),
                 uri: uri.clone(),
                 mime_type: "image/svg+xml".to_owned(),
+                pixel_format: None,
                 width: report.viewport.width,
                 height: report.viewport.height,
                 hash,
@@ -388,9 +389,6 @@ pub(super) fn agent_observe_image_output(
         AgentObserveImageKind::RawRgba | AgentObserveImageKind::Png => {
             let request = agent_capture_request_for_options(report, image, options);
             let capture_result = agent_capture_image(report, &request, image_frames)?;
-            report
-                .diagnostics
-                .extend(capture_result.image.diagnostics.clone());
             let (mut image, bytes) = (capture_result.image, capture_result.bytes);
             image.written = options.out.as_deref().map(report_path);
             report.render_hash.clone_from(&image.hash);
@@ -407,11 +405,7 @@ pub(super) fn agent_capture_request_for_options(
     options: &AgentObserveOptions,
 ) -> AgentCaptureReadRequest {
     let capture_kind = agent_capture_kind(options);
-    let extension = match image_kind {
-        AgentObserveImageKind::Png => "png",
-        AgentObserveImageKind::RawRgba => "rgba",
-        AgentObserveImageKind::Overlay => "svg",
-    };
+    let extension = image_kind.extension();
     AgentCaptureReadRequest {
         uri: agent_capture_uri(report, capture_kind.resource_name(), extension, options),
         image_kind,

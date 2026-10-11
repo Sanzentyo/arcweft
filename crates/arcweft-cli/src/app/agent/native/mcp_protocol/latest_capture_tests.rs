@@ -112,6 +112,7 @@ fn test_latest_capture_resource() -> AgentResource {
         mime_type: "application/octet-stream".to_owned(),
         hash: "blake3:raw-rgba-test".to_owned(),
         image: Some(AgentImageMetadata {
+            text_contexts: None,
             kind: AgentImageKind::Color,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Layer {
@@ -124,7 +125,7 @@ fn test_latest_capture_resource() -> AgentResource {
             width: 1,
             height: 1,
             crop_origin: None,
-            pixel_format: Some("rgba8_unorm".to_owned()),
+            pixel_format: Some(arcweft_agent_protocol::image::AgentImagePixelFormat::Rgba8Unorm),
             row_stride_bytes: Some(4),
             content_bbox: None,
             content_viewport_bbox: None,
@@ -161,6 +162,15 @@ fn test_observation_report() -> AgentObservationReport {
         layers: Vec::new(),
         views: Vec::new(),
         objects: Vec::new(),
+        text_contexts: arcweft_agent_protocol::text_context::AgentTextContextCatalog::empty(
+            arcweft_agent_protocol::text_context::AgentTextContextScope {
+                session_id: "test".to_owned(),
+                frame_id: "frame.0".to_owned(),
+                tick: 0,
+                capture_time_millis: None,
+            },
+        )
+        .unwrap(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),

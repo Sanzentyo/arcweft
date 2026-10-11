@@ -41,6 +41,27 @@ resolved type name, role, layer, depth, declaration provenance, and typed proxy
 params, so tools can find animated, custom-rendered, or `#[text_proxy]`-backed
 text objects before loading the full object descriptor.
 
+The observation's version-1 `text_contexts` catalog owns each prepared text
+context and shaped layout once. Text objects carry a scoped `text_context`
+reference and a strict text-family marker; their `rich_text_ref` retains the
+element's range, text source, ruby, presentation, and interaction metadata.
+The Objects resource, hit-test report, and standalone image metadata carry the
+selected catalog rows, so those envelopes remain self-contained.
+
+Source, display, and prepared ranges are distinct checked domains. Their owning
+context performs conversion, including later pages and text retained after a
+clear. Element descriptors and parent IDs are issued from that context and its
+typed element; clients resolve the reference and traverse the presentation tree.
+Glyph orientation, vertical form, and hit-region ranges must agree with the
+issued layout and presentation.
+
+Observation geometry uses the prepared item's evaluated paint and every actual
+View painter occurrence. It shares the View-to-raster affine with rendering and
+does not evaluate Fx again. Transparent typewriter glyphs retain their selection
+extent. Capture admission additionally binds the current prepared owner and
+the actual context/layout allocations; a transported matching catalog does not
+authorize another prepared frame.
+
 ## Proxy Spans
 
 Authors can attach typed proxy metadata to a text span with the generic
@@ -166,12 +187,9 @@ another proxy, carry a higher local depth, and still be returned as the top hit
 without losing the lower-ranked proxy.
 
 Agent observation also emits each authored proxy span as its own
-`rich_text_proxy` observed object. Its object id is rooted at the parent dialogue View mount
-and includes the native run index plus proxy index:
-
-```text
-object.dialogue.<step>.<view-mount>.proxy.<run>.<proxy>
-```
+`rich_text_proxy` observed object. Its object ID is issued under the exact
+prepared owner and identifies the selected native run and proxy ordinal. It is
+opaque to consumers; the structured reference and catalog provide its identity.
 
 The proxy object uses the same measured post-transform bbox and native capture
 target as the decorated run, but its `rich_text_ref.kind` is

@@ -26,7 +26,7 @@ use arcweft_player_scene::{
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_render_wgpu::{
-    geometry::{PreparedTextOwnerKind, RenderPreferences, RenderViewport},
+    geometry::{RenderPreferences, RenderViewport},
     view_scene::ViewPrimitive,
 };
 use arcweft_runtime_driver::{
@@ -35,6 +35,7 @@ use arcweft_runtime_driver::{
     view_runtime::BundleViewRuntime,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::PreparedTextOwnerKind;
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
     DialogueRevealPolicy, LineDisplayFrame, RichTextDocument, RichTextInlineDirection,
@@ -104,7 +105,7 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
             matches!(
                 owner.kind,
                 PreparedTextOwnerKind::DialogueView {
-                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::CharacterDisplayName,
+                    role: arcweft_text_model::DialoguePreparedTextRole::CharacterDisplayName,
                     ..
                 }
             )
@@ -126,7 +127,7 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
             matches!(
                 owner.kind,
                 PreparedTextOwnerKind::DialogueView {
-                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
+                    role: arcweft_text_model::DialoguePreparedTextRole::Content,
                     ..
                 }
             )
@@ -286,7 +287,7 @@ fn content_glyph_visibility(prepared: &PlayerPreparedFrame) -> (usize, usize) {
             matches!(
                 owner.kind,
                 PreparedTextOwnerKind::DialogueView {
-                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
+                    role: arcweft_text_model::DialoguePreparedTextRole::Content,
                     ..
                 }
             )

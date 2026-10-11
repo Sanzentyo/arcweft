@@ -86,7 +86,8 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
         }],
     };
     let prepared = prepare(&scene).expect("frame prepares");
-    let report = WebFrameObservationReport::from_prepared_frame(&prepared);
+    let report =
+        WebFrameObservationReport::from_prepared_frame(&prepared).expect("actual frame geometry");
 
     assert_eq!(report.image_count, 1);
     assert_eq!(
@@ -123,7 +124,7 @@ fn image_frame_report(images: Vec<RenderImage>) -> WebFrameObservationReport {
         scroll_regions: Vec::new(),
     })
     .expect("image frame prepares");
-    WebFrameObservationReport::from_prepared_frame(&prepared)
+    WebFrameObservationReport::from_prepared_frame(&prepared).expect("actual frame geometry")
 }
 
 fn test_render_image(id: &str) -> RenderImage {

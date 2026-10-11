@@ -5,54 +5,91 @@ use super::*;
 pub(in super::super) fn agent_view_prepared_text_objects(
     step: usize,
     prepared: &PreparedFrame,
+    catalog: &arcweft_agent_protocol::text_context::AgentTextContextCatalog,
+    geometries: &BTreeMap<arcweft_glyphon::PreparedTextId, PreparedTextGeometry>,
     viewport: &AgentViewport,
 ) -> Vec<AgentObservedObject> {
     prepared
         .prepared_text_owners()
         .iter()
-        .filter_map(PreparedTextObservationOwner::new)
-        .filter(|owner| matches!(owner.prepared().kind, PreparedTextOwnerKind::View { .. }))
-        .filter_map(|owner| {
-            prepared
-                .text
-                .get(owner.prepared().text)
-                .and_then(|item| view_text_objects(step, &owner, item, viewport))
+        .enumerate()
+        .filter(|(_, owner)| {
+            matches!(
+                owner.context,
+                arcweft_text_model::PreparedTextContext::Document { .. }
+            )
+        })
+        .filter_map(|(ordinal, prepared_owner)| {
+            let owner = PreparedTextObservationOwner::new(prepared_owner);
+            let reference = catalog
+                .reference(u32::try_from(ordinal).expect("admitted catalog ordinal"))
+                .expect("catalog contains every admitted owner");
+            prepared.text.get(prepared_owner.text).and_then(|item| {
+                view_text_objects(
+                    step,
+                    &owner,
+                    item,
+                    reference.clone(),
+                    catalog
+                        .resolve(&reference)
+                        .expect("issued document context"),
+                    geometries
+                        .get(&prepared_owner.text)
+                        .expect("admitted item geometry"),
+                    viewport,
+                )
+            })
         })
         .flatten()
         .collect()
 }
-
 fn view_text_objects(
     step: usize,
     owner: &PreparedTextObservationOwner<'_>,
     item: &PreparedTextItem,
+    reference: arcweft_agent_protocol::text_context::AgentTextContextReference,
+    entry: &AgentTextContextEntry,
+    geometry: &PreparedTextGeometry,
     viewport: &AgentViewport,
 ) -> Option<Vec<AgentObservedObject>> {
-    let root = view_text_root(step, owner, item, viewport)?;
+    let root = view_text_root(step, owner, item, reference, geometry, entry, viewport)?;
     let context = ViewProjection {
         step,
         owner: owner.prepared(),
         item,
+        geometry,
+        entry,
         viewport,
         root: &root,
     };
     let mut objects = vec![root.clone()];
     objects.extend(view_line_objects(&context));
     objects.extend(view_run_objects(&context));
+    objects.extend(view_proxy_objects(&context));
     objects.extend(view_ruby_objects(&context));
     objects.extend(view_glyph_objects(&context));
-    Some(dedupe_objects(objects))
+    Some(objects)
 }
 
 fn view_text_root(
     step: usize,
     owner: &PreparedTextObservationOwner<'_>,
     item: &PreparedTextItem,
+    reference: arcweft_agent_protocol::text_context::AgentTextContextReference,
+    geometry: &PreparedTextGeometry,
+    entry: &AgentTextContextEntry,
     viewport: &AgentViewport,
 ) -> Option<AgentObservedObject> {
     let root_id = owner.root_id().to_owned();
     let owner = owner.prepared();
-    let bbox = agent_bbox_from_hit_rect(owner.object_bounds, viewport)?;
+    let bounds = owner.object_bounds;
+    let bounds = LayoutRect::new(bounds.x, bounds.y, bounds.width, bounds.height);
+    let bbox = agent_bbox_from_layout(
+        geometry
+            .bounds()
+            .map_or(bounds, |painted| bounds.union(painted)),
+        viewport,
+    )?;
     let parent_id = owner.parent_id.as_ref().map(ToString::to_string);
     let source = AgentCaptureSourceIdentity::Object {
         id: root_id.clone(),
@@ -74,14 +111,15 @@ fn view_text_root(
         enabled: true,
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
-        capture_refs: agent_object_capture_refs_with_source("cli", step, &root_id, &bbox, source),
+        capture_refs: agent_text_object_capture_refs(step, &root_id, &bbox, source, entry),
         object_layer: None,
         object_depth: None,
         text: Some(item.interaction.text.clone()),
+        text_context: Some(reference),
         rich_text_ref: None,
-        content: AgentObservedObjectContent::Custom {
-            object_type: "prepared_text".to_owned(),
-        },
+        content: AgentObservedObjectContent::ViewText(
+            arcweft_agent_protocol::object::AgentTextObjectContent::default(),
+        ),
     })
 }
 
@@ -89,13 +127,13 @@ struct ViewProjection<'a> {
     step: usize,
     owner: &'a PreparedTextOwner,
     item: &'a PreparedTextItem,
+    geometry: &'a PreparedTextGeometry,
+    entry: &'a AgentTextContextEntry,
     viewport: &'a AgentViewport,
     root: &'a AgentObservedObject,
 }
 
 struct ViewChildSpec {
-    parent_id: String,
-    id: String,
     role: &'static str,
     text: String,
     bbox: AgentBBox,
@@ -111,19 +149,15 @@ fn view_line_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
         .enumerate()
         .filter_map(|(line_index, line)| {
             let range = global_range_unbounded(context.owner, line.source_range)?;
-            let bbox = agent_bbox_from_layout(line.bounds, context.viewport)?;
+            let bbox =
+                agent_bbox_from_layout(context.geometry.line(line_index)?, context.viewport)?;
             Some(view_child_object(
                 context.step,
                 context.root,
+                context.entry,
                 ViewChildSpec {
-                    parent_id: context.root.id.clone(),
-                    id: format!("{}.line.{line_index}", context.root.id),
                     role: "text_line",
-                    text: context
-                        .item
-                        .interaction
-                        .text
-                        .get(line.source_range.start..line.source_range.end)
+                    text: prepared_text_for_source(context.owner, context.item, line.source_range)
                         .unwrap_or_default()
                         .to_owned(),
                     bbox: bbox.clone(),
@@ -161,22 +195,19 @@ fn view_run_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
         .layout
         .runs
         .iter()
-        .filter_map(|run| {
+        .enumerate()
+        .filter_map(|(layout_index, run)| {
             let range = global_range_unbounded(context.owner, run.source_range)?;
             let run_index = usize::try_from(run.run_index).ok()?;
-            let bbox = agent_bbox_from_layout(run.bounds, context.viewport)?;
+            let bbox =
+                agent_bbox_from_layout(context.geometry.run(layout_index)?, context.viewport)?;
             Some(view_child_object(
                 context.step,
                 context.root,
+                context.entry,
                 ViewChildSpec {
-                    parent_id: context.root.id.clone(),
-                    id: format!("{}.run.{run_index}", context.root.id),
                     role: "text_run",
-                    text: context
-                        .item
-                        .interaction
-                        .text
-                        .get(run.source_range.start..run.source_range.end)
+                    text: prepared_text_for_source(context.owner, context.item, run.source_range)
                         .unwrap_or_default()
                         .to_owned(),
                     bbox: bbox.clone(),
@@ -217,22 +248,19 @@ fn view_ruby_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
         .iter()
         .filter_map(|ruby| {
             let range = global_range_unbounded(context.owner, ruby.base_range)?;
-            let base_bbox = agent_bbox_from_layout(ruby.base_bounds, context.viewport)?;
-            let annotation_bbox = agent_bbox_from_layout(ruby.ruby_bounds, context.viewport)?;
+            let geometry = context.geometry.ruby(ruby.ruby_index)?;
+            let base_bbox = agent_bbox_from_layout(geometry.base_bounds, context.viewport)?;
+            let annotation_bbox =
+                agent_bbox_from_layout(geometry.annotation_bounds, context.viewport)?;
             let bbox = agent_union_bbox(&base_bbox, &annotation_bbox);
             let ruby_index = usize::try_from(ruby.ruby_index).ok()?;
-            let base_text = context
-                .item
-                .interaction
-                .text
-                .get(ruby.base_range.start..ruby.base_range.end)
+            let base_text = prepared_text_for_source(context.owner, context.item, ruby.base_range)
                 .unwrap_or_default();
             Some(view_child_object(
                 context.step,
                 context.root,
+                context.entry,
                 ViewChildSpec {
-                    parent_id: context.root.id.clone(),
-                    id: format!("{}.ruby.{ruby_index}", context.root.id),
                     role: "text_ruby",
                     text: format!("{base_text} ({})", ruby.text),
                     bbox: bbox.clone(),
@@ -241,7 +269,7 @@ fn view_ruby_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
                         index: ruby_index,
                         page: 0,
                         range,
-                        node_index: RichTextNodeIndex::new(0),
+                        node_index: ruby.owner_node,
                         source: None,
                         ruby: Some(ruby.text.clone()),
                         presentation: Some(ruby.presentation.clone()),
@@ -268,6 +296,62 @@ fn view_ruby_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
         .collect()
 }
 
+fn view_proxy_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
+    let mut objects = Vec::new();
+    for (layout_index, run) in context.item.layout.runs.iter().enumerate() {
+        let Some(range) = global_range_unbounded(context.owner, run.source_range) else {
+            continue;
+        };
+        let Some(bbox) = context
+            .geometry
+            .run(layout_index)
+            .and_then(|bounds| agent_bbox_from_layout(bounds, context.viewport))
+        else {
+            continue;
+        };
+        for (proxy_index, proxy) in run.presentation.object_proxies.iter().enumerate() {
+            let text = prepared_text_for_source(context.owner, context.item, run.source_range)
+                .expect("admitted document proxy range preserves UTF-8")
+                .to_owned();
+            objects.push(view_child_object(
+                context.step,
+                context.root,
+                context.entry,
+                ViewChildSpec {
+                    role: "text_proxy",
+                    text,
+                    bbox: bbox.clone(),
+                    reference: AgentRichTextElementRef {
+                        kind: AgentRichTextElementKind::TextObjectProxy,
+                        index: proxy_index,
+                        page: 0,
+                        range,
+                        node_index: RichTextNodeIndex::new(0),
+                        source: None,
+                        ruby: None,
+                        presentation: Some(proxy_presentation(&run.presentation, proxy)),
+                        orientation: None,
+                        vertical_form: None,
+                        ruby_base_bbox: None,
+                        ruby_annotation_bbox: None,
+                        object_layer: proxy
+                            .layer
+                            .clone()
+                            .or_else(|| run.presentation.layer.clone()),
+                        object_depth: proxy.depth.map(|depth| depth.0).or_else(|| {
+                            (run.presentation.z_index != 0)
+                                .then_some(i32::from(run.presentation.z_index) * 1_000)
+                        }),
+                        hit_test: proxy.hit_test,
+                        hit_regions: proxy_hit_regions(&bbox, range, &run.presentation, proxy),
+                    },
+                },
+            ));
+        }
+    }
+    objects
+}
+
 fn view_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
     let mut objects = view_body_glyph_objects(context);
     objects.extend(view_body_cluster_objects(context));
@@ -283,31 +367,24 @@ fn view_body_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObj
         .enumerate()
         .filter_map(|(glyph_index, glyph)| {
             let range = global_range_unbounded(context.owner, glyph.source_range)?;
-            let bbox = agent_bbox_from_layout(glyph.layout_bounds, context.viewport)?;
+            let bbox = agent_bbox_from_layout(
+                context.geometry.glyph(glyph_index)?.logical_bounds,
+                context.viewport,
+            )?;
             let run = context
                 .item
                 .layout
                 .runs
                 .iter()
                 .find(|run| run.run_index == glyph.run_index)?;
-            let run_index = usize::try_from(glyph.run_index).ok()?;
-            let parent_id = format!("{}.run.{run_index}", context.root.id);
-            let text = context
-                .item
-                .interaction
-                .text
-                .get(glyph.source_range.start..glyph.source_range.end)
+            let text = prepared_text_for_source(context.owner, context.item, glyph.source_range)
                 .unwrap_or_default()
                 .to_owned();
             Some(view_child_object(
                 context.step,
                 context.root,
+                context.entry,
                 ViewChildSpec {
-                    parent_id,
-                    id: format!(
-                        "{}.glyph.{glyph_index}.{}.{}",
-                        context.root.id, range.start, range.end
-                    ),
                     role: "text_glyph",
                     text,
                     bbox: bbox.clone(),
@@ -327,7 +404,7 @@ fn view_body_glyph_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObj
 }
 
 fn view_body_cluster_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedObject> {
-    prepared_body_clusters(context.item)
+    prepared_body_clusters(context.item, context.geometry)
         .into_iter()
         .filter_map(|cluster| {
             let range = global_range_unbounded(context.owner, cluster.source_range)?;
@@ -338,24 +415,15 @@ fn view_body_cluster_objects(context: &ViewProjection<'_>) -> Vec<AgentObservedO
                 .runs
                 .iter()
                 .find(|run| run.run_index == cluster.run_index)?;
-            let run_index = usize::try_from(cluster.run_index).ok()?;
             let cluster_index = usize::try_from(cluster.index).ok()?;
-            let text = context
-                .item
-                .interaction
-                .text
-                .get(cluster.source_range.start..cluster.source_range.end)
+            let text = prepared_text_for_source(context.owner, context.item, cluster.source_range)
                 .unwrap_or_default()
                 .to_owned();
             Some(view_child_object(
                 context.step,
                 context.root,
+                context.entry,
                 ViewChildSpec {
-                    parent_id: format!("{}.run.{run_index}", context.root.id),
-                    id: format!(
-                        "{}.cluster.{cluster_index}.{}.{}",
-                        context.root.id, range.start, range.end
-                    ),
                     role: "text_cluster",
                     text,
                     bbox: bbox.clone(),
@@ -406,11 +474,18 @@ fn view_glyph_reference(
 fn view_child_object(
     step: usize,
     root: &AgentObservedObject,
+    entry: &AgentTextContextEntry,
     spec: ViewChildSpec,
 ) -> AgentObservedObject {
+    let id = entry
+        .element_id(&spec.reference)
+        .expect("document element belongs to its admitted context");
+    let parent_id = entry
+        .element_parent_id(Some(&spec.reference))
+        .expect("admitted document element parent");
     let source = AgentCaptureSourceIdentity::Object {
-        id: spec.id.clone(),
-        parent_id: Some(spec.parent_id.clone()),
+        id: id.clone(),
+        parent_id: parent_id.clone(),
         entity: root.entity.clone(),
         layer: "view.rich_text".to_owned(),
         role: spec.role.to_owned(),
@@ -419,8 +494,8 @@ fn view_child_object(
         rich_text: Some((&spec.reference).into()),
     };
     AgentObservedObject {
-        id: spec.id.clone(),
-        parent_id: Some(spec.parent_id),
+        id: id.clone(),
+        parent_id,
         entity: root.entity.clone(),
         layer: "view.rich_text".to_owned(),
         role: spec.role.to_owned(),
@@ -428,16 +503,15 @@ fn view_child_object(
         enabled: root.enabled,
         bbox: spec.bbox.clone(),
         polygon: spec.bbox.polygon(),
-        capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, &spec.id, &spec.bbox, source,
-        ),
+        capture_refs: agent_text_object_capture_refs(step, &id, &spec.bbox, source, entry),
         object_layer: spec.reference.object_layer.clone(),
         object_depth: spec.reference.object_depth,
         text: Some(spec.text),
+        text_context: root.text_context.clone(),
         rich_text_ref: Some(spec.reference),
-        content: AgentObservedObjectContent::Custom {
-            object_type: "prepared_text".to_owned(),
-        },
+        content: AgentObservedObjectContent::ViewText(
+            arcweft_agent_protocol::object::AgentTextObjectContent::default(),
+        ),
     }
 }
 
@@ -449,8 +523,8 @@ mod tests {
         PreparedTextOwner::new(
             arcweft_render_wgpu::view_scene::PreparedTextId::from_index(0),
             arcweft_id::PublicId::try_new(semantic_id).expect("test semantic id"),
-            PreparedTextOwnerKind::View { mount },
-            0,
+            arcweft_text_model::PreparedTextOwnerKind::View { mount },
+            arcweft_text_model::PreparedTextContext::document(0, 0).unwrap(),
             HitRect::new(0.0, 0.0, 10.0, 10.0),
         )
     }
@@ -458,27 +532,23 @@ mod tests {
     #[test]
     fn prepared_view_text_root_identity_includes_mount_occurrence() {
         let first = PreparedTextObservationOwner::new(&owner("view.shared.text", 17))
-            .expect("View owner has root")
             .root_id()
             .to_owned();
         let second = PreparedTextObservationOwner::new(&owner("view.shared.text", 18))
-            .expect("View owner has root")
             .root_id()
             .to_owned();
 
         assert_ne!(first, second);
-        assert!(first.ends_with(".mount.17"));
-        assert!(second.ends_with(".mount.18"));
+        assert!(first.ends_with(".mount.17.text.0"));
+        assert!(second.ends_with(".mount.18.text.0"));
     }
 
     #[test]
     fn prepared_view_text_root_identity_encodes_semantic_ids_injectively() {
         let slash = PreparedTextObservationOwner::new(&owner("view/text", 17))
-            .expect("View owner has root")
             .root_id()
             .to_owned();
         let underscore = PreparedTextObservationOwner::new(&owner("view_text", 17))
-            .expect("View owner has root")
             .root_id()
             .to_owned();
 

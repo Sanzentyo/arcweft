@@ -24,7 +24,10 @@ use arcweft_render_text::{
     TextResolveError, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
-use arcweft_text_model::{LineDisplayStage, RichTextRange};
+use arcweft_text_model::{
+    LineDisplayStage, PreparedTextContext, PreparedTextContextError, PreparedTextOwnerKind,
+    RichTextRange,
+};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -421,11 +424,11 @@ pub struct PreparedRichTextStageRequest {
 }
 
 /// Canonical prepared item and reveal result for one `RichText` display stage.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PreparedRichTextStageResult {
     pub text: PreparedTextId,
     pub reveal_complete: bool,
-    pub source_origin: usize,
+    pub context: PreparedTextContext,
 }
 
 impl PreparedTextDocumentRequest {
@@ -549,29 +552,6 @@ pub struct PreparedDialogueViewState {
     pub primary_action: Option<arcweft_view::DialogueAdvanceTarget>,
 }
 
-/// Semantic ownership for one canonical prepared-text item.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PreparedTextOwnerKind {
-    /// Dialogue text rendered inside one persistent authored View mount.
-    DialogueView {
-        dialogue: u64,
-        entry: u64,
-        mount: u64,
-        role: DialoguePreparedTextRole,
-    },
-    /// Authored or Rust-backed View text.
-    View { mount: u64 },
-    /// Shared player control text associated with an interaction target.
-    Control,
-}
-
-/// Semantic role of one shaped dialogue text item.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DialoguePreparedTextRole {
-    CharacterDisplayName,
-    Content,
-}
-
 /// Renderer-neutral identity and geometry associated with one prepared item.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedTextOwner {
@@ -579,7 +559,7 @@ pub struct PreparedTextOwner {
     pub semantic_id: PublicId,
     pub parent_id: Option<PublicId>,
     pub kind: PreparedTextOwnerKind,
-    pub source_origin: usize,
+    pub context: PreparedTextContext,
     pub object_bounds: HitRect,
 }
 
@@ -589,7 +569,7 @@ impl PreparedTextOwner {
         text: PreparedTextId,
         semantic_id: PublicId,
         kind: PreparedTextOwnerKind,
-        source_origin: usize,
+        context: PreparedTextContext,
         object_bounds: HitRect,
     ) -> Self {
         Self {
@@ -597,7 +577,7 @@ impl PreparedTextOwner {
             semantic_id,
             parent_id: None,
             kind,
-            source_origin,
+            context,
             object_bounds,
         }
     }
@@ -747,6 +727,10 @@ pub enum FramePlanError {
     #[error(transparent)]
     ResolveText(#[from] TextResolveError),
     #[error(transparent)]
+    TextContext(#[from] PreparedTextContextError),
+    #[error(transparent)]
+    ViewTextContext(#[from] crate::view_scene::ViewTextContextError),
+    #[error(transparent)]
     LayoutText(#[from] TextLayoutError<GlyphonTextEngineError>),
     #[error("prepared text requires registered project fonts")]
     MissingProjectFonts,
@@ -817,11 +801,14 @@ impl PreparedFrame {
         &mut self,
         owner: PreparedTextOwner,
     ) -> Result<(), FramePlanError> {
-        if self.text.get(owner.text).is_none() {
+        let Some(item) = self.text.get(owner.text) else {
             return Err(FramePlanError::MissingPreparedTextOwnerItem {
                 index: owner.text.index(),
             });
-        }
+        };
+        owner
+            .context
+            .validate_owner(owner.kind, &item.interaction.text)?;
         if self
             .text_owners
             .iter()
@@ -839,6 +826,42 @@ impl PreparedFrame {
     #[must_use]
     pub fn prepared_text_owners(&self) -> &[PreparedTextOwner] {
         &self.text_owners
+    }
+
+    /// Project each item's geometry once using the final View paint graph and
+    /// its already-evaluated glyph paint. Items outside Views are submitted by
+    /// the renderer directly under the identity transform.
+    pub fn prepared_text_geometries(
+        &self,
+    ) -> Result<
+        std::collections::BTreeMap<PreparedTextId, arcweft_glyphon::PreparedTextGeometry>,
+        FramePlanError,
+    > {
+        let mut contexts = std::collections::BTreeMap::<
+            PreparedTextId,
+            Vec<arcweft_glyphon::PreparedTextAffine>,
+        >::new();
+        let mut referenced = std::collections::BTreeSet::new();
+        for prepared in &self.view_scenes {
+            referenced.extend(prepared.scene.prepared_text_ids());
+            for (text, context) in prepared.scene.text_paint_contexts()? {
+                contexts
+                    .entry(text)
+                    .or_default()
+                    .push(context.prepared_text_affine([0.0, 0.0])?);
+            }
+        }
+        self.text
+            .iter()
+            .map(|(text, item)| {
+                let affines = if referenced.contains(&text) {
+                    contexts.remove(&text).unwrap_or_default()
+                } else {
+                    vec![arcweft_glyphon::PreparedTextAffine::IDENTITY]
+                };
+                Ok((text, item.painted_geometry(affines)?))
+            })
+            .collect()
     }
 
     pub fn push_dialogue_view(&mut self, dialogue: PreparedDialogueViewState) {
@@ -1372,6 +1395,7 @@ impl SharedFramePlanContext {
                     (prepared.item, prepared.owner, prepared.focused_target)
                 }
             };
+            let text_context = PreparedTextContext::document(0, item.interaction.text.len())?;
             let id = frame.text.push(item)?;
             if usize::try_from(id.index()).ok() != Some(expected) {
                 return Err(FramePlanError::PreparedTextOrderMismatch {
@@ -1383,7 +1407,7 @@ impl SharedFramePlanContext {
                 id,
                 owner.semantic_id,
                 PreparedTextOwnerKind::Control,
-                0,
+                text_context,
                 owner.object_bounds,
             ))?;
             if let Some(target) = focused_text_input {
@@ -1405,7 +1429,7 @@ impl SharedFramePlanContext {
             .prepared_text_engine
             .as_mut()
             .ok_or(FramePlanError::MissingProjectFonts)?;
-        let (item, reveal_complete, diagnostics, source_origin) = dialogue_prepared::prepare_stage(
+        let (item, reveal_complete, diagnostics, context) = dialogue_prepared::prepare_stage(
             engine,
             stage,
             request,
@@ -1418,7 +1442,7 @@ impl SharedFramePlanContext {
         Ok(PreparedRichTextStageResult {
             text,
             reveal_complete,
-            source_origin,
+            context,
         })
     }
 

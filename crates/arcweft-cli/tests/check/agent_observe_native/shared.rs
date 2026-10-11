@@ -7,26 +7,265 @@ fn imq_is_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Authors the launch contract for fixtures whose declared target is flow.main.
-/// The caller supplies that fixture contract; no source inspection selects it.
-fn temp_main_cli_fixture(name: &str, source: &str) -> (PathBuf, EntryRuntimeId) {
+struct NativeCliFixture {
+    path: PathBuf,
+    entry: EntryRuntimeId,
+}
+
+impl NativeCliFixture {
+    fn new(path: PathBuf, entry: EntryRuntimeId) -> Self {
+        Self { path, entry }
+    }
+
+    fn checked_in(path: PathBuf, entry: &str) -> Self {
+        Self::new(
+            path,
+            EntryRuntimeId::from_source_entity_body(entry).expect("fixture entry ID"),
+        )
+    }
+
+    fn agent_command(&self, operation: &str) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+        command
+            .arg("agent")
+            .arg(operation)
+            .arg(&self.path)
+            .arg("--entry")
+            .arg(self.entry.public_label().as_str());
+        command
+    }
+
+    fn text_capture_command(&self, target: NativeTextCaptureTarget) -> NativeTextCaptureCommand {
+        NativeTextCaptureCommand {
+            command: self.agent_command("observe"),
+            target,
+        }
+    }
+
+    fn text_capture_command_at_entry(
+        &self,
+        entry: &EntryRuntimeId,
+        target: NativeTextCaptureTarget,
+    ) -> NativeTextCaptureCommand {
+        assert_eq!(
+            &self.entry, entry,
+            "capture uses the caller-authored fixture launch"
+        );
+        self.text_capture_command(target)
+    }
+}
+
+/// Caller-authored text identity. The command resolves this against an issued
+/// observation with the same explicit launch, step, viewport and sample inputs.
+/// Object descriptors are returned by that observation and never decoded here.
+#[derive(Clone, Copy)]
+struct NativeTextCaptureTarget {
+    dialogue: u64,
+    entry: u64,
+    element: Option<NativeTextElementTarget>,
+}
+
+#[derive(Clone, Copy)]
+enum NativeTextElementTarget {
+    Page(usize),
+    Line(usize),
+    Run(usize),
+    Ruby(usize),
+    Glyph {
+        index: usize,
+        range: arcweft_text_model::RichTextRange,
+    },
+    Cluster {
+        index: usize,
+        range: arcweft_text_model::RichTextRange,
+    },
+}
+
+impl NativeTextCaptureTarget {
+    const fn content(dialogue: u64, entry: u64) -> Self {
+        Self {
+            dialogue,
+            entry,
+            element: None,
+        }
+    }
+    const fn element(dialogue: u64, entry: u64, element: NativeTextElementTarget) -> Self {
+        Self {
+            dialogue,
+            entry,
+            element: Some(element),
+        }
+    }
+
+    fn matches(
+        self,
+        catalog: &arcweft_agent_protocol::text_context::AgentTextContextCatalog,
+        object: &arcweft_agent_protocol::object::AgentObservedObject,
+    ) -> bool {
+        let Some(reference) = &object.text_context else {
+            return false;
+        };
+        let entry = catalog
+            .resolve(reference)
+            .expect("issued fixture reference resolves");
+        if !matches!(entry.owner.kind, arcweft_text_model::PreparedTextOwnerKind::DialogueView { dialogue, entry, role: arcweft_text_model::DialoguePreparedTextRole::Content, .. } if dialogue == self.dialogue && entry == self.entry)
+        {
+            return false;
+        }
+        match (self.element, object.rich_text_ref.as_ref()) {
+            (None, None) => true,
+            (Some(expected), Some(actual)) => expected.matches(actual),
+            _ => false,
+        }
+    }
+}
+
+impl NativeTextElementTarget {
+    fn matches(self, actual: &arcweft_agent_protocol::rich_text::AgentRichTextElementRef) -> bool {
+        use arcweft_agent_protocol::rich_text::AgentRichTextElementKind as Kind;
+        match self {
+            Self::Page(page) => {
+                actual.kind == Kind::TextPage && actual.page == page && actual.index == page
+            }
+            Self::Line(index) => actual.kind == Kind::TextLine && actual.index == index,
+            Self::Run(index) => actual.kind == Kind::TextRun && actual.index == index,
+            Self::Ruby(index) => actual.kind == Kind::Ruby && actual.index == index,
+            Self::Glyph { index, range } => {
+                actual.kind == Kind::TextGlyph && actual.index == index && actual.range == range
+            }
+            Self::Cluster { index, range } => {
+                actual.kind == Kind::GlyphCluster && actual.index == index && actual.range == range
+            }
+        }
+    }
+}
+
+struct NativeTextCaptureCommand {
+    command: Command,
+    target: NativeTextCaptureTarget,
+}
+
+impl NativeTextCaptureCommand {
+    fn arg(&mut self, argument: impl AsRef<std::ffi::OsStr>) -> &mut Self {
+        self.command.arg(argument);
+        self
+    }
+
+    fn output(&mut self) -> std::io::Result<std::process::Output> {
+        let mut inspect = Command::new(self.command.get_program());
+        let mut capture = Command::new(self.command.get_program());
+        if let Some(directory) = self.command.get_current_dir() {
+            inspect.current_dir(directory);
+        }
+        if let Some(directory) = self.command.get_current_dir() {
+            capture.current_dir(directory);
+        }
+        for (name, value) in self.command.get_envs() {
+            if let Some(value) = value {
+                inspect.env(name, value);
+            } else {
+                inspect.env_remove(name);
+            }
+        }
+        for (name, value) in self.command.get_envs() {
+            if let Some(value) = value {
+                capture.env(name, value);
+            } else {
+                capture.env_remove(name);
+            }
+        }
+        capture.args(self.command.get_args());
+        let mut arguments = self.command.get_args();
+        while let Some(argument) = arguments.next() {
+            if ["--image", "--capture", "--out"]
+                .iter()
+                .any(|flag| argument == std::ffi::OsStr::new(flag))
+            {
+                arguments
+                    .next()
+                    .expect("typed capture option has its value");
+            } else {
+                assert_ne!(
+                    argument,
+                    std::ffi::OsStr::new("--object"),
+                    "the caller-authored typed target owns object selection"
+                );
+                inspect.arg(argument);
+            }
+        }
+        let observed = inspect.output()?;
+        if !observed.status.success() {
+            return Err(std::io::Error::other(format!(
+                "typed capture observation failed: {}",
+                String::from_utf8_lossy(&observed.stderr)
+            )));
+        }
+        let report = arcweft_agent_protocol::observation::AgentObservationReport::decode_json(
+            &observed.stdout,
+        )
+        .map_err(std::io::Error::other)?;
+        let candidates = report
+            .objects
+            .iter()
+            .filter(|object| self.target.matches(&report.text_contexts, object))
+            .collect::<Vec<_>>();
+        if candidates.len() != 1 {
+            return Err(std::io::Error::other(format!(
+                "caller-authored capture target requires one exact issued object; found {}: {}",
+                candidates.len(),
+                String::from_utf8_lossy(&observed.stdout)
+            )));
+        }
+        capture.arg("--object").arg(&candidates[0].id).output()
+    }
+}
+
+impl AsRef<Path> for NativeCliFixture {
+    fn as_ref(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for NativeCliFixture {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.path.as_os_str()
+    }
+}
+
+impl std::ops::Deref for NativeCliFixture {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.path
+    }
+}
+
+/// The caller authors a flow.main fixture; the helper authors its typed launch.
+fn temp_native_cli_fixture(name: &str, source: &str) -> NativeCliFixture {
     let entry = EntryRuntimeId::from_source_entity_body("entry.native_test")
         .expect("native fixture entry ID");
     let source = format!("entry cli @entry.native_test {{ goto @flow.main }}\n{source}");
-    (temp_arcw(name, &source), entry)
+    NativeCliFixture::new(temp_arcw(name, &source), entry)
+}
+
+fn temp_authored_native_cli_fixture(name: &str, source: &str, entry: &str) -> NativeCliFixture {
+    NativeCliFixture::checked_in(temp_arcw(name, source), entry)
+}
+
+fn temp_main_cli_fixture(name: &str, source: &str) -> (NativeCliFixture, EntryRuntimeId) {
+    let fixture = temp_native_cli_fixture(name, source);
+    let entry = fixture.entry.clone();
+    (fixture, entry)
 }
 
 fn capture_native_png_report(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     entry: &EntryRuntimeId,
     png_path: &Path,
 ) -> serde_json::Value {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
-        .arg("--entry")
-        .arg(entry.public_label().into_string())
+    assert_eq!(&source_path.entry, entry, "capture uses the fixture launch");
+    let output = source_path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -52,23 +291,17 @@ fn capture_native_png_report(
 }
 
 fn observe_native_dialogue_view_object_raw_report(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
     capture_kind: &str,
-    extra_args: &[&str],
 ) -> serde_json::Value {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
-    command
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
+    let output = source_path
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(raw_path)
         .arg("--mode")
@@ -76,9 +309,7 @@ fn observe_native_dialogue_view_object_raw_report(
         .arg("--steps")
         .arg("4")
         .arg("--max-ops")
-        .arg("64");
-    command.args(extra_args);
-    let output = command
+        .arg("64")
         .output()
         .expect("arcw agent observe writes native dialogue_view object raw crop");
 
@@ -105,33 +336,31 @@ fn observe_native_dialogue_view_object_raw_report(
     json
 }
 
-fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Value {
+fn observe_native_rich_text_layer_report(source_path: &NativeCliFixture) -> serde_json::Value {
     observe_native_rich_text_layer_report_with_viewport(source_path, 1280, 720)
 }
 
 fn observe_native_rich_text_layer_report_at_entry(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     entry: &EntryRuntimeId,
 ) -> serde_json::Value {
     observe_native_rich_text_layer_report_at_entry_with_viewport(source_path, entry, 1280, 720)
 }
 
 fn observe_native_rich_text_layer_report_at_entry_with_viewport(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     entry: &EntryRuntimeId,
     viewport_width: u32,
     viewport_height: u32,
 ) -> serde_json::Value {
-    let mut command =
+    assert_eq!(&source_path.entry, entry, "observe uses the fixture launch");
+    let command =
         native_rich_text_layer_observe_command(source_path, viewport_width, viewport_height);
-    command
-        .arg("--entry")
-        .arg(entry.public_label().into_string());
     run_native_rich_text_layer_observe(command)
 }
 
 fn observe_native_rich_text_layer_report_with_viewport(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     viewport_width: u32,
     viewport_height: u32,
 ) -> serde_json::Value {
@@ -143,15 +372,12 @@ fn observe_native_rich_text_layer_report_with_viewport(
 }
 
 fn native_rich_text_layer_observe_command(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     viewport_width: u32,
     viewport_height: u32,
 ) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    let mut command = source_path.agent_command("observe");
     command
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -190,8 +416,56 @@ fn find_dialogue_view_object(report: &serde_json::Value) -> &serde_json::Value {
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .unwrap_or_else(|| panic!("dialogue_view object should be observed: {report}"))
+}
+
+fn find_native_text_target_object(
+    report: &serde_json::Value,
+    target: NativeTextCaptureTarget,
+) -> &serde_json::Value {
+    let typed: arcweft_agent_protocol::observation::AgentObservationReport =
+        serde_json::from_value(report.clone())
+            .expect("the report has an admitted text context catalog");
+    let matches = typed
+        .objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| target.matches(&typed.text_contexts, object))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "the caller-authored target has one exact issued object: {report}"
+    );
+    &report["objects"][matches[0]]
+}
+
+fn issued_text_capture_uri<'a>(
+    report: &'a serde_json::Value,
+    target: NativeTextCaptureTarget,
+    kind: &str,
+    mime_type: &str,
+) -> &'a str {
+    let object = find_native_text_target_object(report, target);
+    let captures = object["capture_refs"]["captures"]
+        .as_array()
+        .expect("the issued object carries capture refs");
+    let matches = captures
+        .iter()
+        .filter(|capture| capture["kind"] == kind && capture["mime_type"] == mime_type)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "the issued object has one capture of the requested closed format: {object}"
+    );
+    matches[0]["uri"].as_str().expect("issued capture URI")
 }
 
 fn find_dialogue_view_object_by_rich_text_line<'a>(
@@ -204,68 +478,127 @@ fn find_dialogue_view_object_by_rich_text_line<'a>(
         .iter()
         .find(|object| {
             object["role"] == "dialogue_view"
-                && observed_object_rich_text_frame(object)["line"] == line
+                && object["content"]["kind"] == "rich_text"
+                && observed_object_rich_text_line(report, object) == fixture_runtime_line(line)
         })
         .unwrap_or_else(|| {
             panic!("dialogue_view object for rich-text line `{line}` should be observed: {report}")
         })
 }
 
-fn observed_object_rich_text_frame(object: &serde_json::Value) -> &serde_json::Value {
+fn observed_object_rich_text_frame<'a>(
+    report: &'a serde_json::Value,
+    object: &serde_json::Value,
+) -> &'a serde_json::Value {
     assert_eq!(object["content"]["kind"], "rich_text");
     assert!(
-        object.get("rich_text").is_none(),
-        "observed rich-text objects must use content.frame, not root rich_text: {object}"
+        object["content"].get("frame").is_none(),
+        "the owning catalog carries the frame once: {object}"
     );
-    &object["content"]["frame"]
+    let catalog = &report["text_contexts"];
+    assert_eq!(catalog["version"], 1);
+    assert_eq!(catalog["scope"]["session_id"], report["session_id"]);
+    assert_eq!(catalog["scope"]["frame_id"], report["frame_id"]);
+    assert_eq!(catalog["scope"]["tick"], report["tick"]);
+    assert_eq!(
+        catalog["scope"]["capture_time_millis"],
+        report["capture_time_millis"]
+    );
+    assert_eq!(object["text_context"]["scope"], catalog["scope"]);
+    let owner = object["text_context"]["owner"]
+        .as_u64()
+        .expect("issued text context owner ordinal");
+    let row = catalog["entries"]
+        .as_array()
+        .expect("issued text context rows")
+        .iter()
+        .find(|row| row["owner_ordinal"].as_u64() == Some(owner))
+        .expect("the issued text context row is present");
+    assert_eq!(row["content"]["kind"], "display_stage");
+    &row["content"]["context"]["frame"]
 }
 
-fn rich_text_text_runs(dialogue_view: &serde_json::Value) -> &[serde_json::Value] {
-    observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
+fn fixture_runtime_line(label: &str) -> arcweft_core::plan::RuntimeLineId {
+    arcweft_core::plan::RuntimeLineId::from_runtime_line_value(label)
+        .expect("caller-authored runtime line identity")
+}
+
+fn observed_object_rich_text_line(
+    report: &serde_json::Value,
+    object: &serde_json::Value,
+) -> arcweft_core::plan::RuntimeLineId {
+    serde_json::from_value(observed_object_rich_text_frame(report, object)["line"].clone())
+        .expect("issued frame preserves typed runtime line identity")
+}
+
+fn rich_text_text_runs<'a>(
+    report: &'a serde_json::Value,
+    dialogue_view: &serde_json::Value,
+) -> &'a [serde_json::Value] {
+    observed_object_rich_text_frame(report, dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .unwrap_or_else(|| {
             panic!("dialogue_view display_map should expose text_runs: {dialogue_view}")
         })
 }
 
-fn rich_text_text_run_has_effect(dialogue_view: &serde_json::Value, id: &str) -> bool {
-    rich_text_text_run_effect_count(dialogue_view, id) > 0
+fn rich_text_text_run_has_effect(
+    report: &serde_json::Value,
+    dialogue_view: &serde_json::Value,
+    id: &str,
+) -> bool {
+    rich_text_text_run_effect_count(report, dialogue_view, id) > 0
 }
 
-fn rich_text_text_run_effect_count(dialogue_view: &serde_json::Value, id: &str) -> usize {
-    rich_text_text_runs(dialogue_view)
+fn rich_text_text_run_effect_count(
+    report: &serde_json::Value,
+    dialogue_view: &serde_json::Value,
+    id: &str,
+) -> usize {
+    rich_text_text_runs(report, dialogue_view)
         .iter()
-        .flat_map(|run| {
-            run["presentation"]["effects"]
-                .as_array()
-                .into_iter()
-                .flatten()
-        })
-        .filter(|effect| effect["id"] == id)
+        .flat_map(|run| run["presentation"]["fx"].as_array().into_iter().flatten())
+        .filter(|effect| effect["definition"]["function"] == id)
         .count()
 }
 
-fn rich_text_text_run_has_shader(dialogue_view: &serde_json::Value, id: &str) -> bool {
-    rich_text_text_runs(dialogue_view).iter().any(|run| {
-        run["presentation"]["shaders"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|shader| shader["id"] == id)
-    })
+fn rich_text_text_run_has_shader(
+    report: &serde_json::Value,
+    dialogue_view: &serde_json::Value,
+    id: &str,
+) -> bool {
+    rich_text_text_runs(report, dialogue_view)
+        .iter()
+        .any(|run| {
+            run["presentation"]["fx"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|shader| {
+                    shader["definition"]["function"] == "shader"
+                        && shader["static_"].as_array().is_some_and(|arguments| {
+                            arguments.iter().any(|argument| {
+                                argument["kind"] == "resource" && argument["value"] == id
+                            })
+                        })
+                })
+        })
 }
 
 fn rich_text_text_run_has_object_proxy(
+    report: &serde_json::Value,
     dialogue_view: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
 ) -> bool {
-    rich_text_text_runs(dialogue_view).iter().any(|run| {
-        run["presentation"]["object_proxies"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(&predicate)
-    })
+    rich_text_text_runs(report, dialogue_view)
+        .iter()
+        .any(|run| {
+            run["presentation"]["object_proxies"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(&predicate)
+        })
 }
 
 fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
@@ -291,7 +624,7 @@ fn assert_full_grammar_text_object_proxy_hit_region(json: &serde_json::Value) {
 }
 
 fn assert_full_grammar_text_object_proxy_observed_object(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
 ) {
     let proxy_object = find_rich_text_proxy_object(json, "hotspot", "proxy");
@@ -387,7 +720,10 @@ fn assert_full_grammar_text_object_proxy_observed_object(
     assert_eq!(proxy_hit["depth"], 4000);
 }
 
-fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_nested_text_object_proxies(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let proxy_run = find_rich_text_run_object(json, "multi proxy");
     assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
     assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 7000);
@@ -409,7 +745,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
     assert!(keyword["layer"].is_null());
     assert_eq!(keyword["depth"], 4000);
     assert_eq!(keyword["hit_test"], true);
-    assert_eq!(keyword["params"]["channel"]["value"], "inventory");
+    assert_eq!(text_proxy_field(keyword, "channel")["value"], "inventory");
     let hover = proxies
         .iter()
         .find(|proxy| proxy["id"] == "hover")
@@ -420,7 +756,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
     assert_eq!(hover["layer"], "view");
     assert_eq!(hover["depth"], 7000);
     assert_eq!(hover["hit_test"], true);
-    assert_eq!(hover["params"]["tone"]["value"], "alert");
+    assert_eq!(text_proxy_field(hover, "tone")["value"], "alert");
     assert!(hover["params"]["layer"].is_null());
 
     let range_start = proxy_run["rich_text_ref"]["range"]["start"]
@@ -462,7 +798,7 @@ fn assert_full_grammar_nested_text_object_proxies(source_path: &Path, json: &ser
 }
 
 fn assert_full_grammar_nested_proxy_observed_object(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     proxy_id: &str,
     proxy_type: &str,
@@ -545,7 +881,10 @@ fn assert_full_grammar_nested_proxy_observed_object(
     );
 }
 
-fn assert_full_grammar_typed_text_object_proxy(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_typed_text_object_proxy(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let proxy_run = find_rich_text_run_object(json, "typed proxy");
     assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
     assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 4000);
@@ -560,7 +899,7 @@ fn assert_full_grammar_typed_text_object_proxy(source_path: &Path, json: &serde_
     assert_eq!(proxy["role"], "keyword");
     assert_eq!(proxy["depth"], 4000);
     assert_eq!(proxy["hit_test"], true);
-    assert_eq!(proxy["params"]["channel"]["value"], "typed");
+    assert_eq!(text_proxy_field(proxy, "channel")["value"], "typed");
 
     let proxy_object = find_rich_text_proxy_object(json, "KeywordHit", "typed proxy");
     assert_eq!(proxy_object["role"], "rich_text_proxy");
@@ -616,7 +955,10 @@ fn assert_full_grammar_presentation_scalar_depth(json: &serde_json::Value) {
     assert_eq!(run["rich_text_ref"]["object_depth"], 3000);
 }
 
-fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_text_page_object_readback(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let page_object = find_rich_text_page_object_by_line(json, "say.full.006", 0);
     assert_eq!(page_object["role"], "rich_text_page");
     assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
@@ -676,7 +1018,10 @@ fn assert_full_grammar_text_page_object_readback(source_path: &Path, json: &serd
     );
 }
 
-fn assert_full_grammar_text_line_object_readback(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_text_line_object_readback(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let line_object = find_rich_text_line_object_by_line(json, "say.full.006", 0);
     assert_eq!(line_object["role"], "rich_text_line");
     assert_eq!(line_object["rich_text_ref"]["kind"], "text_line");
@@ -737,13 +1082,16 @@ fn assert_full_grammar_text_line_object_readback(source_path: &Path, json: &serd
 }
 
 fn rich_text_text_run_has_transform(
+    report: &serde_json::Value,
     dialogue_view: &serde_json::Value,
     predicate: impl Fn(&serde_json::Value) -> bool,
 ) -> bool {
-    rich_text_text_runs(dialogue_view).iter().any(|run| {
-        let transform = &run["presentation"]["transform"];
-        !transform.is_null() && predicate(transform)
-    })
+    rich_text_text_runs(report, dialogue_view)
+        .iter()
+        .any(|run| {
+            let transform = &run["presentation"]["transform"];
+            !transform.is_null() && predicate(transform)
+        })
 }
 
 fn assert_object_capture_ref_matches_image(
@@ -777,54 +1125,6 @@ fn assert_native_rich_text_layer_image_has_content(report: &serde_json::Value) {
     assert_eq!(image["composition"], "masked_framebuffer_crop");
     assert_eq!(image["mime_type"], "image/png");
     assert!(image["content_pixels"].as_u64().unwrap() > 0);
-}
-
-fn assert_agent_native_visual_diagnostic(report: &serde_json::Value, code: &str, effect_id: &str) {
-    assert_agent_native_visual_diagnostic_in(&report["diagnostics"], code, effect_id);
-}
-
-fn assert_agent_native_visual_image_diagnostic(
-    report: &serde_json::Value,
-    code: &str,
-    effect_id: &str,
-) {
-    assert_agent_native_visual_diagnostic_in(&report["images"][0]["diagnostics"], code, effect_id);
-}
-
-fn assert_agent_native_visual_resource_diagnostic(
-    resource: &serde_json::Value,
-    code: &str,
-    effect_id: &str,
-) {
-    assert_agent_native_visual_diagnostic_in(&resource["image"]["diagnostics"], code, effect_id);
-}
-
-fn assert_agent_native_visual_diagnostic_in(
-    diagnostics: &serde_json::Value,
-    code: &str,
-    effect_id: &str,
-) {
-    let diagnostic = diagnostics
-        .as_array()
-        .expect("diagnostics are reported")
-        .iter()
-        .find(|diagnostic| {
-            diagnostic["source"] == "native_rich_text"
-                && diagnostic["code"] == code
-                && diagnostic["effect_id"] == effect_id
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "native rich-text diagnostic {code}/{effect_id} should be structured: {diagnostics}"
-            )
-        });
-    assert_eq!(diagnostic["severity"], "warning");
-    assert!(
-        diagnostic["message"]
-            .as_str()
-            .is_some_and(|message| message.contains(code)),
-        "diagnostic message should retain the human-readable code: {diagnostic}"
-    );
 }
 
 fn find_rich_text_run_object<'a>(
@@ -909,6 +1209,117 @@ fn find_rich_text_cluster_object<'a>(
         })
 }
 
+/// The issued layout owns word clustering; exact scalar/grapheme requests use
+/// its Glyph elements while the complete sideways word remains one cluster.
+fn checked_observed_text_element(
+    catalog: &arcweft_agent_protocol::text_context::AgentTextContextCatalog,
+    object: &serde_json::Value,
+) -> (
+    arcweft_agent_protocol::text_context::AgentTextContextReference,
+    arcweft_agent_protocol::rich_text::AgentRichTextElementRef,
+) {
+    let context = serde_json::from_value(object["text_context"].clone())
+        .expect("issued text context reference");
+    let element =
+        serde_json::from_value(object["rich_text_ref"].clone()).expect("issued text element");
+    catalog
+        .validate_element(
+            object["id"].as_str().unwrap(),
+            &context,
+            Some(&element),
+            object["text"].as_str(),
+        )
+        .expect("observed text/range belongs to its exact issued element");
+    let owner = catalog.resolve(&context).expect("issued text owner");
+    assert_eq!(
+        owner.element_parent_id(Some(&element)).unwrap().as_deref(),
+        object["parent_id"].as_str()
+    );
+    (context, element)
+}
+
+fn assert_atomic_sideways_word<'report>(
+    report: &'report serde_json::Value,
+    text: &str,
+    range_start: u64,
+    range_end: u64,
+    expected_glyphs: &[(&str, u64, u64)],
+) -> &'report serde_json::Value {
+    use arcweft_agent_protocol::rich_text::{AgentGlyphOrientation, AgentRichTextElementKind};
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+
+    let word = find_rich_text_cluster_object(report, text, range_start, range_end);
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(report["text_contexts"].clone()).expect("issued word catalog");
+    let (context, element) = checked_observed_text_element(&catalog, word);
+    assert_eq!(element.kind, AgentRichTextElementKind::GlyphCluster);
+    assert_eq!(element.orientation, Some(AgentGlyphOrientation::SidewaysCw));
+    let entry = catalog.resolve(&context).expect("word owner resolves");
+    let layout = entry.content.layout();
+    let cluster_index = u32::try_from(element.index).expect("word cluster index");
+    let cluster_glyphs = layout
+        .cluster_glyphs(cluster_index)
+        .expect("canonical word glyphs");
+    assert!(!cluster_glyphs.is_empty());
+
+    let mut previous_ink_center = None;
+    for &(glyph_text, start, end) in expected_glyphs {
+        let glyph = find_rich_text_glyph_object(report, glyph_text, start, end);
+        let (glyph_context, glyph_element) = checked_observed_text_element(&catalog, glyph);
+        assert_eq!(glyph_context, context, "word glyph keeps its exact owner");
+        assert_eq!(glyph_element.kind, AgentRichTextElementKind::TextGlyph);
+        assert_eq!(
+            glyph_element.orientation,
+            Some(AgentGlyphOrientation::SidewaysCw)
+        );
+        let shaped = layout
+            .glyphs
+            .get(glyph_element.index)
+            .expect("canonical glyph index");
+        assert_eq!(
+            shaped.cluster_index, cluster_index,
+            "word glyph stays in the atomic cluster"
+        );
+        assert_eq!(
+            entry
+                .content
+                .ranges()
+                .source_to_display(shaped.source_range)
+                .unwrap(),
+            glyph_element.range
+        );
+        assert_eq!(
+            glyph["bbox"], word["bbox"],
+            "sideways glyph uses its owning word cell"
+        );
+        let ink_center = shaped.ink_bounds.y + shaped.ink_bounds.height * 0.5;
+        if let Some(previous) = previous_ink_center {
+            assert!(
+                ink_center > previous,
+                "{text}: successive glyph ink advances inside the word cell"
+            );
+        }
+        previous_ink_center = Some(ink_center);
+        assert_rich_text_object_has_mask_capture(glyph, "atomic sideways word glyph");
+    }
+    for glyph in cluster_glyphs {
+        let range = entry
+            .content
+            .ranges()
+            .source_to_display(glyph.source_range)
+            .unwrap();
+        assert!(
+            expected_glyphs.iter().any(|&(_, start, end)| {
+                u64::try_from(range.start).ok() == Some(start)
+                    && u64::try_from(range.end).ok() == Some(end)
+            }),
+            "{text}: every shaped glyph retains an authored scalar/grapheme range"
+        );
+    }
+    assert_rich_text_object_has_mask_capture(word, "atomic sideways word cluster");
+    word
+}
+
 fn find_rich_text_glyph_object<'a>(
     report: &'a serde_json::Value,
     text: &str,
@@ -975,7 +1386,7 @@ fn find_rich_text_page_object_by_line<'a>(
         .iter()
         .find(|object| {
             object["role"] == "rich_text_page"
-                && observed_object_rich_text_frame(object)["line"] == line
+                && observed_object_rich_text_line(report, object) == fixture_runtime_line(line)
                 && object["rich_text_ref"]["page"].as_u64().unwrap_or(0) == page
         })
         .unwrap_or_else(|| {
@@ -994,7 +1405,7 @@ fn find_rich_text_line_object_by_line<'a>(
         .iter()
         .find(|object| {
             object["role"] == "rich_text_line"
-                && observed_object_rich_text_frame(object)["line"] == line
+                && observed_object_rich_text_line(report, object) == fixture_runtime_line(line)
                 && object["rich_text_ref"]["index"].as_u64() == Some(index)
         })
         .unwrap_or_else(|| {
@@ -1007,9 +1418,13 @@ fn first_text_run_presentation_layout(report: &serde_json::Value) -> &serde_json
         .as_array()
         .expect("objects are reported")
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .unwrap_or_else(|| panic!("dialogue_view object should be observed: {report}"));
-    let run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
+    let run = observed_object_rich_text_frame(report, dialogue_view)["display_map"]["text_runs"]
         .as_array()
         .expect("text runs are reported")
         .first()

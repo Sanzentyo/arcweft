@@ -1,6 +1,6 @@
 //! Canonical dialogue-stage preparation using the shared shaped text engine.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use super::{
     FramePlanError, PreparedRichTextStageRequest, RenderViewport,
@@ -23,8 +23,9 @@ use arcweft_render_text::{
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_document};
 use arcweft_text_model::{
-    DialogueRevealPolicy, LineDisplayStage, Milli, RichTextAngle, RichTextPresentation,
-    RichTextRange, evaluate_dialogue_reveal,
+    DialogueRevealPolicy, LineDisplayStage, Milli, PreparedDisplayStageContext,
+    PreparedTextContext, PreparedTextContextError, ProjectedTextRangeDomain, RichTextAngle,
+    RichTextPresentation, RichTextRange, evaluate_dialogue_reveal,
 };
 
 struct DialogueFxEvaluator<'a> {
@@ -437,7 +438,15 @@ pub(super) fn prepare_stage(
     viewport: RenderViewport,
     reduce_motion: bool,
     fx_resolver: &dyn FxApplicationResolver,
-) -> Result<(PreparedTextItem, bool, Vec<FxDiagnostic>, usize), FramePlanError> {
+) -> Result<
+    (
+        PreparedTextItem,
+        bool,
+        Vec<FxDiagnostic>,
+        PreparedTextContext,
+    ),
+    FramePlanError,
+> {
     let runs = stage.text_runs();
     let controls = stage.controls();
     let reveal = evaluate_dialogue_reveal(
@@ -457,9 +466,18 @@ pub(super) fn prepare_stage(
         reveal.display_start(),
         document.text().len(),
     ))?;
-    let source_origin = document.source_origin();
+    let ranges = ProjectedTextRangeDomain::try_from_lengths(
+        stage.text_range().start,
+        stage.text().len(),
+        document.source_origin(),
+        document.text().len(),
+    )
+    .map_err(PreparedTextContextError::from)?;
     let mut fx = DialogueFxEvaluator::new(fx_resolver, reduce_motion);
     let document = apply_document_fx(&document, &mut fx)?;
+    let context = PreparedTextContext::display_stage(Arc::new(
+        PreparedDisplayStageContext::try_new(stage.projection(), ranges, document.text())?,
+    ));
     let bounds = hit_rect_to_layout_rect(request.bounds);
     let layout = layout_document(
         &document,
@@ -470,10 +488,13 @@ pub(super) fn prepare_stage(
         },
         engine,
     )?;
-    let visible_end = reveal
-        .visible_end()
-        .saturating_sub(reveal.display_start())
-        .min(document.text().len());
+    let visible_end = ranges
+        .display_to_source(RichTextRange::new(
+            reveal.display_start(),
+            reveal.visible_end(),
+        ))
+        .map_err(PreparedTextContextError::from)?
+        .end;
     let mut paint = TextPaintPlan::from_layout(&layout);
     apply_body_paint(&layout, &mut paint, visible_end, &mut fx)?;
     paint.offscreen_passes.append(&mut fx.offscreen_passes);
@@ -489,7 +510,7 @@ pub(super) fn prepare_stage(
         Some(bounds),
         viewport.physical_scale_factor_f32(),
     )?;
-    Ok((item, reveal.is_complete(), fx.diagnostics, source_origin))
+    Ok((item, reveal.is_complete(), fx.diagnostics, context))
 }
 
 fn apply_body_paint(

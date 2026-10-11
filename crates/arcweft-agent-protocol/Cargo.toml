@@ -9,9 +9,10 @@ repository.workspace = true
 [dependencies]
 arcweft-core = { workspace = true }
 arcweft-layout = { workspace = true }
+arcweft-text-layout = { workspace = true }
 arcweft-text-model = { workspace = true }
 blake3.workspace = true
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true
 thiserror.workspace = true
 

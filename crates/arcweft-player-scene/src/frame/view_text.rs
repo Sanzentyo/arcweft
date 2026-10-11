@@ -24,8 +24,7 @@ use arcweft_render_text::{
 };
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedDialogueViewState, PreparedFrame, PreparedRichTextStageRequest,
-    PreparedTextDocumentRequest, PreparedTextOwner, PreparedTextOwnerKind, RenderScene,
-    SharedFramePlanContext,
+    PreparedTextDocumentRequest, PreparedTextOwner, RenderScene, SharedFramePlanContext,
 };
 use arcweft_render_wgpu::view_scene::PreparedTextId;
 use arcweft_runtime_driver::view_runtime::{
@@ -124,10 +123,10 @@ impl FxApplicationResolver for DialogueFxResolver<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct PushedTextValue {
     text: PreparedTextId,
-    source_origin: usize,
+    context: arcweft_text_model::PreparedTextContext,
     reveal_complete: Option<bool>,
 }
 
@@ -388,10 +387,10 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             })?;
         let dialogue_role = match output.value {
             BundleViewTextValue::CharacterDisplayName { .. } => {
-                Some(arcweft_render_wgpu::geometry::DialoguePreparedTextRole::CharacterDisplayName)
+                Some(arcweft_text_model::DialoguePreparedTextRole::CharacterDisplayName)
             }
             BundleViewTextValue::DisplayFrame { .. } => {
-                Some(arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content)
+                Some(arcweft_text_model::DialoguePreparedTextRole::Content)
             }
             _ => None,
         };
@@ -408,10 +407,10 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             bounds
         };
         let owner_kind = dialogue_text.map_or(
-            PreparedTextOwnerKind::View {
+            arcweft_text_model::PreparedTextOwnerKind::View {
                 mount: mount.mount.get(),
             },
-            |(dialogue, role)| PreparedTextOwnerKind::DialogueView {
+            |(dialogue, role)| arcweft_text_model::PreparedTextOwnerKind::DialogueView {
                 dialogue: dialogue.dialogue.id().get(),
                 entry: dialogue.entry.id().get(),
                 mount: mount.mount.get(),
@@ -423,7 +422,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                 pushed.text,
                 semantic_id,
                 owner_kind,
-                pushed.source_origin,
+                pushed.context,
                 object_bounds,
             )
             .with_parent(parent_id),
@@ -462,42 +461,54 @@ fn push_text_value(
     match value {
         BundleViewTextValue::Plain { value } => {
             let document = plain_document(value, style)?;
-            let source_origin = document.source_origin();
+            let text_context = arcweft_text_model::PreparedTextContext::document(
+                document.source_origin(),
+                document.text().len(),
+            )?;
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
                 text,
-                source_origin,
+                context: text_context,
                 reveal_complete: None,
             })
         }
         BundleViewTextValue::Localized { document, .. } => {
             let document =
                 resolve_document_with_source(document, &cascade, ResolvedTextRunSource::Localized)?;
-            let source_origin = document.source_origin();
+            let text_context = arcweft_text_model::PreparedTextContext::document(
+                document.source_origin(),
+                document.text().len(),
+            )?;
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
                 text,
-                source_origin,
+                context: text_context,
                 reveal_complete: None,
             })
         }
         BundleViewTextValue::RichTextDocument { document } => {
             let document = resolve_document(document, &cascade)?;
-            let source_origin = document.source_origin();
+            let text_context = arcweft_text_model::PreparedTextContext::document(
+                document.source_origin(),
+                document.text().len(),
+            )?;
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
                 text,
-                source_origin,
+                context: text_context,
                 reveal_complete: None,
             })
         }
         BundleViewTextValue::CharacterDisplayName { frame: display } => {
             let document = plain_document(&display.character.display_name, style.clone())?;
-            let source_origin = document.source_origin();
+            let text_context = arcweft_text_model::PreparedTextContext::document(
+                document.source_origin(),
+                document.text().len(),
+            )?;
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
                 text,
-                source_origin,
+                context: text_context,
                 reveal_complete: None,
             })
         }
@@ -538,11 +549,24 @@ fn push_display_frame(
     let Some(dialogue) = context.dialogue else {
         let cascade = TextStyleCascade::new(style);
         let document = resolve_stage_document(display, stage, &cascade)?;
-        let source_origin = document.source_origin();
+        let ranges = arcweft_text_model::ProjectedTextRangeDomain::try_from_lengths(
+            stage.text_range().start,
+            stage.text().len(),
+            document.source_origin(),
+            document.text().len(),
+        )
+        .map_err(arcweft_text_model::PreparedTextContextError::from)?;
+        let text_context = arcweft_text_model::PreparedTextContext::display_stage(
+            std::sync::Arc::new(arcweft_text_model::PreparedDisplayStageContext::try_new(
+                stage.projection(),
+                ranges,
+                document.text(),
+            )?),
+        );
         let text = shared.push_prepared_text_document(frame, &document, request)?;
         return Ok(PushedTextValue {
             text,
-            source_origin,
+            context: text_context,
             reveal_complete: None,
         });
     };
@@ -576,7 +600,7 @@ fn push_display_frame(
     )?;
     Ok(PushedTextValue {
         text: result.text,
-        source_origin: result.source_origin,
+        context: result.context,
         reveal_complete: Some(result.reveal_complete),
     })
 }

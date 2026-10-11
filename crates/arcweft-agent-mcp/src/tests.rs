@@ -83,6 +83,59 @@ fn has_extension(name: &str, extension: &str) -> bool {
 }
 
 const PNG_1X1_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==";
+const MCP_PROXY_TEXT: &str = "abcdefghijproxy";
+
+/// Deterministic 6x8 shaping metrics for the transport/policy fixture.
+struct McpTextFixtureShaper;
+
+impl arcweft_text_layout::TextShaper for McpTextFixtureShaper {
+    type Error = std::convert::Infallible;
+
+    fn font_inventory_hash(&self) -> arcweft_text_layout::FontInventoryHash {
+        let face = arcweft_text_layout::FontFaceId::derive(b"mcp-fixture-glyphs", 0, &[]);
+        arcweft_text_layout::FontInventoryHash::derive([face], std::iter::empty())
+    }
+
+    fn shape_run(
+        &mut self,
+        request: arcweft_text_layout::TextShapeRequest<'_>,
+    ) -> Result<arcweft_text_layout::ShapedTextRun, Self::Error> {
+        use arcweft_text_layout::{
+            FontFaceId, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey, ShapedTextGlyph,
+            ShapedTextRun,
+        };
+        let face = FontFaceId::derive(b"mcp-fixture-glyphs", 0, &[]);
+        let glyphs = request
+            .text
+            .char_indices()
+            .enumerate()
+            .map(|(index, (offset, ch))| ShapedTextGlyph {
+                key: ShapedGlyphKey {
+                    face,
+                    glyph_id: u32::from(ch),
+                    font_size_bits: 8.0_f32.to_bits(),
+                    font_weight: 400,
+                    flags: 0,
+                },
+                source_range: arcweft_text_model::RichTextRange::new(
+                    request.source_range.start + offset,
+                    request.source_range.start + offset + ch.len_utf8(),
+                ),
+                line_index: 0,
+                cluster_index: u32::try_from(index).expect("short fixture ordinal fits u32"),
+                offset: LayoutPoint::default(),
+                advance: LayoutSize::new(6.0, 0.0),
+                ink_bounds: LayoutRect::new(0.0, 0.0, 6.0, 8.0),
+            })
+            .collect::<Vec<_>>();
+        let width = glyphs.iter().map(|glyph| glyph.advance.width).sum();
+        Ok(ShapedTextRun::new(
+            glyphs,
+            LayoutSize::new(width, 0.0),
+            Some(LayoutRect::new(0.0, 0.0, width, 8.0)),
+        ))
+    }
+}
 
 #[test]
 fn tool_descriptors_include_wait_control_surface() {
@@ -159,6 +212,7 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
         mime_type: "image/png".to_owned(),
         hash: "hash".to_owned(),
         image: Some(AgentImageMetadata {
+            text_contexts: None,
             kind: AgentImageKind::Color,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Layer {
@@ -250,13 +304,34 @@ fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
 
 #[test]
 fn image_tool_content_preserves_object_rich_text_ref_metadata() {
-    let metadata: AgentImageMetadata =
-        serde_json::from_value(proxy_object_image_metadata_fixture())
-            .expect("object image metadata deserializes");
+    let metadata = proxy_object_image_metadata_fixture();
+    let metadata = AgentImageMetadata::decode_json(
+        &serde_json::to_vec(&metadata).expect("issued proxy metadata serializes"),
+    )
+    .expect("issued proxy metadata roundtrips through its checked owner");
+    let object = metadata
+        .object
+        .as_ref()
+        .expect("issued proxy object is present");
+    let element = object
+        .rich_text_ref
+        .as_ref()
+        .expect("proxy child is admitted");
+    assert_eq!(element.range.start, 10);
+    assert_eq!(element.range.end, 15);
+    let proxy = &element.presentation.as_ref().unwrap().object_proxies[0];
+    assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
+    assert_eq!(proxy.depth.map(|depth| depth.0), Some(4000));
+    assert_eq!(proxy.fields[0].name, "channel");
+    assert_eq!(
+        proxy.fields[0].value,
+        arcweft_text_model::RichTextTextProxyScalar::Text {
+            value: "choice".to_owned(),
+        }
+    );
+    let capture_uri = object.capture_refs.captures[0].uri.clone();
     let resource = AgentResource {
-        uri: resource_uri(
-            "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba",
-        ),
+        uri: resource_uri(&capture_uri),
         kind: AgentResourceKind::Image,
         mime_type: "application/octet-stream".to_owned(),
         hash: "hash".to_owned(),
@@ -282,6 +357,7 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
     };
     let json: serde_json::Value = serde_json::from_str(text).expect("metadata text is JSON object");
     assert!(json["image"]["object"].is_null());
+    assert!(json["image"]["text_contexts"].is_null());
     assert!(
         json["image"]["scope"]["id"]
             .as_str()
@@ -332,67 +408,260 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
     assert!(json["content_policy"].is_object());
 }
 
-fn proxy_object_image_metadata_fixture() -> serde_json::Value {
-    serde_json::json!({
-        "kind": "mask",
-        "renderer": "native",
-        "scope": { "kind": "object", "id": "object.dialogue.0.0.proxy.0.0" },
-        "composition": "mask_attachment",
-        "width": 1,
-        "height": 1,
-        "pixel_format": "rgba8_unorm",
-        "row_stride_bytes": 4,
-        "content_pixels": 1,
-        "object": {
-            "id": "object.dialogue.0.0.proxy.0.0",
-            "layer": "dialogue.rich_text",
-            "role": "rich_text_proxy",
-            "bbox": { "space": "viewport", "x": 120, "y": 520, "width": 12, "height": 8 },
-            "polygon": [
-                { "x": 120, "y": 520 },
-                { "x": 132, "y": 520 },
-                { "x": 132, "y": 528 },
-                { "x": 120, "y": 528 }
-            ],
-            "capture_refs": {
-                "object_id_color": {
-                    "red": 10,
-                    "green": 20,
-                    "blue": 30,
-                    "alpha": 255
-                },
-                "captures": [{
-                    "kind": "mask",
-                    "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba",
-                    "mime_type": "application/octet-stream",
-                    "width": 12,
-                    "height": 8
-                }]
-            },
-            "text": "proxy",
-            "rich_text_ref": {
-                "kind": "text_object_proxy",
-                "index": 0,
-                "range": { "start": 10, "end": 15 },
-                "node_index": 3,
-                "presentation": {
-                    "object_proxies": [{
-                        "id": "hotspot",
-                        "type_name": "KeywordHit",
-                        "role": "keyword",
-                        "depth": 4000,
-                        "hit_test": true,
-                        "params": {
-                            "channel": { "kind": "selector", "value": "choice" }
-                        }
-                    }]
-                },
-                "object_depth": 4000,
-                "hit_test": true,
-                "hit_regions": []
-            }
-        }
+fn proxy_document_layout_fixture() -> arcweft_text_layout::TextLayout {
+    use arcweft_render_text::{
+        ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
+        TextDocumentRevision, TextFontFamily,
+    };
+    use arcweft_text_model::{
+        Milli, RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextPresentation,
+        RichTextRange, RichTextTextProxyField, RichTextTextProxyFieldKind,
+        RichTextTextProxyFieldSchema, RichTextTextProxyScalar, RichTextTextProxySchema,
+    };
+    let declaration = RichTextObjectProxyDeclaration {
+        struct_name: "KeywordHit".to_owned(),
+        attribute: "text_proxy".to_owned(),
+    };
+    let value = RichTextTextProxyScalar::Text {
+        value: "choice".to_owned(),
+    };
+    let presentation = RichTextPresentation {
+        object_proxies: vec![RichTextObjectProxy {
+            id: "hotspot".to_owned(),
+            schema: Some(RichTextTextProxySchema {
+                id: "KeywordHit".to_owned(),
+                declaration: declaration.clone(),
+                fields: vec![RichTextTextProxyFieldSchema {
+                    id: 0,
+                    name: "channel".to_owned(),
+                    kind: RichTextTextProxyFieldKind::Text,
+                    optional: false,
+                    default: Some(value.clone()),
+                }],
+            }),
+            declaration: Some(declaration),
+            type_name: Some("KeywordHit".to_owned()),
+            role: Some("keyword".to_owned()),
+            layer: None,
+            depth: Some(Milli(4000)),
+            hit_test: true,
+            fields: vec![RichTextTextProxyField {
+                id: 0,
+                name: "channel".to_owned(),
+                value,
+            }],
+        }],
+        ..RichTextPresentation::default()
+    };
+    let style =
+        ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 8000, 8000).expect("fixture style");
+    let runs = [
+        (RichTextRange::new(0, 10), RichTextPresentation::default()),
+        (RichTextRange::new(10, 15), presentation),
+    ]
+    .into_iter()
+    .map(|(range, presentation)| {
+        ResolvedTextRun::new(
+            range,
+            range,
+            style.clone(),
+            presentation,
+            ResolvedTextRunSource::Plain,
+        )
+        .expect("checked fixture run")
     })
+    .collect();
+    let document = ResolvedTextDocument::new(
+        MCP_PROXY_TEXT,
+        0,
+        runs,
+        Vec::new(),
+        TextDocumentRevision::new(1),
+    )
+    .expect("checked complete fixture document");
+    arcweft_text_layout::layout_document(
+        &document,
+        arcweft_text_layout::TextLayoutRequest {
+            origin: arcweft_text_layout::LayoutPoint::new(60.0, 520.0),
+            ..arcweft_text_layout::TextLayoutRequest::default()
+        },
+        &mut McpTextFixtureShaper,
+    )
+    .expect("fixture passes the owning layout compiler")
+}
+
+fn proxy_text_context_fixture() -> (
+    arcweft_agent_protocol::text_context::AgentTextContextCatalog,
+    arcweft_agent_protocol::rich_text::AgentRichTextElementRef,
+    arcweft_agent_protocol::geometry::AgentBBox,
+) {
+    use arcweft_agent_protocol::{
+        geometry::AgentBBox,
+        rich_text::{
+            AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
+        },
+        text_context::{
+            AgentTextContextCatalog, AgentTextContextContent, AgentTextContextEntry,
+            AgentTextContextOwner, AgentTextContextScope,
+        },
+    };
+    use arcweft_text_model::{
+        PreparedTextDocumentContext, PreparedTextOwnerKind, RichTextNodeIndex, RichTextRange,
+    };
+    let layout = std::sync::Arc::new(proxy_document_layout_fixture());
+    assert_eq!(
+        layout.runs[1].bounds,
+        arcweft_text_layout::LayoutRect::new(120.0, 520.0, 30.0, 8.0)
+    );
+    let presentation = layout.runs[1].presentation.clone();
+    let proxy = &presentation.object_proxies[0];
+    let bbox = AgentBBox {
+        space: AgentCoordinateSpace::Viewport,
+        x: 120,
+        y: 520,
+        width: 30,
+        height: 8,
+    };
+    let range = RichTextRange::new(10, 15);
+    let region = AgentHitRegion {
+        kind: AgentHitRegionKind::TextObjectProxy,
+        bbox: bbox.clone(),
+        range,
+        proxy_id: Some(proxy.id.clone()),
+        proxy_type: proxy.type_name.clone(),
+        proxy_declaration: proxy.declaration.clone(),
+        proxy_schema: proxy.schema.clone(),
+        proxy_fields: proxy.fields.clone(),
+        proxy_role: proxy.role.clone(),
+        proxy_layer: proxy.layer.clone(),
+        depth: proxy.depth.map(|depth| depth.0),
+        proxy_params: std::collections::BTreeMap::new(),
+    };
+    let element = AgentRichTextElementRef {
+        kind: AgentRichTextElementKind::TextObjectProxy,
+        index: 0,
+        page: 0,
+        range,
+        node_index: RichTextNodeIndex::new(0),
+        source: None,
+        ruby: None,
+        presentation: Some(presentation),
+        orientation: None,
+        vertical_form: None,
+        ruby_base_bbox: None,
+        ruby_annotation_bbox: None,
+        object_layer: None,
+        object_depth: Some(4000),
+        hit_test: true,
+        hit_regions: vec![region],
+    };
+    let catalog = AgentTextContextCatalog::try_new(
+        AgentTextContextScope {
+            session_id: "cli".to_owned(),
+            frame_id: "frame.0".to_owned(),
+            tick: 0,
+            capture_time_millis: Some(0),
+        },
+        [AgentTextContextEntry {
+            owner_ordinal: 0,
+            owner: AgentTextContextOwner {
+                root_id: "object.dialogue.0.0".to_owned(),
+                parent_id: None,
+                semantic_id: "view.mcp.proxy-fixture".to_owned(),
+                prepared_text: 0,
+                kind: PreparedTextOwnerKind::View { mount: 0 },
+            },
+            content: AgentTextContextContent::PreparedDocument {
+                context: PreparedTextDocumentContext::try_new(0, MCP_PROXY_TEXT.len())
+                    .expect("checked prepared document extent"),
+                text: MCP_PROXY_TEXT.to_owned(),
+                layout,
+            },
+        }],
+    )
+    .expect("checked context/layout catalog");
+    (catalog, element, bbox)
+}
+
+fn proxy_object_image_metadata_fixture() -> AgentImageMetadata {
+    use arcweft_agent_protocol::{
+        geometry::AgentRgbaColor,
+        image::{
+            AgentImageObjectRef, AgentImagePixelFormat, AgentObjectCaptureRef,
+            AgentObjectCaptureRefs,
+        },
+        object::{AgentObservedObjectContent, AgentTextObjectContent},
+    };
+    let (catalog, element, bbox) = proxy_text_context_fixture();
+    let reference = catalog.reference(0).expect("issued fixture owner");
+    let entry = catalog.resolve(&reference).unwrap();
+    let id = entry.element_id(&element).expect("issued proxy descriptor");
+    let parent_id = entry
+        .element_parent_id(Some(&element))
+        .expect("issued proxy parent");
+    let uri = format!(
+        "arcweft://session/{}/frame/{}/object.{id}.mask.rgba",
+        catalog.scope().session_id,
+        catalog.scope().tick
+    );
+    let object = AgentImageObjectRef {
+        id: id.clone(),
+        parent_id,
+        entity: None,
+        layer: "dialogue.rich_text".to_owned(),
+        role: "rich_text_proxy".to_owned(),
+        polygon: bbox.polygon(),
+        bbox: bbox.clone(),
+        capture_refs: AgentObjectCaptureRefs {
+            object_id_color: AgentRgbaColor {
+                red: 10,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            },
+            captures: vec![AgentObjectCaptureRef {
+                kind: AgentImageKind::Mask,
+                uri,
+                mime_type: "application/octet-stream".to_owned(),
+                pixel_format: Some(AgentImagePixelFormat::Rgba8Unorm),
+                page: 0,
+                width: bbox.width,
+                height: bbox.height,
+                selected_capture: None,
+            }],
+        },
+        object_layer: None,
+        object_depth: Some(4000),
+        text: Some("proxy".to_owned()),
+        text_context: Some(reference),
+        rich_text_ref: Some(element),
+        content: AgentObservedObjectContent::ViewText(AgentTextObjectContent::default()),
+    };
+    object
+        .validate_text_context(&catalog)
+        .expect("proxy matches its actual context and layout");
+    AgentImageMetadata {
+        kind: AgentImageKind::Mask,
+        renderer: AgentImageRenderer::Native,
+        scope: AgentImageScope::Object { id },
+        composition: AgentImageComposition::MaskAttachment,
+        page: 0,
+        capture_step: 1,
+        capture_time_millis: 0,
+        width: 1,
+        height: 1,
+        crop_origin: None,
+        pixel_format: Some(AgentImagePixelFormat::Rgba8Unorm),
+        row_stride_bytes: Some(4),
+        content_bbox: None,
+        content_viewport_bbox: None,
+        content_pixels: Some(1),
+        object: Some(object),
+        view: None,
+        selected_capture: None,
+        diagnostics: Vec::new(),
+        text_contexts: Some(catalog),
+    }
 }
 
 fn image_object_frame_metadata_fixture() -> serde_json::Value {
@@ -436,7 +705,8 @@ fn image_object_frame_metadata_fixture() -> serde_json::Value {
                     },
                     "object_layer": "layer.foreground",
                     "object_depth": 2500,
-                    "image_ref": {
+                    "content": {
+                        "kind": "image",
                         "source": "view.image.1",
                         "object": "image.sample.pulse_sprite",
                         "target": "target.sample.pulse_sprite",
@@ -485,6 +755,7 @@ fn resource_list_and_observe_tool_result_expose_resource_links() {
             mime_type: "image/png".to_owned(),
             hash: "hash".to_owned(),
             image: Some(AgentImageMetadata {
+                text_contexts: None,
                 kind: AgentImageKind::ObjectId,
                 renderer: AgentImageRenderer::Native,
                 scope: AgentImageScope::Layer {
@@ -723,6 +994,15 @@ fn runtime_assertion_diagnostic_survives_observation_policy_and_mcp_projection()
         layers: Vec::new(),
         views: Vec::new(),
         objects: Vec::new(),
+        text_contexts: arcweft_agent_protocol::text_context::AgentTextContextCatalog::empty(
+            arcweft_agent_protocol::text_context::AgentTextContextScope {
+                session_id: "assertion".to_owned(),
+                frame_id: "frame.7".to_owned(),
+                tick: 7,
+                capture_time_millis: None,
+            },
+        )
+        .unwrap(),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),

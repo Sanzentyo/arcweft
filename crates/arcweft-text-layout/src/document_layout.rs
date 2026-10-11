@@ -7,9 +7,9 @@ use arcweft_text_model::{RichTextRange, RichTextVerticalLatinMode, RichTextWriti
 
 use crate::{
     GlyphOrientation, GlyphVerticalForm, JlreqStrictness, LayoutPoint, LayoutRect, LayoutSize,
-    ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutError, TextLayoutGlyph,
-    TextLayoutGlyphSource, TextLayoutLine, TextLayoutRequest, TextLayoutRun, TextLayoutSourceMap,
-    TextShapeRequest, TextShaper, VerticalBreakError,
+    ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutBodyAllocation, TextLayoutError,
+    TextLayoutGlyph, TextLayoutGlyphSource, TextLayoutLine, TextLayoutRequest, TextLayoutRun,
+    TextLayoutSourceMap, TextShapeRequest, TextShaper, VerticalBreakError,
     document_hash::layout_hash,
     jlreq_punctuation,
     vertical_break::{VerticalBreakCluster, plan_vertical_breaks},
@@ -25,8 +25,9 @@ pub fn layout_document<S: TextShaper>(
     validate_request(request)?;
     let font_inventory = shaper.font_inventory_hash();
     let logical_ordinals = logical_ordinals(document);
-    let body_request = crate::document_ruby::body_request::<S::Error>(document, request)?;
     let mut shaped_runs = Vec::with_capacity(document.runs().len());
+    let mut body_glyph_count = 0_u32;
+    let mut body_cluster_count = 0_u32;
     for (run_index, run) in document.runs().iter().enumerate() {
         let text = document
             .text()
@@ -44,20 +45,55 @@ pub fn layout_document<S: TextShaper>(
             })
             .map_err(|source| TextLayoutError::Shape { run_index, source })?;
         validate_shaped_run(document, run_index, run, &shaped_run)?;
+        let vertical = if writing_mode == RichTextWritingMode::HorizontalTb {
+            Vec::new()
+        } else {
+            let vertical_latin = run
+                .presentation()
+                .layout
+                .as_ref()
+                .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
+                    layout.vertical_latin
+                });
+            vertical_placements(document, run_index, run, text, &shaped_run, vertical_latin)
+        };
+        // Count the actual emitted product: a vertical placement can borrow
+        // the same shaped glyph as another placement, so shaped-run length
+        // alone is not an upper bound for the final body glyph array.
+        if writing_mode == RichTextWritingMode::HorizontalTb {
+            add_canonical_count(&mut body_glyph_count, shaped_run.glyphs().len())?;
+            add_canonical_count(&mut body_cluster_count, shaped_run.glyphs().len())?;
+        } else {
+            add_canonical_count(&mut body_cluster_count, vertical.len())?;
+            for cluster in &vertical {
+                add_canonical_count(&mut body_glyph_count, cluster.local.len())?;
+            }
+        }
         shaped_runs.push(ShapedDocumentRun {
             run_index,
             run,
-            text,
             shaped: shaped_run,
+            vertical,
+            record_ruby_allocations: false,
         });
     }
 
+    let paragraph_breaks = line_break_offsets(document.text());
+    for run in &mut shaped_runs {
+        for cluster in &mut run.vertical {
+            cluster.break_allowed_before = paragraph_breaks.contains(&cluster.source_range.start);
+        }
+    }
+    let ruby = crate::document_ruby::RubyMeasurements::new(document, request, shaper)?;
+    ruby.mark_base_runs(&mut shaped_runs);
+    let body_request = ruby.body_request::<S::Error>(request)?;
+    ruby.allocate_vertical(&mut shaped_runs, body_request.size.height);
     let mut state = DocumentLayoutState::new(body_request);
     let mut run_index = 0;
     while run_index < shaped_runs.len() {
         let input = &shaped_runs[run_index];
         let Some(group_key) = vertical_group_key(input.run, body_request) else {
-            state.place_horizontal_run(document, input, &logical_ordinals);
+            state.place_horizontal_run(document, input, &logical_ordinals, &ruby);
             run_index += 1;
             continue;
         };
@@ -80,11 +116,16 @@ pub fn layout_document<S: TextShaper>(
     }
     state.finish_line();
 
-    let mut ruby =
-        crate::document_ruby::layout_ruby(document, request, shaper, &state.glyphs, &state.runs)?;
+    let mut ruby = ruby.finish(
+        request,
+        body_request,
+        &state.glyphs,
+        &state.runs,
+        &state.body_allocations,
+    );
     crate::document_ruby::resolve_collisions(&mut ruby);
     for annotation in &ruby {
-        state.include_bounds(annotation.ruby_bounds);
+        state.include_bounds(annotation.base_bounds.union(annotation.ruby_bounds));
     }
     let source_map = TextLayoutSourceMap::new(
         state
@@ -112,11 +153,13 @@ pub fn layout_document<S: TextShaper>(
     })
 }
 
-struct ShapedDocumentRun<'a> {
+pub(crate) struct ShapedDocumentRun<'a> {
     run_index: usize,
     run: &'a ResolvedTextRun,
-    text: &'a str,
     shaped: ShapedTextRun,
+    pub(crate) vertical: Vec<VerticalPlacement>,
+    // Temporary placement selection derived only from admitted Ruby base_runs.
+    pub(crate) record_ruby_allocations: bool,
 }
 
 fn vertical_group_key(
@@ -147,6 +190,7 @@ struct DocumentLayoutState {
     lines: Vec<TextLayoutLine>,
     runs: Vec<TextLayoutRun>,
     glyphs: Vec<TextLayoutGlyph>,
+    body_allocations: Vec<TextLayoutBodyAllocation>,
     bounds: Option<LayoutRect>,
     active_line: Option<ActiveLine>,
     next_cluster_index: u32,
@@ -176,19 +220,20 @@ struct LocalGlyph {
     ink_bounds: LayoutRect,
 }
 
-struct VerticalPlacement {
-    run_index: usize,
+pub(crate) struct VerticalPlacement {
+    pub(crate) run_index: usize,
     font_size: f32,
     column_step: f32,
-    source_range: RichTextRange,
+    pub(crate) source_range: RichTextRange,
     text: String,
     orientation: GlyphOrientation,
     vertical_form: GlyphVerticalForm,
     local: Vec<LocalGlyph>,
     local_bounds: LayoutRect,
-    inline_advance: f32,
-    hard_line: usize,
-    break_allowed_before: bool,
+    pub(crate) inline_advance: f32,
+    pub(crate) allocated_inline_advance: f32,
+    pub(crate) hard_line: usize,
+    pub(crate) break_allowed_before: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -225,6 +270,7 @@ impl DocumentLayoutState {
             lines: Vec::new(),
             runs: Vec::new(),
             glyphs: Vec::new(),
+            body_allocations: Vec::new(),
             bounds: None,
             active_line: None,
             next_cluster_index: 0,
@@ -236,15 +282,10 @@ impl DocumentLayoutState {
         document: &ResolvedTextDocument<'_>,
         input: &ShapedDocumentRun<'_>,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
+        ruby: &crate::document_ruby::RubyMeasurements<'_>,
     ) {
         let glyph_start = self.glyphs.len();
-        self.place_horizontal(
-            document,
-            input.run_index,
-            input.run,
-            &input.shaped,
-            logical_ordinals,
-        );
+        self.place_horizontal(document, input, logical_ordinals, ruby);
         let glyph_end = self.glyphs.len();
         self.record_run(input.run_index, input.run, glyph_start, glyph_end);
     }
@@ -256,7 +297,16 @@ impl DocumentLayoutState {
         glyph_start: usize,
         glyph_end: usize,
     ) {
-        let run_bounds = union_rects(self.glyphs[glyph_start..glyph_end].iter().map(glyph_bounds));
+        let run_bounds = union_rects(
+            self.glyphs[glyph_start..glyph_end]
+                .iter()
+                .map(glyph_bounds)
+                .chain(
+                    self.body_allocations_for_glyphs(glyph_start, glyph_end)
+                        .iter()
+                        .map(|allocation| allocation.bounds),
+                ),
+        );
         if let Some(bounds) = run_bounds {
             self.include_bounds(bounds);
         }
@@ -279,11 +329,13 @@ impl DocumentLayoutState {
     fn place_horizontal(
         &mut self,
         document: &ResolvedTextDocument<'_>,
-        run_index: usize,
-        run: &ResolvedTextRun,
-        shaped: &ShapedTextRun,
+        input: &ShapedDocumentRun<'_>,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
+        ruby: &crate::document_ruby::RubyMeasurements<'_>,
     ) {
+        let run_index = input.run_index;
+        let run = input.run;
+        let shaped = &input.shaped;
         let line_height = milli_to_pixels(run.style().line_height_milli());
         for cluster in cluster_slices(shaped.glyphs()) {
             let hard_line = source_hard_line(document, cluster[0].source_range.start);
@@ -300,8 +352,7 @@ impl DocumentLayoutState {
                     .max()
                     .unwrap_or_default(),
             );
-            let post_inline_advance =
-                crate::document_ruby::inter_character_inline_advance_after(document, source_range);
+            let post_inline_advance = ruby.inter_character_inline_advance_after(source_range);
             let cluster_width =
                 cluster.iter().map(|glyph| glyph.advance.width).sum::<f32>() + post_inline_advance;
             let right = self.request.origin.x + self.request.size.width;
@@ -314,6 +365,7 @@ impl DocumentLayoutState {
             self.horizontal_line_height = self.horizontal_line_height.max(line_height);
             let line_index = self.ensure_line(RichTextWritingMode::HorizontalTb, self.horizontal.y);
             let cluster_index = self.allocate_cluster();
+            let allocation_start = self.glyphs.len();
             for glyph in cluster {
                 let layout_x = self.horizontal.x;
                 let origin = LayoutPoint::new(
@@ -345,6 +397,19 @@ impl DocumentLayoutState {
                 });
                 self.horizontal.x += glyph.advance.width;
             }
+            let allocation_end = self.glyphs.len();
+            if input.record_ruby_allocations
+                && let Some(bounds) = union_rects(
+                    self.glyphs[allocation_start..allocation_end]
+                        .iter()
+                        .map(glyph_bounds),
+                )
+            {
+                self.body_allocations.push(TextLayoutBodyAllocation {
+                    glyph_range: saturating_u32(allocation_start)..saturating_u32(allocation_end),
+                    bounds,
+                });
+            }
             self.horizontal.x += post_inline_advance;
         }
     }
@@ -358,31 +423,10 @@ impl DocumentLayoutState {
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
     ) -> Result<(), VerticalBreakError> {
         let group_glyph_start = self.glyphs.len();
-        let mut placements = runs
+        let placements = runs
             .iter()
-            .flat_map(|input| {
-                let vertical_latin = input
-                    .run
-                    .presentation()
-                    .layout
-                    .as_ref()
-                    .map_or(RichTextVerticalLatinMode::Mixed, |layout| {
-                        layout.vertical_latin
-                    });
-                vertical_placements(
-                    document,
-                    input.run_index,
-                    input.run,
-                    input.text,
-                    &input.shaped,
-                    vertical_latin,
-                )
-            })
+            .flat_map(|run| run.vertical.iter())
             .collect::<Vec<_>>();
-        let paragraph_breaks = line_break_offsets(document.text());
-        for cluster in &mut placements {
-            cluster.break_allowed_before = paragraph_breaks.contains(&cluster.source_range.start);
-        }
         let mut segment_start = 0;
         while segment_start < placements.len() {
             let hard_line = placements[segment_start].hard_line;
@@ -399,7 +443,7 @@ impl DocumentLayoutState {
                 .iter()
                 .map(|cluster| VerticalBreakCluster {
                     text: &cluster.text,
-                    advance: cluster.inline_advance,
+                    advance: cluster.allocated_inline_advance,
                     break_allowed_before: cluster.break_allowed_before,
                 })
                 .collect::<Vec<_>>();
@@ -415,7 +459,15 @@ impl DocumentLayoutState {
                 if plan.breaks_before(offset) {
                     self.break_vertical_line(writing_mode, cluster.column_step);
                 }
-                self.place_vertical_cluster(writing_mode, cluster, logical_ordinals);
+                // This group is the original contiguous shaped-run slice;
+                // the placement retains its exact originating run index.
+                let input = &runs[cluster.run_index - runs[0].run_index];
+                self.place_vertical_cluster(
+                    writing_mode,
+                    cluster,
+                    logical_ordinals,
+                    input.record_ruby_allocations,
+                );
             }
             segment_start = segment_end;
         }
@@ -440,6 +492,7 @@ impl DocumentLayoutState {
         writing_mode: RichTextWritingMode,
         cluster: &VerticalPlacement,
         logical_ordinals: &BTreeMap<(usize, usize), u32>,
+        record_ruby_allocations: bool,
     ) {
         let font_size = cluster.font_size;
         let (boundary_x, cursor_y) = {
@@ -460,15 +513,33 @@ impl DocumentLayoutState {
             logical_ordinals,
             orientation: cluster.orientation,
             vertical_form: cluster.vertical_form,
-            cell: LayoutRect::new(cell_x, cursor_y, font_size, cluster.inline_advance),
+            cell: LayoutRect::new(
+                cell_x,
+                cursor_y + (cluster.allocated_inline_advance - cluster.inline_advance) * 0.5,
+                font_size,
+                cluster.inline_advance,
+            ),
         };
+        let glyph_start = self.glyphs.len();
         self.glyphs.extend(place_vertical_glyphs(
             &cluster.local,
             context,
             cluster.local_bounds,
         ));
+        let glyph_end = self.glyphs.len();
+        if record_ruby_allocations {
+            self.body_allocations.push(TextLayoutBodyAllocation {
+                glyph_range: saturating_u32(glyph_start)..saturating_u32(glyph_end),
+                bounds: LayoutRect::new(
+                    cell_x,
+                    cursor_y,
+                    font_size,
+                    cluster.allocated_inline_advance,
+                ),
+            });
+        }
         let cursor = self.vertical_cursor_mut(writing_mode);
-        cursor.y += cluster.inline_advance;
+        cursor.y += cluster.allocated_inline_advance;
         cursor.previous_cluster = Some(cluster.text.clone());
     }
 
@@ -565,7 +636,12 @@ impl DocumentLayoutState {
         let Some(bounds) = union_rects(
             self.glyphs[line.glyph_start..glyph_end]
                 .iter()
-                .map(glyph_bounds),
+                .map(glyph_bounds)
+                .chain(
+                    self.body_allocations_for_glyphs(line.glyph_start, glyph_end)
+                        .iter()
+                        .map(|allocation| allocation.bounds),
+                ),
         ) else {
             return;
         };
@@ -585,6 +661,17 @@ impl DocumentLayoutState {
             bounds,
             writing_mode: line.writing_mode,
         });
+    }
+
+    fn body_allocations_for_glyphs(&self, start: usize, end: usize) -> &[TextLayoutBodyAllocation] {
+        let start = saturating_u32(start);
+        let end = saturating_u32(end);
+        let first = self
+            .body_allocations
+            .partition_point(|allocation| allocation.glyph_range.start < start);
+        let length = self.body_allocations[first..]
+            .partition_point(|allocation| allocation.glyph_range.end <= end);
+        &self.body_allocations[first..first + length]
     }
 
     fn include_bounds(&mut self, bounds: LayoutRect) {
@@ -648,6 +735,7 @@ fn vertical_placements(
                 local,
                 local_bounds: bounds,
                 inline_advance,
+                allocated_inline_advance: inline_advance,
                 hard_line: source_hard_line(document, source_range.start),
                 break_allowed_before: cluster.break_allowed_before,
             })
@@ -785,6 +873,8 @@ fn validate_shaped_run<E: std::error::Error + 'static>(
     run: &ResolvedTextRun,
     shaped: &ShapedTextRun,
 ) -> Result<(), TextLayoutError<E>> {
+    let mut count = 0;
+    add_canonical_count(&mut count, shaped.glyphs().len())?;
     for (glyph_index, glyph) in shaped.glyphs().iter().enumerate() {
         let range = glyph.source_range;
         let valid_range = range.start < range.end
@@ -963,4 +1053,50 @@ pub(crate) fn milli_to_pixels(value: u32) -> f32 {
 
 pub(crate) fn saturating_u32(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
+}
+
+/// Admit each final array/count before allocating its canonical u32 indices.
+/// The total is unchanged if the new component would exceed the domain.
+pub(crate) fn add_canonical_count<E: std::error::Error + 'static>(
+    total: &mut u32,
+    count: usize,
+) -> Result<(), TextLayoutError<E>> {
+    let count = u32::try_from(count).map_err(|_| TextLayoutError::CanonicalCountOverflow)?;
+    *total = total
+        .checked_add(count)
+        .ok_or(TextLayoutError::CanonicalCountOverflow)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod count_tests {
+    use super::*;
+
+    #[test]
+    fn canonical_layout_counts_reject_aggregate_overflow_without_publishing_a_partial_total() {
+        let mut total = 0;
+        add_canonical_count::<std::convert::Infallible>(
+            &mut total,
+            usize::try_from(u32::MAX).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(total, u32::MAX);
+        assert_eq!(
+            add_canonical_count::<std::convert::Infallible>(&mut total, 1),
+            Err(TextLayoutError::CanonicalCountOverflow),
+        );
+        assert_eq!(total, u32::MAX);
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn canonical_layout_counts_reject_an_unrepresentable_shaped_component() {
+        let mut total = 7;
+        let count = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+        assert_eq!(
+            add_canonical_count::<std::convert::Infallible>(&mut total, count),
+            Err(TextLayoutError::CanonicalCountOverflow),
+        );
+        assert_eq!(total, 7);
+    }
 }

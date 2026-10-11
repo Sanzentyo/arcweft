@@ -1,5 +1,5 @@
 use super::compositing::ViewPaintNode;
-use arcweft_glyphon::PreparedTextId;
+use arcweft_glyphon::{PreparedTextAffine, PreparedTextError, PreparedTextId};
 use arcweft_presentation::hit::HitRect;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -17,6 +17,34 @@ pub struct ViewSceneContext {
     pub opacity: f32,
     pub clip: Option<ViewClip>,
     pub primitive_range: ViewPrimitiveRange,
+}
+
+impl ViewSceneContext {
+    /// One checked glyph submission transform for this actual painter context.
+    /// Offscreen targets supply their viewport origin; observation uses [0, 0].
+    pub fn prepared_text_affine(
+        &self,
+        target_origin: [f32; 2],
+    ) -> Result<PreparedTextAffine, PreparedTextError> {
+        PreparedTextAffine::try_new(
+            [
+                self.transform.m11,
+                self.transform.m12,
+                self.transform.m21,
+                self.transform.m22,
+                self.transform.tx - target_origin[0],
+                self.transform.ty - target_origin[1],
+            ],
+            self.opacity,
+        )
+    }
+}
+
+#[derive(Clone, Debug, thiserror::Error, Eq, PartialEq)]
+#[error("View text painter references absent primitive range {start}..{end}")]
+pub struct ViewTextContextError {
+    pub start: u32,
+    pub end: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -567,6 +595,41 @@ impl ViewScene {
                 | ViewPrimitive::LinearGradient(_)
                 | ViewPrimitive::Image(_) => None,
             })
+    }
+
+    /// Actual text painter occurrences, including nested compositing groups.
+    /// References borrow the final paint graph; replaced or removed contexts
+    /// cannot contribute observation geometry.
+    pub fn text_paint_contexts(
+        &self,
+    ) -> Result<Vec<(PreparedTextId, &ViewSceneContext)>, ViewTextContextError> {
+        let mut contexts = Vec::new();
+        let mut pending = vec![self.paint_nodes.iter()];
+        while let Some(nodes) = pending.last_mut() {
+            match nodes.next() {
+                None => {
+                    pending.pop();
+                }
+                Some(ViewPaintNode::Group(group)) => pending.push(group.children.iter()),
+                Some(ViewPaintNode::Direct(context)) => {
+                    let range = context.primitive_range;
+                    let start = usize::try_from(range.start).ok();
+                    let end = usize::try_from(range.end).ok();
+                    let primitives = start
+                        .zip(end)
+                        .and_then(|(start, end)| self.primitives.get(start..end))
+                        .ok_or(ViewTextContextError {
+                            start: range.start,
+                            end: range.end,
+                        })?;
+                    contexts.extend(primitives.iter().filter_map(|primitive| match primitive {
+                        ViewPrimitive::Text(text) => Some((text.text, context)),
+                        _ => None,
+                    }));
+                }
+            }
+        }
+        Ok(contexts)
     }
 
     pub fn paint_nodes(&self) -> &[ViewPaintNode] {

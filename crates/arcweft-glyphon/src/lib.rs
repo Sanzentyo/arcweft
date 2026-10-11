@@ -9,8 +9,9 @@ pub use physical_bounds::{
     PreparedTextPhysicalBoundsError,
 };
 pub use prepared_text::{
-    PreparedGlyph, PreparedGlyphSource, PreparedTextAffine, PreparedTextBatch, PreparedTextError,
-    PreparedTextId, PreparedTextItem, PreparedTextSubmission, TextCaretPaint, TextCharacterBounds,
+    PreparedGlyph, PreparedGlyphGeometry, PreparedGlyphSource, PreparedRubyGeometry,
+    PreparedTextAffine, PreparedTextBatch, PreparedTextError, PreparedTextGeometry, PreparedTextId,
+    PreparedTextItem, PreparedTextSubmission, TextCaretPaint, TextCharacterBounds,
     TextCompositionUnderline, TextGlyphPaint, TextGlyphTransform, TextInteractionPlan,
     TextPaintPlan,
 };

@@ -22,6 +22,8 @@ pub enum AgentPolicyError {
     #[error(transparent)]
     Image(#[from] arcweft_image::ImageError),
     #[error(transparent)]
+    ImageFormat(#[from] arcweft_agent_protocol::image::AgentImageFormatError),
+    #[error(transparent)]
     Png(#[from] png::EncodingError),
     #[error("image resource has no image metadata")]
     MissingImageMetadata,
@@ -237,6 +239,7 @@ where
             Err(
                 AgentPolicyError::Base64(_)
                 | AgentPolicyError::Image(_)
+                | AgentPolicyError::ImageFormat(_)
                 | AgentPolicyError::Png(_)
                 | AgentPolicyError::MissingImageFrame,
             ) => {
@@ -271,8 +274,11 @@ where
                 if let Some(metadata) = resource.image.as_mut() {
                     metadata.width = value.width();
                     metadata.height = value.height();
-                    metadata.pixel_format = output_encoding.pixel_format().map(str::to_owned);
-                    metadata.row_stride_bytes = output_encoding.row_stride_bytes(value.width());
+                    metadata.pixel_format = output_encoding.pixel_format();
+                    metadata.row_stride_bytes = metadata
+                        .pixel_format
+                        .map(|format| format.row_stride_bytes(value.width(), value.height()))
+                        .transpose()?;
                     metadata.composition = metadata.composition.after_policy_mask();
                     metadata.content_bbox = None;
                     metadata.content_viewport_bbox = None;

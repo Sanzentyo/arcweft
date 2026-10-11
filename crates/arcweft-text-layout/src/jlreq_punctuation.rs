@@ -51,6 +51,45 @@ pub(crate) fn pair_adjustment_for_clusters(
         })
 }
 
+/// JLREQ 3.1.10 keeps a European numeral and its decimal/place separators
+/// together. A separator has that role only between admitted digit clusters;
+/// ordinary word spaces and punctuation keep their existing UAX/JLREQ rules.
+pub(crate) fn is_unbreakable_numeric_separator_boundary(
+    previous: Option<&str>,
+    left: &str,
+    right: &str,
+    next: Option<&str>,
+) -> bool {
+    match (NumericClusterRole::of(left), NumericClusterRole::of(right)) {
+        (NumericClusterRole::Digits, NumericClusterRole::Separator) => {
+            next.is_some_and(|text| NumericClusterRole::of(text) == NumericClusterRole::Digits)
+        }
+        (NumericClusterRole::Separator, NumericClusterRole::Digits) => {
+            previous.is_some_and(|text| NumericClusterRole::of(text) == NumericClusterRole::Digits)
+        }
+        _ => false,
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum NumericClusterRole {
+    Digits,
+    Separator,
+    Other,
+}
+
+impl NumericClusterRole {
+    fn of(text: &str) -> Self {
+        if !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()) {
+            Self::Digits
+        } else if matches!(text, "." | "," | " ") {
+            Self::Separator
+        } else {
+            Self::Other
+        }
+    }
+}
+
 fn cluster_class(grapheme: &str) -> Option<JlreqPunctuationClass> {
     grapheme.chars().next().and_then(char_class)
 }

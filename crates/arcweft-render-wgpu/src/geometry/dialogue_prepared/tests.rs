@@ -279,6 +279,16 @@ fn clear_projects_the_remaining_stage_to_the_dialogue_view_origin() {
     assert!(complete);
     assert_eq!(item.interaction.text, "after");
     assert!(
+        item.paint.glyphs.iter().all(|paint| paint.visible),
+        "completed clear content must reach actual renderer paint"
+    );
+    assert!(
+        item.layout
+            .glyphs
+            .iter()
+            .all(|glyph| glyph.source_range.start >= "before".len())
+    );
+    assert!(
         item.layout
             .glyphs
             .iter()
@@ -663,7 +673,31 @@ fn prepare(
     reveal_complete: bool,
     resolver: &dyn FxApplicationResolver,
 ) -> (PreparedTextItem, bool, Vec<FxDiagnostic>) {
-    let stage = frame.stage(0).expect("stage");
+    let (item, complete, diagnostics, _) = prepare_owned_stage(
+        frame,
+        0,
+        visual_time_millis,
+        reduce_motion,
+        reveal_complete,
+        resolver,
+    );
+    (item, complete, diagnostics)
+}
+
+fn prepare_owned_stage(
+    frame: &LineDisplayFrame,
+    stage_index: usize,
+    visual_time_millis: u64,
+    reduce_motion: bool,
+    reveal_complete: bool,
+    resolver: &dyn FxApplicationResolver,
+) -> (
+    PreparedTextItem,
+    bool,
+    Vec<FxDiagnostic>,
+    PreparedTextContext,
+) {
+    let stage = frame.stage(stage_index).expect("requested stage");
     let mut engine =
         GlyphonTextEngine::from_project_fonts("ja", vec![TEST_FONT.to_vec()]).expect("font engine");
     let request = PreparedRichTextStageRequest {
@@ -679,7 +713,7 @@ fn prepare(
             instant_characters: false,
         },
     };
-    let (item, complete, diagnostics, _) = prepare_stage(
+    prepare_stage(
         &mut engine,
         stage,
         &request,
@@ -687,8 +721,109 @@ fn prepare(
         reduce_motion,
         resolver,
     )
-    .expect("stage prepares");
-    (item, complete, diagnostics)
+    .expect("stage prepares")
+}
+
+#[test]
+fn following_page_and_clear_preserve_actual_glyph_reveal_and_ruby_source_identity() {
+    let frame = frame(vec![
+        RichTextNode::Text {
+            text: "前".to_owned(),
+        },
+        RichTextNode::Control {
+            control: RichTextControl::Page,
+        },
+        RichTextNode::Ruby {
+            body: vec![RichTextNode::Text {
+                text: "旧".to_owned(),
+            }],
+            ruby: "きゅう".to_owned(),
+        },
+        RichTextNode::Control {
+            control: RichTextControl::Clear,
+        },
+        RichTextNode::Ruby {
+            body: vec![RichTextNode::Text {
+                text: "夢".to_owned(),
+            }],
+            ruby: "ゆめ".to_owned(),
+        },
+    ]);
+    let (before_clear, complete, diagnostics, before_clear_context) =
+        prepare_owned_stage(&frame, 1, 0, false, false, &NoFxResolver);
+    assert!(diagnostics.is_empty());
+    assert!(!complete);
+    assert_eq!(before_clear.interaction.text, "旧夢");
+    assert_eq!(
+        before_clear_context
+            .stage()
+            .unwrap()
+            .ranges()
+            .prepared_source_range(),
+        RichTextRange::new(3, 9)
+    );
+    assert!(before_clear.paint.glyphs.iter().all(|paint| !paint.visible));
+
+    // At 28 characters/second, Clear is reached after 旧 at 35,714,286ns;
+    // 夢 remains hidden until 71,428,572ns. Compare the same prepared extent
+    // on either side of that second character's reveal boundary.
+    let (hidden, complete, diagnostics, hidden_context) =
+        prepare_owned_stage(&frame, 1, 36, false, false, &NoFxResolver);
+    assert!(diagnostics.is_empty());
+    assert!(!complete);
+    let (shown, complete, diagnostics, shown_context) =
+        prepare_owned_stage(&frame, 1, 72, false, false, &NoFxResolver);
+    assert!(diagnostics.is_empty());
+    assert!(complete);
+    assert_eq!(hidden.interaction.text, "夢");
+    assert_eq!(hidden.layout, shown.layout);
+    assert_eq!(hidden_context, shown_context);
+    assert!(!shown.layout.glyphs.is_empty());
+    assert!(
+        shown
+            .layout
+            .glyphs
+            .iter()
+            .all(|glyph| { glyph.source_range == RichTextRange::new(6, 9) })
+    );
+    assert!(hidden.paint.glyphs.iter().all(|paint| !paint.visible));
+    assert!(shown.paint.glyphs.iter().all(|paint| paint.visible));
+    let context = shown_context.stage().unwrap();
+    let domain = context.ranges();
+    assert_eq!(context.frame().page_index, 1);
+    assert_eq!(context.frame().text, "旧夢");
+    assert_eq!(domain.display_source_range(), RichTextRange::new(3, 9));
+    assert_eq!(domain.prepared_source_range(), RichTextRange::new(6, 9));
+    assert_eq!(context.frame().display_map.ruby_annotations[1].ruby, "ゆめ");
+    assert_eq!(shown.layout.ruby.len(), 1);
+    assert_eq!(shown.layout.ruby[0].ruby_index, 0);
+    let source = shown.layout.ruby[0].base_range;
+    assert_eq!(source, RichTextRange::new(6, 9));
+    let display = domain.source_to_display(source).unwrap();
+    let prepared = domain.display_to_prepared(display).unwrap();
+    assert_eq!(display, RichTextRange::new(3, 6));
+    assert_eq!(prepared, RichTextRange::new(0, 3));
+    assert_eq!(domain.prepared_to_source(prepared).unwrap(), source);
+    assert_eq!(
+        shown.interaction.text.get(prepared.start..prepared.end),
+        Some("夢")
+    );
+    assert_eq!(
+        context.frame().text.get(display.start..display.end),
+        Some("夢")
+    );
+    assert_eq!(shown.submission().glyphs().len(), shown.glyphs.len());
+    let hidden_geometry = hidden
+        .painted_geometry([arcweft_glyphon::PreparedTextAffine::IDENTITY])
+        .unwrap();
+    let shown_geometry = shown
+        .painted_geometry([arcweft_glyphon::PreparedTextAffine::IDENTITY])
+        .unwrap();
+    assert_eq!(
+        hidden_geometry, shown_geometry,
+        "typewriter visibility must preserve capture extents"
+    );
+    assert!(shown_geometry.ruby(0).is_some());
 }
 
 fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {

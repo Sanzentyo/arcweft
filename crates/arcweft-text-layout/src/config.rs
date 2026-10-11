@@ -73,6 +73,9 @@ where
         ruby_index: usize,
         glyph_index: usize,
     },
+    /// Shaped output exceeds the canonical glyph/cluster index domain.
+    #[error("text layout exceeds canonical u32 glyph or cluster indices")]
+    CanonicalCountOverflow,
     /// Ruby side tracks leave no finite positive body layout area.
     #[error("ruby side-track reservation exhausts the text layout request")]
     InsufficientRubyLayoutSpace,

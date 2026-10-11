@@ -996,7 +996,7 @@ pub(super) fn agent_repl_capture(
                 &observe_options,
                 &observed.image_frames,
             )?;
-            let resource = agent_observe_image_resource(&observed.report, image_output.as_ref());
+            let resource = agent_observe_image_resource(&observed.report, image_output.as_ref())?;
             Ok((observed.report, resource))
         },
     ) {

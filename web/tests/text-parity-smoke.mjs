@@ -280,7 +280,7 @@ async function openReady(browser, baseUrl, checkpoint) {
   await page.waitForFunction(
     () => Boolean(window.__arcweftFatal) ||
       Boolean(window.__arcweftLastFrameObservation?.text?.some((item) =>
-        item.owner?.kind?.startsWith("dialogue:")
+        (item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content")
       )),
     null,
     { timeout: 10_000 },
@@ -324,10 +324,10 @@ async function advanceDialoguePages(page, count) {
   for (let index = 0; index < count; index += 1) {
     const before = await page.evaluate(() => {
       const item = window.__arcweftLastFrameObservation?.text?.find((candidate) =>
-        candidate.owner?.kind?.startsWith("dialogue:")
+        (candidate.owner?.kind?.kind === "dialogue_view" && candidate.owner.kind.role === "content")
       );
       return item
-        ? { identity: item.owner.kind, text: item.text, visibleText: item.visible_text }
+        ? { identity: { owner: item.owner.kind, stage: item.text_context?.context?.frame?.stage_index, page: item.text_context?.context?.frame?.page_index }, text: item.text, visibleText: item.visible_text }
         : null;
     });
     expect(before, `missing dialogue body before advance ${index + 1}`);
@@ -336,7 +336,7 @@ async function advanceDialoguePages(page, count) {
       await page.waitForFunction(
         (text) => Boolean(window.__arcweftFatal) ||
           window.__arcweftLastFrameObservation?.text?.some((item) =>
-            item.owner?.kind?.startsWith("dialogue:") &&
+            (item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content") &&
             item.text === text &&
             item.visible_text === item.text
           ),
@@ -349,7 +349,7 @@ async function advanceDialoguePages(page, count) {
     await page.waitForFunction(
       (identity) => Boolean(window.__arcweftFatal) ||
         window.__arcweftLastFrameObservation?.text?.some((item) =>
-          item.owner?.kind?.startsWith("dialogue:") && item.owner.kind !== identity
+          (item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content") && (item.owner.kind.dialogue !== identity.owner.dialogue || item.owner.kind.entry !== identity.owner.entry || item.owner.kind.mount !== identity.owner.mount || item.text_context?.context?.frame?.stage_index !== identity.stage || item.text_context?.context?.frame?.page_index !== identity.page)
         ),
       before.identity,
       { timeout: 2_000 },
@@ -379,17 +379,21 @@ async function assertCanvasOnlySample(page, checkpoint) {
     expect(text.includes(token), `missing ${JSON.stringify(token)} for ${checkpoint}`);
   }
   const paragraph = frame.text?.find((item) =>
-    item.owner?.kind?.startsWith("dialogue:")
+    (item.owner?.kind?.kind === "dialogue_view" && item.owner.kind.role === "content")
   );
   expect(paragraph?.lines?.length > 0, `missing prepared text lines for ${checkpoint}`);
   expect(paragraph?.runs?.length > 0, `missing prepared text runs for ${checkpoint}`);
   expect(paragraph?.glyphs?.length > 0, `missing prepared text glyphs for ${checkpoint}`);
+  expect(paragraph?.text_context?.kind === "display_stage", `missing admitted display context for ${checkpoint}`);
+  expect(validPaintedBounds(paragraph?.painted_bounds), `missing painted text extent for ${checkpoint}`);
   expect(
     paragraph.glyphs.every((glyph) =>
       Number.isInteger(glyph.source_start) &&
       Number.isInteger(glyph.source_end) &&
       glyph.bounds &&
       glyph.ink_bounds &&
+      validPaintedBounds(glyph.painted_bounds) &&
+      validPaintedBounds(glyph.painted_visual_bounds) &&
       typeof glyph.visible === "boolean" &&
       glyph.rgba?.length === 4 &&
       glyph.transform?.matrix_milli?.length === 4 &&
@@ -401,10 +405,19 @@ async function assertCanvasOnlySample(page, checkpoint) {
     paragraph.runs.every((run) =>
       run.style?.rgba?.length === 4 &&
       run.style?.font_families?.length > 0 &&
+      (run.glyph_start === run.glyph_end || validPaintedBounds(run.painted_bounds)) &&
       typeof run.style?.writing_mode === "string"
     ),
     `bad canonical prepared run evidence for ${checkpoint}`,
   );
+  expect(paragraph.lines.every((line) => line.glyph_start === line.glyph_end || validPaintedBounds(line.painted_bounds)), `missing painted line extent for ${checkpoint}`);
+  expect(paragraph.ruby.every((ruby) => ruby.glyph_count === 0 || (validPaintedBounds(ruby.painted_base_bounds) && validPaintedBounds(ruby.painted_annotation_bounds))), `missing painted ruby extent for ${checkpoint}`);
+}
+
+function validPaintedBounds(bounds) {
+  return Boolean(bounds) &&
+    ["x_milli", "y_milli", "width_milli", "height_milli"].every((field) => Number.isSafeInteger(bounds[field])) &&
+    bounds.width_milli >= 0 && bounds.height_milli >= 0;
 }
 
 async function fontFingerprint(url) {

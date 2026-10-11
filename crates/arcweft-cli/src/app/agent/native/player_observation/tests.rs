@@ -22,6 +22,44 @@ use arcweft_presentation::semantic::{SemanticNode, SemanticTree};
 use arcweft_render_wgpu::geometry::RenderImageFrame;
 
 #[test]
+fn fx_diagnostic_projection_coalesces_duplicates_and_retains_distinct_evidence() {
+    use arcweft_presentation::fx::{FxDiagnosticCode, FxDiagnosticContext, FxId};
+
+    let first = FxDiagnostic::error(
+        FxDiagnosticCode::MissingProvider,
+        FxDiagnosticContext {
+            definition: Some(FxId::try_new("test", "shader.first").unwrap()),
+            ..FxDiagnosticContext::default()
+        },
+        "first missing provider",
+    );
+    let mut changed_message = first.clone();
+    changed_message.message = "another missing provider detail".to_owned();
+    let mut changed_owner = first.clone();
+    changed_owner.context.definition = Some(FxId::try_new("test", "shader.second").unwrap());
+    let effects = [
+        first.clone(),
+        first.clone(),
+        changed_message.clone(),
+        changed_owner.clone(),
+    ];
+    let mut diagnostics = vec![agent_fx_diagnostic(2, &first)];
+    append_fx_diagnostics(&mut diagnostics, &effects, 3);
+    append_fx_diagnostics(&mut diagnostics, &effects, 3);
+    append_fx_diagnostics(&mut diagnostics, std::slice::from_ref(&first), 4);
+    assert_eq!(
+        diagnostics,
+        [
+            agent_fx_diagnostic(2, &first),
+            agent_fx_diagnostic(3, &first),
+            agent_fx_diagnostic(3, &changed_message),
+            agent_fx_diagnostic(3, &changed_owner),
+            agent_fx_diagnostic(4, &first),
+        ]
+    );
+}
+
+#[test]
 fn native_agent_runtime_assertion_projection_uses_compiled_session_capability() {
     let unique = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

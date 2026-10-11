@@ -399,7 +399,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         false,
         "$",
         "prefix",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -407,7 +414,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         false,
         "$",
         "prefix",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -415,7 +429,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         true,
         "$",
         "prefix",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -423,7 +444,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         true,
         "$",
         "prefix",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -431,7 +459,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         false,
         "¢",
         "cent-prefix",
-        "object.dialogue.0.0.cluster.1.3.5",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 5),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -439,7 +474,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         false,
         "¢",
         "cent-prefix",
-        "object.dialogue.0.0.cluster.1.3.5",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 5),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -447,7 +489,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         true,
         "¢",
         "cent-prefix",
-        "object.dialogue.0.0.cluster.1.3.5",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 5),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -455,29 +504,68 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_prefix_abbreviat
         true,
         "¢",
         "cent-prefix",
-        "object.dialogue.0.0.cluster.1.3.5",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 5),
+            },
+        ),
         "object-id",
     );
 }
 
 #[test]
 fn agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviation_raw_crops() {
-    for (mark, label, object_id) in [
-        ("%", "suffix", "object.dialogue.0.0.cluster.2.5.6"),
+    for (mark, label, capture_target) in [
+        (
+            "%",
+            "suffix",
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(5, 6),
+                },
+            ),
+        ),
         (
             "℃",
             "temperature-suffix",
-            "object.dialogue.0.0.cluster.2.5.8",
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(5, 8),
+                },
+            ),
         ),
         (
             "°",
             "temperature-suffix-decomposed",
-            "object.dialogue.0.0.cluster.2.5.7",
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 2,
+                    range: arcweft_text_model::RichTextRange::new(5, 7),
+                },
+            ),
         ),
         (
             "C",
             "temperature-suffix-decomposed",
-            "object.dialogue.0.0.cluster.3.7.8",
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 3,
+                    range: arcweft_text_model::RichTextRange::new(7, 8),
+                },
+            ),
         ),
     ] {
         for (writing_mode, next_column_moves_right) in
@@ -489,7 +577,7 @@ fn agent_observe_native_renderer_writes_published_jlreq_numeric_suffix_abbreviat
                     next_column_moves_right,
                     mark,
                     label,
-                    object_id,
+                    capture_target,
                     capture_kind,
                 );
             }
@@ -505,7 +593,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         false,
         "$",
         "prefix-ideographic",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -513,7 +608,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         false,
         "$",
         "prefix-ideographic",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -521,7 +623,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         true,
         "$",
         "prefix-ideographic",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -529,7 +638,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         true,
         "$",
         "prefix-ideographic",
-        "object.dialogue.0.0.cluster.1.3.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 4),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -537,7 +653,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         false,
         "%",
         "suffix-ideographic",
-        "object.dialogue.0.0.cluster.2.6.7",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(6, 7),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -545,7 +668,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         false,
         "%",
         "suffix-ideographic",
-        "object.dialogue.0.0.cluster.2.6.7",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(6, 7),
+            },
+        ),
         "object-id",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -553,7 +683,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         true,
         "%",
         "suffix-ideographic",
-        "object.dialogue.0.0.cluster.2.6.7",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(6, 7),
+            },
+        ),
         "mask",
     );
     assert_native_published_jlreq_numeric_abbreviation_raw_crop(
@@ -561,7 +698,14 @@ fn agent_observe_native_renderer_writes_published_jlreq_ideographic_numeric_abbr
         true,
         "%",
         "suffix-ideographic",
-        "object.dialogue.0.0.cluster.2.6.7",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(6, 7),
+            },
+        ),
         "object-id",
     );
 }
@@ -843,7 +987,7 @@ fn observe_native_jlreq_paragraph_class_mix_fixture(
 pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: #layout(.{writing_mode}, jlreq=.{strictness})[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[#size(32pt)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
 }}
 "#
         ),
@@ -864,7 +1008,7 @@ fn assert_native_strict_jlreq_paragraph_class_mix_raw_crop(writing_mode: &str, c
 pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[#size(32pt)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終]][p]
 }}
 "#
         ),
@@ -874,18 +1018,23 @@ flow @flow.main main {{
         "native-{writing_mode}-strict-jlreq-paragraph-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 13,
+                    range: arcweft_text_model::RichTextRange::new(39, 42),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.13.39.42")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1011,10 +1160,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ plain Western word class-mix source");
     json
@@ -1044,11 +1191,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-plain-western-word-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Glyph { index: 8, range: arcweft_text_model::RichTextRange::new(20, 21) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1058,8 +1201,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.8.20.21")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1128,19 +1270,14 @@ fn assert_native_published_jlreq_plain_western_word_class_mix_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
 ) -> &'report serde_json::Value {
-    let first = find_rich_text_cluster_object(json, "W", 18, 19);
-    let second = find_rich_text_cluster_object(json, "e", 19, 20);
-    let last = find_rich_text_cluster_object(json, "b", 20, 21);
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ plain Western word class mix keeps leading letters together",
+    assert_atomic_sideways_word(
+        json,
+        "Web",
+        18,
+        21,
+        &[("W", 18, 19), ("e", 19, 20), ("b", 20, 21)],
     );
-    assert_vertical_cluster_after(
-        second,
-        last,
-        "published JLREQ plain Western word class mix keeps final letter attached",
-    );
+    let last = find_rich_text_glyph_object(json, "b", 20, 21);
 
     let person = find_rich_text_cluster_object(json, "人", 21, 24);
     let full_stop = find_rich_text_cluster_object(json, "。", 24, 27);
@@ -1198,10 +1335,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ Western word class-mix source");
     json
 }
@@ -1230,11 +1365,18 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-western-word-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 7,
+                    range: arcweft_text_model::RichTextRange::new(21, 22),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1244,8 +1386,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.9.21.22")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1310,23 +1450,20 @@ fn assert_native_published_jlreq_western_word_class_mix_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
 ) -> &'report serde_json::Value {
-    let first = find_rich_text_cluster_object(json, "W", 18, 19);
-    let second = find_rich_text_cluster_object(json, "e", 19, 20);
-    let before_hyphen = find_rich_text_cluster_object(json, "b", 20, 21);
-    let hyphen = find_rich_text_cluster_object(json, "-", 21, 22);
-    let after_hyphen = find_rich_text_cluster_object(json, "T", 22, 23);
-    let after_hyphen_second = find_rich_text_cluster_object(json, "e", 23, 24);
-    let after_hyphen_third = find_rich_text_cluster_object(json, "s", 24, 25);
-    let last = find_rich_text_cluster_object(json, "t", 25, 26);
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ Western word class mix keeps leading letters together",
+    let before_hyphen = assert_atomic_sideways_word(
+        json,
+        "Web",
+        18,
+        21,
+        &[("W", 18, 19), ("e", 19, 20), ("b", 20, 21)],
     );
-    assert_vertical_cluster_after(
-        second,
-        before_hyphen,
-        "published JLREQ Western word class mix keeps letters before the hyphen together",
+    let hyphen = find_rich_text_cluster_object(json, "-", 21, 22);
+    let after_hyphen = assert_atomic_sideways_word(
+        json,
+        "Test",
+        22,
+        26,
+        &[("T", 22, 23), ("e", 23, 24), ("s", 24, 25), ("t", 25, 26)],
     );
     assert_vertical_cluster_after(
         before_hyphen,
@@ -1337,21 +1474,6 @@ fn assert_native_published_jlreq_western_word_class_mix_objects<'report>(
         hyphen,
         after_hyphen,
         "published JLREQ Western word class mix keeps letters after the hyphen attached",
-    );
-    assert_vertical_cluster_after(
-        after_hyphen,
-        after_hyphen_second,
-        "published JLREQ Western word class mix keeps letters after the hyphen together",
-    );
-    assert_vertical_cluster_after(
-        after_hyphen_second,
-        after_hyphen_third,
-        "published JLREQ Western word class mix keeps letters after the hyphen together",
-    );
-    assert_vertical_cluster_after(
-        after_hyphen_third,
-        last,
-        "published JLREQ Western word class mix keeps the final letter attached",
     );
 
     let person = find_rich_text_cluster_object(json, "人", 26, 29);
@@ -1424,10 +1546,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ apostrophe Western word class-mix source");
     json
@@ -1474,11 +1594,7 @@ flow @flow.main main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1488,8 +1604,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg(case.object_id)
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1642,7 +1757,7 @@ struct NativeApostropheWesternWordClassMixCase {
     label: &'static str,
     text: &'static str,
     apostrophe: &'static str,
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     apostrophe_start: u64,
     apostrophe_end: u64,
     after_start: u64,
@@ -1661,7 +1776,14 @@ const fn native_published_jlreq_apostrophe_western_word_class_mix_cases()
             label: "ascii",
             text: "天地春夏秋冬O'K人。「川」あっいおーえ―中・外………終",
             apostrophe: "'",
-            object_id: "object.dialogue.0.0.cluster.7.19.20",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 7,
+                    range: arcweft_text_model::RichTextRange::new(19, 20),
+                },
+            ),
             apostrophe_start: 19,
             apostrophe_end: 20,
             after_start: 20,
@@ -1676,7 +1798,14 @@ const fn native_published_jlreq_apostrophe_western_word_class_mix_cases()
             label: "typographic",
             text: "天地春夏秋冬O’K人。「川」あっいおーえ―中・外………終",
             apostrophe: "’",
-            object_id: "object.dialogue.0.0.cluster.7.19.22",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 7,
+                    range: arcweft_text_model::RichTextRange::new(19, 22),
+                },
+            ),
             apostrophe_start: 19,
             apostrophe_end: 22,
             after_start: 22,
@@ -1721,10 +1850,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ accented Latin word class-mix source");
     json
@@ -1754,11 +1881,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-accented-latin-word-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Glyph { index: 9, range: arcweft_text_model::RichTextRange::new(21, 23) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1768,8 +1891,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.9.21.23")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1855,25 +1977,14 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_objects<'report>(
     json: &'report serde_json::Value,
     writing_mode: &str,
 ) -> &'report serde_json::Value {
-    let first = find_rich_text_cluster_object(json, "c", 18, 19);
-    let second = find_rich_text_cluster_object(json, "a", 19, 20);
-    let before_accent = find_rich_text_cluster_object(json, "f", 20, 21);
-    let accented = find_rich_text_cluster_object(json, "é", 21, 23);
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ accented Latin word class mix keeps leading letters together",
+    assert_atomic_sideways_word(
+        json,
+        "café",
+        18,
+        23,
+        &[("c", 18, 19), ("a", 19, 20), ("f", 20, 21), ("é", 21, 23)],
     );
-    assert_vertical_cluster_after(
-        second,
-        before_accent,
-        "published JLREQ accented Latin word class mix keeps letters before accent together",
-    );
-    assert_vertical_cluster_after(
-        before_accent,
-        accented,
-        "published JLREQ accented Latin word class mix keeps accented grapheme attached",
-    );
+    let accented = find_rich_text_glyph_object(json, "é", 21, 23);
 
     let person = find_rich_text_cluster_object(json, "人", 23, 26);
     let full_stop = find_rich_text_cluster_object(json, "。", 26, 29);
@@ -1940,10 +2051,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed accented Latin word class-mix source");
     json
@@ -1974,11 +2083,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Glyph { index: 9, range: arcweft_text_model::RichTextRange::new(21, 24) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1988,8 +2093,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.9.21.24")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2043,25 +2147,19 @@ fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_object
     json: &'report serde_json::Value,
     writing_mode: &str,
 ) -> &'report serde_json::Value {
-    let first = find_rich_text_cluster_object(json, "c", 18, 19);
-    let second = find_rich_text_cluster_object(json, "a", 19, 20);
-    let before_accent = find_rich_text_cluster_object(json, "f", 20, 21);
-    let accented = find_rich_text_cluster_object(json, "e\u{301}", 21, 24);
-    assert_vertical_cluster_after(
-        first,
-        second,
-        "published JLREQ decomposed accented Latin word class mix keeps leading letters together",
+    assert_atomic_sideways_word(
+        json,
+        "cafe\u{301}",
+        18,
+        24,
+        &[
+            ("c", 18, 19),
+            ("a", 19, 20),
+            ("f", 20, 21),
+            ("e\u{301}", 21, 24),
+        ],
     );
-    assert_vertical_cluster_after(
-        second,
-        before_accent,
-        "published JLREQ decomposed accented Latin word class mix keeps letters before accent together",
-    );
-    assert_vertical_cluster_after(
-        before_accent,
-        accented,
-        "published JLREQ decomposed accented Latin word class mix keeps accented grapheme attached",
-    );
+    let accented = find_rich_text_glyph_object(json, "e\u{301}", 21, 24);
 
     let person = find_rich_text_cluster_object(json, "人", 24, 27);
     let full_stop = find_rich_text_cluster_object(json, "。", 27, 30);
@@ -2122,10 +2220,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp ZWJ grapheme strict class-mix source");
     json
 }
@@ -2151,11 +2247,18 @@ flow @flow.main main {{
         "native-{writing_mode}-zwj-grapheme-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 29),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2165,8 +2268,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.29")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2293,10 +2394,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp decomposed kana strict class-mix source");
     json
 }
@@ -2323,11 +2422,18 @@ flow @flow.main main {{
         "native-{writing_mode}-decomposed-kana-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 24),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2337,8 +2443,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.24")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2465,10 +2569,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp variation selector strict class-mix source");
     json
 }
@@ -2498,11 +2600,18 @@ flow @flow.main main {{
         "native-{writing_mode}-variation-selector-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 24),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2512,8 +2621,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.24")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2639,10 +2746,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp emoji modifier strict class-mix source");
     json
 }
@@ -2669,11 +2774,18 @@ flow @flow.main main {{
         "native-{writing_mode}-emoji-modifier-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 26),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2683,8 +2795,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.26")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2811,10 +2921,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp regional indicator strict class-mix source");
     json
 }
@@ -2844,11 +2952,18 @@ flow @flow.main main {{
         "native-{writing_mode}-regional-indicator-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 26),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -2858,8 +2973,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.26")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -2985,10 +3098,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp keycap strict class-mix source");
     json
 }
@@ -3014,11 +3125,18 @@ flow @flow.main main {{
         "native-{writing_mode}-keycap-strict-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 6,
+                    range: arcweft_text_model::RichTextRange::new(18, 25),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3028,8 +3146,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.25")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3162,10 +3278,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ unit symbol class-mix source");
     json
 }
@@ -3211,11 +3325,8 @@ flow @flow.main main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3225,8 +3336,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3315,17 +3424,22 @@ fn assert_native_published_jlreq_unit_symbol_class_mix_objects<'report>(
     writing_mode: &str,
     case: NativeUnitSymbolClassMixCase,
 ) -> &'report serde_json::Value {
-    let first_unit = find_rich_text_cluster_object(json, case.first_unit, 18, case.first_unit_end);
-    let second_unit = find_rich_text_cluster_object(
+    let unit_text = format!("{}{}", case.first_unit, case.second_unit);
+    assert_atomic_sideways_word(
+        json,
+        &unit_text,
+        18,
+        case.second_unit_end,
+        &[
+            (case.first_unit, 18, case.first_unit_end),
+            (case.second_unit, case.first_unit_end, case.second_unit_end),
+        ],
+    );
+    let second_unit = find_rich_text_glyph_object(
         json,
         case.second_unit,
         case.first_unit_end,
         case.second_unit_end,
-    );
-    assert_vertical_cluster_after(
-        first_unit,
-        second_unit,
-        "published JLREQ unit symbol class mix keeps unit tail attached",
     );
 
     let person = find_rich_text_cluster_object(json, "人", case.second_unit_end, case.person_end);
@@ -3363,7 +3477,7 @@ struct NativeUnitSymbolClassMixCase {
     text: &'static str,
     first_unit: &'static str,
     second_unit: &'static str,
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     first_unit_end: u64,
     second_unit_end: u64,
     person_end: u64,
@@ -3379,7 +3493,14 @@ const fn native_published_jlreq_unit_symbol_class_mix_cases() -> [NativeUnitSymb
             text: "天地春夏秋冬kg人。「川」あっいおーえ―中・外………終",
             first_unit: "k",
             second_unit: "g",
-            object_id: "object.dialogue.0.0.cluster.7.19.20",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 7,
+                    range: arcweft_text_model::RichTextRange::new(19, 20),
+                },
+            ),
             first_unit_end: 19,
             second_unit_end: 20,
             person_end: 23,
@@ -3392,7 +3513,14 @@ const fn native_published_jlreq_unit_symbol_class_mix_cases() -> [NativeUnitSymb
             text: "天地春夏秋冬μm人。「川」あっいおーえ―中・外………終",
             first_unit: "μ",
             second_unit: "m",
-            object_id: "object.dialogue.0.0.cluster.7.20.21",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 7,
+                    range: arcweft_text_model::RichTextRange::new(20, 21),
+                },
+            ),
             first_unit_end: 20,
             second_unit_end: 21,
             person_end: 24,
@@ -3440,10 +3568,8 @@ flow @flow.main main {{
             case.text
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ numeric unit class-mix source");
     json
 }
@@ -3489,11 +3615,8 @@ flow @flow.main main {{
         case.label
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(&entry, case.capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3503,8 +3626,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg(case.object_id)
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3594,8 +3715,18 @@ fn assert_native_published_jlreq_numeric_unit_class_mix_objects<'report>(
     case: NativeNumericUnitClassMixCase,
 ) -> &'report serde_json::Value {
     let digit = find_rich_text_cluster_object(json, "3", 18, 19);
-    let first_unit = find_rich_text_cluster_object(json, case.first_unit, 19, case.first_unit_end);
-    let second_unit = find_rich_text_cluster_object(
+    let unit_text = format!("{}{}", case.first_unit, case.second_unit);
+    let unit = assert_atomic_sideways_word(
+        json,
+        &unit_text,
+        19,
+        case.second_unit_end,
+        &[
+            (case.first_unit, 19, case.first_unit_end),
+            (case.second_unit, case.first_unit_end, case.second_unit_end),
+        ],
+    );
+    let second_unit = find_rich_text_glyph_object(
         json,
         case.second_unit,
         case.first_unit_end,
@@ -3603,13 +3734,8 @@ fn assert_native_published_jlreq_numeric_unit_class_mix_objects<'report>(
     );
     assert_vertical_cluster_after(
         digit,
-        first_unit,
+        unit,
         "published JLREQ numeric unit class mix keeps first unit symbol with digit",
-    );
-    assert_vertical_cluster_after(
-        first_unit,
-        second_unit,
-        "published JLREQ numeric unit class mix keeps unit tail attached",
     );
 
     let person = find_rich_text_cluster_object(json, "人", case.second_unit_end, case.person_end);
@@ -3647,7 +3773,7 @@ struct NativeNumericUnitClassMixCase {
     text: &'static str,
     first_unit: &'static str,
     second_unit: &'static str,
-    object_id: &'static str,
+    capture_target: NativeTextCaptureTarget,
     first_unit_end: u64,
     second_unit_end: u64,
     person_end: u64,
@@ -3664,7 +3790,14 @@ const fn native_published_jlreq_numeric_unit_class_mix_cases() -> [NativeNumeric
             text: "天地春夏秋冬3kg人。「川」あっいおーえ―中・外………終",
             first_unit: "k",
             second_unit: "g",
-            object_id: "object.dialogue.0.0.cluster.8.20.21",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 8,
+                    range: arcweft_text_model::RichTextRange::new(20, 21),
+                },
+            ),
             first_unit_end: 20,
             second_unit_end: 21,
             person_end: 24,
@@ -3677,7 +3810,14 @@ const fn native_published_jlreq_numeric_unit_class_mix_cases() -> [NativeNumeric
             text: "天地春夏秋冬3μm人。「川」あっいおーえ―中・外………終",
             first_unit: "μ",
             second_unit: "m",
-            object_id: "object.dialogue.0.0.cluster.8.21.22",
+            capture_target: NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Glyph {
+                    index: 8,
+                    range: arcweft_text_model::RichTextRange::new(21, 22),
+                },
+            ),
             first_unit_end: 21,
             second_unit_end: 22,
             person_end: 25,
@@ -3717,10 +3857,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ numeric separator class-mix source");
     json
 }
@@ -3749,11 +3887,18 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-numeric-separator-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 9,
+                    range: arcweft_text_model::RichTextRange::new(23, 24),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3763,8 +3908,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.9.23.24")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3926,10 +4069,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ prefixed abbreviation class-mix source");
     json
@@ -3959,11 +4100,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-prefixed-abbreviation-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 6, range: arcweft_text_model::RichTextRange::new(18, 19) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3973,8 +4110,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.19")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4094,10 +4230,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ cent-prefixed abbreviation class-mix source");
     json
@@ -4127,11 +4261,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-cent-prefixed-abbreviation-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 6, range: arcweft_text_model::RichTextRange::new(18, 20) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4141,8 +4271,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.6.18.20")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4274,10 +4403,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ yen-prefixed abbreviation class-mix source");
     json
@@ -4289,7 +4416,8 @@ fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
     capture_kind: &str,
 ) {
     let text = native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label);
-    let object_id = native_published_jlreq_yen_prefixed_abbreviation_class_mix_object_id(label);
+    let capture_target =
+        native_published_jlreq_yen_prefixed_abbreviation_class_mix_capture_target(label);
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
     );
@@ -4310,11 +4438,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4324,8 +4448,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg(object_id)
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4385,12 +4508,26 @@ fn native_published_jlreq_yen_prefixed_abbreviation_class_mix_text(label: &str) 
     }
 }
 
-fn native_published_jlreq_yen_prefixed_abbreviation_class_mix_object_id(
+fn native_published_jlreq_yen_prefixed_abbreviation_class_mix_capture_target(
     label: &str,
-) -> &'static str {
+) -> NativeTextCaptureTarget {
     match label {
-        "yen-prefix" => "object.dialogue.0.0.cluster.6.18.20",
-        "fullwidth-yen-prefix" => "object.dialogue.0.0.cluster.6.18.21",
+        "yen-prefix" => NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 6,
+                range: arcweft_text_model::RichTextRange::new(18, 20),
+            },
+        ),
+        "fullwidth-yen-prefix" => NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 6,
+                range: arcweft_text_model::RichTextRange::new(18, 21),
+            },
+        ),
         _ => panic!("unknown native published JLREQ yen-prefixed abbreviation label {label}"),
     }
 }
@@ -4472,10 +4609,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ postfixed abbreviation class-mix source");
     json
@@ -4505,11 +4640,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-postfixed-abbreviation-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 7, range: arcweft_text_model::RichTextRange::new(20, 21) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4519,8 +4650,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.7.20.21")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4650,10 +4780,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ ideographic abbreviation class-mix source");
     json
@@ -4665,7 +4793,8 @@ fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
     capture_kind: &str,
 ) {
     let text = native_published_jlreq_ideographic_abbreviation_class_mix_text(label);
-    let object_id = native_published_jlreq_ideographic_abbreviation_class_mix_object_id(label);
+    let capture_target =
+        native_published_jlreq_ideographic_abbreviation_class_mix_capture_target(label);
     let fixture_name = format!(
         "agent-observe-native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}"
     );
@@ -4686,11 +4815,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-{label}-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4700,8 +4825,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg(object_id)
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4761,12 +4885,26 @@ fn native_published_jlreq_ideographic_abbreviation_class_mix_text(label: &str) -
     }
 }
 
-fn native_published_jlreq_ideographic_abbreviation_class_mix_object_id(
+fn native_published_jlreq_ideographic_abbreviation_class_mix_capture_target(
     label: &str,
-) -> &'static str {
+) -> NativeTextCaptureTarget {
     match label {
-        "prefix-ideographic" => "object.dialogue.0.0.cluster.6.18.19",
-        "suffix-ideographic" => "object.dialogue.0.0.cluster.7.21.22",
+        "prefix-ideographic" => NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 6,
+                range: arcweft_text_model::RichTextRange::new(18, 19),
+            },
+        ),
+        "suffix-ideographic" => NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 7,
+                range: arcweft_text_model::RichTextRange::new(21, 22),
+            },
+        ),
         _ => panic!("unknown native published JLREQ ideographic abbreviation label {label}"),
     }
 }
@@ -4846,10 +4984,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ reference mark class-mix source");
     json
 }
@@ -4878,11 +5014,18 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-reference-mark-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 9,
+                    range: arcweft_text_model::RichTextRange::new(25, 28),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4892,8 +5035,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.9.25.28")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -5081,10 +5222,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ parenthesized reference mark class-mix source");
     json
@@ -5114,11 +5253,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-parenthesized-reference-mark-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 10, range: arcweft_text_model::RichTextRange::new(29, 32) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5128,8 +5263,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.10.29.32")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -5292,10 +5426,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ temperature suffix class-mix source");
     json
@@ -5325,11 +5457,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-temperature-suffix-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 7, range: arcweft_text_model::RichTextRange::new(20, 23) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5339,8 +5467,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.7.20.23")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -5458,10 +5585,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ decomposed temperature class-mix source");
     json
@@ -5491,11 +5616,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-decomposed-temperature-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 8, range: arcweft_text_model::RichTextRange::new(22, 23) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5505,8 +5626,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.8.22.23")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -5632,10 +5752,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path).expect("remove temp published JLREQ subscript object class-mix source");
     json
 }
@@ -5664,11 +5782,18 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-subscript-object-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path
+        .text_capture_command_at_entry(
+            &entry,
+            NativeTextCaptureTarget::element(
+                0,
+                0,
+                NativeTextElementTarget::Cluster {
+                    index: 8,
+                    range: arcweft_text_model::RichTextRange::new(22, 23),
+                },
+            ),
+        )
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5678,8 +5803,6 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.8.22.23")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -5844,10 +5967,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek subscript object class-mix source");
     json
@@ -5877,11 +5998,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 8, range: arcweft_text_model::RichTextRange::new(23, 25) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5891,8 +6008,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.8.23.25")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -6016,10 +6132,8 @@ flow @flow.main main {{
 "#
         ),
     );
-    let json = observe_native_rich_text_layer_report_at_entry_with_viewport(
-        &path,
-        &entry, 1280, 900,
-    );
+    let json =
+        observe_native_rich_text_layer_report_at_entry_with_viewport(&path, &entry, 1280, 900);
     fs::remove_file(&path)
         .expect("remove temp published JLREQ Greek superscript object class-mix source");
     json
@@ -6049,11 +6163,7 @@ flow @flow.main main {{
         "native-{writing_mode}-published-jlreq-greek-superscript-object-class-mix-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .args(["--entry", entry.public_label().as_str()])
+    let output = path.text_capture_command_at_entry(&entry, NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Cluster { index: 8, range: arcweft_text_model::RichTextRange::new(22, 24) }))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -6063,8 +6173,7 @@ flow @flow.main main {{
         .arg("1280")
         .arg("--viewport-height")
         .arg("900")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.8.22.24")
+
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")

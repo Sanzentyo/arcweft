@@ -1,8 +1,30 @@
 use super::*;
-use arcweft_agent_protocol::rich_text::AgentRichTextElementKind::{
-    GlyphCluster, Ruby, TextGlyph, TextLine, TextObjectProxy, TextPage, TextRun,
-};
 use arcweft_render_wgpu::offscreen::{CaptureAttachment, SharedFrameCapture};
+
+impl AgentObserveImageKind {
+    pub(super) const fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::RawRgba => "rgba",
+            Self::Overlay => "svg",
+        }
+    }
+    pub(super) const fn mime_type(self) -> &'static str {
+        match self {
+            Self::Png => "image/png",
+            Self::RawRgba => "application/octet-stream",
+            Self::Overlay => "image/svg+xml",
+        }
+    }
+    pub(super) const fn pixel_format(
+        self,
+    ) -> Option<arcweft_agent_protocol::image::AgentImagePixelFormat> {
+        match self {
+            Self::RawRgba => Some(arcweft_agent_protocol::image::AgentImagePixelFormat::Rgba8Unorm),
+            Self::Png | Self::Overlay => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct AgentCaptureReadRequest {
@@ -99,11 +121,13 @@ pub(super) struct AgentImageFrameStore {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct AgentStoredImageFrame {
+    scope: arcweft_agent_protocol::text_context::AgentTextContextScope,
     pub(super) width: u32,
     pub(super) height: u32,
     color_rgba: Vec<u8>,
     object_id_rgba: Vec<u8>,
     mask_rgba: Vec<u8>,
+    diagnostics: Vec<AgentDiagnostic>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -126,8 +150,10 @@ pub(super) enum AgentImageFrameStoreError {
 
 impl AgentImageFrameStore {
     pub(super) fn from_shared_captures(
+        scope: arcweft_agent_protocol::text_context::AgentTextContextScope,
         color: &SharedFrameCapture,
         debug: Option<&SharedFrameCapture>,
+        diagnostics: Vec<AgentDiagnostic>,
     ) -> Result<Self, AgentImageFrameStoreError> {
         if color.origin_x != 0 || color.origin_y != 0 {
             return Err(AgentImageFrameStoreError::CroppedCapture);
@@ -173,17 +199,20 @@ impl AgentImageFrameStore {
         };
         Ok(Self {
             full_frame: Some(AgentStoredImageFrame {
+                scope,
                 width: color.width,
                 height: color.height,
                 color_rgba,
                 object_id_rgba,
                 mask_rgba,
+                diagnostics,
             }),
         })
     }
 
     #[cfg(test)]
     pub(super) fn from_full_attachments(
+        scope: arcweft_agent_protocol::text_context::AgentTextContextScope,
         width: u32,
         height: u32,
         color_rgba: Vec<u8>,
@@ -196,11 +225,13 @@ impl AgentImageFrameStore {
         agent_validate_stored_attachment(CaptureAttachment::Mask, expected, &mask_rgba)?;
         Ok(Self {
             full_frame: Some(AgentStoredImageFrame {
+                scope,
                 width,
                 height,
                 color_rgba,
                 object_id_rgba,
                 mask_rgba,
+                diagnostics: Vec::new(),
             }),
         })
     }
@@ -253,7 +284,9 @@ pub(super) fn agent_capture_resource(
     frames: &AgentImageFrameStore,
 ) -> Result<AgentResource, ExitCode> {
     let result = agent_capture_image(report, request, frames)?;
-    Ok(report.image_resource(&result.image, agent_binary_resource_body(&result.bytes)))
+    report
+        .image_resource(&result.image, agent_binary_resource_body(&result.bytes))
+        .map_err(|error| agent_json_error(&error))
 }
 
 pub(super) fn agent_capture_image(
@@ -261,17 +294,22 @@ pub(super) fn agent_capture_image(
     request: &AgentCaptureReadRequest,
     frames: &AgentImageFrameStore,
 ) -> Result<AgentCaptureImageResult, ExitCode> {
-    if request.page != 0 {
-        eprintln!(
-            "error: prepared-frame capture exposes the current runtime page only; requested page {}",
-            request.page
-        );
-        return Err(ExitCode::from(2));
-    }
+    report.validate_text_contexts().map_err(|error| {
+        eprintln!("error: capture report context: {error}");
+        ExitCode::FAILURE
+    })?;
     let frame = frames.full_frame().ok_or_else(|| {
         eprintln!("error: capture requires the retained shared PreparedFrame attachments");
         ExitCode::from(2)
     })?;
+    if &frame.scope != report.text_contexts.scope()
+        || request.capture_step != report.steps
+        || agent_capture_time_millis(request.capture_time_seconds)
+            != agent_capture_time_millis(agent_report_capture_time_seconds(report))
+    {
+        eprintln!("error: retained capture belongs to another observed session/frame/sample");
+        return Err(ExitCode::from(2));
+    }
     if frame.width != report.viewport.width || frame.height != report.viewport.height {
         eprintln!(
             "error: retained capture extent {}x{} does not match observed viewport {}x{}",
@@ -279,8 +317,45 @@ pub(super) fn agent_capture_image(
         );
         return Err(ExitCode::FAILURE);
     }
-    let raster = agent_raster_for_request(report, request, frame)?;
-    agent_capture_result_from_raster(report, request, &raster)
+    let page = agent_current_capture_page(report, &request.scope, request.page)?;
+    let request = AgentCaptureReadRequest {
+        page,
+        ..request.clone()
+    };
+    let raster = agent_raster_for_request(report, &request, frame)?;
+    agent_capture_result_from_raster(report, &request, &raster)
+}
+
+fn agent_current_capture_page(
+    report: &AgentObservationReport,
+    scope: &AgentCaptureScope,
+    requested: usize,
+) -> Result<usize, ExitCode> {
+    let selection = agent_capture_object_selection(report, scope)?;
+    let mut pages = BTreeSet::new();
+    for object in selection.coverage {
+        if let Some(reference) = &object.text_context {
+            let entry = report.text_contexts.resolve(reference).map_err(|error| {
+                eprintln!("error: capture page context: {error}");
+                ExitCode::FAILURE
+            })?;
+            if let Some(stage) = entry.content.display_stage() {
+                pages.insert(stage.frame().page_index);
+            }
+        }
+    }
+    let current = if pages.len() == 1 {
+        pages.first().copied()
+    } else {
+        None
+    };
+    if requested != 0 && current != Some(requested) {
+        eprintln!(
+            "error: requested capture page {requested} is not the exact current scoped prepared page"
+        );
+        return Err(ExitCode::from(2));
+    }
+    Ok(current.unwrap_or(0))
 }
 
 fn agent_raster_for_request(
@@ -289,7 +364,27 @@ fn agent_raster_for_request(
     frame: &AgentStoredImageFrame,
 ) -> Result<AgentRasterCapture, ExitCode> {
     let selection = agent_capture_object_selection(report, &request.scope)?;
-    let geometry_bbox = agent_capture_objects_bbox(&selection.coverage, frame.width, frame.height)
+    // Leaf text descriptors own their exact sampled geometry. Their backing
+    // cluster attachment may be broader than one physical glyph or proxy;
+    // aggregate object/view/layer scopes still union visible descendants.
+    let leaf_text_scope = matches!(request.scope, AgentCaptureScope::Object(_))
+        && selection.roots.first().is_some_and(|object| {
+            object.rich_text_ref.as_ref().is_some_and(|element| {
+                matches!(
+                element.kind,
+                arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextGlyph
+                    | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::GlyphCluster
+                    | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::Ruby
+                    | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextObjectProxy
+            )
+            })
+        });
+    let geometry_objects = if leaf_text_scope {
+        &selection.roots
+    } else {
+        &selection.coverage
+    };
+    let geometry_bbox = agent_capture_objects_bbox(geometry_objects, frame.width, frame.height)
         .or_else(|| agent_capture_scope_bbox(report, &request.scope));
     let composition = match request.capture_kind {
         AgentObserveCaptureKind::Color => match request.scope {
@@ -338,7 +433,7 @@ fn agent_viewport_raster(
         content_bbox: geometry_bbox.map(agent_content_bbox_from_agent_bbox),
         content_pixels,
         selected_object_ids: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: frame.diagnostics.clone(),
     }
 }
 
@@ -442,7 +537,7 @@ fn agent_scoped_raster(
             .iter()
             .map(|object| object.id.clone())
             .collect(),
-        diagnostics: Vec::new(),
+        diagnostics: frame.diagnostics.clone(),
     })
 }
 
@@ -536,62 +631,34 @@ fn agent_capture_object_selection<'a>(
         agent_report_missing_capture_scope(scope);
         return Err(ExitCode::from(2));
     }
-    let coverage_roots = if let AgentCaptureScope::Object(_) = scope
+    let mut coverage_roots = roots.clone();
+    if let AgentCaptureScope::Object(_) = scope
         && let Some(root) = roots.first().copied()
         && root.rich_text_ref.is_some()
     {
-        roots
+        let capture = report
+            .text_contexts
+            .element_capture(root)
+            .map_err(|error| {
+                eprintln!("error: capture root context: {error}");
+                ExitCode::FAILURE
+            })?;
+        for candidate in report
+            .objects
             .iter()
-            .copied()
-            .chain(report.objects.iter().filter(|candidate| {
-                candidate.visible && agent_related_rich_capture_object(root, candidate)
-            }))
-            .collect()
-    } else {
-        roots.clone()
-    };
+            .filter(|candidate| candidate.visible && candidate.id != root.id)
+        {
+            let included = capture.contains(candidate).map_err(|error| {
+                eprintln!("error: capture contributor context: {error}");
+                ExitCode::FAILURE
+            })?;
+            if included {
+                coverage_roots.push(candidate);
+            }
+        }
+    }
     let coverage = agent_expand_capture_descendants(report, &coverage_roots);
     Ok(AgentCaptureObjectSelection { roots, coverage })
-}
-
-fn agent_related_rich_capture_object(
-    root: &AgentObservedObject,
-    candidate: &AgentObservedObject,
-) -> bool {
-    let (Some(root_ref), Some(candidate_ref)) = (&root.rich_text_ref, &candidate.rich_text_ref)
-    else {
-        return false;
-    };
-    if root.id == candidate.id {
-        return false;
-    }
-    let same_dialogue = rich_text_root_id(&root.id) == rich_text_root_id(&candidate.id);
-    if !same_dialogue {
-        return false;
-    }
-    match root_ref.kind {
-        Ruby | TextObjectProxy | TextGlyph | GlyphCluster => {
-            matches!(candidate_ref.kind, GlyphCluster | TextGlyph | Ruby)
-                && root_ref.range.start < candidate_ref.range.end
-                && candidate_ref.range.start < root_ref.range.end
-        }
-        TextPage | TextLine | TextRun => false,
-    }
-}
-
-fn rich_text_root_id(id: &str) -> &str {
-    [
-        ".page.",
-        ".line.",
-        ".run.",
-        ".ruby.",
-        ".glyph.",
-        ".cluster.",
-        ".proxy.",
-    ]
-    .into_iter()
-    .find_map(|separator| id.split_once(separator).map(|(root, _)| root))
-    .unwrap_or(id)
 }
 
 fn agent_expand_capture_descendants<'a>(
@@ -684,9 +751,9 @@ pub(super) fn agent_capture_result_from_raster(
     request: &AgentCaptureReadRequest,
     capture: &AgentRasterCapture,
 ) -> Result<AgentCaptureImageResult, ExitCode> {
-    let (mime_type, bytes) = match request.image_kind {
-        AgentObserveImageKind::Png => ("image/png", agent_encode_png(capture)?),
-        AgentObserveImageKind::RawRgba => ("application/octet-stream", capture.rgba.clone()),
+    let bytes = match request.image_kind {
+        AgentObserveImageKind::Png => agent_encode_png(capture)?,
+        AgentObserveImageKind::RawRgba => capture.rgba.clone(),
         AgentObserveImageKind::Overlay => unreachable!("overlay is not a raster capture"),
     };
     let content_viewport_bbox =
@@ -702,7 +769,8 @@ pub(super) fn agent_capture_result_from_raster(
         capture_step: request.capture_step,
         capture_time_millis: agent_capture_time_millis(request.capture_time_seconds),
         uri: request.uri.clone(),
-        mime_type: mime_type.to_owned(),
+        mime_type: request.image_kind.mime_type().to_owned(),
+        pixel_format: request.image_kind.pixel_format(),
         width: capture.width,
         height: capture.height,
         hash: hash_hex(&bytes),

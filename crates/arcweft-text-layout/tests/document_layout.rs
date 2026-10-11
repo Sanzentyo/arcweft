@@ -631,3 +631,197 @@ fn vertical_column_start_offsets(layout: &TextLayout) -> Vec<usize> {
         })
         .collect()
 }
+
+#[test]
+fn european_numeral_space_unit_is_preserved_across_paint_runs_and_writing_directions() {
+    let text = "天12 345人";
+    for writing_mode in [
+        RichTextWritingMode::VerticalRl,
+        RichTextWritingMode::VerticalLr,
+    ] {
+        let vertical = style().with_flow(writing_mode, RichTextInlineDirection::Auto);
+        let presentation = RichTextPresentation {
+            layout: Some(RichTextLayout {
+                writing_mode,
+                jlreq_strictness: RichTextJlreqStrictness::Normal,
+                ..RichTextLayout::default()
+            }),
+            ..RichTextPresentation::default()
+        };
+        let unsplit = document_with_presentation(
+            text,
+            vertical.clone(),
+            presentation.clone(),
+            Vec::new(),
+            15,
+        );
+        let split = ResolvedTextDocument::new(
+            text,
+            0,
+            [(0, 5), (5, 6), (6, text.len())]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (start, end))| {
+                    ResolvedTextRun::new(
+                        RichTextRange::new(start, end),
+                        RichTextRange::new(start, end),
+                        vertical.clone(),
+                        RichTextPresentation {
+                            z_index: i16::try_from(index).expect("three paint run indices fit"),
+                            ..presentation.clone()
+                        },
+                        ResolvedTextRunSource::Plain,
+                    )
+                    .expect("numeric paint run is valid")
+                })
+                .collect(),
+            Vec::new(),
+            TextDocumentRevision::new(15),
+        )
+        .expect("numeric split document is valid");
+        let request = TextLayoutRequest {
+            size: LayoutSize::new(180.0, 83.733_33),
+            ..request()
+        };
+        let unsplit = layout_document(&unsplit, request, &mut MockShaper::new(b"font"))
+            .expect("unsplit numeric layout succeeds");
+        let split = layout_document(&split, request, &mut MockShaper::new(b"font"))
+            .expect("split numeric layout succeeds");
+        assert_eq!(vertical_column_start_offsets(&unsplit), vec![0, 9]);
+        assert_eq!(vertical_column_start_offsets(&split), vec![0, 9]);
+        assert_eq!(
+            unsplit
+                .glyphs
+                .iter()
+                .map(|glyph| (glyph.source_range, glyph.line_index, glyph.layout_bounds))
+                .collect::<Vec<_>>(),
+            split
+                .glyphs
+                .iter()
+                .map(|glyph| (glyph.source_range, glyph.line_index, glyph.layout_bounds))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn compound_numeral_space_units_keep_complete_body_members_across_paint_runs() {
+    for (text, space_start, following_start, terminal_start) in
+        [("天12,345 678人", 9, 10, 13), ("天12.3 678人", 7, 8, 11)]
+    {
+        for writing_mode in [
+            RichTextWritingMode::VerticalRl,
+            RichTextWritingMode::VerticalLr,
+        ] {
+            let vertical = style().with_flow(writing_mode, RichTextInlineDirection::Auto);
+            let presentation = RichTextPresentation {
+                layout: Some(RichTextLayout {
+                    writing_mode,
+                    jlreq_strictness: RichTextJlreqStrictness::Normal,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let unsplit = document_with_presentation(
+                text,
+                vertical.clone(),
+                presentation.clone(),
+                Vec::new(),
+                16,
+            );
+            // The space remains actual text in a distinct paint run. Number
+            // punctuation is emitted by the original cluster grouping owner,
+            // rather than fabricating an atomic12,345 or12.3 planner input.
+            let split = ResolvedTextDocument::new(
+                text,
+                0,
+                [
+                    (0, space_start),
+                    (space_start, following_start),
+                    (following_start, text.len()),
+                ]
+                .into_iter()
+                .enumerate()
+                .map(|(index, (start, end))| {
+                    ResolvedTextRun::new(
+                        RichTextRange::new(start, end),
+                        RichTextRange::new(start, end),
+                        vertical.clone(),
+                        RichTextPresentation {
+                            z_index: i16::try_from(index).expect("three paint runs"),
+                            ..presentation.clone()
+                        },
+                        ResolvedTextRunSource::Plain,
+                    )
+                    .expect("compound numeric paint run is valid")
+                })
+                .collect(),
+                Vec::new(),
+                TextDocumentRevision::new(16),
+            )
+            .expect("compound numeric document is valid");
+            let request = TextLayoutRequest {
+                size: LayoutSize::new(180.0, 83.733_33),
+                ..request()
+            };
+            let unsplit = layout_document(&unsplit, request, &mut MockShaper::new(b"font"))
+                .expect("unsplit compound number lays out");
+            let split = layout_document(&split, request, &mut MockShaper::new(b"font"))
+                .expect("split compound number lays out");
+            for layout in [&unsplit, &split] {
+                assert_eq!(
+                    vertical_column_start_offsets(layout),
+                    [0, 3, terminal_start]
+                );
+                let members = layout
+                    .glyphs
+                    .iter()
+                    .filter(|glyph| {
+                        glyph.source_range.start >= 3 && glyph.source_range.end <= terminal_start
+                    })
+                    .collect::<Vec<_>>();
+                let line = members[0].line_index;
+                assert!(members.iter().all(|glyph| glyph.line_index == line));
+                assert!(
+                    members.iter().any(|glyph| {
+                        glyph.source_range == RichTextRange::new(space_start, following_start)
+                    }),
+                    "the separator space must remain an actual body glyph"
+                );
+                assert!(
+                    layout.lines[usize::try_from(line).unwrap()].bounds.height
+                        > request.size.height,
+                    "the whole numeric unit uses the existing forced-overflow escape"
+                );
+            }
+            assert_eq!(
+                split
+                    .runs
+                    .iter()
+                    .map(|run| run.presentation.z_index)
+                    .collect::<Vec<_>>(),
+                [0, 1, 2]
+            );
+            let physical = |layout: &TextLayout| {
+                layout
+                    .glyphs
+                    .iter()
+                    .map(|glyph| {
+                        (
+                            glyph.source_range,
+                            glyph.line_index,
+                            glyph.cluster_index,
+                            glyph.layout_bounds,
+                            glyph.advance,
+                            glyph.orientation,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(physical(&unsplit), physical(&split));
+        }
+    }
+}
+
+#[path = "document_layout/ruby_geometry.rs"]
+mod ruby_geometry;

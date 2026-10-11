@@ -9,6 +9,8 @@ pub mod character_dialogue_style;
 pub mod content;
 pub mod frame;
 pub mod playback;
+pub mod prepared_context;
+pub mod projected_range;
 pub mod reveal;
 pub mod rich_effects;
 pub mod rich_text;
@@ -39,6 +41,13 @@ pub use frame::{
 pub use playback::{
     LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd,
     LineDisplayStageProjection,
+};
+pub use prepared_context::{
+    DialoguePreparedTextRole, PreparedDisplayStageContext, PreparedTextContext,
+    PreparedTextContextError, PreparedTextDocumentContext, PreparedTextOwnerKind,
+};
+pub use projected_range::{
+    ProjectedTextCoordinate, ProjectedTextRangeDomain, ProjectedTextRangeError,
 };
 pub use reveal::{
     DialogueRevealElapsed, DialogueRevealEvaluation, DialogueRevealPolicy, evaluate_dialogue_reveal,

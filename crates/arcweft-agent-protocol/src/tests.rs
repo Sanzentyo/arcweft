@@ -53,6 +53,137 @@ use arcweft_text_model::{
 use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
+pub(super) fn test_text_contexts(
+    tick: usize,
+    root_id: &str,
+) -> crate::text_context::AgentTextContextCatalog {
+    use crate::text_context::{
+        AgentTextContextCatalog, AgentTextContextContent, AgentTextContextEntry,
+        AgentTextContextOwner, AgentTextContextScope,
+    };
+    let frame: arcweft_text_model::LineDisplayStageProjection = test_line_display_frame().into();
+    let context = arcweft_text_model::PreparedDisplayStageContext::try_new(
+        frame,
+        arcweft_text_model::ProjectedTextRangeDomain::document(0, 5).unwrap(),
+        "Hello",
+    )
+    .unwrap();
+    AgentTextContextCatalog::try_new(
+        AgentTextContextScope {
+            session_id: "cli".to_owned(),
+            frame_id: format!("frame.{tick}"),
+            tick,
+            capture_time_millis: None,
+        },
+        [AgentTextContextEntry {
+            owner_ordinal: 0,
+            owner: AgentTextContextOwner {
+                root_id: root_id.to_owned(),
+                parent_id: None,
+                semantic_id: "view.dialogue.test".to_owned(),
+                prepared_text: 0,
+                kind: arcweft_text_model::PreparedTextOwnerKind::DialogueView {
+                    dialogue: 0,
+                    entry: 0,
+                    mount: 0,
+                    role: arcweft_text_model::DialoguePreparedTextRole::Content,
+                },
+            },
+            content: AgentTextContextContent::DisplayStage {
+                context: std::sync::Arc::new(context),
+                layout: std::sync::Arc::new(test_hello_layout()),
+            },
+        }],
+    )
+    .unwrap()
+}
+
+fn test_hello_layout() -> arcweft_text_layout::TextLayout {
+    use arcweft_text_layout::{
+        FontFaceId, FontInventoryHash, GlyphOrientation, GlyphVerticalForm,
+        LayoutPoint as TextPoint, LayoutRect as TextRect, LayoutSize as TextSize, ShapedGlyphKey,
+        TextLayout, TextLayoutGlyph, TextLayoutGlyphSource, TextLayoutHash, TextLayoutLine,
+        TextLayoutRun, TextLayoutSourceMap,
+    };
+    let bounds = TextRect::new(1.0, 2.0, 3.0, 4.0);
+    let range = RichTextRange::new(0, 5);
+    TextLayout {
+        lines: vec![TextLayoutLine {
+            source_range: range,
+            glyph_range: 0..1,
+            bounds,
+            writing_mode: arcweft_text_model::RichTextWritingMode::HorizontalTb,
+        }],
+        runs: vec![TextLayoutRun {
+            run_index: 0,
+            source_range: range,
+            glyph_range: 0..1,
+            bounds,
+            writing_mode: arcweft_text_model::RichTextWritingMode::HorizontalTb,
+            style: Default::default(),
+            presentation: test_rich_text_ref(&AgentBBox {
+                space: AgentCoordinateSpace::Viewport,
+                x: 1,
+                y: 2,
+                width: 3,
+                height: 4,
+            })
+            .presentation
+            .unwrap(),
+        }],
+        glyphs: vec![TextLayoutGlyph {
+            run_index: 0,
+            source_range: range,
+            line_index: 0,
+            cluster_index: 0,
+            logical_ordinal: 0,
+            origin: TextPoint::new(1.0, 2.0),
+            advance: TextSize::new(3.0, 4.0),
+            layout_bounds: bounds,
+            ink_bounds: bounds,
+            orientation: GlyphOrientation::Upright,
+            vertical_form: GlyphVerticalForm::None,
+            inline_scale: 1.0,
+            shape_key: ShapedGlyphKey {
+                face: FontFaceId::from_bytes([1; 32]),
+                glyph_id: 1,
+                font_size_bits: 16.0_f32.to_bits(),
+                font_weight: 400,
+                flags: 0,
+            },
+        }],
+        ruby: Vec::new(),
+        bounds: Some(bounds),
+        source_map: TextLayoutSourceMap::new(vec![TextLayoutGlyphSource {
+            run_index: 0,
+            source_range: range,
+            line_index: 0,
+            cluster_index: 0,
+            logical_ordinal: 0,
+        }]),
+        hash: TextLayoutHash::from_bytes([2; 32]),
+        font_inventory: FontInventoryHash::derive(
+            [FontFaceId::from_bytes([1; 32])],
+            std::iter::empty(),
+        ),
+    }
+}
+
+fn test_empty_text_contexts(
+    session: &str,
+    tick: usize,
+) -> crate::text_context::AgentTextContextCatalog {
+    crate::text_context::AgentTextContextCatalog::empty(
+        crate::text_context::AgentTextContextScope {
+            session_id: session.to_owned(),
+            frame_id: format!("frame.{tick}"),
+            tick,
+            capture_time_millis: None,
+        },
+    )
+    .unwrap()
+}
+
 fn test_binary_resource_body(data: &str) -> AgentBinaryResourceBody {
     AgentBinaryResourceBody {
         encoding: AgentBinaryEncoding::Base64,
@@ -72,6 +203,7 @@ fn test_capture_refs() -> AgentObjectCaptureRefs {
             kind: AgentImageKind::Mask,
             uri: "arcweft://session/cli/frame/1/object.object.dialogue.0.0.mask.png".to_owned(),
             mime_type: "image/png".to_owned(),
+            pixel_format: None,
             page: 0,
             width: 3,
             height: 4,
@@ -86,6 +218,7 @@ fn test_layer_capture_refs() -> AgentLayerCaptureRefs {
             kind: AgentImageKind::Color,
             uri: "arcweft://session/cli/frame/1/layer.dialogue.png".to_owned(),
             mime_type: "image/png".to_owned(),
+            pixel_format: None,
             page: 0,
             width: 10,
             height: 20,
@@ -100,6 +233,7 @@ fn test_view_capture_refs() -> AgentViewCaptureRefs {
             kind: AgentImageKind::Color,
             uri: "arcweft://session/cli/frame/1/view.dialogue_box.png".to_owned(),
             mime_type: "image/png".to_owned(),
+            pixel_format: None,
             page: 0,
             width: 10,
             height: 20,
@@ -153,12 +287,21 @@ fn test_line_display_frame() -> LineDisplayFrame {
             text: "Hello".to_owned(),
         }],
         display_map: RichTextDisplayMap {
+            source_node_count: arcweft_text_model::RichTextNodeCount::new(1),
             text_runs: vec![RichTextTextRun {
                 range: RichTextRange::new(0, 5),
                 source: RichTextTextSource::Text,
                 node_index: RichTextNodeIndex::new(0),
                 styles: Vec::new(),
-                presentation: RichTextPresentation::default(),
+                presentation: test_rich_text_ref(&AgentBBox {
+                    space: AgentCoordinateSpace::Viewport,
+                    x: 1,
+                    y: 2,
+                    width: 3,
+                    height: 4,
+                })
+                .presentation
+                .unwrap(),
             }],
             ..RichTextDisplayMap::default()
         },
@@ -179,16 +322,15 @@ fn test_line_display_frame() -> LineDisplayFrame {
 
 #[test]
 fn observed_rich_text_round_trips_only_the_final_typed_frame_wire() {
-    let content = AgentObservedObjectContent::RichText {
-        frame: Box::new(test_line_display_frame().into()),
-    };
+    let content =
+        AgentObservedObjectContent::RichText(crate::object::AgentTextObjectContent::default());
     let encoded = serde_json::to_value(&content).expect("typed rich-text content serializes");
     let decoded = serde_json::from_value::<AgentObservedObjectContent>(encoded.clone())
         .expect("typed rich-text content deserializes");
     assert_eq!(decoded, content);
 
     let mut removed_flat_field = encoded;
-    removed_flat_field["frame"]["speaker_label"] = "Alice".into();
+    removed_flat_field["frame"] = serde_json::to_value(test_line_display_frame()).unwrap();
     assert!(serde_json::from_value::<AgentObservedObjectContent>(removed_flat_field).is_err());
 }
 
@@ -205,6 +347,7 @@ fn test_raw_mask_image_resource() -> AgentImageResource {
         capture_time_millis: 0,
         uri: "arcweft://session/cli/frame/7/object.object.dialogue.0.0.mask.rgba".to_owned(),
         mime_type: "application/octet-stream".to_owned(),
+        pixel_format: Some(crate::image::AgentImagePixelFormat::Rgba8Unorm),
         width: 3,
         height: 4,
         hash: "raw-hash".to_owned(),
@@ -232,6 +375,65 @@ fn test_raw_mask_image_resource() -> AgentImageResource {
         diagnostics: Vec::new(),
         written: None,
     }
+}
+
+#[test]
+fn image_pixel_format_is_producer_owned_with_query_uri_and_checked_extents() {
+    let report = test_mcp_observation_report();
+    let mut raw = test_raw_mask_image_resource();
+    raw.uri.push_str("?page=1");
+    raw.page = 1;
+    let resource = report
+        .image_resource(&raw, test_binary_resource_body("AAAAAA=="))
+        .unwrap();
+    let metadata = resource.image.unwrap();
+    assert_eq!(
+        metadata.pixel_format,
+        Some(crate::image::AgentImagePixelFormat::Rgba8Unorm)
+    );
+    assert_eq!(metadata.row_stride_bytes, Some(12));
+    AgentImageMetadata::decode_json(&serde_json::to_vec(&metadata).unwrap()).unwrap();
+    let mut mismatch = raw.clone();
+    mismatch.pixel_format = None;
+    assert!(
+        report
+            .image_resource(&mismatch, test_binary_resource_body(""))
+            .is_err(),
+        "URI spelling cannot infer a missing raw format"
+    );
+    let mut png = raw.clone();
+    png.mime_type = "image/png".to_owned();
+    png.pixel_format = None;
+    let encoded = report
+        .image_resource(&png, test_binary_resource_body("AAAAAA=="))
+        .unwrap()
+        .image
+        .unwrap();
+    assert!(encoded.pixel_format.is_none());
+    assert!(encoded.row_stride_bytes.is_none());
+    png.pixel_format = raw.pixel_format;
+    assert!(
+        report
+            .image_resource(&png, test_binary_resource_body(""))
+            .is_err(),
+        "encoded PNG cannot claim raw pixels"
+    );
+    for width in [0, u32::MAX] {
+        let mut invalid = raw.clone();
+        invalid.width = width;
+        assert!(
+            report
+                .image_resource(&invalid, test_binary_resource_body(""))
+                .is_err(),
+            "invalid packed extent {width}"
+        );
+    }
+    let mut wire = serde_json::to_value(&metadata).unwrap();
+    wire["row_stride_bytes"] = serde_json::json!(4);
+    assert!(AgentImageMetadata::decode_json(&serde_json::to_vec(&wire).unwrap()).is_err());
+    let mut wire = serde_json::to_value(&metadata).unwrap();
+    wire["pixel_format"] = serde_json::json!("r8");
+    assert!(AgentImageMetadata::decode_json(&serde_json::to_vec(&wire).unwrap()).is_err());
 }
 
 fn assert_image_metadata(resource: &AgentResource, expected: AgentImageMetadata) {
@@ -262,6 +464,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
             capture_time_millis: 0,
             uri: "arcweft://session/cli/frame/7/color.png".to_owned(),
             mime_type: "image/png".to_owned(),
+            pixel_format: None,
             width: 1280,
             height: 720,
             hash: "image-hash".to_owned(),
@@ -278,6 +481,7 @@ fn test_mcp_observation_report() -> AgentObservationReport {
         layers: Vec::new(),
         views: Vec::new(),
         objects: Vec::new(),
+        text_contexts: test_empty_text_contexts("cli", 7),
         presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
         actions: Vec::new(),
         scroll_regions: Vec::new(),
@@ -308,7 +512,8 @@ fn test_mcp_observation_report() -> AgentObservationReport {
 }
 
 #[allow(clippy::too_many_lines)]
-fn test_serialization_observation_report() -> AgentObservationReport {
+pub(super) fn test_serialization_observation_report() -> AgentObservationReport {
+    let text_contexts = test_text_contexts(1, "object.dialogue.0.0");
     let bbox = AgentBBox {
         space: AgentCoordinateSpace::Viewport,
         x: 1,
@@ -324,8 +529,8 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         capture_refs: test_layer_capture_refs(),
     }];
     let objects = vec![AgentObservedObject {
-        id: "object.dialogue.0.0".to_owned(),
-        parent_id: None,
+        id: "object.dialogue.0.0.run.0".to_owned(),
+        parent_id: Some("object.dialogue.0.0.line.0".to_owned()),
         entity: Some("alice".to_owned()),
         layer: "dialogue".to_owned(),
         role: "dialogue_view".to_owned(),
@@ -337,10 +542,11 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         object_layer: None,
         object_depth: None,
         text: Some("Hello".to_owned()),
+        text_context: Some(text_contexts.reference(0).unwrap()),
         rich_text_ref: Some(test_rich_text_ref(&bbox)),
-        content: AgentObservedObjectContent::RichText {
-            frame: Box::new(test_line_display_frame().into()),
-        },
+        content: AgentObservedObjectContent::RichText(
+            crate::object::AgentTextObjectContent::default(),
+        ),
     }];
     let views = vec![AgentObservedView {
         id: "dialogue_box".to_owned(),
@@ -348,7 +554,7 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         visible: true,
         bbox: bbox.clone(),
         object_count: 1,
-        object_refs: vec!["object.dialogue.0.0".to_owned()],
+        object_refs: vec!["object.dialogue.0.0.run.0".to_owned()],
         capture_refs: test_view_capture_refs(),
     }];
     let presentation_tree = AgentPresentationTree::from_layers_and_objects(&layers, &objects);
@@ -375,6 +581,7 @@ fn test_serialization_observation_report() -> AgentObservationReport {
             capture_time_millis: 0,
             uri: "arcweft://session/cli/frame/1/overlay.svg".to_owned(),
             mime_type: "image/svg+xml".to_owned(),
+            pixel_format: None,
             width: 1280,
             height: 720,
             hash: "render".to_owned(),
@@ -391,10 +598,11 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         layers,
         views,
         objects,
+        text_contexts,
         presentation_tree,
         actions: vec![AgentActionTarget {
             id: "action.advance_text.object.dialogue.0.0".to_owned(),
-            target: "object.dialogue.0.0".to_owned(),
+            target: "object.dialogue.0.0.run.0".to_owned(),
             action: AgentActionKind::AdvanceText,
             kind: AgentActionDispatch::Semantic,
             enabled: true,
@@ -591,7 +799,10 @@ fn observation_report_serializes_stable_snake_case_enums() {
         "color"
     );
     assert_eq!(json["views"][0]["id"], "dialogue_box");
-    assert_eq!(json["views"][0]["object_refs"][0], "object.dialogue.0.0");
+    assert_eq!(
+        json["views"][0]["object_refs"][0],
+        "object.dialogue.0.0.run.0"
+    );
     assert_eq!(
         json["views"][0]["capture_refs"]["captures"][0]["kind"],
         "color"
@@ -633,11 +844,13 @@ fn observation_report_serializes_stable_snake_case_enums() {
     assert_eq!(json["objects"][0]["content"]["kind"], "rich_text");
     assert!(json["objects"][0].get("rich_text").is_none());
     assert_eq!(
-        json["objects"][0]["content"]["frame"]["style_contributions"][0]["path"],
+        json["text_contexts"]["entries"][0]["content"]["context"]["frame"]["style_contributions"]
+            [0]["path"],
         "rich_text.ruby.size"
     );
     assert_eq!(
-        json["objects"][0]["content"]["frame"]["style_contributions"][0]["layer"],
+        json["text_contexts"]["entries"][0]["content"]["context"]["frame"]["style_contributions"]
+            [0]["layer"],
         "engine_defaults"
     );
     assert_eq!(
@@ -657,12 +870,12 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(
         json["presentation_tree"]["nodes"][1]["children"][0],
-        "object.dialogue.0.0"
+        "object.dialogue.0.0.run.0"
     );
     assert_eq!(json["presentation_tree"]["nodes"][2]["kind"], "object");
     assert_eq!(
         json["presentation_tree"]["nodes"][2]["object_id"],
-        "object.dialogue.0.0"
+        "object.dialogue.0.0.run.0"
     );
     assert_eq!(
         json["presentation_tree"]["nodes"][2]["role"],
@@ -807,8 +1020,11 @@ fn hit_test_hit_serializes_capture_refs() {
             object_layer: Some("view".to_owned()),
             object_depth: Some(4000),
             text: Some("Hit".to_owned()),
+            text_context: None,
             rich_text_ref: None,
-            image_ref: None,
+            content: AgentObservedObjectContent::RichText(
+                crate::object::AgentTextObjectContent::default(),
+            ),
         },
         layer: "view".to_owned(),
         role: "rich_text_proxy".to_owned(),
@@ -849,7 +1065,8 @@ fn hit_test_hit_serializes_capture_refs() {
 
 #[test]
 fn image_resource_metadata_preserves_observed_object_ref() {
-    let report = test_mcp_observation_report();
+    let mut report = test_mcp_observation_report();
+    report.text_contexts = test_text_contexts(7, "object.dialogue.0.0");
     let bbox = AgentBBox {
         space: AgentCoordinateSpace::Viewport,
         x: 96,
@@ -861,9 +1078,15 @@ fn image_resource_metadata_preserves_observed_object_ref() {
     rich_text_ref.object_layer = Some("view".to_owned());
     rich_text_ref.object_depth = Some(7000);
     let mut image = test_raw_mask_image_resource();
+    image.capture_step = 8;
+    image.scope = AgentImageScope::Object {
+        id: "object.dialogue.0.0.run.0".to_owned(),
+    };
+    image.uri =
+        "arcweft://session/cli/frame/7/object.object.dialogue.0.0.run.0.mask.rgba".to_owned();
     image.object = Some(AgentImageObjectRef {
         id: "object.dialogue.0.0.run.0".to_owned(),
-        parent_id: Some("object.dialogue.0.0".to_owned()),
+        parent_id: Some("object.dialogue.0.0.line.0".to_owned()),
         entity: Some("character.alice".to_owned()),
         layer: "dialogue".to_owned(),
         role: "rich_text_run".to_owned(),
@@ -873,11 +1096,16 @@ fn image_resource_metadata_preserves_observed_object_ref() {
         object_layer: Some("view".to_owned()),
         object_depth: Some(7000),
         text: Some("Hello".to_owned()),
+        text_context: Some(report.text_contexts.reference(0).unwrap()),
         rich_text_ref: Some(rich_text_ref.clone()),
-        image_ref: None,
+        content: AgentObservedObjectContent::RichText(
+            crate::object::AgentTextObjectContent::default(),
+        ),
     });
 
-    let resource = report.image_resource(&image, test_binary_resource_body("////"));
+    let resource = report
+        .image_resource(&image, test_binary_resource_body("////"))
+        .expect("image context is admitted");
 
     assert_eq!(
         resource
@@ -936,6 +1164,7 @@ fn generic_image_object_metadata_does_not_require_rich_text_ref() {
         object_layer: Some("hud.foreground".to_owned()),
         object_depth: Some(2500),
         text: None,
+        text_context: None,
         rich_text_ref: None,
         content: AgentObservedObjectContent::Image(Box::new(test_observed_image_content())),
     };
@@ -944,27 +1173,26 @@ fn generic_image_object_metadata_does_not_require_rich_text_ref() {
     assert_eq!(image_object.object_layer.as_deref(), Some("hud.foreground"));
     assert_eq!(image_object.object_depth, Some(2500));
     assert!(image_object.rich_text_ref.is_none());
-    let image_ref = image_object
-        .image_ref
-        .as_ref()
-        .expect("image object metadata preserves active image payload");
-    assert_eq!(image_ref.source, "view.image.7");
-    assert_eq!(image_ref.asset.as_deref(), Some("asset.logo.webp"));
-    assert_eq!(image_ref.frame_index, Some(1));
-    assert_eq!(image_ref.local_time_millis, Some(250));
-    assert_eq!(image_ref.opacity_milli, Some(750));
-    assert_eq!(image_ref.fit, Some(AgentImageFit::Intrinsic));
+    let AgentObservedObjectContent::Image(image_content) = &image_object.content else {
+        panic!("image object metadata preserves active image payload");
+    };
+    assert_eq!(image_content.source, "view.image.7");
+    assert_eq!(image_content.asset.as_deref(), Some("asset.logo.webp"));
+    assert_eq!(image_content.frame_index, Some(1));
+    assert_eq!(image_content.local_time_millis, Some(250));
+    assert_eq!(image_content.opacity_milli, Some(750));
+    assert_eq!(image_content.fit, Some(AgentImageFit::Intrinsic));
     assert_eq!(
-        image_ref.alignment,
+        image_content.alignment,
         Some(AgentImageAlignment {
             x_milli: 1_000,
             y_milli: 0,
         })
     );
-    assert_eq!(image_ref.intrinsic_width, Some(64));
-    assert_eq!(image_ref.intrinsic_height, Some(32));
-    assert_eq!(image_ref.actions, vec!["action.inspect".to_owned()]);
-    assert_eq!(image_ref.proxies[0].id, "proxy.logo.hotspot");
+    assert_eq!(image_content.intrinsic_width, Some(64));
+    assert_eq!(image_content.intrinsic_height, Some(32));
+    assert_eq!(image_content.actions, vec!["action.inspect".to_owned()]);
+    assert_eq!(image_content.proxies[0].id, "proxy.logo.hotspot");
 
     let object_json = serde_json::to_value(&object).expect("image object serializes");
     assert_eq!(
@@ -1077,7 +1305,9 @@ fn image_resource_metadata_preserves_capture_diagnostics() {
         message: "native rich-text missing_shader: ghost_glow".to_owned(),
     }];
 
-    let resource = report.image_resource(&image, test_binary_resource_body("////"));
+    let resource = report
+        .image_resource(&image, test_binary_resource_body("////"))
+        .expect("image context is admitted");
     let metadata = resource.image.expect("image metadata is attached");
 
     assert_eq!(metadata.diagnostics, image.diagnostics);
@@ -1139,7 +1369,9 @@ fn capture_metadata_serializes_selected_object_image_resource() {
         },
     ));
 
-    let resource = report.image_resource(&image, test_binary_resource_body("////"));
+    let resource = report
+        .image_resource(&image, test_binary_resource_body("////"))
+        .expect("image context is admitted");
     let json = serde_json::to_value(&resource).expect("resource serializes");
 
     assert_eq!(
@@ -1217,11 +1449,15 @@ fn observation_report_builds_mcp_style_resources() {
         .presentation_tree_resource()
         .expect("presentation tree serializes");
     let overlay = report.overlay_svg_resource().expect("overlay exists");
-    let image = report.image_resource(&report.images[0], test_binary_resource_body("iVBORw0KGgo="));
-    let raw_image = report.image_resource(
-        &test_raw_mask_image_resource(),
-        test_binary_resource_body("////"),
-    );
+    let image = report
+        .image_resource(&report.images[0], test_binary_resource_body("iVBORw0KGgo="))
+        .expect("image context is admitted");
+    let raw_image = report
+        .image_resource(
+            &test_raw_mask_image_resource(),
+            test_binary_resource_body("////"),
+        )
+        .expect("image context is admitted");
     let signals = report.signals_resource().expect("signals serialize");
 
     assert_eq!(latest.uri, "arcweft://session/cli/observation/latest.json");
@@ -1241,6 +1477,7 @@ fn observation_report_builds_mcp_style_resources() {
     assert_image_metadata(
         &image,
         AgentImageMetadata {
+            text_contexts: None,
             kind: AgentImageKind::Color,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Viewport,
@@ -1265,6 +1502,7 @@ fn observation_report_builds_mcp_style_resources() {
     assert_image_metadata(
         &raw_image,
         AgentImageMetadata {
+            text_contexts: None,
             kind: AgentImageKind::Mask,
             renderer: AgentImageRenderer::Native,
             scope: AgentImageScope::Object {
@@ -1281,7 +1519,7 @@ fn observation_report_builds_mcp_style_resources() {
                 x: 96,
                 y: 548,
             }),
-            pixel_format: Some("rgba8_unorm".to_owned()),
+            pixel_format: Some(crate::image::AgentImagePixelFormat::Rgba8Unorm),
             row_stride_bytes: Some(12),
             content_bbox: Some(AgentImageContentBBox {
                 x: 0,

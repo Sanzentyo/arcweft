@@ -1,12 +1,13 @@
 use arcweft_glyphon::{PreparedTextItem, TextGlyphPaint};
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_render_text::{ResolvedTextStyle, TextFontFamily, TextSlant, TextWeight};
-use arcweft_render_wgpu::geometry::{
-    PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
-};
+use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, RenderImage};
 use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect};
-use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
+use arcweft_text_model::{
+    PreparedTextContext, PreparedTextOwnerKind, RichTextInlineDirection, RichTextRange,
+    RichTextWritingMode,
+};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
@@ -102,7 +103,7 @@ impl WebObservationReport {
 }
 
 /// Host-neutral summary of the exact frame consumed by the shared renderer.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WebFrameObservationReport {
     pub schema_version: String,
     pub fx_diagnostics: Vec<FxDiagnostic>,
@@ -145,14 +146,15 @@ pub struct WebFrameImage {
 }
 
 /// Canonical layout and paint evidence for one frame-local prepared item.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct WebFramePreparedText {
     pub id: u32,
     pub text: String,
     pub visible_text: String,
     pub bounds: Option<WebFrameBounds>,
+    pub painted_bounds: Option<WebFrameBounds>,
     pub layout_hash: String,
-    pub source_origin: usize,
+    pub text_context: Option<PreparedTextContext>,
     pub owner: Option<WebFramePreparedTextOwner>,
     pub line_count: usize,
     pub run_count: usize,
@@ -169,7 +171,7 @@ pub struct WebFramePreparedText {
 pub struct WebFramePreparedTextOwner {
     pub semantic_id: String,
     pub parent_id: Option<String>,
-    pub kind: String,
+    pub kind: PreparedTextOwnerKind,
     pub object_bounds: WebFrameBounds,
 }
 
@@ -181,6 +183,7 @@ pub struct WebFramePreparedRun {
     pub glyph_start: u32,
     pub glyph_end: u32,
     pub bounds: WebFrameBounds,
+    pub painted_bounds: Option<WebFrameBounds>,
     pub style: WebFrameTextStyle,
 }
 
@@ -191,6 +194,7 @@ pub struct WebFramePreparedLine {
     pub glyph_start: u32,
     pub glyph_end: u32,
     pub bounds: WebFrameBounds,
+    pub painted_bounds: Option<WebFrameBounds>,
     pub writing_mode: String,
 }
 
@@ -203,6 +207,8 @@ pub struct WebFramePreparedGlyph {
     pub logical_ordinal: u32,
     pub bounds: WebFrameBounds,
     pub ink_bounds: WebFrameBounds,
+    pub painted_bounds: WebFrameBounds,
+    pub painted_visual_bounds: WebFrameBounds,
     pub visible: bool,
     pub opacity_milli: u16,
     pub rgba: [u8; 4],
@@ -226,6 +232,8 @@ pub struct WebFramePreparedRuby {
     pub text: String,
     pub base_bounds: WebFrameBounds,
     pub ruby_bounds: WebFrameBounds,
+    pub painted_base_bounds: Option<WebFrameBounds>,
+    pub painted_annotation_bounds: Option<WebFrameBounds>,
     pub glyph_count: usize,
     pub writing_mode: String,
     pub style: WebFrameTextStyle,
@@ -253,8 +261,11 @@ pub struct WebFrameChoice {
 
 impl WebFrameObservationReport {
     #[must_use]
-    pub fn from_prepared_frame(frame: &PreparedFrame) -> Self {
-        Self {
+    pub fn from_prepared_frame(
+        frame: &PreparedFrame,
+    ) -> Result<Self, arcweft_render_wgpu::geometry::FramePlanError> {
+        let geometries = frame.prepared_text_geometries()?;
+        Ok(Self {
             schema_version: "arcweft.web_frame_observation.v1".to_owned(),
             fx_diagnostics: frame.fx_diagnostics.clone(),
             viewport: WebFrameViewport {
@@ -281,7 +292,12 @@ impl WebFrameObservationReport {
                         .prepared_text_owners()
                         .iter()
                         .find(|owner| owner.text == id);
-                    WebFramePreparedText::new(id.index(), item, owner)
+                    WebFramePreparedText::new(
+                        id.index(),
+                        item,
+                        owner,
+                        geometries.get(&id).expect("actual prepared item geometry"),
+                    )
                 })
                 .collect(),
             choices: frame
@@ -300,20 +316,27 @@ impl WebFrameObservationReport {
                 })
                 .collect(),
             focus: frame.focus_debug(),
-        }
+        })
     }
 }
 
 impl WebFramePreparedText {
-    fn new(id: u32, item: &PreparedTextItem, owner: Option<&PreparedTextOwner>) -> Self {
+    fn new(
+        id: u32,
+        item: &PreparedTextItem,
+        owner: Option<&PreparedTextOwner>,
+        geometry: &arcweft_glyphon::PreparedTextGeometry,
+    ) -> Self {
         let visible_ranges = visible_body_ranges(item);
         let glyphs = item
             .layout
             .glyphs
             .iter()
             .zip(&item.paint.glyphs)
-            .map(|(glyph, paint)| {
+            .enumerate()
+            .map(|(index, (glyph, paint))| {
                 let opacity_milli = paint.effective_opacity_milli();
+                let painted = geometry.glyph(index).expect("admitted body glyph geometry");
                 WebFramePreparedGlyph {
                     source_start: glyph.source_range.start,
                     source_end: glyph.source_range.end,
@@ -322,6 +345,8 @@ impl WebFramePreparedText {
                     logical_ordinal: glyph.logical_ordinal,
                     bounds: WebFrameBounds::from_layout_rect(glyph.layout_bounds),
                     ink_bounds: WebFrameBounds::from_layout_rect(glyph.ink_bounds),
+                    painted_bounds: WebFrameBounds::from_layout_rect(painted.logical_bounds),
+                    painted_visual_bounds: WebFrameBounds::from_layout_rect(painted.visual_bounds),
                     visible: paint.visible && opacity_milli > 0,
                     opacity_milli,
                     rgba: paint.color.channels(),
@@ -335,14 +360,15 @@ impl WebFramePreparedText {
         Self {
             id,
             text: item.interaction.text.clone(),
-            visible_text: text_for_ranges(&item.interaction.text, &visible_ranges),
+            visible_text: text_for_ranges(&item.interaction.text, &visible_ranges, owner),
             bounds: item
                 .interaction
                 .container_bounds
                 .or(item.layout.bounds)
                 .map(WebFrameBounds::from_layout_rect),
             layout_hash: hex_bytes(&item.layout.hash.as_bytes()),
-            source_origin: owner.map_or(0, |owner| owner.source_origin),
+            painted_bounds: geometry.bounds().map(WebFrameBounds::from_layout_rect),
+            text_context: owner.map(|owner| owner.context.clone()),
             owner: owner.map(WebFramePreparedTextOwner::from_owner),
             line_count: item.layout.lines.len(),
             run_count: item.layout.runs.len(),
@@ -353,13 +379,15 @@ impl WebFramePreparedText {
                 .layout
                 .runs
                 .iter()
-                .map(|run| WebFramePreparedRun {
+                .enumerate()
+                .map(|(index, run)| WebFramePreparedRun {
                     run_index: run.run_index,
                     source_start: run.source_range.start,
                     source_end: run.source_range.end,
                     glyph_start: run.glyph_range.start,
                     glyph_end: run.glyph_range.end,
                     bounds: WebFrameBounds::from_layout_rect(run.bounds),
+                    painted_bounds: geometry.run(index).map(WebFrameBounds::from_layout_rect),
                     style: WebFrameTextStyle::from_resolved(&run.style),
                 })
                 .collect(),
@@ -367,12 +395,14 @@ impl WebFramePreparedText {
                 .layout
                 .lines
                 .iter()
-                .map(|line| WebFramePreparedLine {
+                .enumerate()
+                .map(|(index, line)| WebFramePreparedLine {
                     source_start: line.source_range.start,
                     source_end: line.source_range.end,
                     glyph_start: line.glyph_range.start,
                     glyph_end: line.glyph_range.end,
                     bounds: WebFrameBounds::from_layout_rect(line.bounds),
+                    painted_bounds: geometry.line(index).map(WebFrameBounds::from_layout_rect),
                     writing_mode: writing_mode_label(line.writing_mode).to_owned(),
                 })
                 .collect(),
@@ -387,6 +417,12 @@ impl WebFramePreparedText {
                     text: ruby.text.clone(),
                     base_bounds: WebFrameBounds::from_layout_rect(ruby.base_bounds),
                     ruby_bounds: WebFrameBounds::from_layout_rect(ruby.ruby_bounds),
+                    painted_base_bounds: geometry
+                        .ruby(ruby.ruby_index)
+                        .map(|ruby| WebFrameBounds::from_layout_rect(ruby.base_bounds)),
+                    painted_annotation_bounds: geometry
+                        .ruby(ruby.ruby_index)
+                        .map(|ruby| WebFrameBounds::from_layout_rect(ruby.annotation_bounds)),
                     glyph_count: ruby.glyphs.len(),
                     writing_mode: writing_mode_label(ruby.writing_mode).to_owned(),
                     style: WebFrameTextStyle::from_resolved(&ruby.style),
@@ -404,7 +440,7 @@ impl WebFramePreparedTextOwner {
                 .parent_id
                 .as_ref()
                 .map(|parent| parent.as_str().to_owned()),
-            kind: owner_kind_label(owner.kind),
+            kind: owner.kind,
             object_bounds: WebFrameBounds::from_hit_rect(owner.object_bounds),
         }
     }
@@ -497,24 +533,28 @@ fn visible_body_ranges(item: &PreparedTextItem) -> Vec<RichTextRange> {
     })
 }
 
-fn text_for_ranges(text: &str, ranges: &[RichTextRange]) -> String {
+fn text_for_ranges(
+    text: &str,
+    ranges: &[RichTextRange],
+    owner: Option<&PreparedTextOwner>,
+) -> String {
     ranges
         .iter()
-        .filter_map(|range| text.get(range.start..range.end))
+        .map(|range| {
+            let prepared = match owner {
+                Some(owner) => owner
+                    .context
+                    .ranges()
+                    .source_to_prepared(*range)
+                    .expect("admitted owner and item share the glyph source domain"),
+                // Unowned plain renderer primitives have direct document ranges;
+                // no context or prepared authority is synthesized for them.
+                None => *range,
+            };
+            text.get(prepared.start..prepared.end)
+                .expect("prepared glyph range preserves UTF-8 boundaries")
+        })
         .collect()
-}
-
-fn owner_kind_label(kind: PreparedTextOwnerKind) -> String {
-    match kind {
-        PreparedTextOwnerKind::DialogueView {
-            dialogue,
-            entry,
-            mount,
-            role,
-        } => format!("dialogue:{dialogue}:{entry}:{mount}:{role:?}"),
-        PreparedTextOwnerKind::View { mount } => format!("view:{mount}"),
-        PreparedTextOwnerKind::Control => "control".to_owned(),
-    }
 }
 
 fn font_family_label(family: &TextFontFamily) -> String {
@@ -617,4 +657,34 @@ fn stable_hash(bytes: &[u8]) -> String {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
     });
     format!("{hash:016x}")
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    #[test]
+    fn owned_visible_text_uses_prepared_origin_and_preserves_utf8() {
+        let text = "夢after";
+        let owner = PreparedTextOwner::new(
+            arcweft_glyphon::PreparedTextId::from_index(0),
+            arcweft_id::PublicId::try_new("view.projected.text").unwrap(),
+            PreparedTextOwnerKind::View { mount: 7 },
+            PreparedTextContext::document(11, text.len()).unwrap(),
+            arcweft_presentation::hit::HitRect::new(0.0, 0.0, 100.0, 30.0),
+        );
+        owner.context.validate_owner(owner.kind, text).unwrap();
+        assert_eq!(
+            text_for_ranges(text, &[RichTextRange::new(11, 14)], Some(&owner)),
+            "夢"
+        );
+        assert_eq!(
+            text_for_ranges(text, &[RichTextRange::new(14, 19)], Some(&owner)),
+            "after"
+        );
+        assert_eq!(
+            text_for_ranges(text, &[RichTextRange::new(11, 19)], Some(&owner)),
+            text
+        );
+    }
 }

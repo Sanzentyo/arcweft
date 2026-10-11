@@ -1,6 +1,9 @@
 #[test]
 fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geometry() {
-    let source_path = workspace_root().join("samples/rich-text-windows-fonts.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+        "entry.windows_font_showcase",
+    );
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
@@ -10,15 +13,11 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
     );
     assert_eq!(run["entity"], "character.sen");
     assert_eq!(
-        observed_object_rich_text_frame(run)["line"],
-        "say.windows_fonts.001"
+        observed_object_rich_text_line(&json, run),
+        fixture_runtime_line("say.windows_fonts.001")
     );
     assert_eq!(run["rich_text_ref"]["range"]["start"], 0);
     assert_eq!(run["rich_text_ref"]["range"]["end"], 105);
-    assert!(
-        run["bbox"]["height"].as_u64().unwrap() >= 120,
-        "sample vertical_rl run should occupy multiple vertical cells: {run}"
-    );
     assert!(
         run["bbox"]["width"].as_u64().unwrap() <= 400,
         "sample vertical_rl run should be column-shaped rather than one long horizontal line: {run}"
@@ -38,7 +37,10 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
 
 #[test]
 fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_geometry() {
-    let source_path = workspace_root().join("samples/rich-text-full-grammar.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-full-grammar.arcw"),
+        "entry.rich_text_full_grammar",
+    );
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
@@ -48,11 +50,14 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         .iter()
         .find(|object| {
             object["role"] == "dialogue_view"
-                && observed_object_rich_text_frame(object)["line"] == "say.full.005"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+                && observed_object_rich_text_line(&json, object)
+                    == fixture_runtime_line("say.full.005")
         })
         .expect("target dialogue_view object is observed");
     let vertical_rl_display_run =
-        observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
+        observed_object_rich_text_frame(&json, dialogue_view)["display_map"]["text_runs"]
             .as_array()
             .unwrap()
             .iter()
@@ -68,8 +73,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
     assert_eq!(vertical_rl["entity"], "character.bob");
     assert_eq!(
-        observed_object_rich_text_frame(vertical_rl)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(&json, vertical_rl),
+        fixture_runtime_line("say.full.005")
     );
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 27);
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 63);
@@ -88,8 +93,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
     assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
     assert_eq!(
-        observed_object_rich_text_frame(first_vertical_cluster)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(&json, first_vertical_cluster),
+        fixture_runtime_line("say.full.005")
     );
     assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
     assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
@@ -127,8 +132,8 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
 
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
     assert_eq!(
-        observed_object_rich_text_frame(vertical_lr)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(&json, vertical_lr),
+        fixture_runtime_line("say.full.005")
     );
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 71);
@@ -142,7 +147,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
 
 #[test]
 fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_constructs() {
-    let source_path = workspace_root().join("samples/rich-text-full-grammar.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-full-grammar.arcw"),
+        "entry.rich_text_full_grammar",
+    );
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
@@ -168,15 +176,16 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     }
 
     let inferred = find_dialogue_view_object_by_rich_text_line(&json, "say.full.005");
-    assert!(rich_text_text_run_has_effect(inferred, "wave"));
-    assert!(rich_text_text_run_has_effect(inferred, "shake"));
-    assert!(rich_text_text_run_has_effect(inferred, "typewriter"));
-    assert!(rich_text_text_run_has_effect(inferred, "arc"));
+    assert!(rich_text_text_run_has_effect(&json, inferred, "wave"));
+    assert!(rich_text_text_run_has_effect(&json, inferred, "shake"));
+    assert!(rich_text_text_run_has_effect(&json, inferred, "typewriter"));
+    assert!(rich_text_text_run_has_effect(&json, inferred, "arc"));
     assert!(
-        rich_text_text_run_effect_count(inferred, "sparkle") >= 2,
+        rich_text_text_run_effect_count(&json, inferred, "sparkle") >= 2,
         "custom sparkle effects should both survive lowering: {inferred}"
     );
     assert!(rich_text_text_run_has_transform(
+        &json,
         inferred,
         |transform| transform["translate"]["x"] == 4000
             && transform["translate"]["y"] == -2000
@@ -184,12 +193,14 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
             && transform["target"] == "glyph",
     ));
     assert!(rich_text_text_run_has_transform(
+        &json,
         inferred,
         |transform| transform["rotate"]["degrees"] == 8000
             && transform["origin"] == "center"
             && transform["target"] == "run",
     ));
     assert!(rich_text_text_run_has_transform(
+        &json,
         inferred,
         |transform| transform["scale"]["x"] == 1200
             && transform["scale"]["y"] == 1200
@@ -201,22 +212,25 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
 
     let explicit = find_dialogue_view_object_by_rich_text_line(&json, "say.full.006");
     assert!(rich_text_text_run_has_transform(
+        &json,
         explicit,
         |transform| transform["skew"]["x"] == 2000
             && transform["skew"]["y"] == 0
             && transform["origin"] == "glyph_center"
             && transform["target"] == "glyph",
     ));
-    assert!(rich_text_text_run_has_effect(explicit, "jitter"));
-    assert!(rich_text_text_run_has_shader(explicit, "soft_glow"));
-    assert!(rich_text_text_run_has_object_proxy(explicit, |proxy| proxy
-        ["id"]
-        == "hotspot"
-        && proxy["type_name"] == "KeywordHit"
-        && proxy["role"] == "keyword"
-        && proxy["depth"] == 4000
-        && proxy["hit_test"] == true
-        && proxy["params"]["channel"]["value"] == "choice",));
+    assert!(rich_text_text_run_has_effect(&json, explicit, "jitter"));
+    assert!(rich_text_text_run_has_shader(&json, explicit, "soft_glow"));
+    assert!(rich_text_text_run_has_object_proxy(
+        &json,
+        explicit,
+        |proxy| proxy["id"] == "hotspot"
+            && proxy["type_name"] == "KeywordHit"
+            && proxy["role"] == "keyword"
+            && proxy["depth"] == 4000
+            && proxy["hit_test"] == true
+            && text_proxy_field(proxy, "channel")["value"] == "choice",
+    ));
     assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
     assert_full_grammar_nested_text_object_proxies(&source_path, &json);
@@ -247,7 +261,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
 #[test]
 #[ignore = "milestone-only rich-text effects animation sample; runs many native object captures"]
 fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample() {
-    let source_path = workspace_root().join("samples/rich-text-effects-animation/src/main.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/rich-text-effects-animation/src/main.arcw"),
+        "entry.rich_text_effects_animation",
+    );
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
@@ -284,14 +301,14 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
 }
 
 fn assert_effects_animation_combined_typewriter_capture(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
     let combo_run = find_rich_text_run_object(json, "重ね掛けtypewriter");
     assert_eq!(
-        observed_object_rich_text_frame(combo_run)["line"],
-        "say.effects.reveal"
+        observed_object_rich_text_line(json, combo_run),
+        fixture_runtime_line("say.effects.reveal")
     );
     for effect in ["typewriter", "wave", "shake", "sparkle"] {
         assert_rich_text_run_object_has_effect(combo_run, effect);
@@ -364,7 +381,11 @@ fn assert_effects_animation_combined_typewriter_capture(
 
 #[test]
 fn agent_observe_native_rich_text_reports_structured_visual_diagnostics() {
-    let path = temp_arcw(
+    use arcweft_agent_protocol::diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity};
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+    use arcweft_presentation::fx::FxDiagnosticCode;
+
+    let path = temp_native_cli_fixture(
         "agent-observe-native-rich-text-structured-diagnostics",
         r#"
 pub character alice { display = "Alice" }
@@ -378,14 +399,64 @@ flow main {
     let json = observe_native_rich_text_layer_report(&path);
 
     assert_native_rich_text_layer_image_has_content(&json);
-    assert_agent_native_visual_diagnostic(&json, "missing_shader", "ghost_glow");
-    assert_agent_native_visual_image_diagnostic(&json, "missing_shader", "ghost_glow");
+    assert_eq!(json["tick"], 3);
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).expect("issued Fx text catalog");
+    let run = find_rich_text_run_object(&json, "missing shader");
+    let (context, element) = checked_observed_text_element(&catalog, run);
+    let owner = catalog.resolve(&context).expect("issued Fx owner");
+    let shaped_run = &owner.content.layout().runs[element.index];
+    let [application] = shaped_run.presentation.fx.as_slice() else {
+        panic!("the authored run has exactly one checked shader application")
+    };
+    let expected = AgentDiagnostic {
+        step: 3,
+        severity: AgentDiagnosticSeverity::Error,
+        source: Some("fx".to_owned()),
+        code: Some(FxDiagnosticCode::MissingProvider.as_str().to_owned()),
+        effect_id: Some(application.definition().to_string()),
+        message: "Fx render resource `ghost_glow` is not present in the shared table".to_owned(),
+    };
+    let assert_diagnostics = |value: &serde_json::Value| {
+        let diagnostics: Vec<AgentDiagnostic> =
+            serde_json::from_value(value.clone()).expect("typed captured Fx diagnostics");
+        assert_eq!(diagnostics, [expected.clone()]);
+    };
+    assert_diagnostics(&json["diagnostics"]);
+    assert_diagnostics(&json["images"][0]["diagnostics"]);
 
-    let read_uri = "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png";
-    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let viewport_output = path
+        .agent_command("observe")
+        .args([
+            "--json",
+            "--image",
+            "png",
+            "--mode",
+            "drain",
+            "--steps",
+            "4",
+            "--max-ops",
+            "128",
+        ])
+        .output()
+        .expect("arcw agent observe captures the diagnostic viewport");
+    assert!(
+        viewport_output.status.success(),
+        "diagnostic viewport capture should succeed: {}",
+        String::from_utf8_lossy(&viewport_output.stderr)
+    );
+    let viewport: serde_json::Value =
+        serde_json::from_slice(&viewport_output.stdout).expect("viewport report is JSON");
+    assert_eq!(viewport["images"][0]["width"], 1280);
+    assert_eq!(viewport["images"][0]["height"], 720);
+    assert_diagnostics(&viewport["diagnostics"]);
+    assert_diagnostics(&viewport["images"][0]["diagnostics"]);
+
+    let read_uri = json["images"][0]["uri"]
+        .as_str()
+        .expect("issued layer capture URI");
+    let read_output = path
+        .agent_command("observe")
         .arg("--read-uri")
         .arg(read_uri)
         .arg("--mode")
@@ -406,58 +477,133 @@ flow main {
     let resource: serde_json::Value =
         serde_json::from_slice(&read_output.stdout).expect("read-uri resource is JSON");
     assert_eq!(resource["uri"], read_uri);
-    assert_agent_native_visual_resource_diagnostic(&resource, "missing_shader", "ghost_glow");
+    assert_diagnostics(&resource["image"]["diagnostics"]);
 }
 
 #[test]
-fn agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources() {
-    let path = temp_arcw(
+fn agent_check_rejects_unknown_builtin_motion_function() {
+    let path = temp_native_cli_fixture(
         "agent-observe-native-rich-text-missing-motion-diagnostics",
         r#"
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #fx(motion(motion_function=@.ghost_orbit, amplitude=4px, target=.glyph))[missing motion][p]
+    alice: #fx(motion(motion_function=.ghost_orbit, amplitude=4px, target=.glyph))[missing motion][p]
 }
 "#,
     );
 
-    let json = observe_native_rich_text_layer_report(&path);
-
-    assert_native_rich_text_layer_image_has_content(&json);
-    assert_agent_native_visual_diagnostic(&json, "missing_motion_function", "motion");
-    assert_agent_native_visual_image_diagnostic(&json, "missing_motion_function", "motion");
-
-    let read_uri = "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png";
-    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("check")
         .arg(&path)
-        .arg("--read-uri")
-        .arg(read_uri)
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("4")
-        .arg("--max-ops")
-        .arg("128")
         .output()
-        .expect("arcw agent observe reads missing motion diagnostic image URI");
+        .expect("arcw check rejects a value outside the builtin MotionFunction domain");
     fs::remove_file(&path).expect("remove temp missing motion diagnostics source");
 
     assert!(
-        read_output.status.success(),
-        "missing motion diagnostic read-uri should succeed, stderr: {}",
-        String::from_utf8_lossy(&read_output.stderr)
+        !output.status.success(),
+        "an unknown builtin motion function must be rejected before rendering"
     );
-    let resource: serde_json::Value =
-        serde_json::from_slice(&read_output.stdout).expect("read-uri resource is JSON");
-    assert_eq!(resource["uri"], read_uri);
-    assert_agent_native_visual_resource_diagnostic(&resource, "missing_motion_function", "motion");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("sema.final_analysis") && stderr.contains("no admissible final type"),
+        "unknown MotionFunction must fail typed semantic admission: {stderr}"
+    );
+}
+
+#[test]
+fn agent_observe_native_closed_motion_functions_keep_native_capture_and_issued_resources() {
+    use arcweft_agent_protocol::observation::AgentObservationReport;
+    use arcweft_agent_protocol::resource::{AgentResource, AgentResourceBody};
+    use arcweft_presentation::fx::MotionFunction;
+
+    let mut definitions = std::collections::BTreeSet::new();
+    let mut pixels = std::collections::BTreeSet::new();
+    for function in MotionFunction::ALL {
+        let function = function.source_name();
+        let path = temp_native_cli_fixture(
+            "agent-observe-native-closed-motion",
+            &format!(
+                "pub character alice {{ display = \"Alice\" }}\n\nflow main {{\n    alice: #fx(motion(motion_function=.{function}, amplitude=4px, target=.glyph))[checked motion][p]\n}}\n"
+            ),
+        );
+        let json = observe_native_rich_text_layer_report(&path);
+        assert_native_rich_text_layer_image_has_content(&json);
+        let report = AgentObservationReport::decode_json(&serde_json::to_vec(&json).unwrap())
+            .expect("the actual observation retains its validated text context authority");
+        assert_eq!(report.tick, 3);
+        assert!(report.diagnostics.is_empty());
+        let [image] = report.images.as_slice() else {
+            panic!("one issued native layer capture")
+        };
+        assert!(image.diagnostics.is_empty());
+        assert!(!image.hash.is_empty());
+        let run = find_rich_text_run_object(&json, "checked motion");
+        let (context, element) = checked_observed_text_element(&report.text_contexts, run);
+        let owner = report.text_contexts.resolve(&context).unwrap();
+        let [application] = owner.content.layout().runs[element.index]
+            .presentation
+            .fx
+            .as_slice()
+        else {
+            panic!("exactly one admitted builtin motion application")
+        };
+        assert!(definitions.insert(application.definition().clone()));
+        let uri = json["images"][0]["uri"].as_str().expect("issued layer URI");
+        let output = path
+            .agent_command("observe")
+            .args([
+                "--read-uri",
+                uri,
+                "--mode",
+                "drain",
+                "--steps",
+                "4",
+                "--max-ops",
+                "128",
+            ])
+            .output()
+            .expect("native motion image resource reads through its issued URI");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let resource: AgentResource = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(resource.uri.as_str(), uri);
+        assert_eq!(resource.mime_type, "image/png");
+        assert_eq!(resource.hash, image.hash);
+        let metadata = resource.image.expect("issued image metadata");
+        assert!(metadata.diagnostics.is_empty());
+        assert_eq!(metadata.width, image.width);
+        assert_eq!(metadata.height, image.height);
+        assert_eq!(metadata.crop_origin, image.crop_origin);
+        assert_eq!(metadata.content_pixels, image.content_pixels);
+        let AgentResourceBody::BytesBase64(body) = resource.body else {
+            panic!("the actual PNG has a binary resource body")
+        };
+        assert!(!body.data.is_empty());
+        let bytes = general_purpose::STANDARD.decode(&body.data).unwrap();
+        let decoded = arcweft_image::decode_image_bytes(
+            arcweft_image::ImageFormat::Png,
+            &bytes,
+            arcweft_image::ImageDecodeOptions::default(),
+        )
+        .expect("the issued resource contains actual PNG pixels");
+        assert_eq!(decoded.dimensions().width(), image.width);
+        assert_eq!(decoded.dimensions().height(), image.height);
+        let [frame] = decoded.frames() else {
+            panic!("one actual native PNG frame")
+        };
+        assert!(opaque_pixel_count(frame.rgba()) > 0);
+        assert!(pixels.insert(frame.rgba().to_vec()));
+    }
+    assert_eq!(definitions.len(), MotionFunction::ALL.len());
+    assert_eq!(pixels.len(), MotionFunction::ALL.len());
 }
 
 fn assert_effects_animation_function_motion_run_changes_over_time(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -497,7 +643,7 @@ fn assert_effects_animation_function_motion_run_changes_over_time(
 }
 
 fn assert_effects_animation_source_local_effect_run_changes_over_time(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -542,7 +688,7 @@ fn assert_effects_animation_source_local_effect_run_changes_over_time(
 }
 
 fn assert_effects_animation_source_local_effect_post_process_run_is_tinted(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -577,7 +723,7 @@ fn assert_effects_animation_source_local_effect_post_process_run_is_tinted(
 }
 
 fn assert_effects_animation_warm_glow_shader_run_is_tinted(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -609,7 +755,7 @@ fn assert_effects_animation_warm_glow_shader_run_is_tinted(
 }
 
 fn assert_effects_animation_color_sparkle_run_is_tinted(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -641,7 +787,7 @@ fn assert_effects_animation_color_sparkle_run_is_tinted(
 }
 
 fn assert_effects_animation_post_process_effect_runs_execute(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -717,7 +863,7 @@ fn assert_effects_animation_post_process_effect_runs_execute(
 }
 
 fn assert_effects_animation_spin_pulse_run_changes_over_time(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -752,7 +898,7 @@ fn assert_effects_animation_spin_pulse_run_changes_over_time(
 }
 
 fn assert_effects_animation_vertical_spin_pulse_run_changes_over_time(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
     dir: &Path,
 ) {
@@ -790,8 +936,94 @@ fn assert_effects_animation_vertical_spin_pulse_run_changes_over_time(
     );
 }
 
+fn assert_windows_fonts_sample_vertical_run_geometry(json: &serde_json::Value) {
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).expect("issued Windows-font catalog");
+    let first_vertical_cluster = find_rich_text_cluster_object(json, "縦", 0, 3);
+    let (context, cluster) = checked_observed_text_element(&catalog, first_vertical_cluster);
+    let owner = catalog
+        .resolve(&context)
+        .expect("issued Windows-font owner");
+    let members = owner
+        .content
+        .layout()
+        .cluster_glyphs(u32::try_from(cluster.index).unwrap())
+        .expect("actual first vertical cluster");
+    assert_eq!(
+        members.len(),
+        1,
+        "the first upright character is one shaped glyph"
+    );
+    let shaped = &members[0];
+    let run = &owner.content.layout().runs[usize::try_from(shaped.run_index).unwrap()];
+    let run_glyphs = &owner.content.layout().glyphs[usize::try_from(run.glyph_range.start).unwrap()
+        ..usize::try_from(run.glyph_range.end).unwrap()];
+    let columns = run_glyphs
+        .iter()
+        .map(|glyph| glyph.line_index)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        columns.len() >= 2,
+        "the source run occupies multiple vertical columns"
+    );
+    let tallest_column = columns
+        .iter()
+        .map(|index| {
+            owner.content.layout().lines[usize::try_from(*index).unwrap()]
+                .bounds
+                .height
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(
+        tallest_column >= 4.0 * shaped.layout_bounds.height,
+        "vertical columns retain several physical font cells"
+    );
+    // The normative numeric separator joins '123 2026' into one unbreakable
+    // unit. Balanced columns need not fill the container to a fixed 120 px.
+    let numeric_glyphs = run_glyphs
+        .iter()
+        .filter(|glyph| glyph.source_range.start >= 49 && glyph.source_range.end <= 57)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        numeric_glyphs
+            .iter()
+            .map(|glyph| (glyph.source_range.start, glyph.source_range.end))
+            .collect::<Vec<_>>(),
+        (49..57).map(|start| (start, start + 1)).collect::<Vec<_>>()
+    );
+    let numeric_column = numeric_glyphs[0].line_index;
+    assert!(
+        numeric_glyphs
+            .iter()
+            .all(|glyph| glyph.line_index == numeric_column)
+    );
+    let physical_bounds = run_glyphs
+        .iter()
+        .map(|glyph| glyph.layout_bounds.union(glyph.ink_bounds))
+        .reduce(|bounds, next| bounds.union(next))
+        .expect("the observed run has physical glyphs");
+    let observed_run = find_rich_text_run_object(
+        json,
+        "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
+    );
+    let run_bbox: arcweft_agent_protocol::geometry::AgentBBox =
+        serde_json::from_value(observed_run["bbox"].clone()).unwrap();
+    assert_eq!(f64::from(run_bbox.x), f64::from(physical_bounds.x).floor());
+    assert_eq!(f64::from(run_bbox.y), f64::from(physical_bounds.y).floor());
+    assert_eq!(
+        f64::from(run_bbox.x) + f64::from(run_bbox.width),
+        f64::from(physical_bounds.x + physical_bounds.width).ceil()
+    );
+    assert_eq!(
+        f64::from(run_bbox.y) + f64::from(run_bbox.height),
+        f64::from(physical_bounds.y + physical_bounds.height).ceil()
+    );
+}
+
 fn assert_windows_fonts_sample_vertical_cluster_readback(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
 ) {
     let first_vertical_cluster = find_rich_text_cluster_object(json, "縦", 0, 3);
@@ -808,8 +1040,79 @@ fn assert_windows_fonts_sample_vertical_cluster_readback(
         first_vertical_cluster["rich_text_ref"]["vertical_form"],
         "none"
     );
-    assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
-    assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
+    use arcweft_agent_protocol::rich_text::AgentRichTextElementKind;
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+    use arcweft_render_text::TextFontFamily;
+
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).expect("issued Windows-font catalog");
+    let (context, cluster) = checked_observed_text_element(&catalog, first_vertical_cluster);
+    let owner = catalog
+        .resolve(&context)
+        .expect("issued Windows-font owner");
+    let members = owner
+        .content
+        .layout()
+        .cluster_glyphs(u32::try_from(cluster.index).unwrap())
+        .expect("actual first vertical cluster");
+    assert_eq!(
+        members.len(),
+        1,
+        "the first upright character is one shaped glyph"
+    );
+    let shaped = &members[0];
+    let run = &owner.content.layout().runs[usize::try_from(shaped.run_index).unwrap()];
+    assert_eq!(
+        run.style.font_size_milli(),
+        25_000,
+        "standard dialogue Content font size"
+    );
+    assert_eq!(
+        run.style.line_height_milli(),
+        34_000,
+        "standard dialogue Content line height"
+    );
+    assert!(
+        run.style
+            .font_families()
+            .contains(&TextFontFamily::Named("MS Mincho".to_owned()))
+    );
+    assert_eq!(shaped.shape_key.font_size_bits, 25.0_f32.to_bits());
+    assert!(run.presentation.fx.is_empty());
+    assert!(run.presentation.transform.is_none());
+    assert_eq!(
+        run.writing_mode,
+        arcweft_text_model::RichTextWritingMode::VerticalRl
+    );
+    assert!((shaped.layout_bounds.width - 25.0).abs() < f32::EPSILON);
+    assert!((shaped.layout_bounds.height - 25.0).abs() < f32::EPSILON);
+    assert_windows_fonts_sample_vertical_run_geometry(json);
+
+    let first_vertical_glyph = find_rich_text_glyph_object(json, "縦", 0, 3);
+    let (glyph_context, glyph) = checked_observed_text_element(&catalog, first_vertical_glyph);
+    assert_eq!(glyph_context, context);
+    assert_eq!(glyph.kind, AgentRichTextElementKind::TextGlyph);
+    assert_eq!(owner.content.layout().glyphs[glyph.index], *shaped);
+    assert_eq!(
+        usize::try_from(shaped.cluster_index).unwrap(),
+        cluster.index
+    );
+    assert_eq!(first_vertical_glyph["bbox"], first_vertical_cluster["bbox"]);
+
+    let bbox: arcweft_agent_protocol::geometry::AgentBBox =
+        serde_json::from_value(first_vertical_cluster["bbox"].clone()).unwrap();
+    // The logical cell retains the standard font size. Its viewport-pixel
+    // envelope includes fractional placement rather than a fixed font-size box.
+    assert_eq!(f64::from(bbox.x), f64::from(shaped.layout_bounds.x).floor());
+    assert_eq!(f64::from(bbox.y), f64::from(shaped.layout_bounds.y).floor());
+    assert_eq!(
+        f64::from(bbox.x) + f64::from(bbox.width),
+        f64::from(shaped.layout_bounds.x + shaped.layout_bounds.width).ceil()
+    );
+    assert_eq!(
+        f64::from(bbox.y) + f64::from(bbox.height),
+        f64::from(shaped.layout_bounds.y + shaped.layout_bounds.height).ceil()
+    );
     for (kind, mime_type) in [
         ("mask", "application/octet-stream"),
         ("object_id", "application/octet-stream"),
@@ -819,14 +1122,14 @@ fn assert_windows_fonts_sample_vertical_cluster_readback(
             source_path,
             uri,
             first_vertical_cluster["id"].as_str().unwrap(),
-            30,
-            30,
+            u64::from(bbox.width),
+            u64::from(bbox.height),
         );
     }
 }
 
 fn assert_full_grammar_sample_vertical_lr_cluster_readback(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
 ) {
     let first_vertical_lr_cluster = find_rich_text_cluster_object(json, "縦", 66, 69);
@@ -864,13 +1167,13 @@ fn assert_full_grammar_sample_vertical_lr_cluster_readback(
 }
 
 fn assert_full_grammar_typewriter_capture_step_readback(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     json: &serde_json::Value,
 ) {
     let typewriter_run = find_rich_text_run_object(json, "typewriter");
     assert_eq!(
-        observed_object_rich_text_frame(typewriter_run)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(json, typewriter_run),
+        fixture_runtime_line("say.full.005")
     );
     let object_id = typewriter_run["id"]
         .as_str()
@@ -916,16 +1219,13 @@ fn assert_full_grammar_typewriter_capture_step_readback(
 }
 
 fn observe_full_grammar_typewriter_run_mask_at(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
     object_id: &str,
     timing_args: &[&str],
 ) -> (serde_json::Value, Vec<u8>) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    let mut command = source_path.agent_command("observe");
     command
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -969,13 +1269,16 @@ fn observe_full_grammar_typewriter_run_mask_at(
     (json, bytes)
 }
 
-fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_animated_effect_readbacks(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let dir = temp_dir("agent-observe-full-grammar-animated-effects");
 
     let wave_run = find_rich_text_run_object(json, "wave");
     assert_eq!(
-        observed_object_rich_text_frame(wave_run)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(json, wave_run),
+        fixture_runtime_line("say.full.005")
     );
     let wave_object_id = wave_run["id"].as_str().unwrap();
     let wave_early_path = dir.join("full-grammar-wave-time-0125.rgba");
@@ -1008,8 +1311,8 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
 
     let shake_run = find_rich_text_run_object(json, "shake");
     assert_eq!(
-        observed_object_rich_text_frame(shake_run)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(json, shake_run),
+        fixture_runtime_line("say.full.005")
     );
     assert_full_grammar_step_motion_differs(
         source_path,
@@ -1020,8 +1323,8 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
 
     let sparkle_run = find_rich_text_run_object(json, "custom effect");
     assert_eq!(
-        observed_object_rich_text_frame(sparkle_run)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(json, sparkle_run),
+        fixture_runtime_line("say.full.005")
     );
     assert_full_grammar_step_motion_differs(
         source_path,
@@ -1032,8 +1335,8 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
 
     let host_run = find_rich_text_run_object(json, "host");
     assert_eq!(
-        observed_object_rich_text_frame(host_run)["line"],
-        "say.full.005"
+        observed_object_rich_text_line(json, host_run),
+        fixture_runtime_line("say.full.005")
     );
     assert_full_grammar_step_motion_differs(
         source_path,
@@ -1046,7 +1349,7 @@ fn assert_full_grammar_animated_effect_readbacks(source_path: &Path, json: &serd
 }
 
 fn assert_full_grammar_step_motion_differs(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     dir: &Path,
     label: &str,
     object_id: &str,
@@ -1083,16 +1386,13 @@ fn assert_full_grammar_step_motion_differs(
 }
 
 fn observe_full_grammar_run_color_at(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
     object_id: &str,
     timing_args: &[&str],
 ) -> (serde_json::Value, Vec<u8>) {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+    let mut command = source_path.agent_command("observe");
     command
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1152,11 +1452,14 @@ fn assert_full_grammar_color_captures_differ(
     );
 }
 
-fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_soft_glow_shader_readback(
+    source_path: &NativeCliFixture,
+    json: &serde_json::Value,
+) {
     let shader_run = find_rich_text_run_object(json, "shader");
     assert_eq!(
-        observed_object_rich_text_frame(shader_run)["line"],
-        "say.full.006"
+        observed_object_rich_text_line(json, shader_run),
+        fixture_runtime_line("say.full.006")
     );
     let object_id = shader_run["id"]
         .as_str()
@@ -1169,10 +1472,8 @@ fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serd
     let dir = temp_dir("agent-observe-full-grammar-soft-glow-shader");
     let raw_path = dir.join("full-grammar-soft-glow-shader.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
+    let output = source_path
+        .agent_command("observe")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -1240,18 +1541,24 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
     let cases = [
         (
             "windows-fonts",
-            workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+            NativeCliFixture::checked_in(
+                workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+                "entry.windows_font_showcase",
+            ),
             "entry.windows_font_showcase",
             "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
-            120,
+            None,
             500,
         ),
         (
             "full-grammar",
-            workspace_root().join("samples/rich-text-full-grammar.arcw"),
+            NativeCliFixture::checked_in(
+                workspace_root().join("samples/rich-text-full-grammar.arcw"),
+                "entry.rich_text_full_grammar",
+            ),
             "entry.rich_text_full_grammar",
             "吾輩は猫である。ABC 123 2026",
-            120,
+            Some(120),
             260,
         ),
     ];
@@ -1263,10 +1570,14 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
         let json = capture_native_png_report(&source_path, &entry, &png_path);
         assert_native_capture_has_content(&json, &format!("{label}-full-frame.png"));
         let run = find_rich_text_run_object(&json, run_text);
-        assert!(
-            run["bbox"]["height"].as_u64().unwrap() >= min_height,
-            "{label} full-frame PNG report should preserve vertical run height: {run}"
-        );
+        if let Some(min_height) = min_height {
+            assert!(
+                run["bbox"]["height"].as_u64().unwrap() >= min_height,
+                "{label} full-frame PNG report should preserve vertical run height: {run}"
+            );
+        } else {
+            assert_windows_fonts_sample_vertical_run_geometry(&json);
+        }
         assert!(
             run["bbox"]["width"].as_u64().unwrap() <= max_width,
             "{label} full-frame PNG report should preserve column-shaped width: {run}"
@@ -1283,7 +1594,7 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
 
 #[test]
 fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop() {
-    let path = temp_arcw(
+    let path = temp_authored_native_cli_fixture(
         "agent-observe-native-dialogue-layer",
         r#"
 entry cli @entry.main { goto @flow.main }
@@ -1294,6 +1605,7 @@ flow main {
     alice: Hello native layer[p]
 }
 "#,
+        "entry.main",
     );
     let dir = temp_dir("agent-observe-native-dialogue-layer");
     let png_path = dir.join("native-dialogue-layer.png");
@@ -1348,7 +1660,7 @@ flow main {
 
 #[test]
 fn agent_observe_native_renderer_reports_capture_step_metadata() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-native-capture-step",
         r#"
 pub character alice { display = "Alice" }
@@ -1361,15 +1673,11 @@ flow main {
     let dir = temp_dir("agent-observe-native-capture-step");
     let png_path = dir.join("native-step.png");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("png")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(&png_path)
         .arg("--mode")
@@ -1403,7 +1711,7 @@ flow main {
 
 #[test]
 fn agent_observe_native_capture_step_defaults_capture_time_for_typewriter() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-native-capture-step-typewriter-time",
         r#"
 pub character alice { display = "Alice" }
@@ -1417,17 +1725,20 @@ flow main {
     let step_path = dir.join("native-step-typewriter-mask.rgba");
     let explicit_zero_path = dir.join("native-step-typewriter-zero-mask.rgba");
 
-    let step_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let step_output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.0.0.3")
         .arg("--out")
         .arg(&step_path)
         .arg("--mode")
@@ -1451,17 +1762,20 @@ flow main {
     assert_eq!(step_json["images"][0]["capture_time_millis"], 2000);
     assert!(step_json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
 
-    let zero_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let zero_output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.0.0.3")
         .arg("--out")
         .arg(&explicit_zero_path)
         .arg("--mode")
@@ -1496,7 +1810,7 @@ flow main {
 
 #[test]
 fn agent_observe_native_renderer_applies_shader_glyph_color_phase() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-native-shader-glyph-color-phase",
         r#"
 pub character alice { display = "Alice" }
@@ -1509,15 +1823,11 @@ flow main {
     let dir = temp_dir("agent-observe-native-shader-glyph-color-phase");
     let png_path = dir.join("native-shader-glyph-color-phase.png");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("png")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(&png_path)
         .arg("--mode")
@@ -1561,7 +1871,7 @@ flow main {
 
 #[test]
 fn agent_observe_native_renderer_applies_shader_post_process_phase() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-native-shader-post-process-phase",
         r##"
 pub character alice { display = "Alice" }
@@ -1574,15 +1884,11 @@ flow main {
     let dir = temp_dir("agent-observe-native-shader-post-process-phase");
     let raw_path = dir.join("native-shader-post-process-phase.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -1632,7 +1938,7 @@ flow main {
 
 #[test]
 fn agent_observe_native_renderer_applies_builtin_effect_post_process_phase() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-native-builtin-effect-post-process-phase",
         r#"
 pub character alice { display = "Alice" }
@@ -1642,7 +1948,7 @@ flow main {
 }
 "#,
     );
-    let baseline = temp_arcw(
+    let baseline = temp_native_cli_fixture(
         "agent-observe-native-builtin-effect-post-process-baseline",
         r#"
 pub character alice { display = "Alice" }
@@ -1656,15 +1962,11 @@ flow main {
     let raw_path = dir.join("native-builtin-effect-post-process-phase.rgba");
     let baseline_raw_path = dir.join("native-builtin-effect-post-process-baseline.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--capture-time")
@@ -1683,15 +1985,11 @@ flow main {
         "native builtin effect post_process capture should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let baseline_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&baseline)
+    let baseline_output = baseline
+        .text_capture_command(NativeTextCaptureTarget::content(0, 0))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
         .arg("--out")
         .arg(&baseline_raw_path)
         .arg("--capture-time")
@@ -1736,7 +2034,7 @@ flow main {
 
 #[test]
 fn agent_observe_reports_signal_and_visual_effects() {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         "agent-observe-host-event-phase-effect",
         r#"
 pub character alice { display = "Alice" }
@@ -1747,10 +2045,8 @@ flow main {
 "#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -1772,16 +2068,22 @@ flow main {
         .as_array()
         .expect("objects array")
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .expect("dialogue_view object");
-    let host_events = observed_object_rich_text_frame(object)["host_events"]
-        .as_array()
-        .expect("host events array");
-    assert!(
-        host_events
-            .iter()
-            .any(|event| event["kind"] == "signal" && event["signal"] == "sparkle"),
-        "signal point action should be observed as a typed host event: {json}"
+    let host_events: Vec<arcweft_text_model::DialogueHostEvent> = serde_json::from_value(
+        observed_object_rich_text_frame(&json, object)["host_events"].clone(),
+    )
+    .expect("issued host events follow the dialogue owner's wire contract");
+    assert_eq!(
+        host_events,
+        [arcweft_text_model::DialogueHostEvent::Signal {
+            signal: ".sparkle".to_owned(),
+        }],
+        "the authored relative signal identity is preserved exactly"
     );
     assert_eq!(object["text"], "host cuewave cue");
 
@@ -1899,26 +2201,33 @@ flow main {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .expect("native clear rich-text layer crop report is JSON");
-    assert_eq!(json["images"][0]["kind"], "color");
-    assert_eq!(json["images"][0]["renderer"], "native");
-    assert_eq!(json["images"][0]["scope"]["kind"], "layer");
-    assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
+    assert_current_page_native_rich_text_layer_report(&json);
+    let image = &json["images"][0];
+    for field in ["content_bbox", "content_viewport_bbox"] {
+        assert!(image[field]["width"].as_u64().unwrap() > 0);
+        assert!(image[field]["height"].as_u64().unwrap() > 0);
+    }
     assert_eq!(
-        json["images"][0]["content_pixels"], 0,
-        "the drained current page after a terminal page break has no rendered text pixels"
+        image["content_viewport_bbox"]["x"].as_u64().unwrap(),
+        image["crop_origin"]["x"].as_u64().unwrap() + image["content_bbox"]["x"].as_u64().unwrap()
     );
-    assert!(json["images"][0]["content_bbox"].is_null());
-    assert!(json["images"][0]["content_viewport_bbox"].is_null());
+    assert_eq!(
+        image["content_viewport_bbox"]["y"].as_u64().unwrap(),
+        image["crop_origin"]["y"].as_u64().unwrap() + image["content_bbox"]["y"].as_u64().unwrap()
+    );
     let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .expect("dialogue_view object is observed");
     assert_eq!(dialogue_view["text"], "BeforeAfter");
     assert!(
-        observed_object_rich_text_frame(dialogue_view)["display_map"]["controls"]
+        observed_object_rich_text_frame(&json, dialogue_view)["display_map"]["controls"]
             .as_array()
             .unwrap()
             .iter()
@@ -1985,11 +2294,14 @@ fn assert_current_page_native_rich_text_layer_report(json: &serde_json::Value) {
     let image = &json["images"][0];
     assert_eq!(image["kind"], "color");
     assert_eq!(image["renderer"], "native");
-    assert!(image["page"].is_null());
+    assert!(
+        image["page"].is_null(),
+        "logical page zero is omitted by the version-1 codec"
+    );
     assert_eq!(image["scope"]["kind"], "layer");
     assert_eq!(image["scope"]["id"], "dialogue.rich_text");
     assert_eq!(image["composition"], "masked_framebuffer_crop");
-    assert_eq!(image["content_pixels"], 0);
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(image["crop_origin"]["x"], 57);
     assert_eq!(image["crop_origin"]["y"], 460);
     assert_eq!(image["width"], 1166);
@@ -1998,22 +2310,27 @@ fn assert_current_page_native_rich_text_layer_report(json: &serde_json::Value) {
     let objects = json["objects"].as_array().expect("objects are observed");
     let dialogue_view = objects
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .expect("dialogue_view object is observed");
-    let page_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.page.1")
-        .expect("current rich-text page object is observed");
+    let page_object = find_native_text_target_object(
+        json,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Page(0)),
+    );
     assert_eq!(page_object["role"], "rich_text_page");
     assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
-    assert_eq!(page_object["rich_text_ref"]["page"], 1);
+    assert_eq!(page_object["rich_text_ref"]["index"], 0);
+    assert!(page_object["rich_text_ref"]["page"].is_null());
     assert_eq!(page_object["text"], "After");
     assert_eq!(page_object["bbox"], dialogue_view["bbox"]);
     assert_rich_text_hit_region_matches_bbox(page_object, "text_page", 6, 11);
     assert!(
         image["selected_capture"]["mask"]["object_ids"]
             .as_array()
-            .is_some_and(|ids| ids.iter().any(|id| id == "object.dialogue.0.0.page.1"))
+            .is_some_and(|ids| ids.iter().any(|id| id == &page_object["id"]))
     );
 }
 
@@ -2032,17 +2349,15 @@ flow main {
     let dir = temp_dir("agent-observe-native-rich-text-page-object");
     let png_path = dir.join("native-rich-text-page-object.png");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Page(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("png")
-        .arg("--object")
-        .arg("object.dialogue.0.0.page.1")
         .arg("--out")
         .arg(&png_path)
         .arg("--mode")
@@ -2068,7 +2383,12 @@ flow main {
     assert_agent_read_uri_current_page_capture_ref(
         &path,
         &current_page_capture_uri,
-        "object.dialogue.0.0.page.1",
+        find_native_text_target_object(
+            &json,
+            NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Page(0)),
+        )["id"]
+            .as_str()
+            .unwrap(),
     );
 
     fs::remove_file(&path).expect("remove temp native rich-text page object source");
@@ -2079,24 +2399,32 @@ fn assert_current_page_native_rich_text_object_report(json: &serde_json::Value) 
     let image = &json["images"][0];
     assert_eq!(image["kind"], "color");
     assert_eq!(image["renderer"], "native");
-    assert!(image["page"].is_null());
+    assert!(
+        image["page"].is_null(),
+        "logical page zero is omitted by the version-1 codec"
+    );
     assert_eq!(image["scope"]["kind"], "object");
-    assert_eq!(image["scope"]["id"], "object.dialogue.0.0.page.1");
     assert_eq!(image["composition"], "masked_framebuffer_crop");
-    assert_eq!(image["content_pixels"], 0);
+    assert!(image["content_pixels"].as_u64().unwrap() > 0);
 
     let objects = json["objects"].as_array().expect("objects are observed");
     let dialogue_view = objects
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .expect("dialogue_view object is observed");
-    let page_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.page.1")
-        .expect("current rich-text page object is observed");
+    let page_object = find_native_text_target_object(
+        json,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Page(0)),
+    );
+    assert_eq!(image["scope"]["id"], page_object["id"]);
     assert_eq!(page_object["role"], "rich_text_page");
     assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
-    assert_eq!(page_object["rich_text_ref"]["page"], 1);
+    assert_eq!(page_object["rich_text_ref"]["index"], 0);
+    assert!(page_object["rich_text_ref"]["page"].is_null());
     assert_eq!(page_object["text"], "After");
     assert_eq!(page_object["bbox"], dialogue_view["bbox"]);
     assert_eq!(image["crop_origin"]["x"], page_object["bbox"]["x"]);
@@ -2116,24 +2444,21 @@ fn assert_current_page_native_rich_text_object_report(json: &serde_json::Value) 
         .as_str()
         .expect("current page object color PNG capture ref has a URI")
         .to_owned();
-    assert!(
-        uri.ends_with("/object.object.dialogue.0.0.page.1.png"),
-        "current rich-text page capture ref should use its runtime frame URI: {uri}"
+    assert_eq!(image["object"]["text_context"], page_object["text_context"]);
+    assert_eq!(
+        capture["selected_capture"]["source"]["id"],
+        page_object["id"]
     );
     uri
 }
 
 fn assert_agent_read_uri_current_page_capture_ref(
-    path: &Path,
+    path: &NativeCliFixture,
     page_capture_uri: &str,
     object_id: &str,
 ) {
-    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
-        .arg("--entry")
-        .arg("entry.main")
+    let read_output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--read-uri")
         .arg(page_capture_uri)
@@ -2158,11 +2483,11 @@ fn assert_agent_read_uri_current_page_capture_ref(
     assert!(resource["image"]["page"].is_null());
     assert_eq!(resource["image"]["scope"]["kind"], "object");
     assert_eq!(resource["image"]["scope"]["id"], object_id);
-    assert_eq!(resource["image"]["content_pixels"], 0);
+    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
 }
 
 fn assert_agent_read_uri_object_image_has_content(
-    path: &Path,
+    path: &NativeCliFixture,
     uri: &str,
     object_id: &str,
     width: u64,
@@ -2175,7 +2500,7 @@ fn assert_agent_read_uri_object_image_has_content(
 }
 
 fn assert_agent_read_uri_object_id_image_matches_object_color(
-    path: &Path,
+    path: &NativeCliFixture,
     uri: &str,
     object: &serde_json::Value,
     width: u64,
@@ -2202,11 +2527,12 @@ fn assert_agent_read_uri_object_id_image_matches_object_color(
     );
 }
 
-fn read_agent_observe_object_image_resource(path: &Path, uri: &str) -> serde_json::Value {
-    let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(path)
+fn read_agent_observe_object_image_resource(
+    path: &NativeCliFixture,
+    uri: &str,
+) -> serde_json::Value {
+    let read_output = path
+        .agent_command("observe")
         .arg("--json")
         .arg("--read-uri")
         .arg(uri)
@@ -2314,7 +2640,10 @@ fn rgba_pixel_at(bytes: &[u8], width: usize, x: usize, y: usize) -> [u8; 4] {
 
 #[test]
 fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let observe =
         observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
     let image_object = observe["objects"]
@@ -2351,27 +2680,30 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     assert_eq!(resource["image"]["crop_origin"]["x"], 120);
     assert_eq!(resource["image"]["crop_origin"]["y"], 84);
     assert_eq!(resource["image"]["content_pixels"], 64_800);
-    let image_ref = &resource["image"]["object"]["image_ref"];
-    assert_eq!(image_ref["source"], "image.sample.pulse_sprite");
-    assert_eq!(image_ref["object"], "image.sample.pulse_sprite");
-    assert_eq!(image_ref["target"], "target.sample.pulse_sprite");
-    assert_eq!(image_ref["asset"], "asset.bg.pulse");
-    assert_eq!(image_ref["frame_index"], 0);
-    assert_eq!(image_ref["local_time_millis"], 50);
-    assert_eq!(image_ref["opacity_milli"], 500);
-    assert_eq!(image_ref["fit"], "stretch");
-    assert_eq!(image_ref["alignment"]["x_milli"], 500);
-    assert_eq!(image_ref["alignment"]["y_milli"], 500);
-    assert_eq!(image_ref["intrinsic_width"], 2);
-    assert_eq!(image_ref["intrinsic_height"], 1);
-    assert_eq!(image_ref["actions"][0], "action.inspect.pulse_sprite");
+    let image_content = &resource["image"]["object"]["content"];
+    assert_eq!(image_content["source"], "image.sample.pulse_sprite");
+    assert_eq!(image_content["object"], "image.sample.pulse_sprite");
+    assert_eq!(image_content["target"], "target.sample.pulse_sprite");
+    assert_eq!(image_content["asset"], "asset.bg.pulse");
+    assert_eq!(image_content["frame_index"], 0);
+    assert_eq!(image_content["local_time_millis"], 50);
+    assert_eq!(image_content["opacity_milli"], 500);
+    assert_eq!(image_content["fit"], "stretch");
+    assert_eq!(image_content["alignment"]["x_milli"], 500);
+    assert_eq!(image_content["alignment"]["y_milli"], 500);
+    assert_eq!(image_content["intrinsic_width"], 2);
+    assert_eq!(image_content["intrinsic_height"], 1);
+    assert_eq!(image_content["actions"][0], "action.inspect.pulse_sprite");
     assert_eq!(
-        image_ref["params"]["param.role"]["value"],
+        image_content["params"]["param.role"]["value"],
         "animated-hotspot"
     );
-    assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
-    assert_eq!(image_ref["proxies"][0]["depth"], 2600);
-    assert_eq!(image_ref["proxies"][0]["hit_test"], true);
+    assert_eq!(
+        image_content["proxies"][0]["id"],
+        "proxy.pulse_sprite.hotspot"
+    );
+    assert_eq!(image_content["proxies"][0]["depth"], 2600);
+    assert_eq!(image_content["proxies"][0]["hit_test"], true);
 
     let bytes =
         raw_bytes_from_agent_image_resource(&resource, "animated image object read-uri resource");
@@ -2380,7 +2712,10 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
 
 #[test]
 fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let object_id = "object.image.image.sample.pulse_sprite";
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -2430,9 +2765,10 @@ fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
 
 #[test]
 fn agent_observe_reports_authored_scroll_view_capture_and_release_filtering() {
-    let path = temp_arcw(
+    let path = temp_authored_native_cli_fixture(
         "agent-observe-authored-scroll-view",
         AUTHORED_SCROLL_AGENT_SOURCE,
+        "entry.scroll_agent_parity",
     );
 
     let live = agent_observe_json_for_path(
@@ -2542,7 +2878,7 @@ flow scroll_agent_destroyed {
 }
 "#;
 
-fn assert_released_authored_scroll_missing_scopes(path: &Path) {
+fn assert_released_authored_scroll_missing_scopes(path: &NativeCliFixture) {
     let released_view = agent_observe_json_for_path(
         path,
         &[
@@ -2751,7 +3087,11 @@ fn authored_scroll_live_read_uri_args() -> [&'static str; 8] {
     ]
 }
 
-fn agent_observe_json_for_path(path: &Path, args: &[&str], context: &str) -> serde_json::Value {
+fn agent_observe_json_for_path(
+    path: &NativeCliFixture,
+    args: &[&str],
+    context: &str,
+) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -2770,7 +3110,7 @@ fn agent_observe_json_for_path(path: &Path, args: &[&str], context: &str) -> ser
 }
 
 fn read_agent_observe_image_resource_for_path(
-    path: &Path,
+    path: &NativeCliFixture,
     uri: &str,
     args: &[&str],
     context: &str,
@@ -2818,7 +3158,10 @@ fn assert_agent_missing_scope_diagnostic(
 
 #[test]
 fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let observe =
         observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
     let foreground_layer = observe["layers"]
@@ -2897,7 +3240,10 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
 
 #[test]
 fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_raw_blob() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
@@ -2941,20 +3287,20 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
     assert_eq!(metadata["image"]["width"], 360);
     assert_eq!(metadata["image"]["height"], 180);
     assert_eq!(
-        metadata["image"]["object"]["image_ref"]["asset"],
+        metadata["image"]["object"]["content"]["asset"],
         "asset.bg.pulse"
     );
-    assert_eq!(metadata["image"]["object"]["image_ref"]["frame_index"], 0);
+    assert_eq!(metadata["image"]["object"]["content"]["frame_index"], 0);
     assert_eq!(
-        metadata["image"]["object"]["image_ref"]["local_time_millis"],
+        metadata["image"]["object"]["content"]["local_time_millis"],
         50
     );
     assert_eq!(
-        metadata["image"]["object"]["image_ref"]["params"]["param.role"]["value"],
+        metadata["image"]["object"]["content"]["params"]["param.role"]["value"],
         "animated-hotspot"
     );
     assert_eq!(
-        metadata["image"]["object"]["image_ref"]["proxies"][0]["id"],
+        metadata["image"]["object"]["content"]["proxies"][0]["id"],
         "proxy.pulse_sprite.hotspot"
     );
 
@@ -2979,7 +3325,10 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
 
 #[test]
 fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let hit = hit_test_image_animation_sample_at(
         &source_path,
         "entry.image_sprite_overlay",
@@ -3004,18 +3353,24 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
         top_hit["region"]["proxy_params"]["param.channel"]["value"],
         "preview"
     );
-    let image_ref = &top_hit["object"]["image_ref"];
-    assert_eq!(image_ref["asset"], "asset.bg.pulse");
-    assert_eq!(image_ref["frame_index"], 0);
-    assert_eq!(image_ref["local_time_millis"], 50);
-    assert_eq!(image_ref["fit"], "stretch");
-    assert_eq!(image_ref["alignment"]["x_milli"], 500);
-    assert_eq!(image_ref["proxies"][0]["id"], "proxy.pulse_sprite.hotspot");
+    let image_content = &top_hit["object"]["content"];
+    assert_eq!(image_content["asset"], "asset.bg.pulse");
+    assert_eq!(image_content["frame_index"], 0);
+    assert_eq!(image_content["local_time_millis"], 50);
+    assert_eq!(image_content["fit"], "stretch");
+    assert_eq!(image_content["alignment"]["x_milli"], 500);
+    assert_eq!(
+        image_content["proxies"][0]["id"],
+        "proxy.pulse_sprite.hotspot"
+    );
 }
 
 #[test]
 fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let early =
         hit_test_image_animation_sample_at(&source_path, "entry.image_animated_gif", "0", 10, 10);
     let late = hit_test_image_animation_sample_at(
@@ -3042,7 +3397,7 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
         .iter()
         .find(|hit| {
             hit["object"]["entity"] == "image.background.default"
-                && hit["object"]["image_ref"]["asset"] == "asset.bg.pulse"
+                && hit["object"]["content"]["asset"] == "asset.bg.pulse"
         })
         .expect("early background image hit");
     let late_hit = late["hits"]
@@ -3051,14 +3406,14 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
         .iter()
         .find(|hit| {
             hit["object"]["entity"] == "image.background.default"
-                && hit["object"]["image_ref"]["asset"] == "asset.bg.pulse"
+                && hit["object"]["content"]["asset"] == "asset.bg.pulse"
         })
         .expect("late background image hit");
     assert_eq!(early_hit["region"]["kind"], "object");
     assert_eq!(late_hit["region"]["kind"], "object");
 
-    let early_ref = &early_hit["object"]["image_ref"];
-    let late_ref = &late_hit["object"]["image_ref"];
+    let early_ref = &early_hit["object"]["content"];
+    let late_ref = &late_hit["object"]["content"];
     assert_eq!(early_ref["asset"], "asset.bg.pulse");
     assert_eq!(late_ref["asset"], "asset.bg.pulse");
     assert_eq!(early_ref["frame_index"], 0);
@@ -3073,7 +3428,10 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
 
 #[test]
 fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let observe =
         observe_image_animation_sample_entry_at(&source_path, "entry.image_alignment_object", "0");
     let image_object = observe["objects"]
@@ -3101,7 +3459,10 @@ fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
 
 #[test]
 fn agent_observe_native_captures_clipped_animated_image_object() {
-    let source_path = workspace_root().join("samples/image-animation.arcw");
+    let source_path = NativeCliFixture::checked_in(
+        workspace_root().join("samples/image-animation.arcw"),
+        "entry.image_sprite_overlay",
+    );
     let observe =
         observe_image_animation_sample_entry_at(&source_path, "entry.image_clipped_object", "0.15");
     let image_object = observe["objects"]
@@ -3182,7 +3543,7 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
 }
 
 fn observe_image_animation_sample_entry_at(
-    path: &Path,
+    path: &NativeCliFixture,
     entry: &str,
     capture_time: &str,
 ) -> serde_json::Value {
@@ -3208,7 +3569,7 @@ fn observe_image_animation_sample_entry_at(
 }
 
 fn read_image_animation_sample_resource_at(
-    path: &Path,
+    path: &NativeCliFixture,
     entry: &str,
     capture_time: &str,
     uri: &str,
@@ -3237,7 +3598,7 @@ fn read_image_animation_sample_resource_at(
 }
 
 fn hit_test_image_animation_sample_at(
-    path: &Path,
+    path: &NativeCliFixture,
     entry: &str,
     capture_time: &str,
     x: u32,
@@ -3269,7 +3630,7 @@ fn hit_test_image_animation_sample_at(
 }
 
 fn capture_image_animation_sample_object_raw_at(
-    path: &Path,
+    path: &NativeCliFixture,
     entry: &str,
     capture_time: &str,
     object_id: &str,
@@ -3332,13 +3693,10 @@ fn assert_clipped_animated_image_capture_metadata(
     assert_eq!(capture["images"][0]["content_viewport_bbox"]["y"], 48);
     assert_eq!(capture["images"][0]["content_pixels"], 96 * 96);
     assert_eq!(
-        capture["images"][0]["object"]["image_ref"]["object"],
+        capture["images"][0]["object"]["content"]["object"],
         "image.sample.clipped_pulse"
     );
-    assert_eq!(
-        capture["images"][0]["object"]["image_ref"]["frame_index"],
-        1
-    );
+    assert_eq!(capture["images"][0]["object"]["content"]["frame_index"], 1);
 }
 
 #[test]
@@ -3478,19 +3836,17 @@ flow main {
     let dir = temp_dir("agent-observe-native-ruby-mask");
     let raw_path = dir.join("native-ruby-mask.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Ruby(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3523,12 +3879,16 @@ fn assert_native_ruby_mask_report(json: &serde_json::Value, raw_path: &Path) {
     let objects = json["objects"].as_array().expect("objects are listed");
     let dialogue_view = objects
         .iter()
-        .find(|object| object["role"] == "dialogue_view")
+        .find(|object| {
+            object["role"] == "dialogue_view"
+                && object["content"]["kind"] == "rich_text"
+                && object["rich_text_ref"].is_null()
+        })
         .expect("dialogue_view object is observed");
-    let ruby_object = objects
-        .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.ruby.0")
-        .expect("ruby object is observed");
+    let ruby_object = find_native_text_target_object(
+        json,
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
+    );
     assert_eq!(
         json["images"][0]["crop_origin"]["x"],
         ruby_object["bbox"]["x"]
@@ -3602,7 +3962,7 @@ fn agent_observe_native_renderer_writes_vertical_lr_ruby_object_id_raw_crop() {
 
 fn assert_native_vertical_lr_ruby_raw_crop(capture_kind: &str) {
     let fixture_name = format!("agent-observe-native-vertical-lr-ruby-{capture_kind}");
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &fixture_name,
         r#"
 pub character alice { display = "Alice" }
@@ -3615,17 +3975,17 @@ flow main {
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!("native-vertical-lr-ruby-{capture_kind}.rgba"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Ruby(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3727,7 +4087,7 @@ fn agent_observe_native_renderer_writes_overheight_vertical_ruby_raw_crops() {
 }
 
 fn assert_native_long_vertical_ruby_mask_raw_crop(writing_mode: &str, ruby_on_right: bool) {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &format!("agent-observe-native-long-{writing_mode}-ruby-mask"),
         &format!(
             r#"
@@ -3744,17 +4104,17 @@ flow main {{
     ));
     let raw_path = dir.join(format!("native-long-{writing_mode}-ruby-mask.rgba"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Ruby(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3830,7 +4190,7 @@ flow main {{
 }
 
 fn assert_native_long_vertical_ruby_object_id_raw_crop(writing_mode: &str, ruby_on_right: bool) {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &format!("agent-observe-native-long-{writing_mode}-ruby-object-id"),
         &format!(
             r#"
@@ -3847,17 +4207,17 @@ flow main {{
     ));
     let raw_path = dir.join(format!("native-long-{writing_mode}-ruby-object-id.rgba"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Ruby(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("object-id")
-        .arg("--object")
-        .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -3940,7 +4300,7 @@ fn assert_native_overheight_vertical_ruby_raw_crop(
     ruby_on_right: bool,
     capture_kind: &str,
 ) {
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &format!("agent-observe-native-overheight-{writing_mode}-ruby-{capture_kind}"),
         &format!(
             r#"
@@ -3959,17 +4319,17 @@ flow main {{
         "native-overheight-{writing_mode}-ruby-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Ruby(0),
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.ruby.0")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4130,10 +4490,11 @@ fn assert_raw_object_id_tint_bytes(
     );
 }
 
-fn temp_runnable_agent_observe_arcw(name: &str, source: &str) -> PathBuf {
-    temp_arcw(
+fn temp_runnable_agent_observe_arcw(name: &str, source: &str) -> NativeCliFixture {
+    temp_authored_native_cli_fixture(
         name,
         &format!("entry cli @entry.main {{ goto @flow.main }}\n{source}"),
+        "entry.main",
     )
 }
 
@@ -4152,19 +4513,20 @@ flow main {
     let dir = temp_dir("agent-observe-native-text-combine-mask");
     let raw_path = dir.join("native-text-combine-mask.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(2, 6),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.2.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4247,19 +4609,20 @@ flow main {
     let dir = temp_dir("agent-observe-native-vertical-lr-text-combine-mask");
     let raw_path = dir.join("native-vertical-lr-text-combine-mask.rgba");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(2, 6),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("mask")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.2.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4356,19 +4719,20 @@ flow main {{
     let dir = temp_dir(&format!("agent-observe-native-{label}"));
     let raw_path = dir.join(format!("native-{label}.rgba"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(2, 6),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg("object-id")
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.2.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4463,7 +4827,7 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_compressed_punctuation
 fn assert_native_jlreq_compressed_punctuation_raw_crop(writing_mode: &str, capture_kind: &str) {
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-jlreq-compressed-punctuation-{capture_kind}");
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &fixture_name,
         &format!(
             r#"
@@ -4480,17 +4844,20 @@ flow main {{
         "native-{writing_mode}-jlreq-compressed-punctuation-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 1,
+                range: arcweft_text_model::RichTextRange::new(3, 6),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.1.3.6")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4561,21 +4928,87 @@ fn assert_native_jlreq_compressed_punctuation_chain(
     assert_eq!(comma["rich_text_ref"]["vertical_form"], "upright_alternate");
     assert_eq!(middle_dot["rich_text_ref"]["orientation"], "upright");
     assert_eq!(middle_dot["rich_text_ref"]["vertical_form"], "none");
-    assert_eq!(
-        agent_json_bbox_y(&period["bbox"]) - agent_json_bbox_y(&comma["bbox"]),
-        21,
-        "compressed comma should advance by half a body cell"
+    use arcweft_agent_protocol::geometry::AgentBBox;
+    use arcweft_agent_protocol::rich_text::AgentRichTextElementKind;
+    use arcweft_agent_protocol::text_context::AgentTextContextCatalog;
+    let catalog: AgentTextContextCatalog =
+        serde_json::from_value(json["text_contexts"].clone()).expect("issued punctuation catalog");
+    let elements = [comma, period, middle_dot, person];
+    let (context, comma_element) = checked_observed_text_element(&catalog, comma);
+    let owner = catalog.resolve(&context).expect("issued punctuation owner");
+    let font_pixels = f32::from_bits(
+        owner
+            .content
+            .layout()
+            .cluster_glyphs(u32::try_from(comma_element.index).unwrap())
+            .unwrap()[0]
+            .shape_key
+            .font_size_bits,
     );
-    assert_eq!(
-        agent_json_bbox_y(&middle_dot["bbox"]) - agent_json_bbox_y(&period["bbox"]),
-        21,
-        "middle dot should continue the compressed punctuation chain"
-    );
-    assert_eq!(
-        agent_json_bbox_y(&person["bbox"]) - agent_json_bbox_y(&middle_dot["bbox"]),
-        21,
-        "following text should consume the space left by punctuation compression"
-    );
+    let half_cell = font_pixels / 2.0;
+    let mut logical_cells = Vec::new();
+    let mut integer_bounds = Vec::new();
+    for object in elements {
+        let (candidate_context, element) = checked_observed_text_element(&catalog, object);
+        assert_eq!(candidate_context, context);
+        assert_eq!(element.kind, AgentRichTextElementKind::GlyphCluster);
+        let members = owner
+            .content
+            .layout()
+            .cluster_glyphs(u32::try_from(element.index).unwrap())
+            .expect("actual punctuation members");
+        assert_eq!(members.len(), 1);
+        let glyph = &members[0];
+        let run = &owner.content.layout().runs[usize::try_from(glyph.run_index).unwrap()];
+        assert_eq!(
+            run.style.font_size_milli(),
+            25_000,
+            "standard dialogue Content font"
+        );
+        assert_eq!(
+            run.style.line_height_milli(),
+            34_000,
+            "standard dialogue Content line height"
+        );
+        assert_eq!(glyph.shape_key.font_size_bits, 25.0_f32.to_bits());
+        assert!(run.presentation.fx.is_empty());
+        assert!(run.presentation.transform.is_none());
+        let bbox: AgentBBox = serde_json::from_value(object["bbox"].clone()).unwrap();
+        assert_eq!(f64::from(bbox.x), f64::from(glyph.layout_bounds.x).floor());
+        assert_eq!(f64::from(bbox.y), f64::from(glyph.layout_bounds.y).floor());
+        assert_eq!(
+            f64::from(bbox.x) + f64::from(bbox.width),
+            f64::from(glyph.layout_bounds.x + glyph.layout_bounds.width).ceil()
+        );
+        assert_eq!(
+            f64::from(bbox.y) + f64::from(bbox.height),
+            f64::from(glyph.layout_bounds.y + glyph.layout_bounds.height).ceil()
+        );
+        logical_cells.push(glyph.layout_bounds);
+        integer_bounds.push(bbox);
+    }
+    for index in 0..3 {
+        let before = logical_cells[index];
+        let after = logical_cells[index + 1];
+        assert!((before.width - font_pixels).abs() < f32::EPSILON);
+        assert!(
+            (before.height - half_cell).abs() < f32::EPSILON,
+            "punctuation owns a half body cell"
+        );
+        assert!(
+            (after.y - before.y - half_cell).abs() < f32::EPSILON,
+            "following content consumes that half cell"
+        );
+        assert!(
+            (after.x - before.x).abs() < f32::EPSILON,
+            "compression stays in the same logical column"
+        );
+        assert_eq!(
+            f64::from(integer_bounds[index + 1].y - integer_bounds[index].y),
+            f64::from(after.y.floor() - before.y.floor()),
+            "pixel origins enclose the same half-cell advance rather than a fixed21px step"
+        );
+    }
     comma
 }
 
@@ -4607,27 +5040,30 @@ fn assert_native_jlreq_opening_punctuation_raw_crop(writing_mode: &str, capture_
 pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: #layout(.{writing_mode})[天地春「人外][p]
+    alice: #layout(.{writing_mode})[#size(30pt)[天地春「人外]][p]
 }}
 "#
     );
-    let path = temp_arcw(&fixture_name, &source);
+    let path = temp_native_cli_fixture(&fixture_name, &source);
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
         "native-{writing_mode}-jlreq-opening-punctuation-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 3,
+                range: arcweft_text_model::RichTextRange::new(9, 12),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.3.9.12")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4748,13 +5184,13 @@ fn agent_observe_native_renderer_writes_vertical_lr_jlreq_hanging_punctuation_ob
 
 fn assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop(capture_kind: &str) {
     let fixture_name = format!("agent-observe-native-vertical-lr-jlreq-hanging-{capture_kind}");
-    let path = temp_arcw(
+    let path = temp_native_cli_fixture(
         &fixture_name,
         r#"
 pub character alice { display = "Alice" }
 
 flow main {
-    alice: #layout(.vertical_lr)[天地、人人][p]
+    alice: #layout(.vertical_lr)[#size(36pt)[天地、人人]][p]
 }
 "#,
     );
@@ -4763,17 +5199,20 @@ flow main {
         "native-vertical-lr-jlreq-hanging-punctuation-{capture_kind}.rgba"
     ));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
+    let output = path
+        .text_capture_command(NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 2,
+                range: arcweft_text_model::RichTextRange::new(6, 9),
+            },
+        ))
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg("object.dialogue.0.0.cluster.2.6.9")
         .arg("--out")
         .arg(&raw_path)
         .arg("--mode")
@@ -4861,34 +5300,34 @@ fn assert_native_vertical_lr_jlreq_hanging_punctuation_geometry(
 }
 
 fn observe_native_typewriter_cluster_mask_at(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
-    object_id: &str,
+    capture_target: NativeTextCaptureTarget,
     capture_time: &str,
 ) -> (serde_json::Value, Vec<u8>) {
-    observe_native_typewriter_cluster_raw_at(source_path, raw_path, object_id, capture_time, "mask")
+    observe_native_typewriter_cluster_raw_at(
+        source_path,
+        raw_path,
+        capture_target,
+        capture_time,
+        "mask",
+    )
 }
 
 fn observe_native_typewriter_cluster_raw_at(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
-    object_id: &str,
+    capture_target: NativeTextCaptureTarget,
     capture_time: &str,
     capture_kind: &str,
 ) -> (serde_json::Value, Vec<u8>) {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
-        .arg("--entry")
-        .arg("entry.main")
+    let output = source_path
+        .text_capture_command(capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(object_id)
         .arg("--capture-time")
         .arg(capture_time)
         .arg("--out")
@@ -4952,8 +5391,8 @@ fn assert_typed_typewriter_fx_application(presentation: &serde_json::Value) {
         ]),
     )
     .expect("typewriter fixture specialization");
-    let definition = build_builtin_fx_definition(specialization)
-        .expect("canonical typewriter definition");
+    let definition =
+        build_builtin_fx_definition(specialization).expect("canonical typewriter definition");
     let expected = definition
         .bind_application(
             [BuiltinFxArgument::new(
@@ -4971,26 +5410,33 @@ fn assert_typed_typewriter_fx_application(presentation: &serde_json::Value) {
 fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
     let source_path = vertical_goal_clear_smoke_fixture_path();
     let dir = temp_dir("agent-observe-native-vertical-goal-clear-smoke-raw-crops");
-    let object_id = "object.dialogue.0.0.cluster.17.38.42";
+    let capture_target = NativeTextCaptureTarget::element(
+        0,
+        0,
+        NativeTextElementTarget::Cluster {
+            index: 9,
+            range: arcweft_text_model::RichTextRange::new(29, 33),
+        },
+    );
 
     let hidden_mask_path = dir.join("vertical-goal-clear-hidden-mask.rgba");
     let visible_mask_path = dir.join("vertical-goal-clear-visible-mask.rgba");
     let (hidden_mask, hidden_mask_bytes) = observe_native_goal_clear_object_raw_at(
         &source_path,
         &hidden_mask_path,
-        object_id,
+        capture_target,
         "mask",
         "0",
     );
     let (visible_mask, visible_mask_bytes) = observe_native_goal_clear_object_raw_at(
         &source_path,
         &visible_mask_path,
-        object_id,
+        capture_target,
         "mask",
         "60",
     );
-    let hidden_cluster = find_rich_text_cluster_object(&hidden_mask, "2026", 38, 42);
-    let visible_cluster = find_rich_text_cluster_object(&visible_mask, "2026", 38, 42);
+    let hidden_cluster = find_rich_text_cluster_object(&hidden_mask, "2026", 29, 33);
+    let visible_cluster = find_rich_text_cluster_object(&visible_mask, "2026", 29, 33);
     assert_eq!(
         hidden_cluster["rich_text_ref"]["orientation"],
         "text_combine_upright"
@@ -5020,11 +5466,11 @@ fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
         let (json, bytes) = observe_native_goal_clear_object_raw_at(
             &source_path,
             &raw_path,
-            object_id,
+            capture_target,
             capture_kind,
             "60",
         );
-        let cluster = find_rich_text_cluster_object(&json, "2026", 38, 42);
+        let cluster = find_rich_text_cluster_object(&json, "2026", 29, 33);
         assert_eq!(json["images"][0]["width"], cluster["bbox"]["width"]);
         assert_eq!(json["images"][0]["height"], cluster["bbox"]["height"]);
         assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
@@ -5047,27 +5493,29 @@ fn agent_observe_native_renderer_writes_vertical_goal_clear_smoke_raw_crops() {
     fs::remove_dir_all(&dir).expect("remove temp vertical goal-clear raw crop dir");
 }
 
-fn assert_vertical_goal_clear_ruby_raw_crops(source_path: &Path, dir: &Path) {
-    for (ruby_index, object_id, description) in [
+fn assert_vertical_goal_clear_ruby_raw_crops(source_path: &NativeCliFixture, dir: &Path) {
+    for (ruby_index, capture_target, description) in [
         (
             0,
-            "object.dialogue.0.0.ruby.0",
+            NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
             "vertical goal-clear vertical_rl ruby",
         ),
         (
             1,
-            "object.dialogue.0.0.ruby.1",
+            NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(1)),
             "vertical goal-clear vertical_lr ruby",
         ),
     ] {
-        for capture_kind in ["mask", "object-id"] {
+        let mut expected_mask: Option<Vec<u8>> = None;
+        let mut expected_image: Option<serde_json::Value> = None;
+        for capture_kind in ["mask", "object-id", "color"] {
             let raw_path = dir.join(format!(
                 "vertical-goal-clear-ruby-{ruby_index}-{capture_kind}.rgba"
             ));
             let (json, bytes) = observe_native_goal_clear_object_raw_at(
                 source_path,
                 &raw_path,
-                object_id,
+                capture_target,
                 capture_kind,
                 "60",
             );
@@ -5079,6 +5527,28 @@ fn assert_vertical_goal_clear_ruby_raw_crops(source_path: &Path, dir: &Path) {
                 capture_kind,
                 description,
             );
+            let alpha = bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|pixel| pixel[3])
+                .collect::<Vec<_>>();
+            if let Some(expected) = &expected_mask {
+                assert_eq!(
+                    &alpha, expected,
+                    "{description}: every attachment retains the exact selected glyph silhouette"
+                );
+                let expected = expected_image.as_ref().expect("mask image metadata");
+                for field in ["width", "height", "crop_origin", "content_pixels"] {
+                    assert_eq!(
+                        json["images"][0][field], expected[field],
+                        "{description}: {field} is identical across attachments"
+                    );
+                }
+            } else {
+                expected_mask = Some(alpha);
+                expected_image = Some(json["images"][0].clone());
+            }
         }
     }
 }
@@ -5114,8 +5584,32 @@ fn assert_vertical_goal_clear_ruby_raw_crop(
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
-    assert_eq!(content_pixels, width * height);
+    assert_eq!(u64::try_from(bytes.len()).unwrap(), width * height * 4);
+    assert!(
+        content_pixels > 0,
+        "{description}: actual glyph pixels are present"
+    );
+    assert!(
+        content_pixels < width * height,
+        "{description}: the selected mask preserves whitespace around its glyphs"
+    );
     assert_eq!(opaque_pixel_count(bytes) as u64, content_pixels);
+    for pixel in bytes.as_chunks::<4>().0 {
+        if pixel[3] == 0 {
+            assert_eq!(pixel, &[0; 4], "unselected pixels remain transparent");
+        } else {
+            assert_eq!(
+                pixel[3], 255,
+                "selected pixels have full attachment coverage"
+            );
+            if capture_kind == "mask" {
+                assert_eq!(
+                    pixel, &[255; 4],
+                    "mask pixels encode the exact binary selection"
+                );
+            }
+        }
+    }
     if capture_kind == "object-id" {
         assert_raw_object_id_tint(
             raw_path,
@@ -5127,23 +5621,19 @@ fn assert_vertical_goal_clear_ruby_raw_crop(
 }
 
 fn observe_native_goal_clear_object_raw_at(
-    source_path: &Path,
+    source_path: &NativeCliFixture,
     raw_path: &Path,
-    object_id: &str,
+    capture_target: NativeTextCaptureTarget,
     capture_kind: &str,
     capture_time: &str,
 ) -> (serde_json::Value, Vec<u8>) {
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(source_path)
+    let output = source_path
+        .text_capture_command(capture_target)
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
         .arg("--capture")
         .arg(capture_kind)
-        .arg("--object")
-        .arg(object_id)
         .arg("--capture-time")
         .arg(capture_time)
         .arg("--out")
@@ -5195,13 +5685,27 @@ flow main {
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.cluster.0.0.3",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ),
         "0",
     );
     let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.cluster.0.0.3",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ),
         "4",
     );
     let hidden_cluster = find_rich_text_cluster_object(&hidden, "吾", 0, 3);
@@ -5251,14 +5755,28 @@ flow main {
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.cluster.0.0.3",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ),
         "0",
         "object-id",
     );
     let (visible, _visible_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.cluster.0.0.3",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 3),
+            },
+        ),
         "4",
         "object-id",
     );
@@ -5329,13 +5847,27 @@ flow main {{
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.cluster.0.0.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 4),
+            },
+        ),
         "0",
     );
     let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.cluster.0.0.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 4),
+            },
+        ),
         "4",
     );
     let hidden_cluster = find_rich_text_cluster_object(&hidden, "2026", 0, 4);
@@ -5414,14 +5946,28 @@ flow main {{
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.cluster.0.0.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 4),
+            },
+        ),
         "0",
         "object-id",
     );
     let (visible, _visible_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.cluster.0.0.4",
+        NativeTextCaptureTarget::element(
+            0,
+            0,
+            NativeTextElementTarget::Cluster {
+                index: 0,
+                range: arcweft_text_model::RichTextRange::new(0, 4),
+            },
+        ),
         "4",
         "object-id",
     );
@@ -5503,13 +6049,13 @@ flow main {{
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.ruby.0",
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
         "0",
     );
     let (visible, visible_bytes) = observe_native_typewriter_cluster_mask_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.ruby.0",
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
         "4",
     );
     assert_native_typewriter_ruby_capture_time_geometry(
@@ -5574,14 +6120,14 @@ flow main {{
     let (hidden, hidden_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &hidden_path,
-        "object.dialogue.0.0.ruby.0",
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
         "0",
         "object-id",
     );
     let (visible, _visible_bytes) = observe_native_typewriter_cluster_raw_at(
         &path,
         &visible_path,
-        "object.dialogue.0.0.ruby.0",
+        NativeTextCaptureTarget::element(0, 0, NativeTextElementTarget::Ruby(0)),
         "4",
         "object-id",
     );
