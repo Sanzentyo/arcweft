@@ -171,7 +171,7 @@ impl InnerAtlas {
                     };
 
                     let Some(rasterized_glyph) = (rasterize_custom_glyph)(input) else {
-                        panic!("Custom glyph rasterizer returned `None` when it previously returned `Some` for the same input {:?}", &input);
+                        panic!("Custom glyph rasterizer returned `None` when it previously returned `Some` for the same input {:?}", input);
                     };
 
                     // Sanity checks on the rasterizer output

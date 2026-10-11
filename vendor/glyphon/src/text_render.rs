@@ -608,7 +608,7 @@ fn glyph_image_data_for_content(
     if !force_alpha_mask || content_type == ContentType::Mask {
         return data;
     }
-    data.chunks_exact(4).map(|pixel| pixel[3]).collect()
+    data.as_chunks::<4>().0.iter().map(|pixel| pixel[3]).collect()
 }
 
 struct GlyphMetadata {
