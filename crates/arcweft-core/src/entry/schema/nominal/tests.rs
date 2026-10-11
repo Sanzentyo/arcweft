@@ -58,6 +58,209 @@ fn hash(graph: &RuntimeNominalSchemaGraph, byte: u8) -> TypeLayoutHash {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one admitted source graph exercises record shapes, ordered variant cases and their shared rejection matrix"
+)]
+fn data_construction_uses_exact_graph_headers_shapes_and_source_ordered_cases() {
+    let graph = graph(vec![
+        unit(1, vec![]),
+        record(
+            2,
+            RuntimeNominalRecordShape::Newtype,
+            vec![],
+            vec![(None, RuntimeTypeSchema::Bool)],
+        ),
+        RuntimeNominalSchemaDefinition::new(
+            crate::entry::RuntimeNominalDeclarationId::from_bytes([3; 32]),
+            identity(3),
+            vec![],
+            RuntimeNominalSchemaBody::Variant {
+                cases: vec![
+                    RuntimeNominalSchemaCase::new(0, "Empty".to_owned(), None),
+                    RuntimeNominalSchemaCase::new(
+                        1,
+                        "Tuple".to_owned(),
+                        Some(RuntimeTypeSchema::Tuple(
+                            vec![RuntimeTypeSchema::NominalRef(identity(2))].into(),
+                        )),
+                    ),
+                    RuntimeNominalSchemaCase::new(
+                        2,
+                        "Record0".to_owned(),
+                        Some(RuntimeTypeSchema::RecordValue {
+                            fields: Box::new([]),
+                        }),
+                    ),
+                ]
+                .into(),
+            },
+        ),
+    ]);
+    let limits = RuntimeSchemaLimits::engine_default();
+    let unit = graph
+        .try_record_value(identity(1).semantic_identity(), vec![], limits)
+        .unwrap();
+    let record = graph
+        .try_record_value(
+            identity(2).semantic_identity(),
+            vec![RuntimeValue::Bool(true)],
+            limits,
+        )
+        .unwrap();
+    for (byte, value) in [(1, &unit), (2, &record)] {
+        let RuntimeValue::NominalRecord(value) = value else {
+            unreachable!();
+        };
+        assert_eq!(value.type_id(), identity(byte).nominal());
+        assert_eq!(
+            value.semantic_identity(),
+            identity(byte).semantic_identity()
+        );
+        assert_eq!(value.layout(), hash(&graph, byte));
+    }
+    for (ordinal, payload, name) in [
+        (0, None, "Empty"),
+        (1, Some(RuntimeValue::Tuple(vec![record])), "Tuple"),
+        (
+            2,
+            Some(RuntimeValue::try_record(vec![]).unwrap()),
+            "Record0",
+        ),
+    ] {
+        let value = graph
+            .try_variant_value(
+                identity(3).semantic_identity(),
+                ordinal,
+                payload.clone(),
+                limits,
+            )
+            .unwrap();
+        let RuntimeValue::Variant {
+            owner,
+            ordinal: actual,
+            name: actual_name,
+            payload: actual_payload,
+            ..
+        } = &value
+        else {
+            unreachable!();
+        };
+        assert_eq!(*actual, ordinal);
+        assert_eq!(actual_name, name);
+        assert_eq!(actual_payload.as_deref(), payload.as_ref());
+        assert_eq!(
+            *owner,
+            crate::pattern::RuntimeVariantIdentity::Nominal {
+                nominal: identity(3).nominal().clone(),
+                semantic_identity: identity(3).semantic_identity(),
+                layout: hash(&graph, 3),
+            }
+        );
+        graph
+            .accepts_value(identity(3).semantic_identity(), &value, limits)
+            .unwrap();
+    }
+    assert!(
+        graph
+            .try_record_value(identity(3).semantic_identity(), vec![], limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_variant_value(identity(1).semantic_identity(), 0, None, limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_record_value(identity(255).semantic_identity(), vec![], limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_record_value(identity(2).semantic_identity(), vec![], limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_record_value(
+                identity(2).semantic_identity(),
+                vec![RuntimeValue::Unit],
+                limits
+            )
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_variant_value(identity(3).semantic_identity(), 99, None, limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_variant_value(identity(3).semantic_identity(), 1, None, limits)
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_variant_value(identity(3).semantic_identity(), 1, Some(unit), limits)
+            .is_err()
+    );
+}
+
+#[test]
+fn data_construction_keeps_value_work_bounds_and_rejects_executable_members() {
+    let graph = graph(vec![
+        record(
+            1,
+            RuntimeNominalRecordShape::Newtype,
+            vec![],
+            vec![(None, RuntimeTypeSchema::Bool)],
+        ),
+        record(
+            2,
+            RuntimeNominalRecordShape::Newtype,
+            vec![],
+            vec![(
+                None,
+                RuntimeTypeSchema::ExecutableRef(identity(3).semantic_identity()),
+            )],
+        ),
+    ]);
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 2,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    graph
+        .try_record_value(
+            identity(1).semantic_identity(),
+            vec![RuntimeValue::Bool(true)],
+            limits,
+        )
+        .unwrap();
+    assert!(
+        graph
+            .try_record_value(
+                identity(1).semantic_identity(),
+                vec![RuntimeValue::Bool(true)],
+                RuntimeSchemaLimits {
+                    max_nodes: 1,
+                    ..limits
+                }
+            )
+            .is_err()
+    );
+    assert!(
+        graph
+            .try_record_value(
+                identity(2).semantic_identity(),
+                vec![RuntimeValue::Unit],
+                RuntimeSchemaLimits::engine_default()
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn merging_source_graphs_preserves_recursive_layouts_and_rejects_conflicting_bodies() {
     let original = graph(recursive_definitions());
     let mut reversed_definitions = recursive_definitions();

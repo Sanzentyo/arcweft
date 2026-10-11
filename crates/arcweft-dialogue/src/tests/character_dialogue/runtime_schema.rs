@@ -385,9 +385,7 @@ struct Types {
     plan: RuntimePlan,
     awbc: AwbcProgram,
     roles: CharacterDialogueRuntimeRoleTypes,
-    nominal: RuntimeNominalTypeId,
     nominal_identity: RuntimeSemanticTypeId,
-    layout: TypeLayoutHash,
     character_type: RuntimeSemanticTypeId,
     any_type: RuntimeSemanticTypeId,
 }
@@ -627,9 +625,7 @@ impl Types {
             plan,
             awbc,
             roles,
-            nominal,
             nominal_identity,
-            layout,
             character_type,
             any_type,
         }
@@ -734,12 +730,19 @@ impl Types {
             .clone()
     }
     fn nominal(&self, value: RuntimeValue) -> RuntimeValue {
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            self.nominal.clone(),
-            self.nominal_identity,
-            self.layout,
-            vec![value],
-        ))
+        let RuntimeValue::NominalRecord(record) =
+            arcweft_core::program_types::RuntimeProgramTypes::Plan(&self.plan)
+                .try_record_value(
+                    self.nominal_identity,
+                    vec![RuntimeValue::Bool(true)],
+                    RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap()
+        else {
+            unreachable!();
+        };
+        let mut value = Some(value);
+        RuntimeValue::NominalRecord(record.map_fields(|_| value.take().unwrap()))
     }
 }
 
@@ -931,7 +934,7 @@ fn rejects_stale_contracts_and_tampered_policy_headers() {
                 ordinal,
                 name,
                 payload,
-                type_instantiation,
+                type_instantiation: _,
             } = &mut changed[16]
             else {
                 unreachable!()
@@ -972,35 +975,41 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
             family: DeclarationIdentityFamily::Character,
             public_id: PublicId::try_new(sample_manifest().character().as_str()).unwrap(),
         });
-        for payload in [
-            types.nominal(RuntimeValue::String("wrong child".into())),
-            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                types.nominal.clone(),
-                types.nominal_identity,
-                TypeLayoutHash::from_bytes([0; 32]),
-                vec![RuntimeValue::Bool(true)],
-            )),
-            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                types.nominal.clone(),
-                semantic(55),
-                types.layout,
-                vec![RuntimeValue::Bool(true)],
-            )),
+        let payload = types.nominal(RuntimeValue::String("wrong child".into()));
+        let bad = schema.apply(
+            &owner,
+            CharacterDialogueOperation::Factory,
+            target.clone(),
+            &[CharacterDialoguePatchField {
+                coordinate: Coordinate::RichText,
+                operation: Operation::Set(role_value(Role::RichText, payload).into_value()),
+            }],
+            types.any_type,
+        );
+        assert!(matches!(
+            bad,
+            Err(CharacterDialogueValueError::ProgramType(_))
+        ));
+        let value = types.nominal(RuntimeValue::Bool(true));
+        let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            &value, &owner,
+        )
+        .unwrap();
+        for (field, replacement) in [
+            (
+                "layout",
+                serde_json::to_value(TypeLayoutHash::from_bytes([0; 32])).unwrap(),
+            ),
+            (
+                "semantic_identity",
+                serde_json::to_value(semantic(55)).unwrap(),
+            ),
         ] {
-            let bad = schema.apply(
-                &owner,
-                CharacterDialogueOperation::Factory,
-                target.clone(),
-                &[CharacterDialoguePatchField {
-                    coordinate: Coordinate::RichText,
-                    operation: Operation::Set(role_value(Role::RichText, payload).into_value()),
-                }],
-                types.any_type,
-            );
-            assert!(matches!(
-                bad,
-                Err(CharacterDialogueValueError::ProgramType(_))
-            ));
+            let mut invalid = serde_json::to_value(&image).unwrap();
+            invalid["NominalRecord"][field] = replacement;
+            let invalid: arcweft_core::value::AwbcRuntimeValueSnapshot =
+                serde_json::from_value(invalid).unwrap();
+            assert!(invalid.into_runtime_value_for_program(&owner).is_err());
         }
         let wrong_role = base
             .patched(

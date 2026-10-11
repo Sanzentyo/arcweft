@@ -1,0 +1,15 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/runtime_nominal_record_value_constructor_is_private.rs:8:40
+  |
+8 |       let _ = RuntimeNominalRecordValue::new(
+  |                                          ^^^ private associated function
+  |
+ ::: src/value/nominal_record.rs
+  |
+  | /     pub(crate) const fn new(
+  | |         type_id: RuntimeNominalTypeId,
+  | |         semantic_identity: RuntimeSemanticTypeId,
+  | |         layout: TypeLayoutHash,
+  | |         fields: Vec<RuntimeValue>,
+  | |     ) -> Self {
+  | |_____________- private associated function defined here

@@ -28,7 +28,7 @@ use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 fn project_root_admits_nested_joined_rust_values_from_one_source_graph() {
     use arcweft_core::{
         entry::RuntimeSchemaLimits,
-        value::{RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
+        value::{RuntimeSeq, RuntimeValue},
     };
 
     let input = MetadataFixture::new();
@@ -58,36 +58,39 @@ fn project_root_admits_nested_joined_rust_values_from_one_source_graph() {
     let graph = projection.graph();
     assert_eq!(graph.definitions().len(), 2);
     assert_eq!(graph.try_layout_hash(rust.root()).unwrap(), rust.layout());
-    let value = |nested| {
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            projection.nominal().clone(),
-            projection.semantic_identity(),
-            projection.layout(),
-            vec![RuntimeValue::Seq(RuntimeSeq::values(vec![
-                RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                    rust.nominal().clone(),
-                    rust.root(),
-                    rust.layout(),
-                    vec![nested],
-                )),
-            ]))],
-        ))
-    };
     let limits = RuntimeSchemaLimits::engine_default();
-    graph
-        .accepts_value(
+    let nested = graph
+        .try_record_value(rust.root(), vec![RuntimeValue::Bool(true)], limits)
+        .unwrap();
+    let value = graph
+        .try_record_value(
             projection.semantic_identity(),
-            &value(RuntimeValue::Bool(true)),
+            vec![RuntimeValue::Seq(RuntimeSeq::values(vec![nested.clone()]))],
             limits,
         )
         .unwrap();
+    graph
+        .accepts_value(projection.semantic_identity(), &value, limits)
+        .unwrap();
     assert!(
         graph
-            .accepts_value(
-                projection.semantic_identity(),
-                &value(RuntimeValue::Unit),
-                limits
-            )
+            .try_record_value(rust.root(), vec![RuntimeValue::Unit], limits)
+            .is_err()
+    );
+    let RuntimeValue::NominalRecord(nested) = nested else {
+        unreachable!();
+    };
+    let invalid_nested = RuntimeValue::NominalRecord(nested.map_fields(|_| RuntimeValue::Unit));
+    let RuntimeValue::NominalRecord(value) = value else {
+        unreachable!();
+    };
+    let mut invalid_nested = Some(invalid_nested);
+    let invalid = RuntimeValue::NominalRecord(value.map_fields(|_| {
+        RuntimeValue::Seq(RuntimeSeq::values(vec![invalid_nested.take().unwrap()]))
+    }));
+    assert!(
+        graph
+            .accepts_value(projection.semantic_identity(), &invalid, limits)
             .is_err()
     );
 }

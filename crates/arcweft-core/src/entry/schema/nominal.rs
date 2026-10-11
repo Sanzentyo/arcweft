@@ -539,6 +539,113 @@ impl RuntimeNominalSchemaGraph {
         super::value_validation::SchemaValueValidation::graph(self, limits)
             .validate(value, super::value_validation::Expected::GraphRoot(root))
     }
+
+    /// Constructs a data record from this admitted graph's original definition.
+    /// The complete candidate is checked before it is returned. Members that
+    /// require an executable remain rejected by standalone graph validation;
+    /// execution and restoration use the selected program's type authority.
+    pub fn try_record_value(
+        &self,
+        root: RuntimeSemanticTypeId,
+        fields: Vec<crate::value::RuntimeValue>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<crate::value::RuntimeValue, RuntimeSchemaError> {
+        let definition = self
+            .definition(root)
+            .ok_or_else(|| RuntimeSchemaError::NominalGraph {
+                source: Box::new(RuntimeNominalSchemaGraphError::UnknownRoot { root }),
+            })?;
+        let RuntimeNominalSchemaBody::Record {
+            fields: expected, ..
+        } = definition.body()
+        else {
+            return Err(RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "nominal record",
+                actual: "nominal variant",
+            });
+        };
+        if fields.len() != expected.len() {
+            return Err(RuntimeSchemaError::Arity {
+                path: "$".to_owned(),
+                expected: expected.len(),
+                actual: fields.len(),
+            });
+        }
+        let mut layouts = encoding::LayoutOperation::new(self);
+        let layout = layouts
+            .hash(root)
+            .map_err(|source| RuntimeSchemaError::NominalGraph {
+                source: Box::new(source),
+            })?;
+        let candidate = crate::value::RuntimeValue::NominalRecord(
+            crate::value::RuntimeNominalRecordValue::new(
+                definition.identity().nominal().clone(),
+                root,
+                layout,
+                fields,
+            ),
+        );
+        super::value_validation::SchemaValueValidation::with_graph_layouts(layouts, limits)
+            .validate(
+                &candidate,
+                super::value_validation::Expected::GraphRoot(root),
+            )?;
+        Ok(candidate)
+    }
+
+    /// Constructs a data variant from its source-ordered case in this graph.
+    /// Owner, layout, case name and payload contract come from the definition.
+    pub fn try_variant_value(
+        &self,
+        root: RuntimeSemanticTypeId,
+        ordinal: u32,
+        payload: Option<crate::value::RuntimeValue>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<crate::value::RuntimeValue, RuntimeSchemaError> {
+        let definition = self
+            .definition(root)
+            .ok_or_else(|| RuntimeSchemaError::NominalGraph {
+                source: Box::new(RuntimeNominalSchemaGraphError::UnknownRoot { root }),
+            })?;
+        let RuntimeNominalSchemaBody::Variant { cases } = definition.body() else {
+            return Err(RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "nominal variant",
+                actual: "nominal record",
+            });
+        };
+        let case = usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| cases.get(ordinal))
+            .ok_or_else(|| RuntimeSchemaError::UnknownVariant {
+                path: "$".to_owned(),
+                variant: ordinal.to_string(),
+            })?;
+        let mut layouts = encoding::LayoutOperation::new(self);
+        let layout = layouts
+            .hash(root)
+            .map_err(|source| RuntimeSchemaError::NominalGraph {
+                source: Box::new(source),
+            })?;
+        let candidate = crate::value::RuntimeValue::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
+                nominal: definition.identity().nominal().clone(),
+                semantic_identity: root,
+                layout,
+            },
+            ordinal,
+            name: case.name().to_owned(),
+            type_instantiation: None,
+            payload: payload.map(Box::new),
+        };
+        super::value_validation::SchemaValueValidation::with_graph_layouts(layouts, limits)
+            .validate(
+                &candidate,
+                super::value_validation::Expected::GraphRoot(root),
+            )?;
+        Ok(candidate)
+    }
 }
 
 impl Drop for RuntimeNominalSchemaGraph {

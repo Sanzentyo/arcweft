@@ -17,9 +17,14 @@ use arcweft_character::{
     },
 };
 use arcweft_core::{
-    entry::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash},
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
-    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
+    entry::{
+        RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition,
+        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema, RuntimeValueDigest,
+        TypeLayoutHash,
+    },
+    pattern::RuntimeSemanticTypeId,
+    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeRecordFieldId, RuntimeSeq, RuntimeValue},
 };
 use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,12 +61,53 @@ fn sample_manifest() -> CharacterManifest {
     .expect("manifest")
 }
 
-fn nominal_typed(fields: Vec<RuntimeValue>) -> CharacterDialogueTypedValue {
-    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
-    CharacterDialogueTypedValue::try_new(RuntimeValue::NominalRecord(
-        RuntimeNominalRecordValue::new(type_id, semantic_identity, layout, fields),
-    ))
-    .expect("typed value")
+fn nominal_data_graph(
+    schemas: Vec<RuntimeTypeSchema>,
+    extra: Vec<RuntimeNominalSchemaDefinition>,
+) -> RuntimeNominalSchemaGraph {
+    let (type_id, semantic_identity, _) = runtime_schema::test_payload_descriptor();
+    let definition = RuntimeNominalSchemaDefinition::new(
+        arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(*semantic_identity.as_bytes()),
+        RuntimeNominalSchemaIdentity::new(type_id, semantic_identity),
+        vec![],
+        RuntimeNominalSchemaBody::Record {
+            shape: RuntimeNominalRecordShape::Record,
+            fields: schemas
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, schema)| {
+                    RuntimeNominalSchemaField::new(
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap(),
+                        Some(if ordinal == 0 {
+                            "flag".to_owned()
+                        } else {
+                            format!("field{ordinal}")
+                        }),
+                        schema,
+                    )
+                })
+                .collect(),
+        },
+    );
+    RuntimeNominalSchemaGraph::try_new(
+        std::iter::once(definition).chain(extra).collect::<Vec<_>>(),
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap()
+}
+
+fn nominal_data(fields: Vec<RuntimeValue>, schemas: Vec<RuntimeTypeSchema>) -> RuntimeValue {
+    let (_, identity, _) = runtime_schema::test_payload_descriptor();
+    nominal_data_graph(schemas, vec![])
+        .try_record_value(identity, fields, RuntimeSchemaLimits::engine_default())
+        .unwrap()
+}
+
+fn nominal_typed(
+    fields: Vec<RuntimeValue>,
+    schemas: Vec<RuntimeTypeSchema>,
+) -> CharacterDialogueTypedValue {
+    CharacterDialogueTypedValue::try_new(nominal_data(fields, schemas)).expect("typed value")
 }
 
 fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
@@ -350,7 +396,8 @@ fn dialogue_locale_is_a_domain_newtype_over_locale_tag() {
 #[test]
 fn failed_patch_leaves_base_and_successful_candidate_unchanged() {
     let (base, _, _, _) = fixture();
-    let hook = CharacterDialogueHookValue::try_new(nominal_typed(Vec::new())).expect("hook");
+    let hook =
+        CharacterDialogueHookValue::try_new(nominal_typed(Vec::new(), vec![])).expect("hook");
     let too_many = vec![hook; 65];
     let before = base.clone();
     let error = base
@@ -367,10 +414,16 @@ fn failed_patch_leaves_base_and_successful_candidate_unchanged() {
 
 #[test]
 fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
-    let nominal_style = CharacterDialogueStyleValue::try_new(nominal_typed(vec![
-        option_some(RuntimeValue::String("red".to_owned())),
-        option_some(RuntimeValue::Bool(true)),
-    ]))
+    let nominal_style = CharacterDialogueStyleValue::try_new(nominal_typed(
+        vec![
+            option_some(RuntimeValue::String("red".to_owned())),
+            option_some(RuntimeValue::Bool(true)),
+        ],
+        vec![
+            RuntimeTypeSchema::option(RuntimeTypeSchema::String),
+            RuntimeTypeSchema::option(RuntimeTypeSchema::Bool),
+        ],
+    ))
     .expect("nominal style");
     let (base, _, _, _) = fixture_with_style(nominal_style);
     let clear_first = StructuredPatch::try_new(
@@ -456,20 +509,45 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
 
 #[test]
 fn structured_clear_rejects_non_option_some_leaf_atomically() {
-    let layout = TypeLayoutHash::from_bytes([12; 32]);
-    let non_option_some = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal owner"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([12; 32]),
-            layout,
-        },
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Bool(true))),
-        type_instantiation: None,
-    };
-    let style = CharacterDialogueStyleValue::try_new(nominal_typed(vec![non_option_some.clone()]))
-        .expect("nominal style");
+    let choice = RuntimeNominalSchemaIdentity::new(
+        RuntimeNominalTypeId::try_new("custom.Choice").unwrap(),
+        RuntimeSemanticTypeId::from_bytes([12; 32]),
+    );
+    let graph = nominal_data_graph(
+        vec![RuntimeTypeSchema::NominalRef(choice.clone())],
+        vec![RuntimeNominalSchemaDefinition::new(
+            arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes([12; 32]),
+            choice.clone(),
+            vec![],
+            RuntimeNominalSchemaBody::Variant {
+                cases: vec![arcweft_core::entry::RuntimeNominalSchemaCase::new(
+                    0,
+                    "Some".to_owned(),
+                    Some(RuntimeTypeSchema::Bool),
+                )]
+                .into(),
+            },
+        )],
+    );
+    let limits = RuntimeSchemaLimits::engine_default();
+    let non_option_some = graph
+        .try_variant_value(
+            choice.semantic_identity(),
+            0,
+            Some(RuntimeValue::Bool(true)),
+            limits,
+        )
+        .unwrap();
+    let (_, root, _) = runtime_schema::test_payload_descriptor();
+    let style = CharacterDialogueStyleValue::try_new(
+        CharacterDialogueTypedValue::try_new(
+            graph
+                .try_record_value(root, vec![non_option_some.clone()], limits)
+                .unwrap(),
+        )
+        .unwrap(),
+    )
+    .expect("nominal style");
     let (base, _, _, _) = fixture_with_style(style);
     let before = base.clone();
     let patch = StructuredPatch::try_new(
@@ -499,31 +577,86 @@ mod generation;
 mod runtime_schema;
 
 fn nested_nominal(depth: usize) -> CharacterDialogueTypedValue {
-    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
-    let value = (0..depth).fold(RuntimeValue::Unit, |value, _| {
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            type_id.clone(),
-            semantic_identity,
-            layout,
-            vec![value],
-        ))
-    });
+    let value = nested_nominal_value(depth);
     CharacterDialogueTypedValue::try_new(value).expect("nested typed value")
 }
 
+fn nested_nominal_value(depth: usize) -> RuntimeValue {
+    if depth == 0 {
+        return RuntimeValue::Unit;
+    }
+    // Each layer has a declared field type. Avoid a recursive Choice here:
+    // alternative admission adds schema work depth without adding value depth.
+    let identities = (0..depth)
+        .map(|layer| {
+            let mut bytes = [0; 32];
+            bytes[..8].copy_from_slice(&(layer as u64).to_le_bytes());
+            RuntimeNominalSchemaIdentity::new(
+                RuntimeNominalTypeId::try_new(format!("test.Nested{layer}")).unwrap(),
+                RuntimeSemanticTypeId::from_bytes(bytes),
+            )
+        })
+        .collect::<Vec<_>>();
+    let definitions = identities
+        .iter()
+        .enumerate()
+        .map(|(layer, identity)| {
+            let schema = layer
+                .checked_sub(1)
+                .and_then(|inner| identities.get(inner))
+                .map_or(RuntimeTypeSchema::Unit, |inner| {
+                    RuntimeTypeSchema::NominalRef(inner.clone())
+                });
+            RuntimeNominalSchemaDefinition::new(
+                arcweft_core::entry::RuntimeNominalDeclarationId::from_bytes(
+                    identity.semantic_identity().as_bytes().to_owned(),
+                ),
+                identity.clone(),
+                vec![],
+                RuntimeNominalSchemaBody::Record {
+                    shape: RuntimeNominalRecordShape::Record,
+                    fields: vec![RuntimeNominalSchemaField::new(
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                        Some("inner".to_owned()),
+                        schema,
+                    )]
+                    .into(),
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let graph =
+        RuntimeNominalSchemaGraph::try_new(definitions, RuntimeSchemaLimits::engine_default())
+            .unwrap();
+    identities
+        .iter()
+        .fold(RuntimeValue::Unit, |value, identity| {
+            graph
+                .try_record_value(
+                    identity.semantic_identity(),
+                    vec![value],
+                    RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap()
+        })
+}
+
 fn nominal_with_encoded_size(target: usize) -> CharacterDialogueTypedValue {
-    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
     let max_string_bytes = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_string_bytes as usize;
     // Keep the field inventory fixed while sizing payloads through the public
     // encoder. An extra unit slot covers a byte skipped by a varint transition.
     let mut fields = vec![RuntimeValue::Unit; target.div_ceil(max_string_bytes) + 1];
-    let nominal = |fields| {
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            type_id.clone(),
-            semantic_identity,
-            layout,
+    let nominal = |fields: Vec<RuntimeValue>| {
+        let field_count = fields.len();
+        nominal_data(
             fields,
-        ))
+            vec![
+                RuntimeTypeSchema::Choice(
+                    vec![RuntimeTypeSchema::Unit, RuntimeTypeSchema::String].into()
+                );
+                field_count
+            ],
+        )
     };
     for field in 0..fields.len() {
         if nominal(fields.clone())
@@ -587,15 +720,7 @@ fn production_limits_have_the_exact_typed_contract_values() {
 #[test]
 fn generic_typed_values_use_runtime_depth_64_not_structured_depth_8() {
     nested_nominal(MAX_RUNTIME_VALUE_NESTING_DEPTH);
-    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
-    let value = (0..=MAX_RUNTIME_VALUE_NESTING_DEPTH).fold(RuntimeValue::Unit, |value, _| {
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            type_id.clone(),
-            semantic_identity,
-            layout,
-            vec![value],
-        ))
-    });
+    let value = nested_nominal_value(MAX_RUNTIME_VALUE_NESTING_DEPTH + 1);
     assert!(matches!(
         CharacterDialogueTypedValue::try_new(value),
         Err(CharacterDialogueValueError::Limit {
@@ -625,9 +750,15 @@ fn structured_paths_and_values_enforce_depth_8_and_total_leaves_256() {
         })
     ));
 
-    let exact = nominal_typed(vec![RuntimeValue::Bool(true); 256]);
+    let exact = nominal_typed(
+        vec![RuntimeValue::Bool(true); 256],
+        vec![RuntimeTypeSchema::Bool; 256],
+    );
     CharacterDialogueStyleValue::try_new(exact).expect("256 structured leaves");
-    let over = nominal_typed(vec![RuntimeValue::Bool(true); 257]);
+    let over = nominal_typed(
+        vec![RuntimeValue::Bool(true); 257],
+        vec![RuntimeTypeSchema::Bool; 257],
+    );
     assert!(matches!(
         CharacterDialogueStyleValue::try_new(over),
         Err(CharacterDialogueValueError::Limit {

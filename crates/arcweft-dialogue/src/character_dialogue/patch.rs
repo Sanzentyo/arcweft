@@ -10,7 +10,7 @@ use super::{
 };
 use crate::InlineFailurePolicy;
 use arcweft_character::id::CharacterLookId;
-use arcweft_core::value::{RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue};
+use arcweft_core::value::{RuntimeSeq, RuntimeValue};
 use arcweft_view::ViewId;
 use core::marker::PhantomData;
 use std::collections::BTreeMap;
@@ -504,17 +504,28 @@ fn update_path(
             Ok(())
         }
         RuntimeValue::NominalRecord(record) => {
-            let type_id = record.type_id().clone();
-            let semantic_identity = record.semantic_identity();
-            let layout = record.layout();
-            let mut values = record.clone().into_fields();
-            update_fixed_values(&mut values, index, tail, replacement)?;
-            *value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                type_id,
-                semantic_identity,
-                layout,
-                values,
-            ));
+            if index >= record.fields().len() {
+                return Err(CharacterDialogueValueError::Field {
+                    field: "structured_patch",
+                    reason: format!("field ordinal {index} is absent"),
+                });
+            }
+            let mut ordinals = 0..record.fields().len();
+            let mut replacement = replacement;
+            let candidate = record.clone().try_map_fields(|mut field| {
+                if ordinals.next().expect("one ordinal per defining field") == index {
+                    if tail.is_empty() {
+                        field = match replacement.take() {
+                            Some(replacement) => replacement,
+                            None => empty_runtime_value(&field)?,
+                        };
+                    } else {
+                        update_path(&mut field, tail, replacement.take())?;
+                    }
+                }
+                Ok::<_, CharacterDialogueValueError>(field)
+            })?;
+            *value = RuntimeValue::NominalRecord(candidate);
             Ok(())
         }
         RuntimeValue::Seq(sequence) => {

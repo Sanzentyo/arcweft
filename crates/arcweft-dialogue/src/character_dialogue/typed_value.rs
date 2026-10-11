@@ -7,7 +7,7 @@ use super::{
 use crate::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_core::{
     entry::RuntimeSchemaError,
-    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
+    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeSeq, RuntimeValue},
 };
 use core::hash::{Hash, Hasher};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -458,24 +458,9 @@ fn normalize_runtime_value(
             );
             Ok(owner.try_wrap(normalize_runtime_value(value.into_payload())?)?)
         }
-        RuntimeValue::NominalRecord(record) => {
-            let type_id = record.type_id().clone();
-            let semantic_identity = record.semantic_identity();
-            let layout = record.layout();
-            record
-                .into_fields()
-                .into_iter()
-                .map(normalize_runtime_value)
-                .collect::<Result<Vec<_>, _>>()
-                .map(|fields| {
-                    RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                        type_id,
-                        semantic_identity,
-                        layout,
-                        fields,
-                    ))
-                })
-        }
+        RuntimeValue::NominalRecord(record) => record
+            .try_map_fields(normalize_runtime_value)
+            .map(RuntimeValue::NominalRecord),
         RuntimeValue::Variant {
             owner,
             ordinal,
@@ -530,18 +515,9 @@ pub(super) fn empty_runtime_value(
             arcweft_core::value::RuntimeRecordValue::default(),
         )),
         RuntimeValue::NominalRecord(record) => record
-            .fields()
-            .iter()
-            .map(empty_runtime_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map(|fields| {
-                RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(
-                    record.type_id().clone(),
-                    record.semantic_identity(),
-                    record.layout(),
-                    fields,
-                ))
-            }),
+            .clone()
+            .try_map_fields(|field| empty_runtime_value(&field))
+            .map(RuntimeValue::NominalRecord),
         _ => Err(CharacterDialogueValueError::Field {
             field: "structured_patch",
             reason: "clear requires an optional or structurally empty runtime field".to_owned(),

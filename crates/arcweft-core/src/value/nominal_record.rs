@@ -299,9 +299,10 @@ impl RuntimeNominalRecordValue {
         })
     }
 
-    /// Constructs an already schema-ordered nominal record.
+    /// Stages private schema-ordered fields. The owning graph, program or
+    /// storage context must admit the candidate before publication.
     #[must_use]
-    pub const fn new(
+    pub(crate) const fn new(
         type_id: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
@@ -368,6 +369,17 @@ impl RuntimeNominalRecordValue {
     pub fn map_fields(mut self, map: impl FnMut(RuntimeValue) -> RuntimeValue) -> Self {
         self.fields = self.fields.into_iter().map(map).collect();
         self
+    }
+
+    /// Transforms owned fields in defining order without rebuilding the
+    /// nominal header or losing the construction frame's type binding.
+    /// A failed transform exposes no partially rebuilt record.
+    pub fn try_map_fields<E>(
+        mut self,
+        map: impl FnMut(RuntimeValue) -> Result<RuntimeValue, E>,
+    ) -> Result<Self, E> {
+        self.fields = self.fields.into_iter().map(map).collect::<Result<_, _>>()?;
+        Ok(self)
     }
 
     /// Derives the accepted field identity for one stored ordinal.

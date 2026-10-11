@@ -83,8 +83,15 @@ impl<'a> SchemaValueValidation<'a> {
         graph: &'a RuntimeNominalSchemaGraph,
         limits: super::RuntimeSchemaLimits,
     ) -> Self {
+        Self::with_graph_layouts(LayoutOperation::new(graph), limits)
+    }
+
+    pub(super) fn with_graph_layouts(
+        operation: LayoutOperation<'a>,
+        limits: super::RuntimeSchemaLimits,
+    ) -> Self {
         Self {
-            authority: SchemaAuthority::Graph(LayoutOperation::new(graph)),
+            authority: SchemaAuthority::Graph(operation),
             work: ValidationWork::new(limits),
         }
     }

@@ -133,7 +133,8 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     };
     let destination = binding(empty.clone());
     let source = binding(io);
-    let matches = |destination: Option<&RuntimeFunctionEffectInstantiation>, origin| {
+    let matches = |destination: Option<&RuntimeFunctionEffectInstantiation>,
+                   origin: Option<&RuntimeFunctionEffectInstantiation>| {
         RuntimeFunctionEffectInstantiation::with_value_relation(&program, destination, |relation| {
             relation.nominal(
                 if destination.is_some() {
@@ -156,6 +157,23 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
         effects: Box::new([]),
     };
     assert!(!matches(Some(&destination), Some(&malformed)));
+
+    for origin in [&destination, &source] {
+        let record = crate::value::RuntimeNominalRecordValue::new(
+            crate::entry::RuntimeNominalTypeId::try_new("test.Nominal").unwrap(),
+            id(5),
+            crate::entry::TypeLayoutHash::from_bytes([0x82; 32]),
+            vec![],
+        )
+        .with_type_instantiation(Some(std::sync::Arc::new(origin.clone())));
+        let expected = matches(Some(&destination), record.type_instantiation());
+        let transformed = record.try_map_fields(Ok::<_, ()>).unwrap();
+        assert_eq!(
+            matches(Some(&destination), transformed.type_instantiation()),
+            expected
+        );
+        assert_eq!(transformed.type_instantiation(), Some(origin));
+    }
 }
 
 #[test]

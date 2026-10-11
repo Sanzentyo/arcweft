@@ -23,9 +23,7 @@ use arcweft_core::plan::{
     RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeRecordFieldSeedId,
 };
-use arcweft_core::value::{
-    RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeValue,
-};
+use arcweft_core::value::{RuntimeLocalReadMode, RuntimeRecordFieldId, RuntimeValue};
 
 fn identity(marker: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([marker; 32])
@@ -212,16 +210,18 @@ fn nominal_inspection_plan() -> (RuntimePlan, RuntimeValue) {
             roles: RuntimeEntryRoles::None,
         })
         .unwrap();
-    let expected = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-        nominal,
-        identity(3),
-        layout,
-        vec![
-            RuntimeValue::String("resource://one".into()),
-            RuntimeValue::Bool(true),
-        ],
-    ));
-    (builder.finish().unwrap(), expected)
+    let plan = builder.finish().unwrap();
+    let expected = arcweft_core::program_types::RuntimeProgramTypes::Plan(&plan)
+        .try_record_value(
+            identity(3),
+            vec![
+                RuntimeValue::String("resource://one".into()),
+                RuntimeValue::Bool(true),
+            ],
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    (plan, expected)
 }
 
 fn lower_nominal_inspection() -> (AwbcProgram, RuntimeValue) {
