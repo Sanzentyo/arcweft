@@ -77,7 +77,13 @@ existing aggregate. It cannot initialize a child of a whole aggregate that was
 moved away. Whole-record assignment replaces the remaining initialized children
 and passes those owners to cleanup exactly once. A receiver reservation overlaps
 its ancestors and descendants, while disjoint sibling places remain independent.
-Opaque producer values retain their indivisible storage contract.
+Opaque producer values retain their indivisible storage contract. A closed
+builtin field projection with a proven Copy result may synchronously inspect
+its initialized local or stored-record receiver without copying or moving that
+receiver. This operation returns an owned Copy value; no receiver reference can
+escape. It requires the same definite availability as a read, preserves sibling
+resource custody, and rejects inspection after a whole-owner move. A computed
+receiver or a non-Copy builtin result keeps its owned value evaluation.
 
 Stored record paths retain every schema-selected field coordinate, including
 closed generic fields. The same complete path identifies reads, replacement,

@@ -223,14 +223,14 @@ post-process. It is an Arcweft-owned builtin even when authored without
 attributes; `amplitude`, `amount`, `speed`, `seed`, `phase`, and `target` customize
 its typed program.
 
-`motion(...)` applies a renderer-resolved deterministic animation function to
-translation, rotation, and scale together. Its closed parameters include
+`motion(...)` applies one closed deterministic builtin motion function to
+translation, rotation, and scale together. Its typed parameters include
 `motion_function`, `amplitude`, `rotation_amplitude`, `scale_amplitude`, `speed`,
-`phase`, and `seed`. The function identity is authored in Arcweft source and preserved in the
-effect descriptor; renderers may only execute functions they explicitly expose
-through their animation-function registry. Unknown names must remain
-observable through renderer diagnostics and must not be silently reinterpreted
-as another fallback animation or nondeterministic host code.
+`phase`, and `seed`. `motion_function` admits the `MotionFunction` values
+`.breath_orbit` and `.elastic_bloom`. Semantic analysis rejects values outside
+that domain before publishing an Fx application. The checked graph retains
+the selected function; renderers execute that graph without resolving an
+unchecked source name or selecting a fallback animation.
 
 Reusable motion is an Fx function whose body returns `Fx.transform` with a
 typed sampling closure. `ctx.time`, target-local ordinal/phase helpers, and the
