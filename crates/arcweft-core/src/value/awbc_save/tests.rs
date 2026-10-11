@@ -40,7 +40,7 @@ fn float_snapshots_preserve_scalar_bits_and_dense_storage_in_nested_values() {
             bits64.map(f64::from_bits).to_vec(),
         )))),
     ]);
-    let image = AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
+    let image = AwbcRuntimeValueSnapshot::from_standalone_value(&value).unwrap();
     let bytes = serde_json::to_vec(&image).unwrap();
     let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(image, decoded);
@@ -117,7 +117,7 @@ fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_l
         )])),
     ]);
     assert!(!value.ownership().permits_copy());
-    assert!(AwbcRuntimeValueSnapshot::from_runtime_value(&value).is_err());
+    assert!(AwbcRuntimeValueSnapshot::from_standalone_value(&value).is_err());
     let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
         .expect("the native rollback image records a Plan callable and iterator");
     drop(value);
@@ -145,7 +145,7 @@ fn iterator_snapshot_round_trips_only_the_owned_remainder() {
     );
 
     let value = RuntimeValue::Iterator(iterator);
-    let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+    let snapshot = AwbcRuntimeValueSnapshot::from_standalone_value(&value)
         .expect("the iterator remainder is a valid AWBC snapshot");
     let encoded = serde_json::to_vec(&snapshot).expect("iterator remainder serializes");
     let decoded: AwbcRuntimeValueSnapshot =
@@ -168,8 +168,8 @@ fn iterator_snapshot_round_trips_only_the_owned_remainder() {
 #[test]
 fn need_snapshot_preserves_handle_identity_and_rejects_zero_or_forged_correlations() {
     let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.profile"));
-    let snapshot =
-        AwbcRuntimeValueSnapshot::from_runtime_value(&value).expect("typed Need handle snapshots");
+    let snapshot = AwbcRuntimeValueSnapshot::from_standalone_value(&value)
+        .expect("typed Need handle snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("Need snapshot serializes");
     let decoded: AwbcRuntimeValueSnapshot =
         serde_json::from_slice(&encoded).expect("Need snapshot decodes");
@@ -187,7 +187,7 @@ fn need_snapshot_preserves_handle_identity_and_rejects_zero_or_forged_correlatio
 #[test]
 fn rgba8_color_snapshot_preserves_all_channels() {
     let value = RuntimeValue::Color(crate::value::RuntimeColor::new(12, 34, 56, 78));
-    let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+    let snapshot = AwbcRuntimeValueSnapshot::from_standalone_value(&value)
         .expect("RGBA8 color snapshots without a program-specific payload");
     let encoded = serde_json::to_vec(&snapshot).expect("Color snapshot serializes");
     let decoded: AwbcRuntimeValueSnapshot =
@@ -404,7 +404,14 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             event.clone(),
             RuntimeValue::Tuple(vec![event]),
         ] {
-            let saved = AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
+            assert!(AwbcRuntimeValueSnapshot::from_standalone_value(&value).is_err());
+            let absent_program = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+            assert!(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &absent_program)
+                    .is_err()
+            );
+            let saved =
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
             let encoded = serde_json::to_value(saved.clone()).unwrap();
             let saved: AwbcRuntimeValueSnapshot = serde_json::from_value(encoded).unwrap();
             assert_eq!(
@@ -414,7 +421,6 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                     .unwrap(),
                 value
             );
-            let absent_program = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
             assert!(
                 saved
                     .into_runtime_value_for_program(&absent_program)
@@ -422,7 +428,7 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             );
         }
         let AwbcRuntimeValueSnapshot::NominalRecord(saved) =
-            AwbcRuntimeValueSnapshot::from_runtime_value(&record).unwrap()
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&record, &owner).unwrap()
         else {
             unreachable!()
         };
@@ -463,6 +469,9 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                 .validate_live_value(semantic(1), &foreign, RuntimeSchemaLimits::engine_default())
                 .is_err()
         );
+        assert!(
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&foreign, &owner).is_err()
+        );
         let wrong_case = AwbcRuntimeValueSnapshot::Variant {
             type_instantiation: None,
             owner: super::super::RuntimeVariantIdentity::Nominal {
@@ -484,6 +493,20 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             name: "Set".to_owned(),
             payload: None,
         };
+        let wrong_case_live = RuntimeValue::Variant {
+            owner: match &wrong_case {
+                AwbcRuntimeValueSnapshot::Variant { owner, .. } => owner.clone(),
+                _ => unreachable!(),
+            },
+            ordinal: 0,
+            name: "Set".to_owned(),
+            type_instantiation: None,
+            payload: None,
+        };
+        assert!(
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&wrong_case_live, &owner)
+                .is_err()
+        );
         assert!(wrong_case.into_runtime_value_for_program(&owner).is_err());
     }
 }

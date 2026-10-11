@@ -117,8 +117,11 @@ fn nested_direct_await_snapshot_round_trips_and_resumes_exactly() {
         .validate_for_program(&program)
         .expect("nested suspended stack validates");
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
-        .expect("nested suspended stack has a typed save representation");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+    )
+    .expect("nested suspended stack has a typed save representation");
     let encoded = serde_json::to_string(&snapshot).expect("nested suspended stack serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_str(&encoded).expect("nested suspended stack decodes");
@@ -288,8 +291,11 @@ fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
         .validate_for_program(&program)
         .expect("cancelled stack remains a valid terminal snapshot");
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
-        .expect("cancelled stack has a typed save representation");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+    )
+    .expect("cancelled stack has a typed save representation");
     let encoded = serde_json::to_string(&snapshot).expect("cancelled stack serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_str(&encoded).expect("cancelled stack decodes");

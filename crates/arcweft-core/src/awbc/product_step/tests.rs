@@ -58,10 +58,13 @@ fn copyable_fixture_fiber(executor: &AwbcProductStepExecutor) -> FiberState {
         })
         .expect("copyable test fiber visits cleanly");
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
-    AwbcFiberStateSnapshot::from_live(&executor.fiber)
-        .expect("copyable fixture fiber has an inert snapshot")
-        .into_live_for_program(&owner)
-        .expect("copyable fixture fiber restores")
+    AwbcFiberStateSnapshot::from_live(
+        &executor.fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+    )
+    .expect("copyable fixture fiber has an inert snapshot")
+    .into_live_for_program(&owner)
+    .expect("copyable fixture fiber restores")
 }
 
 fn commit_test_dialogue_transaction(
@@ -1292,8 +1295,11 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let host_id = host_output.requests.host_calls[0].id.clone();
 
     let snapshot = product_snapshot(&executor);
-    let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot)
-        .expect("suspended activation host call is saveable");
+    let save = AwbcProductExecutorSaveSnapshot::from_live(
+        &snapshot,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+    )
+    .expect("suspended activation host call is saveable");
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
     let restored_snapshot = save
         .into_live_for_program(&owner)
@@ -1385,8 +1391,11 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         result
     };
 
-    let save = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor))
-        .expect("reached lexical defer packet is saveable");
+    let save = AwbcProductExecutorSaveSnapshot::from_live(
+        &product_snapshot(&executor),
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+    )
+    .expect("reached lexical defer packet is saveable");
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
     let restored_snapshot = save
         .into_live_for_program(&owner)
@@ -1682,8 +1691,11 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         .expect("unpaired restore candidate starts");
         assert!(rejected.restore_snapshot(unpaired).is_err());
 
-        let save = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(executor))
-            .expect("inflight defer saves with its child packet");
+        let save = AwbcProductExecutorSaveSnapshot::from_live(
+            &product_snapshot(executor),
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+        )
+        .expect("inflight defer saves with its child packet");
         let owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
         let restored_snapshot = save
@@ -2002,8 +2014,11 @@ fn save_snapshot_preserves_queued_progress_publications() {
     executor.latch_task_events(vec![event.clone()], &mut output);
     assert!(output.diagnostics.is_empty());
 
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor))
-        .expect("queued Progress snapshots");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &product_snapshot(&executor),
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+    )
+    .expect("queued Progress snapshots");
     let restored = saved
         .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
             std::sync::Arc::clone(&executor.program),
@@ -4142,8 +4157,11 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
     assert!(executor.restore_snapshot(tampered).is_err());
 
     let snapshot = product_snapshot(&executor);
-    let saved =
-        AwbcProductExecutorSaveSnapshot::from_live(&snapshot).expect("typed Need suspension saves");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &snapshot,
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program.clone()),
+    )
+    .expect("typed Need suspension saves");
     let encoded = serde_json::to_string(&saved).expect("typed Need suspension serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("typed Need suspension restores");
@@ -4287,8 +4305,11 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
     let live = executor
         .snapshot_for_save()
         .expect("Restartable in-flight Need can be saved");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
-        .expect("Restartable Need snapshot serializes");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &live,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("Restartable Need snapshot serializes");
     let mut future_observation = live;
     let observation_key = future_observation
         .need_publications
@@ -4545,7 +4566,11 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         _ => panic!("AwaitMany continuation"),
     };
     let live = executor.snapshot_for_save().expect("fanout is saveable");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live).expect("inert snapshot");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &live,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("inert snapshot");
     let encoded = serde_json::to_string(&saved).expect("snapshot serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("snapshot decodes");
@@ -4645,8 +4670,11 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
     let live = executor
         .snapshot_for_save()
         .expect("partial AwaitMany continuation is saveable");
-    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
-        .expect("partial AwaitMany Product state serializes");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(
+        &live,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+    )
+    .expect("partial AwaitMany Product state serializes");
     let encoded = serde_json::to_string(&saved).expect("Product save serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("Product save decodes");
@@ -6226,7 +6254,11 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     assert!(executor.has_internal_work());
 
     let live = product_snapshot(&executor);
-    let save = AwbcProductExecutorSaveSnapshot::from_live(&live).expect("paired queue saves");
+    let save = AwbcProductExecutorSaveSnapshot::from_live(
+        &live,
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+    )
+    .expect("paired queue saves");
     let encoded = serde_json::to_string(&save).expect("version-one inert queue serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("version-one inert queue decodes");

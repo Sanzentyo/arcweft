@@ -3261,7 +3261,7 @@ fn snapshot_runtime_value_for_owner(
         Some(owner) => {
             crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
         }
-        None => crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value),
+        None => crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(value),
     }
 }
 
@@ -5649,7 +5649,7 @@ mod tests {
         .expect("scheduled packet accepts unique capture locals");
         state.scheduled.push(scheduled);
 
-        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live_for_program(&state, &owner)
             .expect("DataShape result and capture snapshot their semantic identities");
         let unrelated_owner =
             RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));

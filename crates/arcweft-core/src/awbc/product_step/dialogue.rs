@@ -451,6 +451,7 @@ impl ProductDialogueStore {
 
     pub(super) fn to_save_snapshot<S>(
         &self,
+        owner: &crate::task::RuntimeProgramOwner,
         snapshot_frame: impl FnMut(
             &ActiveDialogue,
         )
@@ -459,7 +460,7 @@ impl ProductDialogueStore {
         crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
         crate::line_task::RuntimeDialogueRegistrySnapshotError,
     > {
-        self.registry.to_save_snapshot(snapshot_frame)
+        self.registry.to_rollback_snapshot(owner, snapshot_frame)
     }
 
     pub(super) fn from_save_snapshot<S>(

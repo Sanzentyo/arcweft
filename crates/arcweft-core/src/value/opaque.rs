@@ -3434,7 +3434,7 @@ mod tests {
                 message: "opaque value class/persistence is not constant-admissible".to_owned(),
             })
         );
-        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+        let snapshot = AwbcRuntimeValueSnapshot::from_standalone_value(&value)
             .expect("live handle snapshots explicitly");
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
             crate::awbc::schema::AwbcProgram::default(),
@@ -3616,8 +3616,10 @@ mod tests {
             Ok(value.clone())
         );
         assert!(serde_json::to_string(&value).is_err());
-        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&runtime)
-            .expect("AWBC snapshot preserves callback authority");
+        assert!(AwbcRuntimeValueSnapshot::from_standalone_value(&runtime).is_err());
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&runtime, &program_owner)
+                .expect("AWBC snapshot preserves callback authority");
         assert_eq!(
             snapshot
                 .into_runtime_value_for_program(&program_owner)

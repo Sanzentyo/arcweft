@@ -121,22 +121,18 @@ pub struct RuntimeObservationSaveSnapshot {
 }
 
 impl RuntimeObservationSaveSnapshot {
-    /// Portable AWBC state is rebound through the selected program at restore.
-    pub fn from_live(state: &RuntimeObservationState) -> Result<Self, String> {
-        Self::capture(state, None)
-    }
-
-    /// Native rollback requires the exact immutable program lease at capture.
-    pub(crate) fn from_live_for_program(
+    /// Captures observations through their exact immutable program lease.
+    /// Restore may bind the inert result to an independently checked artifact.
+    pub fn from_live_for_program(
         state: &RuntimeObservationState,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        Self::capture(state, Some(owner))
+        Self::capture(state, owner)
     }
 
     fn capture(
         state: &RuntimeObservationState,
-        owner: Option<&RuntimeProgramOwner>,
+        owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
         state
             .validate_unrestricted()
@@ -144,13 +140,10 @@ impl RuntimeObservationSaveSnapshot {
         let capture = |rows: &BTreeMap<String, RuntimePayload>| {
             rows.iter()
                 .map(|(name, value)| {
-                    let saved = match owner {
-                        Some(owner) => AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-                            value.value(),
-                            owner,
-                        ),
-                        None => AwbcRuntimeValueSnapshot::from_runtime_value(value.value()),
-                    }
+                    let saved = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        value.value(),
+                        owner,
+                    )
                     .map_err(|error| format!("observation '{name}' cannot be saved: {error}"))?;
                     Ok((name.clone(), saved))
                 })
@@ -261,15 +254,19 @@ mod tests {
             RuntimeAssignment::try_new("metric.wide".to_owned(), RuntimeValue::u64(u64::MAX))
                 .unwrap(),
         ));
-        let bytes = serde_json::to_vec(&RuntimeObservationSaveSnapshot::from_live(&state).unwrap())
-            .unwrap();
-        let decoded: RuntimeObservationSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
         let owner =
             RuntimeProgramOwner::Awbc(Arc::new(crate::awbc::schema::AwbcProgram::default()));
+        let bytes = serde_json::to_vec(
+            &RuntimeObservationSaveSnapshot::from_live_for_program(&state, &owner).unwrap(),
+        )
+        .unwrap();
+        let decoded: RuntimeObservationSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
         let restored = decoded.into_live_for_program(&owner).unwrap();
         assert_eq!(
-            serde_json::to_vec(&RuntimeObservationSaveSnapshot::from_live(&restored).unwrap())
-                .unwrap(),
+            serde_json::to_vec(
+                &RuntimeObservationSaveSnapshot::from_live_for_program(&restored, &owner).unwrap()
+            )
+            .unwrap(),
             bytes
         );
         assert_eq!(restored, state);
@@ -328,7 +325,7 @@ mod tests {
             RuntimeValue::Bool(false),
             RuntimeValue::NeedHandle(crate::tests::reusable_need("need.observation.saved")),
         ]);
-        let saved_value = AwbcRuntimeValueSnapshot::from_runtime_value(&affine)
+        let saved_value = AwbcRuntimeValueSnapshot::from_standalone_value(&affine)
             .expect("inert value schema can represent an affine value");
         drop(affine);
         let saved = RuntimeObservationSaveSnapshot {

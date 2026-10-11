@@ -135,7 +135,7 @@ impl HostTaskRequestSnapshot {
             Some(owner) => {
                 AwbcRuntimeValueSnapshot::from_runtime_value_for_program(payload.value(), owner)
             }
-            None => AwbcRuntimeValueSnapshot::from_runtime_value(payload.value()),
+            None => AwbcRuntimeValueSnapshot::from_standalone_value(payload.value()),
         };
         Ok(match request {
             HostTaskRequest::FileReadText(r) => Self::FileReadText(r.clone()),

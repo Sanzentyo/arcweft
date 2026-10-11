@@ -1357,8 +1357,11 @@ fn flow_format_attempt_catches_nested_recoverable_call_restores_and_runs_later_o
         Some(crate::value::RuntimeFmtParameterId::Style)
     );
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
-        .expect("in-flight Flow operand attempt snapshots");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("in-flight Flow operand attempt snapshots");
     let bytes = serde_json::to_vec(&snapshot).expect("attempt snapshot serializes");
     let mut forged: serde_json::Value =
         serde_json::from_slice(&bytes).expect("attempt snapshot JSON parses");
@@ -1551,8 +1554,11 @@ fn nested_flow_format_attempts_keep_independent_frame_owned_state_across_restore
         crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(1).unwrap()
     );
 
-    let snapshot =
-        AwbcFiberStateSnapshot::from_live(&fiber).expect("nested Flow format attempts snapshot");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("nested Flow format attempts snapshot");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot deserializes");
@@ -1619,7 +1625,11 @@ fn formatter_snapshot_keeps_start_locale_across_ambient_change() {
             .active_locale(),
         en_us.active_locale()
     );
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .unwrap();
     let bytes = serde_json::to_vec(&snapshot).unwrap();
     let mut corrupted: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     corrupted["frames"][0]["format"]["format_context"]["data_identity"] =
@@ -1684,8 +1694,11 @@ fn format_content_vm_evaluates_style_after_recoverable_value_failure_and_resumes
         output.exit,
         crate::awbc::vm::VmExit::BudgetYield(_)
     ));
-    let snapshot =
-        AwbcFiberStateSnapshot::from_live(&fiber).expect("recoverable formatter state snapshots");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("recoverable formatter state snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot deserializes");
@@ -1769,7 +1782,11 @@ fn formatter_recovers_nested_helper_and_trait_errors_after_a_saved_budget_yield(
             step(&program, &mut fiber, 1).exit,
             crate::awbc::vm::VmExit::BudgetYield(_)
         ));
-        let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("nested call snapshots");
+        let snapshot = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .expect("nested call snapshots");
         let encoded = serde_json::to_vec(&snapshot).expect("nested call snapshot serializes");
         let decoded: AwbcFiberStateSnapshot =
             serde_json::from_slice(&encoded).expect("snapshot decodes");
@@ -1905,8 +1922,11 @@ fn project_display_text_runs_in_the_caller_fiber_and_restores_its_result_continu
         ]
     );
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
-        .expect("in-flight project formatter state snapshots");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("in-flight project formatter state snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot deserializes");
@@ -1961,8 +1981,11 @@ fn flow_attempt_project_display_uses_staged_context_and_restores_method_call() {
         ]
     );
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber)
-        .expect("project attempt method continuation snapshots");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("project attempt method continuation snapshots");
     let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot deserializes");

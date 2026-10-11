@@ -251,7 +251,11 @@ fn scope_carrier_slots_restore_at_each_active_frame_instruction() {
                 .active_frame()
                 .is_ok_and(|frame| !frame.scopes.is_empty())
             {
-                let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+                let snapshot = AwbcFiberStateSnapshot::from_live(
+                    &fiber,
+                    &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+                )
+                .unwrap();
                 fiber = snapshot.into_live_for_program(&owner).unwrap();
                 restored += 1;
             }

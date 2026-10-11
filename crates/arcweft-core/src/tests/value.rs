@@ -155,7 +155,7 @@ fn progress_is_typed_saveable_and_canonically_encoded() {
         .expect("positive zero progress")
     );
 
-    let snapshot = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+    let snapshot = crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value)
         .expect("progress snapshot");
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
         crate::awbc::schema::AwbcProgram::default(),

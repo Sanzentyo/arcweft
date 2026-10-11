@@ -655,9 +655,10 @@ impl RuntimeProducerArgumentAdmission {
     pub(crate) fn try_snapshot(
         &self,
         value: &RuntimeValue,
+        owner: &arcweft_core::task::RuntimeProgramOwner,
     ) -> Result<AwbcRuntimeValueSnapshot, RuntimeOwnershipError> {
         self.validate_live_value(value)?;
-        AwbcRuntimeValueSnapshot::from_runtime_value(value).map_err(|source| {
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner).map_err(|source| {
             RuntimeOwnershipError::Snapshot {
                 path: RuntimeOwnershipPath::root(),
                 source,

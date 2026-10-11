@@ -107,7 +107,11 @@ flow done() -> String { return "done" }
         .map(arcweft_id::DeclarationName::as_str)
         .collect::<Vec<_>>();
     assert_eq!(names, ["rain", "window"]);
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(program.clone())),
+    )
+    .unwrap();
     let restored = snapshot
         .into_live_for_program(&RuntimeProgramOwner::Awbc(Arc::new(program)))
         .unwrap();

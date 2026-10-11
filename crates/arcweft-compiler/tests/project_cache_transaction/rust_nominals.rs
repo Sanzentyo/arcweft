@@ -9,7 +9,7 @@ use arcweft_core::{
     },
     entry::{RuntimeNominalRecordShape as Shape, RuntimeSchemaLimits},
     plan::RuntimePlanTypeProjection,
-    value::{RuntimeNominalRecordValue, RuntimeValue},
+    value::RuntimeValue,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_rust_abi::{
@@ -219,10 +219,7 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
         .filter(|domain| domain.fields().len() == 2)
     {
         let row = plan.type_table().get(domain.owner()).unwrap();
-        let RuntimePlanTypeProjection::Nominal {
-            nominal, layout, ..
-        } = row.projection()
-        else {
+        let RuntimePlanTypeProjection::Nominal { .. } = row.projection() else {
             panic!("source nominal row");
         };
         let (valid, invalid) = match plan
@@ -238,19 +235,33 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
             other => panic!("unexpected instantiated field: {other:?}"),
         };
         let node = |value, next| {
-            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                nominal.clone(),
-                row.semantic_identity(),
-                *layout,
-                vec![value, next],
-            ))
+            arcweft_core::program_types::RuntimeProgramTypes::Plan(plan)
+                .try_record_value(row.semantic_identity(), vec![value, next], limits)
+                .unwrap()
         };
         let leaf = node(valid.clone(), RuntimeValue::option_none());
         let value = node(valid.clone(), RuntimeValue::option_some(leaf));
-        let wrong = node(
-            valid,
-            RuntimeValue::option_some(node(invalid, RuntimeValue::option_none())),
-        );
+        let RuntimeValue::NominalRecord(leaf) = node(valid, RuntimeValue::option_none()) else {
+            unreachable!();
+        };
+        let mut fields = leaf.fields().iter().cloned();
+        let _ = fields.next();
+        let mut replacement = vec![invalid, fields.next().unwrap()].into_iter();
+        let wrong_leaf = leaf.map_fields(|_| replacement.next().unwrap());
+        let wrong = value
+            .clone()
+            .as_nominal_record()
+            .unwrap()
+            .clone()
+            .map_fields({
+                let mut fields = vec![
+                    value.as_nominal_record().unwrap().fields()[0].clone(),
+                    RuntimeValue::option_some(RuntimeValue::NominalRecord(wrong_leaf)),
+                ]
+                .into_iter();
+                move |_| fields.next().unwrap()
+            });
+        let wrong = RuntimeValue::NominalRecord(wrong);
         let awbc_id = program
             .runtime_types
             .iter()

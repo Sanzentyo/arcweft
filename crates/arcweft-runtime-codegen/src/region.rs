@@ -190,7 +190,7 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
     let available = instruction_budget.min(fiber.budget.remaining);
     let entry_budget = fiber.budget;
     let owner = RuntimeProgramOwner::Awbc(Arc::clone(program));
-    let checkpoint = fiber.checkpoint()?;
+    let checkpoint = fiber.checkpoint(&owner)?;
     let result = region.step(CompiledRegionInput {
         program,
         fiber,

@@ -258,14 +258,8 @@ pub struct AwbcRuntimeCallableSnapshot {
 }
 
 impl AwbcRuntimeValueSnapshot {
-    /// Captures a borrowed callable without constructing a second live
-    /// `RuntimeValue::Callable` carrier.
-    pub(crate) fn from_callable(
-        value: &RuntimeCallableValue,
-    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Self::callable_from_live(value, None).map(Self::Callable)
-    }
-
+    /// Captures a borrowed callable through its exact executable lease without
+    /// constructing a second live `RuntimeValue::Callable` carrier.
     pub(crate) fn from_callable_for_program(
         value: &RuntimeCallableValue,
         owner: &RuntimeProgramOwner,
@@ -283,12 +277,6 @@ impl AwbcRuntimeValueSnapshot {
         Ok(tokens)
     }
 
-    pub(crate) fn from_opaque(
-        value: &RuntimeOpaqueValue,
-    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Self::opaque_from_live(value, None).map(Self::Opaque)
-    }
-
     pub(crate) fn from_opaque_for_program(
         value: &RuntimeOpaqueValue,
         owner: &RuntimeProgramOwner,
@@ -296,12 +284,17 @@ impl AwbcRuntimeValueSnapshot {
         Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
     }
 
-    pub fn from_runtime_value(value: &RuntimeValue) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+    /// Internal standalone task/data capture. Program-owned descendants are
+    /// rejected; executable snapshots use the selected program entry point.
+    pub(crate) fn from_standalone_value(
+        value: &RuntimeValue,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         Self::from_live_with_owner(value, None)
     }
 
     /// Captures an inert value under its exact immutable executable lease.
-    /// Callable values anywhere in the graph must belong to this owner.
+    /// Callable values anywhere in the graph must belong to this owner. Every
+    /// nominal value is validated through its type graph before DTO exposure.
     pub fn from_runtime_value_for_program(
         value: &RuntimeValue,
         owner: &RuntimeProgramOwner,
@@ -381,8 +374,9 @@ impl AwbcRuntimeValueSnapshot {
                     })
                     .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
             ),
-            RuntimeValue::NominalRecord(value) => {
-                Self::NominalRecord(Self::nominal_from_live(value, owner)?)
+            RuntimeValue::NominalRecord(record) => {
+                Self::validate_nominal_snapshot(value, record.semantic_identity(), owner)?;
+                Self::NominalRecord(Self::nominal_from_live(record, owner)?)
             }
             RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value, owner)?),
             RuntimeValue::Reduction(value) => {
@@ -398,18 +392,48 @@ impl AwbcRuntimeValueSnapshot {
                 name,
                 payload,
                 type_instantiation,
-            } => Self::Variant {
-                owner: variant_owner.clone(),
-                ordinal: *ordinal,
-                name: name.clone(),
-                payload: payload
-                    .as_deref()
-                    .map(|value| Self::from_live_with_owner(value, owner))
-                    .transpose()?
-                    .map(Box::new),
-                type_instantiation: type_instantiation.as_deref().cloned(),
-            },
+            } => {
+                if let super::RuntimeVariantIdentity::Nominal {
+                    semantic_identity, ..
+                } = variant_owner
+                {
+                    Self::validate_nominal_snapshot(value, *semantic_identity, owner)?;
+                } else if value.builtin_variant_case().is_none() {
+                    return Err(AwbcRuntimeValueSnapshotError::new(
+                        "invalid builtin variant snapshot",
+                    ));
+                }
+                Self::Variant {
+                    owner: variant_owner.clone(),
+                    ordinal: *ordinal,
+                    name: name.clone(),
+                    payload: payload
+                        .as_deref()
+                        .map(|value| Self::from_live_with_owner(value, owner))
+                        .transpose()?
+                        .map(Box::new),
+                    type_instantiation: type_instantiation.as_deref().cloned(),
+                }
+            }
         })
+    }
+
+    fn validate_nominal_snapshot(
+        value: &RuntimeValue,
+        semantic_identity: RuntimeSemanticTypeId,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let owner = owner.ok_or_else(|| {
+            AwbcRuntimeValueSnapshotError::new("nominal values require a program-bound snapshot")
+        })?;
+        owner
+            .types()
+            .validate_snapshot_value(
+                semantic_identity,
+                value,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
     /// Restores values, including DataShape witnesses, after the enclosing
@@ -810,10 +834,20 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeAgentValue::BinaryData(data) => {
                 AwbcRuntimeAgentSnapshot::BinaryData(data.clone())
             }
-            RuntimeAgentValue::DataShape(shape) => AwbcRuntimeAgentSnapshot::DataShape {
-                shape_type: shape.shape_type(),
-                value_type: shape.value_type(),
-            },
+            RuntimeAgentValue::DataShape(shape) => {
+                let owner = owner.ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "DataShape witnesses require a program-bound snapshot",
+                    )
+                })?;
+                shape
+                    .validate_for(owner, shape.shape_type(), shape.value_type())
+                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+                AwbcRuntimeAgentSnapshot::DataShape {
+                    shape_type: shape.shape_type(),
+                    value_type: shape.value_type(),
+                }
+            }
         })
     }
 
@@ -950,9 +984,9 @@ impl AwbcRuntimeValueSnapshot {
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshotError> {
         match owner {
-            None if !matches!(value.owner(), RuntimeProgramOwner::Awbc(_)) => {
+            None => {
                 return Err(AwbcRuntimeValueSnapshotError::new(
-                    "plan-owned callable values cannot cross the AWBC session-save boundary",
+                    "callable values require a program-bound snapshot",
                 ));
             }
             Some(owner) if !value.owner().same_program(owner) => {
@@ -960,7 +994,7 @@ impl AwbcRuntimeValueSnapshot {
                     "callable rollback image belongs to another program",
                 ));
             }
-            None | Some(_) => {}
+            Some(_) => {}
         }
         Ok(AwbcRuntimeCallableSnapshot {
             state: value.state(),

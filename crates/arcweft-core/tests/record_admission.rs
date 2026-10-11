@@ -24,7 +24,8 @@ fn awbc_snapshot_reconstruction_admits_the_same_row_and_column_inventory() {
         .unwrap(),
     );
     for (value, fields_path) in [(row, "/Record"), (columns, "/Seq/RecordColumns/fields")] {
-        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
         let encoded = serde_json::to_value(&snapshot).unwrap();
         let decoded: AwbcRuntimeValueSnapshot = serde_json::from_value(encoded.clone()).unwrap();
         assert_eq!(

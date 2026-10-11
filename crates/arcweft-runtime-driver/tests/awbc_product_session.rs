@@ -94,8 +94,12 @@ fn live_snapshot_fiber(
         .expect("program-bound fiber snapshot reconstructs for inspection")
 }
 
-fn save_snapshot_fiber(snapshot: &mut BundleSessionSnapshot, fiber: &FiberState) {
-    snapshot.executor.state.fiber = AwbcFiberStateSnapshot::from_live(fiber)
+fn save_snapshot_fiber(
+    snapshot: &mut BundleSessionSnapshot,
+    fiber: &FiberState,
+    owner: &RuntimeProgramOwner,
+) {
+    snapshot.executor.state.fiber = AwbcFiberStateSnapshot::from_live(fiber, owner)
         .expect("live fiber projects to its inert snapshot");
 }
 
@@ -903,7 +907,7 @@ fn awbc_save_load_preserves_cleanup_stacks() {
     frame.scopes[0]
         .cleanups
         .push(cleanup("handle.scope", "scope cleanup"));
-    save_snapshot_fiber(&mut snapshot, &fiber);
+    save_snapshot_fiber(&mut snapshot, &fiber, &owner);
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
@@ -945,7 +949,7 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
             effect: AwbcEffectPlanId(0),
             args: vec![callable],
         });
-    save_snapshot_fiber(&mut snapshot, &fiber);
+    save_snapshot_fiber(&mut snapshot, &fiber, &owner);
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
@@ -999,7 +1003,7 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
             effect: AwbcEffectPlanId(0),
             args: vec![opaque_runtime_value()],
         });
-    save_snapshot_fiber(&mut snapshot, &fiber);
+    save_snapshot_fiber(&mut snapshot, &fiber, &owner);
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
@@ -1055,9 +1059,8 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
 fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown_state() {
     let bytes = callable_product_awfb_bytes();
     let session = product_session_from_bytes(&bytes);
-    let foreign = captured_awbc_runtime_callable_value(RuntimeProgramOwner::Awbc(
-        std::sync::Arc::new(callable_awbc_program()),
-    ));
+    let foreign_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(callable_awbc_program()));
+    let foreign = captured_awbc_runtime_callable_value(foreign_owner.clone());
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     let owner = session.program_owner();
     drop(session);
@@ -1071,7 +1074,7 @@ fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown
             effect: AwbcEffectPlanId(0),
             args: vec![foreign],
         });
-    save_snapshot_fiber(&mut snapshot, &fiber);
+    save_snapshot_fiber(&mut snapshot, &fiber, &foreign_owner);
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
@@ -2122,14 +2125,21 @@ fn manual_awbc_capture_origin(declaration: &str) -> arcweft_core::plan::RuntimeL
     arcweft_core::plan::RuntimeLocalOrigin::Binding(*hash.finalize().as_bytes())
 }
 
-fn session_save_with_observation_value(session: &BundleSession, value: RuntimeValue) -> Vec<u8> {
+fn session_save_with_observation_value(
+    session: &BundleSession,
+    value: RuntimeValue,
+    owner: &RuntimeProgramOwner,
+) -> Vec<u8> {
     let mut observations = arcweft_core::observation::RuntimeObservationState::default();
     observations.record_effect(&arcweft_core::effect::LineEffectRequest::SignalWrite(
         arcweft_core::effect::RuntimeAssignment::try_new("signal.payload".to_owned(), value)
             .expect("fixture observation is unrestricted"),
     ));
-    let saved = arcweft_core::observation::RuntimeObservationSaveSnapshot::from_live(&observations)
-        .expect("fixture observations have an inert portable projection");
+    let saved = arcweft_core::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+        &observations,
+        owner,
+    )
+    .expect("fixture observations have an inert portable projection");
     let mut payload = exported_session_json(session);
     payload["executor"]["state"]["observations"] =
         serde_json::to_value(saved).expect("the owning observation DTO serializes");
@@ -2148,6 +2158,7 @@ fn observation_only_asset_restore_requires_the_existing_catalog_validator() {
     let save = session_save_with_observation_value(
         &session,
         RuntimeValue::Tuple(vec![image_handle_for_bytes(b"saved image bytes")]),
+        &session.program_owner(),
     );
     let error = session
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
@@ -2176,6 +2187,7 @@ fn observation_only_asset_catalog_refusal_restores_the_complete_prior_session() 
     let save = session_save_with_observation_value(
         &session,
         RuntimeValue::Tuple(vec![image_handle_for_bytes(b"forged image bytes")]),
+        &session.program_owner(),
     );
     let catalog_digest = RuntimeAssetContentDigest::try_for_bytes(b"catalog image bytes")
         .expect("catalog digest fits");
@@ -2224,7 +2236,10 @@ fn cold_observation_callable_restore_binds_the_installed_current_program() {
     assert!(!portable_owner.same_program(&original_owner));
     let save = session_save_with_observation_value(
         &session,
-        RuntimeValue::Tuple(vec![captured_awbc_runtime_callable_value(portable_owner)]),
+        RuntimeValue::Tuple(vec![captured_awbc_runtime_callable_value(
+            portable_owner.clone(),
+        )]),
+        &portable_owner,
     );
     drop(session);
     let mut restored = product_session_from_bytes(&bytes);
@@ -2305,15 +2320,20 @@ fn live_product_observation_restore_and_hotpatch_install_the_checked_program_own
     let mut snapshot = executor.snapshot().expect("the original Product snapshots");
     let foreign_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(callable_awbc_program()));
     assert!(!foreign_owner.same_program(&first_owner));
-    snapshot
-        .observations
-        .record_effect(&arcweft_core::effect::LineEffectRequest::SignalWrite(
-            arcweft_core::effect::RuntimeAssignment::try_new(
-                "signal.callback".to_owned(),
-                captured_awbc_runtime_callable_value(foreign_owner),
-            )
-            .expect("portable AWBC callable is unrestricted"),
-        ));
+    let mut observations = arcweft_core::observation::RuntimeObservationState::default();
+    observations.record_effect(&arcweft_core::effect::LineEffectRequest::SignalWrite(
+        arcweft_core::effect::RuntimeAssignment::try_new(
+            "signal.callback".to_owned(),
+            captured_awbc_runtime_callable_value(foreign_owner.clone()),
+        )
+        .expect("portable AWBC callable is unrestricted"),
+    ));
+    snapshot.observations =
+        arcweft_core::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+            &observations,
+            &foreign_owner,
+        )
+        .unwrap();
     executor
         .restore_snapshot(snapshot)
         .expect("live snapshot admits and rebinds observations");

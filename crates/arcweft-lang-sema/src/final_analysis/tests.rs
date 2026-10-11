@@ -2750,7 +2750,12 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
         "a loaded image handle is snapshot-only, not a plan constant"
     );
     let snapshot = admission
-        .try_snapshot(&value)
+        .try_snapshot(
+            &value,
+            &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(
+                arcweft_core::awbc::schema::AwbcProgram::default(),
+            )),
+        )
         .expect("the exact accepted opaque value snapshots");
     let arcweft_core::value::AwbcRuntimeValueSnapshot::Opaque(snapshot) = snapshot else {
         panic!("the accepted opaque carrier retains its owner in the snapshot");

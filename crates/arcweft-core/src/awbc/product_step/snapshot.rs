@@ -545,7 +545,7 @@ pub struct AwbcProductExecutorSnapshot {
     pub next_host_call_sequence: u64,
     pub next_audio_sequence: u64,
     pub compact_pure_stats: crate::step::RuntimePureCallStats,
-    pub observations: RuntimeObservationState,
+    pub observations: crate::observation::RuntimeObservationSaveSnapshot,
 }
 
 /// AWBC session-save projection of [`AwbcProductExecutorSnapshot`].
@@ -682,8 +682,12 @@ pub enum AwbcNeedStateSaveSnapshot {
     Cancelled,
 }
 
-fn save_runtime_value(value: &RuntimeValue) -> Result<AwbcRuntimeValueSnapshot, String> {
-    AwbcRuntimeValueSnapshot::from_runtime_value(value).map_err(|error| error.to_string())
+fn save_runtime_value(
+    value: &RuntimeValue,
+    owner: &crate::task::RuntimeProgramOwner,
+) -> Result<AwbcRuntimeValueSnapshot, String> {
+    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+        .map_err(|error| error.to_string())
 }
 
 fn restore_runtime_value(
@@ -754,14 +758,17 @@ fn visit_task_request_values<E>(
     }
 }
 
-fn save_need_state(state: &RuntimeNeedProducerState) -> Result<AwbcNeedStateSaveSnapshot, String> {
+fn save_need_state(
+    state: &RuntimeNeedProducerState,
+    owner: &crate::task::RuntimeProgramOwner,
+) -> Result<AwbcNeedStateSaveSnapshot, String> {
     Ok(match state {
         RuntimeNeedProducerState::NotStarted => AwbcNeedStateSaveSnapshot::NotStarted,
         RuntimeNeedProducerState::Pending(progress) => AwbcNeedStateSaveSnapshot::Pending {
             progress: progress.clone(),
         },
         RuntimeNeedProducerState::Ready(value) => AwbcNeedStateSaveSnapshot::Ready {
-            value: save_runtime_value(&value.0)?,
+            value: save_runtime_value(&value.0, owner)?,
         },
         RuntimeNeedProducerState::ReadyTransferred => AwbcNeedStateSaveSnapshot::ReadyTransferred,
         RuntimeNeedProducerState::InfrastructureFailure(failure) => {
@@ -793,13 +800,14 @@ fn restore_need_state(
 
 fn save_need_producer_registry(
     registry: &NeedProducerRegistryRestore,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcNeedProducerRegistrySaveSnapshot, String> {
     Ok(AwbcNeedProducerRegistrySaveSnapshot {
         task_admissions: registry
             .task_admissions
             .iter()
             .map(|row| {
-                crate::task::TaskSubmissionSaveSnapshot::from_live(row, None)
+                crate::task::TaskSubmissionSaveSnapshot::from_live(row, Some(owner))
                     .map_err(|error| error.to_string())
             })
             .collect::<Result<_, _>>()?,
@@ -820,14 +828,17 @@ fn save_need_producer_registry(
                         .map(|argument| {
                             Ok(AwbcNeedProducerArgumentSaveSnapshot {
                                 name: argument.name.clone(),
-                                value: save_runtime_value(&argument.value)?,
+                                value: save_runtime_value(&argument.value, owner)?,
                             })
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation,
-                    task_spec: crate::task::TaskSpecSnapshot::from_live(&launch.task_spec, None)
-                        .map_err(|error| error.to_string())?,
-                    state: save_need_state(&launch.state)?,
+                    task_spec: crate::task::TaskSpecSnapshot::from_live(
+                        &launch.task_spec,
+                        Some(owner),
+                    )
+                    .map_err(|error| error.to_string())?,
+                    state: save_need_state(&launch.state, owner)?,
                     publication: launch.publication,
                     task_submitted: launch.task_submitted,
                     task_terminal: launch.task_terminal,
@@ -868,12 +879,13 @@ fn save_need_producer_registry(
 
 fn save_live_need_producer_registry(
     registry: &NeedProducerRegistry,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcNeedProducerRegistrySaveSnapshot, String> {
     Ok(AwbcNeedProducerRegistrySaveSnapshot {
         task_admissions: registry
             .task_admissions()
             .map(|row| {
-                crate::task::TaskSubmissionSaveSnapshot::from_live(&row, None)
+                crate::task::TaskSubmissionSaveSnapshot::from_live(&row, Some(owner))
                     .map_err(|error| error.to_string())
             })
             .collect::<Result<_, _>>()?,
@@ -893,14 +905,17 @@ fn save_live_need_producer_registry(
                         .map(|argument| {
                             Ok(AwbcNeedProducerArgumentSaveSnapshot {
                                 name: argument.name.clone(),
-                                value: save_runtime_value(&argument.value)?,
+                                value: save_runtime_value(&argument.value, owner)?,
                             })
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation(),
-                    task_spec: crate::task::TaskSpecSnapshot::from_live(launch.task_spec(), None)
-                        .map_err(|error| error.to_string())?,
-                    state: save_need_state(launch.state())?,
+                    task_spec: crate::task::TaskSpecSnapshot::from_live(
+                        launch.task_spec(),
+                        Some(owner),
+                    )
+                    .map_err(|error| error.to_string())?,
+                    state: save_need_state(launch.state(), owner)?,
                     publication: launch.publication(),
                     task_submitted: launch.task_submitted(),
                     task_terminal: launch.task_terminal(),
@@ -1241,6 +1256,7 @@ fn restore_pending_line_operation(
 
 fn snapshot_pending_line_operation_for_save(
     pending: &super::ProductPendingLineOperation,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcProductPendingLineOperationSaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError>
 {
     Ok(match pending {
@@ -1254,7 +1270,9 @@ fn snapshot_pending_line_operation_for_save(
             cursor: *cursor,
             destination: *destination,
             command: command.clone(),
-            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                value, owner,
+            )?,
             token: token.clone(),
         },
         super::ProductPendingLineOperation::ActorLook {
@@ -1267,7 +1285,9 @@ fn snapshot_pending_line_operation_for_save(
             cursor: *cursor,
             destination: *destination,
             command: command.clone(),
-            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                value, owner,
+            )?,
             token: token.clone(),
         },
         super::ProductPendingLineOperation::StartVoice {
@@ -1286,6 +1306,7 @@ fn snapshot_pending_line_operation_for_save(
 
 fn snapshot_dialogue_phase_for_save(
     phase: &super::ProductDialoguePhase,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcProductDialoguePhaseSaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
     Ok(match phase {
         super::ProductDialoguePhase::Transitioning => {
@@ -1295,10 +1316,10 @@ fn snapshot_dialogue_phase_for_save(
         }
         super::ProductDialoguePhase::Activating { fiber, pending } => {
             AwbcProductDialoguePhaseSaveSnapshot::Activating {
-                fiber: AwbcFiberStateSnapshot::from_live(fiber)?,
+                fiber: AwbcFiberStateSnapshot::from_live(fiber, owner)?,
                 pending: pending
                     .as_ref()
-                    .map(snapshot_pending_line_operation_for_save)
+                    .map(|pending| snapshot_pending_line_operation_for_save(pending, owner))
                     .transpose()?,
             }
         }
@@ -1318,10 +1339,12 @@ fn snapshot_dialogue_phase_for_save(
                 state: match &closing.state {
                     super::ProductDialogueClosingState::Activation { fiber, pending } => {
                         AwbcProductDialogueClosingStateSaveSnapshot::Activation {
-                            fiber: AwbcFiberStateSnapshot::from_live(fiber)?,
+                            fiber: AwbcFiberStateSnapshot::from_live(fiber, owner)?,
                             pending: pending
                                 .as_ref()
-                                .map(snapshot_pending_line_operation_for_save)
+                                .map(|pending| {
+                                    snapshot_pending_line_operation_for_save(pending, owner)
+                                })
                                 .transpose()?,
                         }
                     }
@@ -1431,6 +1454,7 @@ fn restore_dialogue_phase_from_save(
 
 fn snapshot_active_dialogue(
     active: &super::ActiveDialogue,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<
     AwbcProductActiveDialogueSaveSnapshot,
     crate::line_task::RuntimeDialogueRegistrySnapshotError,
@@ -1438,19 +1462,26 @@ fn snapshot_active_dialogue(
     Ok(AwbcProductActiveDialogueSaveSnapshot {
         activation: active.activation.clone(),
         content: active.content,
-        target: crate::value::AwbcRuntimeValueSnapshot::from_opaque(&active.target)?,
+        target: crate::value::AwbcRuntimeValueSnapshot::from_opaque_for_program(
+            &active.target,
+            owner,
+        )?,
         target_type: active.target_type,
         line: active.line.clone(),
         result: active.result.clone(),
         captures: active
             .captures
             .iter()
-            .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
+            .map(|value| {
+                crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+            })
             .collect::<Result<_, _>>()?,
         task_inputs: active
             .task_inputs
             .iter()
-            .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
+            .map(|value| {
+                crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+            })
             .collect::<Result<_, _>>()?,
         values: active
             .values
@@ -1459,8 +1490,9 @@ fn snapshot_active_dialogue(
                 Ok(AwbcProductDialogueValueSaveSnapshot {
                     slot: binding.slot,
                     role: binding.role,
-                    value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
+                    value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
                         &binding.value,
+                        owner,
                     )?,
                 })
             })
@@ -1471,12 +1503,14 @@ fn snapshot_active_dialogue(
             .map(|(site, callback)| {
                 Ok(AwbcProductDialogueEffectSaveSnapshot {
                     site: *site,
-                    callback: crate::value::AwbcRuntimeValueSnapshot::from_callable(callback)?,
+                    callback: crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
+                        callback, owner,
+                    )?,
                 })
             })
             .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
         voice: active.voice.clone(),
-        phase: snapshot_dialogue_phase_for_save(&active.phase)?,
+        phase: snapshot_dialogue_phase_for_save(&active.phase, owner)?,
         elapsed_nanos: active.elapsed_nanos,
         pending_content_events: active.pending_content_events.clone(),
         pending_advance: active.pending_advance,
@@ -1491,7 +1525,10 @@ fn snapshot_active_dialogue(
 }
 
 impl AwbcProductExecutorSaveSnapshot {
-    pub fn from_live(snapshot: &AwbcProductExecutorSnapshot) -> Result<Self, AwbcProductSaveError> {
+    pub fn from_live(
+        snapshot: &AwbcProductExecutorSnapshot,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, AwbcProductSaveError> {
         let needs = snapshot
             .need_producers
             .launches
@@ -1550,12 +1587,12 @@ impl AwbcProductExecutorSaveSnapshot {
                     },
                 )
                 .collect(),
-            need_producers: save_need_producer_registry(&snapshot.need_producers)
+            need_producers: save_need_producer_registry(&snapshot.need_producers, owner)
                 .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
             queued_task_events: snapshot
                 .queued_task_events
                 .iter()
-                .map(AwbcProductTaskEventSaveSnapshot::from_live)
+                .map(|event| AwbcProductTaskEventSaveSnapshot::from_live(event, owner))
                 .collect::<Result<VecDeque<_>, _>>()
                 .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
             emitted_content: snapshot.emitted_content.clone(),
@@ -1566,10 +1603,7 @@ impl AwbcProductExecutorSaveSnapshot {
             next_host_call_sequence: snapshot.next_host_call_sequence,
             next_audio_sequence: snapshot.next_audio_sequence,
             compact_pure_stats: snapshot.compact_pure_stats,
-            observations: crate::observation::RuntimeObservationSaveSnapshot::from_live(
-                &snapshot.observations,
-            )
-            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
+            observations: snapshot.observations.clone(),
         })
     }
 
@@ -1622,7 +1656,7 @@ impl AwbcProductExecutorSaveSnapshot {
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
-            observations: self.observations.into_live_for_program(owner)?,
+            observations: self.observations,
         })
     }
 }
@@ -2014,16 +2048,24 @@ impl AwbcProductStepExecutor {
         &self,
     ) -> Result<AwbcProductExecutorSaveSnapshot, AwbcProductSaveError> {
         let invalid = |message: String| AwbcProductSaveError::InvalidSnapshot { message };
-        let fiber = AwbcFiberStateSnapshot::from_live(&self.fiber)
-            .map_err(|error| invalid(error.to_string()))?;
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let owner = &program_owner;
+        let fiber = AwbcFiberStateSnapshot::from_live(
+            &self.fiber,
+            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+        )
+        .map_err(|error| invalid(error.to_string()))?;
         let child_fibers = self
             .child_fibers
             .iter()
             .map(|child| {
                 Ok(AwbcProductChildFiberSaveSnapshot {
                     owner: child.owner.snapshot(),
-                    fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
-                        .map_err(|error| error.to_string())?,
+                    fiber: AwbcFiberStateSnapshot::from_live(
+                        &child.fiber,
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                    )
+                    .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.as_ref().map(|pending| {
                         AwbcProductPendingHostCallSnapshot {
@@ -2037,14 +2079,14 @@ impl AwbcProductStepExecutor {
             .map_err(invalid)?;
         let dialogues = self
             .dialogues
-            .to_save_snapshot(snapshot_active_dialogue)
+            .to_save_snapshot(owner, |active| snapshot_active_dialogue(active, owner))
             .map_err(|error| invalid(error.to_string()))?;
         let need_producers =
-            save_live_need_producer_registry(&self.need_producers).map_err(invalid)?;
+            save_live_need_producer_registry(&self.need_producers, owner).map_err(invalid)?;
         let queued_task_events = self
             .queued_task_events
             .iter()
-            .map(AwbcProductTaskEventSaveSnapshot::from_live)
+            .map(|event| AwbcProductTaskEventSaveSnapshot::from_live(event, owner))
             .collect::<Result<VecDeque<_>, _>>()
             .map_err(invalid)?;
         Ok(AwbcProductExecutorSaveSnapshot {
@@ -2270,10 +2312,12 @@ impl AwbcProductStepExecutor {
 
     #[must_use]
     pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
-        let fiber = AwbcFiberStateSnapshot::from_live(&self.fiber).map_err(|error| {
-            AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            }
+        let fiber = AwbcFiberStateSnapshot::from_live(
+            &self.fiber,
+            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+        )
+        .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+            message: error.to_string(),
         })?;
         let child_fibers = self
             .child_fibers
@@ -2281,8 +2325,11 @@ impl AwbcProductStepExecutor {
             .map(|child| {
                 Ok(AwbcProductChildFiberSnapshot {
                     owner: child.owner.snapshot(),
-                    fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
-                        .map_err(|error| error.to_string())?,
+                    fiber: AwbcFiberStateSnapshot::from_live(
+                        &child.fiber,
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                    )
+                    .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.as_ref().map(|pending| {
                         AwbcProductPendingHostCallSnapshot {
@@ -2296,7 +2343,15 @@ impl AwbcProductStepExecutor {
             .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
         let dialogues = self
             .dialogues
-            .to_save_snapshot(snapshot_active_dialogue)
+            .to_save_snapshot(
+                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                |active| {
+                    snapshot_active_dialogue(
+                        active,
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                    )
+                },
+            )
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
@@ -2344,7 +2399,12 @@ impl AwbcProductStepExecutor {
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
-            observations: self.facade_fiber.frame.observations.clone(),
+            observations:
+                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                    &self.facade_fiber.frame.observations,
+                    &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                )
+                .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
         })
     }
 
@@ -2711,14 +2771,11 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
-        let observations =
-            crate::observation::RuntimeObservationSaveSnapshot::from_live(&snapshot.observations)
-                .and_then(|saved| {
-                    saved.into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-                        self.program_arc(),
-                    ))
-                })
-                .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        let observations = snapshot
+            .observations
+            .clone()
+            .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         if snapshot.fiber.root != self.fiber.root {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "saved fiber origin differs from the selected invocation".to_owned(),

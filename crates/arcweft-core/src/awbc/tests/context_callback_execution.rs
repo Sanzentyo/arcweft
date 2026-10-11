@@ -523,7 +523,11 @@ fn awbc_lazy_context_matches_the_native_arc_error_contract() {
 
 fn round_trip_context_fiber(fixture: &ContextFixture, fiber: &FiberState) -> FiberState {
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
-    let snapshot = AwbcFiberStateSnapshot::from_live(fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+    )
+    .unwrap();
     let encoded = serde_json::to_vec(&snapshot).unwrap();
     let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();
@@ -558,7 +562,11 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
         crate::awbc::vm::VmExit::BudgetYield(_)
     ));
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+    )
+    .unwrap();
     let mut forged = snapshot.clone();
     let crate::awbc::fiber::AwbcFiberReturnContinuationSnapshot::ContextCallbackDefault {
         pending,
@@ -1117,7 +1125,11 @@ fn verified_lazy_context_callback_survives_budget_snapshot_without_replay() {
         crate::awbc::vm::VmExit::BudgetYield(_)
     ));
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program)),
+    )
+    .unwrap();
     let encoded = serde_json::to_vec(&snapshot).unwrap();
     let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
     let mut restored = snapshot.into_live_for_program(&owner).unwrap();

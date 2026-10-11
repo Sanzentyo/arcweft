@@ -1152,8 +1152,11 @@ fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results(
             result.output.diagnostics
         );
         assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
-        let save =
-            AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot().unwrap()).unwrap();
+        let save = AwbcProductExecutorSaveSnapshot::from_live(
+            &executor.snapshot().unwrap(),
+            &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+        )
+        .unwrap();
         let bytes = serde_json::to_vec(&save).unwrap();
         let decoded_save: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
         executor

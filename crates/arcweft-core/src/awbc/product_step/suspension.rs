@@ -2531,7 +2531,11 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.fiber.checkpoint() {
+        let checkpoint = match self
+            .fiber
+            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+                std::sync::Arc::clone(&self.program),
+            )) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);
@@ -2615,7 +2619,9 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.child_fibers[index].fiber.checkpoint() {
+        let checkpoint = match self.child_fibers[index].fiber.checkpoint(
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program)),
+        ) {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);

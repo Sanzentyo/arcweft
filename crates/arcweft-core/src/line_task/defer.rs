@@ -157,7 +157,7 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
                             value, owner,
                         )
                     }
-                    None => crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value),
+                    None => crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(value),
                 })
                 .collect::<Result<_, _>>()?,
         })

@@ -181,7 +181,17 @@ fn data_shape_snapshot_rebinds_only_with_an_explicit_selected_program_and_exact_
         let value = RuntimeValue::Tuple(vec![RuntimeValue::option_some(RuntimeValue::Agent(
             RuntimeAgentValue::DataShape(witness),
         ))]);
-        let saved = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
+        assert!(crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(&value).is_err());
+        let foreign = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+        assert!(
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                &value, &foreign
+            )
+            .is_err()
+        );
+        let saved =
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                .unwrap();
         let encoded = serde_json::to_value(&saved).unwrap();
         let saved: crate::value::AwbcRuntimeValueSnapshot =
             serde_json::from_value(encoded.clone()).unwrap();

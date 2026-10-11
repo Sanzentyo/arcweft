@@ -20,13 +20,16 @@ pub enum AwbcProductTaskEventKindSaveSnapshot {
 }
 
 impl AwbcProductTaskEventSaveSnapshot {
-    pub(super) fn from_live(event: &TaskEvent) -> Result<Self, String> {
+    pub(super) fn from_live(
+        event: &TaskEvent,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         Ok(Self {
             correlation: event.correlation,
             cursor: event.cursor,
             kind: match &event.kind {
                 TaskEventKind::Ready(value) => AwbcProductTaskEventKindSaveSnapshot::Ready(
-                    AwbcRuntimeValueSnapshot::from_runtime_value(value.value())
+                    AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value.value(), owner)
                         .map_err(|error| error.to_string())?,
                 ),
                 TaskEventKind::InfrastructureFailure(error) => {

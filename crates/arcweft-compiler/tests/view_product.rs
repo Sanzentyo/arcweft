@@ -1017,12 +1017,12 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let first = snapshot.mounts[0].runtime_parameters.iter().find(|binding| binding.name == "first").unwrap().value.clone();
             let executor = AwbcProductStepExecutor::for_program_invocation(Arc::clone(&awbc), program, vec![first], arcweft_core::task::GenerationId::new(0), 64).unwrap();
             let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
-            let image = AwbcFiberStateSnapshot::from_live(executor.compact_fiber()).unwrap();
+            let image = AwbcFiberStateSnapshot::from_live(executor.compact_fiber(), &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
             let encoded = serde_json::to_vec(&image).unwrap();
             let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
             let mut restored = decoded.into_live_for_program(&owner).unwrap();
             restored.validate_for_program(&awbc).unwrap();
-            let checkpoint = restored.checkpoint().unwrap();
+            let checkpoint = restored.checkpoint(&arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
             restored.active_frame_mut().unwrap().clear_register(arcweft_core::awbc::schema::AwbcRegisterId(0)).unwrap();
             restored.restore(checkpoint, &owner).unwrap();
             let mut missing = image.clone();
@@ -1035,7 +1035,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             let returned = restored.frames[0].registers.iter().find_map(|storage| storage.as_ref()).unwrap().clone();
             restored.mark_returned(Some(returned)).unwrap();
             restored.validate_for_program(&awbc).unwrap();
-            let mut frameless = AwbcFiberStateSnapshot::from_live(&restored).unwrap();
+            let mut frameless = AwbcFiberStateSnapshot::from_live(&restored, &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
             frameless.frames.clear();
             assert!(matches!(frameless.into_live_for_program(&owner).unwrap().validate_for_program(&awbc), Err(arcweft_core::awbc::fiber::FiberStateError::ReturnValueMismatch)));
             }
@@ -1060,7 +1060,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
                 assert!(matches!(record.fields(), [RuntimeValue::Callable(_)]));
                 let ordinal = awbc.runtime_types.iter().position(|row| row.semantic_identity() == record.semantic_identity()).unwrap();
                 let ty = arcweft_core::awbc::schema::AwbcTypeId(u32::try_from(ordinal).unwrap());
-                let wrong_field = RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(record.type_id().clone(), record.semantic_identity(), record.layout(), vec![RuntimeValue::Unit]));
+                let wrong_field = RuntimeValue::NominalRecord(record.clone().map_fields(|_| RuntimeValue::Unit));
                 assert!(awbc.validate_live_value(ty, &wrong_field, arcweft_core::entry::RuntimeSchemaLimits::engine_default()).is_err());
                 for (nominal, semantic, layout, fields) in [
                     (arcweft_core::entry::RuntimeNominalTypeId::from_checked_digest([0xa1; 32]), record.semantic_identity(), record.layout(), record.fields().to_vec()),
@@ -1068,8 +1068,15 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
                     (record.type_id().clone(), record.semantic_identity(), arcweft_core::entry::TypeLayoutHash::from_bytes([0xa3; 32]), record.fields().to_vec()),
                     (record.type_id().clone(), record.semantic_identity(), record.layout(), vec![]),
                 ] {
-                    let forged = RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(nominal, semantic, layout, fields));
-                    assert!(awbc.validate_live_value(ty, &forged, arcweft_core::entry::RuntimeSchemaLimits::engine_default()).is_err());
+                    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
+                    let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, &owner).unwrap();
+                    let mut forged = serde_json::to_value(image).unwrap();
+                    forged["NominalRecord"]["type_id"] = serde_json::to_value(nominal).unwrap();
+                    forged["NominalRecord"]["semantic_identity"] = serde_json::to_value(semantic).unwrap();
+                    forged["NominalRecord"]["layout"] = serde_json::to_value(layout).unwrap();
+                    forged["NominalRecord"]["fields"] = serde_json::to_value(fields.iter().map(|value| arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, &owner).unwrap()).collect::<Vec<_>>()).unwrap();
+                    let forged: arcweft_core::value::AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+                    assert!(forged.into_runtime_value_for_program(&owner).is_err());
                 }
             }
             12 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 1, payload: Some(payload), .. } if name == "Full" && matches!(payload.as_ref(), RuntimeValue::Tuple(fields) if matches!(fields.as_slice(), [RuntimeValue::Callable(_)]))), "{value:?}"),

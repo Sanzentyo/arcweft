@@ -102,7 +102,10 @@ pub struct AwbcFiberFormatAttemptStateSnapshot {
 }
 
 impl AwbcFiberFormatAttemptStateSnapshot {
-    pub(super) fn from_live(state: &FiberFormatAttemptState) -> AwbcSaveResult<Self> {
+    pub(super) fn from_live(
+        state: &FiberFormatAttemptState,
+        owner: &RuntimeProgramOwner,
+    ) -> AwbcSaveResult<Self> {
         Ok(Self {
             attempt: state.attempt,
             site: state.site,
@@ -114,7 +117,9 @@ impl AwbcFiberFormatAttemptStateSnapshot {
                 .map(|value| {
                     value
                         .as_ref()
-                        .map(AwbcRuntimeValueSnapshot::from_runtime_value)
+                        .map(|value| {
+                            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                        })
                         .transpose()
                 })
                 .collect::<Result<_, _>>()?,

@@ -2073,7 +2073,11 @@ fn while_let_reevaluates_its_mutating_scrutinee_until_exhausted() {
         at_between_iterations,
         "the first condition pop and body complete before snapshot"
     );
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("mid-loop snapshot saves");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone())),
+    )
+    .expect("mid-loop snapshot saves");
     let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone()));
     let mut restored = snapshot
         .into_live_for_program(&owner)

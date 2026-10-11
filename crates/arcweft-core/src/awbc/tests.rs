@@ -1159,7 +1159,11 @@ fn sequence_pop_front_roundtrips_verifies_moves_rows_and_survives_restore() {
     assert_eq!(sequence.len(), 1);
     assert_eq!(sequence.value_at(0), RuntimeValue::Bool(false));
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot mutated Vec");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+    )
+    .expect("snapshot mutated Vec");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize mutated Vec snapshot");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&serialized).expect("decode mutated Vec snapshot");
@@ -1450,7 +1454,11 @@ fn nominal_field_sequence_pop_front_roundtrips_verifies_mutates_and_survives_res
     assert_eq!(sequence.len(), 1);
     assert_eq!(sequence.value_at(0), RuntimeValue::Bool(false));
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot mutated record");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+    )
+    .expect("snapshot mutated record");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize mutated record snapshot");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&serialized).expect("decode mutated record snapshot");
@@ -1631,7 +1639,11 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     fiber
         .validate_for_program(&decoded)
         .expect("terminal validates");
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot selector terminal");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+    )
+    .expect("snapshot selector terminal");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize selector terminal");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&serialized).expect("decode selector terminal snapshot");
@@ -1715,7 +1727,11 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     )
     .unwrap();
     fiber.validate_for_program(&decoded).unwrap();
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+    )
+    .unwrap();
     let serialized = serde_json::to_vec(&snapshot).unwrap();
     let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&serialized).unwrap();
     drop(fiber);
@@ -1723,11 +1739,19 @@ fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity(
     let mut restored = snapshot.clone().into_live_for_program(&owner).unwrap();
     restored.validate_for_program(&decoded).unwrap();
     assert_eq!(
-        AwbcFiberStateSnapshot::from_live(&restored).unwrap(),
+        AwbcFiberStateSnapshot::from_live(
+            &restored,
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone()))
+        )
+        .unwrap(),
         snapshot
     );
 
-    let checkpoint = restored.checkpoint().unwrap();
+    let checkpoint = restored
+        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(decoded.clone()),
+        ))
+        .unwrap();
     restored.frames[0].scopes[1].id = AwbcScopeId(2);
     assert!(restored.validate_for_program(&decoded).is_err());
     restored.restore(checkpoint.clone(), &owner).unwrap();
@@ -3251,7 +3275,11 @@ fn project_call_retained_callable_survives_snapshot_and_rejoins_next_group() {
     assert_eq!(retained.state(), callable_state_id(1));
     assert_eq!(retained.retained(), [RuntimeValue::Unit]);
 
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot retained callable");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("snapshot retained callable");
     let serialized = serde_json::to_vec(&snapshot).expect("serialize retained callable snapshot");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&serialized).expect("decode retained callable snapshot");
@@ -3976,7 +4004,11 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
     default_fiber
         .validate_for_program(&program)
         .expect("default stage validates");
-    let default_snapshot = AwbcFiberStateSnapshot::from_live(&default_fiber).expect("snapshot");
+    let default_snapshot = AwbcFiberStateSnapshot::from_live(
+        &default_fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("snapshot");
     let default_restored = default_snapshot
         .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
         .expect("restore snapshot");
@@ -3999,7 +4031,11 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
     target_fiber
         .validate_for_program(&program)
         .expect("target stage validates");
-    let target_snapshot = AwbcFiberStateSnapshot::from_live(&target_fiber).expect("snapshot");
+    let target_snapshot = AwbcFiberStateSnapshot::from_live(
+        &target_fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    )
+    .expect("snapshot");
     let mut target_restored = target_snapshot
         .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
         .expect("restore snapshot");
@@ -4385,8 +4421,14 @@ fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
         .validate_for_program(&program)
         .expect("live target continuation validates");
 
-    let encoded = serde_json::to_vec(&AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot"))
-        .expect("snapshot codec");
+    let encoded = serde_json::to_vec(
+        &AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .expect("snapshot"),
+    )
+    .expect("snapshot codec");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot decode");
     let mut restored = snapshot
@@ -6946,7 +6988,11 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .expect("active frame")
         .set_register(AwbcRegisterId(0), value)
         .expect("write opaque register");
-    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("fiber snapshot projects");
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &fiber,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+    )
+    .expect("fiber snapshot projects");
     let encoded = serde_json::to_vec(&snapshot).expect("fiber snapshot serializes");
     drop(fiber);
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
@@ -6959,7 +7005,9 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         .validate_for_program(&program)
         .expect("restored opaque register validates");
     let checkpoint = restored
-        .checkpoint()
+        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
         .expect("checkpoint valid opaque fiber");
 
     let foreign = RuntimeOpaqueTypeOwner::exact(
@@ -7156,7 +7204,9 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("cleanup state belongs to its admitted program");
 
     let checkpoint = fiber
-        .checkpoint()
+        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
         .expect("checkpoint captures a typed image");
     let encoded_checkpoint =
         serde_json::to_string(&checkpoint).expect("fiber checkpoint serializes");
@@ -7676,7 +7726,11 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     fiber
         .validate_for_program(&program)
         .expect("suspended dynamic call snapshot validates");
-    let checkpoint = fiber.checkpoint().expect("snapshot dynamic call fiber");
+    let checkpoint = fiber
+        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::clone(&program),
+        ))
+        .expect("snapshot dynamic call fiber");
     fiber
         .restore(
             checkpoint,
@@ -8100,7 +8154,9 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
         .validate_for_program(&program)
         .expect("preempted dynamic call snapshot validates");
     let checkpoint = fiber
-        .checkpoint()
+        .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::clone(&program),
+        ))
         .expect("snapshot budgeted dynamic call fiber");
     fiber
         .restore(
@@ -8482,7 +8538,11 @@ fn awbc_field_inspection_preserves_owner_across_budget_snapshot_and_later_move()
             .unwrap(),
         &value
     );
-    let snapshot = AwbcFiberStateSnapshot::from_live(&hot).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(
+        &hot,
+        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(decoded.clone())),
+    )
+    .unwrap();
     let mut cold = snapshot
         .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::new(
             decoded.clone(),

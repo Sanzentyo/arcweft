@@ -168,7 +168,11 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
             .exit,
             super::super::vm::VmExit::BudgetYield(_)
         ));
-        let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+        let snapshot = AwbcFiberStateSnapshot::from_live(
+            &fiber,
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .unwrap();
         let encoded = serde_json::to_vec(&snapshot).unwrap();
         let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).unwrap();
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
@@ -185,10 +189,13 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         restored.validate_for_program(&program).unwrap();
         restored.resume_budget_yield(&program).unwrap();
         restored.replenish_budget();
-        let mut cancelled = AwbcFiberStateSnapshot::from_live(&restored)
-            .unwrap()
-            .into_live_for_program(&owner)
-            .unwrap();
+        let mut cancelled = AwbcFiberStateSnapshot::from_live(
+            &restored,
+            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+        )
+        .unwrap()
+        .into_live_for_program(&owner)
+        .unwrap();
         assert!(matches!(
             super::super::vm::cancel_fiber(&mut cancelled).exit,
             super::super::vm::VmExit::Cancelled
