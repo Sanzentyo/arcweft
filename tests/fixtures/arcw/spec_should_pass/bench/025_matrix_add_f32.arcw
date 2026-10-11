@@ -1,8 +1,10 @@
+entry bench @entry.matrix_add_f32 { goto @flow.matrix_add_f32 }
+
 bench @bench.matrix_add_f32 {
     measure iterations = 4 { goto @flow.matrix_add_f32 }
 }
 
 flow matrix_add_f32(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
-    let out = math.matrix_add_f32(lhs, rhs)
-    return out
+    let product = math.matrix_add_f32(lhs, rhs)
+    return product
 }

@@ -1,3 +1,5 @@
+entry bench @entry.mixed_for_iter_pure_jit { goto @flow.mixed_for_iter_pure_jit }
+
 #[pure]
 fn score_i32(base: i32, bias: i32) -> i32 {
     return if base >= 4i32 { base * bias } else { base + bias }
@@ -17,15 +19,16 @@ bench @bench.mixed_for_iter_pure_jit {
     measure iterations = 4 { goto @flow.mixed_for_iter_pure_jit }
 }
 
-flow mixed_for_iter_pure_jit {
-    let ints: Vec<i32> = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32]
+flow mixed_for_iter_pure_jit() -> String {
+    let mut ints: Vec<i32> = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32]
     let uints: Vec<u32> = [1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32, 8u32]
     let floats: Array<f32, 8> = [2.0f32; 8]
 
     let int_scores: Vec<i32> = ints.map(|item| score_i32(item, 3i32))
     let uint_scores: Vec<u32> = uints.map(|item| score_u32(item, 2u32))
-    let float_scores: Vec<f32> = floats.map(|item| score_f32(item, 1.5f32))
+    let float_scores: Array<f32, 8> = floats.map(|item| score_f32(item, 1.5f32))
 
+    ints = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32]
     for item in ints {
         let scored = score_i32(item, 2i32)
         log.info(scored)

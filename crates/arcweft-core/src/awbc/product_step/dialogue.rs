@@ -66,6 +66,106 @@ impl ProductDialogueStore {
             .and_then(|activation| self.registry.active_line(activation))
     }
 
+    /// Borrows the executor's actual phase and the same command/defer ledger
+    /// consumed by activation. No transported or cached readiness is admitted.
+    pub(super) fn has_internal_work(&self, joined_work: bool) -> bool {
+        let Some(frame) = self.active_frame() else {
+            return false;
+        };
+        let Some(line) = self.active_line() else {
+            return false;
+        };
+        if line.has_pending_commands() || line.deferred_inflight().is_some() {
+            return false;
+        }
+        match &frame.phase {
+            super::ProductDialoguePhase::Activating { fiber, pending } => {
+                pending.is_none()
+                    && frame.pending_activation_host_call.is_none()
+                    && !self.activation_budget_exhausted()
+                    && !super::line::fiber_has_scoped_defer_inflight(fiber)
+            }
+            super::ProductDialoguePhase::Reducing { line_task }
+            | super::ProductDialoguePhase::Publishing { line_task } => {
+                !joined_work && line_task.is_closed()
+            }
+            super::ProductDialoguePhase::Closing(closing) => {
+                !joined_work
+                    && match &closing.state {
+                        super::ProductDialogueClosingState::Activation { fiber, .. } => {
+                            !super::line::fiber_has_scoped_defer_inflight(fiber)
+                        }
+                        super::ProductDialogueClosingState::LineTask { line_task } => {
+                            line_task.is_closed()
+                        }
+                    }
+            }
+            super::ProductDialoguePhase::Transitioning => false,
+        }
+    }
+
+    pub(super) fn activation_budget_exhausted(&self) -> bool {
+        self.active_frame().is_some_and(|frame| {
+            matches!(
+                &frame.phase,
+                super::ProductDialoguePhase::Activating { fiber, .. }
+                    if fiber.status == crate::awbc::fiber::FiberStatus::Suspended
+                        && matches!(
+                            fiber.suspension.as_ref().map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        )
+            )
+        })
+    }
+
+    /// Replenishes the existing activation quantum once at host-step ingress.
+    /// Preemption retains its exact VM cursor across snapshot/restore; the
+    /// caller's max_ops still bounds every subsequent internal operation.
+    pub(super) fn prepare_activation_budget(
+        &mut self,
+        program: &crate::awbc::schema::AwbcProgram,
+    ) -> Result<(), ProductStepError> {
+        if !self.active_frame().is_some_and(|frame| {
+            matches!(&frame.phase, super::ProductDialoguePhase::Activating { .. })
+        }) {
+            return Ok(());
+        }
+        let mut transaction = self.begin_active_transaction()?;
+        // Reserve the registry commit before mutating the VM cursor or budget.
+        // The budget resume performs all of its own checks before mutation.
+        let proof = match self.inspect_commit(&transaction) {
+            Ok(proof) => proof,
+            Err(error) => {
+                self.restore_transaction(transaction)
+                    .expect("rejected budget preparation retains its original registry owner");
+                return Err(error.into());
+            }
+        };
+        let super::ProductDialoguePhase::Activating { fiber, .. } =
+            &mut transaction.frame_mut().phase
+        else {
+            unreachable!("the sole borrowed activation phase was checked")
+        };
+        if matches!(
+            fiber
+                .suspension
+                .as_ref()
+                .map(|suspension| &suspension.reason),
+            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+        ) {
+            if let Err(error) = fiber.resume_budget_yield(program) {
+                self.restore_transaction(transaction)
+                    .expect("rejected budget resume retains its sole registry transaction");
+                return Err(error.into());
+            }
+        }
+        if fiber.status == crate::awbc::fiber::FiberStatus::Running {
+            fiber.replenish_budget();
+        }
+        self.commit_prepared(transaction, proof);
+        Ok(())
+    }
+
     pub(super) fn visit_runtime_values<E>(
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,

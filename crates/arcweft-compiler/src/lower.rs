@@ -559,6 +559,41 @@ fn project_runtime_semantic_fact_inventories(
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
+    // Runtime and extracted-program publication share the complete checked
+    // Match transaction, including guards, unreachable arms and nested bodies.
+    // Input layout alone never grants exhaustiveness or semantic publication.
+    for (_, module) in project.modules() {
+        let expression_matches = module.expressions().filter_map(|(owner, expression)| {
+            (matches!(expression.kind(), HirExprKind::Match(_))
+                && (runtime_owners.contains_expression(owner)
+                    || program_owners.is_some_and(|owners| owners.contains_expression(owner))))
+            .then_some(arcweft_lang_hir::project::HirMatchOwner::Expression(owner))
+        });
+        let statement_matches = module.statements().filter_map(|(owner, statement)| {
+            (matches!(
+                statement.kind(),
+                arcweft_lang_hir::stmt::HirStmtKind::Match(_)
+            ) && (runtime_owners.contains_statement(owner)
+                || program_owners.is_some_and(|owners| owners.contains_statement(owner))))
+            .then_some(arcweft_lang_hir::project::HirMatchOwner::Statement(owner))
+        });
+        for owner in expression_matches.chain(statement_matches) {
+            analysis
+                .checked_match(
+                    project,
+                    symbols,
+                    owner,
+                    arcweft_lang_sema::final_analysis::CheckedMatchLimits::PRODUCTION,
+                )
+                .map_err(|error| {
+                    RuntimeSemanticProjectionError::ExecutionContext(Box::new(
+                        arcweft_lang_sema::final_analysis::CheckedExecutionContextError::MatchTranscript(
+                            Box::new(error),
+                        ),
+                    ))
+                })?;
+        }
+    }
     let execution_projection = analysis.execution_projection();
     let mut instance_owned_expression_owners =
         ordinary_function_runtime_expression_owners(project, runtime_owners, analysis)?;

@@ -48,5 +48,5 @@ fn typed_stream_plan_is_admitted_and_runs_without_a_flow() {
         .output;
 
     assert!(output.effects.stream_events.is_empty());
-    assert!(engine.fiber().stream_states.contains_key(&stream_id));
+    assert!(engine.fiber().frame.stream_states.contains_key(&stream_id));
 }

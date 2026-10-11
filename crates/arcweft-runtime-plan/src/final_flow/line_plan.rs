@@ -322,24 +322,25 @@ impl LinePlanLowerer<'_, '_> {
         let kind = self.resolve_statement(statement)?.kind().clone();
         match self.statement_projection(statement)? {
             LinePlanStatementProjection::Let { pattern, input } => {
-                let binding = self
-                    .flow
-                    .pattern_lowerer()
-                    .lower(pattern)
-                    .map_err(RuntimePlanLowerError::new)?;
                 if self.line_call(input)?.is_some() {
+                    let binding = self
+                        .flow
+                        .pattern_lowerer()
+                        .lower(pattern)
+                        .map_err(RuntimePlanLowerError::new)?;
                     let operation = self.lower_line_call(input, Some(binding))?;
                     self.activation_ops.push(operation);
                 } else {
-                    self.activation_ops
-                        .push(FlowDraft::Flow(RuntimeFlowOpSeed::Let {
-                            pattern: binding,
-                            expr: self
-                                .flow
-                                .expr_lowerer()
-                                .lower(input)
-                                .map_err(RuntimePlanLowerError::new)?,
-                        }));
+                    // Ordinary bindings keep the same continuation lowering
+                    // as every other executable body, including project calls,
+                    // effects and suspension. Line capabilities above retain
+                    // their owning command drafts and capture registration.
+                    self.activation_ops.extend(
+                        self.flow
+                            .lower_statement(statement, &kind)?
+                            .into_iter()
+                            .map(FlowDraft::Flow),
+                    );
                 }
             }
             LinePlanStatementProjection::Out { value } => {

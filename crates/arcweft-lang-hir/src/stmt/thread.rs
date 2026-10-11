@@ -849,8 +849,6 @@ pub enum HirThreadStmtRecoveryIssue {
     MissingBody { role: HirThreadStmtBodyRole },
     #[error("statement body {role:?} is missing its closing delimiter")]
     UnclosedBody { role: HirThreadStmtBodyRole },
-    #[error("Match statement has no complete arm")]
-    EmptyMatch,
     #[error("Select statement has no complete branch")]
     EmptySelect,
     #[error("Select branch {ordinal} has a recovered head")]

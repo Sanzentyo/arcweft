@@ -7,9 +7,9 @@ use super::bundle::{
 use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
-    ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
-    profile_project_compilation_context, project_compilation_context, resolve_source_selection,
-    semantic_context_for_selection, verify_compiled_project,
+    ProfileOptions, ProjectDiagnosticOutput, SourceSelection, load_and_check_selection,
+    print_project_compile_error, profile_project_compilation_context, project_compilation_context,
+    resolve_source_selection, semantic_context_for_selection, verify_compiled_project,
 };
 use super::runtime::profile::compile_accepted_project_runtime_plan;
 use super::runtime::run::watch_inputs;
@@ -2153,7 +2153,11 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
     };
     let progress = CliProgress::new(!options.json);
     let checked = progress.run(CliProgressStatus::Checking, options.input.display(), || {
-        load_and_check_selection(&selection, None)
+        load_and_check_selection(
+            &selection,
+            None,
+            ProjectDiagnosticOutput::for_json(options.json),
+        )
     })?;
     let verification = progress.run(
         CliProgressStatus::Verifying,

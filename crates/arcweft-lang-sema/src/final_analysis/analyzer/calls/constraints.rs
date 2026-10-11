@@ -3701,6 +3701,17 @@ impl AnalyzerPreparedCallPrefix {
         ))
     }
 
+    pub(crate) fn has_compact_numeric_literal_argument(
+        &self,
+        ordinal: u32,
+        source: ExprId,
+    ) -> bool {
+        self.record
+            .inputs()
+            .mapping()
+            .has_compact_numeric_literal_source(ordinal, source)
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (PreparedCallableApplication, AnalyzerPreparedCandidateRecord) {

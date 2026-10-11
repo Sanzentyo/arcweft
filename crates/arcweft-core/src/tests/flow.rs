@@ -226,7 +226,7 @@ fn drain(engine: &mut Engine) -> crate::step::RuntimeStepOutput {
         output.flow_events.extend(next.flow_events);
         output.diagnostics.extend(next.diagnostics);
         if matches!(
-            engine.fiber().status,
+            engine.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         ) {
             break;
@@ -262,7 +262,10 @@ fn native_flow_returns_a_typed_scalar_value() {
             value: "ready".to_owned(),
         }]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -341,7 +344,10 @@ fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
             value: "scope result".to_owned(),
         }]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -380,7 +386,10 @@ fn native_flow_evaluates_a_named_expression_scope_before_its_outer_return() {
             value: "expression scope".to_owned(),
         }]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -431,7 +440,10 @@ fn native_goto_selects_the_targeted_typed_flow() {
             },
         ]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -578,7 +590,10 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
             value: "continued".to_owned(),
         }]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -761,7 +776,10 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                 value: "defaulted".to_owned(),
             }]
         );
-        assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+        assert!(matches!(
+            engine.fiber().frame.status,
+            FlowFiberStatus::Done(_)
+        ));
     }
 }
 
@@ -915,7 +933,10 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                 value: "rest".to_owned(),
             }]
         );
-        assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+        assert!(matches!(
+            engine.fiber().frame.status,
+            FlowFiberStatus::Done(_)
+        ));
     }
 }
 
@@ -1188,7 +1209,10 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             value: "12".to_owned(),
         }],
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -1287,7 +1311,10 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
             value: "done".to_owned(),
         }]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -1420,7 +1447,10 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
             },
         ]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 #[test]
@@ -1510,7 +1540,10 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
 
     let output = drain(&mut engine);
 
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Failed(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Failed(_)
+    ));
     assert!(output.diagnostics.iter().any(|diagnostic| {
         diagnostic
             .message
@@ -1703,7 +1736,7 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
             output.flow_events.extend(next.flow_events);
             output.diagnostics.extend(next.diagnostics);
             if matches!(
-                engine.fiber().status,
+                engine.fiber().frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             ) {
                 break;
@@ -1716,7 +1749,7 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
                 value: "drained".to_owned(),
             }],
             "output: {output:?}; status: {:?}",
-            engine.fiber().status
+            engine.fiber().frame.status
         );
     }
 }
@@ -1912,7 +1945,7 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
             output.flow_events.extend(next.flow_events);
             output.diagnostics.extend(next.diagnostics);
             if matches!(
-                engine.fiber().status,
+                engine.fiber().frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             ) {
                 break;
@@ -1925,7 +1958,7 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
                 value: "drained".to_owned(),
             }],
             "output: {output:?}; status: {:?}",
-            engine.fiber().status
+            engine.fiber().frame.status
         );
     }
 }
@@ -2081,7 +2114,7 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
         output.flow_events.extend(next.flow_events);
         output.diagnostics.extend(next.diagnostics);
         if matches!(
-            engine.fiber().status,
+            engine.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         ) {
             break;
@@ -2094,7 +2127,7 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
             value: "3".to_owned(),
         }],
         "output: {output:?}; status: {:?}",
-        engine.fiber().status
+        engine.fiber().frame.status
     );
 }
 
@@ -2348,14 +2381,20 @@ fn imported_flow_goto_requires_exact_admitted_identity_and_never_falls_back_to_p
         let output = drain(&mut engine);
         if accepted {
             assert!(output.diagnostics.is_empty());
-            assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+            assert!(matches!(
+                engine.fiber().frame.status,
+                FlowFiberStatus::Done(_)
+            ));
             assert!(
                 output.flow_events.iter().any(
                     |event| matches!(event, FlowEvent::Return { value } if value == "selected")
                 )
             );
         } else {
-            assert!(matches!(engine.fiber().status, FlowFiberStatus::Failed(_)));
+            assert!(matches!(
+                engine.fiber().frame.status,
+                FlowFiberStatus::Failed(_)
+            ));
             assert!(!output.diagnostics.is_empty());
             assert!(
                 !output

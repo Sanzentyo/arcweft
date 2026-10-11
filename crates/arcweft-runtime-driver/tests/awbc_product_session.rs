@@ -2318,7 +2318,7 @@ fn live_product_observation_restore_and_hotpatch_install_the_checked_program_own
         .restore_snapshot(snapshot)
         .expect("live snapshot admits and rebinds observations");
     let RuntimeValue::Callable(callable) =
-        executor.fiber().observations.signals()["signal.callback"].value()
+        executor.fiber().frame.observations.signals()["signal.callback"].value()
     else {
         panic!("installed observation is the checked callable")
     };
@@ -2331,7 +2331,7 @@ fn live_product_observation_restore_and_hotpatch_install_the_checked_program_own
         .replace_program_preserving_state_arc(next_program)
         .expect("matching checked code admits the hotpatch");
     let RuntimeValue::Callable(callable) =
-        executor.fiber().observations.signals()["signal.callback"].value()
+        executor.fiber().frame.observations.signals()["signal.callback"].value()
     else {
         panic!("hotpatch retains its typed callable")
     };

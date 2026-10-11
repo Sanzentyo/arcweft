@@ -300,17 +300,3 @@ pub(super) fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option
         }
     })
 }
-
-pub(super) fn has_host_requests(output: &RuntimeStepOutput) -> bool {
-    !output.requests.tasks.is_empty()
-        || !output.requests.audio.is_empty()
-        || !output.requests.cancel_scopes.is_empty()
-        || !output.requests.ensure_content.is_empty()
-        || !output.requests.host_calls.is_empty()
-}
-
-pub(super) fn has_visible_output(output: &RuntimeStepOutput) -> bool {
-    !output.flow_events.is_empty()
-        || !output.effects.line.is_empty()
-        || !output.effects.stream_events.is_empty()
-}

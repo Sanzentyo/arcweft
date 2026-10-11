@@ -185,6 +185,46 @@ fn clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto() {
 }
 
 #[test]
+fn bench_assert_sections_publish_clean_named_blocks_and_exact_expectation_bodies() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-bench-assert",
+        "bench @bench.checked {\n    measure { goto @flow.main }\n    assert { expect.log(.info, contains=\"ready\") }\n    assert { expect.signal(@signal.ready, true) }\n}\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (_, item, bench) = bench_item(&module, 0);
+    assert_eq!(item.state(), &HirItemPoisonState::Clean);
+    assert_eq!(bench.body().len(), 3);
+    let assertions = module.expressions().filter_map(|(_, expression)| match expression.kind() {
+        crate::expr::HirExprKind::NamedBlock(block)
+            if matches!(block.name(), crate::expr::HirNamedBlockName::Resolved(name) if name.as_str() == "assert") => Some(block),
+        _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(assertions.len(), 2);
+    for assertion in assertions {
+        assert!(assertion.statements().is_empty());
+        let crate::expr::HirExprKind::Call(expectation) =
+            module.resolve_expr(assertion.tail()).unwrap().kind()
+        else {
+            panic!("each assertion retains its expectation call as the block tail");
+        };
+        assert_eq!(expectation.arguments().len(), 2);
+        assert!(
+            expectation
+                .arguments()
+                .iter()
+                .all(|argument| module.resolve_expr(argument.value()).is_ok())
+        );
+    }
+}
+
+#[test]
 fn test_and_bench_recovery_preserves_missing_id_kind_and_body_without_defaults() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-test-bench-recovery",

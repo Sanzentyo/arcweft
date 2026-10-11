@@ -1,3 +1,5 @@
+entry bench @entry.mixed_width_for_iter_pure_jit { goto @flow.mixed_width_for_iter_pure_jit }
+
 #[pure]
 fn score_i16(base: i16, bias: i16) -> i16 {
     return if base >= 4i16 { base * bias } else { base + bias }
@@ -27,31 +29,35 @@ bench @bench.mixed_width_for_iter_pure_jit {
     measure iterations = 4 { goto @flow.mixed_width_for_iter_pure_jit }
 }
 
-flow mixed_width_for_iter_pure_jit {
-    let signed: Vec<i16> = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16]
-    let unsigned: Vec<u16> = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16]
-    let sized: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]
-    let usize_values: Vec<usize> = [1usize, 2usize, 3usize, 4usize, 5usize, 6usize, 7usize, 8usize]
+flow mixed_width_for_iter_pure_jit() -> String {
+    let mut signed: Vec<i16> = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16]
+    let mut unsigned: Vec<u16> = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16]
+    let mut sized: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]
+    let mut usize_values: Vec<usize> = [1usize, 2usize, 3usize, 4usize, 5usize, 6usize, 7usize, 8usize]
     let floats: Array<f64, 8> = [2.0f64; 8]
 
     let signed_scores: Vec<i16> = signed.map(|item| score_i16(item, 3i16))
     let unsigned_scores: Vec<u16> = unsigned.map(|item| score_u16(item, 2u16))
     let sized_scores: Vec<isize> = sized.map(|item| score_isize(item, 5isize))
     let usize_scores: Vec<usize> = usize_values.map(|item| score_usize(item, 2usize))
-    let float_scores: Vec<f64> = floats.map(|item| score_f64(item, 1.5f64))
+    let float_scores: Array<f64, 8> = floats.map(|item| score_f64(item, 1.5f64))
 
+    signed = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16]
     for item in signed {
         let scored = score_i16(item, 2i16)
         log.info(scored)
     }
+    unsigned = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16]
     for item in unsigned {
         let scored = score_u16(item, 3u16)
         log.info(scored)
     }
+    sized = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]
     for item in sized {
         let scored = score_isize(item, 7isize)
         log.info(scored)
     }
+    usize_values = [1usize, 2usize, 3usize, 4usize, 5usize, 6usize, 7usize, 8usize]
     for item in usize_values {
         let scored = score_usize(item, 1usize)
         log.info(scored)

@@ -1444,7 +1444,7 @@ mod tests {
         }
         assert!(steps > 3, "callbacks remain budgeted ordinary calls");
         assert!(
-            engine.fiber().env.bindings_snapshot().is_empty(),
+            engine.fiber().frame.env.bindings_snapshot().is_empty(),
             "completed callbacks and iterator scopes release all local bindings"
         );
     }
@@ -1483,7 +1483,7 @@ mod tests {
                 "a failing callback cannot publish a Map result"
             );
             if !matches!(
-                engine.fiber().status,
+                engine.fiber().frame.status,
                 arcweft_core::engine::FlowFiberStatus::Running
             ) {
                 terminal = true;
@@ -1493,10 +1493,10 @@ mod tests {
         assert!(
             terminal,
             "Map callback did not reach terminal within256 one-op steps: status={:?}, diagnostics={diagnostics:?}",
-            engine.fiber().status
+            engine.fiber().frame.status
         );
         assert!(matches!(
-            engine.fiber().status,
+            engine.fiber().frame.status,
             arcweft_core::engine::FlowFiberStatus::Failed(_)
         ));
         assert!(!diagnostics.is_empty());
@@ -1504,12 +1504,13 @@ mod tests {
             engine.take_program_result().unwrap().is_none(),
             "an incomplete Map result cannot escape its frame"
         );
-        let arcweft_core::engine::FlowFiberStatus::Failed(failure) = &engine.fiber().status else {
+        let arcweft_core::engine::FlowFiberStatus::Failed(failure) = &engine.fiber().frame.status
+        else {
             panic!("the callback must fail in its owning frame");
         };
         let failure = failure.clone();
-        let bindings = engine.fiber().env.bindings_snapshot();
-        let cursor = engine.fiber().cursor;
+        let bindings = engine.fiber().frame.env.bindings_snapshot();
+        let cursor = engine.fiber().frame.cursor;
         let execution = engine.fiber().execution;
         engine.step_with_pure_backend(
             Default::default(),
@@ -1519,14 +1520,14 @@ mod tests {
             },
             &mut backend,
         );
-        assert!(matches!(&engine.fiber().status,
+        assert!(matches!(&engine.fiber().frame.status,
             arcweft_core::engine::FlowFiberStatus::Failed(message) if message == &failure));
         assert_eq!(
-            engine.fiber().env.bindings_snapshot(),
+            engine.fiber().frame.env.bindings_snapshot(),
             bindings,
             "failed Map ownership is retained by the same public execution"
         );
-        assert_eq!(engine.fiber().cursor, cursor);
+        assert_eq!(engine.fiber().frame.cursor, cursor);
         assert_eq!(engine.fiber().execution, execution);
         assert!(engine.take_program_result().unwrap().is_none());
     }
@@ -1567,23 +1568,23 @@ mod tests {
                 if let Some((program, value)) = engine.take_program_result().unwrap() {
                     assert_eq!(program, selected.program());
                     assert!(
-                        engine.fiber().env.bindings_snapshot().is_empty(),
+                        engine.fiber().frame.env.bindings_snapshot().is_empty(),
                         "native equality releases callback, iterator and root scopes"
                     );
                     return value;
                 }
                 assert!(
                     matches!(
-                        engine.fiber().status,
+                        engine.fiber().frame.status,
                         arcweft_core::engine::FlowFiberStatus::Running
                     ),
                     "native equality ended without a result: {:?}",
-                    engine.fiber().status
+                    engine.fiber().frame.status
                 );
             }
             panic!(
                 "native source equality did not complete within256 one-op steps: {:?}",
-                engine.fiber().status
+                engine.fiber().frame.status
             );
         }
         for (family, kind) in [
@@ -1768,7 +1769,7 @@ mod tests {
                 step.output.diagnostics
             );
             if matches!(
-                native.fiber().status,
+                native.fiber().frame.status,
                 arcweft_core::engine::FlowFiberStatus::Done(_)
             ) {
                 break;
@@ -1830,11 +1831,11 @@ mod tests {
                 let step = engine.step(Default::default(), options);
                 assert!(step.stats.executed_ops <= 1);
                 diagnostics.extend(step.output.diagnostics);
-                if !matches!(engine.fiber().status, FlowFiberStatus::Running) {
+                if !matches!(engine.fiber().frame.status, FlowFiberStatus::Running) {
                     break;
                 }
             }
-            match &engine.fiber().status {
+            match &engine.fiber().frame.status {
                 FlowFiberStatus::Done(_) => {
                     assert!(diagnostics.is_empty(), "{diagnostics:?}");
                     let (program, result) = engine
@@ -1853,14 +1854,14 @@ mod tests {
                     );
                     assert!(engine.take_program_result().unwrap().is_none());
                     let execution = engine.fiber().execution;
-                    let cursor = engine.fiber().cursor;
+                    let cursor = engine.fiber().frame.cursor;
                     let second = engine.step(Default::default(), options);
                     assert_eq!(second.stats.executed_ops, 0);
                     assert!(
-                        matches!(&engine.fiber().status,FlowFiberStatus::Failed(actual) if actual==&message)
+                        matches!(&engine.fiber().frame.status,FlowFiberStatus::Failed(actual) if actual==&message)
                     );
                     assert_eq!(engine.fiber().execution, execution);
-                    assert_eq!(engine.fiber().cursor, cursor);
+                    assert_eq!(engine.fiber().frame.cursor, cursor);
                     Err(message)
                 }
                 status => panic!(
@@ -1915,11 +1916,11 @@ mod tests {
                 let step = executor.step(Default::default(), options);
                 assert!(step.stats.executed_ops <= 1);
                 diagnostics.extend(step.output.diagnostics);
-                if !matches!(executor.fiber().status, FlowFiberStatus::Running) {
+                if !matches!(executor.fiber().frame.status, FlowFiberStatus::Running) {
                     break;
                 }
             }
-            match &executor.fiber().status {
+            match &executor.fiber().frame.status {
                 FlowFiberStatus::Done(_) => {
                     assert!(diagnostics.is_empty(), "{diagnostics:?}");
                     let (program, result) = executor
@@ -1940,7 +1941,7 @@ mod tests {
                     let second = executor.step(Default::default(), options);
                     assert_eq!(second.stats.executed_ops, 0);
                     assert!(
-                        matches!(&executor.fiber().status,FlowFiberStatus::Failed(actual) if actual==&message)
+                        matches!(&executor.fiber().frame.status,FlowFiberStatus::Failed(actual) if actual==&message)
                     );
                     assert!(executor.take_program_result().unwrap().is_none());
                     Err(message)

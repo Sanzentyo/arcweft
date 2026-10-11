@@ -88,9 +88,13 @@ pub(in crate::app::agent) fn is_arcw_path(path: &Path) -> bool {
 pub(in crate::app::agent) fn agent_source_rag_index(
     path: &Path,
 ) -> Result<AgentSourceRagIndex, String> {
-    let checked =
-        crate::app::project::load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())
-            .map_err(|code| format!("agent rag query failed to compile source: {code:?}"))?;
+    let checked = crate::app::project::load_and_check_with_env(
+        path,
+        &TypeCheckEnv::standard(),
+        Vec::new(),
+        crate::app::project::ProjectDiagnosticOutput::Human,
+    )
+    .map_err(|code| format!("agent rag query failed to compile source: {code:?}"))?;
     let source = checked.source_document.text();
     let source_hash = agent_content_hash(source);
     let project = checked.compiled.analysis_lease().semantic_index();

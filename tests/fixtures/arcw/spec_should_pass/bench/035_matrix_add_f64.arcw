@@ -1,8 +1,10 @@
+entry bench @entry.matrix_add_f64 { goto @flow.matrix_add_f64 }
+
 bench @bench.matrix_add_f64 {
     measure iterations = 4 { goto @flow.matrix_add_f64 }
 }
 
 flow matrix_add_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {
-    let out = math.matrix_add_f64(lhs, rhs)
-    return out
+    let product = math.matrix_add_f64(lhs, rhs)
+    return product
 }

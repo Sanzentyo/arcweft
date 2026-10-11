@@ -744,9 +744,36 @@ pub(in crate::app) fn require_profile_kind(
     Err(ExitCode::from(2))
 }
 
+/// Requested output for a compiler-owned project rejection.
+#[derive(Clone, Copy)]
+pub(in crate::app) enum ProjectDiagnosticOutput {
+    Human,
+    Json,
+}
+
+impl ProjectDiagnosticOutput {
+    pub(in crate::app) const fn for_json(json: bool) -> Self {
+        if json { Self::Json } else { Self::Human }
+    }
+
+    fn emit(self, error: &ProjectCompileError) -> ExitCode {
+        match self {
+            Self::Human => print_project_compile_error(error),
+            Self::Json => {
+                let report = crate::output::ProjectCompileFailureReport::from_error(error);
+                if let Err(code) = super::shared::print_json(&report) {
+                    return code;
+                }
+            }
+        }
+        ExitCode::FAILURE
+    }
+}
+
 pub(in crate::app) fn load_and_check_selection(
     selection: &SourceSelection,
     adapter_override: Option<&str>,
+    diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override)?;
@@ -758,10 +785,11 @@ pub(in crate::app) fn load_and_check_selection(
             &context,
             selection,
             phases,
+            diagnostic_output,
         );
     }
     if selection.project_manifest().is_some() {
-        return load_and_check_project_with_env(selection, &semantic, phases);
+        return load_and_check_project_with_env(selection, &semantic, phases, diagnostic_output);
     }
     let direct = direct_project_compilation_input(selection, &semantic, &mut phases)?;
     load_and_check_project_sources(
@@ -771,6 +799,7 @@ pub(in crate::app) fn load_and_check_selection(
         direct.context(),
         selection,
         phases,
+        diagnostic_output,
     )
 }
 
@@ -778,6 +807,7 @@ fn load_and_check_project_with_env(
     selection: &SourceSelection,
     semantic: &SelectionSemanticContext,
     phases: Vec<RuntimeProfilePhase>,
+    diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     let loaded = selection
         .loaded_project()
@@ -789,6 +819,7 @@ fn load_and_check_project_with_env(
         &context,
         selection,
         phases,
+        diagnostic_output,
     )
 }
 
@@ -798,6 +829,7 @@ fn load_and_check_loaded_project(
     context: &ProjectCompilationContext,
     selection: &SourceSelection,
     phases: Vec<RuntimeProfilePhase>,
+    diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     load_and_check_project_sources(
         loaded.sources(),
@@ -806,6 +838,7 @@ fn load_and_check_loaded_project(
         context,
         selection,
         phases,
+        diagnostic_output,
     )
 }
 
@@ -816,6 +849,7 @@ fn load_and_check_project_sources(
     context: &ProjectCompilationContext,
     selection: &SourceSelection,
     mut phases: Vec<RuntimeProfilePhase>,
+    diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     let source_document = Arc::clone(sources.root_module().document());
     let compiled_project = if let Some(compiler) = compiler {
@@ -824,10 +858,8 @@ fn load_and_check_project_sources(
             ExitCode::FAILURE
         })?;
         run_profile_phase(&mut phases, "project_compile", || {
-            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
-                print_project_compile_error(&error);
-                ExitCode::FAILURE
-            })
+            compile_project(&mut session, sources, parsed_sources, context)
+                .map_err(|error| diagnostic_output.emit(&error))
         })?
     } else {
         let mut session = ProjectCompilationSession::try_new().map_err(|error| {
@@ -835,10 +867,8 @@ fn load_and_check_project_sources(
             ExitCode::FAILURE
         })?;
         run_profile_phase(&mut phases, "project_compile", || {
-            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
-                print_project_compile_error(&error);
-                ExitCode::FAILURE
-            })
+            compile_project(&mut session, sources, parsed_sources, context)
+                .map_err(|error| diagnostic_output.emit(&error))
         })?
     };
     let emitter = DiagnosticEmitter::stderr();
@@ -1409,6 +1439,7 @@ pub(in crate::app) fn load_and_check_with_env(
     path: &Path,
     env: &TypeCheckEnv,
     mut phases: Vec<RuntimeProfilePhase>,
+    diagnostic_output: ProjectDiagnosticOutput,
 ) -> Result<CheckedModule, ExitCode> {
     let package_name = path
         .file_stem()
@@ -1434,6 +1465,7 @@ pub(in crate::app) fn load_and_check_with_env(
         direct.context(),
         &selection,
         phases,
+        diagnostic_output,
     )
 }
 

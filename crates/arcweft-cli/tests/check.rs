@@ -352,20 +352,10 @@ fn assert_jit_check_json(
 
     if expected_helper_source == "source" {
         let source_compiler = &json["source_compiler"];
-        assert_typecheck_metrics(&source_compiler["typecheck"]);
-        assert_borrow_check_metrics(&source_compiler["borrow_check"]);
+        assert_semantic_metrics(&source_compiler["semantic"]);
         assert_phase_timings_include(
             &source_compiler["phases"],
-            &[
-                "read_source",
-                "parse",
-                "lint",
-                "lower_hir",
-                "resolve",
-                "readiness",
-                "typecheck",
-                "line_task_lower",
-            ],
+            &["read_source", "project_compile"],
         );
     } else {
         assert!(
@@ -493,37 +483,15 @@ fn assert_verify_types_json_summary(stdout: &str) {
         &json["phases"],
         &[
             "read_source",
-            "parse",
-            "lint",
-            "lower_hir",
-            "resolve",
-            "readiness",
-            "typecheck",
-            "line_task_lower",
-            "runtime_plan_lower",
-            "runtime_type_validate",
+            "project_compile",
+            "product_awbc_lower",
+            "aot_lower",
             "verify",
+            "executor_prepare",
             "run",
         ],
     );
-    assert_typecheck_metrics(&json["typecheck"]);
-    assert_borrow_check_metrics(&json["borrow_check"]);
-    assert!(
-        json["runtime_type_validation"]["diagnostics"]
-            .as_u64()
-            .is_some()
-            && json["runtime_type_validation"]["errors"].as_u64().is_some()
-            && json["runtime_type_validation"]["stats"]["flows"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && json["runtime_type_validation"]["stats"]["ops"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && json["runtime_type_validation"]["stats"]["type_judgments"]
-                .as_u64()
-                .is_some(),
-        "runtime type validation counters should be populated: {json}"
-    );
+    assert_semantic_metrics(&json["semantic"]);
     assert!(
         json["verifier"]["diagnostics"].as_u64().is_some()
             && json["verifier"]["obligations"].as_u64().is_some()
@@ -560,45 +528,25 @@ fn assert_profile_json_summary(stdout: &str) {
         &json["phases"],
         &[
             "read_source",
-            "parse",
-            "lint",
-            "lower_hir",
-            "resolve",
-            "readiness",
-            "typecheck",
-            "line_task_lower",
-            "runtime_plan_lower",
-            "runtime_type_validate",
+            "project_compile",
+            "product_awbc_lower",
             "aot_lower",
-            "bytecode_lower",
+            "executor_prepare",
             "run",
         ],
     );
 
     let compiler = &json["compiler"];
-    assert_typecheck_metrics(&compiler["typecheck"]);
-    assert_borrow_check_metrics(&compiler["borrow_check"]);
-    assert_runtime_plan_metrics(&compiler["runtime_plan"]);
+    assert_semantic_metrics(&compiler["semantic"]);
+    assert_syntax_metrics(&compiler["syntax"]);
     assert!(
-        compiler["runtime_type_validation"]["flows"]
+        compiler["awbc"]["flows"]
             .as_u64()
             .is_some_and(|value| value > 0)
-            && compiler["runtime_type_validation"]["ops"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && compiler["runtime_type_validation"]["type_judgments"]
-                .as_u64()
-                .is_some(),
-        "runtime type validation counters should be populated: {compiler}"
-    );
-    assert!(
-        compiler["bytecode"]["flows"]
-            .as_u64()
-            .is_some_and(|value| value > 0)
-            && compiler["bytecode"]["instructions"]
+            && compiler["awbc"]["instructions"]
                 .as_u64()
                 .is_some_and(|value| value > 0),
-        "bytecode lowering counters should be populated: {compiler}"
+        "verified AWBC product counters should be populated: {compiler}"
     );
     assert!(
         compiler["aot"]["flows"]
@@ -629,7 +577,7 @@ fn assert_profile_json_summary(stdout: &str) {
     assert!(
         runtime["steps"][0]["stats"]["executed_ops"]
             .as_u64()
-            .is_some_and(|value| value == 2)
+            .is_some_and(|value| value == 3)
             && runtime["executor_stats"]["aot_fast_path_ops"]
                 .as_u64()
                 .is_some()
@@ -638,72 +586,48 @@ fn assert_profile_json_summary(stdout: &str) {
     );
 }
 
-fn assert_runtime_plan_metrics(runtime_plan: &serde_json::Value) {
+fn assert_semantic_metrics(semantic: &serde_json::Value) {
     assert!(
-        runtime_plan["optimized_flows"]
+        semantic["expressions"]
             .as_u64()
             .is_some_and(|value| value > 0)
-            && runtime_plan["optimized_op_slices"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && runtime_plan["local_use_tail_scans"].as_u64().is_some()
-            && runtime_plan["pure_candidate_functions_seen"]
-                .as_u64()
-                .is_some()
-            && runtime_plan["pure_candidate_lower_attempts"]
-                .as_u64()
-                .is_some()
-            && runtime_plan["pure_expr_lowered_nodes"].as_u64().is_some()
-            && runtime_plan["pure_expr_cloned_nodes"].as_u64().is_some()
-            && runtime_plan["pure_rewrite_expr_visits"]
-                .as_u64()
-                .is_some_and(|value| value == 0),
-        "runtime-plan lowering counters should be populated: {runtime_plan}"
+            && semantic["types"].as_u64().is_some_and(|value| value > 0)
+            && semantic["items"].as_u64().is_some_and(|value| value > 0),
+        "accepted semantic type/expression/declaration facts should be populated: {semantic}"
     );
-}
-
-fn assert_typecheck_metrics(typecheck: &serde_json::Value) {
-    assert!(
-        typecheck["expressions"]
-            .as_u64()
-            .is_some_and(|value| value > 0)
-            && typecheck["judgments"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-            && typecheck["judgment_rules"]["expr"]
-                .as_u64()
-                .is_some_and(|value| value > 0),
-        "typecheck performance counters should be populated: {typecheck}"
-    );
-    assert!(
-        typecheck["judgment_samples"]
-            .as_array()
-            .is_some_and(|samples| !samples.is_empty()),
-        "typecheck should expose bounded judgment samples: {typecheck}"
-    );
-}
-
-fn assert_borrow_check_metrics(borrow_check: &serde_json::Value) {
     for key in [
-        "binding_groups",
-        "bindings",
-        "state_snapshots",
-        "state_restores",
-        "state_merges",
-        "state_cloned_bindings",
-        "state_delta_entries",
-        "state_full_clones",
-        "state_merge_keys",
-        "boundary_checks",
-        "escape_checks",
-        "active_borrow_removes",
-        "max_active_borrows",
+        "locals",
+        "captures",
+        "patterns",
+        "statements",
+        "calls",
+        "logical_argument_checks",
+        "resolver_invocations",
+        "candidate_argument_probes",
+        "selected_replay_argument_visits",
+        "retained_argument_fact_publications",
     ] {
         assert!(
-            borrow_check[key].as_u64().is_some(),
-            "borrow-check counter `{key}` should be numeric: {borrow_check}"
+            semantic[key].as_u64().is_some(),
+            "semantic fact/accounting counter `{key}` should be numeric: {semantic}"
         );
     }
+    assert_eq!(semantic["call_diagnostics"], 0, "{semantic}");
+}
+
+fn assert_syntax_metrics(syntax: &serde_json::Value) {
+    for key in [
+        "accepted_source_bytes",
+        "lexer_tokens",
+        "grammar_events",
+        "identity_bearing_nodes",
+    ] {
+        assert!(
+            syntax[key].as_u64().is_some_and(|count| count > 0),
+            "accepted syntax work counter `{key}` should be populated: {syntax}"
+        );
+    }
+    assert_eq!(syntax["diagnostic_identities"], 0, "{syntax}");
 }
 
 fn assert_phase_timings_include(phases: &serde_json::Value, expected_names: &[&str]) {

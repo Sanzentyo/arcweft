@@ -421,21 +421,24 @@ impl Engine {
         for (input, value) in method.inputs.iter().skip(1).zip(&arg_values) {
             self.validate_local_value(input.local(), value)?;
         }
-        self.fiber.env.push_scope_with_capacity(method.inputs.len());
-        self.fiber.env.set(receiver_local, receiver_value);
+        self.fiber
+            .frame
+            .env
+            .push_scope_with_capacity(method.inputs.len());
+        self.fiber.frame.env.set(receiver_local, receiver_value);
         for (input, value) in method.inputs.iter().skip(1).zip(arg_values) {
-            self.fiber.env.set(input.local(), value);
+            self.fiber.frame.env.set(input.local(), value);
         }
         let value = self.evaluate_expr_with_backend(&method.body, pure_backend);
         let updated_receiver = if receiver_mode == RuntimeReceiverMode::MutRef {
             method
                 .inputs
                 .first()
-                .and_then(|input| self.fiber.env.take(input.local()))
+                .and_then(|input| self.fiber.frame.env.take(input.local()))
         } else {
             None
         };
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
 
         let value = value?;
         if receiver_mode == RuntimeReceiverMode::MutRef && updated_receiver.is_none() {
@@ -462,6 +465,7 @@ impl Engine {
             .ok_or(RuntimeEvalError::UnknownLocal(local))?;
         let matches =
             self.fiber
+                .frame
                 .env
                 .value_matches_type(self.plan.as_ref(), declaration.ty(), value)?;
         if !matches {

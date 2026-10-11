@@ -1,3 +1,4 @@
+mod pure;
 mod run;
 mod samples;
 
@@ -18,6 +19,7 @@ use std::process::ExitCode;
 
 #[derive(Clone, Copy)]
 pub(in crate::app) struct BenchRuntimeContext<'a> {
+    pub(in crate::app) analysis: &'a arcweft_compiler::project::ProjectAnalysisLease,
     pub(in crate::app) pure_config: RuntimePureAcceleratorConfig,
     pub(in crate::app) host_policy: &'a arcweft_host_adapter::HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
@@ -57,6 +59,7 @@ pub(in crate::app) fn script_bench_selection(
     let file_roots = selection.native_file_roots();
     let manifest = collect_script_tests(source_runtime.compiled.analysis_lease().hir_project());
     let runtime = BenchRuntimeContext {
+        analysis: source_runtime.compiled.analysis_lease(),
         pure_config,
         host_policy: &source_runtime.host_policy,
         adapter_registrars,

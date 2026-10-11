@@ -514,6 +514,124 @@ fn checked_match_never_domain_is_exhaustive_without_a_witness() {
 }
 
 #[test]
+fn nested_match_keeps_each_owners_literal_and_sequence_coverage_universe() {
+    for (baseline, nested) in [
+        (
+            "fn root(value: i64, inner: i64) -> i64 { match value { 1i64 => 10i64, _ => 20i64 } }",
+            "fn root(value: i64, inner: i64) -> i64 { match value { 1i64 => match inner { 7i64 => 10i64, _ => 20i64 }, _ => 20i64 } }",
+        ),
+        (
+            "fn root(items: Vec<bool>, inner: Vec<bool>) -> i64 { match items { [] => 0i64, [_, ..] => 1i64 } }",
+            "fn root(items: Vec<bool>, inner: Vec<bool>) -> i64 { match items { [] => match inner { [true, true] => 0i64, _ => 1i64 }, [_, ..] => 1i64 } }",
+        ),
+    ] {
+        let expected = build_only_checked_match(baseline, CheckedMatchLimits::PRODUCTION)
+            .expect("baseline coverage universe");
+        let fixture = fixture(nested, None);
+        let report = analyze(&fixture).expect("nested Match analysis");
+        let project = fixture.project.analysis_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module");
+        let products = module
+            .expressions()
+            .filter_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .map(|owner| {
+                report
+                    .checked_match_with_control(
+                        project,
+                        &fixture.symbols,
+                        owner,
+                        CheckedMatchLimits::PRODUCTION,
+                        FinalSemanticAnalysisControl::new(&AtomicBool::new(false)),
+                    )
+                    .expect("each nested Match seals its own complete coverage")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(products.len(), 2);
+        let outer = products
+            .iter()
+            .min_by_key(|product| product.path().steps().len())
+            .expect("outer Match");
+        assert_eq!(outer.path(), expected.path());
+        assert_eq!(
+            outer.coverage().domain_digest(),
+            expected.coverage().domain_digest()
+        );
+        assert!(
+            products
+                .iter()
+                .all(|product| product.coverage().exhaustive())
+        );
+        assert!(products.iter().all(|product| product.arms().len() == 2));
+        assert_ne!(outer.semantic_digest(), expected.semantic_digest());
+    }
+}
+
+#[test]
+fn direct_statement_match_query_keeps_nested_expression_coverage_separate() {
+    for (baseline, nested) in [
+        (
+            "flow main(value: i64, inner: i64) { match value { 1i64 => { let result = 10i64 }, _ => { let result = 20i64 } } }",
+            "flow main(value: i64, inner: i64) { match value { 1i64 => { let result = match inner { 7i64 => 10i64, _ => 20i64 } }, _ => { let result = 20i64 } } }",
+        ),
+        (
+            "flow main(items: Vec<bool>, inner: Vec<bool>) { match items { [] => { let result = 0i64 }, [_, ..] => { let result = 1i64 } } }",
+            "flow main(items: Vec<bool>, inner: Vec<bool>) { match items { [] => { let result = match inner { [true, true] => 0i64, _ => 1i64 } }, [_, ..] => { let result = 1i64 } } }",
+        ),
+    ] {
+        let query = |source| {
+            let fixture = fixture(source, None);
+            let report = analyze(&fixture).expect("statement Match analysis");
+            let project = fixture.project.analysis_view().expect("executable HIR");
+            let module = project
+                .module(&CanonicalModulePath::crate_root())
+                .expect("root module");
+            let owner = module
+                .statements()
+                .find_map(|(owner, statement)| {
+                    matches!(
+                        statement.kind(),
+                        arcweft_lang_hir::stmt::HirStmtKind::Match(_)
+                    )
+                    .then_some(owner)
+                })
+                .expect("outer statement Match");
+            let product = report
+                .checked_match(
+                    project,
+                    &fixture.symbols,
+                    owner,
+                    CheckedMatchLimits::PRODUCTION,
+                )
+                .expect("complete direct statement Match query");
+            let statement = report
+                .checked_statement_semantic_digest(
+                    project,
+                    &fixture.symbols,
+                    owner,
+                    CheckedMatchLimits::PRODUCTION,
+                )
+                .expect("complete enclosing statement transcript");
+            (product, statement)
+        };
+        let (expected, baseline_statement) = query(baseline);
+        let (actual, nested_statement) = query(nested);
+        assert_eq!(actual.path(), expected.path());
+        assert_eq!(
+            actual.coverage().domain_digest(),
+            expected.coverage().domain_digest()
+        );
+        assert!(actual.coverage().exhaustive());
+        assert_eq!(actual.arms().len(), 2);
+        assert_ne!(actual.semantic_digest(), expected.semantic_digest());
+        assert_ne!(nested_statement, baseline_statement);
+    }
+}
+
+#[test]
 fn checked_match_observes_cancellation_and_matrix_limits_atomically() {
     let source = r"
 fn root(flag: bool) -> i64 {

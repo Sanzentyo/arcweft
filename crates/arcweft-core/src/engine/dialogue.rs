@@ -61,6 +61,8 @@ pub(crate) enum DialogueExecutionError {
     EffectMaterialization(#[from] RuntimeEffectMaterializeError),
     #[error("dialogue activation effect failed: {message}")]
     ActivationEffectFailed { message: String },
+    #[error("dialogue activation execution failed: {message}")]
+    ActivationExecutionFailed { message: String },
 }
 
 pub(super) struct DialogueLineTaskStart {
@@ -74,9 +76,10 @@ pub(super) struct DialogueLineTaskStart {
 
 pub(super) enum DialogueActivationStep {
     Continue,
+    Execution(RuntimeStepOutput),
     Reveal(DialogueLineTaskStart),
     Deferred(super::NativeLineTaskExecutionBatch),
-    HostCall(crate::step::RuntimeHostCallRequest),
+    HostCall(Box<crate::step::RuntimeHostCallRequest>),
     Effect(LineEffectRequest),
 }
 
@@ -155,12 +158,12 @@ impl Engine {
     fn apply_dialogue_commit_disposition(&mut self, disposition: DialogueCommitDisposition) {
         match disposition {
             DialogueCommitDisposition::Published { resume, bindings } => {
-                self.fiber.env.bind_all(bindings);
-                self.fiber.cursor = resume;
-                self.fiber.status = super::FlowFiberStatus::Running;
+                self.fiber.frame.env.bind_all(bindings);
+                self.fiber.frame.cursor = resume;
+                self.fiber.frame.status = super::FlowFiberStatus::Running;
             }
             DialogueCommitDisposition::Failed { error } => {
-                self.fiber.status = super::FlowFiberStatus::Failed(error.to_string());
+                self.fiber.frame.status = super::FlowFiberStatus::Failed(error.to_string());
             }
         }
     }
@@ -173,11 +176,16 @@ impl Engine {
     ) {
         let activation = transaction.activation().clone();
         let phase = transaction.frame().phase;
+        let mut execution_output = None;
         let (start, deferred_batch, host_call, effect) = match step {
             DialogueActivationStep::Continue => (None, None, None, None),
+            DialogueActivationStep::Execution(staged) => {
+                execution_output = Some(staged);
+                (None, None, None, None)
+            }
             DialogueActivationStep::Reveal(start) => (Some(start), None, None, None),
             DialogueActivationStep::Deferred(batch) => (None, Some(batch), None, None),
-            DialogueActivationStep::HostCall(request) => (None, None, Some(request), None),
+            DialogueActivationStep::HostCall(request) => (None, None, Some(*request), None),
             DialogueActivationStep::Effect(effect) => (None, None, None, Some(effect)),
         };
         let (transaction, batch, event, commit_proof) = match start {
@@ -259,10 +267,9 @@ impl Engine {
         };
         match committed {
             Ok(()) => {
-                self.fiber.status = super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
-                    activation.clone(),
-                    phase,
-                ));
+                self.fiber.frame.status = super::FlowFiberStatus::Dialogue(
+                    DialogueExecutionStatus::new(activation.clone(), phase),
+                );
             }
             Err(error) => {
                 self.fail_eval(error, output);
@@ -284,6 +291,9 @@ impl Engine {
         }
         if let Some(event) = event {
             output.flow_events.push(event);
+        }
+        if let Some(staged) = execution_output {
+            output.merge(staged);
         }
     }
 
@@ -390,7 +400,7 @@ impl Engine {
                     ActivationScopeStep::Waiting => {
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
-                                self.fiber.status =
+                                self.fiber.frame.status =
                                     super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
                                         activation_id,
                                         DialogueRuntimePhase::Closing,
@@ -403,7 +413,7 @@ impl Engine {
                     ActivationScopeStep::Deferred(batch) => {
                         match self.commit_dialogue_activation_transaction(transaction, output) {
                             Ok(()) => {
-                                self.fiber.status =
+                                self.fiber.frame.status =
                                     super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
                                         activation_id,
                                         DialogueRuntimePhase::Closing,
@@ -427,7 +437,7 @@ impl Engine {
             if let Some(batch) = batch {
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status =
+                        self.fiber.frame.status =
                             super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
                                 activation_id,
                                 DialogueRuntimePhase::Closing,
@@ -488,7 +498,7 @@ impl Engine {
             let phase = transaction.frame().phase;
             match self.commit_dialogue_activation_transaction(transaction, output) {
                 Ok(()) => {
-                    self.fiber.status = super::FlowFiberStatus::Dialogue(
+                    self.fiber.frame.status = super::FlowFiberStatus::Dialogue(
                         DialogueExecutionStatus::new(activation, phase),
                     );
                 }
@@ -517,7 +527,7 @@ impl Engine {
             if let Some(batch) = batch {
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status =
+                        self.fiber.frame.status =
                             super::FlowFiberStatus::Dialogue(DialogueExecutionStatus::new(
                                 activation_id,
                                 DialogueRuntimePhase::Closing,
@@ -547,7 +557,7 @@ impl Engine {
             let phase = transaction.frame().phase;
             match self.commit_dialogue_activation_transaction(transaction, output) {
                 Ok(()) => {
-                    self.fiber.status = super::FlowFiberStatus::Dialogue(
+                    self.fiber.frame.status = super::FlowFiberStatus::Dialogue(
                         DialogueExecutionStatus::new(activation, phase),
                     );
                 }
@@ -864,11 +874,21 @@ impl Engine {
         &mut self,
         transaction: &mut DialogueActivationTransaction,
         outcomes: &[RuntimeLineHostOutcome],
-        host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
+        input: &mut super::RuntimeStepInput,
+        events: &[super::TaskEvent],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<DialogueActivationStep, DialogueExecutionError> {
         let activation_id = transaction.activation().clone();
         let (frame, activation) = transaction.parts_mut();
+        if !frame.execution.pending_ops.is_empty()
+            || !frame.execution.control_stack.is_empty()
+            || !matches!(frame.execution.status, super::FlowFiberStatus::Running)
+        {
+            let before = self.activation_local_handle_owners(frame)?;
+            let staged = self.step_dialogue_execution(frame, None, input, events, pure_backend)?;
+            self.commit_activation_assignment_discards(&activation_id, frame, activation, &before)?;
+            return Ok(DialogueActivationStep::Execution(staged));
+        }
         if frame.pending_line_operation.is_some() {
             match self.resume_pending_line_operation(&activation_id, frame, activation, outcomes) {
                 Ok(true) => advance_activation_pc(frame)?,
@@ -878,13 +898,14 @@ impl Engine {
             return Ok(DialogueActivationStep::Continue);
         }
         if let Some(pending) = frame.pending_host_call.clone() {
-            let Some(index) = host_results
+            let Some(index) = input
+                .host_call_results
                 .iter()
                 .position(|result| result.id == pending.id)
             else {
                 return Ok(DialogueActivationStep::Continue);
             };
-            let result = host_results.remove(index);
+            let result = input.host_call_results.remove(index);
             let value = result
                 .outcome
                 .map_err(|error| DialogueExecutionError::HostCallFailed {
@@ -907,10 +928,10 @@ impl Engine {
                     &self.plan,
                     binding,
                     value.into_value(),
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )?
                 .ok_or_else(|| RuntimeEvalError::PatternMismatch("host result".to_owned()))?;
-                frame.locals.bind_all(bindings);
+                frame.execution.env.bind_all(bindings);
             }
             frame.pending_host_call = None;
             advance_activation_pc(frame)?;
@@ -960,7 +981,7 @@ impl Engine {
         let assignment_before = self.activation_local_handle_owners(frame)?;
         match operation {
             FlowOp::EnterScope { identity } => {
-                frame.locals.push_scope_with_identity(identity);
+                frame.execution.env.push_scope_with_identity(identity);
                 frame.scopes.push(DialogueActivationScope::new());
             }
             FlowOp::ExitScope => {
@@ -991,18 +1012,11 @@ impl Engine {
                     pure_backend,
                 )?;
             }
-            FlowOp::Assign { place, value } => {
-                let value = self.evaluate_dialogue_expr(frame, &value, pure_backend)?;
-                frame
-                    .locals
-                    .assign_place(&place, value)
-                    .map_err(|error| error.into_parts().0)?;
-            }
             FlowOp::HostCall { binding, target } => {
                 let (args, named_args) = {
-                    std::mem::swap(&mut self.fiber.env, &mut frame.locals);
+                    std::mem::swap(&mut self.fiber.frame.env, &mut frame.execution.env);
                     let evaluated = self.evaluate_host_call_arguments(&target.args, pure_backend);
-                    std::mem::swap(&mut self.fiber.env, &mut frame.locals);
+                    std::mem::swap(&mut self.fiber.frame.env, &mut frame.execution.env);
                     evaluated
                         .map_err(|message| DialogueExecutionError::HostCallFailed { message })?
                 };
@@ -1032,7 +1046,7 @@ impl Engine {
                     activation,
                     &assignment_before,
                 )?;
-                return Ok(DialogueActivationStep::HostCall(
+                return Ok(DialogueActivationStep::HostCall(Box::new(
                     crate::step::RuntimeHostCallRequest::admit(
                         id,
                         target.producer,
@@ -1054,7 +1068,7 @@ impl Engine {
                             message: error.to_string(),
                         }
                     })?,
-                ));
+                )));
             }
             FlowOp::LineOperation { binding, operation } => {
                 self.execute_line_operation(
@@ -1106,7 +1120,23 @@ impl Engine {
             } => {
                 self.register_dialogue_defer(frame, activation, site, outcome, &captures, owner)?;
             }
-            _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
+            operation => {
+                let staged = self.step_dialogue_execution(
+                    frame,
+                    Some(operation),
+                    input,
+                    events,
+                    pure_backend,
+                )?;
+                self.commit_activation_assignment_discards(
+                    &activation_id,
+                    frame,
+                    activation,
+                    &assignment_before,
+                )?;
+                advance_activation_pc(frame)?;
+                return Ok(DialogueActivationStep::Execution(staged));
+            }
         }
         self.commit_activation_assignment_discards(
             &activation_id,
@@ -1120,6 +1150,49 @@ impl Engine {
         Ok(DialogueActivationStep::Continue)
     }
 
+    /// Runs one ordinary opcode or resumes one suspension in the activation's
+    /// owned frame. All direct/value/default calls use the ordinary invocation
+    /// stack; the enclosing dialogue continuation remains suspended.
+    fn step_dialogue_execution(
+        &mut self,
+        frame: &mut DialogueActivationFrame,
+        operation: Option<FlowOp>,
+        input: &mut super::RuntimeStepInput,
+        events: &[super::TaskEvent],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeStepOutput, DialogueExecutionError> {
+        let mut staged = RuntimeStepOutput::default();
+        let mut drop_policy = None;
+        std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+        if let Some(operation) = operation {
+            self.execute_flow_operation(
+                operation,
+                None,
+                &mut staged,
+                pure_backend,
+                &mut drop_policy,
+            );
+        } else if !self.resume_suspended(input, events, &mut staged, pure_backend) {
+            self.step_flow(&mut staged, pure_backend, &mut drop_policy);
+        }
+        std::mem::swap(&mut self.fiber.frame, &mut frame.execution);
+        frame
+            .execution
+            .env
+            .set_assignment_discard_boundary(drop_policy)?;
+        match &frame.execution.status {
+            super::FlowFiberStatus::Failed(message) => {
+                Err(DialogueExecutionError::ActivationExecutionFailed {
+                    message: message.clone(),
+                })
+            }
+            super::FlowFiberStatus::Done(_) => {
+                Err(LineRuntimeError::InvalidActivationOperation.into())
+            }
+            _ => Ok(staged),
+        }
+    }
+
     fn activation_local_handle_owners(
         &self,
         frame: &DialogueActivationFrame,
@@ -1128,7 +1201,7 @@ impl Engine {
         DialogueExecutionError,
     > {
         let mut owners = std::collections::BTreeMap::new();
-        for (local, value) in frame.locals.bindings() {
+        for (local, value) in frame.execution.env.bindings() {
             let owner = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
             for handle in unique_affine_line_handles(value)? {
                 if owners
@@ -1149,7 +1222,7 @@ impl Engine {
         activation: &mut NativeDialogueActivationState,
         before: &std::collections::BTreeMap<RuntimeLineHandleToken, RuntimeHandleOwnerSlot>,
     ) -> Result<(), DialogueExecutionError> {
-        let drops = frame.locals.take_assignment_discard_authorization();
+        let drops = frame.execution.env.take_assignment_discard_authorization();
         let after = self.activation_local_handle_owners(frame)?;
         if !drops.has_displaced_values() && before == &after {
             return Ok(());
@@ -1239,7 +1312,8 @@ impl Engine {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
             let value = frame
-                .locals
+                .execution
+                .env
                 .get(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?;
             capture_refs.push(value);
@@ -1309,7 +1383,8 @@ impl Engine {
             if read.mode() == crate::value::RuntimeLocalReadMode::Copy {
                 values[index] = Some(
                     frame
-                        .locals
+                        .execution
+                        .env
                         .get(read.local())
                         .expect("checked copied defer local remains present")
                         .clone(),
@@ -1323,7 +1398,8 @@ impl Engine {
             if read.mode() == crate::value::RuntimeLocalReadMode::Move {
                 values[index] = Some(
                     frame
-                        .locals
+                        .execution
+                        .env
                         .take(read.local())
                         .expect("checked moved defer local remains present"),
                 );
@@ -1422,7 +1498,7 @@ impl Engine {
         let mut commands =
             RuntimeCommandQueue::new(activation_id.clone(), activation.command_sequence());
         let mut seen = std::collections::BTreeSet::new();
-        for (local, value) in frame.locals.current_scope_bindings() {
+        for (local, value) in frame.execution.env.current_scope_bindings() {
             for handle in unique_affine_line_handles(value)? {
                 if handle.token().activation() != activation_id
                     || !seen.insert(handle.token().clone())
@@ -1444,7 +1520,7 @@ impl Engine {
         }
         flush_commands(activation_id, activation, commands)?;
         activation.commit_ledger(ledger);
-        let _ = frame.locals.pop_scope_bindings();
+        let _ = frame.execution.env.pop_scope_bindings();
         Ok(())
     }
 
@@ -1454,9 +1530,9 @@ impl Engine {
         expression: &crate::value::RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        std::mem::swap(&mut self.fiber.env, &mut state.locals);
+        std::mem::swap(&mut self.fiber.frame.env, &mut state.execution.env);
         let result = self.evaluate_expr_with_backend(expression, pure_backend);
-        std::mem::swap(&mut self.fiber.env, &mut state.locals);
+        std::mem::swap(&mut self.fiber.frame.env, &mut state.execution.env);
         result
     }
 
@@ -1482,7 +1558,7 @@ impl Engine {
             &self.plan,
             pattern,
             &value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return Err(
                 RuntimeEvalError::PatternMismatch(super::runtime_value_label(&value)).into(),
@@ -1518,7 +1594,7 @@ impl Engine {
                     } else {
                         None
                     };
-                    for (local, value) in frame.locals.bindings() {
+                    for (local, value) in frame.execution.env.bindings() {
                         if &self.owned_slot(local)? == slot
                             && value_contains_token(value, handle.token())?
                         {
@@ -1553,7 +1629,8 @@ impl Engine {
                 continue;
             }
             let source = frame
-                .locals
+                .execution
+                .env
                 .get(*local)
                 .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
             if unique_affine_line_handles(source)?
@@ -1570,7 +1647,8 @@ impl Engine {
                 continue;
             }
             let _ = frame
-                .locals
+                .execution
+                .env
                 .take(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?;
         }
@@ -1578,11 +1656,11 @@ impl Engine {
             &self.plan,
             pattern,
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )
         .expect("checked dialogue let projection remains valid")
         .expect("checked dialogue let pattern remains matched");
-        frame.locals.bind_all(bindings);
+        frame.execution.env.bind_all(bindings);
         Ok(())
     }
 
@@ -1756,7 +1834,7 @@ impl Engine {
                 let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
                 activation.schedule_prepared(prepared_schedule, captures.into_boxed_slice());
                 activation.record_commands_prepared(prepared_commands);
-                state.locals.bind_all(bindings);
+                state.execution.env.bind_all(bindings);
             }
             RuntimeLineOperation::ActorLook {
                 character,
@@ -1771,7 +1849,8 @@ impl Engine {
                     return Err(LineRuntimeError::InvalidHandleSite.into());
                 }
                 let actor_value = state
-                    .locals
+                    .execution
+                    .env
                     .get(actor.local())
                     .ok_or(RuntimeEvalError::UnknownLocal(actor.local()))?;
                 let RuntimeValue::Opaque(actor_opaque) = actor_value else {
@@ -1867,7 +1946,7 @@ impl Engine {
                         )?;
                         let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
                         activation.record_commands_prepared(prepared);
-                        state.locals.bind_all(bindings);
+                        state.execution.env.bind_all(bindings);
                     }
                     RuntimeDialogueVoiceState::Lazy(ticket) => {
                         let mut commands = RuntimeCommandQueue::new(
@@ -1956,7 +2035,7 @@ impl Engine {
                         };
                         let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
                         activation.record_commands_prepared(prepared);
-                        state.locals.bind_all(bindings);
+                        state.execution.env.bind_all(bindings);
                     }
                     RuntimeStageCommandOutcome::Rejected { code, .. } => {
                         let mut ledger = activation.ledger().clone();
@@ -2033,7 +2112,7 @@ impl Engine {
                         };
                         let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
                         activation.record_commands_prepared(prepared);
-                        state.locals.bind_all(bindings);
+                        state.execution.env.bind_all(bindings);
                     }
                     RuntimeStageCommandOutcome::Rejected { code, .. } => {
                         let mut ledger = activation.ledger().clone();
@@ -2147,7 +2226,7 @@ impl Engine {
                 let bindings = self.bind_operation_value_owned(binding.as_ref(), value);
                 state.voice = RuntimeDialogueVoiceState::Ready(session.clone());
                 activation.record_commands_prepared(prepared);
-                state.locals.bind_all(bindings);
+                state.execution.env.bind_all(bindings);
             }
         }
         state.pending_line_operation = None;
@@ -2168,7 +2247,7 @@ impl Engine {
             &self.plan,
             pattern,
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
@@ -2204,7 +2283,7 @@ impl Engine {
             &self.plan,
             pattern,
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )
         .expect("preflighted operation pattern remains valid")
         .expect("preflighted operation pattern remains matched")
@@ -2332,7 +2411,7 @@ impl Engine {
                 let phase = transaction.frame().phase;
                 match self.commit_dialogue_activation_transaction(transaction, output) {
                     Ok(()) => {
-                        self.fiber.status = super::FlowFiberStatus::Dialogue(
+                        self.fiber.frame.status = super::FlowFiberStatus::Dialogue(
                             DialogueExecutionStatus::new(activation, phase),
                         );
                     }
@@ -2382,7 +2461,7 @@ impl Engine {
             &self.plan,
             state.result_target.pattern(),
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
         }
@@ -2485,7 +2564,7 @@ impl Engine {
             &self.plan,
             state.result_target.pattern(),
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )
         .expect("prepared publication pattern remains valid")
         .expect("publication pattern passed borrowed owning preflight");
@@ -2542,7 +2621,8 @@ impl Engine {
         };
         let target = match source_local {
             Some(local) => state
-                .locals
+                .execution
+                .env
                 .take(local)
                 .ok_or(RuntimeEvalError::UnknownLocal(local))?,
             None => self.evaluate_dialogue_expr(state, target, pure_backend)?,
@@ -2572,7 +2652,7 @@ impl Engine {
         if result.is_err()
             && let Some(local) = source_local
         {
-            state.locals.set(local, target);
+            state.execution.env.set(local, target);
         }
         result.map(|()| None)
     }
@@ -2929,7 +3009,7 @@ mod tests {
             resume: None,
             captures: Box::new([]),
             task_inputs: Box::new([]),
-            locals,
+            execution: crate::engine::NativeFlowExecutionFrame::running(locals),
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
             phase: DialogueRuntimePhase::Activating,
@@ -2984,8 +3064,8 @@ mod tests {
         engine
             .execute_dialogue_evaluated_effect(&activation, frame, line, &effect, &mut pure)
             .expect("drop candidate");
-        assert!(owner.frame().locals.get(local).is_none());
-        owner.frame_mut().locals.push_scope();
+        assert!(owner.frame().execution.env.get(local).is_none());
+        owner.frame_mut().execution.env.push_scope();
         owner
             .frame_mut()
             .scopes
@@ -3002,9 +3082,9 @@ mod tests {
             .dialogue_activations
             .begin_transaction(&activation)
             .expect("live frame");
-        assert_eq!(live.frame().locals.get(local), None);
+        assert_eq!(live.frame().execution.env.get(local), None);
         assert_eq!(live.frame().scopes.len(), 1);
-        assert!(engine.fiber.env.get(local).is_none());
+        assert!(engine.fiber.frame.env.get(local).is_none());
     }
 
     #[test]
@@ -3013,7 +3093,7 @@ mod tests {
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(local);
-        frame.locals.push_scope();
+        frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         let mut line = RuntimeDialogueActivationState::new();
         let first = line
@@ -3077,7 +3157,7 @@ mod tests {
         let id = activation_id();
         let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
         let mut frame = activation_frame(local);
-        frame.locals.push_scope();
+        frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         frame.activation_pc = 3;
         frame.exiting_for_result = true;
@@ -3101,7 +3181,8 @@ mod tests {
             engine.resume_dialogue_activation(
                 &mut transaction,
                 &[],
-                &mut Vec::new(),
+                &mut crate::step::RuntimeStepInput::default(),
+                &[],
                 &mut VmRuntimePureCallBackend::default(),
             ),
             Ok(super::DialogueActivationStep::Continue)
@@ -3160,7 +3241,7 @@ mod tests {
         engine.commit_and_suspend_dialogue(
             transaction,
             &mut output,
-            super::DialogueActivationStep::HostCall(request.clone()),
+            super::DialogueActivationStep::HostCall(Box::new(request.clone())),
         );
         assert_eq!(output.requests.host_calls, vec![request]);
         let mut transaction = engine
@@ -3175,7 +3256,11 @@ mod tests {
             engine.resume_dialogue_activation(
                 &mut transaction,
                 &[],
-                &mut vec![reply],
+                &mut crate::step::RuntimeStepInput {
+                    host_call_results: vec![reply],
+                    ..crate::step::RuntimeStepInput::default()
+                },
+                &[],
                 &mut VmRuntimePureCallBackend::default(),
             ),
             Ok(super::DialogueActivationStep::Continue)
@@ -3280,8 +3365,8 @@ mod tests {
         let source = locals[0];
         let destination = locals[1];
         let mut frame = activation_frame(source);
-        frame.locals = crate::value::RuntimeEnv::default();
-        frame.locals.push_scope();
+        frame.execution.env = crate::value::RuntimeEnv::default();
+        frame.execution.env.push_scope();
         frame.scopes.push(DialogueActivationScope::new());
         let character =
             arcweft_character::id::CharacterId::try_new("character.fixture").expect("character");
@@ -3323,7 +3408,7 @@ mod tests {
                 RuntimeHandleLeaseState::Active,
             )
             .expect("actor acquired");
-        frame.locals.set(source, RuntimeValue::Opaque(actor));
+        frame.execution.env.set(source, RuntimeValue::Opaque(actor));
         let mut line = RuntimeDialogueActivationState::new();
         line.commit_ledger(ledger);
         let path = RuntimePatternBindingPath::try_from_steps([RuntimePatternBindingStep::Whole])
@@ -3352,9 +3437,9 @@ mod tests {
                 &mut VmRuntimePureCallBackend::default(),
             )
             .expect("affine let transfers owner");
-        assert!(frame.locals.get(source).is_none());
+        assert!(frame.execution.env.get(source).is_none());
         assert!(matches!(
-            frame.locals.get(destination),
+            frame.execution.env.get(destination),
             Some(RuntimeValue::Opaque(_))
         ));
         assert_eq!(
@@ -3386,7 +3471,8 @@ mod tests {
             .unwrap();
         line.commit_ledger(ledger);
         frame
-            .locals
+            .execution
+            .env
             .set(incoming_local, RuntimeValue::Opaque(incoming));
         let incoming_expr = RuntimeExpr::from_admitted_parts(
             RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
@@ -3404,7 +3490,8 @@ mod tests {
             )
             .unwrap();
         frame
-            .locals
+            .execution
+            .env
             .assign_runtime_place(crate::value::RuntimeMutablePlace::Local(destination), value)
             .unwrap();
         engine
@@ -3449,8 +3536,8 @@ mod tests {
             Ok(ActivationScopeStep::Finished)
         ));
         assert!(frame.scopes.is_empty());
-        assert!(frame.locals.get(source).is_none());
-        assert!(frame.locals.get(destination).is_none());
+        assert!(frame.execution.env.get(source).is_none());
+        assert!(frame.execution.env.get(destination).is_none());
         assert!(line.has_pending_commands());
         assert!(matches!(
             line.take_commit_receipt().into_commands().as_slice(),

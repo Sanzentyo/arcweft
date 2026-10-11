@@ -89,6 +89,7 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
     assert_eq!(
         restored
             .fiber
+            .frame
             .env
             .function_instantiation()
             .unwrap()
@@ -99,7 +100,7 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
     let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall {
         type_instantiation,
         ..
-    }) = missing.fiber.control_stack.last_mut()
+    }) = missing.fiber.frame.control_stack.last_mut()
     else {
         panic!("program did not retain its active function frame")
     };
@@ -139,7 +140,7 @@ fn completed_handle_program_with_prefix(
         crate::engine::NativeInvocationRoot::Program(fixture.program),
         value,
     ));
-    engine.fiber.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+    engine.fiber.frame.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
     engine.main_started = true;
     engine.need_producers = crate::tests::program_custody::pending_program_need(
         engine.generation,
@@ -189,7 +190,7 @@ fn program_continuation_accepts_detached_prefix_and_retains_native_need_result_c
         crate::engine::NativeInvocationRoot::Program(id),
         RuntimeValue::NeedHandle(need.clone()),
     ));
-    engine.fiber.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+    engine.fiber.frame.status = crate::engine::FlowFiberStatus::Done(crate::engine::FlowExit::Done);
     engine.main_started = true;
     let mut engine = engine
         .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
@@ -818,7 +819,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         }
     }
     assert!(matches!(
-        restored.fiber.status,
+        restored.fiber.frame.status,
         crate::engine::FlowFiberStatus::Done(_)
     ));
     assert_eq!(
@@ -973,10 +974,10 @@ fn aot_exhausted_executable_frame_retains_native_fallthrough_rejection_and_clean
                 .any(|row| row.message == expected)
         );
         assert!(
-            engine.fiber.control_stack.is_empty(),
+            engine.fiber.frame.control_stack.is_empty(),
             "the original function frame is unwound"
         );
-        assert!(engine.fiber.pending_ops.is_empty());
+        assert!(engine.fiber.frame.pending_ops.is_empty());
         assert!(engine.take_function_result(site).unwrap().is_none());
         let failed = engine.inert_rollback_image().unwrap();
         let repeated = engine.step_with_pure_backend(Default::default(), options, &mut backend);

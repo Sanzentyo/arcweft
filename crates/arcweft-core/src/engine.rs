@@ -200,9 +200,21 @@ pub(super) struct NativePreparedDialogueEffectCallback {
     invocation: RuntimeCallableZeroArgInvocationProof,
 }
 
-/// Current flow execution cursor.
+/// Executor identity and its current owned execution frame.
 #[derive(Debug, PartialEq)]
 pub struct FlowFiber {
+    pub frame: NativeFlowExecutionFrame,
+    pub id: FlowFiberId,
+    pub persistent_id: RuntimePersistentFiberId,
+    pub execution: crate::runtime_id::ExecutionInstanceId,
+    pub(crate) owner: FlowFiberOwner,
+}
+
+/// Budgeted native execution state shared by root, child and dialogue execution.
+/// A dialogue transaction owns its frame while the enclosing fiber is suspended;
+/// executing it borrows that fiber's identity without creating another fiber.
+#[derive(Debug, PartialEq)]
+pub struct NativeFlowExecutionFrame {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
@@ -214,15 +226,20 @@ pub struct FlowFiber {
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
     /// Terminal cancellation selection awaiting the owning activation transaction.
     pub(crate) selected_dialogue_result: Option<RuntimeValue>,
-    pub id: FlowFiberId,
-    pub persistent_id: RuntimePersistentFiberId,
-    pub execution: crate::runtime_id::ExecutionInstanceId,
-    pub(crate) owner: FlowFiberOwner,
     pub status: FlowFiberStatus,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 struct FlowFiberRollbackImage {
+    frame: NativeFlowExecutionFrameRollbackImage,
+    id: FlowFiberId,
+    persistent_id: RuntimePersistentFiberId,
+    execution: crate::runtime_id::ExecutionInstanceId,
+    owner: FlowFiberOwner,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeFlowExecutionFrameRollbackImage {
     line_cursor: usize,
     cursor: Option<FlowCursor>,
     pending_ops: VecDeque<FlowOpRollbackImage>,
@@ -233,10 +250,6 @@ struct FlowFiberRollbackImage {
     observations: crate::observation::RuntimeObservationSaveSnapshot,
     stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeStateRollbackImage>,
     selected_dialogue_result: Option<crate::value::AwbcRuntimeValueSnapshot>,
-    id: FlowFiberId,
-    persistent_id: RuntimePersistentFiberId,
-    execution: crate::runtime_id::ExecutionInstanceId,
-    owner: FlowFiberOwner,
     status: FlowFiberStatusRollbackImage,
 }
 
@@ -246,6 +259,34 @@ impl FlowFiber {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FlowFiberRollbackImage, String> {
         Ok(FlowFiberRollbackImage {
+            frame: self.frame.inert_rollback_image(owner)?,
+            id: self.id,
+            persistent_id: self.persistent_id,
+            execution: self.execution,
+            owner: self.owner.clone(),
+        })
+    }
+
+    fn from_rollback_image(
+        image: FlowFiberRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            frame: NativeFlowExecutionFrame::from_rollback_image(image.frame, owner)?,
+            id: image.id,
+            persistent_id: image.persistent_id,
+            execution: image.execution,
+            owner: image.owner,
+        })
+    }
+}
+
+impl NativeFlowExecutionFrame {
+    fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
+        Ok(NativeFlowExecutionFrameRollbackImage {
             line_cursor: self.line_cursor,
             cursor: self.cursor,
             pending_ops: self
@@ -285,16 +326,12 @@ impl FlowFiber {
                     .map_err(|error| error.to_string())
                 })
                 .transpose()?,
-            id: self.id,
-            persistent_id: self.persistent_id,
-            execution: self.execution,
-            owner: self.owner.clone(),
             status: self.status.inert_rollback_image(owner)?,
         })
     }
 
     fn from_rollback_image(
-        image: FlowFiberRollbackImage,
+        image: NativeFlowExecutionFrameRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(Self {
@@ -330,10 +367,6 @@ impl FlowFiber {
                         .map_err(|error| error.to_string())
                 })
                 .transpose()?,
-            id: image.id,
-            persistent_id: image.persistent_id,
-            execution: image.execution,
-            owner: image.owner,
             status: FlowFiberStatus::from_rollback_image(image.status, owner)?,
         })
     }
@@ -554,7 +587,7 @@ fn flow_fiber_line_handle_tokens(
     let mut tokens = flow_fiber_line_handle_owners(fiber)?
         .into_keys()
         .collect::<BTreeSet<_>>();
-    if let Some(selected) = &fiber.selected_dialogue_result {
+    if let Some(selected) = &fiber.frame.selected_dialogue_result {
         for handle in selected
             .affine_line_handles()
             .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
@@ -575,7 +608,7 @@ fn flow_fiber_line_handle_owners(
     crate::line_task::LineRuntimeError,
 > {
     let mut owners = BTreeMap::new();
-    for (local, value) in fiber.env.bindings() {
+    for (local, value) in fiber.frame.env.bindings() {
         let owner =
             crate::value::ownership::RuntimeOwnedSlotId::environment_local(fiber.execution, local);
         for handle in value
@@ -587,7 +620,7 @@ fn flow_fiber_line_handle_owners(
             }
         }
     }
-    for (frame_index, entry) in fiber.control_stack.iter().enumerate() {
+    for (frame_index, entry) in fiber.frame.control_stack.iter().enumerate() {
         let FlowControlStackEntryKind::FormatAttempt(frame) = &entry.kind else {
             continue;
         };
@@ -1601,6 +1634,20 @@ impl FlowExit {
 impl Default for FlowFiber {
     fn default() -> Self {
         Self {
+            frame: NativeFlowExecutionFrame::default(),
+            id: FlowFiberId::default(),
+            persistent_id: RuntimePersistentFiberId::default(),
+            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
+                std::num::NonZeroU64::MIN,
+            ),
+            owner: FlowFiberOwner::Executor,
+        }
+    }
+}
+
+impl Default for NativeFlowExecutionFrame {
+    fn default() -> Self {
+        Self {
             line_cursor: 0,
             cursor: None,
             pending_ops: VecDeque::new(),
@@ -1611,13 +1658,17 @@ impl Default for FlowFiber {
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
             selected_dialogue_result: None,
-            id: FlowFiberId::default(),
-            persistent_id: RuntimePersistentFiberId::default(),
-            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
-                std::num::NonZeroU64::MIN,
-            ),
-            owner: FlowFiberOwner::Executor,
             status: FlowFiberStatus::Done(FlowExit::Done),
+        }
+    }
+}
+
+impl NativeFlowExecutionFrame {
+    fn running(env: RuntimeEnv) -> Self {
+        Self {
+            env,
+            status: FlowFiberStatus::Running,
+            ..Self::default()
         }
     }
 }
@@ -1818,8 +1869,8 @@ impl Engine {
                     && token.ordinal().get() < self.next_scheduled_scope_sequence
             };
             let mut pending = Vec::new();
-            pending.extend(fiber.pending_ops.iter());
-            for frame in &fiber.control_stack {
+            pending.extend(fiber.frame.pending_ops.iter());
+            for frame in &fiber.frame.control_stack {
                 match &frame.kind {
                     FlowControlStackEntryKind::Scope {
                         origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
@@ -1974,23 +2025,25 @@ impl Engine {
             main_started,
             root: None,
             fiber: FlowFiber {
-                line_cursor: 0,
-                cursor: None,
-                pending_ops: VecDeque::new(),
-                control_stack: Vec::new(),
-                await_observer: None,
-                root_cleanups: Vec::new(),
-                env: RuntimeEnv::default(),
-                observations: RuntimeObservationState::default(),
-                stream_states,
-                selected_dialogue_result: None,
+                frame: crate::engine::NativeFlowExecutionFrame {
+                    line_cursor: 0,
+                    cursor: None,
+                    pending_ops: VecDeque::new(),
+                    control_stack: Vec::new(),
+                    await_observer: None,
+                    root_cleanups: Vec::new(),
+                    env: RuntimeEnv::default(),
+                    observations: RuntimeObservationState::default(),
+                    stream_states,
+                    selected_dialogue_result: None,
+                    status,
+                },
                 id: FlowFiberId::default(),
                 persistent_id: RuntimePersistentFiberId::from_allocated(1),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
                     std::num::NonZeroU64::MIN,
                 ),
                 owner: FlowFiberOwner::Executor,
-                status,
             },
             child_fibers: VecDeque::new(),
             next_fiber_id: 1,
@@ -2122,7 +2175,7 @@ impl Engine {
                 local,
                 value: binding.value,
             });
-        engine.fiber.env.bind_all_root(admitted);
+        engine.fiber.frame.env.bind_all_root(admitted);
         Ok(engine)
     }
 
@@ -2168,11 +2221,11 @@ impl Engine {
             .ok_or_else(|| EngineStartError::MissingFlow {
                 flow: flow.canonical_label(),
             })?;
-        self.fiber.cursor = Some(FlowCursor {
+        self.fiber.frame.cursor = Some(FlowCursor {
             flow_index,
             op_index: 0,
         });
-        self.fiber.status = FlowFiberStatus::Running;
+        self.fiber.frame.status = FlowFiberStatus::Running;
         self.main_started = true;
         Ok(())
     }
@@ -2229,11 +2282,11 @@ impl Engine {
                     flow: startup.initial_flow.canonical_label(),
                 }
             })?;
-            self.fiber.cursor = Some(FlowCursor {
+            self.fiber.frame.cursor = Some(FlowCursor {
                 flow_index,
                 op_index: 0,
             });
-            self.fiber.status = FlowFiberStatus::Running;
+            self.fiber.frame.status = FlowFiberStatus::Running;
             let initial_state_local = self
                 .validate_current_flow_parameter_bindings(std::iter::once(
                     &startup.initial_state_binding,
@@ -2264,7 +2317,7 @@ impl Engine {
                     message: "root startup state must be unrestricted".to_owned(),
                 });
             }
-            self.fiber.env.set_root(
+            self.fiber.frame.env.set_root(
                 initial_state_local,
                 startup.initial_state_binding.value.clone(),
             );
@@ -2318,7 +2371,7 @@ impl Engine {
             return Ok(Vec::new());
         };
         let binding_label = format!("#{}", first.parameter.position());
-        let Some(cursor) = self.fiber.cursor.as_ref() else {
+        let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
             return Err(RuntimeEvalError::MissingFlowBindingTarget {
                 flow: "<none>".to_owned(),
                 binding: binding_label,
@@ -2422,7 +2475,7 @@ impl Engine {
                     Ok(false) => continue,
                     Err(error) => {
                         let message = format!("invalid Need publication: {error}");
-                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                         output.diagnostics.push(RuntimeDiagnostic::categorized(
                             RuntimeDiagnosticCategory::Host,
                             message,
@@ -2462,7 +2515,7 @@ impl Engine {
                 Err(error) => {
                     let (reason, _rejected_event) = error.into_parts();
                     let message = format!("invalid Need task publication: {reason}");
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         message,
@@ -2489,7 +2542,7 @@ impl Engine {
         )) {
             Ok(image) => image,
             Err(message) => {
-                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Host,
                     message,
@@ -2508,7 +2561,7 @@ impl Engine {
                         "Need {need:?} received conflicting publications at {:?}",
                         cursor
                     );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         message,
@@ -2520,7 +2573,7 @@ impl Engine {
                     let message = format!(
                         "Need {need:?} changed publication authority between external state and a local task"
                     );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         message,
@@ -2577,7 +2630,7 @@ impl Engine {
             })
         {
             let message = error.to_string();
-            self.fiber.status = FlowFiberStatus::Failed(message.clone());
+            self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
             output.diagnostics.push(RuntimeDiagnostic::categorized(
                 RuntimeDiagnosticCategory::Host,
                 message,
@@ -2615,7 +2668,7 @@ impl Engine {
                 let source = error.into_source();
                 if let Some(activation) = activation.filter(|activation| {
                     matches!(
-                        &self.fiber.status,
+                        &self.fiber.frame.status,
                         FlowFiberStatus::Dialogue(current) if current.activation() == activation
                     )
                 }) {
@@ -2631,7 +2684,7 @@ impl Engine {
                         RuntimeDiagnosticCategory::Input,
                         message.clone(),
                     ));
-                    self.fiber.status = FlowFiberStatus::Failed(message);
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message);
                 }
                 let stats = RuntimeStepStats {
                     executed_ops,
@@ -2781,7 +2834,7 @@ impl Engine {
                     let message = root
                         .failure()
                         .map_or_else(|| "root reducer trapped".to_owned(), ToString::to_string);
-                    self.fiber.status = FlowFiberStatus::Failed(message);
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message);
                     false
                 } else {
                     true
@@ -2804,7 +2857,7 @@ impl Engine {
                     .diagnostics
                     .push(RuntimeDiagnostic::categorized(category, message.clone()));
                 if !step_input_rejection {
-                    self.fiber.status = FlowFiberStatus::Failed(message);
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message);
                 }
                 false
             }
@@ -2835,11 +2888,11 @@ impl Engine {
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
-        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+        if !matches!(self.fiber.frame.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.cursor.is_some()
-            || !self.fiber.pending_ops.is_empty()
+        if self.fiber.frame.cursor.is_some()
+            || !self.fiber.frame.pending_ops.is_empty()
             || self.has_active_project_call()
         {
             self.step_main_flow_transaction(output, pure_backend);
@@ -2899,7 +2952,11 @@ impl Engine {
             pure_backend,
             &mut drop_policy,
         );
-        let mut drops = candidate.fiber.env.take_assignment_discard_authorization();
+        let mut drops = candidate
+            .fiber
+            .frame
+            .env
+            .take_assignment_discard_authorization();
         if let Err(error) = drops.set_boundary(drop_policy) {
             drop(candidate);
             *self = Self::from_rollback_image(image)
@@ -2944,7 +3001,7 @@ impl Engine {
     fn main_fiber_can_attempt_runtime_op(&self) -> bool {
         self.main_started
             && !matches!(
-                self.fiber.status,
+                self.fiber.frame.status,
                 FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
             )
     }
@@ -2984,11 +3041,11 @@ impl Engine {
     }
 
     fn pending_ops_len(&self) -> usize {
-        self.fiber.pending_ops.len()
+        self.fiber.frame.pending_ops.len()
             + self
                 .child_fibers
                 .iter()
-                .map(|fiber| fiber.pending_ops.len())
+                .map(|fiber| fiber.frame.pending_ops.len())
                 .sum::<usize>()
     }
 
@@ -2997,7 +3054,7 @@ impl Engine {
         body: Vec<FlowOp>,
         captures: &[crate::runtime_id::RuntimeLocalDeclarationId],
     ) -> Result<(FlowFiber, u64), RuntimeEvalError> {
-        let env = self.fiber.env.try_capture_unrestricted(captures)?;
+        let env = self.fiber.frame.env.try_capture_unrestricted(captures)?;
         let ordinal = self.next_fiber_id;
         let next = ordinal
             .checked_add(1)
@@ -3015,21 +3072,23 @@ impl Engine {
         }
         Ok((
             FlowFiber {
-                line_cursor: 0,
-                cursor: None,
-                pending_ops,
-                control_stack: Vec::new(),
-                await_observer: None,
-                root_cleanups: Vec::new(),
-                env,
-                observations: RuntimeObservationState::default(),
-                stream_states: BTreeMap::new(),
-                selected_dialogue_result: None,
+                frame: crate::engine::NativeFlowExecutionFrame {
+                    line_cursor: 0,
+                    cursor: None,
+                    pending_ops,
+                    control_stack: Vec::new(),
+                    await_observer: None,
+                    root_cleanups: Vec::new(),
+                    env,
+                    observations: RuntimeObservationState::default(),
+                    stream_states: BTreeMap::new(),
+                    selected_dialogue_result: None,
+                    status: FlowFiberStatus::Running,
+                },
                 id: FlowFiberId(ordinal),
                 persistent_id: RuntimePersistentFiberId::from_allocated(next.get()),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(next),
                 owner: FlowFiberOwner::Executor,
-                status: FlowFiberStatus::Running,
             },
             next.get(),
         ))
@@ -3175,21 +3234,23 @@ impl Engine {
         pending_ops.extend(executable.ops().iter().cloned());
         pending_ops.push_back(FlowOp::ExitScope);
         FlowFiber {
-            line_cursor: 0,
-            cursor: None,
-            pending_ops,
-            control_stack: Vec::new(),
-            await_observer: None,
-            root_cleanups: Vec::new(),
-            env,
-            observations: RuntimeObservationState::default(),
-            stream_states: BTreeMap::new(),
-            selected_dialogue_result: None,
+            frame: crate::engine::NativeFlowExecutionFrame {
+                line_cursor: 0,
+                cursor: None,
+                pending_ops,
+                control_stack: Vec::new(),
+                await_observer: None,
+                root_cleanups: Vec::new(),
+                env,
+                observations: RuntimeObservationState::default(),
+                stream_states: BTreeMap::new(),
+                selected_dialogue_result: None,
+                status: FlowFiberStatus::Running,
+            },
             id: FlowFiberId(prepared.ordinal),
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
             owner: FlowFiberOwner::Executor,
-            status: FlowFiberStatus::Running,
         }
     }
 
@@ -3302,7 +3363,7 @@ impl Engine {
             .captures()
             .iter()
             .map(|local| {
-                let value = self.fiber.env.get(*local).ok_or(
+                let value = self.fiber.frame.env.get(*local).ok_or(
                     crate::line_task::LineRuntimeError::UnknownOwnedLocal { local: *local },
                 )?;
                 if !value.ownership().permits_copy() {
@@ -3468,16 +3529,19 @@ impl Engine {
                         .checked_add(1)
                         .expect("fiber identity headroom was preflighted");
                     batch.child_fibers.push_back(FlowFiber {
-                        line_cursor: 0,
-                        cursor: None,
-                        pending_ops,
-                        control_stack: Vec::new(),
-                        await_observer: None,
-                        root_cleanups: Vec::new(),
-                        env,
-                        observations: RuntimeObservationState::default(),
-                        stream_states: BTreeMap::new(),
-                        selected_dialogue_result: None,
+                        frame: crate::engine::NativeFlowExecutionFrame {
+                            line_cursor: 0,
+                            cursor: None,
+                            pending_ops,
+                            control_stack: Vec::new(),
+                            await_observer: None,
+                            root_cleanups: Vec::new(),
+                            env,
+                            observations: RuntimeObservationState::default(),
+                            stream_states: BTreeMap::new(),
+                            selected_dialogue_result: None,
+                            status: FlowFiberStatus::Running,
+                        },
                         id: FlowFiberId(ordinal),
                         persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
                         execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
@@ -3489,7 +3553,6 @@ impl Engine {
                             cancel_policy: policy.cancel,
                             closing: false,
                         }),
-                        status: FlowFiberStatus::Running,
                     });
                     batch.run_child_next = true;
                 }
@@ -3693,16 +3756,19 @@ impl Engine {
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
         };
         let child = FlowFiber {
-            line_cursor: 0,
-            cursor: None,
-            pending_ops,
-            control_stack: Vec::new(),
-            await_observer: None,
-            root_cleanups: Vec::new(),
-            env,
-            observations: RuntimeObservationState::default(),
-            stream_states: BTreeMap::new(),
-            selected_dialogue_result: None,
+            frame: crate::engine::NativeFlowExecutionFrame {
+                line_cursor: 0,
+                cursor: None,
+                pending_ops,
+                control_stack: Vec::new(),
+                await_observer: None,
+                root_cleanups: Vec::new(),
+                env,
+                observations: RuntimeObservationState::default(),
+                stream_states: BTreeMap::new(),
+                selected_dialogue_result: None,
+                status: FlowFiberStatus::Running,
+            },
             id: FlowFiberId(prepared.ordinal),
             persistent_id: RuntimePersistentFiberId::from_allocated(prepared.allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(prepared.allocated),
@@ -3715,7 +3781,6 @@ impl Engine {
                 cancel_policy: ChildCancelPolicy::Finish,
                 closing: false,
             }),
-            status: FlowFiberStatus::Running,
         };
         debug_assert_eq!(
             flow_fiber_line_handle_tokens(&child)
@@ -3788,7 +3853,7 @@ impl Engine {
         let live_tokens = matches!(&owner, FlowFiberOwner::LineTask(_))
             .then(|| flow_fiber_line_handle_tokens(&child))
             .transpose()?;
-        let mut drops = child.env.take_assignment_discard_authorization();
+        let mut drops = child.frame.env.take_assignment_discard_authorization();
         drops.set_boundary(drop_policy)?;
         if let FlowFiberOwner::LineTask(owner) = &owner {
             let mut transaction = self
@@ -3807,7 +3872,7 @@ impl Engine {
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
             Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         }
-        match child.status {
+        match child.frame.status {
             FlowFiberStatus::Done(_) => {
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
@@ -3815,14 +3880,14 @@ impl Engine {
                     if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Defer(_)) {
                         self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
                     } else {
-                        let returned_bindings = std::mem::take(&mut child.env)
+                        let returned_bindings = std::mem::take(&mut child.frame.env)
                             .into_slots()
                             .into_boxed_slice();
                         self.complete_line_task_work(
                             &owner.tag,
                             returned_bindings,
                             &live_tokens,
-                            child.selected_dialogue_result.take(),
+                            child.frame.selected_dialogue_result.take(),
                             false,
                             owner.closing,
                             owner.join_policy == ChildJoinPolicy::Join,
@@ -3846,7 +3911,7 @@ impl Engine {
                     if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Defer(_)) {
                         self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
                     } else {
-                        let returned_bindings = std::mem::take(&mut child.env)
+                        let returned_bindings = std::mem::take(&mut child.frame.env)
                             .into_slots()
                             .into_boxed_slice();
                         self.complete_line_task_work(
@@ -3884,7 +3949,7 @@ impl Engine {
         let crate::line_task::LineTaskWork::Defer(id) = tag.work() else {
             return Err(crate::line_task::LineRuntimeError::InvalidDeferredTransition.into());
         };
-        match &self.fiber.status {
+        match &self.fiber.frame.status {
             FlowFiberStatus::Dialogue(activation)
                 if activation.activation() == tag.activation_id() => {}
             _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
@@ -3948,7 +4013,7 @@ impl Engine {
             .get(group_id.index())
             .cloned()
             .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
-        match &self.fiber.status {
+        match &self.fiber.frame.status {
             FlowFiberStatus::Dialogue(activation)
                 if activation.activation() == tag.activation_id() => {}
             _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
@@ -4090,10 +4155,10 @@ impl Engine {
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
-        if !matches!(self.fiber.status, FlowFiberStatus::Running) {
+        if !matches!(self.fiber.frame.status, FlowFiberStatus::Running) {
             return;
         }
-        if self.fiber.cursor.is_some() || !self.fiber.pending_ops.is_empty() {
+        if self.fiber.frame.cursor.is_some() || !self.fiber.frame.pending_ops.is_empty() {
             self.step_flow(output, pure_backend, drop_policy);
         }
     }
@@ -4103,25 +4168,25 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let frames = std::mem::take(&mut self.fiber.control_stack);
+        let frames = std::mem::take(&mut self.fiber.frame.control_stack);
         for frame in frames.into_iter().rev() {
             if let FlowControlStackEntryKind::Scope { cleanups, .. } = frame.kind {
                 self.emit_scope_cleanups(cleanups, output, pure_backend);
             }
         }
         self.drain_root_cleanups(output, pure_backend);
-        self.fiber.cursor = None;
-        self.fiber.pending_ops.clear();
-        self.fiber.await_observer = None;
-        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+        self.fiber.frame.cursor = None;
+        self.fiber.frame.pending_ops.clear();
+        self.fiber.frame.await_observer = None;
+        self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 
     fn finish_active_child_if_exhausted(&mut self) {
-        if matches!(self.fiber.status, FlowFiberStatus::Running)
-            && self.fiber.cursor.is_none()
-            && self.fiber.pending_ops.is_empty()
+        if matches!(self.fiber.frame.status, FlowFiberStatus::Running)
+            && self.fiber.frame.cursor.is_none()
+            && self.fiber.frame.pending_ops.is_empty()
         {
-            self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+            self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
         }
     }
 
@@ -4133,8 +4198,8 @@ impl Engine {
     ) -> bool {
         if self.hard_stop_reason(output).is_some() {
             if matches!(mode, RuntimeStepMode::Drain | RuntimeStepMode::Server)
-                && has_host_requests(output)
-                && (self.main_fiber_can_attempt_runtime_op() || self.has_runnable_child_fibers())
+                && output.has_host_requests()
+                && (self.fiber_has_internal_work(&self.fiber) || self.has_runnable_child_fibers())
             {
                 return false;
             }
@@ -4142,14 +4207,14 @@ impl Engine {
         }
         match mode {
             RuntimeStepMode::OneOp => executed_ops > 0,
-            RuntimeStepMode::Game => has_presentation_visible_output(output),
+            RuntimeStepMode::Game => output.has_presentation_visible_output(),
             RuntimeStepMode::Drain | RuntimeStepMode::Server => false,
         }
     }
 
     fn record_observations(&mut self, effects: &[LineEffectRequest]) {
         for effect in effects {
-            self.fiber.observations.record_effect(effect);
+            self.fiber.frame.observations.record_effect(effect);
         }
     }
 
@@ -4179,7 +4244,7 @@ impl Engine {
     fn effective_fiber_status(&self) -> FlowFiberStatus {
         if self.has_executor_work()
             && matches!(
-                self.fiber.status,
+                self.fiber.frame.status,
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
@@ -4190,7 +4255,7 @@ impl Engine {
         {
             FlowFiberStatus::Running
         } else {
-            match &self.fiber.status {
+            match &self.fiber.frame.status {
                 FlowFiberStatus::Running => FlowFiberStatus::Running,
                 FlowFiberStatus::Dialogue(activation) => {
                     FlowFiberStatus::Dialogue(activation.clone())
@@ -4229,36 +4294,47 @@ impl Engine {
     }
 
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
-        if self.has_executor_work()
-            && matches!(
-                self.fiber.status,
-                FlowFiberStatus::Done(_)
-                    | FlowFiberStatus::NeedWaiting(_)
-                    | FlowFiberStatus::WaitingMany(_)
-                    | FlowFiberStatus::HostCall(_)
-                    | FlowFiberStatus::Dialogue(_)
-                    | FlowFiberStatus::Choice(_)
-            )
+        if self.has_runnable_child_fibers()
+            && !matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_))
         {
             return None;
         }
-        match self.fiber.status {
+        if matches!(&self.fiber.frame.status, FlowFiberStatus::Dialogue(_))
+            && self.fiber_has_internal_work(&self.fiber)
+        {
+            return None;
+        }
+        match self.fiber.frame.status {
+            FlowFiberStatus::Done(_) if self.has_executor_work() => Some(
+                if output.has_presentation_visible_output() || output.has_host_requests() {
+                    RuntimeStepStopReason::Output
+                } else {
+                    RuntimeStepStopReason::Blocked
+                },
+            ),
             FlowFiberStatus::Done(_) => Some(RuntimeStepStopReason::Done),
             FlowFiberStatus::Failed(_) => Some(RuntimeStepStopReason::Failed),
-            FlowFiberStatus::HostCall(_) => Some(if has_host_requests(output) {
+            FlowFiberStatus::HostCall(_) => Some(if output.has_host_requests() {
                 RuntimeStepStopReason::Output
             } else {
                 RuntimeStepStopReason::Blocked
             }),
-            FlowFiberStatus::Dialogue(_)
-            | FlowFiberStatus::WaitingMany(_)
-            | FlowFiberStatus::Choice(_) => Some(if has_presentation_visible_output(output) {
-                RuntimeStepStopReason::Output
-            } else {
-                RuntimeStepStopReason::Blocked
-            }),
+            FlowFiberStatus::Dialogue(_) => Some(
+                if output.has_presentation_visible_output() || output.has_host_requests() {
+                    RuntimeStepStopReason::Output
+                } else {
+                    RuntimeStepStopReason::Blocked
+                },
+            ),
+            FlowFiberStatus::WaitingMany(_) | FlowFiberStatus::Choice(_) => {
+                Some(if output.has_presentation_visible_output() {
+                    RuntimeStepStopReason::Output
+                } else {
+                    RuntimeStepStopReason::Blocked
+                })
+            }
             FlowFiberStatus::NeedWaiting(_) => Some(RuntimeStepStopReason::Blocked),
-            FlowFiberStatus::Running if has_host_requests(output) => {
+            FlowFiberStatus::Running if output.has_host_requests() => {
                 Some(RuntimeStepStopReason::Output)
             }
             FlowFiberStatus::Running => None,
@@ -4270,7 +4346,7 @@ impl Engine {
         executed_ops: usize,
         output: &RuntimeStepOutput,
     ) -> RuntimeStepStopReason {
-        if options.mode == RuntimeStepMode::Game && has_presentation_visible_output(output) {
+        if options.mode == RuntimeStepMode::Game && output.has_presentation_visible_output() {
             return RuntimeStepStopReason::Output;
         }
         if options.mode == RuntimeStepMode::OneOp && executed_ops > 0 {
@@ -4282,47 +4358,33 @@ impl Engine {
         RuntimeStepStopReason::OneOp
     }
 
+    fn fiber_has_internal_work(&self, fiber: &FlowFiber) -> bool {
+        if fiber.owner.requests_line_task_close() {
+            return true;
+        }
+        match &fiber.frame.status {
+            FlowFiberStatus::Running => true,
+            FlowFiberStatus::Dialogue(activation) => self
+                .dialogue_activations
+                .has_internal_work(activation.activation(), self.has_joined_work()),
+            FlowFiberStatus::Done(_)
+            | FlowFiberStatus::Failed(_)
+            | FlowFiberStatus::NeedWaiting(_)
+            | FlowFiberStatus::WaitingMany(_)
+            | FlowFiberStatus::HostCall(_)
+            | FlowFiberStatus::Choice(_) => false,
+        }
+    }
+
     fn has_runnable_child_fibers(&self) -> bool {
         self.child_fibers.iter().any(|child| {
-            matches!(child.status, FlowFiberStatus::Running)
-                && (child.cursor.is_some() || !child.pending_ops.is_empty())
+            self.fiber_has_internal_work(child)
+                || matches!(
+                    child.frame.status,
+                    FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+                )
         })
     }
-}
-
-fn has_host_requests(output: &RuntimeStepOutput) -> bool {
-    !output.requests.tasks.is_empty()
-        || !output.requests.audio.is_empty()
-        || !output.requests.cancel_scopes.is_empty()
-        || !output.requests.ensure_content.is_empty()
-        || !output.requests.host_calls.is_empty()
-}
-
-fn has_presentation_visible_output(output: &RuntimeStepOutput) -> bool {
-    output.flow_events.iter().any(flow_event_is_visible)
-        || output.effects.line.iter().any(line_effect_is_visible)
-}
-
-fn flow_event_is_visible(event: &FlowEvent) -> bool {
-    matches!(
-        event,
-        FlowEvent::DialogueLine { .. }
-            | FlowEvent::LineCancelled { .. }
-            | FlowEvent::ChoicePresented { .. }
-            | FlowEvent::ChoiceSelected { .. }
-            | FlowEvent::AwaitStarted { .. }
-            | FlowEvent::AwaitProgress { .. }
-    )
-}
-
-fn line_effect_is_visible(effect: &LineEffectRequest) -> bool {
-    !matches!(
-        effect,
-        LineEffectRequest::Log(_)
-            | LineEffectRequest::SignalWrite(_)
-            | LineEffectRequest::MetricWrite(_)
-            | LineEffectRequest::EmitEvent(_)
-    )
 }
 
 #[cfg(test)]
@@ -4398,7 +4460,7 @@ mod rollback_tests {
             "local input",
             crate::task::TaskOutcomeContract::program(unit),
         );
-        engine.fiber.env.bind_all_root([RuntimeLocalBinding {
+        engine.fiber.frame.env.bind_all_root([RuntimeLocalBinding {
             local,
             value: RuntimeValue::NeedHandle(local_need.clone()),
         }]);
@@ -4444,7 +4506,7 @@ mod rollback_tests {
         drop(engine);
         let restored = Engine::from_rollback_image(image).expect("exact owner restore");
         assert_eq!(
-            restored.fiber.env.get(local),
+            restored.fiber.frame.env.get(local),
             Some(&RuntimeValue::NeedHandle(local_need))
         );
         let queued = restored.need_publications.get(&ready_correlation).unwrap();
@@ -4472,6 +4534,7 @@ mod rollback_tests {
             .expect("the original Plan admits its callable");
         engine
             .fiber
+            .frame
             .observations
             .record_effect(&LineEffectRequest::SignalWrite(
                 crate::effect::RuntimeAssignment::try_new(
@@ -4482,6 +4545,7 @@ mod rollback_tests {
             ));
         engine
             .fiber
+            .frame
             .observations
             .record_effect(&LineEffectRequest::MetricWrite(
                 crate::effect::RuntimeAssignment::try_new(
@@ -4491,7 +4555,7 @@ mod rollback_tests {
                 .expect("unsigned metric remains typed"),
             ));
         let expected = crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
-            &engine.fiber.observations,
+            &engine.fiber.frame.observations,
             &owner,
         )
         .expect("exact-owner observation image");
@@ -4502,7 +4566,7 @@ mod rollback_tests {
         let restored =
             Engine::from_rollback_image(image).expect("the original native owner restores");
         let RuntimeValue::Tuple(values) =
-            restored.fiber.observations.signals()["signal.callback"].value()
+            restored.fiber.frame.observations.signals()["signal.callback"].value()
         else {
             panic!("the callable retains its enclosing typed tuple")
         };
@@ -4512,7 +4576,7 @@ mod rollback_tests {
         assert!(callable.owner().same_program(&owner));
         assert_eq!(
             crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
-                &restored.fiber.observations,
+                &restored.fiber.frame.observations,
                 &owner,
             )
             .expect("restored image is admitted by the same owner"),
@@ -4525,7 +4589,7 @@ mod rollback_tests {
             ),
         ));
         let error = crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
-            &restored.fiber.observations,
+            &restored.fiber.frame.observations,
             &foreign_owner,
         )
         .expect_err("an equal-looking Plan cannot capture another native lease");
@@ -4550,5 +4614,106 @@ fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclaratio
             false,
             crate::plan::RuntimeLocalBindingStorage::Derived,
         ),
+    }
+}
+
+#[cfg(test)]
+mod dialogue_readiness_tests {
+    use super::*;
+
+    #[test]
+    fn native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup() {
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+        let mut builder = crate::plan::RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [crate::plan::RuntimePlanTypeSeed::new(
+                    unit,
+                    crate::plan::RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .expect("unit type admission");
+        let plan = builder.finish().expect("unit plan seals");
+        let unit_id = plan
+            .type_table()
+            .id_for_semantic(unit)
+            .expect("admitted unit type");
+        let mut engine = Engine::new(plan);
+        let (child, next_fiber_id) = engine
+            .prepare_child_fiber(
+                vec![FlowOp::HostCall {
+                    binding: None,
+                    target: crate::plan::RuntimeHostCallTarget {
+                        producer: crate::tests::host_producer(),
+                        public_id: "readiness.child".to_owned(),
+                        capability: "test".to_owned(),
+                        operation: "read".to_owned(),
+                        contract: None,
+                        args: Vec::new(),
+                        result: unit_id,
+                        mode: crate::step::RuntimeHostCallMode::Suspend,
+                        deterministic: true,
+                    },
+                }],
+                &[],
+            )
+            .expect("the owning constructor issues the child and lexical scope");
+        engine.child_fibers.push_back(child);
+        engine.next_fiber_id = next_fiber_id;
+        // Natural unit-plan exhaustion uses the existing finish path. This is
+        // the retained-queue boundary, not an explicit Return bypass or a
+        // change of the child's joined/detached owner.
+        let mut finished = RuntimeStepOutput::default();
+        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+        engine.step_line_only(&RuntimeStepInput::default(), &mut finished, &mut backend);
+        assert!(matches!(
+            engine.fiber.frame.status,
+            FlowFiberStatus::Done(_)
+        ));
+        assert!(
+            engine.has_joined_work(),
+            "the exact Executor owner remains joined"
+        );
+        let drain = RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+            ..RuntimeStepOptions::default()
+        };
+        let issued = engine.step(RuntimeStepInput::default(), drain);
+        let [request] = issued.output.requests.host_calls.as_slice() else {
+            panic!("one actual child host-call request");
+        };
+        assert_eq!(issued.stop_reason, RuntimeStepStopReason::Output);
+        assert_eq!(issued.fiber_status, FlowFiberStatus::Running);
+        let request_id = request.id.clone();
+        let child_id = engine.child_fibers[0].persistent_id;
+        assert!(matches!(&engine.child_fibers[0].frame.status,
+            FlowFiberStatus::HostCall(state) if state.id == request_id));
+        assert!(!engine.has_runnable_child_fibers());
+
+        let blocked = engine.step(RuntimeStepInput::default(), drain);
+        assert_eq!(blocked.stop_reason, RuntimeStepStopReason::Blocked);
+        assert_eq!(blocked.fiber_status, FlowFiberStatus::Running);
+        assert!(blocked.output.requests.host_calls.is_empty());
+        assert_eq!(engine.child_fibers[0].persistent_id, child_id);
+        assert!(matches!(&engine.child_fibers[0].frame.status,
+            FlowFiberStatus::HostCall(state) if state.id == request_id));
+        assert!(engine.has_joined_work());
+        let completed = engine.step(
+            RuntimeStepInput {
+                host_call_results: vec![crate::step::RuntimeHostCallResult {
+                    id: request_id,
+                    outcome: Ok(RuntimePayload(RuntimeValue::Unit)),
+                }],
+                ..RuntimeStepInput::default()
+            },
+            drain,
+        );
+        assert_eq!(completed.stop_reason, RuntimeStepStopReason::Done);
+        assert!(matches!(completed.fiber_status, FlowFiberStatus::Done(_)));
+        assert!(completed.output.requests.host_calls.is_empty());
+        assert!(engine.child_fibers.is_empty());
+        assert!(!engine.has_joined_work());
     }
 }

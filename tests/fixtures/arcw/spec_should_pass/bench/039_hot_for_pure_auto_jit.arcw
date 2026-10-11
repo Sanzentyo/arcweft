@@ -1,3 +1,5 @@
+entry bench @entry.hot_for_pure_auto_jit { goto @flow.hot_for_pure_auto_jit }
+
 #[pure]
 fn score_i128_auto(base: i128, bias: i128) -> i128 {
     return base + bias + 1i128
@@ -12,7 +14,7 @@ bench @bench.hot_for_pure_auto_jit {
     measure iterations = 4 { goto @flow.hot_for_pure_auto_jit }
 }
 
-flow hot_for_pure_auto_jit {
+flow hot_for_pure_auto_jit() -> String {
     let ints: Array<i128, 128> = [1i128; 128]
     let floats: Array<f32, 128> = [1.0f32; 128]
 

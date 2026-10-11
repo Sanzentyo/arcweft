@@ -25,23 +25,20 @@ use crate::value::{RuntimeEnv, RuntimeLocalBinding};
 use std::sync::Arc;
 
 impl Engine {
-    // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
-    // still changing; extracting each arm now would obscure grammar coverage.
-    #[allow(clippy::too_many_lines)]
     pub(super) fn step_flow(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
-        if self.fiber.pending_ops.is_empty() && self.has_active_project_call() {
+        if self.fiber.frame.pending_ops.is_empty() && self.has_active_project_call() {
             self.fail_function_call_fallthrough(output, pure_backend);
             return;
         }
-        let (op, next_op_index) = if let Some(op) = self.fiber.pending_ops.pop_front() {
+        let (op, next_op_index) = if let Some(op) = self.fiber.frame.pending_ops.pop_front() {
             (op, None)
         } else {
-            let Some(cursor) = self.fiber.cursor.as_ref() else {
+            let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
                 return;
             };
             let Some(op) = self
@@ -54,9 +51,22 @@ impl Engine {
             };
             (op, Some(cursor.op_index + 1))
         };
+        self.execute_flow_operation(op, next_op_index, output, pure_backend, drop_policy);
+    }
+
+    // One dispatcher owns the complete FlowOp algebra for every native frame.
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn execute_flow_operation(
+        &mut self,
+        op: FlowOp,
+        next_op_index: Option<usize>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+        drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
+    ) {
         match op {
             FlowOp::Bind(bindings) => {
-                self.fiber.env.bind_all(bindings);
+                self.fiber.frame.env.bind_all(bindings);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::Let { pattern, expr } => {
@@ -113,7 +123,7 @@ impl Engine {
             }
             FlowOp::Assign { place, value } => {
                 match self.evaluate_expr_with_backend(&value, pure_backend) {
-                    Ok(value) => match self.fiber.env.assign_place(&place, value) {
+                    Ok(value) => match self.fiber.frame.env.assign_place(&place, value) {
                         Ok(_) => self.advance_if_needed(next_op_index),
                         Err(error) => self.fail_eval(error.into_parts().0, output),
                     },
@@ -121,7 +131,7 @@ impl Engine {
                 }
             }
             FlowOp::LineOperation { .. } | FlowOp::CommitDialogueResult { .. } => {
-                self.fiber.status = FlowFiberStatus::Failed(
+                self.fiber.frame.status = FlowFiberStatus::Failed(
                     "line operation escaped its dialogue activation authority".to_owned(),
                 );
             }
@@ -134,7 +144,7 @@ impl Engine {
                             crate::line_task::LineTaskWork::Cancellation(_)
                                 | crate::line_task::LineTaskWork::Node(_)
                         )
-                ) || self.fiber.selected_dialogue_result.is_some()
+                ) || self.fiber.frame.selected_dialogue_result.is_some()
                 {
                     self.fail_eval(
                         crate::line_task::LineRuntimeError::InvalidActivationOperation,
@@ -144,12 +154,12 @@ impl Engine {
                 }
                 match self.evaluate_expr_with_backend(&value, pure_backend) {
                     Ok(selected) => {
-                        self.fiber.selected_dialogue_result = Some(selected);
+                        self.fiber.frame.selected_dialogue_result = Some(selected);
                         *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
-                        self.fiber.pending_ops.clear();
-                        self.fiber.cursor = None;
+                        self.fiber.frame.pending_ops.clear();
+                        self.fiber.frame.cursor = None;
                         self.unwind_control_stack(output, pure_backend);
-                        self.fiber.status = FlowFiberStatus::Done(super::FlowExit::Done);
+                        self.fiber.frame.status = FlowFiberStatus::Done(super::FlowExit::Done);
                     }
                     Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
@@ -189,7 +199,7 @@ impl Engine {
                     return;
                 };
                 let Some(content_plan) = self.plan.dialogue_content().get(content).cloned() else {
-                    self.fiber.status =
+                    self.fiber.frame.status =
                         FlowFiberStatus::Failed(format!("missing dialogue content plan {content}"));
                     return;
                 };
@@ -231,7 +241,7 @@ impl Engine {
                         }
                     };
                     if remaining != 0 || !callback.is_structured_executable_callback() {
-                        self.fiber.status = FlowFiberStatus::Failed(
+                        self.fiber.frame.status = FlowFiberStatus::Failed(
                             "dialogue effect callback is not an executable zero-argument function"
                                 .to_owned(),
                         );
@@ -244,7 +254,7 @@ impl Engine {
                 }
                 let line = content_plan.line().clone();
                 let Some(task_group) = content_plan.line_task_group() else {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         crate::line_task::LineRuntimeError::MissingTaskGroup.to_string(),
                     );
                     return;
@@ -255,13 +265,13 @@ impl Engine {
                     .get(task_group.index())
                     .cloned()
                 else {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         crate::line_task::LineRuntimeError::UnknownTaskGroup.to_string(),
                     );
                     return;
                 };
                 if group.result_type() != result.ty() {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         crate::line_task::LineRuntimeError::DialogueResultTypeMismatch.to_string(),
                     );
                     return;
@@ -269,14 +279,14 @@ impl Engine {
                 let captures = match self.capture_line_task_locals(&group) {
                     Ok(captures) => captures,
                     Err(error) => {
-                        self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
                         return;
                     }
                 };
                 let activation = match self.allocate_dialogue_activation(content) {
                     Ok(activation) => activation,
                     Err(message) => {
-                        self.fiber.status = FlowFiberStatus::Failed(message.to_string());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(message.to_string());
                         return;
                     }
                 };
@@ -293,10 +303,10 @@ impl Engine {
                     content,
                     target: Some(target_value),
                     task_group,
-                    resume: self.fiber.cursor,
+                    resume: self.fiber.frame.cursor,
                     captures: capture_locals,
                     task_inputs: Box::new([]),
-                    locals,
+                    execution: super::NativeFlowExecutionFrame::running(locals),
                     line_task: DialogueLineTaskState::NotStarted,
                     elapsed: LogicalDuration::default(),
                     phase: super::DialogueRuntimePhase::Activating,
@@ -315,20 +325,21 @@ impl Engine {
                     .dialogue_activations
                     .begin(activation.clone(), dialogue)
                 {
-                    self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
                     return;
                 }
-                self.fiber.status = FlowFiberStatus::Dialogue(super::DialogueExecutionStatus::new(
-                    activation,
-                    super::DialogueRuntimePhase::Activating,
-                ));
+                self.fiber.frame.status =
+                    FlowFiberStatus::Dialogue(super::DialogueExecutionStatus::new(
+                        activation,
+                        super::DialogueRuntimePhase::Activating,
+                    ));
             }
             FlowOp::Choice { id, options } => {
                 output.flow_events.push(FlowEvent::ChoicePresented {
                     id: id.clone(),
                     options: options.clone(),
                 });
-                self.fiber.status = FlowFiberStatus::Choice(ChoiceState {
+                self.fiber.frame.status = FlowFiberStatus::Choice(ChoiceState {
                     id,
                     options,
                     resume: self.resume_cursor(next_op_index),
@@ -370,7 +381,7 @@ impl Engine {
                 {
                     Ok(arguments) => arguments,
                     Err(error) => {
-                        self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(error.clone());
                         output.diagnostics.push(RuntimeDiagnostic::new(error));
                         return;
                     }
@@ -386,7 +397,7 @@ impl Engine {
                         "host call {} result type is absent from the selected plan",
                         target.public_id
                     );
-                    self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(error.clone());
                     output.diagnostics.push(RuntimeDiagnostic::new(error));
                     return;
                 };
@@ -415,7 +426,7 @@ impl Engine {
                     }
                 };
                 output.requests.host_calls.push(request);
-                self.fiber.status = FlowFiberStatus::HostCall(HostCallState {
+                self.fiber.frame.status = FlowFiberStatus::HostCall(HostCallState {
                     binding,
                     id,
                     result_type: super::HostCallResultType::Plan(target.result),
@@ -498,7 +509,7 @@ impl Engine {
             FlowOp::Loop { result, body } => {
                 self.advance_if_needed(next_op_index);
                 let body = Arc::from(body);
-                self.fiber.control_stack.push(FlowControlStackEntry {
+                self.fiber.frame.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
                         body: Arc::clone(&body),
                         result,
@@ -514,7 +525,7 @@ impl Engine {
                     Ok(true) => {
                         self.advance_if_needed(next_op_index);
                         let body = Arc::from(body);
-                        self.fiber.control_stack.push(FlowControlStackEntry {
+                        self.fiber.frame.control_stack.push(FlowControlStackEntry {
                             kind: FlowControlStackEntryKind::While {
                                 condition: condition.clone(),
                                 body: Arc::clone(&body),
@@ -551,7 +562,7 @@ impl Engine {
                 Ok(Some(bindings)) => {
                     self.advance_if_needed(next_op_index);
                     let body = Arc::from(body);
-                    self.fiber.control_stack.push(FlowControlStackEntry {
+                    self.fiber.frame.control_stack.push(FlowControlStackEntry {
                         kind: FlowControlStackEntryKind::WhileLet {
                             pattern: pattern.clone(),
                             expr: expr.clone(),
@@ -631,6 +642,7 @@ impl Engine {
                     .map(|local| {
                         let value = self
                             .fiber
+                            .frame
                             .env
                             .get(*local)
                             .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
@@ -855,8 +867,8 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::CompleteAwaitObserver => {
-                let Some(state) = self.fiber.await_observer.take() else {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                let Some(state) = self.fiber.frame.await_observer.take() else {
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         "Await observer completed without an active Await context".to_owned(),
                     );
                     output.diagnostics.push(RuntimeDiagnostic::new(
@@ -864,7 +876,7 @@ impl Engine {
                     ));
                     return;
                 };
-                self.fiber.status = FlowFiberStatus::NeedWaiting(state);
+                self.fiber.frame.status = FlowFiberStatus::NeedWaiting(state);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
@@ -889,6 +901,7 @@ impl Engine {
 
     pub(in crate::engine) fn has_active_project_call(&self) -> bool {
         self.fiber
+            .frame
             .control_stack
             .iter()
             .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
@@ -903,7 +916,7 @@ impl Engine {
     ) {
         let owner = Arc::clone(&self.plan);
         let Some(row) = owner.project_call_sites().get(site) else {
-            self.fiber.status =
+            self.fiber.frame.status =
                 FlowFiberStatus::Failed(format!("missing project-call site {site}"));
             return;
         };
@@ -1146,7 +1159,7 @@ impl Engine {
 
     pub(super) fn advance_if_needed(&mut self, next_op_index: Option<usize>) {
         if let Some(next_op_index) = next_op_index
-            && let Some(cursor) = self.fiber.cursor.as_mut()
+            && let Some(cursor) = self.fiber.frame.cursor.as_mut()
         {
             cursor.op_index = next_op_index;
         }
@@ -1172,7 +1185,7 @@ impl Engine {
     }
 
     fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {
-        self.fiber.cursor.map(|cursor| {
+        self.fiber.frame.cursor.map(|cursor| {
             let mut cursor = cursor;
             if let Some(next_op_index) = next_op_index {
                 cursor.op_index = next_op_index;
@@ -1182,9 +1195,9 @@ impl Engine {
     }
 
     pub(super) fn push_ops(&mut self, ops: Vec<FlowOp>) {
-        self.fiber.pending_ops.reserve(ops.len());
+        self.fiber.frame.pending_ops.reserve(ops.len());
         for op in ops.into_iter().rev() {
-            self.fiber.pending_ops.push_front(op);
+            self.fiber.frame.pending_ops.push_front(op);
         }
     }
 
@@ -1200,8 +1213,8 @@ impl Engine {
         identity: RuntimeScopeIdentity,
         origin: crate::scope::RuntimeScopeFrameOrigin,
     ) {
-        self.fiber.env.push_scope_with_identity(identity);
-        self.fiber.control_stack.push(FlowControlStackEntry {
+        self.fiber.frame.env.push_scope_with_identity(identity);
+        self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope {
                 origin,
                 cleanups: Vec::new(),
@@ -1216,7 +1229,7 @@ impl Engine {
     ) -> Option<crate::scope::RuntimeScheduledScopeToken> {
         let ordinal = std::num::NonZeroU64::new(self.next_scheduled_scope_sequence)?;
         let Some(next) = self.next_scheduled_scope_sequence.checked_add(1) else {
-            self.fiber.status = FlowFiberStatus::Failed(
+            self.fiber.frame.status = FlowFiberStatus::Failed(
                 crate::scope::RuntimeScopeExitError::IdentityCapacityExhausted.to_string(),
             );
             return None;
@@ -1248,6 +1261,7 @@ impl Engine {
         ),
     > + '_ {
         self.fiber
+            .frame
             .control_stack
             .iter()
             .rev()
@@ -1281,6 +1295,7 @@ impl Engine {
             kind: FlowControlStackEntryKind::Scope { cleanups, .. },
         }) = self
             .fiber
+            .frame
             .control_stack
             .iter_mut()
             .rev()
@@ -1288,15 +1303,16 @@ impl Engine {
         {
             cleanups.push(cleanup);
         } else {
-            self.fiber.root_cleanups.push(cleanup);
+            self.fiber.frame.root_cleanups.push(cleanup);
         }
     }
 
     pub(super) fn cancel_scope_cleanup(&mut self, key: &str) {
         self.fiber
+            .frame
             .root_cleanups
             .retain(|cleanup| cleanup.key != key);
-        for entry in &mut self.fiber.control_stack {
+        for entry in &mut self.fiber.frame.control_stack {
             if let FlowControlStackEntryKind::Scope { cleanups, .. } = &mut entry.kind {
                 cleanups.retain(|cleanup| cleanup.key != key);
             }
@@ -1489,15 +1505,17 @@ impl Engine {
             return;
         };
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.into_iter().rev() {
-            self.fiber.pending_ops.push_front(op)
+            self.fiber.frame.pending_ops.push_front(op)
         }
         if let Some(prefix) = prefix {
-            self.fiber.pending_ops.push_front(prefix)
+            self.fiber.frame.pending_ops.push_front(prefix)
         }
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::EnterScheduledScope {
                 identity: RuntimeScopeIdentity::Anonymous,
@@ -1520,18 +1538,21 @@ impl Engine {
             return;
         };
         self.fiber
+            .frame
             .pending_ops
             .reserve(ops.len() + usize::from(prefix.is_some()) + 2);
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.into_iter().rev() {
-            self.fiber.pending_ops.push_front(op)
+            self.fiber.frame.pending_ops.push_front(op)
         }
         if let Some(prefix) = prefix {
-            self.fiber.pending_ops.push_front(prefix)
+            self.fiber.frame.pending_ops.push_front(prefix)
         }
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::EnterScheduledScope { identity, token });
     }
@@ -1546,10 +1567,11 @@ impl Engine {
             return;
         }
         self.fiber
+            .frame
             .pending_ops
             .reserve(ops.len() + usize::from(prefix.is_some()) + usize::from(tail.is_some()) + 2);
         if let Some(tail) = tail {
-            self.fiber.pending_ops.push_front(tail);
+            self.fiber.frame.pending_ops.push_front(tail);
         }
         let Some(token) =
             self.allocate_scheduled_scope(crate::scope::RuntimeScopeFrameKind::Control)
@@ -1557,15 +1579,17 @@ impl Engine {
             return;
         };
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.iter().rev().cloned() {
-            self.fiber.pending_ops.push_front(op);
+            self.fiber.frame.pending_ops.push_front(op);
         }
         if let Some(prefix) = prefix {
-            self.fiber.pending_ops.push_front(prefix);
+            self.fiber.frame.pending_ops.push_front(prefix);
         }
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::EnterScheduledScope {
                 identity: RuntimeScopeIdentity::Anonymous,
@@ -1580,16 +1604,18 @@ impl Engine {
         token: crate::scope::RuntimeScheduledScopeToken,
     ) {
         self.fiber
+            .frame
             .pending_ops
             .reserve(ops.len() + usize::from(tail.is_some()) + 1);
         if let Some(tail) = tail {
-            self.fiber.pending_ops.push_front(tail);
+            self.fiber.frame.pending_ops.push_front(tail);
         }
         self.fiber
+            .frame
             .pending_ops
             .push_front(FlowOp::ExitScheduledScope { token });
         for op in ops.iter().rev().cloned() {
-            self.fiber.pending_ops.push_front(op);
+            self.fiber.frame.pending_ops.push_front(op);
         }
     }
 
@@ -1598,7 +1624,7 @@ impl Engine {
         origin: crate::scope::RuntimeScopeFrameOrigin,
     ) {
         if let crate::scope::RuntimeScopeFrameOrigin::Scheduled(token) = origin {
-            self.fiber.pending_ops.retain(
+            self.fiber.frame.pending_ops.retain(
                 |op| !matches!(op,FlowOp::ExitScheduledScope {token:queued} if *queued==token),
             );
         }
@@ -1610,7 +1636,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         if !matches!(
-            self.fiber.control_stack.last(),
+            self.fiber.frame.control_stack.last(),
             Some(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::Scope { .. }
             })
@@ -1622,12 +1648,12 @@ impl Engine {
                 FlowControlStackEntryKind::Scope {
                     origin, cleanups, ..
                 },
-        }) = self.fiber.control_stack.pop()
+        }) = self.fiber.frame.control_stack.pop()
         else {
             return;
         };
         self.cancel_scheduled_scope_close(origin);
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
         self.emit_scope_cleanups(cleanups, output, pure_backend);
     }
 
@@ -1637,7 +1663,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         while matches!(
-            self.fiber.control_stack.last(),
+            self.fiber.frame.control_stack.last(),
             Some(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::Scope { .. }
             })
@@ -1652,7 +1678,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<FlowControlStackEntryKind> {
         self.pop_scope_frames_until_loop(output, pure_backend);
-        let is_loop = self.fiber.control_stack.last().is_some_and(|entry| {
+        let is_loop = self.fiber.frame.control_stack.last().is_some_and(|entry| {
             matches!(
                 entry.kind,
                 FlowControlStackEntryKind::Loop { .. }
@@ -1661,14 +1687,14 @@ impl Engine {
             )
         });
         if is_loop {
-            self.fiber.control_stack.pop().map(|entry| entry.kind)
+            self.fiber.frame.control_stack.pop().map(|entry| entry.kind)
         } else {
             None
         }
     }
 
     pub(super) fn discard_pending_until_loop_next(&mut self) {
-        while let Some(op) = self.fiber.pending_ops.pop_front() {
+        while let Some(op) = self.fiber.frame.pending_ops.pop_front() {
             if matches!(
                 op,
                 FlowOp::LoopNext { .. } | FlowOp::WhileNext { .. } | FlowOp::WhileLetNext { .. }
@@ -1688,7 +1714,7 @@ impl Engine {
         let Some(kind) = self.pop_loop_frame(output, pure_backend) else {
             return false;
         };
-        self.fiber.await_observer = None;
+        self.fiber.frame.await_observer = None;
         match kind {
             FlowControlStackEntryKind::Loop {
                 result: Some(pattern),
@@ -1721,13 +1747,14 @@ impl Engine {
         self.discard_pending_until_loop_next();
         let Some(kind) = self
             .fiber
+            .frame
             .control_stack
             .last()
             .map(|frame| frame.kind.clone())
         else {
             return false;
         };
-        self.fiber.await_observer = None;
+        self.fiber.frame.await_observer = None;
         match kind {
             FlowControlStackEntryKind::Loop { body, .. } => self.push_loop_iteration(&body),
             FlowControlStackEntryKind::While { condition, body } => {
@@ -1764,7 +1791,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let cleanups = std::mem::take(&mut self.fiber.root_cleanups);
+        let cleanups = std::mem::take(&mut self.fiber.frame.root_cleanups);
         self.emit_scope_cleanups(cleanups, output, pure_backend);
     }
 

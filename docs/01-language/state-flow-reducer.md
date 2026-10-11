@@ -109,6 +109,14 @@ passing 区分を必須で保持する。Entry や stateful Entry の schema も
 formal から区分を取得する。frame の `Owned`／`Shared`／`Mutable` ingress mode と
 区分を混同せず、保存された schema に区分が欠けている場合は復元を拒否する。
 
+`entry bench` の direct `goto` は、測定 adapter が complete formal inventory を
+明示入力する Flow を指定できる。CLI は `--value` を同じ Flow invocation schema
+へ一度だけ解決し、欠落・重複・未知名・型不一致を実行前に拒否する。反復測定は
+全入力が unrestricted の場合だけ同じ immutable plan の invocation を再実行する。
+通常の direct Entry startup は引数を補わず、引数を必要とする Flow の開始を拒否する。
+CLI／Server／Activity／custom の direct `goto` は引き続き zero-parameter とし、
+Server route の明示 binding や stateful Entry の typed startup と混同しない。
+
 ## View
 
 View は状態から描画仕様を作る純粋関数。

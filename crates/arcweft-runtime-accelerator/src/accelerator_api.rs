@@ -251,6 +251,102 @@ impl RuntimePureAccelerator {
         }
     }
 
+    /// Runs standalone scalar invocations with the caller's explicit control
+    /// budget. Live expression dispatch continues to use call_i64_flat_batch.
+    ///
+    /// VM or physical-backend decline enters Core's existing owning invocation.
+    /// Rows commit in order; the failed row writes no output and is not replayed.
+    /// Compiled AOT/JIT entries keep their ordinary, finite batch path when
+    /// the exact owning total/control-cost projection fits that same budget.
+    ///
+    /// # Errors
+    ///
+    /// Rejects foreign plans, incomplete direct i64 ABIs, or malformed row
+    /// shapes before execution. A bounded VM fault retains its completed
+    /// output prefix and leaves the failed row and unattempted suffix intact.
+    pub fn call_i64_flat_batch_invocations(
+        &mut self,
+        helper: RuntimePureFunctionRef<'_>,
+        flat_inputs: &[i64],
+        arity: usize,
+        out: &mut [i64],
+        budget: arcweft_core::step::RuntimeStepBudget,
+    ) -> Result<(), RuntimeEvalError> {
+        if !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.to_owned(),
+                reason: "standalone batch belongs to another admitted plan".to_owned(),
+            });
+        }
+        if arity != helper.inputs.len()
+            || helper.output_type != arcweft_core::plan::RuntimePureOutputType::I64
+            || !helper.supports_scalar_frame()
+            || !helper
+                .inputs
+                .iter()
+                .all(|input| input.abi() == arcweft_core::plan::RuntimePureInputType::I64)
+        {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: helper.name.to_owned(),
+                reason: "standalone batch requires the complete direct i64 function ABI".to_owned(),
+            });
+        }
+        validate_flat_batch_shape(helper, flat_inputs.len(), arity, out.len())?;
+        let vm = matches!(
+            cache_entry(&self.cache, helper),
+            Some(RuntimePureCacheEntry::Vm) | None
+        );
+        let fits_budget = helper
+            .total_numeric_completion_control_ops()
+            .is_some_and(|cost| cost <= budget.max_ops);
+        if !vm && fits_budget {
+            return self.call_i64_flat_batch(helper, flat_inputs, arity, out);
+        }
+        self.record_flat_batch_stats(flat_inputs, out.len(), true);
+        if out.is_empty() {
+            return Ok(());
+        }
+        if cache_entry(&self.cache, helper).is_some() {
+            self.compile_stats.cache_hits += 1;
+        } else {
+            self.compile_stats.cache_misses += 1;
+        }
+        let rows = out.len();
+        for (row, slot) in out.iter_mut().enumerate() {
+            self.stats.vm_calls += 1;
+            self.stats.fallbacks += 1;
+            if arity != 0 {
+                self.stats.arg_vec_allocations += 1;
+                self.stats.arg_bytes_copied += arity * std::mem::size_of::<i64>();
+            }
+            let start = row * arity;
+            let values = flat_inputs[start..start + arity]
+                .iter()
+                .copied()
+                .map(arcweft_core::value::RuntimeValue::i64);
+            let result = arcweft_core::pure::PureFunctionRequest::try_new(
+                std::sync::Arc::clone(helper.plan()),
+                helper.id(),
+                values,
+            )
+            .and_then(|request| {
+                let request = request.with_format_context(self.vm_scratch.format_context().clone());
+                arcweft_core::pure::VmPureFunctionBackend
+                    .evaluate_invocation(&request, budget)
+                    .and_then(|result| exact_i64_result(result.value))
+            });
+            match result {
+                Ok(value) => *slot = value,
+                Err(error) => {
+                    self.stats.pure_calls -= rows - row - 1;
+                    self.stats.result_bytes_copied -= (rows - row) * std::mem::size_of::<i64>();
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn call_i64_flat_batch(
         &mut self,
         helper: RuntimePureFunctionRef<'_>,

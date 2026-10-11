@@ -209,3 +209,73 @@ fn desugared_expression_cannot_change_its_parent_scope() {
         },
     );
 }
+
+#[test]
+fn authored_dialogue_spaces_and_newlines_keep_exact_hir_source_roles() {
+    use crate::dialogue_application::HirDialogueNodeKind;
+    use crate::source_index::{HirDialogueNodeSourcePart, HirExprSourceRole, HirSourceQuery};
+
+    let body = "alice()[Head #[name] |[夢](ゆめ)[r] 2026 ABC。\r\n    Next]";
+    let parsed = parsed_source("authored-dialogue-spaces", &[body.into()]);
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let owner = owners[0];
+    let HirExprKind::AttachedContentApplication(application) = expression(&module, owner).kind()
+    else {
+        panic!("the exact attached body remains the published expression owner")
+    };
+    let foreign = parsed_source("authored-dialogue-spaces-foreign", &[body.into()]);
+    let stale = SourceDocument::try_new(
+        parsed.document().identity().id().clone(),
+        parsed.document().display_name().clone(),
+        parsed.source().replace("Next", "Other"),
+    )
+    .unwrap();
+    let mut texts = Vec::new();
+    let mut newlines = Vec::new();
+    for node in application.content().nodes() {
+        let part = match node.kind() {
+            HirDialogueNodeKind::Text(text) => {
+                texts.push(text.as_str());
+                HirDialogueNodeSourcePart::Text
+            }
+            HirDialogueNodeKind::LineBreak(_) => HirDialogueNodeSourcePart::LineBreak,
+            _ => continue,
+        };
+        let query = HirSourceQuery::Expr {
+            owner,
+            role: HirExprSourceRole::DialogueNode {
+                ordinal: node.id().ordinal(),
+                part,
+            },
+        };
+        let range = module
+            .source_anchor(query.clone())
+            .unwrap()
+            .unwrap()
+            .range();
+        let source = &parsed.source()[range.as_range()];
+        match node.kind() {
+            HirDialogueNodeKind::Text(text) => assert_eq!(source, text.as_str()),
+            HirDialogueNodeKind::LineBreak(_) => newlines.push(source),
+            _ => unreachable!(),
+        }
+        assert!(
+            module
+                .source_site(parsed.document().identity(), query.clone())
+                .is_ok()
+        );
+        assert!(matches!(
+            module.source_site(foreign.document().identity(), query.clone()),
+            Err(HirSourceQueryError::WrongSourceDocument { expected, actual })
+                if expected == *parsed.document().identity().id()
+                    && actual == *foreign.document().identity().id()
+        ));
+        assert!(matches!(
+            module.source_site(stale.identity(), query),
+            Err(HirSourceQueryError::StaleSourceRevision { .. })
+        ));
+    }
+    assert_eq!(texts, ["Head ", " ", " 2026 ABC。", "Next"]);
+    assert_eq!(newlines, ["\r\n"]);
+}

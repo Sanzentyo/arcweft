@@ -1713,11 +1713,6 @@ fn match_statement_matches(
     if attached_arms.len() != statement.arms().len() {
         return None;
     }
-    if attached_arms.is_empty() && !matches!(attached_body, MatchStatementBodyNode::Missing(_)) {
-        recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-            HirThreadStmtRecoveryIssue::EmptyMatch,
-        ));
-    }
     let parent_scope = arenas.scopes.resolve_prepared(slots, outer_scope).ok()?;
     for (arm_ordinal, (attached_arm, arm)) in attached_arms.iter().zip(statement.arms()).enumerate()
     {

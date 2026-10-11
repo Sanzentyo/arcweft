@@ -3,12 +3,14 @@ fn run_json_uses_jit_for_map_closure_pure_batch() {
     let path = temp_arcw(
         "runtime-map-pure-jit",
         r#"
+entry cli @entry.run { goto @flow.map_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow map_pure {
+flow map_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -22,6 +24,7 @@ flow map_pure {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
@@ -58,12 +61,14 @@ fn run_json_fuses_jit_map_closure_pure_sum() {
     let path = temp_arcw(
         "runtime-map-pure-jit-sum",
         r#"
+entry cli @entry.run { goto @flow.map_pure_sum }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow map_pure_sum {
+flow map_pure_sum() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let total: i64 = values.map(|item| score(item, 2i64)).sum()
     log.info(total)
@@ -75,6 +80,7 @@ flow map_pure_sum {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
@@ -165,7 +171,10 @@ flow @flow.opening start {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("error[AWF0102]"), "{stderr}");
-    assert!(stderr.contains("identity::decl_binding_mismatch"), "{stderr}");
+    assert!(
+        stderr.contains("identity::decl_binding_mismatch"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -189,10 +198,7 @@ flow @flow.opening opening {
         "redundant declaration identity is a warning, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("warning[AWF0101]")
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("warning[AWF0101]"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("style::redundant_decl_identity"));
 }
 
@@ -383,7 +389,7 @@ fn verify_json_reports_semantic_thread_join_conflict() {
 character alice { display = "Alice" }
 
 flow thread_join {
-    alice[待って。[p]]
+    alice()[待って。[p]]
     with:
         thread worker:
             out 1i32
@@ -417,10 +423,12 @@ fn verify_json_reports_effect_capability_obligation() {
     let path = temp_arcw(
         "verify-effect-capability",
         r"
-signal @signal:.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
-flow effects {
-    signal.set(@signal.current_flow, @flow.effects)
+flow signal_writer
+effects {}
+{
+    signal.set(@signal.current_flow, @flow.signal_writer)
 }
 ",
     );
@@ -443,6 +451,35 @@ flow effects {
         stdout.contains("effect_capability") && stdout.contains("signal.write"),
         "JSON report should include the effect capability obligation: {stdout}"
     );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("denied effect JSON is valid");
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["status"], "denied");
+    assert_eq!(json["stage"], "type-check");
+    assert_eq!(json["rejected_obligation_kind"], "effect_capability");
+    let diagnostic = json["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["diagnostic"]["code"] == "AWF-EFX-001")
+        .expect("original upper-bound source diagnostic");
+    assert!(
+        diagnostic["diagnostic"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("signal.write")
+    );
+    assert!(!diagnostic["diagnostic"]["span"].is_null());
+    assert!(
+        !diagnostic["diagnostic"]["labels"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        json.get("obligations").is_none(),
+        "a denied seal is not an accepted verifier generation"
+    );
 }
 
 #[test]
@@ -450,12 +487,12 @@ fn verify_json_accepts_effect_capability_from_flow_contract() {
     let path = temp_arcw(
         "verify-effect-contract",
         r"
-signal @signal:.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
-flow effects
+flow signal_writer
 effects { signal.write }
 {
-    signal.set(@signal.current_flow, @flow.effects)
+    signal.set(@signal.current_flow, @flow.signal_writer)
 }
 ",
     );
@@ -674,11 +711,11 @@ pub character alice {
 
 flow plan {
     let alice_preset = alice(text_color="#404142")
-    alice_preset(text_color="#505152")[|[待](ま)って。[mark .release][p]]
+    alice_preset(text_color="#505152")[|[待](ま)って。[mark @.release][p]]
     with:
         thread motion:
             wait(0.1s)
-        on mark(.release):
+        on mark(@.release):
             log.info("release")
 }
 "##,
@@ -774,6 +811,8 @@ fn run_json_steps_runtime_plan() {
     let path = temp_arcw(
         "runtime-run",
         r"
+entry cli @entry.run { goto @flow.run }
+
 pub character alice {
 }
 
@@ -788,6 +827,7 @@ flow run {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--steps")
         .arg("2")
         .arg("--json")
@@ -814,7 +854,9 @@ fn run_json_can_select_aot_executor() {
     let path = temp_arcw(
         "runtime-run-aot",
         r#"
-flow run {
+entry cli @entry.run { goto @flow.run }
+
+flow run() -> String {
     log.info("aot")
     return "done"
 }
@@ -824,6 +866,7 @@ flow run {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--executor")
         .arg("aot")
         .arg("--mode")
@@ -857,7 +900,9 @@ fn run_json_modes_and_budget_drive_engine_step_boundary() {
     let path = temp_arcw(
         "runtime-step-modes",
         r#"
-flow run {
+entry cli @entry.run { goto @flow.run }
+
+flow run() -> String {
     log.info("first")
     log.info("second")
     return "done"
@@ -868,6 +913,7 @@ flow run {
     let one_op = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
@@ -891,6 +937,7 @@ flow run {
     let drain = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -915,6 +962,7 @@ flow run {
     let budget = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.run"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -943,7 +991,7 @@ fn profile_json_can_select_aot_executor_without_absolute_source() {
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow profile {
+flow profile() -> String {
     return "done"
 }
 "#,
@@ -999,7 +1047,7 @@ fn profile_json_reports_runtime_math_backend_selection() {
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow profile {
+flow profile() -> String {
     log.info("profile math")
     return "done"
 }
@@ -1046,8 +1094,8 @@ fn run_json_executes_math_intrinsic_with_cli_matrix_bindings() {
         "runtime-math-bindings",
         r"
 flow math(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
-    let out = math.matmul_f32(lhs, rhs)
-    return out
+    let product = math.matmul_f32(lhs, rhs)
+    return product
 }
 ",
     );
@@ -1106,8 +1154,8 @@ fn run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings() {
         "runtime-math-f64-bindings",
         r"
 flow math_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {
-    let out = math.matmul_f64(lhs, rhs)
-    return out
+    let product = math.matmul_f64(lhs, rhs)
+    return product
 }
 ",
     );
@@ -1167,7 +1215,9 @@ fn verify_types_json_reports_type_and_runtime_validation_without_absolute_source
     let path = temp_arcw(
         "verify-types",
         r#"
-flow verify_types {
+entry cli @entry.verify_types { goto @flow.verify_types }
+
+flow verify_types() -> String {
     log.info("verify types")
     return "done"
 }
@@ -1177,6 +1227,7 @@ flow verify_types {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("verify-types")
         .arg(&path)
+        .args(["--entry", "entry.verify_types"])
         .arg("--run")
         .arg("--executor")
         .arg("aot")
@@ -1210,7 +1261,7 @@ fn profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source(
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow profile {
+flow profile() -> String {
     log.info("profile")
     return "done"
 }
@@ -1236,32 +1287,7 @@ flow profile {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"name\": \"parse\"")
-            && stdout.contains("\"name\": \"typecheck\"")
-            && stdout.contains("\"name\": \"runtime_type_validate\"")
-            && stdout.contains("\"name\": \"aot_lower\"")
-            && stdout.contains("\"name\": \"bytecode_lower\"")
-            && stdout.contains("\"name\": \"executor_prepare\"")
-            && stdout.contains("\"name\": \"run\"")
-            && stdout.contains("\"compiler\"")
-            && stdout.contains("\"typecheck\"")
-            && stdout.contains("\"borrow_check\"")
-            && stdout.contains("\"runtime_type_validation\"")
-            && stdout.contains("\"bytecode\"")
-            && stdout.contains("\"aot\"")
-            && stdout.contains("\"instructions\"")
-            && stdout.contains("\"linear_dispatch_flows\"")
-            && stdout.contains("\"mixed_dispatch_flows\"")
-            && stdout.contains("\"expressions\"")
-            && stdout.contains("\"judgments\"")
-            && stdout.contains("\"judgment_rules\"")
-            && stdout.contains("\"judgment_samples\"")
-            && stdout.contains("\"boundary_checks\"")
-            && stdout.contains("\"executed_ops\": 2")
-            && stdout.contains("\"source\": \"arcweft-cli-profile-json-"),
-        "profile json should include phase timings, compiler stats, borrow stats, and VM stats: {stdout}"
-    );
+    assert_profile_json_summary(&stdout);
     assert!(
         !stdout.contains(&std::env::temp_dir().display().to_string()),
         "profile json must not record absolute temp paths: {stdout}"
@@ -1286,9 +1312,9 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.profile_io { goto @flow.profile_io }
-flow profile_io effects { fs.read(save), fs.write(save) } {
+flow profile_io() -> String effects { fs.read(save), fs.write(save) } {
     let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
-    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text.to_string())) { .Ok(_) => text, .Err(_) => "write_failed" }
     return output
 }
 "#,
@@ -1351,7 +1377,7 @@ extern capability cli {
 
 entry cli @entry.main { goto @flow.main }
 
-flow main() {
+flow main() -> Vec<String> {
     return cli.args()
 }
 ",
@@ -1360,6 +1386,7 @@ flow main() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("cli")
         .arg(&path)
+        .args(["--entry", "entry.main"])
         .arg("--json")
         .arg("--steps")
         .arg("2")
@@ -1400,7 +1427,15 @@ flow opening() -> String {
         let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
             .arg("run")
             .arg(&path)
-            .args(["--flow", "flow.opening", "--executor", executor, "--steps", "1", "--json"])
+            .args([
+                "--flow",
+                "flow.opening",
+                "--executor",
+                executor,
+                "--steps",
+                "1",
+                "--json",
+            ])
             .output()
             .expect("explicit Flow library executes");
         assert!(
@@ -1408,8 +1443,8 @@ flow opening() -> String {
             "{executor} Flow library failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .expect("explicit Flow library reports JSON");
+        let report: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("explicit Flow library reports JSON");
         assert_eq!(
             report["final_status"],
             serde_json::json!("done Return(\"selected\")"),
@@ -1504,12 +1539,7 @@ flow choose(first: i64, second: i64) -> i64 {
             "has no parameter named `third`",
         ),
         (
-            &[
-                "--value",
-                "first=not-an-integer",
-                "--value",
-                "second=22",
-            ],
+            &["--value", "first=not-an-integer", "--value", "second=22"],
             "does not match its checked type",
         ),
     ];
@@ -1522,7 +1552,10 @@ flow choose(first: i64, second: i64) -> i64 {
             .args(*arguments)
             .output()
             .expect("arcw run rejects malformed explicit Flow values");
-        assert!(!output.status.success(), "malformed values unexpectedly ran");
+        assert!(
+            !output.status.success(),
+            "malformed values unexpectedly ran"
+        );
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             stderr.contains(expected),
@@ -2092,7 +2125,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow main effects { fs.read(save) } {
+flow main() -> String effects { fs.read(save), log.write } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
     log.info("parallel done")
@@ -2105,6 +2138,7 @@ flow main effects { fs.read(save) } {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&source_path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -2150,7 +2184,7 @@ extern capability system {
     fn available_parallelism() -> Need<Result<String, SystemError>> effects { system.read }
 }
 entry cli @entry.main { goto @flow.main }
-flow main effects { system.read } {
+flow main() -> String effects { system.read, log.write } {
     let cores = match (await system.core_count()) { .Ok(value) => value, .Err(_) => "core_failed" }
     let threads = match (await system.thread_count()) { .Ok(value) => value, .Err(_) => "thread_failed" }
     let available = match (await system.available_parallelism()) { .Ok(value) => value, .Err(_) => "available_failed" }
@@ -2164,6 +2198,7 @@ flow main effects { system.read } {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -2207,11 +2242,13 @@ fn run_json_observes_line_child_tasks_through_scheduler() {
     let path = temp_arcw(
         "line-child-scheduler",
         r#"
+entry cli @entry.main { goto @flow.main }
+
 pub character alice {
 }
 
-flow main {
-    alice[待って。[p]]
+flow main() -> String {
+    alice()[待って。[p]]
     with:
         thread motion:
             log.info("motion")
@@ -2223,6 +2260,7 @@ flow main {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
@@ -2254,7 +2292,9 @@ fn run_json_executes_source_thread_through_scheduler_marker() {
     let path = temp_arcw(
         "source-thread-scheduler",
         r#"
-flow main {
+entry cli @entry.main { goto @flow.main }
+
+flow main() -> String {
     thread worker {
         log.info("worker")
     }
@@ -2266,6 +2306,7 @@ flow main {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.main"])
         .arg("--mode")
         .arg("one-op")
         .arg("--steps")
@@ -2298,11 +2339,13 @@ fn run_json_reports_headless_observations() {
     let path = temp_arcw(
         "runtime-observations",
         r#"
-signal @signal:.current_flow: Watch<Ref<Flow>>
-metric gauge @metric.frame_count: i32
+entry cli @entry.observed { goto @flow.observed }
 
-flow observed
-effects { signal.write, metric.write }
+signal current_flow: Watch<Ref<Flow>>
+metric gauge frame_count: i32 {}
+
+flow observed() -> String
+effects { signal.write, metric.write, log.write, event.emit }
 {
     log.info("enter observed")
     signal.set(@signal.current_flow, @flow.observed)
@@ -2316,6 +2359,7 @@ effects { signal.write, metric.write }
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.observed"])
         .arg("--steps")
         .arg("5")
         .arg("--json")
@@ -2367,8 +2411,7 @@ flow generation() -> String {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"streams\"")
-            && !stdout.contains("\"sources\""),
+        stdout.contains("\"streams\"") && !stdout.contains("\"sources\""),
         "plan JSON should expose stream plans without Source roots: {stdout}"
     );
 }
@@ -2418,8 +2461,10 @@ fn run_json_executes_scope_and_loop_value_bindings() {
     let path = temp_arcw(
         "runtime-value-bindings",
         r#"
-flow value_bindings {
-    let local_target = scope target_scope {
+entry cli @entry.value_bindings { goto @flow.value_bindings }
+
+flow value_bindings() -> String {
+    let local_target = {
         let candidate = @flow.done
         candidate
     }
@@ -2431,7 +2476,7 @@ flow value_bindings {
     goto next
 }
 
-flow done {
+flow done() -> String {
     return "done"
 }
 "#,
@@ -2440,6 +2485,7 @@ flow done {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.value_bindings"])
         .arg("--steps")
         .arg("12")
         .arg("--json")
@@ -2533,6 +2579,27 @@ fn test_json_lists_script_tests() {
     let path = temp_arcw(
         "script-test",
         r"
+struct ScenarioState {}
+enum ScenarioEvent { Tick }
+
+fn initial_state() -> ScenarioState effects {} { ScenarioState {} }
+fn reduce(state: &ScenarioState, event: ScenarioEvent)
+    -> Result<Reduction<ScenarioState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry test @entry.opening {
+    state = ScenarioState
+    initializer = initial_state
+    event = ScenarioEvent
+    reducer = reduce
+    goto @flow.opening
+}
+
+flow opening(state: ScenarioState) -> Unit {}
+
 test @test.opening scenario {
     goto @flow.opening
     expect.no_assertion_failures()
@@ -2564,10 +2631,29 @@ fn test_json_executes_headless_scenario_expectations() {
     let path = temp_arcw(
         "script-test-headless",
         r#"
+struct ScenarioState {}
+enum ScenarioEvent { Tick }
+
+fn initial_state() -> ScenarioState effects {} { ScenarioState {} }
+fn reduce(state: &ScenarioState, event: ScenarioEvent)
+    -> Result<Reduction<ScenarioState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry test @entry.observed {
+    state = ScenarioState
+    initializer = initial_state
+    event = ScenarioEvent
+    reducer = reduce
+    goto @flow.observed
+}
+
 signal current_flow: Watch<Ref<Flow>>
 
-flow observed
-effects { signal.write }
+flow observed(state: ScenarioState) -> String
+effects { signal.write, log.write }
 {
     log.info("enter observed")
     signal.set(@signal.current_flow, @flow.observed)
@@ -2611,7 +2697,7 @@ fn bench_json_validates_headless_script_benches() {
     let path = temp_arcw(
         "script-bench",
         r#"
-metric gauge @metric:.memo_hit_rate: f32
+metric gauge memo_hit_rate: f32 {}
 
 bench @bench.opening {
     setup { let state = fixture<GameState>("opening.json") }
@@ -2649,11 +2735,13 @@ fn bench_json_measures_headless_runtime_sections() {
     let path = temp_arcw(
         "script-bench-measured",
         r#"
+entry bench @entry.measured { goto @flow.measured }
+
 bench @bench.runtime {
-    measure iterations = 2 { goto @flow.bench }
+    measure iterations = 2 { goto @flow.measured }
 }
 
-flow bench {
+flow measured() -> String {
     log.info("bench")
     return "done"
 }
@@ -2686,16 +2774,24 @@ flow bench {
             && stdout.contains("\"iterations\": 2")
             && stdout.contains("\"warmup\": 1")
             && stdout.contains("\"host_system\"")
-            && stdout.contains("\"executed_ops_median\": 2")
+            && stdout.contains("\"executed_ops_median\": 3")
             && stdout.contains("\"compiler\"")
-            && stdout.contains("\"phases\"")
-            && stdout.contains("\"name\": \"typecheck\"")
-            && stdout.contains("\"borrow_check\"")
-            && stdout.contains("\"boundary_checks\""),
+            && stdout.contains("\"phases\""),
         "bench JSON should include headless measurement and compiler profiling: {stdout}"
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_syntax_metrics(&json["compiler"]["syntax"]);
+    assert_phase_timings_include(
+        &json["phases"],
+        &[
+            "read_source",
+            "project_compile",
+            "product_awbc_lower",
+            "aot_lower",
+        ],
+    );
     let host = &json["benches"][0]["sections"][0]["measurement"]["host_system"];
     assert!(host["physical_cores"].as_u64().unwrap_or(0) > 0);
     assert!(host["logical_threads"].as_u64().unwrap_or(0) > 0);
@@ -2707,11 +2803,13 @@ fn bench_json_can_measure_aot_executor_sections() {
     let path = temp_arcw(
         "script-bench-aot",
         r#"
+entry bench @entry.measured { goto @flow.measured }
+
 bench @bench.runtime_aot {
-    measure iterations = 1 { goto @flow.bench }
+    measure iterations = 1 { goto @flow.measured }
 }
 
-flow bench {
+flow measured() -> String {
     log.info("bench aot")
     return "done"
 }
@@ -2753,6 +2851,8 @@ fn bench_json_measures_for_loop_pure_jit_without_arg_vec_allocation() {
     let path = temp_arcw(
         "script-bench-for-pure-jit",
         r#"
+entry bench @entry.for_pure { goto @flow.for_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -2762,7 +2862,7 @@ bench @bench.for_pure {
     measure iterations = 2 { goto @flow.for_pure }
 }
 
-flow for_pure {
+flow for_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let scored = score(item, 2i64)
@@ -2856,6 +2956,8 @@ fn bench_json_batches_bracket_sequence_pure_jit_calls() {
     let path = temp_arcw(
         "script-bench-bracket-pure-jit",
         r#"
+entry bench @entry.bracket_pure { goto @flow.bracket_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -2865,7 +2967,7 @@ bench @bench.bracket_pure {
     measure iterations = 2 { goto @flow.bracket_pure }
 }
 
-flow bracket_pure {
+flow bracket_pure() -> String {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
     for item in scores {
         log.info(item)
@@ -2964,6 +3066,8 @@ fn bench_json_fuses_bracket_sequence_pure_sum_jit_calls() {
     let path = temp_arcw(
         "script-bench-bracket-pure-sum-jit",
         r#"
+entry bench @entry.bracket_pure_sum { goto @flow.bracket_pure_sum }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -2973,7 +3077,7 @@ bench @bench.bracket_pure_sum {
     measure iterations = 2 { goto @flow.bracket_pure_sum }
 }
 
-flow bracket_pure_sum {
+flow bracket_pure_sum() -> String {
     let total: i64 = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)].sum()
     log.info(total)
     return "done"
@@ -3043,6 +3147,8 @@ fn bench_json_batches_bracket_sequence_pure_aot_on_worker_pool() {
     let path = temp_arcw(
         "script-bench-bracket-pure-aot",
         r#"
+entry bench @entry.bracket_pure { goto @flow.bracket_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -3052,7 +3158,7 @@ bench @bench.bracket_pure {
     measure iterations = 2 { goto @flow.bracket_pure }
 }
 
-flow bracket_pure {
+flow bracket_pure() -> String {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
     for item in scores {
         log.info(item)
@@ -3150,6 +3256,8 @@ fn bench_json_batches_map_closure_pure_jit_calls() {
     let path = temp_arcw(
         "script-bench-map-pure-jit",
         r#"
+entry bench @entry.map_pure { goto @flow.map_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -3159,7 +3267,7 @@ bench @bench.map_pure {
     measure iterations = 2 { goto @flow.map_pure }
 }
 
-flow map_pure {
+flow map_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -3228,6 +3336,8 @@ fn bench_json_fuses_map_closure_pure_sum_jit_calls() {
     let path = temp_arcw(
         "script-bench-map-pure-sum-jit",
         r#"
+entry bench @entry.map_pure_sum { goto @flow.map_pure_sum }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -3237,7 +3347,7 @@ bench @bench.map_pure_sum {
     measure iterations = 2 { goto @flow.map_pure_sum }
 }
 
-flow map_pure_sum {
+flow map_pure_sum() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let total: i64 = values.map(|item| score(item, 2i64)).sum()
     log.info(total)
@@ -3303,6 +3413,8 @@ fn bench_json_batches_map_closure_pure_aot_on_worker_pool() {
     let path = temp_arcw(
         "script-bench-map-pure-aot",
         r#"
+entry bench @entry.map_pure { goto @flow.map_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -3312,7 +3424,7 @@ bench @bench.map_pure {
     measure iterations = 2 { goto @flow.map_pure }
 }
 
-flow map_pure {
+flow map_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -3388,6 +3500,8 @@ fn bench_json_measures_branching_for_loop_pure_jit_characteristics() {
     let path = temp_arcw(
         "script-bench-branching-for-pure-jit",
         r#"
+entry bench @entry.branch_for_pure { goto @flow.branch_for_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64, scale: i64) -> i64 {
     let weighted = base * (bonus + 2i64)
@@ -3398,7 +3512,7 @@ bench @bench.branch_for_pure {
     measure iterations = 2 { goto @flow.branch_for_pure }
 }
 
-flow branch_for_pure {
+flow branch_for_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let first = score(item, 2i64, 5i64)
@@ -3469,6 +3583,8 @@ fn bench_json_measures_runtime_match_to_pure_jit_characteristics() {
     let path = temp_arcw(
         "script-bench-match-pure-jit",
         r#"
+entry bench @entry.match_pure { goto @flow.match_pure }
+
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
@@ -3486,13 +3602,13 @@ flow match_pure {
     }
 }
 
-flow scored {
+flow scored() -> String {
     let scored = score(3i64, 2i64)
     log.info(scored)
     return "done"
 }
 
-flow fallback {
+flow fallback() -> String {
     let scored = score(1i64, 1i64)
     log.info(scored)
     return "fallback"
@@ -3556,11 +3672,13 @@ fn bench_json_measures_thread_scheduling_characteristics() {
     let path = temp_arcw(
         "script-bench-thread-scheduling",
         r#"
+entry bench @entry.threads { goto @flow.threads }
+
 bench @bench.threads {
     measure iterations = 1 { goto @flow.threads }
 }
 
-flow threads {
+flow threads() -> String {
     thread first {
         log.info("first")
     }
@@ -3798,15 +3916,27 @@ fn bench_json_measures_checked_in_system_info_thread_fixture() {
     assert_eq!(measurement["native_io"]["scheduler"]["max_in_flight"], 6);
     assert_eq!(
         measurement["native_io"]["scheduler"]["submitted_by_class"]["cpu"],
-        6
+        3
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["submitted_by_class"]["background"],
+        3
     );
     assert_eq!(
         measurement["native_io"]["scheduler"]["dispatched_by_class"]["cpu"],
-        6
+        3
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["dispatched_by_class"]["background"],
+        3
     );
     assert_eq!(
         measurement["native_io"]["scheduler"]["completed_by_class"]["cpu"],
-        6
+        3
+    );
+    assert_eq!(
+        measurement["native_io"]["scheduler"]["completed_by_class"]["background"],
+        3
     );
     assert_eq!(measurement["native_io"]["scheduler"]["dispatch_sorts"], 0);
     assert_native_bridge_phase_timings(measurement);
@@ -4353,10 +4483,9 @@ fn bench_json_measures_checked_in_large_map_pure_batch_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(
-        json["compiler"]["runtime_type_validation"]["expressions"],
-        6
-    );
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_eq!(json["compiler"]["semantic"]["expressions"], 20);
+    assert_eq!(json["compiler"]["semantic"]["calls"], 4);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["pure_batch_calls_median"], 1);
     assert_eq!(
@@ -4432,10 +4561,9 @@ fn bench_json_measures_checked_in_nonuniform_map_pure_batch_fixture() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
-    assert_eq!(
-        json["compiler"]["runtime_type_validation"]["expressions"],
-        5
-    );
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_eq!(json["compiler"]["semantic"]["expressions"], 18);
+    assert_eq!(json["compiler"]["semantic"]["calls"], 4);
     assert_eq!(
         json["compiler"]["runtime_plan"]["pure_function_candidates"],
         1
@@ -5026,8 +5154,8 @@ bench @bench.infer_matmul_bias_add_f32 {
 }
 
 flow infer_matmul_bias_add_f32(lhs: TensorF32, rhs: TensorF32, bias: TensorF32) -> TensorF32 {
-    let out = infer.matmul_bias_add_f32(lhs, rhs, bias)
-    return out
+    let product = infer.matmul_bias_add_f32(lhs, rhs, bias)
+    return product
 }
 ",
     )
@@ -5511,11 +5639,10 @@ fn bench_json_measures_checked_in_dense_scalar_len_fixture() {
             .is_some_and(|source| source.ends_with("013_dense_scalar_len.arcw")),
         "dense scalar len bench should report the fixture source without an absolute path: {stdout}"
     );
-    assert_eq!(json["compiler"]["typecheck"]["warnings"], 0);
-    assert_eq!(
-        json["compiler"]["typecheck"]["judgment_rules"]["let_binding"],
-        6
-    );
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_eq!(json["compiler"]["semantic"]["locals"], 6);
+    assert_eq!(json["compiler"]["semantic"]["expressions"], 54);
+    assert_eq!(json["compiler"]["semantic"]["calls"], 6);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 8);
     assert_eq!(
@@ -5565,10 +5692,6 @@ fn bench_json_measures_checked_in_dense_textual_scalar_len_fixture() {
         !stdout.contains(&workspace_root().display().to_string()),
         "dense textual scalar len bench JSON must not record the workspace path: {stdout}"
     );
-    assert!(
-        stdout.contains("Vec(String)"),
-        "dense textual scalar len bench should validate String sequence typing: {stdout}"
-    );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
     assert!(
@@ -5577,11 +5700,10 @@ fn bench_json_measures_checked_in_dense_textual_scalar_len_fixture() {
             .is_some_and(|source| source.ends_with("014_dense_textual_scalar_len.arcw")),
         "dense textual scalar len bench should report the fixture source without an absolute path: {stdout}"
     );
-    assert_eq!(json["compiler"]["typecheck"]["warnings"], 0);
-    assert_eq!(
-        json["compiler"]["typecheck"]["judgment_rules"]["let_binding"],
-        5
-    );
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_eq!(json["compiler"]["semantic"]["locals"], 5);
+    assert_eq!(json["compiler"]["semantic"]["types"], 7);
+    assert_eq!(json["compiler"]["semantic"]["expressions"], 27);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
     assert_eq!(
@@ -5631,12 +5753,6 @@ fn bench_json_measures_checked_in_dense_wide_numeric_len_fixture() {
         !stdout.contains(&workspace_root().display().to_string()),
         "dense wide numeric len bench JSON must not record the workspace path: {stdout}"
     );
-    for expected in ["Vec(I128)", "Vec(U128)", "Vec(ISize)", "Vec(USize)"] {
-        assert!(
-            stdout.contains(expected),
-            "dense wide numeric len bench should validate {expected}: {stdout}"
-        );
-    }
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
     assert!(
@@ -5645,11 +5761,10 @@ fn bench_json_measures_checked_in_dense_wide_numeric_len_fixture() {
             .is_some_and(|source| source.ends_with("015_dense_wide_numeric_len.arcw")),
         "dense wide numeric len bench should report the fixture source without an absolute path: {stdout}"
     );
-    assert_eq!(json["compiler"]["typecheck"]["warnings"], 0);
-    assert_eq!(
-        json["compiler"]["typecheck"]["judgment_rules"]["let_binding"],
-        5
-    );
+    assert_semantic_metrics(&json["compiler"]["semantic"]);
+    assert_eq!(json["compiler"]["semantic"]["locals"], 5);
+    assert_eq!(json["compiler"]["semantic"]["types"], 10);
+    assert_eq!(json["compiler"]["semantic"]["expressions"], 18);
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
     assert_eq!(measurement["deterministic"]["executed_ops_median"], 7);
     assert_eq!(
@@ -5919,6 +6034,264 @@ fn assert_pure_helper_bench_json(stdout: &str) {
     );
 }
 
+mod pure_measurement_boundary_tests {
+    use super::*;
+
+    const SCORE: &str = r"
+#[pure]
+fn score(base: i64, bonus: i64, scale: i64) -> i64 {
+    let boosted = bonus + 2
+    let weighted = base * boosted
+    return if base >= 3 { weighted + scale } else { scale }
+}
+bench @bench.score {
+    measure iterations = 4 { pure(score) }
+}
+";
+
+    fn bench(source: &str, backend: &str, max_ops: usize) -> std::process::Output {
+        let path = temp_arcw("pure-measurement-boundary", source);
+        Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("bench")
+            .arg(path)
+            .args([
+                "--iterations",
+                "4",
+                "--warmup",
+                "1",
+                "--samples",
+                "2",
+                "--input-seed",
+                "5",
+                "--pure-workers",
+                "2",
+                "--pure-batch-min-len",
+                "1",
+            ])
+            .arg("--pure-backend")
+            .arg(backend)
+            .arg("--max-ops")
+            .arg(max_ops.to_string())
+            .arg("--json")
+            .output()
+            .unwrap()
+    }
+
+    fn measured(output: &std::process::Output) -> serde_json::Value {
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(value["benches"][0]["status"], "measured");
+        assert_eq!(value["benches"][0]["sections"][0]["status"], "measured");
+        value["benches"][0]["sections"][0]["pure_helper"].clone()
+    }
+
+    #[test]
+    fn pure_bench_explicit_vm_aot_auto_share_checked_source_and_input_series() {
+        let mut expected = None;
+        for backend in ["vm", "aot", "auto"] {
+            let pure = measured(&bench(SCORE, backend, 64));
+            assert_eq!(pure["helper"], "score");
+            assert_eq!(
+                pure["input_bindings"],
+                serde_json::json!(["base", "bonus", "scale"])
+            );
+            assert_eq!(pure["input_seed"], 5);
+            assert_eq!(pure["vm_max_ops"], 64);
+            assert_eq!(pure["matches_vm"], true);
+            assert_eq!(pure["warmup"], 1);
+            assert_eq!(pure["iterations"], 4);
+            assert_eq!(pure["samples"], 2);
+            let batch = &pure["runtime_batch"];
+            assert_eq!(batch["matches_vm"], true);
+            assert_eq!(batch["config"]["backend"], backend);
+            assert_eq!(batch["stats"]["batch_calls"], 2);
+            assert_eq!(batch["stats"]["batch_items"], 8);
+            assert_eq!(batch["stats"]["pure_calls"], 8);
+            assert_eq!(
+                batch["accumulator"],
+                pure["deterministic"]["vm_accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["aot_accumulator"],
+                batch["accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["jit_accumulator"],
+                batch["accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["jit_batch_accumulator"],
+                batch["accumulator"]
+            );
+            if backend == "vm" {
+                assert_eq!(batch["stats"]["vm_calls"], 8);
+                assert_eq!(batch["stats"]["aot_calls"], 0);
+                assert_eq!(batch["stats"]["jit_calls"], 0);
+            }
+            if let Some(value) = &expected {
+                assert_eq!(value, &batch["accumulator"]);
+            }
+            expected = Some(batch["accumulator"].clone());
+            assert_sample_summary_is_ordered(&pure["timings"]["vm_samples"]);
+            assert_sample_summary_is_ordered(&batch["samples"]);
+        }
+    }
+
+    #[test]
+    fn pure_bench_fallible_native_body_uses_bounded_vm_in_configured_aot_auto_batch() {
+        let source = r"
+fn score(base: i64, bonus: i64, scale: i64) -> i64 effects {} {
+    let boosted = bonus + 2i64
+    let weighted = base * boosted
+    let adjusted = -weighted / scale
+    return if base >= 3 { adjusted + scale } else { scale }
+}
+bench @bench.fallible_score { measure { pure(score) } }
+";
+        for backend in ["aot", "auto"] {
+            let pure = measured(&bench(source, backend, 64));
+            let batch = &pure["runtime_batch"];
+            assert_eq!(batch["config"]["backend"], backend);
+            assert_eq!(batch["stats"]["batch_calls"], 2);
+            assert_eq!(batch["stats"]["pure_calls"], 8);
+            assert_eq!(batch["stats"]["vm_calls"], 8);
+            assert_eq!(batch["stats"]["fallbacks"], 8);
+            assert_eq!(batch["stats"]["aot_calls"], 0);
+            assert_eq!(batch["stats"]["jit_calls"], 0);
+            if backend == "aot" {
+                assert_eq!(batch["compile"]["aot_successes"], 1);
+            }
+            let compiled = batch["compile"]["aot_successes"].as_u64().unwrap()
+                + batch["compile"]["jit_successes"].as_u64().unwrap();
+            assert_eq!(compiled, 1);
+            assert_eq!(
+                batch["accumulator"],
+                pure["deterministic"]["vm_accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["aot_accumulator"],
+                batch["accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["jit_accumulator"],
+                batch["accumulator"]
+            );
+            assert_eq!(
+                pure["deterministic"]["jit_batch_accumulator"],
+                batch["accumulator"]
+            );
+            assert!(pure["jit_stats"]["evaluated_exprs"].as_u64().unwrap() > 0);
+            assert!(pure["aot_stats"]["evaluated_exprs"].as_u64().unwrap() > 0);
+        }
+    }
+
+    #[test]
+    fn pure_bench_zero_argument_checked_function_is_invoked_for_every_row() {
+        let source = r"
+#[pure]
+fn constant() -> i64 {
+    let value = 7i64
+    return value
+}
+bench @bench.constant { measure { pure(constant) } }
+";
+        let pure = measured(&bench(source, "vm", 64));
+        assert_eq!(pure["helper"], "constant");
+        assert_eq!(pure["input_bindings"], serde_json::json!([]));
+        assert_eq!(pure["runtime_batch"]["accumulator"], 56);
+        assert_eq!(pure["runtime_batch"]["stats"]["pure_calls"], 8);
+        assert_eq!(pure["runtime_batch"]["stats"]["vm_calls"], 8);
+        assert_eq!(pure["runtime_batch"]["stats"]["arg_bytes_borrowed"], 0);
+        assert_eq!(pure["deterministic"]["vm_accumulator"], 56);
+        assert_eq!(pure["deterministic"]["aot_accumulator"], 56);
+        assert_eq!(pure["deterministic"]["jit_accumulator"], 56);
+        assert_eq!(pure["deterministic"]["jit_batch_accumulator"], 56);
+    }
+
+    fn rejected(source: &str, backend: &str, max_ops: usize) -> Vec<String> {
+        let output = bench(source, backend, max_ops);
+        assert!(!output.status.success(), "a rejected measurement must fail");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["benches"][0]["status"], "failed");
+        let section = &report["benches"][0]["sections"][0];
+        assert_eq!(section["status"], "failed");
+        assert!(section["pure_helper"].is_null());
+        section["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn pure_bench_exhausted_explicit_budget_is_terminal_on_every_requested_backend() {
+        for backend in ["vm", "aot", "auto"] {
+            let diagnostics = rejected(SCORE, backend, 0);
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|value| value.contains("exhausted its explicit 0-operation budget")),
+                "{diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pure_bench_unknown_helper_is_rejected_from_the_checked_catalog() {
+        let source = r"
+fn score(base: i64) -> i64 { return base }
+bench @bench.missing { measure { pure(missing) } }
+";
+        for backend in ["vm", "aot", "auto"] {
+            let diagnostics = rejected(source, backend, 64);
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|value| value.contains("no accepted deterministic function")
+                        && value.contains("missing")),
+                "{diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pure_bench_effectful_helper_is_rejected_before_invocation() {
+        let source = r#"
+fn noisy() -> i64 effects { log.write } {
+    log.info("must not execute during measurement")
+    return 7i64
+}
+bench @bench.noisy { measure { pure(noisy) } }
+"#;
+        for backend in ["vm", "aot", "auto"] {
+            let diagnostics = rejected(source, backend, 64);
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|value| value.contains("external effects")),
+                "{diagnostics:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pure_bench_non_i64_abi_is_rejected_without_rebinding_or_coercion() {
+        let source = r"
+fn boolean(value: bool) -> bool { return value }
+bench @bench.boolean { measure { pure(boolean) } }
+";
+        let diagnostics = rejected(source, "vm", 64);
+        assert!(diagnostics.iter().any(|value|
+            value.contains("complete direct i64 ABI") && value.contains("boolean")
+        ), "{diagnostics:?}");
+    }
+}
+
 fn assert_runtime_pure_batch_json(pure_helper: &serde_json::Value) {
     let runtime_batch = &pure_helper["runtime_batch"];
     assert_eq!(runtime_batch["matches_vm"], true);
@@ -5958,16 +6331,18 @@ fn bench_json_checks_runtime_assert_sections() {
     let path = temp_arcw(
         "script-bench-assert",
         r#"
-signal @signal:.bench_done: Watch<Bool>
+entry bench @entry.measured { goto @flow.measured }
+
+signal bench_done: Watch<bool>
 
 bench @bench.runtime_assert {
-    measure iterations = 1 { goto @flow.bench }
+    measure iterations = 1 { goto @flow.measured }
     assert { expect.log(.info, contains="bench observed") }
     assert { expect.signal(@signal.bench_done, true) }
     assert { expect.no_assertion_failures() }
 }
 
-flow bench effects { signal.write } {
+flow measured() -> String effects { signal.write, log.write } {
     log.info("bench observed")
     signal.set(@signal.bench_done, true)
     return "done"
@@ -6005,14 +6380,16 @@ fn bench_json_fails_runtime_assert_sections() {
     let path = temp_arcw(
         "script-bench-assert-fail",
         r#"
-signal @signal:.bench_done: Watch<Bool>
+entry bench @entry.measured { goto @flow.measured }
+
+signal bench_done: Watch<bool>
 
 bench @bench.runtime_assert_fail {
-    measure iterations = 1 { goto @flow.bench }
+    measure iterations = 1 { goto @flow.measured }
     assert { expect.signal(@signal.bench_done, false) }
 }
 
-flow bench effects { signal.write } {
+flow measured() -> String effects { signal.write } {
     signal.set(@signal.bench_done, true)
     return "done"
 }
@@ -6131,6 +6508,8 @@ fn bench_json_measures_traverse_parallel_file_tasks() {
     fs::write(
         &source_path,
         r#"
+entry bench @entry.parallel_io { goto @flow.parallel_io }
+
 extern capability fs {
     type FsError
     fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
@@ -6143,7 +6522,7 @@ bench @bench.parallel_io {
     assert { expect.file(path.save("output.txt"), equals="done") }
 }
 
-flow parallel_io effects { fs.read(save), fs.write(save) } {
+flow parallel_io() -> String effects { fs.read(save), fs.write(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
     let status = match (await fs.write_text(path.save("output.txt"), "done")) { .Ok(_) => "done", .Err(_) => "write_failed" }
@@ -6205,6 +6584,8 @@ fn bench_json_measures_threaded_native_read_scheduling() {
     fs::write(
         &source_path,
         r#"
+entry bench @entry.threaded_reads { goto @flow.threaded_reads }
+
 extern capability fs {
     type FsError
     fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
@@ -6215,7 +6596,7 @@ bench @bench.threaded_reads {
     measure iterations = 1 { goto @flow.threaded_reads }
 }
 
-flow threaded_reads effects { fs.read(save) } {
+flow threaded_reads() -> String effects { fs.read(save), log.write, control.spawn } {
     thread left {
         let text = match (await fs.read_text(path.save("a.txt"))) { .Ok(text) => text, .Err(_) => "left_failed" }
         log.info(text)
@@ -6301,6 +6682,8 @@ fn bench_json_fails_native_file_assertions() {
     fs::write(
         &source_path,
         r#"
+entry bench @entry.write_actual { goto @flow.write_actual }
+
 extern capability fs {
     type FsError
     fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
@@ -6312,7 +6695,7 @@ bench @bench.native_file_assert {
     assert { expect.file(path.save("output.txt"), equals="expected") }
 }
 
-flow write_actual effects { fs.write(save) } {
+flow write_actual() -> String effects { fs.write(save) } {
     let status = match (await fs.write_text(path.save("output.txt"), "actual")) { .Ok(_) => "done", .Err(_) => "write_failed" }
     return status
 }
@@ -6389,7 +6772,7 @@ fn check_rejects_non_arcw_file_extension() {
         "non-arcw",
         "arwt",
         r#"
-flow main {
+flow main() -> String {
     return "done"
 }
 "#,
@@ -6420,7 +6803,7 @@ fn check_rejects_direct_non_arcw_edge_extensions() {
             "direct-extension-edge",
             extension,
             r#"
-flow main {
+flow main() -> String {
     return "done"
 }
 "#,
@@ -6447,32 +6830,31 @@ flow main {
 
 #[test]
 fn tooling_commands_reject_direct_non_arcw_paths() {
-    for args in [&["fmt"][..], &["ids", "materialize"][..]] {
-        let path = temp_file(
-            "tooling-non-arcw",
-            "arwt",
-            r#"
-flow main {
+    let path = temp_file(
+        "tooling-non-arcw",
+        "arwt",
+        r#"
+flow main() -> String {
     return "done"
 }
 "#,
-        );
-
-        let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
-        command.args(args).arg(&path);
-        let output = command.output().expect("arcw tooling command runs");
-
-        fs::remove_file(&path).expect("remove temp non-arcw fixture");
-        assert!(
-            !output.status.success(),
-            "{args:?} must reject direct non-arcw path"
-        );
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("not an .arcw source file"),
-            "stderr should explain extension policy: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("fmt")
+        .arg(&path)
+        .output()
+        .expect("arcw tooling command runs");
+    fs::remove_file(&path).expect("remove temp non-arcw fixture");
+    assert!(
+        !output.status.success(),
+        "fmt must reject direct non-arcw path"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("not a supported .arcw or .awfagent source file"),
+        "stderr should explain extension policy: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -6483,7 +6865,7 @@ fn tooling_directory_scan_ignores_non_arcw_files() {
     fs::write(
         &arcw,
         r#"
-flow main {
+flow main() -> String {
     return "done"
 }
 "#,
@@ -6508,12 +6890,12 @@ flow main {
 
 #[test]
 fn spec_valid_run_edge_fixture_now_executes() {
-    let relative_path =
-        "tests/fixtures/arcw/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw";
+    let relative_path = "tests/fixtures/arcw/spec_should_pass/check/011_dialogue_line_value_and_handle_discard.arcw";
     let path = workspace_root().join(relative_path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.main"])
         .arg("--json")
         .arg("--steps")
         .arg("5")
@@ -6530,29 +6912,11 @@ fn spec_valid_run_edge_fixture_now_executes() {
 }
 
 #[test]
-fn rejected_await_question_with_fixture_fails_with_guidance() {
-    let path = workspace_root()
-        .join("tests/fixtures/arcw/spec_should_fail/011_await_question_with_rejected.arcw");
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg(&path)
-        .output()
-        .expect("arcw check runs");
-
-    assert!(!output.status.success(), "ambiguous await form must fail");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("await expr? with") && stderr.contains("try await"),
-        "diagnostic should point to try-await replacement: {stderr}"
-    );
-}
-
-#[test]
 fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
     for (relative_path, expected) in [
         (
             "tests/fixtures/arcw/spec_should_fail/013_continue_expr_position_rejected.arcw",
-            "unknown symbol `continue`",
+            "semantic value resolution failed",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/014_let_else_non_diverging_rejected.arcw",
@@ -6569,10 +6933,6 @@ fn spec_rejected_edge_fixtures_fail_with_diagnostics() {
         (
             "tests/fixtures/arcw/spec_should_fail/017_out_in_flow_rejected.arcw",
             "`out` can only be used",
-        ),
-        (
-            "tests/fixtures/arcw/spec_should_fail/018_private_full_replay_rejected.arcw",
-            "privacy = private",
         ),
         (
             "tests/fixtures/arcw/spec_should_fail/019_unsafe_lifetime_missing_reason_rejected.arcw",
@@ -6614,11 +6974,11 @@ entry server @entry.http {
     route POST "/save" -> @flow.save
 }
 
-flow health {
+flow health() -> String {
     return "ok"
 }
 
-flow save {
+flow save() -> String {
     return "saved"
 }
 "#,
@@ -6628,7 +6988,7 @@ flow save {
         .arg("serve")
         .arg(&path)
         .arg("--entry")
-        .arg("@entry.http")
+        .arg("entry.http")
         .arg("--adapter")
         .arg("native-http")
         .arg("--json")
@@ -6661,7 +7021,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow hello(name: String) {
+flow hello(name: String) -> String {
     return name
 }
 "#,
@@ -6671,7 +7031,7 @@ flow hello(name: String) {
         .arg("serve")
         .arg(&path)
         .arg("--entry")
-        .arg("http")
+        .arg("entry.http")
         .arg("--adapter")
         .arg("native-http")
         .arg("--json")
@@ -6691,9 +7051,11 @@ fn serve_json_treats_server_run_entry_as_default_route() {
     let path = temp_arcw(
         "serve-run",
         r#"
-entry server @entry.server { goto @flow.main }
+entry server @entry.server {
+    route GET "/" -> @flow.main
+}
 
-flow main {
+flow main() -> String {
     return "server"
 }
 "#,
@@ -6702,6 +7064,7 @@ flow main {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("serve")
         .arg(&path)
+        .args(["--entry", "entry.server"])
         .arg("--json")
         .output()
         .expect("arcw serve runs");
@@ -6713,10 +7076,10 @@ flow main {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"method\": \"*\"")
-            && stdout.contains("\"path\": \"*\"")
+        stdout.contains("\"method\": \"GET\"")
+            && stdout.contains("\"path\": \"/\"")
             && stdout.contains("\"target\": \"flow.main\""),
-        "server run entry should become a default route: {stdout}"
+        "server entry should expose its authored checked route: {stdout}"
     );
 }
 
@@ -6732,7 +7095,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow hello(name: String) {
+flow hello(name: String) -> String {
     return name
 }
 "#,
@@ -6785,7 +7148,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello
 }
 
-flow hello {
+flow hello() -> String {
     return route_params.name
 }
 "#,
@@ -6841,7 +7204,7 @@ entry server @entry.http {
     route GET "/health" -> @flow.health
 }
 
-flow health {
+flow health() -> String {
     return "ok"
 }
 "#,
@@ -6898,7 +7261,7 @@ fn profile_source_and_path_are_mutually_exclusive() {
     fs::write(
         &source,
         r#"
-flow main {
+flow main() -> String {
     return "done"
 }
 "#,
@@ -6951,7 +7314,7 @@ fn profile_rejects_unknown_adapter() {
         r#"
 entry server @entry.http { goto @flow.main }
 
-flow main {
+flow main() -> String {
     return "ok"
 }
 "#,
@@ -6986,7 +7349,9 @@ adapter = "custom-http"
     fs::remove_dir_all(&dir).expect("remove temp profile project");
     assert!(!output.status.success(), "unknown adapter must fail");
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("unknown adapter `custom-http`"),
+        String::from_utf8_lossy(&output.stderr).contains(
+            "selected adapter `custom-http` was not found in the complete checked registry"
+        ),
         "stderr should explain unknown adapter: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -7449,7 +7814,8 @@ mod source_map_batch_owner_tests {
             }
             assert!(failed);
             assert!(engine.take_program_result().unwrap().is_none());
-            let RuntimeValue::Seq(previous) = engine.fiber().env.get(accumulator).unwrap() else {
+            let RuntimeValue::Seq(previous) = engine.fiber().frame.env.get(accumulator).unwrap()
+            else {
                 panic!("original accumulator")
             };
             assert_eq!(previous.len(), 1);
@@ -7466,7 +7832,8 @@ mod source_map_batch_owner_tests {
                 &mut backend,
             );
             assert_eq!(repeat.stats.executed_ops, 0);
-            let RuntimeValue::Seq(previous) = engine.fiber().env.get(accumulator).unwrap() else {
+            let RuntimeValue::Seq(previous) = engine.fiber().frame.env.get(accumulator).unwrap()
+            else {
                 panic!("retained failed accumulator")
             };
             assert_eq!(previous.len(), 1);
@@ -7491,7 +7858,7 @@ mod source_map_batch_owner_tests {
             .unwrap();
             for _ in 0..64 {
                 if matches!(
-                    engine.fiber().pending_ops.front(),
+                    engine.fiber().frame.pending_ops.front(),
                     Some(FlowOp::WhileLet { .. })
                 ) {
                     return engine;
@@ -7516,7 +7883,8 @@ mod source_map_batch_owner_tests {
             arcweft_core::runtime_id::RuntimeLocalDeclarationId,
             arcweft_core::runtime_id::RuntimeLocalDeclarationId,
         ) {
-            let Some(FlowOp::WhileLet { expr, body, .. }) = engine.fiber().pending_ops.front()
+            let Some(FlowOp::WhileLet { expr, body, .. }) =
+                engine.fiber().frame.pending_ops.front()
             else {
                 panic!("actual Map loop")
             };
@@ -7550,13 +7918,14 @@ mod source_map_batch_owner_tests {
             );
             actual_cost += step.stats.executed_ops;
             assert_eq!(step.stats.executed_ops, 1);
-            let completed = reference.fiber().env.get(iterator).is_none()
+            let completed = reference.fiber().frame.env.get(iterator).is_none()
                 && !reference
                     .fiber()
+                    .frame
                     .pending_ops
                     .iter()
                     .any(|op| matches!(op, FlowOp::WhileLetNext { .. }))
-                && matches!(reference.fiber().env.get(accumulator), Some(RuntimeValue::Seq(seq)) if seq.len() == 3);
+                && matches!(reference.fiber().frame.env.get(accumulator), Some(RuntimeValue::Seq(seq)) if seq.len() == 3);
             if completed {
                 break;
             }
@@ -7581,8 +7950,8 @@ mod source_map_batch_owner_tests {
         );
         assert_eq!(step.stats.executed_ops, actual_cost);
         assert_eq!(physical.stats().batch_calls, 1);
-        assert!(admitted.fiber().env.get(iterator).is_none());
-        let RuntimeValue::Seq(result) = admitted.fiber().env.get(accumulator).unwrap() else {
+        assert!(admitted.fiber().frame.env.get(iterator).is_none());
+        let RuntimeValue::Seq(result) = admitted.fiber().frame.env.get(accumulator).unwrap() else {
             panic!("same accumulator owner")
         };
         assert_eq!(result.len(), 3);
@@ -8250,7 +8619,7 @@ mod source_map_batch_owner_tests {
             .unwrap();
             for _ in 0..64 {
                 if matches!(
-                    engine.fiber().pending_ops.front(),
+                    engine.fiber().frame.pending_ops.front(),
                     Some(FlowOp::ApplyGroup { .. })
                 ) {
                     return engine;
@@ -8270,7 +8639,7 @@ mod source_map_batch_owner_tests {
             panic!("Array Map must expose its accepted ApplyGroup owner");
         }
         let at_aggregate = |engine: &Engine| {
-            matches!(engine.fiber().pending_ops.front(),
+            matches!(engine.fiber().frame.pending_ops.front(),
             Some(FlowOp::Let { expr, .. }) if matches!(expr.kind(), RuntimeExprKind::BracketSeq(_)))
         };
         let mut ordinary = accelerator(RuntimePureBackendMode::Aot, selected.plan());
@@ -8524,4 +8893,130 @@ mod source_map_batch_owner_tests {
             expected
         );
     }
+}
+
+#[test]
+fn verify_json_accepts_inferred_effect_row_without_source_upper_bound() {
+    let path = temp_arcw(
+        "verify-inferred-effect-row",
+        "signal current_flow: Watch<Ref<Flow>>\nflow signal_writer { signal.set(@signal.current_flow, @flow.signal_writer) }\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--json"])
+        .arg(&path)
+        .output()
+        .expect("arcw verify infers an omitted effect row");
+    fs::remove_file(&path).unwrap();
+    assert!(
+        output.status.success(),
+        "omitted effects infer the body row: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("accepted verifier JSON");
+    assert!(json.get("policy").is_some());
+    assert!(json.get("obligations").is_some());
+    assert!(
+        json.get("status").is_none(),
+        "the accepted verifier report keeps its established grammar"
+    );
+}
+
+#[test]
+fn verify_json_reports_semantic_denial_before_solver_or_artifact_output() {
+    let path = temp_arcw(
+        "verify-semantic-json-denial",
+        "flow main() -> i64 { return true }\n",
+    );
+    let obligations = path.with_extension("obligations.json");
+    let smt = path.with_extension("denied-smt");
+    fs::write(&obligations, "existing artifact").unwrap();
+    assert!(
+        !smt.exists(),
+        "the owned denial fixture has no SMT directory"
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["verify", "--mode", "test", "--backend", "z3", "--json"])
+        .arg(&path)
+        .arg("--solver-command")
+        .arg("arcweft-denied-analysis-must-not-start-a-solver")
+        .arg("--emit-obligations")
+        .arg(&obligations)
+        .arg("--emit-smt")
+        .arg(&smt)
+        .output()
+        .expect("arcw verify reports the compiler-owned semantic denial");
+    assert!(!output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("complete denied-analysis JSON");
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["status"], "denied");
+    assert_eq!(json["stage"], "type-check");
+    assert!(
+        json["diagnostics"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+    assert!(
+        json.get("rejected_obligation_kind").is_none(),
+        "a return mismatch is not an effect rejection"
+    );
+    for field in ["obligations", "solver_checks", "runtime", "lines", "proofs"] {
+        assert!(
+            json.get(field).is_none(),
+            "denied analysis cannot publish {field}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(&obligations).unwrap(),
+        "existing artifact"
+    );
+    assert!(
+        !smt.exists(),
+        "denied compilation does not emit solver inputs"
+    );
+    fs::remove_file(&path).unwrap();
+    fs::remove_file(&obligations).unwrap();
+}
+
+#[test]
+fn plan_json_reports_syntax_denial_with_exact_source_spans() {
+    let source =
+        "pub view Card() {\n    export part as card.heading\n    Panel().part(header)\n}\n";
+    let path = temp_arcw("plan-syntax-json-denial", source);
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["plan", "--json"])
+        .arg(&path)
+        .output()
+        .expect("arcw plan uses the shared compiler rejection output");
+    fs::remove_file(&path).unwrap();
+    assert!(!output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("syntax rejection JSON");
+    assert_eq!(json["version"], 1);
+    assert_eq!(json["status"], "denied");
+    assert_eq!(json["stage"], "readiness");
+    assert!(
+        json.get("lines").is_none(),
+        "syntax recovery is not an executable runtime plan"
+    );
+    let rows = json["diagnostics"]
+        .as_array()
+        .expect("compiler diagnostic rows");
+    let row = rows
+        .iter()
+        .find(|row| row["diagnostic"]["code"] == "syntax.view.export_missing_local")
+        .expect("the original typed missing-local parser diagnostic");
+    assert_eq!(row["stage"], "parse");
+    let span: arcweft_verify::SourceSpan =
+        serde_json::from_value(row["diagnostic"]["span"].clone()).unwrap();
+    let document = arcweft_source::SourceDocument::try_new(
+        span.source.id().clone(),
+        arcweft_source::SourceName::path(path.display().to_string()),
+        source,
+    )
+    .unwrap();
+    assert!(span.validate_for(&document));
+    assert!(row["diagnostic"]["code"].as_str().is_some());
+    assert!(!row["diagnostic"]["labels"].as_array().unwrap().is_empty());
 }

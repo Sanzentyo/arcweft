@@ -45,6 +45,7 @@ impl Engine {
                 {
                     let local = read.local();
                     self.fiber
+                        .frame
                         .env
                         .get(local)
                         .ok_or(RuntimeEvalError::UnknownLocal(local))?;
@@ -60,6 +61,7 @@ impl Engine {
             let target = match (local, target) {
                 (Some(local), None) => self
                     .fiber
+                    .frame
                     .env
                     .take(local)
                     .ok_or(RuntimeEvalError::UnknownLocal(local))?,
@@ -130,7 +132,7 @@ impl Engine {
                 output
                     .diagnostics
                     .push(RuntimeDiagnostic::new(message.clone()));
-                self.fiber.status = FlowFiberStatus::Failed(message);
+                self.fiber.frame.status = FlowFiberStatus::Failed(message);
             }
         }
     }
@@ -143,7 +145,7 @@ impl Engine {
     ) {
         for effect in effects {
             self.emit_line_effect(effect, output, pure_backend);
-            if matches!(self.fiber.status, FlowFiberStatus::Failed(_)) {
+            if matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)) {
                 break;
             }
         }

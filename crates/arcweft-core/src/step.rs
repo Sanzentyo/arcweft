@@ -768,6 +768,39 @@ impl<'a> RuntimeStepInputRef<'a> {
 }
 
 impl RuntimeStepOutput {
+    /// Work that requires a host adapter before its pending operation can resume.
+    pub(crate) fn has_host_requests(&self) -> bool {
+        !self.requests.tasks.is_empty()
+            || !self.requests.audio.is_empty()
+            || !self.requests.cancel_scopes.is_empty()
+            || !self.requests.ensure_content.is_empty()
+            || !self.requests.host_calls.is_empty()
+            || !self.requests.line_commands.is_empty()
+    }
+
+    /// The shared Game-mode boundary. Observations do not publish presentation.
+    pub(crate) fn has_presentation_visible_output(&self) -> bool {
+        self.flow_events.iter().any(|event| {
+            matches!(
+                event,
+                FlowEvent::DialogueLine { .. }
+                    | FlowEvent::LineCancelled { .. }
+                    | FlowEvent::ChoicePresented { .. }
+                    | FlowEvent::ChoiceSelected { .. }
+                    | FlowEvent::AwaitStarted { .. }
+                    | FlowEvent::AwaitProgress { .. }
+            )
+        }) || self.effects.line.iter().any(|effect| {
+            !matches!(
+                effect,
+                LineEffectRequest::Log(_)
+                    | LineEffectRequest::SignalWrite(_)
+                    | LineEffectRequest::MetricWrite(_)
+                    | LineEffectRequest::EmitEvent(_)
+            )
+        })
+    }
+
     pub fn writer(&mut self) -> RuntimeStepOutputSink<'_> {
         RuntimeStepOutputSink::new(self)
     }

@@ -1,8 +1,10 @@
+entry bench @entry.linear_aot { goto @flow.linear_aot }
+
 bench @bench.linear_aot {
     measure iterations = 4 { goto @flow.linear_aot }
 }
 
-flow linear_aot {
+flow linear_aot() -> String {
     let value: i64 = 41i64 + 1i64
     log.info(value)
     return "done"

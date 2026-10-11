@@ -16,7 +16,7 @@ impl Engine {
         let mut executed_ops = 0;
         let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
-        let pending_ops_before = self.fiber.pending_ops.len();
+        let pending_ops_before = self.fiber.frame.pending_ops.len();
         let mut runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
@@ -38,7 +38,7 @@ impl Engine {
             // active function whose exhausted pending body must reject fallthrough.
             if self.has_executor_work()
                 || self.has_active_project_call()
-                || !self.fiber.pending_ops.is_empty()
+                || !self.fiber.frame.pending_ops.is_empty()
             {
                 let (_, control_ops) = self.with_scalar_operation_budget(
                     options.mode,
@@ -53,7 +53,7 @@ impl Engine {
                 }
                 continue;
             }
-            let Some(cursor) = self.fiber.cursor.as_ref() else {
+            let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
                 self.finish(&mut output, pure_backend);
                 executed_ops += 1;
                 if self.should_return_to_host(options.mode, &output, executed_ops) {
@@ -125,7 +125,7 @@ impl Engine {
         RuntimeStepStats {
             executed_ops,
             pending_ops_before,
-            pending_ops_after: self.fiber.pending_ops.len(),
+            pending_ops_after: self.fiber.frame.pending_ops.len(),
             child_fibers: self.child_fiber_count(),
             pure,
             line_effects: output.effects.line.len(),
@@ -139,7 +139,7 @@ impl Engine {
         output
             .diagnostics
             .push(super::RuntimeDiagnostic::new(message.to_owned()));
-        self.fiber.status = FlowFiberStatus::Failed(message.to_owned());
+        self.fiber.frame.status = FlowFiberStatus::Failed(message.to_owned());
     }
 
     pub(crate) fn can_start_aot_linear_step(
@@ -152,10 +152,10 @@ impl Engine {
             && self.root.is_none()
             && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
-            && self.fiber.pending_ops.is_empty()
-            && self.fiber.control_stack.is_empty()
-            && matches!(self.fiber.status, FlowFiberStatus::Running)
-            && self.fiber.cursor.as_ref().is_some_and(|cursor| {
+            && self.fiber.frame.pending_ops.is_empty()
+            && self.fiber.frame.control_stack.is_empty()
+            && matches!(self.fiber.frame.status, FlowFiberStatus::Running)
+            && self.fiber.frame.cursor.as_ref().is_some_and(|cursor| {
                 program
                     .flow_block(cursor.flow_index)
                     .and_then(|flow| flow.linear_op(cursor.op_index))
@@ -172,7 +172,7 @@ impl Engine {
     ) {
         match op {
             AotLinearOp::Bind(bindings) => {
-                self.fiber.env.bind_all_ref(bindings);
+                self.fiber.frame.env.bind_all_ref(bindings);
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::Let { pattern, expr } => {
@@ -181,7 +181,7 @@ impl Engine {
             }
             AotLinearOp::Assign { place, value } => {
                 match self.evaluate_expr_with_backend(value, pure_backend) {
-                    Ok(value) => match self.fiber.env.assign_place(place, value) {
+                    Ok(value) => match self.fiber.frame.env.assign_place(place, value) {
                         Ok(_) => self.advance_aot_linear_cursor(next_op_index),
                         Err(error) => self.fail_eval(error.into_parts().0, output),
                     },
@@ -238,7 +238,7 @@ impl Engine {
     }
 
     fn advance_aot_linear_cursor(&mut self, next_op_index: usize) {
-        if let Some(cursor) = self.fiber.cursor.as_mut() {
+        if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
             cursor.op_index = next_op_index;
         }
     }

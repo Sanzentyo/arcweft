@@ -3,9 +3,10 @@ use super::super::executor::RuntimeExecutorTemplate;
 use super::super::expectations::{
     RuntimeExpectationView, evaluate_runtime_expectation, script_commands,
 };
+use super::super::invocation::seal_resolved_flow_invocation;
 use super::super::options::ScriptBenchOptions;
 use super::super::steps::{
-    NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps,
+    NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_flow_steps,
 };
 use super::BenchRuntimeContext;
 use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
@@ -74,6 +75,28 @@ pub(in crate::app) fn run_script_bench(
     if summary.status != "validated" {
         return summary;
     }
+    if !options.values.is_empty()
+        && bench
+            .sections
+            .iter()
+            .any(|section| bench_pure_helper_name(section).is_some())
+    {
+        "failed".clone_into(&mut summary.status);
+        summary.diagnostics.push("--value supplies Flow inputs; pure helper measurements use their checked generated input series".to_owned());
+        return summary;
+    }
+    if !options.values.is_empty()
+        && !bench
+            .sections
+            .iter()
+            .any(|section| bench_goto_flow(section).is_some())
+    {
+        "failed".clone_into(&mut summary.status);
+        summary
+            .diagnostics
+            .push("--value requires a measured goto Flow".to_owned());
+        return summary;
+    }
     let sections = bench
         .sections
         .iter()
@@ -138,13 +161,17 @@ fn bench_expectation_failures(
             )];
         }
     };
-    let entry = match bench_entry_for_flow(plan, &flow) {
-        Ok(entry) => entry,
+    match bench_entry_for_flow(plan, &flow) {
+        Ok(_) => {}
         Err(error) => return vec![error],
     };
-    let frames = run_runtime_steps(
-        plan.clone(),
-        &entry,
+    let invocation =
+        match seal_resolved_flow_invocation(plan.clone(), flow.clone(), &options.values) {
+            Ok(invocation) => invocation,
+            Err(_) => return vec!["bench assertion Flow inputs failed typed admission".to_owned()],
+        };
+    let frames = run_runtime_flow_steps(
+        invocation,
         NativeRunHost {
             source: Some(NativeRunSource::new(source_path, runtime.file_roots)),
             bundle_assets: Some(runtime.bundle_assets),
@@ -208,22 +235,6 @@ fn bench_assertion_expectation(section: &BenchSection) -> Result<&ScriptExpectat
     Ok(expectation)
 }
 
-fn run_bench_pure_helper_section(
-    section: &BenchSection,
-    validated: ScriptBenchSectionRunSummary,
-) -> ScriptBenchSectionRunSummary {
-    let Some(helper_name) = bench_pure_helper_name(section) else {
-        return validated;
-    };
-    ScriptBenchSectionRunSummary::new(
-        &section.name,
-        "skipped",
-        vec![format!(
-            "pure helper `{helper_name}` benchmark is unavailable until it can be driven by an admitted RuntimePlan helper"
-        )],
-    )
-}
-
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
     let [ScriptCommand::Pure { helper }] = section.body.as_slice() else {
         return None;
@@ -242,8 +253,8 @@ fn run_bench_section(
     if section.name != "measure" || validated.status != "validated" {
         return validated;
     }
-    if bench_pure_helper_name(section).is_some() {
-        return run_bench_pure_helper_section(section, validated);
+    if let Some(helper) = bench_pure_helper_name(section) {
+        return super::pure::run(section, &helper, validated, options, runtime);
     }
     let Some(flow) = bench_goto_flow(section) else {
         return validated;
@@ -280,8 +291,8 @@ fn run_bench_flow_section(
         }
     };
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
-    let entry = match bench_entry_for_flow(plan, &flow) {
-        Ok(entry) => entry,
+    match bench_entry_for_flow(plan, &flow) {
+        Ok(_) => {}
         Err(error) => {
             let mut summary = validated;
             "failed".clone_into(&mut summary.status);
@@ -289,9 +300,19 @@ fn run_bench_flow_section(
             return summary;
         }
     };
-    let pure_plan = Arc::new(plan.clone());
-    let executor_template =
-        RuntimeExecutorTemplate::new(Arc::clone(&pure_plan), entry, options.executor);
+    let invocation =
+        match seal_resolved_flow_invocation(plan.clone(), flow.clone(), &options.values) {
+            Ok(invocation) => invocation,
+            Err(_) => {
+                return ScriptBenchSectionRunSummary::new(
+                    &section.name,
+                    "failed",
+                    vec!["bench Flow inputs failed typed admission".to_owned()],
+                );
+            }
+        };
+    let pure_plan = Arc::clone(invocation.plan());
+    let executor_template = RuntimeExecutorTemplate::new(invocation, options.executor);
     let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();

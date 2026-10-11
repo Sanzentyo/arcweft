@@ -1322,8 +1322,7 @@ fn jit_check_json_uses_source_pure_helper() {
     let path = temp_arcw(
         "jit-pure-helper",
         r"
-#[pure]
-fn score(base: i64, bonus: i64, scale: i64) -> i64 {
+fn score(base: i64, bonus: i64, scale: i64) -> i64 effects {} {
     let boosted = bonus + 2
     let weighted = base * boosted
     let adjusted = -weighted / scale
@@ -1363,27 +1362,31 @@ fn score(base: i64, bonus: i64, scale: i64) -> i64 {
     );
 }
 
-#[test]
-fn run_json_uses_jit_for_runtime_pure_calls_without_arg_vec_allocation() {
-    let path = temp_arcw(
-        "runtime-pure-jit",
-        r"
-#[pure]
-fn score(base: i64, bonus: i64) -> i64 {
+const RUNTIME_PURE_JIT_SOURCE: &str = r"
+fn score(base: i64, bonus: i64) -> i64 effects {} {
     return base * (bonus + 2)
 }
 
-flow @flow.main main {
+entry cli @entry.cli.main { goto @flow.main }
+
+flow main() -> i64 effects {} {
     return score(3, 4)
 }
-",
-    );
+";
+
+#[test]
+fn run_json_uses_jit_for_runtime_pure_calls_without_arg_vec_allocation() {
+    let path = temp_arcw("runtime-pure-jit", RUNTIME_PURE_JIT_SOURCE);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.cli.main"])
         .arg("--json")
         .arg("--mode")
         .arg("drain")
+        // One caller dispatch and the original one-operation Return body.
+        .arg("--max-ops")
+        .arg("2")
         .arg("--steps")
         .arg("5")
         .arg("--pure-backend")
@@ -1404,14 +1407,27 @@ flow @flow.main main {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
     assert_eq!(json["final_status"], "done Return(\"18\")");
-    let pure = &json["steps"][0]["stats"]["pure"];
-    assert_eq!(pure["pure_calls"], 1);
-    assert_eq!(pure["jit_calls"], 1);
-    assert_eq!(pure["arg_stack_packs"], 0);
-    assert_eq!(pure["arg_vec_allocations"], 0);
-    assert_eq!(pure["arg_bytes_copied"], 0);
-    assert_eq!(pure["arg_bytes_borrowed"], 16);
-    assert_eq!(pure["result_bytes_copied"], 0);
+    let steps = json["steps"]
+        .as_array()
+        .expect("run output includes the runtime step deltas");
+    assert!(!steps.is_empty());
+    let pure_counter = |key: &str| {
+        steps
+            .iter()
+            .map(|step| {
+                step["stats"]["pure"][key]
+                    .as_u64()
+                    .expect("each step includes its typed runtime pure counter")
+            })
+            .sum::<u64>()
+    };
+    assert_eq!(pure_counter("pure_calls"), 1);
+    assert_eq!(pure_counter("jit_calls"), 1);
+    assert_eq!(pure_counter("arg_stack_packs"), 0);
+    assert_eq!(pure_counter("arg_vec_allocations"), 0);
+    assert_eq!(pure_counter("arg_bytes_copied"), 0);
+    assert_eq!(pure_counter("arg_bytes_borrowed"), 16);
+    assert_eq!(pure_counter("result_bytes_copied"), 0);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(json["executor_stats"]["pure_config"]["workers"]["fixed"], 1);
     assert_eq!(json["executor_stats"]["pure_config"]["resolved_workers"], 1);
@@ -1436,16 +1452,86 @@ flow @flow.main main {
 }
 
 #[test]
+fn run_json_retains_original_budget_and_one_op_scalar_continuations() {
+    let path = temp_arcw("runtime-pure-jit-budget", RUNTIME_PURE_JIT_SOURCE);
+    for backend in ["jit", "auto"] {
+        for mode in ["drain", "one-op"] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
+            command
+                .arg("run")
+                .arg(&path)
+                .args(["--entry", "entry.cli.main"])
+                .arg("--json")
+                .args(["--mode", mode])
+                .args(["--steps", "5"])
+                .args(["--pure-backend", backend])
+                .args(["--pure-workers", "1"]);
+            if mode == "one-op" {
+                // The mode owns suspension after one op even with enough cost.
+                command.args(["--max-ops", "2"]);
+            }
+            // Drain intentionally retains the original omitted max_ops=1.
+            let output = command.output().expect("run original bounded source");
+            assert!(
+                output.status.success(),
+                "{backend}/{mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(json["final_status"], "done Return(\"18\")");
+            let steps = json["steps"].as_array().expect("actual step deltas");
+            assert!(
+                steps.len() > 1,
+                "the original call remains resumable: {json}"
+            );
+            let pure_counter = |key: &str| {
+                steps
+                    .iter()
+                    .map(|step| {
+                        step["stats"]["pure"][key]
+                            .as_u64()
+                            .expect("every step has the actual u64 counter")
+                    })
+                    .sum::<u64>()
+            };
+            for step in steps {
+                assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= 1);
+                assert_eq!(step["diagnostics"], serde_json::json!([]));
+            }
+            assert_eq!(pure_counter("pure_calls"), 1, "semantic interpreted call");
+            assert_eq!(pure_counter("vm_calls"), 1);
+            assert_eq!(pure_counter("jit_calls"), 0);
+            assert_eq!(pure_counter("aot_calls"), 0);
+            assert_eq!(pure_counter("arg_bytes_borrowed"), 0);
+            let prepared = &json["executor_stats"]["pure_compile"];
+            assert_eq!(prepared["auto_jit_promotions"], 0);
+            if backend == "jit" {
+                assert_eq!(prepared["jit_attempts"], 1, "explicit JIT preparation");
+                assert_eq!(prepared["jit_successes"], 1);
+            } else {
+                assert_eq!(prepared["jit_attempts"], 0);
+                assert_eq!(prepared["jit_successes"], 0);
+                assert_eq!(
+                    prepared["aot_successes"], 1,
+                    "Auto retains its prepared baseline"
+                );
+            }
+        }
+    }
+    fs::remove_file(path).expect("remove original bounded source");
+}
+#[test]
 fn run_json_can_record_aot_object_artifact_stats_when_requested() {
     let path = temp_arcw(
         "runtime-aot-object-artifacts",
         r"
-#[pure]
-fn score(base: i32, bonus: i32) -> i32 {
+fn score(base: i32, bonus: i32) -> i32 effects {} {
     return base * (bonus + 2i32)
 }
 
-flow @flow.main main {
+entry cli @entry.cli.main { goto @flow.main }
+
+flow main() -> i32 effects {} {
     return score(3i32, 4i32)
 }
 ",
@@ -1453,6 +1539,7 @@ flow @flow.main main {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.cli.main"])
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -1492,17 +1579,14 @@ flow @flow.main main {
     );
 }
 
-#[test]
-fn run_json_uses_jit_for_for_loop_pure_calls_without_arg_vec_allocation() {
-    let path = temp_arcw(
-        "runtime-for-pure-jit",
-        r#"
-#[pure]
-fn score(base: i64, bonus: i64) -> i64 {
+const RUNTIME_FOR_PURE_JIT_SOURCE: &str = r#"
+fn score(base: i64, bonus: i64) -> i64 effects {} {
     return base * (bonus + 2i64)
 }
 
-flow @flow.for_pure for_pure {
+entry cli @entry.cli.main { goto @flow.for_pure }
+
+flow for_pure() -> String effects { log.write } {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let scored = score(item, 2i64)
@@ -1510,14 +1594,19 @@ flow @flow.for_pure for_pure {
     }
     return "done"
 }
-"#,
-    );
+"#;
+
+#[test]
+fn run_json_uses_jit_for_for_loop_pure_calls_without_arg_vec_allocation() {
+    let path = temp_arcw("runtime-for-pure-jit", RUNTIME_FOR_PURE_JIT_SOURCE);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .args(["--entry", "entry.cli.main"])
         .arg("--mode")
-        .arg("one-op")
+        .arg("drain")
+        .args(["--max-ops", "64"])
         .arg("--steps")
         .arg("32")
         .arg("--pure-backend")
@@ -1534,20 +1623,336 @@ flow @flow.for_pure for_pure {
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
     assert_eq!(json["final_status"], "done Return(\"done\")");
-    let pure_calls = sum_step_pure_counter(&json, "pure_calls");
-    assert_eq!(pure_calls, 4);
-    assert_eq!(sum_step_pure_counter(&json, "jit_calls"), 4);
-    assert_eq!(sum_step_pure_counter(&json, "arg_stack_packs"), 0);
-    assert_eq!(sum_step_pure_counter(&json, "arg_vec_allocations"), 0);
-    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_copied"), 0);
-    assert_eq!(sum_step_pure_counter(&json, "arg_bytes_borrowed"), 64);
-    assert_eq!(sum_step_pure_counter(&json, "result_bytes_copied"), 0);
+    let steps = json["steps"]
+        .as_array()
+        .expect("run output includes the runtime step deltas");
+    assert!(!steps.is_empty());
+    let pure_counter = |key: &str| {
+        steps
+            .iter()
+            .map(|step| {
+                step["stats"]["pure"][key]
+                    .as_u64()
+                    .expect("each step includes its typed runtime pure counter")
+            })
+            .sum::<u64>()
+    };
+    assert_eq!(pure_counter("pure_calls"), 4);
+    assert_eq!(pure_counter("jit_calls"), 4);
+    assert_eq!(pure_counter("arg_stack_packs"), 0);
+    assert_eq!(pure_counter("arg_vec_allocations"), 0);
+    assert_eq!(pure_counter("arg_bytes_copied"), 0);
+    assert_eq!(pure_counter("arg_bytes_borrowed"), 64);
+    assert_eq!(pure_counter("result_bytes_copied"), 0);
     assert_eq!(json["executor_stats"]["pure_config"]["backend"], "jit");
     assert_eq!(
         json["executor_stats"]["pure_config"]["worker_pool_active"],
         false
     );
     assert_eq!(json["executor_stats"]["pure_compile"]["jit_successes"], 1);
+}
+
+#[test]
+fn run_json_retains_original_for_loop_one_op_budget_and_workload() {
+    let path = temp_arcw("runtime-for-pure-jit-original", RUNTIME_FOR_PURE_JIT_SOURCE);
+    for backend in ["jit", "auto"] {
+        for mode in ["one-op", "drain"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+                .arg("run")
+                .arg(&path)
+                .args(["--entry", "entry.cli.main", "--json"])
+                .args(["--mode", mode, "--steps", "32"])
+                .args(["--pure-backend", backend])
+                // Keep the original omitted max_ops=1 for the same four rows.
+                .output()
+                .expect("original bounded for-loop executes");
+            assert!(
+                output.status.success(),
+                "{backend}/{mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(json["final_status"], "done Return(\"done\")", "{json}");
+            let steps = json["steps"].as_array().expect("actual step deltas");
+            assert!(steps.len() > 1 && steps.len() <= 32, "{json}");
+            for step in steps {
+                assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= 1);
+                assert_eq!(step["diagnostics"], serde_json::json!([]));
+            }
+            let pure_counter = |key: &str| {
+                steps
+                    .iter()
+                    .map(|step| step["stats"]["pure"][key].as_u64().unwrap())
+                    .sum::<u64>()
+            };
+            assert_eq!(pure_counter("pure_calls"), 4);
+            assert_eq!(pure_counter("vm_calls"), 4);
+            assert_eq!(pure_counter("jit_calls"), 0);
+            assert_eq!(pure_counter("aot_calls"), 0);
+            assert_eq!(pure_counter("arg_stack_packs"), 0);
+            assert_eq!(pure_counter("arg_vec_allocations"), 0);
+            assert_eq!(pure_counter("arg_bytes_copied"), 0);
+            assert_eq!(pure_counter("arg_bytes_borrowed"), 0);
+            assert_eq!(pure_counter("result_bytes_copied"), 0);
+        }
+    }
+    fs::remove_file(path).expect("remove original bounded for-loop source");
+}
+
+mod standalone_pure_batch_owner_tests {
+    use arcweft_core::pure::{RuntimePureCallBackend, RuntimePureFunctionRef};
+    use arcweft_core::step::RuntimeStepBudget;
+    use arcweft_core::value::RuntimeEvalError;
+    use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureBackendMode};
+
+    fn selected(source: &str) -> arcweft_compiler::project::CompiledDeterministicFunction {
+        let compiled = arcweft_compiler::source::compile_source(source).unwrap();
+        compiled
+            .analysis
+            .compile_deterministic_function(
+                Some("score"),
+                &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+            )
+            .unwrap()
+    }
+
+    const DIRECT: &str = r"
+fn score(base: i64, unused: i64) -> i64 effects {} {
+    let value = base + 4i64
+    return value + unused
+}
+";
+    const NESTED: &str = r"
+fn inner(base: i64) -> i64 effects {} { return base + 4i64 }
+fn score(base: i64, unused: i64) -> i64 effects {} {
+    let value = inner(base)
+    return value + unused
+}
+";
+
+    #[test]
+    fn standalone_batch_original_control_cost_bounds_vm_aot_jit_auto_before_completion() {
+        let selected = selected(DIRECT);
+        let program = selected.program();
+        let function =
+            RuntimePureFunctionRef::resolve(program.plan(), program.function_site().unwrap())
+                .unwrap();
+        assert!(function.body.is_executable());
+        let cost = function.total_numeric_completion_control_ops().unwrap();
+        assert!(cost > 0);
+        for mode in [
+            RuntimePureBackendMode::Vm,
+            RuntimePureBackendMode::Aot,
+            RuntimePureBackendMode::Jit,
+            RuntimePureBackendMode::Auto,
+        ] {
+            let mut backend = RuntimePureAccelerator::new(mode, program.plan());
+            let mut complete = [-1_i64; 3];
+            backend
+                .call_i64_flat_batch_invocations(
+                    function,
+                    &[1, 40, 2, 30, 3, 20],
+                    2,
+                    &mut complete,
+                    RuntimeStepBudget { max_ops: cost },
+                )
+                .unwrap();
+            assert_eq!(complete, [45, 36, 27]);
+            assert_eq!(backend.stats().pure_calls, 3);
+            match mode {
+                RuntimePureBackendMode::Vm => assert_eq!(backend.stats().vm_calls, 3),
+                RuntimePureBackendMode::Aot => assert_eq!(backend.stats().aot_calls, 3),
+                RuntimePureBackendMode::Jit => assert_eq!(backend.stats().jit_calls, 3),
+                RuntimePureBackendMode::Auto => {
+                    assert_eq!(backend.stats().aot_calls + backend.stats().jit_calls, 3,)
+                }
+            }
+            backend.reset_runtime_counters();
+            let mut denied = [91, 92, 93];
+            let error = backend
+                .call_i64_flat_batch_invocations(
+                    function,
+                    &[1, 40, 2, 30, 3, 20],
+                    2,
+                    &mut denied,
+                    RuntimeStepBudget { max_ops: cost - 1 },
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error, RuntimeEvalError::UnsupportedPure { ref reason, .. }
+                if reason.contains("exhausted its explicit"))
+            );
+            assert_eq!(denied, [91, 92, 93]);
+            assert_eq!(backend.stats().pure_calls, 1);
+            assert_eq!(backend.stats().vm_calls, 1);
+            assert_eq!(backend.stats().aot_calls, 0);
+            assert_eq!(backend.stats().jit_calls, 0);
+            assert_eq!(backend.stats().result_bytes_copied, 0);
+        }
+    }
+
+    #[test]
+    fn standalone_batch_nested_control_uses_bounded_vm_on_explicit_aot_auto_decline() {
+        let selected = selected(NESTED);
+        let program = selected.program();
+        let function =
+            RuntimePureFunctionRef::resolve(program.plan(), program.function_site().unwrap())
+                .unwrap();
+        assert!(function.body.is_executable());
+        assert_eq!(function.total_numeric_completion_control_ops(), None);
+        for mode in [
+            RuntimePureBackendMode::Vm,
+            RuntimePureBackendMode::Aot,
+            RuntimePureBackendMode::Auto,
+        ] {
+            let mut backend = RuntimePureAccelerator::new(mode, program.plan());
+            let mut out = [0_i64; 3];
+            backend
+                .call_i64_flat_batch_invocations(
+                    function,
+                    &[1, 40, 2, 30, 3, 20],
+                    2,
+                    &mut out,
+                    RuntimeStepBudget { max_ops: 64 },
+                )
+                .unwrap();
+            assert_eq!(out, [45, 36, 27]);
+            assert_eq!(backend.stats().pure_calls, 3);
+            assert_eq!(backend.stats().vm_calls, 3);
+            assert_eq!(backend.stats().aot_calls, 0);
+            assert_eq!(backend.stats().jit_calls, 0);
+            backend.reset_runtime_counters();
+            let error = backend
+                .call_i64_flat_batch_invocations(
+                    function,
+                    &[1, 40, 2, 30, 3, 20],
+                    2,
+                    &mut out,
+                    RuntimeStepBudget { max_ops: 0 },
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error, RuntimeEvalError::UnsupportedPure { ref reason, .. }
+                if reason.contains("exhausted its explicit 0-operation budget"))
+            );
+            assert_eq!(out, [45, 36, 27]);
+            assert_eq!(backend.stats().pure_calls, 1);
+            assert_eq!(backend.stats().vm_calls, 1);
+            assert_eq!(backend.stats().result_bytes_copied, 0);
+        }
+    }
+
+    #[test]
+    fn standalone_batch_mapping_fault_preserves_completed_prefix_without_native_retry() {
+        let selected = selected(
+            r"
+fn score(base: i64, divisor: i64) -> i64 effects {} { return base / divisor }
+",
+        );
+        let program = selected.program();
+        let function =
+            RuntimePureFunctionRef::resolve(program.plan(), program.function_site().unwrap())
+                .unwrap();
+        assert_eq!(function.total_numeric_completion_control_ops(), None);
+        let budget = RuntimeStepBudget { max_ops: 64 };
+        let request = arcweft_core::pure::PureFunctionRequest::try_new(
+            std::sync::Arc::clone(program.plan()),
+            function.id(),
+            [
+                arcweft_core::value::RuntimeValue::i64(8),
+                arcweft_core::value::RuntimeValue::i64(0),
+            ],
+        )
+        .unwrap();
+        let expected = arcweft_core::pure::VmPureFunctionBackend
+            .evaluate_invocation(&request, budget)
+            .unwrap_err();
+        assert!(
+            matches!(&expected, RuntimeEvalError::UnsupportedPure { reason, .. }
+            if reason.contains("division by zero"))
+        );
+        for mode in [
+            RuntimePureBackendMode::Vm,
+            RuntimePureBackendMode::Aot,
+            RuntimePureBackendMode::Jit,
+            RuntimePureBackendMode::Auto,
+        ] {
+            let mut backend = RuntimePureAccelerator::new(mode, program.plan());
+            let mut out = [91_i64, 92, 93];
+            let error = backend
+                .call_i64_flat_batch_invocations(function, &[9, 3, 8, 0, 7, 1], 2, &mut out, budget)
+                .unwrap_err();
+            assert_eq!(error, expected);
+            assert_eq!(out, [3, 92, 93]);
+            assert_eq!(backend.stats().pure_calls, 2);
+            assert_eq!(backend.stats().vm_calls, 2);
+            assert_eq!(backend.stats().aot_calls, 0);
+            assert_eq!(backend.stats().jit_calls, 0);
+            assert_eq!(backend.stats().result_bytes_copied, 8);
+        }
+    }
+
+    #[test]
+    fn standalone_batch_foreign_plan_and_incomplete_formals_reject_before_execution() {
+        let first = selected(DIRECT);
+        let second = selected(DIRECT);
+        let function = RuntimePureFunctionRef::resolve(
+            first.program().plan(),
+            first.program().function_site().unwrap(),
+        )
+        .unwrap();
+        let foreign = RuntimePureFunctionRef::resolve(
+            second.program().plan(),
+            second.program().function_site().unwrap(),
+        )
+        .unwrap();
+        let mut backend =
+            RuntimePureAccelerator::new(RuntimePureBackendMode::Vm, first.program().plan());
+        let mut out = [91_i64; 1];
+        assert!(matches!(backend.call_i64_flat_batch_invocations(
+            foreign, &[1, 40], 2, &mut out, RuntimeStepBudget { max_ops: 64 },
+        ), Err(RuntimeEvalError::UnsupportedPure { reason, .. })
+            if reason == "standalone batch belongs to another admitted plan"));
+        assert_eq!(out, [91]);
+        assert_eq!(backend.stats().pure_calls, 0);
+        assert!(matches!(backend.call_i64_flat_batch_invocations(
+            function, &[1], 1, &mut out, RuntimeStepBudget { max_ops: 64 },
+        ), Err(RuntimeEvalError::UnsupportedPure { reason, .. })
+            if reason == "standalone batch requires the complete direct i64 function ABI"));
+        assert_eq!(out, [91]);
+        assert_eq!(backend.stats().pure_calls, 0);
+    }
+
+    #[test]
+    fn compiler_named_function_query_uses_one_checked_root_and_strict_uniqueness() {
+        let source = r"
+fn score(base: i64, unused: i64) -> i64 { return base + unused }
+fn other() -> i64 { return 2i64 }
+";
+        let compiled = arcweft_compiler::source::compile_source(source).unwrap();
+        let control = arcweft_compiler::lower::ProjectInstantiationControl::default();
+        let selected = compiled
+            .analysis
+            .compile_deterministic_function(Some("score"), &control)
+            .unwrap();
+        assert_eq!(selected.name(), "score");
+        assert_eq!(selected.input_labels(), ["base", "unused"]);
+        assert!(selected.program().plan().pure_helpers().is_empty());
+        assert_eq!(selected.program().plan().pure_programs().len(), 1);
+        assert!(selected.program().plan().entries().is_empty());
+        assert!(matches!(
+            compiled
+                .analysis
+                .compile_deterministic_function(Some("missing"), &control),
+            Err(arcweft_compiler::project::DeterministicFunctionCompileError::Missing { .. })
+        ));
+        assert!(matches!(
+            compiled
+                .analysis
+                .compile_deterministic_function(None, &control),
+            Err(arcweft_compiler::project::DeterministicFunctionCompileError::Ambiguous { .. })
+        ));
+    }
 }
 
 mod scalar_live_budget_owner_tests {
@@ -1618,7 +2023,7 @@ flow main() -> String { return "ok" }
     fn until_call(engine: &mut Engine, backend: &mut impl arcweft_core::pure::RuntimeCallBackend) {
         for _ in 0..64 {
             if matches!(
-                engine.fiber().pending_ops.front(),
+                engine.fiber().frame.pending_ops.front(),
                 Some(FlowOp::ProjectCall { .. })
             ) {
                 return;
@@ -1665,6 +2070,140 @@ flow main() -> String { return "ok" }
         panic!("the bounded source invocation must complete");
     }
 
+    #[test]
+    fn single_return_source_call_span_is_exactly_dispatch_plus_original_return() {
+        let selected = source_program(
+            r#"
+fn score(base: i64, bonus: i64) -> i64 effects {} {
+    return base * (bonus + 2)
+}
+pub fn root(value: i64, unused: i64) -> i64 effects {} {
+    let result = score(value, 4)
+    return result
+}
+flow main() -> String { return "ok" }
+"#,
+        );
+        let mut probe = native(&selected, 3);
+        let mut vm = VmRuntimePureCallBackend::default();
+        until_call(&mut probe, &mut vm);
+        let Some(FlowOp::ProjectCall { site }) = probe.fiber().frame.pending_ops.front() else {
+            panic!("original checked source call")
+        };
+        let result = selected
+            .plan()
+            .project_call_sites()
+            .get(*site)
+            .unwrap()
+            .result()
+            .binding_declarations()
+            .next()
+            .unwrap()
+            .local();
+        assert!(probe.fiber().frame.env.get(result).is_none());
+        for _ in 0..2 {
+            let step = probe.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::OneOp,
+                    budget: RuntimeStepBudget { max_ops: 2 },
+                    ..Default::default()
+                },
+                &mut vm,
+            );
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            assert_eq!(step.stats.executed_ops, 1);
+        }
+        assert_eq!(
+            probe.fiber().frame.env.get(result),
+            Some(&RuntimeValue::i64(18))
+        );
+        for mode in [RuntimePureBackendMode::Aot, RuntimePureBackendMode::Jit] {
+            let mut engine = native(&selected, 3);
+            let mut physical = RuntimePureAccelerator::new(mode, selected.plan());
+            until_call(&mut engine, &mut physical);
+            let step = engine.step_with_pure_backend(
+                Default::default(),
+                RuntimeStepOptions {
+                    mode: RuntimeStepMode::Drain,
+                    budget: RuntimeStepBudget { max_ops: 2 },
+                    ..Default::default()
+                },
+                &mut physical,
+            );
+            assert!(step.output.diagnostics.is_empty(), "{step:?}");
+            assert_eq!(step.stats.executed_ops, 2);
+            assert_eq!(
+                engine.fiber().frame.env.get(result),
+                Some(&RuntimeValue::i64(18))
+            );
+            assert_eq!(physical.stats().pure_calls, 1);
+            assert_eq!(physical.stats().aot_calls + physical.stats().jit_calls, 1);
+            assert_eq!(physical.stats().arg_bytes_borrowed, 16);
+            assert_eq!(physical.stats().arg_vec_allocations, 0);
+            assert_eq!(physical.stats().arg_bytes_copied, 0);
+        }
+        for options in [
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::Drain,
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::OneOp,
+                budget: RuntimeStepBudget { max_ops: 2 },
+                ..Default::default()
+            },
+        ] {
+            for mode in [RuntimePureBackendMode::Auto, RuntimePureBackendMode::Jit] {
+                let mut backend = RuntimePureAccelerator::new(mode, selected.plan());
+                let (value, executed) = finish(&mut native(&selected, 3), &mut backend, options);
+                assert_eq!(value, RuntimeValue::i64(18));
+                assert!(executed > 1);
+                assert_eq!(backend.stats().jit_calls + backend.stats().aot_calls, 0);
+            }
+            let mut plan = selected.plan().as_ref().clone();
+            plan.bind_artifact(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([84; 32]).unwrap(),
+            )
+            .unwrap();
+            let product = Arc::new(
+                arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+                    &plan,
+                    &selected.lowering_report().dialogue_content_catalog,
+                    "single-return-budget.arcw",
+                )
+                .lower()
+                .unwrap()
+                .program,
+            );
+            let mut executor =
+                arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
+                    product,
+                    selected.program(),
+                    vec![RuntimeValue::i64(3), RuntimeValue::i64(77)],
+                    arcweft_core::task::GenerationId::new(0),
+                    1,
+                )
+                .unwrap();
+            let mut backend = VmRuntimePureCallBackend::default();
+            let mut observed = None;
+            for _ in 0..128 {
+                let step =
+                    executor.step_with_pure_backend(Default::default(), options, &mut backend);
+                assert!(step.output.diagnostics.is_empty(), "{step:?}");
+                assert!(step.stats.executed_ops <= 1);
+                if let Some((program, value)) = executor.take_program_result().unwrap() {
+                    assert_eq!(program, selected.program());
+                    observed = Some(value);
+                    break;
+                }
+            }
+            assert_eq!(observed, Some(RuntimeValue::i64(18)));
+            assert_eq!(backend.stats().jit_calls + backend.stats().aot_calls, 0);
+            assert!(executor.take_program_result().unwrap().is_none());
+        }
+    }
     #[test]
     fn physical_source_body_charges_the_same_native_driver_control_ops() {
         let selected = source_program(SOURCE);
@@ -1954,7 +2493,7 @@ flow main() -> String { return "ok" }
         let mut probe = native(&selected, 3);
         let mut vm = VmRuntimePureCallBackend::default();
         until_call(&mut probe, &mut vm);
-        let Some(FlowOp::ProjectCall { site }) = probe.fiber().pending_ops.front() else {
+        let Some(FlowOp::ProjectCall { site }) = probe.fiber().frame.pending_ops.front() else {
             panic!("accepted caller dispatch")
         };
         let result_local = selected
@@ -1967,7 +2506,7 @@ flow main() -> String { return "ok" }
             .next()
             .unwrap()
             .local();
-        assert!(probe.fiber().env.get(result_local).is_none());
+        assert!(probe.fiber().frame.env.get(result_local).is_none());
         let mut call_span = 0_usize;
         for _ in 0..64 {
             let step = probe.step_with_pure_backend(
@@ -1981,12 +2520,12 @@ flow main() -> String { return "ok" }
             );
             assert!(step.output.diagnostics.is_empty(), "{step:?}");
             call_span += step.stats.executed_ops;
-            if probe.fiber().env.get(result_local).is_some() {
+            if probe.fiber().frame.env.get(result_local).is_some() {
                 break;
             }
         }
         assert!(
-            probe.fiber().env.get(result_local).is_some(),
+            probe.fiber().frame.env.get(result_local).is_some(),
             "the original call must publish its owned result before the probe stops"
         );
         assert!(

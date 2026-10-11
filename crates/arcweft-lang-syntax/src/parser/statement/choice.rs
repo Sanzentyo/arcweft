@@ -507,7 +507,13 @@ fn emit_choice_item(
 ) {
     match parser.current_text() {
         Some("let") => {
-            emit_statement_with_role(parser, end, item_kind, SyntaxRole::ChoiceItem(ordinal));
+            emit_statement_with_role(
+                parser,
+                end,
+                item_kind,
+                SyntaxRole::ChoiceItem(ordinal),
+                super::StatementBodyContext::Ordinary,
+            );
         }
         Some("if") => emit_choice_if(parser, end, item_kind, SyntaxRole::ChoiceItem(ordinal)),
         Some("for") => emit_choice_for(parser, end, item_kind, ordinal),

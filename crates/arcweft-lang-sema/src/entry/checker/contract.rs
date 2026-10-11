@@ -414,6 +414,7 @@ impl<'a> EntryContractBuilder<'a> {
             TypeKind::USize => CanonicalType::Atomic(CanonicalAtomic::USize),
             TypeKind::F32 => CanonicalType::Atomic(CanonicalAtomic::F32),
             TypeKind::F64 => CanonicalType::Atomic(CanonicalAtomic::F64),
+            TypeKind::DenseNumeric(ty) => CanonicalType::DenseNumeric(*ty),
             TypeKind::String => CanonicalType::Atomic(CanonicalAtomic::String),
             TypeKind::Char => CanonicalType::Atomic(CanonicalAtomic::Char),
             TypeKind::Bytes => CanonicalType::Atomic(CanonicalAtomic::Bytes),

@@ -40,6 +40,8 @@ use std::sync::Arc;
 
 pub(super) struct ProductActivationProgress {
     pub(super) progressed: bool,
+    /// Caller-budget charge for this committed activation operation.
+    pub(super) executed_ops: usize,
     pub(super) presented: Option<crate::plan::FlowEvent>,
     pub(super) reducer: LineTaskActivation,
     pub(super) pure_stats: Option<crate::step::RuntimePureCallStats>,
@@ -1084,6 +1086,7 @@ impl super::AwbcProductStepExecutor {
         if has_pending_operation && self.resume_pending_line_operation(transaction, &outcomes)? {
             return Ok(ProductActivationProgress {
                 progressed: true,
+                executed_ops: 1,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: None,
@@ -1096,6 +1099,7 @@ impl super::AwbcProductStepExecutor {
             if outcomes.is_empty() {
                 return Ok(ProductActivationProgress {
                     progressed: false,
+                    executed_ops: 0,
                     presented: None,
                     reducer: LineTaskActivation::default(),
                     pure_stats: None,
@@ -1111,6 +1115,7 @@ impl super::AwbcProductStepExecutor {
             settle_scoped_defer_releases(transaction);
             return Ok(ProductActivationProgress {
                 progressed: true,
+                executed_ops: 1,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: None,
@@ -1159,6 +1164,7 @@ impl super::AwbcProductStepExecutor {
             | ProductDialoguePhase::Transitioning => {
                 return Ok(ProductActivationProgress {
                     progressed: false,
+                    executed_ops: 0,
                     presented: None,
                     reducer: LineTaskActivation::default(),
                     pure_stats: None,
@@ -1171,6 +1177,7 @@ impl super::AwbcProductStepExecutor {
         if fiber_has_scoped_defer_inflight(before) {
             return Ok(ProductActivationProgress {
                 progressed: false,
+                executed_ops: 0,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: None,
@@ -1524,12 +1531,14 @@ impl super::AwbcProductStepExecutor {
                         }
                     };
                     let progressed = pending_operation.is_none();
+                    let executed_ops = usize::from(step.executed > 0);
                     frame.phase = ProductDialoguePhase::Activating {
                         fiber: candidate.take().expect("activation fiber remains owned"),
                         pending: pending_operation,
                     };
                     Ok(ProductActivationProgress {
                         progressed,
+                        executed_ops,
                         presented: None,
                         reducer: LineTaskActivation::default(),
                         pure_stats: Some(candidate_stats),
@@ -1581,6 +1590,7 @@ impl super::AwbcProductStepExecutor {
                         };
                         Ok(ProductActivationProgress {
                             progressed: true,
+                            executed_ops: usize::from(step.executed > 0),
                             presented: None,
                             reducer: LineTaskActivation::default(),
                             pure_stats: Some(candidate_stats),
@@ -1596,6 +1606,7 @@ impl super::AwbcProductStepExecutor {
                         };
                         Ok(ProductActivationProgress {
                             progressed: true,
+                            executed_ops: 1,
                             presented: None,
                             reducer: LineTaskActivation::default(),
                             pure_stats: Some(candidate_stats),
@@ -1637,6 +1648,7 @@ impl super::AwbcProductStepExecutor {
                         };
                         Ok(ProductActivationProgress {
                             progressed: false,
+                            executed_ops: usize::from(step.executed > 0),
                             presented: None,
                             reducer: LineTaskActivation::default(),
                             pure_stats: Some(candidate_stats),
@@ -1710,6 +1722,7 @@ impl super::AwbcProductStepExecutor {
                 self.activation_host_call_request(pending.call, &args, Some(pending.clone()))?;
             return Ok(ProductActivationProgress {
                 progressed: false,
+                executed_ops: 0,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: None,
@@ -1763,6 +1776,7 @@ impl super::AwbcProductStepExecutor {
         };
         Ok(ProductActivationProgress {
             progressed: true,
+            executed_ops: 1,
             presented: None,
             reducer: LineTaskActivation::default(),
             pure_stats: None,
@@ -2941,6 +2955,7 @@ impl super::AwbcProductStepExecutor {
         fiber.commit_yielded_instruction_prepared(yielded);
         Ok(ProductActivationProgress {
             progressed: true,
+            executed_ops: 1,
             presented: None,
             reducer: LineTaskActivation::default(),
             pure_stats: None,
@@ -2967,6 +2982,7 @@ impl super::AwbcProductStepExecutor {
         if fiber_has_scoped_defer_inflight(fiber) {
             return Ok(ProductActivationProgress {
                 progressed: false,
+                executed_ops: 0,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: None,
@@ -3004,6 +3020,7 @@ impl super::AwbcProductStepExecutor {
                 )?;
                 return Ok(ProductActivationProgress {
                     progressed: true,
+                    executed_ops: 1,
                     presented: None,
                     reducer: LineTaskActivation::default(),
                     pure_stats: Some(self.compact_pure_stats),
@@ -3041,6 +3058,7 @@ impl super::AwbcProductStepExecutor {
             }
             return Ok(ProductActivationProgress {
                 progressed: true,
+                executed_ops: 1,
                 presented: None,
                 reducer: LineTaskActivation::default(),
                 pure_stats: Some(self.compact_pure_stats),
@@ -3222,6 +3240,7 @@ impl super::AwbcProductStepExecutor {
         frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
             progressed: true,
+            executed_ops: 1,
             presented: Some(build_dialogue_line_event(
                 &self.program,
                 activation.clone(),
@@ -3594,7 +3613,7 @@ fn awbc_formatter_handle_owners(
     Ok(owners)
 }
 
-fn fiber_has_scoped_defer_inflight(fiber: &FiberState) -> bool {
+pub(super) fn fiber_has_scoped_defer_inflight(fiber: &FiberState) -> bool {
     fiber
         .frames
         .iter()

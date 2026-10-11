@@ -115,6 +115,22 @@ impl ProjectAnalysisLease {
             .sum()
     }
 
+    /// Selects one checked deterministic declaration from this same semantic
+    /// generation, then compiles its complete original function ABI.
+    ///
+    /// # Errors
+    ///
+    /// Rejects missing or ambiguous selectors, nondeterministic checked roots,
+    /// catalog mismatches, and failed original-root compilation.
+    pub fn compile_deterministic_function(
+        &self,
+        name: Option<&str>,
+        control: &crate::lower::ProjectInstantiationControl,
+    ) -> Result<super::CompiledDeterministicFunction, super::DeterministicFunctionCompileError>
+    {
+        super::deterministic::compile(self, name, control)
+    }
+
     /// Compiles an admitted value or body root using this exact semantic
     /// generation and its complete free-input/whole-formal execution ABI.
     pub fn compile_deterministic_program(

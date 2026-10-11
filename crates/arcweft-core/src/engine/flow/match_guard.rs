@@ -36,7 +36,7 @@ impl Engine {
                 &self.plan,
                 &arm.pattern,
                 &value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )? {
                 continue;
             }
@@ -46,7 +46,7 @@ impl Engine {
                     &arm.pattern,
                     &value,
                     &guard.copy_locals,
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )?
                 .expect("inspected guarded pattern remains matched");
                 let Some(token) = self.push_control_scope_frame() else {
@@ -54,9 +54,9 @@ impl Engine {
                         "native control scope identity capacity exhausted".into(),
                     ));
                 };
-                self.fiber.env.set(guard.candidate, value);
-                self.fiber.env.bind_all(bindings);
-                let Some(entry) = self.fiber.control_stack.last_mut() else {
+                self.fiber.frame.env.set(guard.candidate, value);
+                self.fiber.frame.env.bind_all(bindings);
+                let Some(entry) = self.fiber.frame.control_stack.last_mut() else {
                     unreachable!("guard scope was just pushed")
                 };
                 let FlowControlStackEntryKind::Scope { match_guard, .. } = &mut entry.kind else {
@@ -68,10 +68,11 @@ impl Engine {
                     next_arm: index + 1,
                 });
                 self.fiber
+                    .frame
                     .pending_ops
                     .push_front(FlowOp::ExitScheduledScope { token });
                 for op in guard.ops.iter().rev() {
-                    self.fiber.pending_ops.push_front(op.clone());
+                    self.fiber.frame.pending_ops.push_front(op.clone());
                 }
                 return Ok(());
             }
@@ -79,7 +80,7 @@ impl Engine {
                 &self.plan,
                 &arm.pattern,
                 value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )?
             .expect("inspected owned pattern remains matched");
             self.push_scoped_ops_with_bindings(bindings, arm.ops.clone());
@@ -99,6 +100,7 @@ impl Engine {
     ) -> bool {
         let continuation =
             self.fiber
+                .frame
                 .control_stack
                 .last_mut()
                 .and_then(|entry| match &mut entry.kind {
@@ -128,6 +130,7 @@ impl Engine {
         };
         let value = self
             .fiber
+            .frame
             .env
             .take(continuation.candidate)
             .ok_or(RuntimeEvalError::UninitializedLocal(continuation.candidate));
@@ -138,7 +141,7 @@ impl Engine {
                     &self.plan,
                     &arm.pattern,
                     value,
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )?
                 .expect("inspected owned pattern remains matched");
                 self.push_scoped_ops_with_bindings(bindings, arm.ops.clone());

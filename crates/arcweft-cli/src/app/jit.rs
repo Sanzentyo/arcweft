@@ -19,7 +19,7 @@ use arcweft_core::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
         PureFunctionResult, PureFunctionStats, RuntimeI64Args, RuntimePureFunctionBodyRef,
         RuntimePureFunctionId, RuntimePureFunctionInputs, RuntimePureFunctionRef,
-        VmPureFunctionBackend, VmPureFunctionScratch,
+        VmPureFunctionBackend,
     },
     value::{
         DenseSeq, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeExpr,
@@ -144,6 +144,7 @@ pub(in crate::app) struct JitCheckReport {
     input_bindings: Vec<String>,
     dynamic_inputs: bool,
     input_seed: u64,
+    pub(in crate::app) vm_max_ops: usize,
     host_system: HostSystemInfo,
     vm_backend: String,
     aot_backend: String,
@@ -260,6 +261,8 @@ impl From<&JitCheckReport> for ScriptBenchPureHelperMeasurementSummary {
         Self {
             host_system: host_system_info(),
             helper: report.helper.clone(),
+            input_seed: report.input_seed,
+            vm_max_ops: report.vm_max_ops,
             input_bindings: report.input_bindings.clone(),
             matches_vm: report.matches_vm,
             warmup: report.warmup,
@@ -452,7 +455,10 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 
     let target = jit_check_target(options)?;
-    let report = run_jit_check(options, &target)?;
+    let report = run_jit_check(options, &target).map_err(|error| {
+        eprintln!("error: {error}");
+        error.exit_code()
+    })?;
 
     if options.json {
         print_json(&report)?;
@@ -467,10 +473,53 @@ fn jit_check_command(options: &JitCheckOptions) -> Result<(), ExitCode> {
     }
 }
 
+/// Adapter failures retain the owning runtime/native error; requested
+/// measurements never turn an invocation failure into a skipped section.
+#[derive(Debug, thiserror::Error)]
+pub(in crate::app) enum PureMeasurementError {
+    #[error("invalid pure measurement workload: {0}")]
+    InvalidWorkload(&'static str),
+    #[error("function {name} requires a complete direct i64 ABI of at most four inputs")]
+    UnsupportedAbi { name: String },
+    #[error("pure measurement backend results differ from the owning VM reference")]
+    ConformanceMismatch,
+    #[error("pure measurement returned a value outside the exact i64 ABI")]
+    UnexpectedResult,
+    #[error(transparent)]
+    ProgramBinding(#[from] arcweft_core::plan::RuntimePureProgramLookupError),
+    #[error(transparent)]
+    Runtime(#[from] arcweft_core::value::RuntimeEvalError),
+    #[error(transparent)]
+    Native(#[from] arcweft_lang_jit_cranelift::CraneliftCodegenError),
+    #[error("external baseline failed with {0:?}")]
+    ExternalBaseline(ExitCode),
+}
+
+impl PureMeasurementError {
+    fn exit_code(&self) -> ExitCode {
+        match self {
+            Self::InvalidWorkload(_) | Self::UnsupportedAbi { .. } => ExitCode::from(2),
+            _ => ExitCode::FAILURE,
+        }
+    }
+}
+
 pub(in crate::app) fn run_jit_check(
     options: &JitCheckOptions,
     target: &JitCheckTarget,
-) -> Result<JitCheckReport, ExitCode> {
+) -> Result<JitCheckReport, PureMeasurementError> {
+    if options.iterations == 0 || options.samples == 0 {
+        return Err(PureMeasurementError::InvalidWorkload(
+            "iterations and samples must be greater than zero",
+        ));
+    }
+    options
+        .iterations
+        .checked_mul(options.samples)
+        .and_then(|count| count.checked_mul(target.inputs().len().max(1)))
+        .ok_or(PureMeasurementError::InvalidWorkload(
+            "input series size overflow",
+        ))?;
     let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.inputs().len());
     let request = target.request_with_inputs(&first_inputs)?;
     let conformance = collect_jit_check_conformance(&request, options.vm_max_ops)?;
@@ -515,6 +564,7 @@ fn jit_check_report(
         input_bindings: target.input_labels.clone(),
         dynamic_inputs: !target.inputs().is_empty(),
         input_seed: options.input_seed,
+        vm_max_ops: options.vm_max_ops,
         host_system: host_system_info(),
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
         aot_backend: backend_label(conformance.aot.backend).to_owned(),
@@ -696,25 +746,13 @@ struct JitJuliaMeasurement {
 fn collect_jit_check_conformance(
     request: &PureFunctionRequest,
     max_ops: usize,
-) -> Result<JitCheckConformanceSet, ExitCode> {
+) -> Result<JitCheckConformanceSet, PureMeasurementError> {
     let vm = VmPureFunctionBackend
-        .evaluate_invocation(request, arcweft_core::step::RuntimeStepBudget { max_ops })
-        .map_err(|error| {
-            eprintln!("error: VM conformance invocation failed: {error}");
-            ExitCode::FAILURE
-        })?;
+        .evaluate_invocation(request, arcweft_core::step::RuntimeStepBudget { max_ops })?;
     let aot =
-        arcweft_core::pure::PureFunctionBackend::evaluate(&AotPureFunctionBackend::new(), request)
-            .map_err(|error| {
-                eprintln!("error: AOT conformance check failed: {error}");
-                ExitCode::FAILURE
-            })?;
+        arcweft_core::pure::PureFunctionBackend::evaluate(&AotPureFunctionBackend::new(), request)?;
     let jit =
-        arcweft_core::pure::PureFunctionBackend::evaluate(&CraneliftPureFunctionBackend, request)
-            .map_err(|error| {
-            eprintln!("error: JIT conformance check failed: {error}");
-            ExitCode::FAILURE
-        })?;
+        arcweft_core::pure::PureFunctionBackend::evaluate(&CraneliftPureFunctionBackend, request)?;
     Ok(JitCheckConformanceSet {
         aot_matches_vm: aot.value == vm.value,
         jit_matches_vm: jit.value == vm.value,
@@ -727,52 +765,34 @@ fn collect_jit_check_conformance(
 fn compile_jit_check_helpers(
     request: &PureFunctionRequest,
     target: &JitCheckTarget,
-) -> Result<JitCheckCompiledHelpers, ExitCode> {
+) -> Result<JitCheckCompiledHelpers, PureMeasurementError> {
     let aot_started = Instant::now();
-    let aot = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(
-            request,
-            target
-                .inputs()
-                .iter()
-                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
-        )
-        .map_err(|error| {
-            eprintln!("error: failed to compile AOT helper: {error}");
-            ExitCode::FAILURE
-        })?;
+    let aot = AotPureFunctionBackend::new().compile_i64_with_inputs(
+        request,
+        target
+            .inputs()
+            .iter()
+            .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+    )?;
     let aot_compile_elapsed_ns = aot_started.elapsed().as_nanos();
-
     let jit_started = Instant::now();
-    let jit = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(
-            request,
-            target
-                .inputs()
-                .iter()
-                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
-        )
-        .map_err(|error| {
-            eprintln!("error: failed to compile JIT helper: {error}");
-            ExitCode::FAILURE
-        })?;
+    let jit = CraneliftPureFunctionBackend.compile_i64_with_inputs(
+        request,
+        target
+            .inputs()
+            .iter()
+            .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+    )?;
     let jit_compile_elapsed_ns = jit_started.elapsed().as_nanos();
-
     let jit_batch_started = Instant::now();
-    let jit_batch = CraneliftPureFunctionBackend
-        .compile_i64_batch(
-            request,
-            target
-                .inputs()
-                .iter()
-                .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
-        )
-        .map_err(|error| {
-            eprintln!("error: failed to compile JIT batch helper: {error}");
-            ExitCode::FAILURE
-        })?;
+    let jit_batch = CraneliftPureFunctionBackend.compile_i64_batch(
+        request,
+        target
+            .inputs()
+            .iter()
+            .map(arcweft_core::pure::RuntimePureFunctionInputRef::local),
+    )?;
     let jit_batch_compile_elapsed_ns = jit_batch_started.elapsed().as_nanos();
-
     Ok(JitCheckCompiledHelpers {
         aot,
         jit,
@@ -787,21 +807,30 @@ fn measure_jit_check_helpers(
     options: &JitCheckOptions,
     target: &JitCheckTarget,
     compiled: &JitCheckCompiledHelpers,
-) -> Result<JitCheckMeasurements, ExitCode> {
-    warmup_jit_check_jit(&compiled.jit, options.warmup, options.input_seed);
-    warmup_jit_check_aot(
-        &compiled.aot,
-        target.inputs().len(),
-        options.warmup,
-        options.input_seed,
-    )?;
+) -> Result<JitCheckMeasurements, PureMeasurementError> {
+    // The owning bounded VM completes the identical warmup and measured input
+    // series before any physical timing invocation. A low budget cannot be
+    // bypassed by successful AOT/JIT compilation or a cheaper first branch.
     warmup_jit_check_vm(
         target,
         options.warmup,
         options.input_seed,
         options.vm_max_ops,
     )?;
-
+    let vm = measure_jit_check_vm(
+        target,
+        options.samples,
+        options.iterations,
+        options.input_seed,
+        options.vm_max_ops,
+    )?;
+    warmup_jit_check_jit(&compiled.jit, options.warmup, options.input_seed)?;
+    warmup_jit_check_aot(
+        &compiled.aot,
+        target.inputs().len(),
+        options.warmup,
+        options.input_seed,
+    )?;
     Ok(JitCheckMeasurements {
         aot: measure_jit_check_aot(
             &compiled.aot,
@@ -822,16 +851,13 @@ fn measure_jit_check_helpers(
             options.iterations,
             options.input_seed,
         )?,
-        vm: measure_jit_check_vm(
-            target,
-            options.samples,
-            options.iterations,
-            options.input_seed,
-            options.vm_max_ops,
-        )?,
+        vm,
         julia: options
             .julia
-            .then(|| measure_jit_check_julia(target, options))
+            .then(|| {
+                measure_jit_check_julia(target, options)
+                    .map_err(PureMeasurementError::ExternalBaseline)
+            })
             .transpose()?,
     })
 }
@@ -1037,23 +1063,15 @@ impl JitCheckTarget {
         )
     }
 
-    fn from_program(
+    pub(in crate::app) fn from_program(
         name: String,
         compiled: &arcweft_compiler::lower::CompiledDeterministicProgram,
         input_labels: Vec<String>,
-        source_compiler: JitCheckSourceCompilerReport,
-    ) -> Result<Self, ExitCode> {
+        source_compiler: Option<JitCheckSourceCompilerReport>,
+    ) -> Result<Self, PureMeasurementError> {
         let plan = Arc::clone(compiled.plan());
-        let site = compiled.function_site().map_err(|error| {
-            eprintln!(
-                "error: selected deterministic program has no unique admitted function: {error}"
-            );
-            ExitCode::FAILURE
-        })?;
-        let candidate = RuntimePureFunctionRef::resolve(&plan, site).map_err(|error| {
-            eprintln!("error: selected deterministic function is unavailable: {error}");
-            ExitCode::FAILURE
-        })?;
+        let site = compiled.function_site()?;
+        let candidate = RuntimePureFunctionRef::resolve(&plan, site)?;
         if candidate.inputs.len() > 4
             || candidate.output_type != RuntimePureOutputType::I64
             || !candidate.supports_scalar_frame()
@@ -1063,15 +1081,12 @@ impl JitCheckTarget {
                 .all(|input| input.abi() == RuntimePureInputType::I64)
             || input_labels.len() != candidate.inputs.len()
         {
-            eprintln!(
-                "error: function `{name}` requires a complete direct i64 ABI of at most four inputs for JIT check"
-            );
-            return Err(ExitCode::from(2));
+            return Err(PureMeasurementError::UnsupportedAbi { name });
         }
         Ok(Self {
             name,
             source: JitCheckHelperSource::Source,
-            source_compiler: Some(source_compiler),
+            source_compiler,
             input_labels,
             plan,
             helper: site.into(),
@@ -1145,25 +1160,32 @@ impl JitCheckTarget {
         }
     }
 
-    fn request_with_inputs(&self, inputs: &[i64]) -> Result<PureFunctionRequest, ExitCode> {
-        PureFunctionRequest::try_new(
+    fn request_with_inputs(
+        &self,
+        inputs: &[i64],
+    ) -> Result<PureFunctionRequest, PureMeasurementError> {
+        Ok(PureFunctionRequest::try_new(
             Arc::clone(&self.plan),
             self.helper,
             inputs.iter().copied().map(RuntimeValue::i64),
-        )
-        .map_err(|error| {
-            eprintln!("error: JIT helper request is invalid: {error}");
-            ExitCode::FAILURE
-        })
+        )?)
     }
 
-    fn helper(&self) -> RuntimePureFunctionRef<'_> {
+    /// # Panics
+    ///
+    /// Panics only if the immutable target's admitted original function and
+    /// plan no longer resolve together; construction verifies that invariant.
+    pub(in crate::app) fn helper(&self) -> RuntimePureFunctionRef<'_> {
         RuntimePureFunctionRef::resolve(&self.plan, self.helper)
             .expect("JIT target retains its exact admitted body and ABI")
     }
 
-    fn inputs(&self) -> RuntimePureFunctionInputs<'_> {
+    pub(in crate::app) fn inputs(&self) -> RuntimePureFunctionInputs<'_> {
         self.helper().inputs
+    }
+
+    pub(in crate::app) fn plan(&self) -> &Arc<RuntimePlan> {
+        &self.plan
     }
 }
 
@@ -1277,150 +1299,51 @@ fn jit_check_source_target(
     path: &Path,
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
-    use arcweft_lang_hir::project::HirDeclarationBodyRootRole;
-    use arcweft_lang_sema::final_analysis::{
-        CheckedExecutionBodyOwner, CheckedExecutionSource, CheckedItemRole,
-    };
-
-    let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
-    let lease = checked.compiled.analysis_lease();
-    let analysis = lease.final_analysis();
-    let hir = lease.hir_project().analysis_view().map_err(|error| {
-        eprintln!("error: selected source generation is not executable: {error}");
-        ExitCode::FAILURE
-    })?;
-    let mut candidates = Vec::new();
-    for body in analysis
-        .hir_topology()
-        .modules()
-        .iter()
-        .flat_map(arcweft_lang_hir::project::HirModuleEvaluationTopology::entries)
-        .filter_map(|entry| entry.body())
-    {
-        let declaration = body.declaration();
-        if !matches!(
-            analysis
-                .item(body.source_item())
-                .map(arcweft_lang_sema::final_analysis::CheckedItem::role),
-            Some(CheckedItemRole::Function { .. })
-        ) || !body
-            .roots()
-            .iter()
-            .any(|root| root.role() == HirDeclarationBodyRootRole::FunctionBody)
-            || helper_name.is_some_and(|name| name != declaration.name())
-        {
-            continue;
-        }
-        let source = CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
-            declaration: declaration.clone(),
-            role: HirDeclarationBodyRootRole::FunctionBody,
-        });
-        let context = analysis
-            .checked_execution_context(hir, lease.project_symbols(), source.clone(), None)
-            .map_err(|error| {
-                eprintln!("error: function execution context is unavailable: {error}");
-                ExitCode::FAILURE
-            })?;
-        if let Err(error) = context.checked_deterministic_program(source.clone()) {
-            if helper_name.is_some() {
-                eprintln!(
-                    "error: function `{}` is not deterministic: {error}",
-                    declaration.name()
-                );
-                return Err(ExitCode::FAILURE);
-            }
-            continue;
-        }
-        let callable = analysis
-            .checked_callables()
-            .project_callable(declaration)
-            .map_err(|error| {
-                use arcweft_lang_sema::callable::CheckedCallableLookupError;
-                let reason = match error {
-                    CheckedCallableLookupError::Missing => {
-                        "the function is absent from the accepted callable catalog"
-                    }
-                    CheckedCallableLookupError::CandidateMismatch => {
-                        "the selected candidate differs from the accepted function"
-                    }
-                    CheckedCallableLookupError::RecordPointerMismatch => {
-                        "the callable record belongs to another catalog instance"
-                    }
-                    CheckedCallableLookupError::WrongFamily => {
-                        "the accepted callable has a different family"
-                    }
-                    CheckedCallableLookupError::ForeignWorld => {
-                        "the callable belongs to another semantic world"
-                    }
-                    CheckedCallableLookupError::StaleProjectRevision => {
-                        "the callable belongs to an earlier project revision"
-                    }
-                    CheckedCallableLookupError::ForeignCatalogDigest => {
-                        "the callable belongs to another catalog generation"
-                    }
-                    CheckedCallableLookupError::StaleStandardVersion => {
-                        "the callable uses an earlier standard catalog"
-                    }
-                    CheckedCallableLookupError::ForeignDetachedSource => {
-                        "the callable belongs to another detached source"
-                    }
-                };
-                eprintln!("error: accepted function signature is unavailable: {reason}");
-                ExitCode::FAILURE
-            })?;
-        let labels = callable
-            .signature()
-            .groups()
-            .iter()
-            .flat_map(arcweft_lang_sema::callable::CallableParameterGroup::parameters)
-            .enumerate()
-            .map(|(index, parameter)| {
-                parameter
-                    .name()
-                    .map_or_else(|| format!("arg{index}"), |name| name.as_str().to_owned())
-            })
-            .collect::<Vec<_>>();
-        candidates.push((declaration.name().to_owned(), source, labels));
-    }
-    let (name, source, labels) = match candidates.as_slice() {
-        [_] => candidates
-            .pop()
-            .expect("one accepted deterministic candidate"),
-        [] => {
-            eprintln!(
-                "error: no accepted deterministic function matched the selected source target"
-            );
-            return Err(ExitCode::FAILURE);
-        }
-        _ => {
-            eprintln!("error: multiple deterministic functions found; pass --helper NAME");
-            return Err(ExitCode::from(2));
-        }
-    };
-    let compiled = lease
-        .compile_deterministic_program(
-            source,
-            None,
+    let checked = load_and_check_with_env(
+        path,
+        &TypeCheckEnv::standard(),
+        Vec::new(),
+        crate::app::project::ProjectDiagnosticOutput::Human,
+    )?;
+    let selected = checked
+        .compiled
+        .analysis_lease()
+        .compile_deterministic_function(
+            helper_name,
             &arcweft_compiler::lower::ProjectInstantiationControl::default(),
         )
         .map_err(|error| {
-            eprintln!("error: selected deterministic function compilation failed: {error}");
-            ExitCode::FAILURE
+            eprintln!("error: {error}");
+            match error {
+                arcweft_compiler::project::DeterministicFunctionCompileError::Ambiguous {
+                    ..
+                } => ExitCode::from(2),
+                _ => ExitCode::FAILURE,
+            }
         })?;
     JitCheckTarget::from_program(
-        name,
-        &compiled,
-        labels,
-        JitCheckSourceCompilerReport::from(&checked),
+        selected.name().to_owned(),
+        selected.program(),
+        selected.input_labels().to_vec(),
+        Some(JitCheckSourceCompilerReport::from(&checked)),
     )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        error.exit_code()
+    })
 }
 
-fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_seed: u64) {
+fn warmup_jit_check_jit(
+    compiled: &CompiledPureI64Inputs,
+    warmup: usize,
+    input_seed: u64,
+) -> Result<(), PureMeasurementError> {
     let arity = compiled.input_locals().len();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, arity);
-        let _ = compiled.call_i64_args(RuntimeI64Args::new(inputs, arity));
+        compiled.call_i64_args(RuntimeI64Args::new(inputs, arity))?;
     }
+    Ok(())
 }
 
 fn measure_jit_check_jit(
@@ -1428,16 +1351,11 @@ fn measure_jit_check_jit(
     samples: usize,
     iterations: usize,
     input_seed: u64,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
     let arity = compiled.input_locals().len();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, arity);
-        compiled
-            .call_i64_args(RuntimeI64Args::new(inputs, arity))
-            .map_err(|error| {
-                eprintln!("error: JIT evaluation failed: {error}");
-                ExitCode::FAILURE
-            })
+        Ok(compiled.call_i64_args(RuntimeI64Args::new(inputs, arity))?)
     })
 }
 
@@ -1446,14 +1364,9 @@ fn measure_jit_check_batch(
     samples: usize,
     iterations: usize,
     input_seed: u64,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
     measure_repeated_samples(samples, |sample| {
-        compiled
-            .call(input_seed, sample, iterations)
-            .map_err(|error| {
-                eprintln!("error: JIT batch evaluation failed: {error}");
-                ExitCode::FAILURE
-            })
+        Ok(compiled.call(input_seed, sample, iterations)?)
     })
 }
 
@@ -1462,16 +1375,11 @@ fn warmup_jit_check_aot(
     arity: usize,
     warmup: usize,
     input_seed: u64,
-) -> Result<(), ExitCode> {
+) -> Result<(), PureMeasurementError> {
     let mut slots = Vec::new();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, arity);
-        let _ = compiled
-            .call_with_inputs_scratch(&inputs[..arity], &mut slots)
-            .map_err(|error| {
-                eprintln!("error: AOT warmup failed: {error}");
-                ExitCode::FAILURE
-            })?;
+        compiled.call_with_inputs_scratch(&inputs[..arity], &mut slots)?;
     }
     Ok(())
 }
@@ -1482,43 +1390,24 @@ fn measure_jit_check_aot(
     samples: usize,
     iterations: usize,
     input_seed: u64,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
     let mut slots = Vec::new();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, arity);
-        compiled
-            .call_with_inputs_scratch(&inputs[..arity], &mut slots)
-            .map(|(value, _stats)| value)
-            .map_err(|error| {
-                eprintln!("error: AOT evaluation failed: {error}");
-                ExitCode::FAILURE
-            })
+        Ok(compiled
+            .call_with_inputs_scratch(&inputs[..arity], &mut slots)?
+            .0)
     })
 }
 
 fn evaluate_jit_check_vm(
     target: &JitCheckTarget,
     inputs: &[i64],
-    scratch: &mut VmPureFunctionScratch,
     max_ops: usize,
-) -> Result<RuntimeValue, ExitCode> {
-    if target.helper().body.is_executable() {
-        let request = target.request_with_inputs(inputs)?;
-        VmPureFunctionBackend
-            .evaluate_invocation(&request, arcweft_core::step::RuntimeStepBudget { max_ops })
-            .map(|result| result.value)
-            .map_err(|error| {
-                eprintln!("error: VM invocation failed: {error}");
-                ExitCode::FAILURE
-            })
-    } else {
-        scratch
-            .evaluate_i64_slice(&target.plan, target.helper, inputs)
-            .map_err(|error| {
-                eprintln!("error: VM expression evaluation failed: {error}");
-                ExitCode::FAILURE
-            })
-    }
+) -> Result<PureFunctionResult, PureMeasurementError> {
+    let request = target.request_with_inputs(inputs)?;
+    Ok(VmPureFunctionBackend
+        .evaluate_invocation(&request, arcweft_core::step::RuntimeStepBudget { max_ops })?)
 }
 
 fn warmup_jit_check_vm(
@@ -1526,16 +1415,10 @@ fn warmup_jit_check_vm(
     warmup: usize,
     input_seed: u64,
     max_ops: usize,
-) -> Result<(), ExitCode> {
-    let mut scratch = VmPureFunctionScratch::default();
+) -> Result<(), PureMeasurementError> {
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, target.inputs().len());
-        let _ = evaluate_jit_check_vm(
-            target,
-            &inputs[..target.inputs().len()],
-            &mut scratch,
-            max_ops,
-        )?;
+        evaluate_jit_check_vm(target, &inputs[..target.inputs().len()], max_ops)?;
     }
     Ok(())
 }
@@ -1546,24 +1429,16 @@ fn measure_jit_check_vm(
     iterations: usize,
     input_seed: u64,
     max_ops: usize,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
-    let mut scratch = VmPureFunctionScratch::default();
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, target.inputs().len());
-        let value = evaluate_jit_check_vm(
-            target,
-            &inputs[..target.inputs().len()],
-            &mut scratch,
-            max_ops,
-        )?;
-        let RuntimeValue::Int(value) = value else {
-            eprintln!("error: VM measurement returned a value outside the admitted i64 ABI");
-            return Err(ExitCode::FAILURE);
+        let result = evaluate_jit_check_vm(target, &inputs[..target.inputs().len()], max_ops)?;
+        let RuntimeValue::Int(value) = result.value else {
+            return Err(PureMeasurementError::UnexpectedResult);
         };
-        value.exact_i64().ok_or_else(|| {
-            eprintln!("error: VM measurement returned a different integer width");
-            ExitCode::FAILURE
-        })
+        value
+            .exact_i64()
+            .ok_or(PureMeasurementError::UnexpectedResult)
     })
 }
 
@@ -2001,11 +1876,12 @@ fn julia_identifier(name: &str) -> Result<String, String> {
 fn measure_repeated(
     samples: usize,
     iterations: usize,
-    mut call: impl FnMut(usize, usize) -> Result<i64, ExitCode>,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
-    if samples == 0 {
-        eprintln!("error: --samples must be greater than zero");
-        return Err(ExitCode::from(2));
+    mut call: impl FnMut(usize, usize) -> Result<i64, PureMeasurementError>,
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
+    if samples == 0 || iterations == 0 {
+        return Err(PureMeasurementError::InvalidWorkload(
+            "iterations and samples must be greater than zero",
+        ));
     }
     let mut elapsed = Vec::with_capacity(samples);
     let mut accumulator = 0_i64;
@@ -2024,11 +1900,12 @@ fn measure_repeated(
 
 fn measure_repeated_samples(
     samples: usize,
-    mut call: impl FnMut(usize) -> Result<i64, ExitCode>,
-) -> Result<JitRepeatedMeasurement, ExitCode> {
+    mut call: impl FnMut(usize) -> Result<i64, PureMeasurementError>,
+) -> Result<JitRepeatedMeasurement, PureMeasurementError> {
     if samples == 0 {
-        eprintln!("error: --samples must be greater than zero");
-        return Err(ExitCode::from(2));
+        return Err(PureMeasurementError::InvalidWorkload(
+            "samples must be greater than zero",
+        ));
     }
     let mut elapsed = Vec::with_capacity(samples);
     let mut accumulator = 0_i64;
@@ -2043,6 +1920,10 @@ fn measure_repeated_samples(
     })
 }
 
+/// # Panics
+///
+/// Panics for an empty sample set. Measurement admission requires at least
+/// one sample before any timer or backend invocation.
 pub(in crate::app) fn timing_samples(mut values: Vec<u128>) -> JitTimingSamples {
     values.sort_unstable();
     let len = values.len();

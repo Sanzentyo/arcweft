@@ -1,3 +1,5 @@
+entry bench @entry.dense_textual_scalar_len { goto @flow.dense_textual_scalar_len }
+
 pub character alice { display = "Alice" }
 pub character bob { display = "Bob" }
 
@@ -5,7 +7,7 @@ bench @bench.dense_textual_scalar_len {
     measure iterations = 4 { goto @flow.dense_textual_scalar_len }
 }
 
-flow dense_textual_scalar_len {
+flow dense_textual_scalar_len() -> String {
     let label: String = "alpha"
     let names: Vec<String> = [label, "beta", "gamma", "delta"]
     let ratios: Vec<f64> = [1.0f64, 2.0f64, 3.0f64, 4.0f64]

@@ -24,6 +24,159 @@ use arcweft_tooling::runtime_diagnostic::{
 use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy};
 use std::process::ExitCode;
 
+/// Compiler rejection published before any executable project exists.
+///
+/// Diagnostics borrow the compiler's canonical source-backed rejection. The
+/// optional obligation family comes from its original typed semantic error;
+/// neither a verifier report nor an executable plan is fabricated.
+#[derive(serde::Serialize)]
+pub(crate) struct ProjectCompileFailureReport<'a> {
+    version: u32,
+    status: &'static str,
+    stage: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rejected_obligation_kind: Option<arcweft_verify::ProofObligationKind>,
+    diagnostics: Vec<ProjectCompileDiagnosticReport<'a>>,
+}
+
+impl<'a> ProjectCompileFailureReport<'a> {
+    pub(crate) fn from_error(error: &'a arcweft_compiler::project::ProjectCompileError) -> Self {
+        use arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError;
+
+        let rejected_obligation_kind = match error.semantic_error() {
+            Some(
+                FinalSemanticAnalysisError::EffectUpperBoundExceeded { .. }
+                | FinalSemanticAnalysisError::TargetCapabilityUnavailable { .. }
+                | FinalSemanticAnalysisError::TargetHostCallUnavailable { .. },
+            ) => Some(arcweft_verify::ProofObligationKind::EffectCapability),
+            Some(_) | None => None,
+        };
+        Self {
+            version: 1,
+            status: "denied",
+            stage: error.stage(),
+            rejected_obligation_kind,
+            diagnostics: error
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| ProjectCompileDiagnosticReport {
+                    module: diagnostic.module().map(ToString::to_string),
+                    stage: diagnostic.stage().as_str(),
+                    diagnostic: SourceDiagnosticReport::from(diagnostic.diagnostic()),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ProjectCompileDiagnosticReport<'a> {
+    module: Option<String>,
+    stage: &'static str,
+    diagnostic: SourceDiagnosticReport<'a>,
+}
+
+/// Faithful wire projection of the shared diagnostic graph. Exact spans use
+/// the verifier's existing transport type and retain source revision identity.
+#[derive(serde::Serialize)]
+struct SourceDiagnosticReport<'a> {
+    severity: &'static str,
+    code: Option<&'a str>,
+    message: &'a str,
+    span: Option<arcweft_verify::SourceSpan>,
+    labels: Vec<SourceDiagnosticLabelReport<'a>>,
+    notes: &'a [String],
+    suggestions: Vec<SourceDiagnosticSuggestionReport<'a>>,
+    commands: Vec<SourceDiagnosticCommandReport<'a>>,
+}
+
+impl<'a> From<&'a arcweft_source::Diagnostic> for SourceDiagnosticReport<'a> {
+    fn from(diagnostic: &'a arcweft_source::Diagnostic) -> Self {
+        use arcweft_source::{DiagnosticLabelStyle, DiagnosticSeverity};
+
+        Self {
+            severity: match diagnostic.severity() {
+                DiagnosticSeverity::Error => "error",
+                DiagnosticSeverity::Warning => "warning",
+                DiagnosticSeverity::Info => "info",
+                DiagnosticSeverity::Hint => "hint",
+            },
+            code: diagnostic
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            message: diagnostic.message(),
+            span: diagnostic
+                .span()
+                .map(arcweft_verify::SourceSpan::from_exact),
+            labels: diagnostic
+                .labels()
+                .iter()
+                .map(|label| SourceDiagnosticLabelReport {
+                    style: match label.style() {
+                        DiagnosticLabelStyle::Primary => "primary",
+                        DiagnosticLabelStyle::Secondary => "secondary",
+                    },
+                    span: arcweft_verify::SourceSpan::from_exact(label.span()),
+                    message: label.message(),
+                })
+                .collect(),
+            notes: diagnostic.notes(),
+            suggestions: diagnostic
+                .suggestions()
+                .iter()
+                .map(|suggestion| SourceDiagnosticSuggestionReport {
+                    message: suggestion.message(),
+                    applicability: suggestion.applicability().as_str(),
+                    edits: suggestion
+                        .edits()
+                        .iter()
+                        .map(|edit| SourceDiagnosticEditReport {
+                            span: arcweft_verify::SourceSpan::from_exact(edit.span()),
+                            replacement: edit.replacement(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            commands: diagnostic
+                .commands()
+                .iter()
+                .map(|command| SourceDiagnosticCommandReport {
+                    id: command.id(),
+                    title: command.title(),
+                    arguments: command.arguments(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SourceDiagnosticLabelReport<'a> {
+    style: &'static str,
+    span: arcweft_verify::SourceSpan,
+    message: Option<&'a str>,
+}
+
+#[derive(serde::Serialize)]
+struct SourceDiagnosticSuggestionReport<'a> {
+    message: &'a str,
+    applicability: &'static str,
+    edits: Vec<SourceDiagnosticEditReport<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct SourceDiagnosticEditReport<'a> {
+    span: arcweft_verify::SourceSpan,
+    replacement: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct SourceDiagnosticCommandReport<'a> {
+    id: &'a str,
+    title: &'a str,
+    arguments: &'a [String],
+}
+
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
@@ -635,6 +788,8 @@ pub(crate) struct ScriptBenchDeterministicSummary {
 pub(crate) struct ScriptBenchPureHelperMeasurementSummary {
     pub(crate) host_system: HostSystemInfo,
     pub(crate) helper: String,
+    pub(crate) input_seed: u64,
+    pub(crate) vm_max_ops: usize,
     pub(crate) input_bindings: Vec<String>,
     pub(crate) matches_vm: bool,
     pub(crate) warmup: usize,
@@ -736,6 +891,20 @@ impl ScriptBenchRunSummary {
 }
 
 impl ScriptBenchSectionRunSummary {
+    pub(crate) fn measured_pure(
+        name: impl Into<String>,
+        diagnostics: Vec<String>,
+        pure_helper: ScriptBenchPureHelperMeasurementSummary,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            status: "measured".to_owned(),
+            diagnostics,
+            measurement: None,
+            pure_helper: Some(pure_helper),
+        }
+    }
+
     pub(crate) fn new(
         name: impl Into<String>,
         status: impl Into<String>,
@@ -1020,6 +1189,7 @@ impl RuntimeStepRunSummary {
             task_requests: task_requests.iter().map(task_request_label).collect(),
             observations: RuntimeObservationSummary {
                 signals: fiber
+                    .frame
                     .observations
                     .signals()
                     .iter()
@@ -1029,6 +1199,7 @@ impl RuntimeStepRunSummary {
                     })
                     .collect(),
                 metrics: fiber
+                    .frame
                     .observations
                     .metrics()
                     .iter()
@@ -1038,6 +1209,7 @@ impl RuntimeStepRunSummary {
                     })
                     .collect(),
                 logs: fiber
+                    .frame
                     .observations
                     .logs
                     .iter()
@@ -1047,6 +1219,7 @@ impl RuntimeStepRunSummary {
                     })
                     .collect(),
                 events: fiber
+                    .frame
                     .observations
                     .events
                     .iter()
@@ -1062,6 +1235,7 @@ impl RuntimeStepRunSummary {
                 .map(stream_event_label)
                 .collect(),
             stream_states: fiber
+                .frame
                 .stream_states
                 .values()
                 .map(|state| RuntimeQueueStateSummary {
@@ -1221,4 +1395,81 @@ fn count_effects(group: &LineTaskGroup) -> usize {
         .into_iter()
         .map(|exit| group.cleanup().actions(exit).len())
         .sum::<usize>()
+}
+
+#[cfg(test)]
+mod denied_analysis_tests {
+    use super::SourceDiagnosticReport;
+    use arcweft_source::{
+        Diagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,
+        DiagnosticSeverity, DiagnosticSuggestion, SourceDocument, SourceDocumentId, SourceEdit,
+        SourceName, SourceRange,
+    };
+
+    #[test]
+    fn diagnostic_json_preserves_complete_graph_and_exact_source_revision() {
+        let id = SourceDocumentId::try_new("arcweft-project://diagnostic/main.arcw").unwrap();
+        let document =
+            SourceDocument::try_new(id.clone(), SourceName::path("main.arcw"), "αbeta").unwrap();
+        let primary = document.span(SourceRange::new(0, 2)).unwrap();
+        let secondary = document.span(SourceRange::new(2, 6)).unwrap();
+        let diagnostic = Diagnostic::new(DiagnosticSeverity::Hint, "complete typed diagnostic")
+            .with_code("test.exact_source")
+            .with_label(DiagnosticLabel::primary(
+                primary.clone(),
+                Some("primary label".to_owned()),
+            ))
+            .with_label(DiagnosticLabel::secondary(
+                secondary.clone(),
+                Some("related label".to_owned()),
+            ))
+            .with_note("first witness")
+            .with_note("second witness")
+            .with_suggestion(
+                DiagnosticSuggestion::new(
+                    "edit both spans",
+                    DiagnosticApplicability::HasPlaceholders,
+                )
+                .with_edit(SourceEdit::new(primary, "λ"))
+                .with_edit(SourceEdit::new(secondary, "next")),
+            )
+            .with_command(
+                DiagnosticCommand::new("test.exact", "Inspect exact source").with_argument("owner"),
+            );
+        let json = serde_json::to_value(SourceDiagnosticReport::from(&diagnostic)).unwrap();
+        assert_eq!(json["severity"], "hint");
+        assert_eq!(json["code"], "test.exact_source");
+        assert_eq!(json["message"], "complete typed diagnostic");
+        assert_eq!(
+            json["notes"],
+            serde_json::json!(["first witness", "second witness"])
+        );
+        assert_eq!(json["labels"][0]["style"], "primary");
+        assert_eq!(json["labels"][0]["message"], "primary label");
+        assert_eq!(json["labels"][1]["style"], "secondary");
+        assert_eq!(json["labels"][1]["message"], "related label");
+        assert_eq!(json["suggestions"][0]["applicability"], "has_placeholders");
+        assert_eq!(json["suggestions"][0]["edits"][0]["replacement"], "λ");
+        assert_eq!(json["suggestions"][0]["edits"][1]["replacement"], "next");
+        assert_eq!(json["commands"][0]["id"], "test.exact");
+        assert_eq!(
+            json["commands"][0]["arguments"],
+            serde_json::json!(["owner"])
+        );
+        let other = SourceDocument::try_new(id, SourceName::path("main.arcw"), "γbeta").unwrap();
+        for value in [
+            &json["span"],
+            &json["labels"][0]["span"],
+            &json["labels"][1]["span"],
+            &json["suggestions"][0]["edits"][0]["span"],
+            &json["suggestions"][0]["edits"][1]["span"],
+        ] {
+            let span: arcweft_verify::SourceSpan = serde_json::from_value(value.clone()).unwrap();
+            assert!(span.validate_for(&document));
+            assert!(
+                !span.validate_for(&other),
+                "same document ID cannot replace its source revision"
+            );
+        }
+    }
 }

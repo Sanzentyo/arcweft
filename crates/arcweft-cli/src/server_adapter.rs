@@ -235,7 +235,7 @@ fn run_route_flow(
     let mut response = if let Some(diagnostic) = result.output.diagnostics.first() {
         NativeHttpResponse::new(500, diagnostic.message.clone())
     } else {
-        match &executor.fiber().status {
+        match &executor.fiber().frame.status {
             FlowFiberStatus::Done(FlowExit::Return(value)) => {
                 NativeHttpResponse::new(200, value.clone())
             }

@@ -30,6 +30,114 @@ fn declaration_body(report: &FinalSemanticAnalysis, name: &str) -> CheckedExecut
 }
 
 #[test]
+fn empty_statement_match_admits_only_uninhabited_domains_and_keeps_never_continuation() {
+    use crate::final_analysis::CheckedMatchLimits;
+
+    for source in [
+        "fn exhausted(bottom: Never) -> i64 { match bottom {}; }",
+        "flow exhausted(bottom: Never) -> i64 { match bottom {}; }",
+        "fn exhausted(bottom: (bool, Never)) -> i64 { match bottom {}; }",
+        "fn exhausted(input: Option<i64>, bottom: Never) -> i64 { let .Some(value) = input else { match bottom {}; }; value }",
+    ] {
+        let world = fixture(source, None);
+        let report = analyze(&world).unwrap_or_else(|error| {
+            let detail = if let crate::final_analysis::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = &error {
+                world.project.analysis_view().unwrap().modules().find_map(|(_, module)| {
+                    module.resolve_expr(*owner).ok().map(|expr| format!("{:?}", expr.kind()))
+                })
+            } else {
+                None
+            };
+            panic!("uninhabited statement Match in {source}: {error:?}; {detail:?}")
+        });
+        let project = world.project.analysis_view().unwrap();
+        let module = project.modules().next().unwrap().1;
+        let owners = module
+            .statements()
+            .filter_map(|(owner, statement)| {
+                matches!(
+                    statement.kind(),
+                    arcweft_lang_hir::stmt::HirStmtKind::Match(_)
+                )
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(owners.len(), 1);
+        let owner = owners[0];
+        let product = report
+            .checked_match(
+                project,
+                &world.symbols,
+                owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .unwrap();
+        assert!(product.coverage().exhaustive());
+        assert!(product.arms().is_empty());
+        report
+            .checked_statement_semantic_digest(
+                project,
+                &world.symbols,
+                owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .unwrap();
+        let source = declaration_body(&report, "exhausted");
+        let context = report
+            .checked_execution_context(project, &world.symbols, source.clone(), None)
+            .unwrap();
+        let abi = context.checked_execution_input_abi(source).unwrap();
+        abi.validate_for(&context).unwrap();
+    }
+}
+
+#[test]
+fn nonexhaustive_statement_match_cannot_publish_statement_or_enclosing_match_semantics() {
+    use crate::final_analysis::{CheckedMatchLimits, CheckedSemanticTranscriptError};
+
+    for source in [
+        "flow exhausted(value: bool) { match value {} }",
+        "flow exhausted(value: bool) { match value { true => { match value {} }, false => {} } }",
+    ] {
+        let world = fixture(source, None);
+        let report = analyze(&world).unwrap();
+        let project = world.project.analysis_view().unwrap();
+        let module = project.modules().next().unwrap().1;
+        let owners = module
+            .statements()
+            .filter_map(|(owner, statement)| {
+                matches!(
+                    statement.kind(),
+                    arcweft_lang_hir::stmt::HirStmtKind::Match(_)
+                )
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        assert!(!owners.is_empty());
+        for owner in owners {
+            assert!(matches!(
+                report.checked_statement_semantic_digest(
+                    project,
+                    &world.symbols,
+                    owner,
+                    CheckedMatchLimits::PRODUCTION,
+                ),
+                Err(CheckedSemanticTranscriptError::NonExhaustive { .. })
+            ));
+            assert!(matches!(
+                report.checked_match(
+                    project,
+                    &world.symbols,
+                    owner,
+                    CheckedMatchLimits::PRODUCTION
+                ),
+                Err(CheckedSemanticTranscriptError::NonExhaustive { .. })
+            ));
+        }
+    }
+}
+
+#[test]
 fn empty_body_has_an_authenticated_root_without_an_expression_anchor() {
     let world = fixture("flow empty() {}\nfn other() -> i64 { 42i64 }", None);
     let report = analyze(&world).unwrap();

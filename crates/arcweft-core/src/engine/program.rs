@@ -248,7 +248,7 @@ impl Engine {
             }
         }
         self.main_started = true;
-        self.fiber.status = FlowFiberStatus::Running;
+        self.fiber.frame.status = FlowFiberStatus::Running;
         let mut output = crate::step::RuntimeStepOutput::default();
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         self.start_function_site_call(
@@ -286,13 +286,13 @@ impl Engine {
             RuntimeProgramInputRollback, input_refs, into_values,
         };
         let prepared = (|| {
-            if !matches!(self.fiber.status, FlowFiberStatus::Done(_))
+            if !matches!(self.fiber.frame.status, FlowFiberStatus::Done(_))
                 || !self.child_fibers.is_empty()
                 || self.root.is_some()
-                || !self.fiber.pending_ops.is_empty()
-                || !self.fiber.control_stack.is_empty()
-                || self.fiber.await_observer.is_some()
-                || !self.fiber.root_cleanups.is_empty()
+                || !self.fiber.frame.pending_ops.is_empty()
+                || !self.fiber.frame.control_stack.is_empty()
+                || self.fiber.frame.await_observer.is_some()
+                || !self.fiber.frame.root_cleanups.is_empty()
             {
                 return Err(RuntimeProgramContinuationFailure::NotCompleted);
             }

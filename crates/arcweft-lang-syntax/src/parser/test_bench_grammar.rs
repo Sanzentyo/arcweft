@@ -251,8 +251,10 @@ fn emit_plan_statement(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal:
     } else {
         end
     };
-    if matches!(parser.current_text(), Some("setup" | "measure" | "report"))
-        && find_top_level_boundary(parser, parser.cursor(), child_end, &["{"]) < child_end
+    if matches!(
+        parser.current_text(),
+        Some("setup" | "measure" | "assert" | "report")
+    ) && find_top_level_boundary(parser, parser.cursor(), child_end, &["{"]) < child_end
     {
         parser.start(
             SyntaxKind::ExpressionStatement,

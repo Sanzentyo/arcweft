@@ -1,4 +1,4 @@
-use arcweft_core::plan::{RuntimeFlowInvocation, RuntimePlan};
+use arcweft_core::plan::{FlowRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::value::{RuntimeBinding, RuntimeFlowParameterBinding};
 use std::collections::BTreeMap;
 use std::process::ExitCode;
@@ -14,6 +14,17 @@ pub(in crate::app) fn seal_named_flow_invocation(
         eprintln!("error: cannot resolve --flow `{target}`: {error}");
         ExitCode::from(2)
     })?;
+    seal_resolved_flow_invocation(plan, flow, bindings)
+}
+
+/// Binds an already selected plan-owned Flow without reinterpreting its private
+/// identity as an external source name.
+pub(in crate::app) fn seal_resolved_flow_invocation(
+    plan: RuntimePlan,
+    flow: FlowRuntimeId,
+    bindings: &[RuntimeBinding],
+) -> Result<RuntimeFlowInvocation, ExitCode> {
+    let target = flow.canonical_label();
     let parameters = plan
         .flow_schemas()
         .iter()

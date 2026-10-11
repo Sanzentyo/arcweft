@@ -288,6 +288,10 @@ pub struct RuntimeFlowInvocation {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeFlowInvocationError {
+    #[error(
+        "runtime Flow invocation parameter {parameter:?} cannot be repeated because its value is not unrestricted"
+    )]
+    NonRepeatableParameter { parameter: FlowParameterCoordinate },
     #[error("runtime Flow `{flow}` does not exist")]
     UnknownFlow { flow: String },
     #[error("runtime Flow `{flow}` has no invocation schema")]
@@ -410,6 +414,28 @@ impl RuntimePlan {
 }
 
 impl RuntimeFlowInvocation {
+    /// Repeats the same admitted input inventory only when every value is
+    /// unrestricted. The entire inventory is checked before any value is
+    /// copied, and the new invocation retains this exact immutable plan.
+    ///
+    /// # Errors
+    ///
+    /// Rejects affine or linear inputs without copying a partial inventory.
+    pub fn try_repeat_unrestricted(&self) -> Result<Self, RuntimeFlowInvocationError> {
+        for binding in &self.bindings {
+            if !binding.value.ownership().permits_copy() {
+                return Err(RuntimeFlowInvocationError::NonRepeatableParameter {
+                    parameter: binding.parameter,
+                });
+            }
+        }
+        Ok(Self {
+            plan: Arc::clone(&self.plan),
+            flow: self.flow.clone(),
+            bindings: self.bindings.clone(),
+        })
+    }
+
     /// Borrows the exact immutable plan pinned by this affine invocation.
     pub const fn plan(&self) -> &Arc<RuntimePlan> {
         &self.plan
@@ -477,6 +503,14 @@ impl fmt::Display for EntryRuntimeId {
 }
 
 impl RuntimeEntryKind {
+    /// Whether a direct Flow target receives its complete input inventory from
+    /// the invoking adapter. Bench measurements seal those inputs before each
+    /// execution; ordinary direct Entry startup supplies no external inventory.
+    #[must_use]
+    pub const fn accepts_external_flow_inputs(&self) -> bool {
+        matches!(self, Self::Bench)
+    }
+
     /// Canonical source/manifest spelling for this entry kind.
     pub fn as_str(&self) -> &str {
         match self {
@@ -1110,7 +1144,7 @@ impl super::RuntimePlanInventory {
                 | RuntimeEntryKind::Custom(_),
                 RuntimeEntryTarget::Flow(_) | RuntimeEntryTarget::Routes(_),
                 RuntimeEntryRoles::None,
-            ) => self.verify_existing_entry_target(&entry.id, &entry.target),
+            ) => self.verify_existing_entry_target(&entry.id, &entry.kind, &entry.target),
             _ => Err(RuntimePlanError::IncompatibleEntryRoles {
                 entry: entry.id.canonical_label(),
                 kind: entry.kind.as_str().to_owned(),
@@ -1121,6 +1155,7 @@ impl super::RuntimePlanInventory {
     fn verify_existing_entry_target(
         &self,
         entry: &EntryRuntimeId,
+        kind: &RuntimeEntryKind,
         target: &RuntimeEntryTarget,
     ) -> Result<(), RuntimePlanError> {
         match target {
@@ -1136,7 +1171,7 @@ impl super::RuntimePlanInventory {
                     .flows
                     .schema(flow)
                     .ok_or_else(|| RuntimePlanError::MissingFlowSchema(flow.canonical_label()))?;
-                if !schema.parameters.is_empty() {
+                if !schema.parameters.is_empty() && !kind.accepts_external_flow_inputs() {
                     return Err(RuntimePlanError::ParameterizedDirectEntryTarget {
                         entry: entry.canonical_label(),
                         flow: flow.canonical_label(),

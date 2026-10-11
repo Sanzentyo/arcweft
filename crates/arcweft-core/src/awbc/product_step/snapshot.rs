@@ -2103,7 +2103,7 @@ impl AwbcProductStepExecutor {
             compact_pure_stats: self.compact_pure_stats,
             observations:
                 crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
-                    &self.facade_fiber.observations,
+                    &self.facade_fiber.frame.observations,
                     &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                 )
                 .map_err(invalid)?,
@@ -2237,6 +2237,7 @@ impl AwbcProductStepExecutor {
         }
         self.dialogues.visit_runtime_values(&mut visitor)?;
         self.facade_fiber
+            .frame
             .observations
             .visit_runtime_values(&mut visitor)?;
         for launch in self.need_producers.launches() {
@@ -2343,7 +2344,7 @@ impl AwbcProductStepExecutor {
             next_host_call_sequence: self.next_host_call_sequence,
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
-            observations: self.facade_fiber.observations.clone(),
+            observations: self.facade_fiber.frame.observations.clone(),
         })
     }
 
@@ -2423,7 +2424,7 @@ impl AwbcProductStepExecutor {
         self.next_host_call_sequence = snapshot.next_host_call_sequence;
         self.next_audio_sequence = snapshot.next_audio_sequence;
         self.compact_pure_stats = snapshot.compact_pure_stats;
-        self.facade_fiber.observations = observations;
+        self.facade_fiber.frame.observations = observations;
         self.rebuild_facade_stream_states_from_compact();
         self.sync_facade();
         Ok(())
@@ -3045,6 +3046,11 @@ impl AwbcProductStepExecutor {
                             suspension.resume,
                             crate::awbc::fiber::FiberResumeTarget::Declared(_)
                         ) => {}
+                (None, Some(suspension))
+                    if matches!(
+                        &suspension.reason,
+                        crate::awbc::fiber::FiberSuspensionReason::BudgetYield
+                    ) => {}
                 (None, Some(suspension))
                     if matches!(
                         &suspension.reason,
@@ -3728,7 +3734,7 @@ impl AwbcProductStepExecutor {
     }
 
     pub(super) fn rebuild_facade_stream_states_from_compact(&mut self) {
-        self.facade_fiber.stream_states.clear();
+        self.facade_fiber.frame.stream_states.clear();
         for (index, _) in self.program.stream_plans.iter().enumerate() {
             let Some(index) = u32::try_from(index).ok() else {
                 continue;
@@ -3746,7 +3752,7 @@ impl AwbcProductStepExecutor {
                 runtime.closed = compact.closed;
                 runtime.emitted_count = compact.emitted_count;
             }
-            self.facade_fiber.stream_states.insert(id, runtime);
+            self.facade_fiber.frame.stream_states.insert(id, runtime);
         }
     }
 }

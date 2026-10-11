@@ -61,13 +61,13 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(in crate::engine) resume: Option<super::super::FlowCursor>,
     /// Source-order capture coordinates; the values themselves live only in
-    /// `locals` and may be affine while activation executes.
+    /// `execution.env` and may be affine while activation executes.
     pub(in crate::engine) captures: Box<[RuntimeLocalDeclarationId]>,
     /// Copyable external and activation-local inputs for unscheduled line work.
     pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding]>,
-    /// Activation-local execution environment. The parent fiber never owns
-    /// these bindings while the dialogue transaction is live.
-    pub(in crate::engine) locals: crate::value::RuntimeEnv,
+    /// The same execution frame used by ordinary fibers. The parent continuation
+    /// and this frame never own each other's bindings or invocation stack.
+    pub(in crate::engine) execution: super::super::NativeFlowExecutionFrame,
     pub(in crate::engine) line_task: DialogueLineTaskState,
     /// Logical time accumulated while this line has been active.
     pub(in crate::engine) elapsed: crate::time::LogicalDuration,
@@ -151,7 +151,7 @@ struct NativeDialogueActivationFrameRollbackImage {
     resume: Option<super::super::FlowCursor>,
     captures: Box<[RuntimeLocalDeclarationId]>,
     task_inputs: Vec<NativeDialogueBindingRollbackImage>,
-    locals: crate::value::RuntimeEnvRollbackImage,
+    execution: super::super::NativeFlowExecutionFrameRollbackImage,
     line_task: DialogueLineTaskState,
     elapsed: crate::time::LogicalDuration,
     phase: DialogueRuntimePhase,
@@ -365,7 +365,7 @@ impl DialogueActivationFrame {
                 .iter()
                 .map(|binding| NativeDialogueBindingRollbackImage::from_live(binding, owner))
                 .collect::<Result<_, String>>()?,
-            locals: self.locals.inert_rollback_image(owner)?,
+            execution: self.execution.inert_rollback_image(owner)?,
             line_task: self.line_task.clone(),
             elapsed: self.elapsed,
             phase: self.phase,
@@ -440,7 +440,10 @@ impl DialogueActivationFrame {
                 .map(|binding| binding.into_live(owner))
                 .collect::<Result<Vec<_>, String>>()?
                 .into_boxed_slice(),
-            locals: crate::value::RuntimeEnv::from_rollback_image(image.locals, owner)?,
+            execution: super::super::NativeFlowExecutionFrame::from_rollback_image(
+                image.execution,
+                owner,
+            )?,
             line_task: image.line_task,
             elapsed: image.elapsed,
             phase: image.phase,
@@ -499,7 +502,8 @@ impl DialogueActivationFrame {
         let mut inputs = Vec::with_capacity(self.captures.len() + exports.len());
         for local in self.captures.iter().chain(exports.iter()) {
             let value = self
-                .locals
+                .execution
+                .env
                 .get(*local)
                 .ok_or(LineRuntimeError::UnknownOwnedLocal { local: *local })?;
             if !value.ownership().permits_copy() {
@@ -702,6 +706,41 @@ impl DialogueActivationStore {
             .commit_published_prepared(transaction.inner, proof)
             .into_line();
         DialogueTerminalReceipt { line, disposition }
+    }
+
+    /// Derived from the sole admitted frame and command/defer ledger. This
+    /// query stores no second execution phase and never consumes ingress.
+    pub(crate) fn has_internal_work(
+        &self,
+        activation: &DialogueActivationId,
+        joined_work: bool,
+    ) -> bool {
+        let Some(active) = self.registry.active_frame(activation) else {
+            return false;
+        };
+        let Some(line) = self.registry.active_line(activation) else {
+            return false;
+        };
+        let frame = &active.frame;
+        if line.has_pending_commands()
+            || line.deferred_inflight().is_some()
+            || frame.scopes.iter().any(|scope| scope.inflight.is_some())
+        {
+            return false;
+        }
+        match frame.phase {
+            DialogueRuntimePhase::Activating => {
+                frame.pending_line_operation.is_none() && frame.pending_host_call.is_none()
+            }
+            DialogueRuntimePhase::Ready => {
+                !joined_work
+                    && matches!(
+                        &frame.line_task,
+                        DialogueLineTaskState::Live(task) if task.is_closed()
+                    )
+            }
+            DialogueRuntimePhase::Closing | DialogueRuntimePhase::Publishing => !joined_work,
+        }
     }
 
     pub(crate) fn active_line(
@@ -1237,7 +1276,9 @@ mod tests {
             resume: None,
             captures: Box::default(),
             task_inputs: Box::default(),
-            locals: crate::value::RuntimeEnv::default(),
+            execution: crate::engine::NativeFlowExecutionFrame::running(
+                crate::value::RuntimeEnv::default(),
+            ),
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
             phase,
@@ -1276,8 +1317,8 @@ mod tests {
         );
         let mut state = frame(DialogueRuntimePhase::Activating);
         state.captures = vec![external].into_boxed_slice();
-        state.locals.set(external, RuntimeValue::Unit);
-        state.locals.set(export, RuntimeValue::Bool(true));
+        state.execution.env.set(external, RuntimeValue::Unit);
+        state.execution.env.set(export, RuntimeValue::Bool(true));
         let inputs = state
             .task_inputs_for_reveal(&[export])
             .expect("copyable activation local is available to line work");
@@ -1287,7 +1328,7 @@ mod tests {
         );
         assert_eq!(inputs[1].value, RuntimeValue::Bool(true));
 
-        state.locals.set(
+        state.execution.env.set(
             export,
             RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
                 &stage_actor_owner(),

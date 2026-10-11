@@ -4,12 +4,12 @@ use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionRejection,
 };
 use super::items::function_body_roles;
-use super::preparation::append_function_body_result_expectations;
 use super::state::{
     CandidateFactOperationFailure, CandidateFactTransactionAction, CandidateSemanticProjection,
 };
 use super::{
-    Analyzer, ExprId, FinalSemanticAnalysisError, HirFunctionBody, HirModule, ItemId, Rc, TypeKind,
+    Analyzer, ExprId, FinalSemanticAnalysisError, HirFunctionBody, HirModule, HirStmtKind, ItemId,
+    Rc, TypeKind,
 };
 
 /// The two existing function-body typing rules. A generator must declare a
@@ -54,7 +54,7 @@ impl Analyzer<'_, '_, '_> {
         if !matches!(result, TypeKind::Stream { .. }) {
             let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
             let yields = self
-                .check_function_body_type(&context, module, body, result)
+                .check_function_body_type(&context, module, body, &result)
                 .map_err(|error| error.into_public(*tail))?;
             return (yields == 0)
                 .then_some(())
@@ -124,7 +124,7 @@ impl Analyzer<'_, '_, '_> {
                     &context,
                     module,
                     body,
-                    interpretation.expected(result),
+                    &interpretation.expected(result),
                 )?;
                 Ok(CandidateFactTransactionAction::Extract(
                     interpretation.accepts_yields(yields),
@@ -142,52 +142,73 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         body: &HirFunctionBody,
-        expected: TypeKind,
+        expected: &TypeKind,
     ) -> Result<u32, AnalyzerExpressionError> {
-        let HirFunctionBody::Block { statements, .. } = body else {
+        let HirFunctionBody::Block {
+            statements, tail, ..
+        } = body
+        else {
             return Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::RecoveredOwner,
             ));
         };
-        let mut expectations = Vec::<(ExprId, TypeKind)>::new();
-        append_function_body_result_expectations(module, body, expected, &mut expectations)
-            .map_err(AnalyzerExpressionError::fatal)?;
-        for (owner, expected) in &expectations {
-            let value = match self.evaluate_expression(context, *owner, Some(expected)) {
-                Ok(value) => value,
-                Err(error) => {
-                    if matches!(
-                        error,
-                        AnalyzerExpressionError::Rejected(
-                            AnalyzerExpressionRejection::Unavailable { owner: rejected }
-                        ) if rejected == *owner
-                    ) && self
-                        .has_unselected_call_diagnostic(context, *owner)
-                        .map_err(AnalyzerExpressionError::fact)?
-                    {
-                        continue;
-                    }
-                    return Err(error);
-                }
-            };
-            if value.value_type().is_none()
-                && self
-                    .has_unselected_call_diagnostic(context, *owner)
-                    .map_err(AnalyzerExpressionError::fact)?
-            {
-                continue;
-            }
-            if value
-                .value_type()
-                .is_none_or(|actual| !expected.accepts(actual))
-            {
-                return Err(AnalyzerExpressionError::rejected(*owner));
+        for owner in statements {
+            let statement = module.resolve_stmt(*owner).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if let HirStmtKind::Return { value } = statement.kind() {
+                self.check_function_result_expression(context, *value, Some(expected))?;
             }
         }
         self.evaluate_block_statement_uses(context, module, statements)?;
+        let completion = self.function_statements_result_context(context, module, statements)?;
+        self.check_function_result_expression(
+            context,
+            *tail,
+            completion.continues().then_some(expected),
+        )?;
         function_body_roles(module, body, self.facts.expressions())
             .map(|(yields, _)| yields)
             .map_err(AnalyzerExpressionError::fatal)
+    }
+
+    fn check_function_result_expression(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+        expected: Option<&TypeKind>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let value = match self.evaluate_expression(context, owner, expected) {
+            Ok(value) => value,
+            Err(error) => {
+                if matches!(
+                    error,
+                    AnalyzerExpressionError::Rejected(
+                        AnalyzerExpressionRejection::Unavailable { owner: rejected }
+                    ) if rejected == owner
+                ) && self
+                    .has_unselected_call_diagnostic(context, owner)
+                    .map_err(AnalyzerExpressionError::fact)?
+                {
+                    return Ok(());
+                }
+                return Err(error);
+            }
+        };
+        if value.value_type().is_none()
+            && self
+                .has_unselected_call_diagnostic(context, owner)
+                .map_err(AnalyzerExpressionError::fact)?
+        {
+            return Ok(());
+        }
+        if value
+            .value_type()
+            .is_none_or(|actual| expected.is_some_and(|expected| !expected.accepts(actual)))
+        {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        Ok(())
     }
 }
 

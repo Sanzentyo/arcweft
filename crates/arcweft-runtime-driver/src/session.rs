@@ -861,7 +861,7 @@ impl BundleSession {
             .pure
             .saturating_add(pure_backend.stats().saturating_delta(view_pure_before));
         self.append_fx_diagnostics(&mut diagnostics);
-        let observations = self.executor.fiber().observations.clone();
+        let observations = self.executor.fiber().frame.observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
         requested_host_calls
@@ -1012,7 +1012,7 @@ impl BundleSession {
 
     pub fn is_finished(&self) -> bool {
         matches!(
-            &self.executor.fiber().status,
+            &self.executor.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         )
     }

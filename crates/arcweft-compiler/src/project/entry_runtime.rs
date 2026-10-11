@@ -10,7 +10,7 @@ use arcweft_core::{
     },
     pattern::RuntimeSemanticTypeId,
     plan::{
-        EntryRuntimeId, FlowRuntimeId, RouteCaptureCoordinate, RuntimeEntryKind, RuntimeEntrySpec,
+        EntryRuntimeId, FlowRuntimeId, RouteCaptureCoordinate, RuntimeEntrySpec,
         RuntimeEntryTarget, RuntimeHttpMethod, RuntimeRouteBinding, RuntimeRouteBindingSource,
         RuntimeRoutePath, RuntimeRoutePathSegment, RuntimeRouteSpec,
     },
@@ -23,10 +23,9 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{
     entry::{
         AgentBudget as CheckedAgentBudget, CheckedAgentEntry, CheckedCallableRole,
-        CheckedEntryBinding, CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryKind,
-        CheckedEntryRoute, CheckedEntryRouteBindingSource, CheckedExistingEntry,
-        CheckedExistingEntryTarget, CheckedInitialFlowRole, CheckedNominalRole,
-        CheckedStatefulEntry,
+        CheckedEntryBinding, CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryRoute,
+        CheckedEntryRouteBindingSource, CheckedExistingEntry, CheckedExistingEntryTarget,
+        CheckedInitialFlowRole, CheckedNominalRole, CheckedStatefulEntry,
     },
     final_analysis::FinalSemanticAnalysis,
     registration::RegisteredSemanticWorld,
@@ -111,7 +110,7 @@ pub(super) fn runtime_entry_lowering_input(
         let runtime_id = runtime_entry_id(binding.id())?;
         let binding_identity =
             EntryBindingIdentity::from_bytes(*binding.binding_digest().as_bytes());
-        let kind = runtime_entry_kind(&binding.kind());
+        let kind = binding.kind().runtime_kind();
 
         let (target, roles) = match binding {
             CheckedEntryBinding::Stateful(checked) => {
@@ -465,20 +464,6 @@ const fn runtime_http_method(method: HirHttpMethod) -> RuntimeHttpMethod {
 fn runtime_entry_id(id: &CheckedEntryId) -> Result<EntryRuntimeId, EntryRuntimeProjectionError> {
     EntryRuntimeId::from_source_entity_body(id.public_id().as_str())
         .map_err(|error| EntryRuntimeProjectionError::InvalidEntryIdentity(error.to_string()))
-}
-
-fn runtime_entry_kind(kind: &CheckedEntryKind) -> RuntimeEntryKind {
-    match kind {
-        CheckedEntryKind::Game => RuntimeEntryKind::Game,
-        CheckedEntryKind::Editor => RuntimeEntryKind::Editor,
-        CheckedEntryKind::Cli => RuntimeEntryKind::Cli,
-        CheckedEntryKind::Server => RuntimeEntryKind::Server,
-        CheckedEntryKind::Activity => RuntimeEntryKind::Activity,
-        CheckedEntryKind::Test => RuntimeEntryKind::Test,
-        CheckedEntryKind::Bench => RuntimeEntryKind::Bench,
-        CheckedEntryKind::Agent => RuntimeEntryKind::Agent,
-        CheckedEntryKind::Custom(value) => RuntimeEntryKind::Custom(value.clone()),
-    }
 }
 
 fn runtime_callable_role(

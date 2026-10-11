@@ -24,20 +24,20 @@ impl Engine {
     pub(super) fn abandon_format_attempt_for_transfer(&mut self) -> bool {
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(_),
-        }) = self.fiber.control_stack.last()
+        }) = self.fiber.frame.control_stack.last()
         else {
             return false;
         };
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(mut frame),
-        }) = self.fiber.control_stack.pop()
+        }) = self.fiber.frame.control_stack.pop()
         else {
             unreachable!("format attempt frame was checked before removal")
         };
         if let Some(active) = frame.active.take() {
-            self.fiber.env.pop_scope();
-            self.fiber.pending_ops = active.caller_pending_ops;
-            self.fiber.cursor = active.resume;
+            self.fiber.frame.env.pop_scope();
+            self.fiber.frame.pending_ops = active.caller_pending_ops;
+            self.fiber.frame.cursor = active.resume;
         }
         true
     }
@@ -78,7 +78,7 @@ impl Engine {
             return Err(RuntimeEvalError::InvalidExpressionType(value.ty()));
         }
         if ordinal == 0 {
-            self.fiber.control_stack.push(FlowControlStackEntry {
+            self.fiber.frame.control_stack.push(FlowControlStackEntry {
                 kind: FlowControlStackEntryKind::FormatAttempt(NativeFormatAttemptFrame {
                     attempt,
                     context: self.format_context.clone(),
@@ -90,18 +90,18 @@ impl Engine {
             });
         }
         let resume = self.resume_cursor(next_op_index);
-        let caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
+        let caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(frame),
-        }) = self.fiber.control_stack.last_mut()
+        }) = self.fiber.frame.control_stack.last_mut()
         else {
-            self.fiber.pending_ops = caller_pending_ops;
+            self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "format operand has no current attempt frame".to_owned(),
             ));
         };
         if frame.attempt != attempt || frame.next_operand != ordinal || frame.active.is_some() {
-            self.fiber.pending_ops = caller_pending_ops;
+            self.fiber.frame.pending_ops = caller_pending_ops;
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "format operands are out of source order".to_owned(),
             ));
@@ -111,10 +111,11 @@ impl Engine {
             resume,
             caller_pending_ops,
         });
-        self.fiber.env.push_scope_with_capacity(0);
-        self.fiber.cursor = resume;
-        self.fiber.pending_ops = VecDeque::from(body);
+        self.fiber.frame.env.push_scope_with_capacity(0);
+        self.fiber.frame.cursor = resume;
+        self.fiber.frame.pending_ops = VecDeque::from(body);
         self.fiber
+            .frame
             .pending_ops
             .push_back(FlowOp::CompleteFormatOperand {
                 attempt,
@@ -148,7 +149,7 @@ impl Engine {
         }
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(frame),
-        }) = self.fiber.control_stack.last_mut()
+        }) = self.fiber.frame.control_stack.last_mut()
         else {
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "format completion has no current attempt frame".to_owned(),
@@ -168,9 +169,9 @@ impl Engine {
         let active = frame.active.take().expect("checked active format operand");
         frame.values[ordinal] = Some(evaluated);
         frame.next_operand = ordinal + 1;
-        self.fiber.env.pop_scope();
-        self.fiber.pending_ops = active.caller_pending_ops;
-        self.fiber.cursor = active.resume;
+        self.fiber.frame.env.pop_scope();
+        self.fiber.frame.pending_ops = active.caller_pending_ops;
+        self.fiber.frame.cursor = active.resume;
         Ok(())
     }
 
@@ -180,14 +181,15 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        let Some(index) = self.fiber.control_stack.iter().rposition(|entry| {
+        let Some(index) = self.fiber.frame.control_stack.iter().rposition(|entry| {
             matches!(&entry.kind, FlowControlStackEntryKind::FormatAttempt(frame) if frame.active.is_some())
         }) else {
             return false;
         };
-        while self.fiber.control_stack.len() > index + 1 {
+        while self.fiber.frame.control_stack.len() > index + 1 {
             let entry = self
                 .fiber
+                .frame
                 .control_stack
                 .pop()
                 .expect("bounded format unwind");
@@ -196,11 +198,11 @@ impl Engine {
                     origin, cleanups, ..
                 } => {
                     self.cancel_scheduled_scope_close(origin);
-                    self.fiber.env.pop_scope();
+                    self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
                 FlowControlStackEntryKind::FunctionCall(frame) if frame.function_scope => {
-                    self.fiber.env.pop_scope();
+                    self.fiber.frame.env.pop_scope();
                 }
                 FlowControlStackEntryKind::FunctionCall(_)
                 | FlowControlStackEntryKind::Loop { .. }
@@ -212,7 +214,7 @@ impl Engine {
             }
         }
         let FlowControlStackEntryKind::FormatAttempt(frame) =
-            &mut self.fiber.control_stack[index].kind
+            &mut self.fiber.frame.control_stack[index].kind
         else {
             unreachable!("selected format frame is stable during unwind")
         };
@@ -225,10 +227,10 @@ impl Engine {
         if frame.first_recoverable.is_none() {
             frame.first_recoverable = Some(failure.to_owned());
         }
-        self.fiber.env.pop_scope();
-        self.fiber.pending_ops = active.caller_pending_ops;
-        self.fiber.cursor = active.resume;
-        self.fiber.status = FlowFiberStatus::Running;
+        self.fiber.frame.env.pop_scope();
+        self.fiber.frame.pending_ops = active.caller_pending_ops;
+        self.fiber.frame.cursor = active.resume;
+        self.fiber.frame.status = FlowFiberStatus::Running;
         true
     }
 
@@ -254,7 +256,7 @@ impl Engine {
         let count = manifest.operands().len();
         let Some(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FormatAttempt(frame),
-        }) = self.fiber.control_stack.pop()
+        }) = self.fiber.frame.control_stack.pop()
         else {
             return Err(RuntimeEvalError::DialogueContentConstruction(
                 "FormatContent has no completed attempt frame".to_owned(),
@@ -372,7 +374,7 @@ mod tests {
                 rhs: Box::new(literal(integer, RuntimeValue::i64(0))),
             },
         );
-        engine.fiber.pending_ops = VecDeque::from(vec![
+        engine.fiber.frame.pending_ops = VecDeque::from(vec![
             FlowOp::FormatOperandAttempt {
                 attempt,
                 parameter: RuntimeFmtParameterId::Value,
@@ -402,8 +404,8 @@ mod tests {
         for _ in 0..3 {
             engine.step_flow(&mut output, &mut backend, &mut drop_policy);
         }
-        assert!(engine.fiber.pending_ops.is_empty());
-        assert_eq!(engine.fiber.status, FlowFiberStatus::Running);
+        assert!(engine.fiber.frame.pending_ops.is_empty());
+        assert_eq!(engine.fiber.frame.status, FlowFiberStatus::Running);
         assert!(output.diagnostics.is_empty());
         let values = engine.take_format_attempt_values(attempt).unwrap();
         assert_eq!(values.context.active_locale(), &initial_locale);
@@ -421,7 +423,7 @@ mod tests {
                 ),
             ]
         );
-        assert!(engine.fiber.control_stack.is_empty());
+        assert!(engine.fiber.frame.control_stack.is_empty());
     }
 
     #[test]
@@ -437,7 +439,7 @@ mod tests {
                 rhs: Box::new(literal(string, RuntimeValue::String("bad".to_owned()))),
             },
         );
-        engine.fiber.pending_ops = VecDeque::from(vec![
+        engine.fiber.frame.pending_ops = VecDeque::from(vec![
             FlowOp::FormatOperandAttempt {
                 attempt,
                 parameter: RuntimeFmtParameterId::Value,
@@ -462,7 +464,10 @@ mod tests {
         let mut drop_policy = None;
         engine.step_flow(&mut output, &mut backend, &mut drop_policy);
         engine.step_flow(&mut output, &mut backend, &mut drop_policy);
-        assert!(matches!(engine.fiber.status, FlowFiberStatus::Failed(_)));
+        assert!(matches!(
+            engine.fiber.frame.status,
+            FlowFiberStatus::Failed(_)
+        ));
         assert_eq!(output.diagnostics.len(), 1);
     }
 }

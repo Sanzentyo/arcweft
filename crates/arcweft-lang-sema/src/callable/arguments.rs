@@ -145,6 +145,17 @@ impl MappedCallArgument {
     pub(crate) fn slots(&self) -> &[MappedCallArgumentSlot] {
         &self.slots
     }
+
+    /// A compact numeric spread is mapper-owned literal data. Its logical
+    /// elements have no expression IDs or executable control transfers.
+    pub(crate) fn is_compact_numeric_literal_source(&self, source: ExprId) -> bool {
+        self.source == source
+            && self.passing == MappedCallArgumentPassing::Spread
+            && !self.slots.is_empty()
+            && self.slots.iter().all(|slot| {
+                matches!(slot.source(), CheckedCallArgumentSlotSource::CompactNumericElement { sequence, .. } if sequence == source)
+            })
+    }
 }
 
 impl MappedCallArgumentSlot {
@@ -234,6 +245,13 @@ impl PreparedCallArgumentMapping {
             .map(MappedCallArgument::source)
             .collect::<Vec<_>>()
             .into_boxed_slice()
+    }
+
+    pub(crate) fn has_compact_numeric_literal_source(&self, ordinal: u32, source: ExprId) -> bool {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| self.arguments.get(ordinal))
+            .is_some_and(|argument| argument.is_compact_numeric_literal_source(source))
     }
 
     /// Classifies every authored argument for selected-HIR traversal. The

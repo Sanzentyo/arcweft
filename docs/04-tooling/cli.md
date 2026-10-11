@@ -160,7 +160,19 @@ oxiz  use the pure Rust OxiZ adapter
 z3    use the external Z3 process adapter
 ```
 
-JSON output is shared with LSP and future Agent tooling. Diagnostics include a
+Accepted verification JSON is shared with LSP and future Agent tooling. If
+project compilation rejects the source before verification, `--json` publishes
+a version1 compiler rejection report (`status: "denied"`, original `stage`,
+canonical `diagnostics`) and exits unsuccessfully. Its source spans retain exact
+document identity and revision. The optional `rejected_obligation_kind` is
+projected from the original typed semantic error, never parsed from diagnostic
+text. It does not imply that a verifier obligation or runtime plan was admitted.
+The same requested compiler-rejection output is used by plan, serve, compile,
+unsafe and the inspection path of verify-types. Setup and runtime-host failures
+remain their own command boundaries. See [verification](verification.md) for
+the complete rejected-analysis contract.
+
+Accepted-report diagnostics include a
 stable diagnostic id, obligation id, severity, source span when available,
 related ids, and code-action descriptors. The report includes conservative
 semantic obligations such as MustDrop discharge, upper-lifetime writes, unsafe
@@ -1163,6 +1175,13 @@ are reported as skipped until a player adapter owns those backends.
 `measure` section, accepts `setup`, `measure`, `assert`, and `report` sections,
 measures headless `measure` bodies that name `goto @flow...`, and reports
 per-bench `measured`, `validated`, `skipped`, or `failed` status in JSON.
+`--value name=typed-value` supplies the complete input inventory of each measured
+Flow, using the same parser and plan-owned parameter/type admission as
+`arcw run --flow`. Missing, duplicate, unknown, or incorrectly typed inputs fail
+before execution. Each warmup and measured iteration starts from the same
+admitted unrestricted values; affine or linear inputs cannot be repeated.
+The actual matching `entry bench` declaration remains required. Pure-helper
+measurements use their generated checked input series and reject `--value`.
 The same native file task bridge used by `arcw run` and `arcw test` is active
 inside measured headless bench iterations, so `fs.read_text`, `fs.read_bytes`,
 `fs.write_text`, and `fs.write_bytes` can participate in correctness and timing
@@ -1345,6 +1364,20 @@ bench @bench.score {
 }
 ```
 
+For `pure(name)` measurements, the compiler selects exactly one accepted
+function declaration in the current semantic generation. Unknown or ambiguous
+selectors, external effects, suspension, and unsupported measurement ABIs fail
+explicitly. The native conformance workload supports the complete direct `i64`
+ABI with zero to four inputs; a zero-input helper is still invoked once per row.
+`--max-ops` is the per-invocation VM control budget, including executable VM
+fallback in the configured runtime batch. The configured batch admits physical
+completion only when the existing owning total/control-cost projection fits the
+budget; otherwise it invokes the bounded VM and reports actual VM/fallback
+counters. Native timing measurements follow the same successfully bounded VM
+input series, including conformance and warmup. The JSON records `input_seed`
+and `vm_max_ops`; warmup executions are excluded from timing and measured batch
+counters. Unsupported native conformance fails the requested measurement; it
+never substitutes a VM result under an AOT/JIT label.
 For `pure(name)` measurements, `arcw bench --json` runs the VM reference, the
 typed AOT plan, the native Cranelift JIT, and the JIT batch loop with
 deterministic generated integer inputs. The report includes conformance,

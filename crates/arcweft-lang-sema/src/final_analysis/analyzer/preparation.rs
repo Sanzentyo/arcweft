@@ -21,10 +21,9 @@ use super::expressions::AnalyzerExpressionExpectation;
 use super::state::SemanticFactState;
 use super::{
     Analyzer, BTreeMap, BTreeSet, ExprId, FinalSemanticAnalysisError, GenericTypeScope,
-    HirExprKind, HirFunctionBody, HirImplMember, HirItemKind, HirModule, HirPatternKind,
-    HirPredicateBody, HirProofBody, HirStmtKind, NominalResolutionLimits, PatternId,
-    ProjectNominalType, Rc, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId,
-    TypeKind, TypeResolutionInput,
+    HirExprKind, HirImplMember, HirItemKind, HirModule, HirPatternKind, HirPredicateBody,
+    HirProofBody, HirStmtKind, NominalResolutionLimits, PatternId, ProjectNominalType, Rc,
+    ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId, TypeKind, TypeResolutionInput,
     expression_types::literal_type,
     patterns::{PatternSeedContext, seed_item_parameter_types, seed_pattern_locals},
     resolve_type_ref,
@@ -1162,40 +1161,6 @@ fn resolved_required_result(
         .get(&owner)
         .cloned()
         .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
-}
-
-pub(super) fn append_function_body_result_expectations(
-    module: &HirModule,
-    body: &HirFunctionBody,
-    expected: TypeKind,
-    expectations: &mut Vec<(ExprId, TypeKind)>,
-) -> Result<(), FinalSemanticAnalysisError> {
-    let HirFunctionBody::Block {
-        statements, tail, ..
-    } = body
-    else {
-        return Err(FinalSemanticAnalysisError::RecoveredOwner);
-    };
-    for statement in statements {
-        let statement = module
-            .resolve_stmt(*statement)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if let HirStmtKind::Return { value } = statement.kind() {
-            expectations.push((*value, expected.clone()));
-        }
-    }
-    let tail_expected = match statements.last() {
-        Some(statement)
-            if module
-                .resolve_stmt(*statement)
-                .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Return { .. })) =>
-        {
-            TypeKind::Unit
-        }
-        _ => expected,
-    };
-    expectations.push((*tail, tail_expected));
-    Ok(())
 }
 
 fn append_flow_body_result_expectations(

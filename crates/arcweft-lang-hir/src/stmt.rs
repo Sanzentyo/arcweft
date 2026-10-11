@@ -307,7 +307,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
             Body::SourceLocale => matches!(kind, HirStmtKind::SourceLocale(_)),
             Body::Scope => matches!(kind, HirStmtKind::Scope(_)),
         },
-        Issue::EmptyMatch => matches!(kind, HirStmtKind::Match(_)),
         Issue::EmptySelect | Issue::RecoveredSelectBranch { .. } => {
             matches!(kind, HirStmtKind::Select(_))
         }

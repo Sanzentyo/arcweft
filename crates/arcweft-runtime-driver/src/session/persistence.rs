@@ -135,7 +135,10 @@ impl BundleSession {
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
         validate_dialogue_content_frames(&self.dialogue_content, &self.presentation)?;
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
-        validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
+        validate_presentation_runtime_status(
+            &self.presentation,
+            &self.executor.fiber().frame.status,
+        )?;
         let active = self.active_generation();
         self.executor.product_awbc_program().ok_or_else(|| {
             BundleSessionSaveError::UnsupportedExecutorTier {
@@ -585,7 +588,7 @@ impl BundleSession {
             }
             validate_presentation_runtime_status(
                 &snapshot.presentation,
-                &restored_executor.fiber().status,
+                &restored_executor.fiber().frame.status,
             )?;
             let mut value_validator = SessionRestoreValueValidator::new(validator);
             value_validator.visit_root(snapshot.root.as_ref())?;

@@ -32,21 +32,27 @@ pub(super) fn assert_unselected_call_has_no_execution(
 fn unselected_call_outcomes_never_grant_execution() {
     use crate::callable::CallAnalysisOutcome;
 
-    let fixture = super::typed_overload_fixture(
+    for source in [
         "fn caller() { choose(true); }\n",
-        "choose",
-        vec![
-            super::TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
-            super::TestCallableOverload::strict([TypeKind::U64], TypeKind::U64),
-        ],
-    );
-    let analysis = analyze(&fixture).expect("rejected overloads remain inspectable by tooling");
-    let calls = analysis.calls().collect::<Vec<_>>();
-    let [(owner, call)] = calls.as_slice() else {
-        panic!("one source call");
-    };
-    assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
-    assert_unselected_call_has_no_execution(&analysis, *owner);
+        "fn caller() -> i64 { choose(true); return 42i64 }\n",
+        "fn caller() -> i64 { choose(true); if true { return 42i64 } else { return 0i64 } }\n",
+    ] {
+        let fixture = super::typed_overload_fixture(
+            source,
+            "choose",
+            vec![
+                super::TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
+                super::TestCallableOverload::strict([TypeKind::U64], TypeKind::U64),
+            ],
+        );
+        let analysis = analyze(&fixture).expect("rejected overloads remain inspectable by tooling");
+        let calls = analysis.calls().collect::<Vec<_>>();
+        let [(owner, call)] = calls.as_slice() else {
+            panic!("one source call");
+        };
+        assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
+        assert_unselected_call_has_no_execution(&analysis, *owner);
+    }
 }
 
 #[test]

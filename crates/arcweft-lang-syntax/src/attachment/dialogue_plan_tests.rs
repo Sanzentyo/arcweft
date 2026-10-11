@@ -68,7 +68,7 @@ fn line_plan(source: &str) -> crate::attachment::AttachedDialogueLinePlan {
         .unwrap()
         .dialogue_line_plan()
         .unwrap()
-        .expect("Dialogue application retains its line plan")
+        .unwrap_or_else(|| panic!("Dialogue application retains its line plan: {source:?}"))
 }
 
 fn expect_init(item: &AttachedDialogueLinePlanItem) -> &AttachedDialogueLinePlanInit {
@@ -100,6 +100,68 @@ fn braced_init_is_one_typed_scoped_item_with_ordered_statements() {
     assert_eq!(init.statements()[1].kind(), SyntaxKind::ExpressionStatement);
     assert!(!init.has_recovery());
     assert_eq!(plan.body().items()[1].kind(), SyntaxKind::OutStatement);
+}
+
+#[test]
+fn init_and_direct_line_plan_conditions_own_typed_flow_branch_bodies() {
+    use crate::attachment::node::IfStatementKind;
+    use crate::attachment::{AttachedThreadFlowItem, IfStatementElseNode};
+
+    for source in [
+        "flow main() { alice()[Ready[p]] with { init { if ready { log.info(\"then\") } else { log.info(\"else\") } } } }",
+        "flow main() { alice()[Ready[p]] with { if ready { log.info(\"then\") } else { log.info(\"else\") } } }",
+        "flow main() {\n    alice()[Ready[p]] with:\n        init:\n            if ready { log.info(\"then\") } else { log.info(\"else\") }\n}",
+    ] {
+        let plan = line_plan(source);
+        let [item] = plan.body().items() else {
+            panic!("one line work root")
+        };
+        let statement = match item {
+            AttachedDialogueLinePlanItem::Init(init) => {
+                let [statement] = init.statements() else {
+                    panic!("one Init statement")
+                };
+                statement
+            }
+            AttachedDialogueLinePlanItem::Statement(statement) => statement,
+        };
+        let conditional = statement.cast::<IfStatementKind>().expect("typed If root");
+        let then = conditional.then_branch().expect("typed then branch");
+        let Some(IfStatementElseNode::Block(otherwise)) =
+            conditional.else_branch().expect("typed else branch")
+        else {
+            panic!("authored block else")
+        };
+        for block in [then, otherwise] {
+            let body = block
+                .thread_flow_body()
+                .expect("line work keeps Flow body grammar");
+            let [AttachedThreadFlowItem::Statement(statement)] = body.items() else {
+                panic!("one source-ordered expression statement")
+            };
+            assert_eq!(statement.kind(), SyntaxKind::ExpressionStatement);
+            assert!(!body.has_recovery());
+        }
+    }
+}
+
+#[test]
+fn inline_with_colon_missing_indent_keeps_recovery_and_following_binding() {
+    let source = "flow main() {\n    alice()[Ready[p]] with:\n    let following = 1\n}";
+    let plan = line_plan(source);
+    assert!(plan.body().has_recovery());
+    let snapshot = attach(source);
+    let bindings = snapshot
+        .nodes()
+        .filter(|node| node.kind() == SyntaxKind::LetStatement)
+        .collect::<Vec<_>>();
+    let [binding] = bindings.as_slice() else {
+        panic!("following binding stays outside recovery")
+    };
+    assert_eq!(
+        binding.source_span().range().start(),
+        source.find("let following").unwrap()
+    );
 }
 
 #[test]

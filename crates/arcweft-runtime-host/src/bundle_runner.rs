@@ -560,7 +560,7 @@ fn run_runtime_steps_with_executor(
         let (summary, task_requests, host_call_requests, _audio_commands) =
             BundleRunnerStepSummary::from_result(step_index, result);
         let done = matches!(
-            executor.fiber().status,
+            executor.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         summaries.push(summary);
@@ -588,6 +588,7 @@ fn run_runtime_steps_with_executor(
         steps: summaries,
         final_status: executor
             .fiber()
+            .frame
             .status
             .status_label(FlowStatusLabelStyle::Runtime),
         executor_stats: executor.executor_stats(),

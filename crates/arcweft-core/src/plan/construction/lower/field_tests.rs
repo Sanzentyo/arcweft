@@ -422,12 +422,15 @@ fn field_inspection_native_and_pure_execution_preserve_an_affine_receiver_until_
             "{:?}",
             step.output.diagnostics
         );
-        assert_eq!(engine.fiber().env.get(local_ids[0]), Some(&value));
+        assert_eq!(engine.fiber().frame.env.get(local_ids[0]), Some(&value));
         assert_eq!(
-            engine.fiber().env.get(inspected),
+            engine.fiber().frame.env.get(inspected),
             Some(&RuntimeValue::String("resource://one".into()))
         );
-        assert!(matches!(engine.fiber().status, FlowFiberStatus::Running));
+        assert!(matches!(
+            engine.fiber().frame.status,
+            FlowFiberStatus::Running
+        ));
     }
     let completed = engine.step(RuntimeStepInput::default(), options);
     assert!(
@@ -435,9 +438,12 @@ fn field_inspection_native_and_pure_execution_preserve_an_affine_receiver_until_
         "{:?}",
         completed.output.diagnostics
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
     assert!(
-        engine.fiber().env.get(local_ids[0]).is_none(),
+        engine.fiber().frame.env.get(local_ids[0]).is_none(),
         "only the final Move consumes the receiver"
     );
 }
@@ -614,6 +620,12 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
             }],
         )
         .unwrap();
+    assert!(matches!(
+        invocation.try_repeat_unrestricted(),
+        Err(crate::plan::RuntimeFlowInvocationError::NonRepeatableParameter { parameter })
+            if parameter == FlowParameterCoordinate::from_position(0)
+    ));
+    // A rejected repeat leaves the original composite Need custody usable.
     let mut engine = Engine::for_flow_invocation_with_need_context(
         invocation,
         crate::task::GenerationId::new(0),
@@ -629,10 +641,13 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
         moved.output.diagnostics
     );
     assert!(
-        engine.fiber().env.get(fixture.owner).is_none(),
+        engine.fiber().frame.env.get(fixture.owner).is_none(),
         "the whole partial owner cannot be read"
     );
-    assert_eq!(engine.fiber().env.get(fixture.body), Some(&fixture.need));
+    assert_eq!(
+        engine.fiber().frame.env.get(fixture.body),
+        Some(&fixture.need)
+    );
     for uri in fixture.uris {
         let inspected = engine.step(RuntimeStepInput::default(), options);
         assert!(
@@ -641,11 +656,14 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
             inspected.output.diagnostics
         );
         assert_eq!(
-            engine.fiber().env.get(uri),
+            engine.fiber().frame.env.get(uri),
             Some(&RuntimeValue::String("resource://one".into()))
         );
-        assert_eq!(engine.fiber().env.get(fixture.body), Some(&fixture.need));
-        assert!(engine.fiber().env.get(fixture.owner).is_none());
+        assert_eq!(
+            engine.fiber().frame.env.get(fixture.body),
+            Some(&fixture.need)
+        );
+        assert!(engine.fiber().frame.env.get(fixture.owner).is_none());
     }
     let completed = engine.step(RuntimeStepInput::default(), options);
     assert!(
@@ -653,11 +671,12 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
         "{:?}",
         completed.output.diagnostics
     );
-    let FlowFiberStatus::Done(crate::engine::FlowExit::Return(label)) = &engine.fiber().status
+    let FlowFiberStatus::Done(crate::engine::FlowExit::Return(label)) =
+        &engine.fiber().frame.status
     else {
         panic!(
             "the moved Need and two inspected URIs must return: {:?}",
-            engine.fiber().status
+            engine.fiber().frame.status
         );
     };
     assert_eq!(
@@ -669,7 +688,7 @@ fn nominal_field_inspection_native_reads_the_live_child_after_an_affine_sibling_
         ]))
     );
     assert!(
-        engine.fiber().env.get(fixture.body).is_none(),
+        engine.fiber().frame.env.get(fixture.body).is_none(),
         "the Need moves once into the return"
     );
 }

@@ -153,7 +153,7 @@ impl Engine {
                 &self.plan,
                 args.pattern,
                 item.into_value(),
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             ) {
                 Ok(Some(bindings)) => {
                     let should_continue = self.with_temp_bindings(bindings, |this| {
@@ -199,6 +199,7 @@ impl Engine {
                 };
                 let state = self
                     .fiber
+                    .frame
                     .stream_states
                     .entry(stream.clone())
                     .or_insert_with(|| StreamRuntimeState::new(stream.clone()));
@@ -235,7 +236,7 @@ impl Engine {
                 &self.plan,
                 &arm.pattern,
                 &value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             ) else {
                 continue;
             };
@@ -245,7 +246,7 @@ impl Engine {
                     &arm.pattern,
                     &value,
                     guard,
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 ) {
                     Ok(projected) => projected,
                     Err(error) => {
@@ -264,7 +265,7 @@ impl Engine {
                     &self.plan,
                     &arm.pattern,
                     value,
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )
                 .expect("checked stream match remains valid")
                 .expect("checked stream match remains selected");
@@ -288,7 +289,7 @@ impl Engine {
             Ok(target) => {
                 if let Some(stream) = target.strip_prefix("stream:")
                     && let Ok(stream_id) = StreamRuntimeId::from_runtime_target_value(stream)
-                    && let Some(state) = self.fiber.stream_states.get_mut(&stream_id)
+                    && let Some(state) = self.fiber.frame.stream_states.get_mut(&stream_id)
                     && let Some(sequence) = state.close_with_sequence()
                 {
                     output.effects.stream_events.push(RuntimeStreamEvent {
@@ -338,6 +339,7 @@ impl Engine {
             .and_then(|stream| StreamRuntimeId::from_runtime_target_value(stream).ok())
             .and_then(|stream| {
                 self.fiber
+                    .frame
                     .stream_states
                     .get_mut(&stream)
                     .and_then(|state| state.queue.pop_front())

@@ -1,7 +1,8 @@
 use super::diagnostics::emit_diagnostics;
 use super::project::{
-    CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
-    resolve_source_selection, runtime_pure_config_for_selection, verify_compiled_project,
+    CheckedModule, ProfileOptions, ProjectDiagnosticOutput, SourceSelection,
+    load_and_check_selection, resolve_source_selection, runtime_pure_config_for_selection,
+    verify_compiled_project,
 };
 use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
@@ -41,7 +42,11 @@ const Z3_BIN_ENV: &str = "ARCWEFT_Z3_BIN";
 
 pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
+    let checked = load_and_check_selection(
+        &selection,
+        None,
+        ProjectDiagnosticOutput::for_json(options.json),
+    )?;
     let mut report = verify_compiled_project(
         &checked.compiled,
         VerificationPolicy {
@@ -104,7 +109,13 @@ pub(super) fn verify_types_command(
         None
     };
     let mut checked = source_runtime.as_ref().map_or_else(
-        || load_and_check_selection(&selection, None),
+        || {
+            load_and_check_selection(
+                &selection,
+                None,
+                ProjectDiagnosticOutput::for_json(options.json),
+            )
+        },
         |runtime| {
             Ok(CheckedModule {
                 compiled: std::sync::Arc::clone(&runtime.compiled),
@@ -267,7 +278,11 @@ fn verify_types_runtime_self_check(
 
 pub(super) fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
+    let checked = load_and_check_selection(
+        &selection,
+        None,
+        ProjectDiagnosticOutput::for_json(options.json),
+    )?;
     let report = verify_compiled_project(
         &checked.compiled,
         VerificationPolicy {

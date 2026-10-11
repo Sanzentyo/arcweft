@@ -1,12 +1,18 @@
 use super::options::PlanOptions;
-use crate::app::project::{load_and_check_selection, resolve_source_selection};
+use crate::app::project::{
+    ProjectDiagnosticOutput, load_and_check_selection, resolve_source_selection,
+};
 use crate::app::shared::print_json;
 use crate::output::RuntimePlanReport;
 use std::process::ExitCode;
 
 pub(in crate::app) fn runtime_plan_command(options: &PlanOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
+    let checked = load_and_check_selection(
+        &selection,
+        None,
+        ProjectDiagnosticOutput::for_json(options.json),
+    )?;
     let lowered = checked.runtime_plan();
     let report = RuntimePlanReport::from_lowered(&checked, lowered)?;
     if options.json {

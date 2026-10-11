@@ -2873,3 +2873,285 @@ source = \"src/main.arcw\"\n",
     let mut session = ProjectCompilationSession::try_new().expect("dialogue HIR database");
     compile_project(&mut session, &project, &parsed_sources, &context)
 }
+
+fn resolve_authored_spacing_frame(
+    compiled: &CompiledProject,
+    schema: &arcweft_dialogue::CharacterDialogueRuntimeSchema,
+    artifact: arcweft_core::effect::RuntimeArtifactFingerprint,
+    template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
+    target: &arcweft_core::value::RuntimeOpaqueValue,
+    values: &[RuntimeDialogueValueBinding],
+) -> arcweft_text_model::LineDisplayFrame {
+    let runtime = compiled.runtime_plan();
+    let manifest = runtime.plan.dialogue_content().template(template).unwrap();
+    let content =
+        RuntimeDialogueContentValue::try_from_evaluated_bindings(artifact, manifest, values)
+            .expect(
+                "the executed values retain the admitted template's exact slot roles and types",
+            );
+    let fragments = runtime
+        .dialogue_content_catalog
+        .fragment_catalog(artifact)
+        .unwrap();
+    let materialized = DialogueContentMaterializer::new(&fragments)
+        .materialize(&content)
+        .unwrap();
+    let spec = runtime
+        .dialogue_content_catalog
+        .records()
+        .iter()
+        .find(|spec| spec.template_id() == template)
+        .expect("the selected dialogue has its exact catalog record");
+    let admitted = schema
+        .admit(
+            schema.program_owner(),
+            &RuntimeValue::Opaque(target.clone()),
+            target.semantic_identity(),
+        )
+        .expect("the executed CharacterDialogue target belongs to this program generation");
+    let config = admitted.dialogue().config();
+    let RuntimeValue::Opaque(style) = config.style().typed().value() else {
+        panic!("the fixture uses the admitted default empty Style role")
+    };
+    assert!(
+        arcweft_dialogue::CharacterDialogueRolePayloadCodec::RichTextProperties
+            .decode_properties(style.payload())
+            .unwrap()
+            .is_empty()
+    );
+    let RuntimeValue::Opaque(rich_text) = config.rich_text().typed().value() else {
+        panic!("the admitted RichText role carries its typed property payload")
+    };
+    let base_styles = arcweft_text_model::project_character_dialogue_rich_text_properties(
+        &arcweft_dialogue::CharacterDialogueRolePayloadCodec::RichTextProperties
+            .decode_properties(rich_text.payload())
+            .unwrap(),
+    )
+    .unwrap();
+    let context = arcweft_render_text::RuntimeLineContext::new(
+        values.to_vec(),
+        arcweft_text_model::DialoguePresentationCharacter {
+            id: admitted.dialogue().character().clone(),
+            display_name: "Alice".to_owned(),
+        },
+        arcweft_text_model::CharacterDialoguePresentationConfig {
+            view: config.view().clone(),
+            style_sheet: None,
+            voice: config.voice().cloned(),
+            look: config.look().cloned(),
+            stage: config.stage().cloned(),
+            portrait: config.portrait().cloned(),
+            focus: config.focus().cloned(),
+            cleanup: config.cleanup().cloned(),
+            source_locale: config.source_locale().cloned(),
+            hooks: config.hooks().to_vec(),
+            inline_failure: config.inline_failure().clone(),
+            custom: config.custom().clone(),
+            config_digest: schema.effective_config_digest(admitted.dialogue()).unwrap(),
+        },
+        base_styles,
+        spec.inline_styles().to_vec(),
+    );
+    let frame =
+        arcweft_render_text::resolve_materialized_frame(spec, &materialized, &content, &context)
+            .expect("the admitted Content resolves through the existing typed display-map owner");
+    assert!(frame.inline_failures.is_empty());
+    assert!(frame.unresolved.is_empty());
+    frame.validate().unwrap();
+    let encoded = serde_json::to_vec(&frame).unwrap();
+    let decoded: arcweft_text_model::LineDisplayFrame = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded, frame);
+    frame
+}
+
+fn frames_for_authored_dialogue_spacing(source: &str) -> arcweft_text_model::LineDisplayFrame {
+    let compiled = compile_attached_dialogue_project(source).unwrap();
+    let runtime = compiled.runtime_plan();
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "authored_dialogue_spacing.arcw",
+    )
+    .lower()
+    .expect("the checked source lowers to canonical verified AWBC");
+    let bytes = report.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, report.program);
+    let [flow] = runtime.plan.flows() else {
+        panic!("one fixture flow")
+    };
+    let template = flow
+        .body()
+        .ops()
+        .iter()
+        .find_map(|op| match op {
+            FlowOp::Dialogue { content, .. } => runtime
+                .plan
+                .dialogue_content()
+                .get(*content)
+                .map(RuntimeDialogueContentPlan::template),
+            _ => None,
+        })
+        .expect("the authored dialogue owns its checked template");
+    let artifact = arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&bytes).as_bytes(),
+    )
+    .unwrap();
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(artifact).unwrap();
+    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    let native_schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+        );
+    let (native_target, native_values, native_effects) = execute_single_dialogue_with_content(
+        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+        template,
+    );
+    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .unwrap();
+    let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+        );
+    let (awbc_target, awbc_values, awbc_effects) = execute_single_dialogue_with_content(
+        |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+        template,
+    );
+    assert_eq!(native_target, awbc_target);
+    assert_eq!(native_values, awbc_values);
+    assert_eq!(native_effects, awbc_effects);
+    let native_frame = resolve_authored_spacing_frame(
+        &compiled,
+        &native_schema,
+        artifact,
+        template,
+        &native_target,
+        &native_values,
+    );
+    let awbc_frame = resolve_authored_spacing_frame(
+        &compiled,
+        &awbc_schema,
+        artifact,
+        template,
+        &awbc_target,
+        &awbc_values,
+    );
+    assert_eq!(native_frame, awbc_frame);
+    native_frame
+}
+
+#[test]
+fn authored_space_after_interpolation_keeps_ruby_display_range_in_native_and_awbc() {
+    let frame = frames_for_authored_dialogue_spacing(
+        r##"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let player = "Aoi"
+    alice: #color(rgb("#303132"))[Hello #[player] |[夢](ゆめ)[r][p]]
+}
+entry cli @entry.main { goto @flow.main }
+"##,
+    );
+    assert_eq!(frame.text, "Hello Aoi 夢\n");
+    let [ruby] = frame.display_map.ruby_annotations.as_slice() else {
+        panic!("the authored Ruby annotation remains one exact owner")
+    };
+    assert_eq!(ruby.ruby, "ゆめ");
+    assert_eq!(
+        ruby.base_range,
+        arcweft_text_model::RichTextRange::new(10, 13)
+    );
+    assert_eq!(
+        &frame.text[ruby.base_range.start..ruby.base_range.end],
+        "夢"
+    );
+    assert!(frame.display_map.text_runs.iter().any(|run| {
+        run.source == arcweft_text_model::RichTextTextSource::Interpolation
+            && run.range == arcweft_text_model::RichTextRange::new(6, 9)
+    }));
+    assert!(frame.display_map.text_runs.iter().any(|run| {
+        run.source == arcweft_text_model::RichTextTextSource::Text
+            && run.range == arcweft_text_model::RichTextRange::new(9, 10)
+    }));
+}
+
+#[test]
+fn authored_space_after_hard_break_keeps_vertical_text_run_in_native_and_awbc() {
+    let frame = frames_for_authored_dialogue_spacing(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice: #layout(.vertical_lr)[縦 |[夢](ゆめ)[r] 2026 ABC。][p]
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    );
+    assert_eq!(frame.text, "縦 夢\n 2026 ABC。");
+    let after_break: Vec<_> = frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| {
+            run.source == arcweft_text_model::RichTextTextSource::Text
+                && &frame.text[run.range.start..run.range.end] == " 2026 ABC。"
+        })
+        .collect();
+    let [run] = after_break.as_slice() else {
+        panic!("the inline leading space and following digits retain one authored text run")
+    };
+    assert_eq!(run.range, arcweft_text_model::RichTextRange::new(8, 20));
+    assert!(frame.display_map.text_runs.iter().all(|run| {
+        run.presentation.layout.as_ref().is_some_and(|layout| {
+            layout.writing_mode == arcweft_text_model::RichTextWritingMode::VerticalLr
+        })
+    }));
+    let [ruby] = frame.display_map.ruby_annotations.as_slice() else {
+        panic!("the vertical Ruby remains one exact owner")
+    };
+    assert_eq!(
+        ruby.base_range,
+        arcweft_text_model::RichTextRange::new(4, 7)
+    );
+    assert_eq!(ruby.ruby, "ゆめ");
+}
+
+#[test]
+fn physical_line_endings_normalize_display_without_erasing_inline_spaces_in_native_and_awbc() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow main() -> Unit {\n",
+        "    let player = \"Aoi\"\n",
+        "    alice()[\r\n  Head #[player]  \r\n\t Next[r] \t2026 \r Third\n    Last[p]]\n",
+        "}\n",
+        "entry cli @entry.main { goto @flow.main }\n",
+    );
+    let frame = frames_for_authored_dialogue_spacing(source);
+    assert_eq!(frame.text, "\nHead Aoi  \nNext\n \t2026 \nThird\nLast");
+    let breaks: Vec<_> = frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter(|run| run.source == arcweft_text_model::RichTextTextSource::ControlHardBreak)
+        .collect();
+    assert_eq!(breaks.len(), 5);
+    for run in breaks {
+        assert_eq!(&frame.text[run.range.start..run.range.end], "\n");
+        assert_eq!(run.range.end - run.range.start, 1);
+    }
+}
+
+#[path = "evaluated_effects/dialogue_readiness.rs"]
+mod dialogue_readiness;

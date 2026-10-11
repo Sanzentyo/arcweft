@@ -1,4 +1,4 @@
-flow bad_out {
-    out .Done
+flow bad_out() -> String {
+    out 1i32
     return "done"
 }

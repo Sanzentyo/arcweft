@@ -33,6 +33,76 @@ flow main() -> bool {
 "#;
 
 #[test]
+fn empty_never_statement_match_preserves_let_else_in_native_and_awbc() {
+    let source = r"
+entry cli @entry.main { goto @flow.main }
+fn stop() -> Never { loop {} }
+flow main() -> i64 {
+    let input: Option<i64> = .Some(42i64)
+    let .Some(value) = input else { match stop() {}; }
+    return value
+}
+";
+    let compiled = compile_source(source).expect("Never statement continuation source compiles");
+    let [flow] = compiled.plan.flows() else {
+        panic!("fixture has one flow");
+    };
+    let mut native = Engine::for_flow(compiled.plan.clone(), &flow.id).unwrap();
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    for _ in 0..2048 {
+        if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        let step = native.step(RuntimeStepInput::default(), options);
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+    }
+    assert_eq!(
+        native.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("42".into()))
+    );
+
+    let bytes = awfb_bytes_from_source(source, [0x3b; 32]);
+    let mut session = session_from_bytes(&bytes);
+    for _ in 0..2048 {
+        if session.is_finished() {
+            break;
+        }
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+    }
+    assert!(session.is_finished());
+    let snapshot = session.snapshot_session().unwrap();
+    assert_eq!(
+        snapshot.executor.state.fiber.return_summary.as_deref(),
+        Some("42")
+    );
+}
+
+#[test]
+fn inhabited_empty_statement_match_cannot_publish_a_native_plan() {
+    for source in [
+        "entry cli @entry.main { goto @flow.main }\nflow main() { match true {}; }",
+        "entry cli @entry.main { goto @flow.main }\nflow main() { match true { true => { match false {}; }, false => {} } }",
+    ] {
+        assert!(
+            compile_source(source).is_err(),
+            "incomplete Match cannot publish a plan: {source}"
+        );
+    }
+}
+
+#[test]
 fn awfb_session_save_preserves_a_live_local_before_nested_replacement() {
     use arcweft_core::awbc::schema::{AwbcInstruction, AwbcMutablePlace};
 
@@ -133,6 +203,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
     for _ in 0..1024 {
         let prefix = engine
             .fiber()
+            .frame
             .env
             .bindings_snapshot()
             .into_iter()
@@ -146,7 +217,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
             observed_prefix = true;
             break;
         }
-        if matches!(&engine.fiber().status, FlowFiberStatus::Done(_)) {
+        if matches!(&engine.fiber().frame.status, FlowFiberStatus::Done(_)) {
             break;
         }
         let result = engine.step(RuntimeStepInput::default(), options);
@@ -162,7 +233,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
     );
 
     for _ in 0..2048 {
-        if matches!(&engine.fiber().status, FlowFiberStatus::Done(_)) {
+        if matches!(&engine.fiber().frame.status, FlowFiberStatus::Done(_)) {
             break;
         }
         let result = engine.step(RuntimeStepInput::default(), options);
@@ -173,7 +244,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
         );
     }
     assert_eq!(
-        engine.fiber().status,
+        engine.fiber().frame.status,
         FlowFiberStatus::Done(FlowExit::Return("true".to_owned()))
     );
 }

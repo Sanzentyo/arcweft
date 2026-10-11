@@ -15,7 +15,9 @@ use super::indentation::{
     trailing_owner_body_token,
 };
 use super::trigger::emit_trigger_pattern;
-use super::{emit_statement_with_role, top_level_operator};
+use super::{
+    BlockSequenceKind, StatementBodyContext, emit_statement_with_role, top_level_operator,
+};
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -43,7 +45,12 @@ pub(in crate::parser) fn emit_dialogue_line_plan(
         }
         Some((colon, ":")) => {
             bump_until(parser, colon);
-            let interval = indented_suite_interval(parser, owner_start, colon, end);
+            let interval = indented_suite_interval(
+                parser,
+                super::indentation::physical_line_owner_start(parser, owner_start),
+                colon,
+                end,
+            );
             emit_indented_body(parser, interval, item_kind);
         }
         _ => {
@@ -259,6 +266,7 @@ fn emit_line_plan_item(
         end,
         item_kind,
         SyntaxRole::DialogueLinePlanItem(ordinal),
+        StatementBodyContext::ThreadFlow,
     );
 }
 
@@ -283,13 +291,14 @@ fn emit_init(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxK
             parser.bump();
             bump_trivia_before(parser, end);
             bump_until(parser, introducer);
-            let _ = super::emit_braced_statement_block_until(
+            let _ = super::emit_braced_block_until_with_kind(
                 parser,
                 end,
                 item_kind,
                 SyntaxKind::Block,
                 SyntaxRole::Body,
                 "syntax.dialogue.line_plan_init_missing_close",
+                BlockSequenceKind::DialogueWork,
             );
             parser.finish();
         }
@@ -320,6 +329,7 @@ fn emit_init(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxK
                 interval.end(),
                 item_kind,
                 SyntaxRole::Body,
+                BlockSequenceKind::DialogueWork,
             );
             bump_until(parser, interval.end());
             parser.finish();
@@ -691,7 +701,13 @@ pub(super) fn dialogue_plan_interval(
     let end = match token_text(parser, introducer) {
         Some("{") => find_matching_close_before(parser, introducer + 1, limit, "{")
             .map_or(limit, |close| close.saturating_add(1)),
-        Some(":") => indented_suite_interval(parser, with, introducer, limit).end(),
+        Some(":") => indented_suite_interval(
+            parser,
+            super::indentation::physical_line_owner_start(parser, with),
+            introducer,
+            limit,
+        )
+        .end(),
         _ => return None,
     };
     Some(DialoguePlanInterval {

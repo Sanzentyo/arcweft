@@ -222,19 +222,19 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
     for _ in 0..8 {
         let started = step(&mut engine);
         assert!(started.diagnostics.is_empty(), "{:?}", started.diagnostics);
-        if matches!(engine.fiber().status, FlowFiberStatus::NeedWaiting(_)) {
+        if matches!(engine.fiber().frame.status, FlowFiberStatus::NeedWaiting(_)) {
             break;
         }
         assert!(
-            matches!(engine.fiber().status, FlowFiberStatus::Running),
+            matches!(engine.fiber().frame.status, FlowFiberStatus::Running),
             "{:?}",
-            engine.fiber().status
+            engine.fiber().frame.status
         );
     }
     assert!(
-        matches!(engine.fiber().status, FlowFiberStatus::NeedWaiting(_)),
+        matches!(engine.fiber().frame.status, FlowFiberStatus::NeedWaiting(_)),
         "{:?}",
-        engine.fiber().status
+        engine.fiber().frame.status
     );
     let resumed = engine
         .step(
@@ -255,9 +255,9 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         )
         .output;
     assert!(
-        !matches!(engine.fiber().status, FlowFiberStatus::Failed(_)),
+        !matches!(engine.fiber().frame.status, FlowFiberStatus::Failed(_)),
         "{:?}: {:?}",
-        engine.fiber().status,
+        engine.fiber().frame.status,
         resumed.diagnostics
     );
     let mut events = resumed.flow_events;
@@ -272,7 +272,10 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
             .collect::<Vec<_>>(),
         ["captured"]
     );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    assert!(matches!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(_)
+    ));
 }
 
 fn manual_local_source(declaration: &str) -> crate::plan::RuntimeLocalDeclarationSource {

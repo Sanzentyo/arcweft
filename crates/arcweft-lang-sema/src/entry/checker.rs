@@ -766,8 +766,13 @@ impl<'a> EntryCheckContext<'a> {
             }
         };
         let mut diagnostics = Vec::new();
-        let target =
-            self.resolve_existing_entry_target(module, source_item, entry, &mut diagnostics);
+        let target = self.resolve_existing_entry_target(
+            module,
+            source_item,
+            entry,
+            &checked_kind,
+            &mut diagnostics,
+        );
         let Some(target) = target else {
             return Err(diagnostics);
         };
@@ -790,6 +795,7 @@ impl<'a> EntryCheckContext<'a> {
         module: &'a HirModule,
         owner: ItemId,
         entry: &'a HirEntryDeclaration,
+        kind: &CheckedEntryKind,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedExistingEntryTarget> {
         let gotos = entry
@@ -816,7 +822,9 @@ impl<'a> EntryCheckContext<'a> {
                 let resolved =
                     self.resolve_flow_target(module, goto.target(), source.clone(), diagnostics)?;
                 let target = self.checked_existing_flow_target(&resolved, diagnostics)?;
-                if !target.parameters().is_empty() {
+                if !target.parameters().is_empty()
+                    && !kind.runtime_kind().accepts_external_flow_inputs()
+                {
                     diagnostics.push(CheckedEntryDiagnostic::new(
                         "sema.entry.unbound_goto_parameters",
                         "direct Entry goto target must not require Flow parameters",

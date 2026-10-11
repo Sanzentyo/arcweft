@@ -1281,6 +1281,14 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         activation_step(&mut executor, &activation, Vec::new(), &mut backend);
     assert_eq!(host_output.requests.host_calls.len(), 1);
     assert!(!host_progress.progressed);
+    assert_eq!(
+        host_progress.executed_ops, 1,
+        "the issued host-call instruction is charged"
+    );
+    assert!(
+        !executor.dialogues.has_internal_work(false),
+        "the typed host result remains an external wait"
+    );
     let host_id = host_output.requests.host_calls[0].id.clone();
 
     let snapshot = product_snapshot(&executor);
@@ -1519,9 +1527,13 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
         .expect("revealed dialogue inspection returns the active owner");
 }
 
-#[test]
-fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
-    let program = defer_host_call_program();
+fn registered_root_defer_executor(
+    program: AwbcProgram,
+) -> (
+    AwbcProductStepExecutor,
+    crate::runtime_id::DialogueActivationId,
+    crate::pure::VmRuntimePureCallBackend,
+) {
     let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
         .expect("deferred host-call executor starts");
     let target_owner = executor
@@ -1588,49 +1600,55 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
     assert_eq!(transaction.line().deferred_registrations().len(), 3);
     commit_test_dialogue_transaction(&mut executor, transaction);
 
-    fn prepare_next(
-        executor: &mut AwbcProductStepExecutor,
-        activation: &crate::runtime_id::DialogueActivationId,
-    ) -> (
-        bool,
-        Option<(
-            crate::runtime_id::RuntimeDeferRegistrationId,
-            crate::runtime_id::RuntimeDeferSiteId,
-        )>,
-    ) {
-        let mut transaction = executor
-            .dialogues
-            .begin_transaction(activation)
-            .expect("deferred activation transaction");
-        let mut batch = super::ProductLineTaskExecutionBatch {
-            child_fibers: std::collections::VecDeque::new(),
-            existing_child_actions: BTreeMap::new(),
-            line_task_activations: Vec::new(),
-            line_task_baseline: None,
-            line_task_reserved_runs: Vec::new(),
-            dialogue_effect_callback_activations: executor
-                .dialogue_effect_callback_activations
-                .clone(),
-            next_generation: executor.next_generation,
-            next_fiber_instance: executor.next_fiber_instance,
-            observations: Vec::new(),
-            pure_stats: None,
-        };
-        let progressed = executor
-            .prepare_next_deferred_child(
-                &mut transaction,
-                crate::line_task::ScopeExit::Completed,
-                &mut batch,
-            )
-            .expect("next defer transition prepares");
-        let inflight = transaction.line().deferred_inflight();
-        let receipt = commit_test_dialogue_transaction(executor, transaction);
-        let mut output = crate::step::RuntimeStepOutput::default();
-        executor.commit_line_task_commands(batch, &mut output);
-        assert!(output.requests.line_commands.is_empty());
-        assert!(receipt.into_line().into_commands().is_empty());
-        (progressed, inflight)
-    }
+    (executor, activation, backend)
+}
+
+fn prepare_root_defer_child(
+    executor: &mut AwbcProductStepExecutor,
+    activation: &crate::runtime_id::DialogueActivationId,
+) -> (
+    bool,
+    Option<(
+        crate::runtime_id::RuntimeDeferRegistrationId,
+        crate::runtime_id::RuntimeDeferSiteId,
+    )>,
+) {
+    let mut transaction = executor
+        .dialogues
+        .begin_transaction(activation)
+        .expect("deferred activation transaction");
+    let mut batch = super::ProductLineTaskExecutionBatch {
+        child_fibers: std::collections::VecDeque::new(),
+        existing_child_actions: BTreeMap::new(),
+        line_task_activations: Vec::new(),
+        line_task_baseline: None,
+        line_task_reserved_runs: Vec::new(),
+        dialogue_effect_callback_activations: executor.dialogue_effect_callback_activations.clone(),
+        next_generation: executor.next_generation,
+        next_fiber_instance: executor.next_fiber_instance,
+        observations: Vec::new(),
+        pure_stats: None,
+    };
+    let progressed = executor
+        .prepare_next_deferred_child(
+            &mut transaction,
+            crate::line_task::ScopeExit::Completed,
+            &mut batch,
+        )
+        .expect("next defer transition prepares");
+    let inflight = transaction.line().deferred_inflight();
+    let receipt = commit_test_dialogue_transaction(executor, transaction);
+    let mut output = crate::step::RuntimeStepOutput::default();
+    executor.commit_line_task_commands(batch, &mut output);
+    assert!(output.requests.line_commands.is_empty());
+    assert!(receipt.into_line().into_commands().is_empty());
+    (progressed, inflight)
+}
+
+#[test]
+fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
+    let (mut executor, activation, mut backend) =
+        registered_root_defer_executor(defer_host_call_program());
 
     fn run_deferred_host_call(
         executor: &mut AwbcProductStepExecutor,
@@ -1722,19 +1740,19 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             .expect("completed child inspection restores its activation");
     }
 
-    let (progressed, inflight) = prepare_next(&mut executor, &activation);
+    let (progressed, inflight) = prepare_root_defer_child(&mut executor, &activation);
     assert!(progressed);
     assert_eq!(inflight.map(|(_, site)| site.index()), Some(2));
     run_deferred_host_call(&mut executor, &activation, &mut backend, "last");
 
-    let (progressed, inflight) = prepare_next(&mut executor, &activation);
+    let (progressed, inflight) = prepare_root_defer_child(&mut executor, &activation);
     assert!(progressed);
     assert_eq!(
         inflight, None,
         "the Failed-only middle registration is skipped"
     );
 
-    let (progressed, inflight) = prepare_next(&mut executor, &activation);
+    let (progressed, inflight) = prepare_root_defer_child(&mut executor, &activation);
     assert!(progressed);
     assert_eq!(inflight.map(|(_, site)| site.index()), Some(0));
     run_deferred_host_call(&mut executor, &activation, &mut backend, "first");
@@ -6046,6 +6064,7 @@ fn product_observation_visitor_includes_nested_asset_payloads_once() {
     assert!(value.ownership().permits_copy());
     executor
         .facade_fiber
+        .frame
         .observations
         .record_effect(&LineEffectRequest::SignalWrite(
             crate::effect::RuntimeAssignment::try_copy("signal.asset".to_owned(), &value)
@@ -6076,6 +6095,7 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
     ]);
     executor
         .facade_fiber
+        .frame
         .observations
         .record_effect(&LineEffectRequest::SignalWrite(
             crate::effect::RuntimeAssignment::try_copy("signal.asset".to_owned(), &value)
@@ -6083,6 +6103,7 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
         ));
     executor
         .facade_fiber
+        .frame
         .observations
         .record_effect(&LineEffectRequest::MetricWrite(
             crate::effect::RuntimeAssignment::try_new(
@@ -6101,11 +6122,11 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
         .restore_inert_snapshot_owned(saved)
         .expect("the exact Product restores");
     assert_eq!(
-        executor.fiber().observations.signals()["signal.asset"].value(),
+        executor.fiber().frame.observations.signals()["signal.asset"].value(),
         &value
     );
     assert_eq!(
-        executor.fiber().observations.metrics()["metric.count"].value(),
+        executor.fiber().frame.observations.metrics()["metric.count"].value(),
         &RuntimeValue::u64(u64::MAX),
     );
     let mut roles = Vec::new();
@@ -6121,4 +6142,160 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
         roles,
         vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
     );
+}
+
+#[test]
+fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budget() {
+    let mut program = defer_host_call_program();
+    let tail =
+        AwbcFunctionId(u32::try_from(program.functions.len()).expect("tail function ordinal"));
+    let tail_block = AwbcBlockId(u32::try_from(program.blocks.len()).expect("tail block ordinal"));
+    let spawn = u32::try_from(program.instructions.len()).expect("spawn instruction ordinal");
+    program.instructions.push(AwbcInstruction::SpawnFiber {
+        dst: None,
+        function: tail,
+        args: Vec::new(),
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(spawn, 1);
+    program.functions.push(AwbcFunction {
+        definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(b"g06.blocked-defer-running-tail.v1\0").as_bytes(),
+        ),
+        semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(0),
+        type_context: None,
+        input_ownership: Vec::new(),
+        frame_layout: AwbcFrameLayoutId(0),
+        blocks: AwbcTableRange::new(tail_block.0, 1),
+        entry_block: tail_block,
+        flags: AwbcFunctionFlags::default(),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: tail,
+        instructions: AwbcTableRange::new(spawn + 1, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program
+        .verify(Default::default(), Default::default())
+        .expect("mixed owned queue verifies");
+    let bytes = program
+        .encode_canonical()
+        .expect("mixed queue canonical program");
+    let program =
+        AwbcProgram::decode_canonical(&bytes, crate::awbc::codec::AwbcDecodeBudget::default())
+            .expect("the actual SpawnFiber program decodes");
+    let (mut executor, activation, mut backend) = registered_root_defer_executor(program);
+    let (prepared, inflight) = prepare_root_defer_child(&mut executor, &activation);
+    assert!(prepared);
+    assert_eq!(inflight.map(|(_, site)| site.index()), Some(2));
+
+    let mut issued = crate::step::RuntimeStepOutput::default();
+    assert!(executor.step_next_child(
+        &mut issued,
+        &mut backend,
+        &mut RuntimeStepInput::default(),
+        &mut Vec::new(),
+    ));
+    let [request] = issued.requests.host_calls.as_slice() else {
+        panic!("the actual deferred child issues one host request");
+    };
+    let request_id = request.id.clone();
+    assert_eq!(
+        request.args(),
+        [RuntimePayload(RuntimeValue::String("last".to_owned()))]
+    );
+    assert_eq!(executor.child_fibers.len(), 1);
+    assert!(!executor.child_fibers[0].has_internal_work());
+
+    let one_op = RuntimeStepOptions {
+        mode: crate::step::RuntimeStepMode::OneOp,
+        budget: crate::step::RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    let spawned = executor.step(RuntimeStepInput::default(), one_op);
+    assert_eq!(spawned.stats.executed_ops, 1);
+    assert_eq!(executor.child_fibers.len(), 2);
+    assert_eq!(executor.child_fibers[1].fiber.cursor.function, tail);
+    let returned = executor.step(RuntimeStepInput::default(), one_op);
+    assert_eq!(returned.stats.executed_ops, 1);
+    assert_eq!(executor.fiber.status, FiberStatus::Returned);
+    assert!(executor.has_internal_work());
+
+    let live = product_snapshot(&executor);
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&live).expect("paired queue saves");
+    let encoded = serde_json::to_string(&save).expect("version-one inert queue serializes");
+    let decoded: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_str(&encoded).expect("version-one inert queue decodes");
+    assert_eq!(decoded, save);
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let restored_snapshot = decoded
+        .into_live_for_program(&owner)
+        .expect("same-owner queue restores");
+    let mut restored =
+        AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
+            .expect("restore destination starts");
+    restored
+        .restore_snapshot(restored_snapshot)
+        .expect("exact paired owners install");
+    let blocked_child = product_snapshot(&executor).child_fibers.remove(0);
+    let drain = RuntimeStepOptions {
+        mode: crate::step::RuntimeStepMode::Drain,
+        budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+        ..RuntimeStepOptions::default()
+    };
+
+    let runnable = executor.step(RuntimeStepInput::default(), drain);
+    let replay = restored.step(RuntimeStepInput::default(), drain);
+    assert_eq!(runnable, replay);
+    assert_eq!(
+        runnable.stats.executed_ops, 1,
+        "only the tail Return instruction is charged"
+    );
+    assert_eq!(runnable.stop_reason, RuntimeStepStopReason::Blocked);
+    assert!(runnable.output.requests.host_calls.is_empty());
+    assert_eq!(executor.child_fibers.len(), 1);
+    assert_eq!(
+        product_snapshot(&executor).child_fibers,
+        [blocked_child.clone()]
+    );
+    assert!(!executor.has_internal_work());
+
+    let blocked = executor.step(RuntimeStepInput::default(), drain);
+    let blocked_replay = restored.step(RuntimeStepInput::default(), drain);
+    assert_eq!(blocked, blocked_replay);
+    assert_eq!(
+        blocked.stats.executed_ops, 0,
+        "one bounded blocked pass issues no instruction"
+    );
+    assert_eq!(blocked.stop_reason, RuntimeStepStopReason::Blocked);
+    assert!(blocked.output.requests.host_calls.is_empty());
+    assert_eq!(product_snapshot(&executor).child_fibers, [blocked_child]);
+
+    let resume = RuntimeStepInput {
+        host_call_results: vec![RuntimeHostCallResult {
+            id: request_id,
+            outcome: Ok(RuntimePayload(RuntimeValue::Unit)),
+        }],
+        ..RuntimeStepInput::default()
+    };
+    let completed = executor.step(resume.clone(), drain);
+    let completed_replay = restored.step(resume, drain);
+    assert_eq!(completed, completed_replay);
+    assert!(completed.stats.executed_ops > 0 && completed.stats.executed_ops <= 64);
+    assert_eq!(completed.stop_reason, RuntimeStepStopReason::Done);
+    assert!(completed.output.requests.host_calls.is_empty());
+    assert!(executor.child_fibers.is_empty());
+    let transaction = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("owned completion");
+    assert_eq!(transaction.line().deferred_inflight(), None);
+    executor
+        .dialogues
+        .restore_transaction(transaction)
+        .expect("inspection restores the owner");
 }

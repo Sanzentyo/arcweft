@@ -160,6 +160,23 @@ pub struct RuntimeStepOptions {
 `max_ops` is enforced inside the VM loop. If the budget is reached before a hard
 stop, the result reports `RuntimeStepStopReason::BudgetExhausted`.
 
+Dialogue activation retains an executor-owned frame while the parent is
+suspended. That outward suspension does not create a host boundary when the
+admitted activation or its owned cleanup child has internal work. Pending host
+results, command acknowledgements, and live presentation input remain real
+waits. An instruction that opens a host wait still consumes its operation
+budget; its external wait does not erase the instruction's charge. A compact
+activation's VM quantum is
+replenished only at the next host step, preserving its exact preemption cursor
+and the caller's remaining `max_ops` boundary.
+
+Retained child scopes remain executor work after the parent finishes, including
+detached line work. Local join policy governs the parent return gate and does
+not discard that executor ownership. A blocked child at the front of the queue
+must not hide a later runnable child. Product execution polls at most the
+retained queue length at that dispatch boundary; a blocked poll issues no VM
+instruction and does not consume an operation charge.
+
 ## Stop reasons
 
 ```rust

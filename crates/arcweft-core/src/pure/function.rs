@@ -487,9 +487,18 @@ impl<'a> RuntimePureFunctionRef<'a> {
     /// its typed places. Compilation alone does not make a fallible body total.
     #[must_use]
     pub fn supports_total_numeric_completion(self) -> bool {
-        self.scalar_eval_supported
-            && self.supports_scalar_frame()
-            && self.exact_scalar_completion_control_ops().is_some()
+        self.total_numeric_completion_control_ops().is_some()
+    }
+
+    /// Original scheduled control cost for a total direct scalar completion.
+    /// Standalone callers use this same projection to admit a physical body
+    /// within their explicit budget. Absence retains owning VM control.
+    #[must_use]
+    pub fn total_numeric_completion_control_ops(self) -> Option<usize> {
+        if !self.scalar_eval_supported || !self.supports_scalar_frame() {
+            return None;
+        }
+        self.exact_scalar_completion_control_ops()
     }
 
     /// The direct forwarding projection authorizes only one exact retained

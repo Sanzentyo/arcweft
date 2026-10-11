@@ -73,7 +73,7 @@ pub(super) fn execute_native_character_dialogue_calls(
             )
             .output;
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
-        match &engine.fiber().status {
+        match &engine.fiber().frame.status {
             FlowFiberStatus::Running => {}
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(exit, &FlowExit::Done);
@@ -143,7 +143,7 @@ fn assert_native_engine_return(
         )
         .output;
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
-        match &engine.fiber().status {
+        match &engine.fiber().frame.status {
             FlowFiberStatus::Running => {}
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(exit, &FlowExit::Return(expected.to_owned()));

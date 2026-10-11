@@ -171,7 +171,7 @@ impl BundleRunnerSession {
         let (summary, task_requests, host_call_requests, audio_commands) =
             BundleRunnerStepSummary::from_result(index, result);
         let runtime_finished = matches!(
-            self.executor.fiber().status,
+            self.executor.fiber().frame.status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         if !runtime_finished {
@@ -216,6 +216,7 @@ impl BundleRunnerSession {
     pub fn final_status(&self) -> String {
         self.executor
             .fiber()
+            .frame
             .status
             .status_label(FlowStatusLabelStyle::Runtime)
     }
@@ -236,6 +237,7 @@ impl BundleRunnerSession {
             final_status: self
                 .executor
                 .fiber()
+                .frame
                 .status
                 .status_label(FlowStatusLabelStyle::Runtime),
         }

@@ -1,6 +1,6 @@
-flow bad_break {
+flow bad_break() -> String {
     while true {
-        break 1
+        break 1i32
     }
     return "done"
 }

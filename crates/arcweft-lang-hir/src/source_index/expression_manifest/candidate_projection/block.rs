@@ -764,13 +764,6 @@ impl CandidateValidationCursor<'_, '_> {
                 });
             }
         }
-        if source_arms.is_empty()
-            && !matches!(source.body(), AttachedCandidateMatchBody::Missing { .. })
-        {
-            recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                HirThreadStmtRecoveryIssue::EmptyMatch,
-            ));
-        }
         if body_unclosed {
             recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
                 HirThreadStmtRecoveryIssue::UnclosedBody {

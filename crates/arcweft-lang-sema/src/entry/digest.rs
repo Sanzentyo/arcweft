@@ -1,4 +1,5 @@
 use arcweft_core::entry::TypeLayoutHash;
+use arcweft_core::math::RuntimeDenseNumericType;
 use arcweft_lang_hir::{
     item::HirRoutePathSegment,
     symbol::{CallableDeclarationId, CallablePackageId},
@@ -21,6 +22,7 @@ const VERSION: u32 = 1;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) enum CanonicalType {
     Atomic(CanonicalAtomic),
+    DenseNumeric(RuntimeDenseNumericType),
     Named(String),
     Nominal(BoundNominalTypeKey),
     Applied {
@@ -106,6 +108,7 @@ impl CanonicalType {
     pub(super) fn source_label(&self) -> String {
         match self {
             Self::Atomic(atomic) => atomic.source_label().to_owned(),
+            Self::DenseNumeric(ty) => ty.source_label().to_owned(),
             Self::Named(name) => name.clone(),
             Self::Nominal(key) => format!("{}::{}", key.module(), key.name()),
             Self::Applied { constructor, args } => format!(
@@ -612,6 +615,12 @@ impl CanonicalBytes {
                 self.u8(1);
                 self.u8(canonical_atomic_tag(*atomic));
             }
+            CanonicalType::DenseNumeric(ty) => {
+                self.u8(10);
+                for part in ty.semantic_parts() {
+                    self.u8(part);
+                }
+            }
             CanonicalType::Named(name) => {
                 self.u8(2);
                 self.string(name);
@@ -824,6 +833,31 @@ mod tests {
         push_string(bytes, "crate.state");
         push_string(bytes, name);
         bytes.push(kind);
+    }
+
+    #[test]
+    fn dense_numeric_flow_contracts_encode_all_four_roles_without_source_spelling() {
+        let id = flow("flow.dense", "dense_flow_identity");
+        let mut digests = std::collections::BTreeSet::new();
+        for (ty, parts) in
+            RuntimeDenseNumericType::ALL
+                .into_iter()
+                .zip([[0, 0], [0, 1], [1, 0], [1, 1]])
+        {
+            let mut bytes = CanonicalBytes::domain(b"arcweft.flow-contract\0");
+            bytes.canonical_type(&CanonicalType::DenseNumeric(ty));
+            let mut expected = domain(b"arcweft.flow-contract\0");
+            expected.extend_from_slice(&[10, parts[0], parts[1]]);
+            assert_eq!(bytes.finish(), expected);
+            let mut signature = empty_signature();
+            signature.result = Some(CanonicalType::DenseNumeric(ty));
+            let contract = CanonicalFlowContract {
+                signature: Some(signature),
+                contract_effects: EffectSet::new(),
+                suspension: CanonicalFlowSuspension::Flow,
+            };
+            assert!(digests.insert(flow_contract(&id, &contract)));
+        }
     }
 
     #[test]

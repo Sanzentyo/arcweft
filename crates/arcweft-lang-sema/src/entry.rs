@@ -350,6 +350,22 @@ impl BoundNominalTypeKey {
 }
 
 impl CheckedEntryKind {
+    /// Projects this checked adapter family to the shared runtime role policy.
+    pub fn runtime_kind(&self) -> arcweft_core::plan::RuntimeEntryKind {
+        use arcweft_core::plan::RuntimeEntryKind;
+        match self {
+            Self::Game => RuntimeEntryKind::Game,
+            Self::Editor => RuntimeEntryKind::Editor,
+            Self::Cli => RuntimeEntryKind::Cli,
+            Self::Server => RuntimeEntryKind::Server,
+            Self::Activity => RuntimeEntryKind::Activity,
+            Self::Test => RuntimeEntryKind::Test,
+            Self::Bench => RuntimeEntryKind::Bench,
+            Self::Agent => RuntimeEntryKind::Agent,
+            Self::Custom(value) => RuntimeEntryKind::Custom(value.clone()),
+        }
+    }
+
     pub fn as_str(&self) -> &str {
         match self {
             Self::Game => "game",

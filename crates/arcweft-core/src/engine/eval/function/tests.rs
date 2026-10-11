@@ -88,7 +88,7 @@ fn numeric_closure_uses_its_binder_while_ordinary_site_enters_the_scalar_backend
             .next()
             .unwrap()
             .0;
-        let before = engine.fiber().env.bindings_snapshot();
+        let before = engine.fiber().frame.env.bindings_snapshot();
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         assert_eq!(
             engine
@@ -98,7 +98,7 @@ fn numeric_closure_uses_its_binder_while_ordinary_site_enters_the_scalar_backend
         );
         assert_eq!(backend.stats().pure_calls, expected_calls);
         assert_eq!(
-            engine.fiber().env.bindings_snapshot(),
+            engine.fiber().frame.env.bindings_snapshot(),
             before,
             "the owning frame releases its input bindings"
         );

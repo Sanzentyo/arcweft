@@ -2,14 +2,14 @@
 //! This bounded source inventory query publishes no execution edge or proof.
 //! The same Unit/Never continuation algebra is used by the ownership CFG fold.
 use super::{
-    Analyzer, AnalyzerExpressionError, ExprId, FinalSemanticAnalysisError, HirExprKind, HirModule,
-    PreparedExpressionFact,
+    Analyzer, AnalyzerExpressionContext, AnalyzerExpressionError, ExprId,
+    FinalSemanticAnalysisError, HirExprKind, HirModule, PreparedExpressionFact,
 };
 use crate::final_analysis::completion::NormalContinuation;
 use arcweft_lang_hir::body_edges::HirBodyChild;
 use arcweft_lang_hir::expr::{
-    HirComputationBlockKind, HirExpressionChildOwnership, HirExpressionOwnedBodyRole,
-    HirExpressionOwnedChild,
+    HirComputationBlockKind, HirExpressionChildOwnership, HirExpressionChildRole,
+    HirExpressionOwnedBodyRole, HirExpressionOwnedChild,
 };
 use arcweft_lang_hir::identity::StmtId;
 use arcweft_lang_hir::project::{
@@ -23,7 +23,7 @@ use arcweft_lang_hir::stmt::{
 };
 use std::collections::BTreeSet;
 
-pub(super) struct BodyCompletion {
+pub(in crate::final_analysis::analyzer) struct BodyCompletion {
     normal: NormalContinuation,
     returns: BTreeSet<StmtId>,
     // Exact source rows, not copied targets. Only a matching receiving boundary
@@ -45,7 +45,7 @@ impl BodyCompletion {
             escaping: BTreeSet::new(),
         }
     }
-    pub(super) const fn continues(&self) -> bool {
+    pub(in crate::final_analysis::analyzer) const fn continues(&self) -> bool {
         self.normal.is_unit()
     }
     pub(super) fn returns(&self) -> &BTreeSet<StmtId> {
@@ -69,7 +69,14 @@ impl BodyCompletion {
     }
 }
 #[derive(Clone, Copy)]
+enum CompletionQueryPurpose<'a> {
+    CheckedResults,
+    FunctionResultTyping(&'a AnalyzerExpressionContext<'a>),
+}
+
+#[derive(Clone, Copy)]
 struct CompletionQuery<'a> {
+    purpose: CompletionQueryPurpose<'a>,
     callable: Option<ExprId>,
     // The checker owns this exact prepared result before fact publication.
     // Recursive child reads still require their own existing prepared facts.
@@ -86,7 +93,27 @@ impl Analyzer<'_, '_, '_> {
             module,
             statements,
             CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
                 callable,
+                current_expression: None,
+            },
+        )
+    }
+    /// Declaration-result typing keeps a rejected Call's issued diagnostic.
+    /// Its possible resumption constrains the tail but grants no execution
+    /// evidence; checked expression queries still require an available result.
+    pub(in crate::final_analysis::analyzer) fn function_statements_result_context<'a>(
+        &self,
+        context: &'a AnalyzerExpressionContext<'a>,
+        module: &HirModule,
+        statements: &[StmtId],
+    ) -> Result<BodyCompletion, AnalyzerExpressionError> {
+        self.block_statements_completion_in(
+            module,
+            statements,
+            CompletionQuery {
+                purpose: CompletionQueryPurpose::FunctionResultTyping(context),
+                callable: None,
                 current_expression: None,
             },
         )
@@ -102,6 +129,7 @@ impl Analyzer<'_, '_, '_> {
             module,
             body,
             CompletionQuery {
+                purpose: CompletionQueryPurpose::CheckedResults,
                 callable: Some(callable),
                 current_expression: Some((body, body_fact)),
             },
@@ -198,7 +226,8 @@ impl Analyzer<'_, '_, '_> {
         } else {
             None
         };
-        self.topology
+        let edges = self
+            .topology
             .selected_expression_child_edges(
                 module,
                 owner,
@@ -250,7 +279,36 @@ impl Analyzer<'_, '_, '_> {
                     ),
                     _ => FinalSemanticAnalysisError::WrongPayloadFamily,
                 })
-            })
+            })?;
+        if !matches!(kind, HirExprKind::Call(_)) {
+            return Ok(edges);
+        }
+        let calls = self
+            .facts
+            .prepared_calls()
+            .map_err(AnalyzerExpressionError::fact)?;
+        let mut edges = edges.into_vec();
+        // The sealed mapper owns compact numeric data, with logical literal
+        // slots rather than child expression continuations. Source ownership
+        // remains in the selected HIR inventory.
+        edges.retain(|edge| {
+            let HirExpressionEvaluationEdge::Expression {
+                child,
+                role: HirExpressionChildRole::Argument { ordinal },
+                ..
+            } = edge
+            else {
+                return true;
+            };
+            !calls
+                .project_site_payload(
+                    crate::callable::CheckedCallSite::HirCall(owner),
+                    |prefix| prefix.has_compact_numeric_literal_argument(*ordinal, *child),
+                    |_| false,
+                )
+                .unwrap_or(false)
+        });
+        Ok(edges.into_boxed_slice())
     }
 
     fn completion_transfer_target(
@@ -486,14 +544,25 @@ impl Analyzer<'_, '_, '_> {
         {
             result.normal = result.normal.join(NormalContinuation::Unit);
         }
-        let normal = self
+        let normal = if let Some(normal) = self
             .completion_expression_fact(owner, query)?
             .normal_continuation()
-            .ok_or_else(|| {
-                AnalyzerExpressionError::fatal(
+        {
+            normal
+        } else {
+            let retained_diagnostic = match query.purpose {
+                CompletionQueryPurpose::CheckedResults => false,
+                CompletionQueryPurpose::FunctionResultTyping(context) => self
+                    .has_unselected_call_diagnostic(context, owner)
+                    .map_err(AnalyzerExpressionError::fact)?,
+            };
+            if !retained_diagnostic {
+                return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                )
-            })?;
+                ));
+            }
+            NormalContinuation::Unit
+        };
         result.normal = result.normal.then(normal);
         Ok(result)
     }

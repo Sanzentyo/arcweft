@@ -586,6 +586,13 @@ impl RuntimeEnv {
         std::mem::take(&mut self.assignment_discards)
     }
 
+    pub(crate) fn set_assignment_discard_boundary(
+        &mut self,
+        policy: Option<crate::effect::RuntimeDropPolicy>,
+    ) -> Result<(), crate::line_task::LineRuntimeError> {
+        self.assignment_discards.set_boundary(policy)
+    }
+
     pub fn bindings_snapshot(&self) -> Vec<RuntimeLocalSlot> {
         self.scopes
             .iter()

@@ -146,7 +146,7 @@ impl AwbcProductStepExecutor {
             self.runtime_generation.get(),
             self.fiber.budget.quantum,
         );
-        self.facade_fiber.status = crate::engine::FlowFiberStatus::Running;
+        self.facade_fiber.frame.status = crate::engine::FlowFiberStatus::Running;
         self.fiber.frames[0].instance = frame_instance;
         self.fiber.next_frame_instance = next_frame_instance;
         self.fiber.streams = streams;

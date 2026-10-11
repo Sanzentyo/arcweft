@@ -7,6 +7,7 @@
 
 mod analysis;
 mod cache_batch;
+mod deterministic;
 mod dialogue_profile;
 mod entry_runtime;
 #[cfg(test)]
@@ -19,6 +20,7 @@ pub(crate) use cache_batch::PendingProjectCompileStores;
 #[cfg(test)]
 use cache_batch::PendingStoreTransitionError;
 pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
+pub use deterministic::{CompiledDeterministicFunction, DeterministicFunctionCompileError};
 pub use dialogue_profile::{
     CheckedDialogueProfile, DialogueProfileAdmissionError, DialogueProfileOwner,
 };
@@ -45,8 +47,9 @@ use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::{
     entry::{CheckedEntryCatalog, CheckedEntryDiagnostic, CheckedEntryKind},
     final_analysis::{
-        FinalSemanticAnalysisControl, FinalSemanticCatalogs, FinalSemanticProjectError,
-        analyze_final_project, project_callable_tail_recovery_diagnostics,
+        FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticCatalogs,
+        FinalSemanticProjectError, analyze_final_project,
+        project_callable_tail_recovery_diagnostics,
     },
     project_index::{ProgramHash, ProjectSemanticIndex},
     proof_return::classify_proof_return_project,
@@ -239,6 +242,8 @@ pub struct ProjectCompileError {
     stage: &'static str,
     diagnostics: Vec<ProjectCompileDiagnostic>,
     lease: Option<ProjectCompilationLease>,
+    #[source]
+    semantic_error: Option<Box<FinalSemanticAnalysisError>>,
 }
 
 impl ProjectCompileStage {
@@ -718,6 +723,7 @@ where
                                 .with_code(error.diagnostic_code())
                         });
                         linked_error(ProjectCompileStage::TypeCheck, [diagnostic])
+                            .with_semantic_error(error)
                     }
                     FinalSemanticProjectError::Entry(diagnostics) => {
                         linked_error_with_registration_sources(
@@ -1432,6 +1438,7 @@ fn module_error(
             })
             .collect(),
         lease: None,
+        semantic_error: None,
     }
 }
 
@@ -1557,6 +1564,7 @@ fn linked_error(
             })
             .collect(),
         lease: None,
+        semantic_error: None,
     }
 }
 
@@ -1608,6 +1616,7 @@ fn linked_error_with_registration_sources(
             })
             .collect(),
         lease: None,
+        semantic_error: None,
     }
 }
 
@@ -1645,10 +1654,22 @@ fn linked_error_with_compilation_sources(
             })
             .collect(),
         lease: None,
+        semantic_error: None,
     }
 }
 
 impl ProjectCompileError {
+    fn with_semantic_error(mut self, error: Box<FinalSemanticAnalysisError>) -> Self {
+        debug_assert!(self.semantic_error.is_none());
+        self.semantic_error = Some(error);
+        self
+    }
+
+    /// Original final-semantic rejection, retained without reconstructing it
+    /// from a diagnostic code, source spelling, or rendered message.
+    pub fn semantic_error(&self) -> Option<&FinalSemanticAnalysisError> {
+        self.semantic_error.as_deref()
+    }
     fn with_compilation_lease(mut self, lease: ProjectCompilationLease) -> Self {
         debug_assert!(self.lease.is_none());
         let tooling = lease.tooling_lease();

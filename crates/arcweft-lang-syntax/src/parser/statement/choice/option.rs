@@ -98,6 +98,7 @@ pub(super) fn emit_choice_option_field(
                 end,
                 item_kind,
                 SyntaxRole::ChoiceOptionField(ordinal),
+                super::super::StatementBodyContext::Ordinary,
             );
         }
         _ => emit_recovery(

@@ -343,8 +343,12 @@ fn agent_script_compile_target(
                 .map_err(|code| {
                     format!("failed to resolve native source for Agent Script: {code:?}")
                 })?;
-        let checked = load_and_check_selection(&selection, None)
-            .map_err(|code| format!("failed to check native source for Agent Script: {code:?}"))?;
+        let checked = load_and_check_selection(
+            &selection,
+            None,
+            crate::app::project::ProjectDiagnosticOutput::Human,
+        )
+        .map_err(|code| format!("failed to check native source for Agent Script: {code:?}"))?;
         return agent_script_native_compile_target(&checked, &options.signals);
     }
     agent_script_standalone_compile_target(&options.signals)
@@ -2358,8 +2362,12 @@ mod registered_environment_reuse_tests {
             &crate::app::project::ProfileOptions::default(),
         )
         .expect("native source selection");
-        let native = load_and_check_selection(&selection, None)
-            .expect("actual native source compiler supplies adapter policy and metadata");
+        let native = load_and_check_selection(
+            &selection,
+            None,
+            crate::app::project::ProjectDiagnosticOutput::Human,
+        )
+        .expect("actual native source compiler supplies adapter policy and metadata");
         let registered = native.compiled.analysis_lease().registered_environment();
         let expected_ingress = registered.statement_ingress().clone();
         let expected_metadata = registered.rust_metadata().clone();

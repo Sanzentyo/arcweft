@@ -5,7 +5,7 @@ use super::{
     FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState, MappedEffect,
     ProductStepError, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
     RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason,
-    has_host_requests, has_visible_output, runtime_value_label, source_diagnostic,
+    runtime_value_label, source_diagnostic,
 };
 
 impl AwbcProductStepExecutor {
@@ -218,17 +218,22 @@ impl AwbcProductStepExecutor {
                 .as_ref()
                 .map(|suspension| &suspension.reason),
             Some(FiberSuspensionReason::BudgetYield)
-        ) {
+        ) || self.dialogue_activation_budget_exhausted()
+        {
             return RuntimeStepStopReason::BudgetExhausted;
         }
-        if self.fiber.status == FiberStatus::Suspended {
-            return if has_visible_output(output) || has_host_requests(output) {
+        if matches!(
+            self.fiber.status,
+            FiberStatus::Suspended | FiberStatus::Returned | FiberStatus::Cancelled
+        ) && !self.has_internal_work()
+        {
+            return if output.has_presentation_visible_output() || output.has_host_requests() {
                 RuntimeStepStopReason::Output
             } else {
                 RuntimeStepStopReason::Blocked
             };
         }
-        if options.mode == RuntimeStepMode::Game && has_visible_output(output) {
+        if options.mode == RuntimeStepMode::Game && output.has_presentation_visible_output() {
             return RuntimeStepStopReason::Output;
         }
         if options.mode == RuntimeStepMode::OneOp && executed_ops > 0 {
@@ -237,7 +242,7 @@ impl AwbcProductStepExecutor {
         if executed_ops >= options.budget.max_ops {
             return RuntimeStepStopReason::BudgetExhausted;
         }
-        if has_host_requests(output) {
+        if output.has_host_requests() {
             RuntimeStepStopReason::Output
         } else {
             RuntimeStepStopReason::OneOp
@@ -266,23 +271,28 @@ impl AwbcProductStepExecutor {
                 .as_ref()
                 .map(|suspension| &suspension.reason),
             Some(FiberSuspensionReason::BudgetYield)
-        ) {
+        ) || self.dialogue_activation_budget_exhausted()
+        {
             return true;
         }
-        if self.fiber.status == FiberStatus::Suspended {
+        if matches!(
+            self.fiber.status,
+            FiberStatus::Suspended | FiberStatus::Returned | FiberStatus::Cancelled
+        ) && !self.has_internal_work()
+        {
             return true;
         }
         match mode {
             RuntimeStepMode::OneOp => executed_ops > 0,
-            RuntimeStepMode::Game => has_visible_output(output),
+            RuntimeStepMode::Game => output.has_presentation_visible_output(),
             RuntimeStepMode::Drain | RuntimeStepMode::Server => false,
         }
     }
 
     pub(super) fn sync_facade(&mut self) {
-        self.facade_fiber.line_cursor =
+        self.facade_fiber.frame.line_cursor =
             usize::try_from(self.fiber.line_cursor).unwrap_or(usize::MAX);
-        self.facade_fiber.status = self.effective_status();
+        self.facade_fiber.frame.status = self.effective_status();
     }
 
     pub(super) fn effective_status(&self) -> FlowFiberStatus {

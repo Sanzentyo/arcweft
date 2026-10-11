@@ -27,6 +27,11 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
     if colon == head_end {
         return None;
     }
+    // Reserved `with` starts a bracket application's line plan even when
+    // the indentation introducer is on the same physical line as its target.
+    if find_top_level_boundary(parser, start, colon, &["with"]) < colon {
+        return None;
+    }
     let plan_start = crate::parser::statement::dialogue_plan::colon_dialogue_plan_start(
         parser, start, colon, end,
     );

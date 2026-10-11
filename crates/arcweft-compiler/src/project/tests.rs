@@ -1540,6 +1540,7 @@ flow main() -> String {
             .output;
         for value in engine
             .fiber()
+            .frame
             .env
             .bindings_snapshot()
             .into_iter()
@@ -1549,7 +1550,7 @@ flow main() -> String {
                 actual.insert(content_text(&content));
             }
         }
-        match &engine.fiber().status {
+        match &engine.fiber().frame.status {
             FlowFiberStatus::Done(FlowExit::Return(value)) => {
                 assert_eq!(value, "done");
                 completed = true;
@@ -1660,6 +1661,7 @@ flow main() -> String {
             .output;
         for value in engine
             .fiber()
+            .frame
             .env
             .bindings_snapshot()
             .into_iter()
@@ -1676,7 +1678,7 @@ flow main() -> String {
             observed_fallback |= matches!(value.outcome(), RuntimeDialogueFormattedOutcome::Failure { reason, .. } if reason.contains("division by zero"))
                 && is_recovered_fallback(value.failure_selection());
         }
-        match &engine.fiber().status {
+        match &engine.fiber().frame.status {
             FlowFiberStatus::Done(FlowExit::Return(value)) => {
                 assert_eq!(value, "done");
                 completed = true;
@@ -4273,4 +4275,46 @@ fn named_make_need_arguments_keep_the_checked_request_role_identity() {
         .expect("actual admitted MakeNeed argument");
     assert_eq!(argument.identity(), role);
     assert_eq!(argument.name(), Some("asset"));
+}
+
+#[test]
+fn semantic_rejection_retains_original_error_and_pre_executable_lease() {
+    let (project, context) = removed_role_project(
+        "signal current_flow: Watch<Ref<Flow>>\nflow signal_writer\neffects {}\n{ signal.set(@signal.current_flow, @flow.signal_writer) }\n",
+    );
+    let (mut session, parsed) = compilation_state(&project);
+    let error = compile_project(&mut session, &project, &parsed, &context)
+        .expect_err("a closed empty effect row rejects signal.write");
+    let rejection = error
+        .semantic_error()
+        .expect("original semantic error is retained");
+    let FinalSemanticAnalysisError::EffectUpperBoundExceeded {
+        missing,
+        contract_source,
+        ..
+    } = rejection
+    else {
+        panic!("expected the typed upper-bound rejection: {rejection}");
+    };
+    assert!(missing.contains(&arcweft_lang_sema::effects::EffectId::signal_write()));
+    contract_source
+        .validate_for(project.root_module().document())
+        .expect("exact source revision");
+    let diagnostic = rejection
+        .source_diagnostic()
+        .expect("canonical source diagnostic");
+    assert!(
+        error
+            .diagnostics()
+            .iter()
+            .any(|row| row.diagnostic() == &diagnostic)
+    );
+    let lease = error
+        .compilation_lease()
+        .expect("accepted HIR is retained on semantic rejection");
+    assert!(matches!(lease, ProjectCompilationLease::Hir(_)));
+    assert!(
+        lease.analysis_lease().is_none(),
+        "denial cannot publish final semantic facts"
+    );
 }

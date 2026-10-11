@@ -1,8 +1,9 @@
 use super::entry::{select_server_entry, server_routes};
 use super::options::ServeOptions;
 use crate::app::project::{
-    SourceSelection, load_and_check_selection, native_host_policy_for_selection_with_adapter,
-    require_profile_kind, resolve_source_selection, runtime_pure_config_for_selection,
+    ProjectDiagnosticOutput, SourceSelection, load_and_check_selection,
+    native_host_policy_for_selection_with_adapter, require_profile_kind, resolve_source_selection,
+    runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
@@ -83,7 +84,11 @@ pub(in crate::app) fn runtime_serve_selection(
     let adapter = adapter_override
         .or(selection.adapter())
         .unwrap_or(standard::SANS_IO_ADAPTER_ID);
-    let checked = load_and_check_selection(selection, adapter_override)?;
+    let checked = load_and_check_selection(
+        selection,
+        adapter_override,
+        ProjectDiagnosticOutput::for_json(config.json),
+    )?;
     let host_policy = native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
     let plan = checked.runtime_plan().plan.clone();
     let entry = select_server_entry(&plan, selection.command_entry(entry_override)?)?;

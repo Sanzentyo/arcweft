@@ -230,9 +230,10 @@ impl Engine {
             staged.extend(bindings);
         }
         self.fiber
+            .frame
             .env
             .push_function_scope(site, staged.len(), type_instantiation.clone());
-        self.fiber.env.bind_all(staged);
+        self.fiber.frame.env.bind_all(staged);
         let value = self.evaluate_expr_with_backend(body, backend);
         let value = value.and_then(|value| {
             let matches = match &type_instantiation {
@@ -247,7 +248,7 @@ impl Engine {
                 ))
             }
         });
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
         value
     }
 
@@ -276,8 +277,11 @@ impl Engine {
                 || cost > charge.remaining
                 || self.has_executor_work()
                 || self.has_joined_work()
-                || self.fiber.await_observer.is_some()
-                || !matches!(self.fiber.status, super::super::FlowFiberStatus::Running)
+                || self.fiber.frame.await_observer.is_some()
+                || !matches!(
+                    self.fiber.frame.status,
+                    super::super::FlowFiberStatus::Running
+                )
             {
                 return Ok(None);
             }

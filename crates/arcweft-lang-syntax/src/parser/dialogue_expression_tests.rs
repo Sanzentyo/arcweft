@@ -299,6 +299,96 @@ mod tests {
     }
 
     #[test]
+    fn explicit_line_plan_owns_an_otherwise_ambiguous_bracket_payload() {
+        for (content, ambiguous) in [("Ready[p]", true), ("value", true), ("2026", false)] {
+            let bare = format!("flow opening {{ alice()[{content}] }}\n");
+            let bare_build =
+                parse_document(&document(&bare), crate::parser::ParseOptions::default()).unwrap();
+            assert!(bare_build.diagnostics().is_empty());
+            assert!(
+                bare_build.index().entries().iter().any(|entry| {
+                    match entry
+                        .expression_projection()
+                        .map(PendingExpressionProjection::projection)
+                    {
+                        Some(ExpressionProjection::PostfixBracket(
+                            crate::expressions::SyntaxPostfixBracketProjection::Ambiguous {
+                                ..
+                            },
+                        )) => ambiguous,
+                        Some(ExpressionProjection::Index(_)) => !ambiguous,
+                        _ => false,
+                    }
+                }),
+                "{content}: {:?}",
+                bare_build
+                    .index()
+                    .entries()
+                    .iter()
+                    .filter_map(|entry| entry.expression_projection())
+                    .collect::<Vec<_>>()
+            );
+
+            let source = format!(
+                "flow opening {{\n    alice()[{content}] with {{ init {{ log.info(\"ready\") }} }}\n    let following = true\n}}\n"
+            );
+            let built =
+                parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+            assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+            assert_eq!(built.green().to_string(), source);
+            let attached = applications(&built);
+            assert_eq!(attached.len(), 1);
+            assert!(attached[0].has_plan());
+            assert!(!attached[0].has_recovery());
+            assert!(
+                built
+                    .index()
+                    .entries()
+                    .iter()
+                    .any(|entry| { entry.kind() == SyntaxKind::LetStatement })
+            );
+            assert!(
+                !built
+                    .index()
+                    .entries()
+                    .iter()
+                    .any(|entry| { entry.kind() == SyntaxKind::ErrorExpression })
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_line_plan_missing_body_keeps_typed_recovery_and_following_declaration() {
+        let source = "flow opening {\n    alice()[Ready[p]] with\n}\nfn following() { () }\n";
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        assert_eq!(built.green().to_string(), source);
+        let attached = applications(&built);
+        assert_eq!(attached.len(), 1);
+        assert!(attached[0].has_plan());
+        assert!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .any(|entry| entry.kind() == SyntaxKind::MissingBody)
+        );
+        assert!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .any(|entry| entry.kind() == SyntaxKind::FunctionItem)
+        );
+        assert!(
+            built
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.range().is_empty())
+        );
+    }
+
+    #[test]
     fn inline_timed_cue_uses_the_indented_callback_graph_and_keeps_its_sibling() {
         let source = concat!(
             "flow opening {\n",
@@ -547,5 +637,198 @@ mod tests {
         );
         assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
         assert_eq!(built.green().to_string(), source);
+    }
+
+    fn authored_space_owner(
+        built: &crate::grammar::build::GrammarBuild,
+    ) -> &PendingExpressionProjection {
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter_map(UnattachedGrammarEntry::expression_projection)
+            .find(|projection| {
+                matches!(
+                    projection.projection(),
+                    ExpressionProjection::AttachedContentApplication(application)
+                        if matches!(application.content(), SyntaxDialogueContentProjection::Present(content)
+                            if content.nodes().iter().any(|node| matches!(node,
+                                SyntaxDialogueNodeProjection::Text(text) if text.as_ref() == "Head ")))
+                )
+            })
+            .expect("the authored Head text selects its exact content owner")
+    }
+
+    fn assert_authored_text_spans(
+        source: &str,
+        owner: &PendingExpressionProjection,
+        expected: &[&str],
+    ) {
+        use crate::expressions::SyntaxDialogueNodeSourcePart;
+
+        let ExpressionProjection::AttachedContentApplication(application) = owner.projection()
+        else {
+            panic!("the selected projection owns attached content")
+        };
+        let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+            panic!("the selected body is present")
+        };
+        let texts: Vec<_> = content
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, node)| match node {
+                SyntaxDialogueNodeProjection::Text(text) => Some((ordinal, text.as_ref())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts.iter().map(|(_, text)| *text).collect::<Vec<_>>(),
+            expected
+        );
+        for (ordinal, text) in texts {
+            let ordinal = u32::try_from(ordinal).expect("the fixture node ordinal fits u32");
+            for part in [
+                SyntaxDialogueNodeSourcePart::Whole,
+                SyntaxDialogueNodeSourcePart::Text,
+            ] {
+                let range = owner
+                    .components()
+                    .iter()
+                    .find(|component| {
+                        component.role() == ExpressionComponentRole::DialogueNode { ordinal, part }
+                    })
+                    .expect("each Text retains both owning source roles")
+                    .range();
+                assert_eq!(&source[range.as_range()], text);
+                assert_eq!(range.end() - range.start(), text.len());
+            }
+        }
+    }
+
+    #[test]
+    fn dialogue_inline_spaces_after_atoms_keep_exact_text_spans_and_lossless_source() {
+        let source = "flow opening {\n    alice: Head #[name] \t|[夢](ゆめ) #strong()[body][r] 2026 ABC。\n}\n";
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), source);
+        let owner = authored_space_owner(&built);
+        assert_authored_text_spans(source, owner, &["Head ", " \t", " ", " 2026 ABC。"]);
+
+        let replayed = parse_document(
+            &document(&built.green().to_string()),
+            crate::parser::ParseOptions::default(),
+        )
+        .unwrap();
+        assert!(
+            replayed.diagnostics().is_empty(),
+            "{:?}",
+            replayed.diagnostics()
+        );
+        assert_eq!(
+            authored_space_owner(&replayed).projection(),
+            owner.projection()
+        );
+        assert_eq!(
+            authored_space_owner(&replayed).components(),
+            owner.components()
+        );
+    }
+
+    #[test]
+    fn dialogue_physical_newlines_own_indentation_and_original_line_ending_spans() {
+        use crate::expressions::{SyntaxDialogueNodeSourcePart, SyntaxLineBreakKind};
+
+        let source = "flow opening {\n    alice: #strong()[ \tHead #[name]  \r\n\t  Next[r] \t2026 \r  Third\n    Last]\n}\n";
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), source);
+        let owner = authored_space_owner(&built);
+        assert_authored_text_spans(
+            source,
+            owner,
+            &["Head ", "  ", "Next", " \t2026 ", "Third", "Last"],
+        );
+        let ExpressionProjection::AttachedContentApplication(application) = owner.projection()
+        else {
+            panic!("the selected projection owns attached content")
+        };
+        let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+            panic!("the selected body is present")
+        };
+        let endings: Vec<_> = content
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, node)| match node {
+                SyntaxDialogueNodeProjection::LineBreak(kind) => {
+                    assert_eq!(*kind, SyntaxLineBreakKind::Line);
+                    let ordinal = u32::try_from(ordinal).unwrap();
+                    let range = owner
+                        .components()
+                        .iter()
+                        .find(|component| {
+                            component.role()
+                                == ExpressionComponentRole::DialogueNode {
+                                    ordinal,
+                                    part: SyntaxDialogueNodeSourcePart::LineBreak,
+                                }
+                        })
+                        .unwrap()
+                        .range();
+                    Some(&source[range.as_range()])
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(endings, ["\r\n", "\r", "\n"]);
+    }
+
+    #[test]
+    fn inline_space_preservation_keeps_atom_boundary_comments_as_lossless_trivia() {
+        let source = "flow opening {\n    alice: Head #[name] \t/* hidden */ tail[r] \t/** documentation */done\n}\n";
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), source);
+        assert_authored_text_spans(
+            source,
+            authored_space_owner(&built),
+            &["Head ", " \t", " tail", " \t", "done"],
+        );
+    }
+
+    #[test]
+    fn dialogue_margin_only_body_stays_missing_and_raw_whitespace_stays_opaque() {
+        use crate::expressions::SyntaxDialogueContentRecoveryBoundary;
+
+        let missing = "flow opening {\n    alice: #strong()[ \t]\n    let following = true\n}\n";
+        let built =
+            parse_document(&document(missing), crate::parser::ParseOptions::default()).unwrap();
+        assert_eq!(built.green().to_string(), missing);
+        assert!(applications(&built).iter().any(|application| {
+            matches!(application.content(), SyntaxDialogueContentProjection::Missing {
+                boundary: SyntaxDialogueContentRecoveryBoundary::CloseBracket { range }
+            } if &missing[range.as_range()] == "]")
+        }));
+        assert!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .any(|entry| entry.kind() == SyntaxKind::LetStatement)
+        );
+
+        let raw = "flow opening {\n    alice: #raw()[ \t#[value][r]\r\n  literal]\n}\n";
+        let built = parse_document(&document(raw), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(built.green().to_string(), raw);
+        assert!(applications(&built).iter().any(|application| {
+            matches!(application.content(), SyntaxDialogueContentProjection::RawLiteral(literal)
+                if literal.value() == " \t#[value][r]\r\n  literal"
+                    && &raw[literal.range().as_range()] == literal.value())
+        }));
     }
 }

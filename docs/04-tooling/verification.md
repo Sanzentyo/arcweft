@@ -105,18 +105,19 @@ Release verification should reject undisclosed audited unsafe, policy-forbidden
 trusted proof evidence, and unproven non-trivial lifetime promotion, thread
 capture, global mutation, and MustDrop override obligations.
 
-The semantic pass lives in `arcweft-lang-sema::analyze_semantics` and returns a
-structured `SemanticReport`. `arcweft-verify` treats that report as the source
-of truth for semantic-owned obligations before emitting the shared verifier JSON
-used by CLI, LSP, and Agent tooling. It generates obligations for lifetime
+The final project semantic pass owns checked facts and admits one exact HIR
+generation. `arcweft-verify` consumes that generation, its symbol authority and
+sealed `FinalSemanticAnalysis`. CLI, LSP and Agent tooling borrow those facts;
+they do not rerun analysis or manufacture an executable plan after rejection.
+The accepted verifier report collects obligations for lifetime
 promotion, `unsafe lifetime`, upper-lifetime registry writes, thread capture,
-effect capability writes, proof-body validity, thread join result typing,
+proof-body validity, thread join result typing,
 trusted assumptions, `Raw` syntax that reached HIR-facing analysis, sibling
 thread and line child task write conflicts, and MustDrop registry values such
 as `'line.focus` that are not explicitly dropped or transferred.
 
 Effects are checked as semantic facts, not as ordinary value expressions.
-Flow/function contracts grant capabilities in the checked body:
+Flow/function effects clauses bound the inferred effects of their bodies:
 
 ```arcw
 flow effects
@@ -128,12 +129,24 @@ effects { signal.write, metric.write, state.write('flow) }
 }
 ```
 
-In the current implementation, `signal.set(...)` requires `signal.write` and
-`metric.set(...)` requires `metric.write`; upper-lifetime registry writes such
-as `'flow.flags.seen <- true` require `state.write(flow)`, written in source as
-`state.write('flow)`. Missing capabilities are reported as verifier
-obligations; matching `effects` clauses or explicit checker environment
-capabilities discharge them automatically.
+`signal.set(...)` requires `signal.write` and `metric.set(...)` requires
+`metric.write`; upper-lifetime registry writes such as `'flow.flags.seen <- true`
+require `state.write(flow)`, written in source as `state.write('flow)`. Omitted
+`effects` infer the body row. Explicit `effects {}` imposes an empty upper
+bound; explicit members impose the corresponding checked upper bound. Target
+capability availability is checked separately and cannot widen that bound.
+
+When project compilation rejects analysis, `arcw verify --json` publishes the
+compiler-owned rejection and returns a non-success exit code. This version1
+report has `status: "denied"`, its original compilation `stage`, and canonical
+diagnostic rows. Typed effect rejections carry
+`rejected_obligation_kind: "effect_capability"`; other rejections omit that
+optional classification. Codes, severity, messages, source revision-bound
+spans, primary/secondary labels, notes, suggestions and commands come from the
+original diagnostic authority. A rejected seal has no accepted obligations,
+solver checks, executable runtime plan or generated proof artifacts. Solver
+execution and `--emit-obligations`/`--emit-smt` begin only after compilation
+succeeds. The accepted verifier JSON grammar remains the shared verifier report.
 
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It

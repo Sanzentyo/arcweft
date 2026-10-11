@@ -42,7 +42,7 @@ impl Engine {
             // VM runtime backends decline executable scalar calls so the
             // original budgeted frame remains active. Only an admitted AOT/JIT
             // capability can complete this physical fast path.
-            frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
+            frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
@@ -54,7 +54,7 @@ impl Engine {
             )
         {
             let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
-            frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
+            frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
@@ -110,16 +110,18 @@ impl Engine {
         {
             pure_backend.record_interpreted_function_call(function);
         }
-        self.fiber
-            .env
-            .push_function_scope(site, staged.len(), frame.type_instantiation.clone());
-        self.fiber.env.bind_all(staged);
+        self.fiber.frame.env.push_function_scope(
+            site,
+            staged.len(),
+            frame.type_instantiation.clone(),
+        );
+        self.fiber.frame.env.bind_all(staged);
         frame.function_scope = true;
-        frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
-        self.fiber.control_stack.push(FlowControlStackEntry {
+        frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
+        self.fiber.frame.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::FunctionCall(frame),
         });
-        self.fiber.pending_ops.extend(ops);
+        self.fiber.frame.pending_ops.extend(ops);
         Ok(())
     }
 
@@ -160,7 +162,7 @@ impl Engine {
                 return;
             }
         }
-        self.fiber.pending_ops = frame.caller_pending_ops;
+        self.fiber.frame.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
             FunctionReturnContinuation::Program { program } => {
                 if !plan_owner
@@ -177,10 +179,10 @@ impl Engine {
                     );
                     return;
                 }
-                self.fiber.cursor = None;
+                self.fiber.frame.cursor = None;
                 self.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Program(program), value));
-                self.fiber.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+                self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
             FunctionReturnContinuation::Function { site } => {
                 if site != frame.site
@@ -196,10 +198,10 @@ impl Engine {
                     );
                     return;
                 }
-                self.fiber.cursor = None;
+                self.fiber.frame.cursor = None;
                 self.invocation_result =
                     Some((crate::engine::NativeInvocationRoot::Function(site), value));
-                self.fiber.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
+                self.fiber.frame.status = FlowFiberStatus::Done(crate::engine::FlowExit::Done);
             }
             FunctionReturnContinuation::CallableDefault { pending, result } => {
                 if let Err(error) = self.finish_callable_group_default(
@@ -228,8 +230,8 @@ impl Engine {
     ) {
         match self.try_bind_pattern_owned(result, value) {
             Ok(None) => {
-                self.fiber.cursor = resume;
-                self.fiber.status = FlowFiberStatus::Running;
+                self.fiber.frame.cursor = resume;
+                self.fiber.frame.status = FlowFiberStatus::Running;
             }
             Ok(Some(value)) => self.fail_eval(
                 RuntimeEvalError::PatternMismatch(runtime_value_label(&value)),
@@ -246,24 +248,25 @@ impl Engine {
     ) -> Option<FunctionCallFrame> {
         if !self
             .fiber
+            .frame
             .control_stack
             .iter()
             .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
         {
             return None;
         }
-        while let Some(entry) = self.fiber.control_stack.pop() {
+        while let Some(entry) = self.fiber.frame.control_stack.pop() {
             match entry.kind {
                 FlowControlStackEntryKind::Scope {
                     origin, cleanups, ..
                 } => {
                     self.cancel_scheduled_scope_close(origin);
-                    self.fiber.env.pop_scope();
+                    self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
                 FlowControlStackEntryKind::FunctionCall(frame) => {
                     if frame.function_scope {
-                        self.fiber.env.pop_scope();
+                        self.fiber.frame.env.pop_scope();
                     }
                     return Some(frame);
                 }
@@ -272,7 +275,7 @@ impl Engine {
                 | FlowControlStackEntryKind::WhileLet { .. } => {}
                 FlowControlStackEntryKind::FormatAttempt(frame) => {
                     if frame.active.is_some() {
-                        self.fiber.env.pop_scope();
+                        self.fiber.frame.env.pop_scope();
                     }
                 }
             }
@@ -301,7 +304,7 @@ impl Engine {
         let Some(frame) = self.take_function_call_frame(output, pure_backend) else {
             unreachable!("fallthrough is dispatched only with an active function frame")
         };
-        self.fiber.pending_ops.clear();
+        self.fiber.frame.pending_ops.clear();
         self.fail_eval(
             RuntimeEvalError::FunctionFallthrough { site: frame.site },
             output,

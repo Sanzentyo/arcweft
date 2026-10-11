@@ -78,9 +78,9 @@ fn at_control_frame() -> Engine {
     for _ in 0..16 {
         let step = engine.step(Default::default(), options);
         assert!(step.output.diagnostics.is_empty(), "{step:?}");
-        if matches!(engine.fiber.control_stack.last().map(|entry|&entry.kind),Some(FlowControlStackEntryKind::Scope {origin:RuntimeScopeFrameOrigin::Scheduled(token),..}) if token.kind()==crate::scope::RuntimeScopeFrameKind::Control)
+        if matches!(engine.fiber.frame.control_stack.last().map(|entry|&entry.kind),Some(FlowControlStackEntryKind::Scope {origin:RuntimeScopeFrameOrigin::Scheduled(token),..}) if token.kind()==crate::scope::RuntimeScopeFrameKind::Control)
             && matches!(
-                engine.fiber.pending_ops.front(),
+                engine.fiber.frame.pending_ops.front(),
                 Some(FlowOp::ExitScopeBind { .. })
             )
         {
@@ -101,10 +101,11 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
     };
     let step = restored.step(Default::default(), options);
     assert!(step.output.diagnostics.is_empty(), "{step:?}");
-    assert!(restored.fiber.control_stack.is_empty());
+    assert!(restored.fiber.frame.control_stack.is_empty());
     assert!(
         !restored
             .fiber
+            .frame
             .pending_ops
             .iter()
             .any(|op| matches!(op, FlowOp::ExitScheduledScope { .. }))
@@ -123,6 +124,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
     let mut missing = image.clone();
     missing
         .fiber
+        .frame
         .pending_ops
         .retain(|op| !matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }));
     assert_eq!(
@@ -132,12 +134,13 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
     let mut duplicate = image.clone();
     let close = duplicate
         .fiber
+        .frame
         .pending_ops
         .iter()
         .find(|op| matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }))
         .unwrap()
         .clone();
-    duplicate.fiber.pending_ops.push_back(close);
+    duplicate.fiber.frame.pending_ops.push_back(close);
     assert_eq!(
         Engine::from_rollback_image(duplicate).unwrap_err(),
         "native pending scope close has a foreign, repeated, or unallocated token"
@@ -145,6 +148,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
     let mut foreign = image;
     let close = foreign
         .fiber
+        .frame
         .pending_ops
         .iter_mut()
         .find(|op| matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }))

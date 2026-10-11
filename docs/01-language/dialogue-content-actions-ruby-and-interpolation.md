@@ -603,14 +603,21 @@ ranges. Quoted values may contain whitespace. Unterminated quotes and duplicate
 or otherwise invalid arguments are reported by the owning typed schema instead
 of being collapsed by a whitespace-to-map conversion.
 
-`DialogueContent` removes authored indentation and normalizes physical line
-endings to `\n`. Token, argument, expression, and body ranges are therefore
-byte ranges relative to the normalized `DialogueContent::raw()`, not absolute
-document ranges. Compiler and tooling consumers project them to the authored
-document with `DialogueContent.source_range(...)`; the reverse mapping for an
-editor cursor uses `DialogueContent.content_offset(...)`. Removed indentation
-and the interior byte of an authored CRLF pair intentionally have no reverse
-content offset.
+Dialogue text removes the horizontal formatting margin at the beginning of a
+body and after each physical source newline. Once an atom has begun on that
+source line, authored spaces and tabs remain text, including those after
+`#[...]`, Ruby, content calls, and point actions. `[r]` inserts a display
+line break; it does not start a new source indentation margin. Physical CRLF,
+CR, and LF newline tokens become a typed line break that displays as `\n`.
+
+The lossless syntax tree retains every original byte. Typed dialogue-node,
+argument, expression, and body source roles use exact UTF-8 ranges in the
+original document; HIR source queries retain that document and revision
+authority. A Text role includes its preserved inline spaces, while a physical
+LineBreak role covers the original complete line-ending token. Formatting
+margin and comment trivia stay in the syntax tree without becoming displayed
+text. `#raw()` bodies remain opaque and preserve their literal whitespace and
+line endings.
 
 Values used by dialogue interpolation should be defined in the surrounding flow scope or inside a pure `#[...]` expression. Line-plan variables are for cues and cancellation, not for text interpolation that has already been parsed as content.
 

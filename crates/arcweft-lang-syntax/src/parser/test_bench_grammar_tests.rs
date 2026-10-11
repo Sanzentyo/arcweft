@@ -20,6 +20,22 @@ fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
 }
 
 #[test]
+fn bench_assert_sections_retain_expectation_calls_as_named_plan_blocks() {
+    let source = "bench @bench.checked {\n    measure { goto @flow.main }\n    assert { expect.log(.info, contains=\"ready\") }\n    assert { expect.signal(@signal.ready, true) }\n}\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::NamedBlockExpression),
+        3
+    );
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::CallExpression),
+        2
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn test_and_bench_plans_are_structured_and_lossless() {
     let source = r#"/// Headless route check.
 #[generated]

@@ -233,9 +233,10 @@ fn emit_unbraced_statement_block_until(
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
+    sequence_kind: BlockSequenceKind,
 ) {
     parser.start(SyntaxKind::Block, role);
-    emit_block_sequence(parser, end, item_kind, BlockSequenceKind::Statement);
+    emit_block_sequence(parser, end, item_kind, sequence_kind);
     parser.finish();
 }
 
@@ -244,7 +245,15 @@ enum BlockSequenceKind {
     Value,
     Statement,
     ThreadFlow,
+    /// Ordered statement roots with the same nested bodies as Flow line work.
+    DialogueWork,
     UnsafeAuditStatement,
+}
+
+#[derive(Clone, Copy)]
+enum StatementBodyContext {
+    Ordinary,
+    ThreadFlow,
 }
 
 fn emit_block_sequence(
@@ -267,7 +276,10 @@ fn emit_block_sequence(
             break;
         }
         let start = parser.cursor();
-        let thread_flow = sequence_kind == BlockSequenceKind::ThreadFlow;
+        let thread_flow = matches!(
+            sequence_kind,
+            BlockSequenceKind::ThreadFlow | BlockSequenceKind::DialogueWork
+        );
         let dialogue_plan = thread_flow
             .then(|| dialogue_plan::dialogue_plan_interval(parser, start, close))
             .flatten();
@@ -328,6 +340,14 @@ fn emit_block_sequence(
                     item_kind,
                     statement,
                     dialogue_plan.map(dialogue_plan::DialoguePlanInterval::owner_end),
+                );
+            } else if sequence_kind == BlockSequenceKind::DialogueWork {
+                emit_statement_with_role(
+                    parser,
+                    end,
+                    item_kind,
+                    SyntaxRole::Statement(statement),
+                    StatementBodyContext::ThreadFlow,
                 );
             } else {
                 emit_statement(parser, end, item_kind, statement);
@@ -567,7 +587,13 @@ fn emit_statement(
     item_kind: SyntaxKind,
     ordinal: u32,
 ) {
-    emit_statement_with_role(parser, end, item_kind, SyntaxRole::Statement(ordinal));
+    emit_statement_with_role(
+        parser,
+        end,
+        item_kind,
+        SyntaxRole::Statement(ordinal),
+        StatementBodyContext::Ordinary,
+    );
 }
 
 /// Emits one ordinary statement fragment without inventing a declaration
@@ -578,7 +604,13 @@ pub(super) fn emit_statement_fragment(
     role: SyntaxRole,
 ) {
     let end = trimmed_end(parser, parser.cursor(), end);
-    emit_statement_with_role(parser, end, SyntaxKind::FunctionItem, role);
+    emit_statement_with_role(
+        parser,
+        end,
+        SyntaxKind::FunctionItem,
+        role,
+        StatementBodyContext::Ordinary,
+    );
 }
 
 fn emit_statement_with_role(
@@ -586,6 +618,7 @@ fn emit_statement_with_role(
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
+    context: StatementBodyContext,
 ) {
     if let Some(head) = defer_on_head(parser, parser.cursor(), end)
         && !defer_on_head_is_well_formed(parser, head)
@@ -594,7 +627,14 @@ fn emit_statement_with_role(
         return;
     }
     let kind = classify_statement(parser, end, item_kind);
-    emit_statement_kind(parser, end, item_kind, role, kind, false);
+    emit_statement_kind(
+        parser,
+        end,
+        item_kind,
+        role,
+        kind,
+        matches!(context, StatementBodyContext::ThreadFlow),
+    );
 }
 
 /// Returns the end of one outcome-qualified indentation body when measuring
@@ -1846,7 +1886,13 @@ fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
         parser.bump();
         parser.bump_trivia();
         if parser.cursor() < end {
-            emit_statement_with_role(parser, end, item_kind, SyntaxRole::Statement(0));
+            emit_statement_with_role(
+                parser,
+                end,
+                item_kind,
+                SyntaxRole::Statement(0),
+                StatementBodyContext::ThreadFlow,
+            );
         } else {
             emit_required_statement_body_recovery(
                 parser,
@@ -1856,13 +1902,14 @@ fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
         }
     } else if let Some((open, body_end)) = body.filter(|(open, _)| *open == trigger_end) {
         debug_assert_eq!(parser.cursor(), open);
-        let _ = emit_braced_statement_block_until(
+        let _ = emit_braced_block_until_with_kind(
             parser,
             body_end,
             item_kind,
             SyntaxKind::Block,
             SyntaxRole::Body,
             "syntax.statement.on_missing_close",
+            BlockSequenceKind::DialogueWork,
         );
         if first_significant(parser, parser.cursor(), end).is_some() {
             let start = parser.current_offset();
@@ -1895,6 +1942,7 @@ fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
                 interval.end(),
                 item_kind,
                 SyntaxRole::Body,
+                BlockSequenceKind::DialogueWork,
             );
             bump_until(parser, end);
         }

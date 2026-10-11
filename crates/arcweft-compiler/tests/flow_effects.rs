@@ -74,7 +74,7 @@ fn assert_returns_42(compiled: CompiledSource, program: AwbcProgram) {
             .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
             .output;
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
-        match &engine.fiber().status {
+        match &engine.fiber().frame.status {
             FlowFiberStatus::Running => {}
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(exit, &FlowExit::Return("42".to_owned()));

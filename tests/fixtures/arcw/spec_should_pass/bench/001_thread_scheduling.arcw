@@ -1,8 +1,10 @@
+entry bench @entry.threads { goto @flow.threads }
+
 bench @bench.threads {
     measure iterations = 1 { goto @flow.threads }
 }
 
-flow threads {
+flow threads() -> String {
     thread first {
         log.info("first")
     }

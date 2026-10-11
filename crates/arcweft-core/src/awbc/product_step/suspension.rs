@@ -2368,13 +2368,13 @@ impl AwbcProductStepExecutor {
                         kind: StreamEventKind::Item(RuntimePayload::from(event_value)),
                     });
                     *sequence = sequence.saturating_add(1);
-                    if let Some(state) = self.facade_fiber.stream_states.get_mut(&stream_id) {
+                    if let Some(state) = self.facade_fiber.frame.stream_states.get_mut(&stream_id) {
                         state.push_item(RuntimePayload::from(value));
                     }
                 }
                 VmObservation::StreamClose(stream) => {
                     let stream_id = stream_id_for(&self.program, stream);
-                    if let Some(state) = self.facade_fiber.stream_states.get_mut(&stream_id)
+                    if let Some(state) = self.facade_fiber.frame.stream_states.get_mut(&stream_id)
                         && let Some(sequence) = state.close_with_sequence()
                     {
                         output.effects.stream_events.push(RuntimeStreamEvent {

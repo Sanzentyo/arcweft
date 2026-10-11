@@ -132,9 +132,9 @@ fn run_controller_to_host_call(
                 .expect("one host call");
         }
         assert!(
-            matches!(engine.fiber().status, FlowFiberStatus::Running),
+            matches!(engine.fiber().frame.status, FlowFiberStatus::Running),
             "{:?}: {:?}",
-            engine.fiber().status,
+            engine.fiber().frame.status,
             output.diagnostics
         );
     }
@@ -519,6 +519,76 @@ entry agent @entry.agent.smoke {
             .iter()
             .any(|flow| { flow.id == *generated })
     );
+}
+
+#[test]
+fn dense_numeric_bench_entries_preserve_all_four_checked_contract_roles() {
+    let mut bindings = BTreeSet::new();
+    for ty in arcweft_core::math::RuntimeDenseNumericType::ALL {
+        let source = format!(
+            "entry bench @entry.dense {{ goto @flow.dense }}\n\nflow dense(value: {}) -> {} {{ return value }}\n",
+            ty.source_label(),
+            ty.source_label()
+        );
+        let (project, context) =
+            entry_project(&source, "entry.dense", ProjectEntrySelectionKind::Bench);
+        let compiled = compile_attached_project(&project, &context)
+            .unwrap_or_else(|error| panic!("{}: {error:?}", ty.source_label()));
+        let entry = compiled
+            .analysis_lease()
+            .checked_entries()
+            .entries()
+            .next()
+            .expect("checked Bench entry");
+        assert!(bindings.insert(*entry.binding_digest().as_bytes()));
+        let plan = &compiled.runtime_plan().plan;
+        let runtime_entry = plan.entries().first().expect("one Bench entry");
+        assert!(matches!(
+            arcweft_core::engine::Engine::for_entry(plan.clone(), &runtime_entry.id),
+            Err(arcweft_core::engine::EngineStartError::InvalidFlowInvocation { .. })
+        ));
+        let flow = plan.resolve_flow_target_value("flow.dense").unwrap();
+        assert_eq!(
+            plan.flow_schemas()
+                .iter()
+                .find(|schema| schema.flow == flow)
+                .expect("same checked Flow owns the executable schema")
+                .parameters
+                .len(),
+            1
+        );
+        let awbc = arcweft_runtime_plan::awbc_lower::AwbcLowerer::for_entry(
+            plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "dense_bench.arcw",
+            &runtime_entry.id,
+        )
+        .lower()
+        .expect("externally bound Bench lowers to verified AWBC")
+        .program;
+        let mut staged = arcweft_core::awbc::fiber::FiberState::for_entry(
+            &awbc,
+            arcweft_core::awbc::schema::AwbcEntryId(0),
+            0,
+            1,
+        )
+        .expect("argument-bearing AWBC frames are staged before input admission");
+        let registers = staged.frames[0].registers.clone();
+        let cursor = staged.cursor;
+        assert!(matches!(
+            staged.frames[0].bind_positional_arguments(&awbc, &[]),
+            Err(arcweft_core::awbc::fiber::FiberStateError::ArgumentCount {
+                expected: 1,
+                actual: 0
+            })
+        ));
+        assert_eq!(staged.frames[0].registers, registers);
+        assert_eq!(staged.cursor, cursor);
+        let cli_source = source.replace("entry bench", "entry cli");
+        let (cli_project, cli_context) =
+            entry_project(&cli_source, "entry.dense", ProjectEntrySelectionKind::Cli);
+        assert!(compile_attached_project(&cli_project, &cli_context).is_err());
+    }
 }
 
 #[test]

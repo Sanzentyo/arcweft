@@ -1,4 +1,4 @@
-flow bad_yield {
-    yield 1
+flow bad_yield() -> String {
+    yield 1i32
     return "done"
 }

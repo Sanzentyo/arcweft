@@ -28,12 +28,14 @@ impl Engine {
             FlowControl::Goto(target) => match self.plan.resolve_flow_target_value(&target) {
                 Ok(target) => self.goto(&target, output, pure_backend),
                 Err(error) => {
-                    self.fiber.status =
+                    self.fiber.frame.status =
                         FlowFiberStatus::Failed(format!("invalid goto target {target}: {error}"));
                 }
             },
             FlowControl::Return(value) => self.return_value(value, output, pure_backend),
-            FlowControl::Failed(message) => self.fiber.status = FlowFiberStatus::Failed(message),
+            FlowControl::Failed(message) => {
+                self.fiber.frame.status = FlowFiberStatus::Failed(message)
+            }
         }
         true
     }
@@ -44,21 +46,22 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        self.fiber.pending_ops.clear();
-        self.fiber.await_observer = None;
+        self.fiber.frame.pending_ops.clear();
+        self.fiber.frame.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
         if let Some(flow_index) = self.flow_index(target) {
-            self.fiber.cursor = Some(FlowCursor {
+            self.fiber.frame.cursor = Some(FlowCursor {
                 flow_index,
                 op_index: 0,
             });
-            self.fiber.status = FlowFiberStatus::Running;
+            self.fiber.frame.status = FlowFiberStatus::Running;
         } else {
-            self.fiber.cursor = None;
-            self.fiber.status = FlowFiberStatus::Failed(format!("missing goto target {target}"));
+            self.fiber.frame.cursor = None;
+            self.fiber.frame.status =
+                FlowFiberStatus::Failed(format!("missing goto target {target}"));
         }
     }
 
@@ -75,13 +78,13 @@ impl Engine {
         ) {
             return;
         }
-        self.fiber.pending_ops.clear();
-        self.fiber.await_observer = None;
+        self.fiber.frame.pending_ops.clear();
+        self.fiber.frame.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),
         });
-        self.fiber.status = FlowFiberStatus::Done(FlowExit::Return(value));
+        self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Return(value));
     }
 
     pub(super) fn unwind_control_stack(
@@ -89,20 +92,20 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        while let Some(entry) = self.fiber.control_stack.pop() {
+        while let Some(entry) = self.fiber.frame.control_stack.pop() {
             match entry.kind {
                 FlowControlStackEntryKind::Scope { cleanups, .. } => {
-                    self.fiber.env.pop_scope();
+                    self.fiber.frame.env.pop_scope();
                     self.emit_scope_cleanups(cleanups, output, pure_backend);
                 }
                 FlowControlStackEntryKind::FunctionCall(frame) => {
                     if frame.function_scope {
-                        self.fiber.env.pop_scope();
+                        self.fiber.frame.env.pop_scope();
                     }
                 }
                 FlowControlStackEntryKind::FormatAttempt(frame) => {
                     if frame.active.is_some() {
-                        self.fiber.env.pop_scope();
+                        self.fiber.frame.env.pop_scope();
                     }
                 }
                 FlowControlStackEntryKind::Loop { .. }
@@ -120,7 +123,7 @@ impl Engine {
     ) {
         self.drain_root_cleanups(output, pure_backend);
         output.flow_events.push(FlowEvent::Done);
-        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+        self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 }
 

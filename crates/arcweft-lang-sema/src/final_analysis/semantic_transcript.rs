@@ -900,7 +900,6 @@ struct SemanticTranscriptGraph<'analysis, 'control> {
     pattern_paths: BTreeMap<StableSemanticCoordinate, PatternId>,
     pattern_visiting: BTreeSet<PatternId>,
     coverage_pattern_visiting: BTreeSet<PatternId>,
-    observed_patterns: Vec<(PatternId, StableSemanticCoordinate)>,
     statement_digests: BTreeMap<arcweft_lang_hir::identity::StmtId, CheckedStatementSemanticDigest>,
     statement_visiting: BTreeSet<arcweft_lang_hir::identity::StmtId>,
     body_digests: BTreeMap<
@@ -932,7 +931,6 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             pattern_paths: BTreeMap::new(),
             pattern_visiting: BTreeSet::new(),
             coverage_pattern_visiting: BTreeSet::new(),
-            observed_patterns: Vec::new(),
             statement_digests: BTreeMap::new(),
             statement_visiting: BTreeSet::new(),
             body_digests: BTreeMap::new(),
@@ -997,6 +995,9 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             }
         })?;
         let mut coverage_arms = Vec::new();
+        // Each Match owns its coverage observations. Arm body transcription
+        // can seal nested Matches before this owner's matrix is constructed.
+        let mut observed_patterns = Vec::new();
         coverage_arms
             .try_reserve_exact(authored.arms().len())
             .map_err(|_| CheckedMatchBuildError::ArithmeticOverflow {
@@ -1013,6 +1014,7 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                 arm.pattern(),
                 &arm_coordinate,
                 &StablePatternCoordinate::new([]),
+                &mut observed_patterns,
             )?;
             let mut bindings = Vec::new();
             self.collect_pattern_bindings(
@@ -1096,7 +1098,7 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             self.control,
             &mut self.budget,
             StableSemanticCoordinate::new(match_path.clone()),
-            std::mem::take(&mut self.observed_patterns),
+            observed_patterns,
         )
         .analyze(&scrutinee_ty, &coverage_arms)?;
         if let Some(witness) = coverage.witness().cloned() {
@@ -1137,6 +1139,7 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
         owner: PatternId,
         arm: &StableMatchArmCoordinate,
         coordinate: &StablePatternCoordinate,
+        observed_patterns: &mut Vec<(PatternId, StableSemanticCoordinate)>,
     ) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
         self.control.check()?;
         let depth = u64::try_from(coordinate.steps().len())
@@ -1182,13 +1185,12 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
             }
             .into());
         }
-        self.observed_patterns.try_reserve_exact(1).map_err(|_| {
+        observed_patterns.try_reserve_exact(1).map_err(|_| {
             CheckedMatchBuildError::ArithmeticOverflow {
                 kind: CheckedMatchLimitKind::PatternNodes,
             }
         })?;
-        self.observed_patterns
-            .push((owner, semantic_coordinate.clone()));
+        observed_patterns.push((owner, semantic_coordinate.clone()));
         let hir = self
             .module
             .resolve_pattern(owner)
@@ -1206,7 +1208,7 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                     continue;
                 };
                 let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
-                self.pattern_digest(child, arm, &child_coordinate)?;
+                self.pattern_digest(child, arm, &child_coordinate, observed_patterns)?;
             }
         } else {
             for edge in hir.kind().child_edges() {
@@ -1215,7 +1217,7 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                 };
                 let child_coordinate =
                     child_pattern_coordinate(coordinate, hir.kind(), edge.role())?;
-                self.pattern_digest(child, arm, &child_coordinate)?;
+                self.pattern_digest(child, arm, &child_coordinate, observed_patterns)?;
             }
         }
         // The digest itself is issued by the one accepted-rooted generic
@@ -4529,6 +4531,17 @@ impl SemanticTranscriptGraph<'_, '_> {
             )?;
             bodies.push((coordinate, digest));
         }
+        let match_digest = if let HirStmtKind::Match(matched) = hir.kind() {
+            Some(
+                self.build(
+                    owner.into(),
+                    arcweft_lang_hir::project::HirMatchView::Statement(matched),
+                )?
+                .semantic_digest(),
+            )
+        } else {
+            None
+        };
         let coordinate = self.coordinates.statement(owner)?.canonical_bytes()?;
         let mut hasher = TranscriptHasher::new(&mut self.budget);
         transcript_update!(hasher, b"arcweft.lang.checked-statement-semantic.v1\0");
@@ -4546,6 +4559,9 @@ impl SemanticTranscriptGraph<'_, '_> {
             &self.coordinates,
         )?;
         write_effects(&mut hasher, checked.effects())?;
+        if let Some(digest) = match_digest {
+            transcript_update!(hasher, digest.as_bytes());
+        }
         write_len(&mut hasher, children.len())?;
         for (role, child) in children {
             write_bytes(&mut hasher, &role)?;

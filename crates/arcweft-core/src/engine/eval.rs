@@ -65,7 +65,7 @@ impl Engine {
             &self.plan,
             pattern,
             &value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return Ok(None);
         }
@@ -75,7 +75,7 @@ impl Engine {
                 pattern,
                 &value,
                 guard,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )?;
             let matched = self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
@@ -88,7 +88,7 @@ impl Engine {
             &self.plan,
             pattern,
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )?
         .expect("checked owned pattern remains matched");
         Ok(Some(bindings))
@@ -129,19 +129,19 @@ impl Engine {
                 .then(|| value.clone())
                 .ok_or(RuntimeEvalError::AffineLiteralCopy),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
-            RuntimeExprKind::Local(read) => self.fiber.env.read(read),
+            RuntimeExprKind::Local(read) => self.fiber.frame.env.read(read),
             RuntimeExprKind::SequencePopFront { place } => {
-                self.fiber.env.pop_sequence_front(place).map(|value| {
+                self.fiber.frame.env.pop_sequence_front(place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }
             RuntimeExprKind::SequencePush { place, value } => {
                 let value = self.evaluate_expr_with_backend(value, pure_backend)?;
-                self.fiber.env.push_sequence_item(place, value)?;
+                self.fiber.frame.env.push_sequence_item(place, value)?;
                 Ok(RuntimeValue::Unit)
             }
             RuntimeExprKind::SequencePopBack { place } => {
-                self.fiber.env.pop_vector_item(place).map(|value| {
+                self.fiber.frame.env.pop_vector_item(place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }
@@ -152,9 +152,12 @@ impl Engine {
                 body,
             } => self.evaluate_let_expr(*binding, expr, body, pure_backend),
             RuntimeExprKind::Scope { identity, body } => {
-                self.fiber.env.push_scope_with_identity(identity.clone());
+                self.fiber
+                    .frame
+                    .env
+                    .push_scope_with_identity(identity.clone());
                 let result = self.evaluate_expr_with_backend(body, pure_backend);
-                self.fiber.env.pop_scope();
+                self.fiber.frame.env.pop_scope();
                 result
             }
             RuntimeExprKind::Tuple(_)
@@ -623,7 +626,7 @@ impl Engine {
                         .get(receiver_local)
                         .ok_or(RuntimeEvalError::UnknownLocal(receiver_local))?
                         .ty();
-                    if !self.fiber.env.value_matches_type(
+                    if !self.fiber.frame.env.value_matches_type(
                         self.plan.as_ref(),
                         receiver_ty,
                         &receiver,
@@ -882,6 +885,7 @@ impl Engine {
             };
             if !self
                 .fiber
+                .frame
                 .env
                 .value_matches_type(plan.as_ref(), field.ty(), &value)?
             {
@@ -913,7 +917,7 @@ impl Engine {
             )
             .with_type_instantiation(
                 (!declaration.scope().is_root())
-                    .then(|| self.fiber.env.function_instantiation_lease().cloned())
+                    .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
                     .flatten(),
             ),
         ))
@@ -935,6 +939,7 @@ impl Engine {
             (Some(expected), Some(value))
                 if self
                     .fiber
+                    .frame
                     .env
                     .value_matches_type(plan.as_ref(), expected, value)? => {}
             (None, None) => {}
@@ -951,7 +956,7 @@ impl Engine {
                 .ok_or(RuntimeEvalError::UnknownPlanType(ty))?
                 .scope()
                 .is_root())
-            .then(|| self.fiber.env.function_instantiation_lease().cloned())
+            .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
             .flatten(),
         })
     }
@@ -993,6 +998,7 @@ impl Engine {
         let state = self.evaluate_expr_with_backend(state, pure_backend)?;
         if !self
             .fiber
+            .frame
             .env
             .value_matches_type(plan.as_ref(), state_ty, &state)?
         {
@@ -1017,7 +1023,7 @@ impl Engine {
                 self.evaluate_expr_with_backend(value, pure_backend)?
             }
             crate::value::RuntimeFieldTarget::Inspect { place, .. } => {
-                return self.fiber.env.inspect_field(place, field);
+                return self.fiber.frame.env.inspect_field(place, field);
             }
         };
         match (field, value) {
@@ -1158,10 +1164,10 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        self.fiber.env.push_scope_with_capacity(1);
-        self.fiber.env.set(binding, value);
+        self.fiber.frame.env.push_scope_with_capacity(1);
+        self.fiber.frame.env.set(binding, value);
         let result = self.evaluate_expr_with_backend(body, pure_backend);
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
         result
     }
 
@@ -1174,6 +1180,7 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber
+            .frame
             .env
             .assign_place(place, value)
             .map_err(|error| error.into_parts().0)?;
@@ -1208,7 +1215,7 @@ impl Engine {
             &self.plan,
             pattern,
             &value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
         }
@@ -1218,7 +1225,7 @@ impl Engine {
                 pattern,
                 &value,
                 guard,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )?;
             self.with_temp_bindings(projected, |this| {
                 this.evaluate_bool_with_backend(guard, pure_backend)
@@ -1231,7 +1238,7 @@ impl Engine {
                 &self.plan,
                 pattern,
                 value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )?
             .expect("checked owned pattern remains matched");
             self.with_temp_bindings(bindings, |this| {
@@ -1254,7 +1261,7 @@ impl Engine {
                 &self.plan,
                 arm.pattern(),
                 &value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )? {
                 continue;
             }
@@ -1264,7 +1271,7 @@ impl Engine {
                     arm.pattern(),
                     &value,
                     guard,
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )?;
                 if !self.with_temp_bindings(projected, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
@@ -1276,7 +1283,7 @@ impl Engine {
                 &self.plan,
                 arm.pattern(),
                 value,
-                self.fiber.env.function_instantiation(),
+                self.fiber.frame.env.function_instantiation(),
             )?
             .expect("checked owned pattern remains matched");
             return self.with_temp_bindings(bindings, |this| {
@@ -1309,10 +1316,13 @@ impl Engine {
         I::IntoIter: ExactSizeIterator,
     {
         let bindings = bindings.into_iter();
-        self.fiber.env.push_scope_with_capacity(bindings.len());
-        self.fiber.env.bind_all(bindings);
+        self.fiber
+            .frame
+            .env
+            .push_scope_with_capacity(bindings.len());
+        self.fiber.frame.env.bind_all(bindings);
         let result = f(self);
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
         result
     }
 
@@ -1322,10 +1332,10 @@ impl Engine {
         value: &RuntimeValue,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        self.fiber.env.push_scope_with_capacity(1);
-        self.fiber.env.set_ref(local, value);
+        self.fiber.frame.env.push_scope_with_capacity(1);
+        self.fiber.frame.env.set_ref(local, value);
         let result = f(self);
-        self.fiber.env.pop_scope();
+        self.fiber.frame.env.pop_scope();
         result
     }
 
@@ -1376,7 +1386,7 @@ impl Engine {
             &self.plan,
             pattern,
             &value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )? {
             return Ok(Some(value));
         }
@@ -1384,12 +1394,12 @@ impl Engine {
             &self.plan,
             pattern,
             value,
-            self.fiber.env.function_instantiation(),
+            self.fiber.frame.env.function_instantiation(),
         )?
         else {
             unreachable!("borrowed pattern preflight sealed the owning match")
         };
-        self.fiber.env.bind_all(bindings);
+        self.fiber.frame.env.bind_all(bindings);
         Ok(None)
     }
 
@@ -1399,7 +1409,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         let message = error.to_string();
-        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic::new(message));
     }
 }

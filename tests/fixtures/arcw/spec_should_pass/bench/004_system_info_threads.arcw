@@ -1,3 +1,5 @@
+entry bench @entry.system_threads { goto @flow.system_threads }
+
 extern capability system {
     type SystemError
     fn core_count() -> Need<Result<String, SystemError>> effects { system.read }
@@ -9,7 +11,7 @@ bench @bench.system_threads {
     measure iterations = 1 { goto @flow.system_threads }
 }
 
-flow system_threads effects { system.read, control.spawn } {
+flow system_threads() -> String effects { system.read, log.write, control.spawn } {
     thread cores {
         let value = match (await system.core_count()) { .Ok(value) => value, .Err(_) => "core_failed" }
         log.info(value)

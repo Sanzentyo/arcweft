@@ -1398,11 +1398,6 @@ impl StagedHirModuleTransaction<'_> {
             }
             arms.push(arm);
         }
-        if arms.is_empty() && !matches!(attached_body, MatchStatementBodyNode::Missing(_)) {
-            recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                HirThreadStmtRecoveryIssue::EmptyMatch,
-            ));
-        }
         if body_unclosed {
             recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
                 HirThreadStmtRecoveryIssue::UnclosedBody {

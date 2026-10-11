@@ -462,10 +462,11 @@ impl Engine {
                 })
         };
         if !operations_avoid_locals(plan, ops, elided)
-            || !self.fiber.root_cleanups.is_empty()
-            || (!self.fiber.pending_ops.is_empty()
+            || !self.fiber.frame.root_cleanups.is_empty()
+            || (!self.fiber.frame.pending_ops.is_empty()
                 && self
                     .fiber
+                    .frame
                     .cursor
                     .as_ref()
                     .is_some_and(|cursor| !cursor_avoids(cursor)))
@@ -473,6 +474,7 @@ impl Engine {
             return false;
         }
         self.fiber
+            .frame
             .control_stack
             .iter()
             .all(|frame| match &frame.kind {
@@ -517,14 +519,14 @@ impl Engine {
         if mode != RuntimeStepMode::Drain
             || self.has_executor_work()
             || self.has_joined_work()
-            || !matches!(self.fiber.status, FlowFiberStatus::Running)
-            || self.fiber.await_observer.is_some()
+            || !matches!(self.fiber.frame.status, FlowFiberStatus::Running)
+            || self.fiber.frame.await_observer.is_some()
         {
             return None;
         }
         let owner = Arc::clone(&self.plan);
-        let ops = if self.fiber.pending_ops.is_empty() {
-            let cursor = self.fiber.cursor.as_ref()?;
+        let ops = if self.fiber.frame.pending_ops.is_empty() {
+            let cursor = self.fiber.frame.cursor.as_ref()?;
             self.flow_at_cursor(cursor)?
                 .body()
                 .ops()
@@ -532,17 +534,17 @@ impl Engine {
                 .iter()
                 .collect::<Vec<_>>()
         } else {
-            self.fiber.pending_ops.iter().collect::<Vec<_>>()
+            self.fiber.frame.pending_ops.iter().collect::<Vec<_>>()
         };
         let (callable, item_ty, output_ty, items, source, calls, loop_base, ordinary_row_ops, sum) =
             if let Some(selected) = project_loop(&owner, ops.first().copied()?) {
                 let RuntimeValue::Iterator(RuntimeIterator::Values { items }) =
-                    self.fiber.env.get(selected.iterator)?
+                    self.fiber.frame.env.get(selected.iterator)?
                 else {
                     return None;
                 };
                 let RuntimeValue::Seq(sequence) =
-                    self.fiber.env.inspect_place(selected.result).ok()?
+                    self.fiber.frame.env.inspect_place(selected.result).ok()?
                 else {
                     return None;
                 };
@@ -575,19 +577,19 @@ impl Engine {
                     .results
                     .iter()
                     .filter_map(|result| binder(result))
-                    .any(|local| self.fiber.env.get(local).is_some())
+                    .any(|local| self.fiber.frame.env.get(local).is_some())
                 {
                     return None;
                 }
                 let items = selected
                     .items
                     .iter()
-                    .map(|local| self.fiber.env.get(*local))
+                    .map(|local| self.fiber.frame.env.get(*local))
                     .collect::<Option<Vec<_>>>()?;
                 let calls = items.len();
                 let sum = selected
                     .aggregate
-                    .filter(|local| self.fiber.env.get(*local).is_none())
+                    .filter(|local| self.fiber.frame.env.get(*local).is_none())
                     .and_then(|aggregate| project_sum(&owner, &ops[calls + 1..], aggregate))
                     .map(|mut sum| {
                         sum.skipped_ops += 1;
@@ -615,7 +617,7 @@ impl Engine {
         {
             return None;
         }
-        let RuntimeValue::Callable(mapping) = self.fiber.env.get(callable)? else {
+        let RuntimeValue::Callable(mapping) = self.fiber.frame.env.get(callable)? else {
             return None;
         };
         let projection = project_numeric_map(&owner, mapping).ok()??;
@@ -625,7 +627,7 @@ impl Engine {
         let rows = match &source {
             CommitSource::Loop { iterator, .. } => {
                 let RuntimeValue::Iterator(RuntimeIterator::Values { items }) =
-                    self.fiber.env.get(*iterator)?
+                    self.fiber.frame.env.get(*iterator)?
                 else {
                     return None;
                 };
@@ -642,11 +644,10 @@ impl Engine {
                 && sum
                     .aliases
                     .iter()
-                    .all(|local| self.fiber.env.get(*local).is_none())
+                    .all(|local| self.fiber.frame.env.get(*local).is_none())
                 && match sum.target {
-                    SumTarget::Bind(pattern) => {
-                        binder(pattern).is_some_and(|local| self.fiber.env.get(local).is_none())
-                    }
+                    SumTarget::Bind(pattern) => binder(pattern)
+                        .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),
                     SumTarget::Return => true,
                 }
                 && self.numeric_elision_has_no_later_observer(
@@ -710,12 +711,13 @@ impl Engine {
                                     RuntimeNumericMapBatchResult::Values(values),
                                 ) => {
                                     let _iterator =
-                                        candidate.fiber.env.take(*iterator).expect(
+                                        candidate.fiber.frame.env.take(*iterator).expect(
                                             "projected iterator remains owned until commit",
                                         );
                                     for value in values {
                                         if let Err(error) = candidate
                                             .fiber
+                                            .frame
                                             .env
                                             .push_sequence_item(accumulator, value)
                                         {
@@ -732,11 +734,11 @@ impl Engine {
                                     RuntimeNumericMapBatchResult::Sum(value),
                                 ) => {
                                     let _iterator =
-                                        candidate.fiber.env.take(*iterator).expect(
+                                        candidate.fiber.frame.env.take(*iterator).expect(
                                             "projected iterator remains owned until commit",
                                         );
                                     let _sequence =
-                                        candidate.fiber.env.take(accumulator.local()).expect(
+                                        candidate.fiber.frame.env.take(accumulator.local()).expect(
                                             "projected Sum consumes its admitted accumulator",
                                         );
                                     sum_result = Some(RuntimeValue::i64(value));
@@ -748,7 +750,7 @@ impl Engine {
                                     for (local, (pattern, value)) in
                                         items.iter().zip(results.iter().zip(values))
                                     {
-                                        let _item = candidate.fiber.env.take(*local).expect(
+                                        let _item = candidate.fiber.frame.env.take(*local).expect(
                                             "projected Array item remains owned until commit",
                                         );
                                         candidate.bind_value(pattern, value, staged);
@@ -759,20 +761,20 @@ impl Engine {
                                     RuntimeNumericMapBatchResult::Sum(value),
                                 ) => {
                                     for local in items {
-                                        let _item = candidate.fiber.env.take(*local).expect(
+                                        let _item = candidate.fiber.frame.env.take(*local).expect(
                                             "projected Array item remains owned until commit",
                                         );
                                     }
                                     sum_result = Some(RuntimeValue::i64(value));
                                 }
                             }
-                            if candidate.fiber.pending_ops.is_empty() {
-                                if let Some(cursor) = candidate.fiber.cursor.as_mut() {
+                            if candidate.fiber.frame.pending_ops.is_empty() {
+                                if let Some(cursor) = candidate.fiber.frame.cursor.as_mut() {
                                     cursor.op_index += commit.consumed_ops;
                                 }
                             } else {
                                 for _ in 0..commit.consumed_ops {
-                                    candidate.fiber.pending_ops.pop_front();
+                                    candidate.fiber.frame.pending_ops.pop_front();
                                 }
                             }
                             candidate.run_child_next = true;

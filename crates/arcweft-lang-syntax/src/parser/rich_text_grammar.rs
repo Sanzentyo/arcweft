@@ -96,6 +96,9 @@ struct DialogueContentState {
     argument_limit_exhausted: bool,
     has_real_atom: bool,
     saw_nontrivia: bool,
+    // Only physical source newlines begin a new indentation margin. A point
+    // action such as [r] changes display flow without changing this source line.
+    line_has_atom: bool,
 }
 
 fn emit_dialogue_content_nodes(
@@ -120,6 +123,7 @@ fn emit_dialogue_content_node(
     }
     let start = parser.current_offset();
     state.saw_nontrivia = true;
+    state.line_has_atom = true;
     if emit_action_after_content_limit(
         parser,
         start,
@@ -167,7 +171,32 @@ fn emit_dialogue_trivia(
     {
         return false;
     }
+    if parser.current_kind() == Some(SyntaxKind::WhitespaceToken) && state.line_has_atom {
+        // Continue the existing plain-text span through inline spaces. If an
+        // actual comment follows at this atom boundary, retain the spaces as
+        // their own source span and leave the comment on the trivia path.
+        let next = parser
+            .cursor()
+            .checked_add(1)
+            .expect("dialogue token cursor remains representable");
+        if parser.token_at(next).is_some_and(|token| {
+            matches!(
+                token.kind(),
+                SyntaxKind::CommentToken | SyntaxKind::DocCommentToken
+            )
+        }) {
+            let range = parser
+                .current()
+                .expect("inline dialogue whitespace retains its lexer token")
+                .range();
+            let text = parser.source()[range.as_range()].into();
+            emit_text_node(parser, range, text, &mut state.nodes, &mut state.components);
+            return true;
+        }
+        return false;
+    }
     if parser.current_kind() == Some(SyntaxKind::NewlineToken) {
+        state.line_has_atom = false;
         let range = parser
             .current()
             .expect("dialogue newline remains inside the content interval")
@@ -669,11 +698,13 @@ fn next_dialogue_surface_start(parser: &DocumentParser<'_, '_>, end: usize) -> u
         .expect("dialogue token cursor remains representable");
     (next..end)
         .filter_map(|index| parser.token_at(index))
-        .map(|token| token.range().start())
-        .find(|start| {
-            scan_dialogue_surface(parser.source(), *start, content_end).is_some()
-                || parser.source()[*start..].starts_with('[')
+        .find(|token| {
+            let start = token.range().start();
+            token.kind() == SyntaxKind::NewlineToken
+                || scan_dialogue_surface(parser.source(), start, content_end).is_some()
+                || parser.source()[start..].starts_with('[')
         })
+        .map(|token| token.range().start())
         .unwrap_or(content_end)
 }
 

@@ -58,7 +58,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
+        let status = std::mem::replace(&mut self.fiber.frame.status, FlowFiberStatus::Running);
         match status {
             FlowFiberStatus::Dialogue(activation) => {
                 let transaction =
@@ -69,13 +69,7 @@ impl Engine {
                             return true;
                         }
                     };
-                self.resume_dialogue_state(
-                    transaction,
-                    input.dialogue_input_actions.as_slice(),
-                    &mut input.host_call_results,
-                    output,
-                    pure_backend,
-                );
+                self.resume_dialogue_state(transaction, input, events, output, pure_backend);
                 true
             }
             FlowFiberStatus::NeedWaiting(state) => {
@@ -87,7 +81,7 @@ impl Engine {
                 true
             }
             waiting @ FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(_)) => {
-                self.fiber.status = waiting;
+                self.fiber.frame.status = waiting;
                 false
             }
             FlowFiberStatus::HostCall(state) => {
@@ -101,7 +95,7 @@ impl Engine {
             status @ (FlowFiberStatus::Running
             | FlowFiberStatus::Done(_)
             | FlowFiberStatus::Failed(_)) => {
-                self.fiber.status = status;
+                self.fiber.frame.status = status;
                 false
             }
         }
@@ -110,8 +104,8 @@ impl Engine {
     fn resume_dialogue_state(
         &mut self,
         mut transaction: super::dialogue::DialogueActivationTransaction,
-        input_actions: &[crate::step::RuntimeDialogueInputActionEvent],
-        host_results: &mut Vec<crate::step::RuntimeHostCallResult>,
+        input: &mut RuntimeStepInput,
+        events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -143,7 +137,8 @@ impl Engine {
             match self.resume_dialogue_activation(
                 &mut transaction,
                 &line_outcomes,
-                host_results,
+                input,
+                events,
                 pure_backend,
             ) {
                 Ok(step) => self.commit_and_suspend_dialogue(transaction, output, step),
@@ -225,13 +220,14 @@ impl Engine {
                 })
                 .collect::<Vec<_>>();
             callback_sites = requested_effects;
-            let input_actions = match line_task.accept_input_action_events(input_actions) {
-                Ok(actions) => actions,
-                Err(error) => {
-                    self.begin_dialogue_failure(transaction, error.into(), output);
-                    return;
-                }
-            };
+            let input_actions =
+                match line_task.accept_input_action_events(&input.dialogue_input_actions) {
+                    Ok(actions) => actions,
+                    Err(error) => {
+                        self.begin_dialogue_failure(transaction, error.into(), output);
+                        return;
+                    }
+                };
             let ready = accepted_content.ready().with_input_actions(&input_actions);
             if let Some((action, cancelled)) = cancel_live_line_task_group(&group, ready, line_task)
             {
@@ -366,7 +362,7 @@ impl Engine {
             )
         });
         let Some(publication) = publication else {
-            self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+            self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
             return;
         };
         if publication.correlation() != state.handle.correlation() {
@@ -408,7 +404,7 @@ impl Engine {
                 ..
             } => {
                 let message = format!("await Need {} failed: {failure}", correlation.need);
-                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Host,
                     message,
@@ -418,7 +414,7 @@ impl Engine {
                 state: need_state, ..
             } => match need_state {
                 Need::NotStarted => {
-                    self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+                    self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
                 }
                 Need::Pending(progress) => {
                     output.flow_events.push(FlowEvent::AwaitProgress {
@@ -447,7 +443,7 @@ impl Engine {
                             "await Need {} published a payload outside its checked item type",
                             state.handle.need_id()
                         );
-                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                         output.diagnostics.push(RuntimeDiagnostic::categorized(
                             RuntimeDiagnosticCategory::Host,
                             message,
@@ -459,11 +455,11 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.value(),
-                            self.fiber.env.function_instantiation(),
+                            self.fiber.frame.env.function_instantiation(),
                         ) {
                             Ok(true) => {}
                             Ok(false) => {
-                                self.fiber.status = FlowFiberStatus::Failed(
+                                self.fiber.frame.status = FlowFiberStatus::Failed(
                                     "await result did not match binding pattern".to_owned(),
                                 );
                                 output.diagnostics.push(RuntimeDiagnostic::new(
@@ -487,21 +483,21 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.into_value(),
-                            self.fiber.env.function_instantiation(),
+                            self.fiber.frame.env.function_instantiation(),
                         )
                         .expect("checked external Need binding remains valid")
                         .expect("checked external Need binding matches");
-                        self.fiber.env.bind_all(bindings);
+                        self.fiber.frame.env.bind_all(bindings);
                     }
                     output.flow_events.push(FlowEvent::AwaitReady {
                         need: state.handle.need_id(),
                         value: observed,
                     });
-                    self.fiber.cursor = state.resume;
-                    self.fiber.status = FlowFiberStatus::Running;
+                    self.fiber.frame.cursor = state.resume;
+                    self.fiber.frame.status = FlowFiberStatus::Running;
                 }
                 Need::Cancelled => {
-                    self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+                    self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
                 }
             },
             RuntimeNeedPublication::Producer { .. } => {
@@ -511,7 +507,7 @@ impl Engine {
                 };
                 match launch.state() {
                     RuntimeNeedProducerState::NotStarted => {
-                        self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+                        self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
                     }
                     RuntimeNeedProducerState::InfrastructureFailure(failure) => {
                         self.fail_eval(failure.clone(), output);
@@ -548,7 +544,7 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.value(),
-                                self.fiber.env.function_instantiation(),
+                                self.fiber.frame.env.function_instantiation(),
                             ) {
                                 Ok(true) => {}
                                 Ok(false) => {
@@ -578,24 +574,24 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.into_value(),
-                                self.fiber.env.function_instantiation(),
+                                self.fiber.frame.env.function_instantiation(),
                             )
                             .expect("checked await binding remains valid")
                             .expect("checked await binding matches");
-                            self.fiber.env.bind_all(bindings);
+                            self.fiber.frame.env.bind_all(bindings);
                         }
                         output.flow_events.push(FlowEvent::AwaitReady {
                             need: state.handle.need_id(),
                             value: observed,
                         });
-                        self.fiber.cursor = state.resume;
-                        self.fiber.status = FlowFiberStatus::Running;
+                        self.fiber.frame.cursor = state.resume;
+                        self.fiber.frame.status = FlowFiberStatus::Running;
                     }
                     RuntimeNeedProducerState::ReadyTransferred => {
                         self.fail_eval("local Need Ready was already consumed", output);
                     }
                     RuntimeNeedProducerState::Cancelled => {
-                        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+                        self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
                     }
                 }
             }
@@ -613,9 +609,9 @@ impl Engine {
             match crate::pattern::match_runtime_pattern(&self.plan, &observer.pattern, &value) {
                 Ok(Some(bindings)) => {
                     let ops = observer.ops.clone();
-                    self.fiber.await_observer = Some(Box::new(state));
+                    self.fiber.frame.await_observer = Some(Box::new(state));
                     self.push_await_observer_ops(bindings, &ops);
-                    self.fiber.status = FlowFiberStatus::Running;
+                    self.fiber.frame.status = FlowFiberStatus::Running;
                     return;
                 }
                 Ok(None) => {}
@@ -625,11 +621,11 @@ impl Engine {
                 }
             }
         }
-        self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+        self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
     }
 
     pub(super) fn latch_active_await_observer_publications(&mut self) {
-        let Some(state) = self.fiber.await_observer.as_mut() else {
+        let Some(state) = self.fiber.frame.await_observer.as_mut() else {
             return;
         };
         let queued_cursor = state.queued.back().map(RuntimeNeedPublication::cursor);
@@ -650,6 +646,7 @@ impl Engine {
         }
         let state = self
             .fiber
+            .frame
             .await_observer
             .as_mut()
             .expect("await observer remains active while publications are staged");
@@ -709,7 +706,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         let message = message.into();
-        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
         output.diagnostics.push(RuntimeDiagnostic::categorized(
             RuntimeDiagnosticCategory::Budget,
             message,
@@ -727,14 +724,14 @@ impl Engine {
             .iter()
             .position(|result| result.id == state.id)
         else {
-            self.fiber.status = FlowFiberStatus::HostCall(state);
+            self.fiber.frame.status = FlowFiberStatus::HostCall(state);
             return;
         };
         let result = input.host_call_results.remove(index);
         match result.outcome {
             Ok(value) => {
                 let super::HostCallResultType::Plan(ty) = state.result_type else {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         "host-call result has no selected plan type".to_owned(),
                     );
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -748,7 +745,7 @@ impl Engine {
                     value.value(),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 ) {
-                    self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         error.to_string(),
@@ -759,7 +756,7 @@ impl Engine {
                     match self.try_bind_pattern_owned(binding, value.into_value()) {
                         Ok(None) => {}
                         Ok(Some(_value)) => {
-                            self.fiber.status = FlowFiberStatus::Failed(
+                            self.fiber.frame.status = FlowFiberStatus::Failed(
                                 "host-call result did not match binding pattern".to_owned(),
                             );
                             output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -774,8 +771,8 @@ impl Engine {
                         }
                     }
                 }
-                self.fiber.cursor = state.resume;
-                self.fiber.status = FlowFiberStatus::Running;
+                self.fiber.frame.cursor = state.resume;
+                self.fiber.frame.status = FlowFiberStatus::Running;
             }
             Err(error) => {
                 let category = match error.kind {
@@ -787,7 +784,7 @@ impl Engine {
                         RuntimeDiagnosticCategory::Host
                     }
                 };
-                self.fiber.status = FlowFiberStatus::Failed(error.message.clone());
+                self.fiber.frame.status = FlowFiberStatus::Failed(error.message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     category,
                     error.message.clone(),
@@ -804,7 +801,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let Some((requested_choice, selection)) = input_choice_selection(input) else {
-            self.fiber.status = FlowFiberStatus::Choice(state);
+            self.fiber.frame.status = FlowFiberStatus::Choice(state);
             return;
         };
         if requested_choice.is_some() && requested_choice != state.id.as_deref() {
@@ -816,7 +813,7 @@ impl Engine {
                     state.id.as_deref().unwrap_or("-")
                 ),
             ));
-            self.fiber.status = FlowFiberStatus::Choice(state);
+            self.fiber.frame.status = FlowFiberStatus::Choice(state);
             return;
         }
         let Some(position) = state.options.iter().position(|option| {
@@ -829,7 +826,7 @@ impl Engine {
                     state.id.as_deref().unwrap_or("-")
                 ),
             ));
-            self.fiber.status = FlowFiberStatus::Choice(state);
+            self.fiber.frame.status = FlowFiberStatus::Choice(state);
             return;
         };
         let option = state.options.remove(position);
@@ -845,8 +842,8 @@ impl Engine {
         if let Some(target) = option.target {
             self.goto(&target, output, pure_backend);
         } else {
-            self.fiber.cursor = state.resume;
-            self.fiber.status = FlowFiberStatus::Running;
+            self.fiber.frame.cursor = state.resume;
+            self.fiber.frame.status = FlowFiberStatus::Running;
         }
     }
 
@@ -988,7 +985,7 @@ impl Engine {
                     &self.plan,
                     &binding,
                     RuntimeValue::NeedHandle(handle),
-                    self.fiber.env.function_instantiation(),
+                    self.fiber.frame.env.function_instantiation(),
                 )
                 .map_err(|error| error.to_string())?
                 .ok_or_else(|| "Need producer result did not match its checked binding".to_owned())
@@ -1005,7 +1002,7 @@ impl Engine {
         }
         let task_spec = (admission.disposition() == NeedProducerTaskDisposition::Ensure)
             .then(|| self.need_producers.submission_for_admission(&admission));
-        self.fiber.env.bind_all(bindings);
+        self.fiber.frame.env.bind_all(bindings);
         self.advance_if_needed(next_op_index);
         if let Some(task_spec) = task_spec {
             output.requests.tasks.push(task_spec);
@@ -1048,6 +1045,7 @@ impl Engine {
             .map(|local| {
                 let value = self
                     .fiber
+                    .frame
                     .env
                     .get(local)
                     .ok_or_else(|| "AwaitMany capture is unavailable".to_owned())?;
@@ -1139,7 +1137,7 @@ impl Engine {
                             in_flight.handle.correlation().task_id,
                             in_flight.index
                         );
-                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                         output.diagnostics.push(RuntimeDiagnostic::categorized(
                             RuntimeDiagnosticCategory::Host,
                             message,
@@ -1171,7 +1169,7 @@ impl Engine {
                         in_flight.handle.correlation().task_id,
                         in_flight.index
                     );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    self.fiber.frame.status = FlowFiberStatus::Failed(message.clone());
                     output.diagnostics.push(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Host,
                         message,
@@ -1179,7 +1177,7 @@ impl Engine {
                     return;
                 }
                 TaskEventKind::Cancelled => {
-                    self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+                    self.fiber.frame.status = FlowFiberStatus::Done(FlowExit::Done);
                     return;
                 }
             }
@@ -1265,7 +1263,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         if !state.in_flight.is_empty() || state.results.iter().any(Option::is_none) {
-            self.fiber.status =
+            self.fiber.frame.status =
                 FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
             return;
         }
@@ -1286,7 +1284,7 @@ impl Engine {
             match self.try_bind_pattern_owned(binding, ready_value) {
                 Ok(None) => {}
                 Ok(Some(_ready_value)) => {
-                    self.fiber.status = FlowFiberStatus::Failed(
+                    self.fiber.frame.status = FlowFiberStatus::Failed(
                         "await result did not match binding pattern".to_owned(),
                     );
                     output.diagnostics.push(RuntimeDiagnostic::new(
@@ -1304,8 +1302,8 @@ impl Engine {
             need: state.base.need_id(),
             value: observed,
         });
-        self.fiber.cursor = state.resume;
-        self.fiber.status = FlowFiberStatus::Running;
+        self.fiber.frame.cursor = state.resume;
+        self.fiber.frame.status = FlowFiberStatus::Running;
     }
 
     fn await_many_task_spec(
@@ -1840,7 +1838,10 @@ mod host_result_tests {
 
         engine.resume_host_call_state(state, &mut input, &mut output);
 
-        assert!(matches!(engine.fiber.status, FlowFiberStatus::Failed(_)));
+        assert!(matches!(
+            engine.fiber.frame.status,
+            FlowFiberStatus::Failed(_)
+        ));
         assert!(!output.diagnostics.is_empty());
         assert!(output.flow_events.is_empty());
     }

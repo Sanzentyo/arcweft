@@ -247,7 +247,7 @@ fn emitted_unit_scope_exits_before_outer_continuation_and_cleanup_native_awbc() 
                 if let LineEffectRequest::Log(log) = effect {
                     if log.message == "after" {
                         assert!(
-                            native.fiber().env.get(inside).is_none(),
+                            native.fiber().frame.env.get(inside).is_none(),
                             "emitted scope locals must be gone before the outside continuation"
                         );
                         outside = true;
@@ -403,8 +403,8 @@ fn aggregate_emitted_scope_cancels_its_own_implicit_close_before_outer_continuat
             for effect in step.output.effects.line {
                 if let LineEffectRequest::Log(log) = effect {
                     if log.message == "after" {
-                        assert!(engine.fiber().env.get(inside).is_none());
-                        assert!(!engine.fiber().pending_ops.iter().any(|op| matches!(
+                        assert!(engine.fiber().frame.env.get(inside).is_none());
+                        assert!(!engine.fiber().frame.pending_ops.iter().any(|op| matches!(
                             op,
                             arcweft_core::plan::FlowOp::ExitScheduledScope { .. }
                         )));

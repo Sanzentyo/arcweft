@@ -717,7 +717,7 @@ fn entity_reference_fields_value_and_inspect_preserve_native_awbc_roundtrip_pari
                     "{:?}",
                     step.output.diagnostics
                 );
-                if matches!(native.fiber().status, FlowFiberStatus::Done(_)) {
+                if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
                     break;
                 }
             }

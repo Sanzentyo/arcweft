@@ -267,8 +267,12 @@ source = "demo.arcw"
             .expect("package identity resolves"),
         "org.arcweft.test.launch-only"
     );
-    super::super::project::load_and_check_selection(&selection, None)
-        .expect("launch profile compiles its selected source directly");
+    super::super::project::load_and_check_selection(
+        &selection,
+        None,
+        super::super::project::ProjectDiagnosticOutput::Human,
+    )
+    .expect("launch profile compiles its selected source directly");
 
     fs::remove_dir_all(root).expect("fixture root removes");
 }
