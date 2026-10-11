@@ -7,10 +7,7 @@ entry cli @entry.vertical_goal_clear_smoke {
 }
 
 flow vertical_goal_clear_smoke() -> String {
-    audit(id=@say.vertical_goal_clear_smoke.001, voice=auto)[
-        #layout(.vertical_rl, jlreq=.strict)[#font("MS Mincho")[吾|[輩](はい)は2026ABC。]][r]
-        #layout(.vertical_lr, jlreq=.strict)[#font("MS Mincho")[縦|[夢](ゆめ)へ#fx(typewriter(characters_per_second=1))[2026]XYZ。]][p]
-    ]
+    audit(id=@say.vertical_goal_clear_smoke.001, voice=auto)[#layout(.vertical_rl, jlreq=.strict)[#font("MS Mincho")[吾|[輩](はい)は2026ABC。]][r]#layout(.vertical_lr, jlreq=.strict)[#font("MS Mincho")[縦|[夢](ゆめ)へ#fx(typewriter(characters_per_second=1))[2026]XYZ。]][p]]
 
     return "vertical_goal_clear_smoke"
 }
