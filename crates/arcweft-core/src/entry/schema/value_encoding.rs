@@ -886,6 +886,11 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             writer.runtime_range(range)?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
+            crate::value::RuntimeIterator::Range(range),
+        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
+            writer.runtime_range_iterator(range)?;
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
             crate::value::RuntimeIterator::Values { items },
         )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
             writer.u8(24)?;
@@ -894,6 +899,18 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget.collection(items.len())?;
             }
             work.push(Work::DequeValues(items.iter(), 0, depth + 1, children));
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
+            crate::value::RuntimeIterator::Witness(witness),
+        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
+            writer.u8(25)?;
+            writer.len(witness.next_method().0)?;
+            work.push(Work::Value(
+                witness.state().view(),
+                depth + 1,
+                validation.child(&children, 0)?,
+                None,
+            ));
         }
         RuntimeValueView::RuntimeOnly(value)
             if matches!(encoding, ValueEncoding::Literal | ValueEncoding::Live) =>
@@ -1056,6 +1073,41 @@ fn predicate_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
 }
 
 impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
+    fn runtime_range_iterator(
+        &mut self,
+        range: &crate::value::RuntimeRangeIterator,
+    ) -> Result<(), RuntimeSchemaError> {
+        let end = range
+            .validated_end()
+            .ok_or_else(|| RuntimeSchemaError::Encoding {
+                message: "range iterator has an invalid retained cursor".to_owned(),
+            })?;
+        self.u8(23)?;
+        self.scalar(end)?;
+        let (inclusive, done) = match range {
+            crate::value::RuntimeRangeIterator::Int {
+                current,
+                inclusive,
+                done,
+                ..
+            } => {
+                self.i128(*current)?;
+                (*inclusive, *done)
+            }
+            crate::value::RuntimeRangeIterator::UInt {
+                current,
+                inclusive,
+                done,
+                ..
+            } => {
+                self.u128(*current)?;
+                (*inclusive, *done)
+            }
+        };
+        self.u8(u8::from(inclusive))?;
+        self.u8(u8::from(done))
+    }
+
     fn runtime_range(
         &mut self,
         range: &crate::value::RuntimeRange,

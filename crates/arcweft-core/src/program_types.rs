@@ -26,6 +26,7 @@ mod function_contract;
 pub use function_contract::RuntimeFunctionEffectInstantiation;
 pub(crate) use function_contract::RuntimeValueTypeContext;
 mod data_shapes;
+mod iterator;
 pub use construction::RuntimeProgramValueConstructionError;
 pub use data_shapes::{
     RuntimeDataFieldDefaultError, RuntimeDataFieldDefaultRequest, RuntimeProgramDataShapeError,

@@ -164,7 +164,10 @@ pub use place_displacement::{
 };
 pub(crate) use place_storage::RecordHeader as RuntimePlaceRecordHeader;
 pub use place_storage::RuntimePlaceStorage;
-pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
+pub use range::{
+    RuntimeIterator, RuntimeIteratorWitness, RuntimeIteratorWitnessError, RuntimeRange,
+    RuntimeRangeIterator,
+};
 pub use record::{RuntimeFieldValue, RuntimeRecordAdmissionError, RuntimeRecordValue};
 pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
 pub use reduction::{
@@ -581,8 +584,8 @@ impl RuntimeValue {
             Self::Iterator(RuntimeIterator::Values { items, .. }) => {
                 items.iter().any(Self::contains_nonconstant_opaque)
             }
-            Self::Iterator(RuntimeIterator::Witness { state, .. }) => {
-                state.contains_nonconstant_opaque()
+            Self::Iterator(RuntimeIterator::Witness(witness)) => {
+                witness.state().contains_nonconstant_opaque()
             }
             Self::Variant(crate::value::RuntimeVariantValue { payload, .. }) => payload
                 .as_deref()
@@ -643,7 +646,9 @@ impl RuntimeValue {
             Self::Iterator(RuntimeIterator::Values { items, .. }) => {
                 items.iter().any(Self::contains_function)
             }
-            Self::Iterator(RuntimeIterator::Witness { state, .. }) => state.contains_function(),
+            Self::Iterator(RuntimeIterator::Witness(witness)) => {
+                witness.state().contains_function()
+            }
             Self::Variant(crate::value::RuntimeVariantValue {
                 payload: Some(payload),
                 ..
@@ -2624,6 +2629,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error(transparent)]
+    IteratorWitness(#[from] RuntimeIteratorWitnessError),
     #[error("program {program} input {position} cannot transfer detached custody: {source}")]
     ProgramInputCustody {
         program: arcweft_id::runtime_program::RuntimePureProgramId,

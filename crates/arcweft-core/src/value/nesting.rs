@@ -65,8 +65,8 @@ fn validate_value(
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => {
             validate_values(items, depth + 1, maximum)
         }
-        RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
-            validate_value(state, depth + 1, maximum)
+        RuntimeValue::Iterator(RuntimeIterator::Witness(witness)) => {
+            validate_value(witness.state(), depth + 1, maximum)
         }
         RuntimeValue::Variant(crate::value::RuntimeVariantValue {
             payload: Some(payload),

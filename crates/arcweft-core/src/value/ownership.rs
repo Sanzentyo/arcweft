@@ -307,7 +307,7 @@ impl RuntimeValue {
                 }
                 Ok(())
             }
-            Self::Iterator(RuntimeIterator::Witness { state, .. }) => state.collect_resources(
+            Self::Iterator(RuntimeIterator::Witness(witness)) => witness.state().collect_resources(
                 &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
                 handles,
             ),
@@ -457,7 +457,7 @@ fn iterator_ownership(iterator: &RuntimeIterator) -> RuntimeValueOwnership {
     match iterator {
         RuntimeIterator::Values { items } => values_ownership(items),
         RuntimeIterator::Range(_) => RuntimeValueOwnership::Unrestricted,
-        RuntimeIterator::Witness { state, .. } => state.ownership(),
+        RuntimeIterator::Witness(witness) => witness.state().ownership(),
     }
 }
 

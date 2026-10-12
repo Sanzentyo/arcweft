@@ -2586,7 +2586,7 @@ impl RuntimeContentValueBudget {
                     }
                     self.visit_values(items.iter())?;
                 }
-                crate::value::RuntimeIterator::Witness { state, .. } => self.visit(state)?,
+                crate::value::RuntimeIterator::Witness(witness) => self.visit(witness.state())?,
                 crate::value::RuntimeIterator::Range(_) => {}
             },
             RuntimeValue::Variant(crate::value::RuntimeVariantValue { name, payload, .. }) => {

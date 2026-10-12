@@ -175,16 +175,139 @@ impl RuntimeRange {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeIterator {
-    Values {
-        items: VecDeque<RuntimeValue>,
-    },
+    Values { items: VecDeque<RuntimeValue> },
     Range(RuntimeRangeIterator),
-    Witness {
-        state: Box<RuntimeValue>,
+    Witness(RuntimeIteratorWitness),
+}
+
+/// Mutable iterator receiver leased to its original executable method table.
+///
+/// ```compile_fail
+/// use arcweft_core::value::{RuntimeIteratorWitness, RuntimeValue};
+/// use arcweft_core::task::RuntimeProgramOwner;
+/// use arcweft_core::plan::RuntimeTraitMethodId;
+/// fn forge(owner: RuntimeProgramOwner) -> RuntimeIteratorWitness {
+///     RuntimeIteratorWitness { owner, state: Box::new(RuntimeValue::Unit), next: RuntimeTraitMethodId(0) }
+/// }
+/// ```
+#[derive(Clone)]
+pub struct RuntimeIteratorWitness {
+    owner: crate::task::RuntimeProgramOwner,
+    state: Box<RuntimeValue>,
+    next: RuntimeTraitMethodId,
+}
+
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
+pub enum RuntimeIteratorWitnessError {
+    #[error("iterator witness has no admitted next signature at method {next:?}")]
+    Signature { next: RuntimeTraitMethodId },
+    #[error("iterator witness belongs to a different executable program")]
+    ForeignProgram,
+    #[error(transparent)]
+    State(#[from] crate::program_types::RuntimeProgramTypeError),
+}
+
+impl RuntimeIteratorWitness {
+    pub(crate) fn try_new(
+        owner: crate::task::RuntimeProgramOwner,
+        state: RuntimeValue,
         next: RuntimeTraitMethodId,
-    },
+    ) -> Result<Self, RuntimeIteratorWitnessError> {
+        let (state_type, _) = owner
+            .types()
+            .iterator_witness_types(next)
+            .ok_or(RuntimeIteratorWitnessError::Signature { next })?;
+        owner.types().validate_live_value(
+            state_type,
+            &state,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
+        Ok(Self {
+            owner,
+            state: Box::new(state),
+            next,
+        })
+    }
+
+    pub fn validate_for_owner(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<(), RuntimeIteratorWitnessError> {
+        if !self.owner.same_program(owner) {
+            return Err(RuntimeIteratorWitnessError::ForeignProgram);
+        }
+        let (state_type, _) = owner
+            .types()
+            .iterator_witness_types(self.next)
+            .ok_or(RuntimeIteratorWitnessError::Signature { next: self.next })?;
+        owner.types().validate_live_value(
+            state_type,
+            &self.state,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
+        Ok(())
+    }
+
+    #[must_use]
+    pub const fn owner(&self) -> &crate::task::RuntimeProgramOwner {
+        &self.owner
+    }
+    #[must_use]
+    pub fn state(&self) -> &RuntimeValue {
+        &self.state
+    }
+    #[must_use]
+    pub const fn next_method(&self) -> RuntimeTraitMethodId {
+        self.next
+    }
+    pub(crate) fn state_mut(&mut self) -> &mut RuntimeValue {
+        &mut self.state
+    }
+}
+
+impl std::fmt::Debug for RuntimeIteratorWitness {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeIteratorWitness")
+            .field("next", &self.next)
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for RuntimeIteratorWitness {
+    fn eq(&self, other: &Self) -> bool {
+        self.owner.same_program(&other.owner)
+            && self.next == other.next
+            && self.state == other.state
+    }
+}
+
+impl Serialize for RuntimeIterator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let owner = match self {
+            Self::Witness(witness) => Some(witness.owner()),
+            _ => None,
+        };
+        super::AwbcRuntimeValueSnapshot::iterator_from_live(self, owner)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeIterator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let snapshot = super::awbc_save::AwbcRuntimeIteratorSnapshot::deserialize(deserializer)?;
+        let value = super::AwbcRuntimeValueSnapshot::Iterator(snapshot)
+            .into_unrestricted_standalone_value()
+            .map_err(serde::de::Error::custom)?;
+        let RuntimeValue::Iterator(iterator) = value else {
+            unreachable!("iterator snapshot owns its value kind")
+        };
+        Ok(iterator)
+    }
 }
 
 impl RuntimeIterator {
@@ -240,11 +363,12 @@ impl RuntimeIterator {
         }
     }
 
-    pub fn witness(state: RuntimeValue, next: RuntimeTraitMethodId) -> Self {
-        Self::Witness {
-            state: Box::new(state),
-            next,
-        }
+    pub fn try_witness(
+        owner: crate::task::RuntimeProgramOwner,
+        state: RuntimeValue,
+        next: RuntimeTraitMethodId,
+    ) -> Result<Self, RuntimeIteratorWitnessError> {
+        RuntimeIteratorWitness::try_new(owner, state, next).map(Self::Witness)
     }
 }
 
@@ -255,7 +379,7 @@ impl Iterator for RuntimeIterator {
         match self {
             Self::Values { items } => items.pop_front(),
             Self::Range(range) => range.next(),
-            Self::Witness { .. } => None,
+            Self::Witness(_) => None,
         }
     }
 }
@@ -276,6 +400,57 @@ pub enum RuntimeRangeIterator {
         inclusive: bool,
         done: bool,
     },
+}
+
+impl RuntimeRangeIterator {
+    /// Validates the retained cursor without narrowing an exhausted cursor.
+    /// Inclusive iteration may retain `end + 1` beyond the element width.
+    pub(crate) fn validated_end(&self) -> Option<super::RuntimeScalarView<'static>> {
+        match self {
+            Self::Int {
+                width,
+                current,
+                end,
+                inclusive,
+                done,
+            } => {
+                let bound = RuntimeInt::from_i128(*width, *end)?;
+                let exhausted = if *inclusive {
+                    current > end
+                } else {
+                    current >= end
+                };
+                let cursor_valid = RuntimeInt::from_i128(*width, *current).is_some()
+                    || (*inclusive && end.checked_add(1) == Some(*current));
+                (cursor_valid
+                    && (!done
+                        || exhausted
+                        || (*inclusive && current == end && end.checked_add(1).is_none())))
+                .then_some(super::RuntimeScalarView::Int(bound))
+            }
+            Self::UInt {
+                width,
+                current,
+                end,
+                inclusive,
+                done,
+            } => {
+                let bound = RuntimeUInt::from_u128(*width, *end)?;
+                let exhausted = if *inclusive {
+                    current > end
+                } else {
+                    current >= end
+                };
+                let cursor_valid = RuntimeUInt::from_u128(*width, *current).is_some()
+                    || (*inclusive && end.checked_add(1) == Some(*current));
+                (cursor_valid
+                    && (!done
+                        || exhausted
+                        || (*inclusive && current == end && end.checked_add(1).is_none())))
+                .then_some(super::RuntimeScalarView::UInt(bound))
+            }
+        }
+    }
 }
 
 impl Iterator for RuntimeRangeIterator {

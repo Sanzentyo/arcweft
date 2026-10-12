@@ -94,6 +94,15 @@ traversal を使い、空の columnar storage の再帰 metadata を検証から
 Core value／sequence／predicate の内部 child は、構築前検証後の private な
 構築経路を使う。task request など別の owning codec の検証境界は保持する。
 
+Iterator witness の live receiver は original executable lease を保持する。
+`next` の method identity、唯一の mutable receiver parameter、builtin Option の
+item 型をその program の型・signature・frame layout から読み、receiver state と
+保存場所の Iterator item 型を照合する。context-free decode はこの lease を発行
+しない。Range iterator は元の整数幅と end、current、inclusive、done を保持し、
+inclusive な最大値を返した後の `end + 1` を正当な終端カーソルとして扱う。
+live／snapshot admission は同じ grammar で Witness の state と Range の全 header
+を encoded-byte budget に含め、偽造 bound・cursor・早すぎる done を拒否する。
+
 durable root の保存値も Core DTO を使う。active entry の identity・kind・binding
 から original program の stateful roles を選び、state/event identity と layout を
 照合してから復元する。state payload はその role の original 型グラフと root

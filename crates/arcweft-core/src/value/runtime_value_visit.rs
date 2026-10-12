@@ -34,8 +34,8 @@ pub fn visit_runtime_value_graph<E>(
             RuntimeValue::Callable(value) => pending.extend(value.retained()),
             RuntimeValue::NeedHandle(handle) => pending.extend(handle.request_values()),
             RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => pending.extend(items),
-            RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
-                pending.push(state);
+            RuntimeValue::Iterator(RuntimeIterator::Witness(witness)) => {
+                pending.push(witness.state());
             }
             RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                 payload: Some(value),

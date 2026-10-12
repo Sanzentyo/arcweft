@@ -6,10 +6,12 @@ use arcweft_core::plan::{
 
 #[test]
 fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
-    let compiled = compile_source(include_str!(
-        "../../../fixtures/iterator-witness/user-defined.arcw"
-    ))
-    .expect("source fixture compiles through admitted project lowering");
+    let source = format!(
+        "entry cli @entry.main {{ goto @flow.counter_demo }}\n{}",
+        include_str!("../../../fixtures/iterator-witness/user-defined.arcw")
+    );
+    let compiled =
+        compile_source(&source).expect("source fixture compiles through admitted project lowering");
     let plan = &compiled.plan;
 
     assert_eq!(
@@ -78,14 +80,17 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
         witness.executable,
         RuntimeIteratorWitnessExecutable::TraitCalls { .. }
     ));
+    run_witness_plan(&compiled);
 }
 
 #[test]
 fn source_iterator_identity_witness_executes_on_verified_awbc() {
-    let compiled = compile_source(include_str!(
-        "../../../fixtures/iterator-witness/identity.arcw"
-    ))
-    .expect("identity iterator fixture compiles through admitted project lowering");
+    let source = format!(
+        "entry cli @entry.main {{ goto @flow.identity_counter_demo }}\n{}",
+        include_str!("../../../fixtures/iterator-witness/identity.arcw")
+    );
+    let compiled = compile_source(&source)
+        .expect("identity iterator fixture compiles through admitted project lowering");
     assert_eq!(
         compiled.plan.trait_methods().len(),
         1,
@@ -109,4 +114,106 @@ fn source_iterator_identity_witness_executes_on_verified_awbc() {
                 RuntimeIteratorWitnessExecutable::IdentityIntoIterator { .. }
             )
     ));
+    run_witness_plan(&compiled);
+}
+
+fn run_witness_plan(compiled: &arcweft_compiler::types::CompiledSource) {
+    run_native_witness_plan(compiled.plan.clone());
+    let program = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "iterator_witness_source.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    run_and_restore_awbc_witness_plan(std::sync::Arc::new(program));
+}
+
+fn run_native_witness_plan(plan: arcweft_core::plan::RuntimePlan) {
+    use arcweft_core::{
+        engine::{Engine, FlowExit, FlowFiberStatus},
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    };
+    let entry = plan.entries()[0].id.clone();
+    let mut engine = Engine::for_entry(plan, &entry).unwrap();
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    for _ in 0..2048 {
+        if matches!(engine.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        let output = engine.step(RuntimeStepInput::default(), options);
+        assert!(
+            output.output.diagnostics.is_empty(),
+            "{:?}",
+            output.output.diagnostics
+        );
+    }
+    assert_eq!(
+        engine.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("2".into()))
+    );
+}
+
+fn run_and_restore_awbc_witness_plan(
+    program: std::sync::Arc<arcweft_core::awbc::schema::AwbcProgram>,
+) {
+    use arcweft_core::{
+        awbc::{
+            product_step::{AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor},
+            schema::AwbcEntryId,
+        },
+        engine::{FlowExit, FlowFiberStatus},
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+        task::RuntimeProgramOwner,
+    };
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+    let mut executor =
+        AwbcProductStepExecutor::for_entry_arc(program, AwbcEntryId(0), 4096).unwrap();
+    let next_function = executor
+        .program()
+        .trait_methods
+        .iter()
+        .find(|method| method.receiver == arcweft_core::awbc::schema::AwbcTraitReceiverMode::MutRef)
+        .unwrap()
+        .function;
+    let mut restored = false;
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    for _ in 0..2048 {
+        if !restored && executor.compact_fiber().cursor.function == next_function {
+            let snapshot = executor.snapshot_for_save().unwrap();
+            let image = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap();
+            let bytes = serde_json::to_vec(&image).unwrap();
+            let decoded: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
+            executor = executor
+                .restore_inert_snapshot_owned(decoded)
+                .unwrap_or_else(|(_, error)| panic!("witnessed iterator restore failed: {error}"));
+            restored = true;
+        }
+        if matches!(executor.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        let output = executor.step(RuntimeStepInput::default(), options);
+        assert!(
+            output.output.diagnostics.is_empty(),
+            "{:?}",
+            output.output.diagnostics
+        );
+    }
+    assert!(
+        restored,
+        "the actual next method frame must stop and restore"
+    );
+    assert_eq!(
+        executor.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("2".into()))
+    );
 }

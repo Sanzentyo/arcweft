@@ -4490,8 +4490,14 @@ fn validate_nested_runtime_value(
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => items
             .iter()
             .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
-        RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
-            validate_nested_runtime_value(program, state, depth + 1)
+        RuntimeValue::Iterator(RuntimeIterator::Witness(witness)) => {
+            if !matches!(witness.owner(), crate::task::RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program))
+            {
+                return Err(FiberStateError::InvalidRuntimeCallable {
+                    reason: "iterator witness belongs to another program".to_owned(),
+                });
+            }
+            validate_nested_runtime_value(program, witness.state(), depth + 1)
         }
         RuntimeValue::Variant(variant) => variant.payload().map_or(Ok(()), |payload| {
             validate_nested_runtime_value(program, payload, depth + 1)

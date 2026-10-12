@@ -51,6 +51,8 @@ fn range_programs() -> (AwbcProgram, crate::plan::RuntimePlan) {
         Type::UInt(AwbcUnsignedIntKind::U16),
         Type::Range(AwbcTypeId(0)),
         Type::Range(AwbcTypeId(1)),
+        Type::Iterator(AwbcTypeId(0)),
+        Type::Iterator(AwbcTypeId(1)),
     ]);
     let identity = |index: usize| program.runtime_types[index].semantic_identity();
     let mut builder = RuntimePlanBuilder::new();
@@ -67,6 +69,8 @@ fn range_programs() -> (AwbcProgram, crate::plan::RuntimePlan) {
                 ),
                 RuntimePlanTypeSeed::new(identity(2), Projection::Range(identity(0))),
                 RuntimePlanTypeSeed::new(identity(3), Projection::Range(identity(1))),
+                RuntimePlanTypeSeed::new(identity(4), Projection::Iterator(identity(0))),
+                RuntimePlanTypeSeed::new(identity(5), Projection::Iterator(identity(1))),
             ],
             [],
         )
@@ -254,6 +258,150 @@ fn range_snapshot_byte_budget_and_restore_preserve_both_program_owners() {
         assert_eq!(iterator.next(), Some(RuntimeValue::Int(RuntimeInt::I16(2))));
         assert_eq!(iterator.next(), Some(RuntimeValue::Int(RuntimeInt::I16(3))));
         assert_eq!(iterator.next(), None);
+    }
+}
+
+#[test]
+fn range_iterator_snapshot_preserves_terminal_width_overflow() {
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeRange};
+    let (program, plan) = range_programs();
+    let signed = program.runtime_types[4].semantic_identity();
+    let unsigned = program.runtime_types[5].semantic_identity();
+    let exact = RuntimeSchemaLimits {
+        max_encoded_bytes: 37,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in [
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(plan)),
+        RuntimeProgramOwner::Awbc(std::sync::Arc::new(program)),
+    ] {
+        for (identity, range, expected) in [
+            (
+                signed,
+                RuntimeRange::Int {
+                    start: Some(RuntimeInt::I16(i16::MAX)),
+                    end: Some(RuntimeInt::I16(i16::MAX)),
+                    inclusive: true,
+                },
+                RuntimeValue::Int(RuntimeInt::I16(i16::MAX)),
+            ),
+            (
+                unsigned,
+                RuntimeRange::UInt {
+                    start: Some(RuntimeUInt::U16(u16::MAX)),
+                    end: Some(RuntimeUInt::U16(u16::MAX)),
+                    inclusive: true,
+                },
+                RuntimeValue::UInt(RuntimeUInt::U16(u16::MAX)),
+            ),
+        ] {
+            let mut iterator = range.into_iterator().unwrap();
+            assert_eq!(iterator.next(), Some(expected));
+            for exhausted in [false, true] {
+                if exhausted {
+                    assert_eq!(iterator.next(), None);
+                }
+                let value = RuntimeValue::Iterator(iterator.clone());
+                owner
+                    .types()
+                    .validate_snapshot_value(identity, &value, exact)
+                    .unwrap();
+                assert!(
+                    owner
+                        .types()
+                        .validate_snapshot_value(
+                            identity,
+                            &value,
+                            RuntimeSchemaLimits {
+                                max_encoded_bytes: 36,
+                                ..exact
+                            }
+                        )
+                        .is_err()
+                );
+                let image =
+                    AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                        .unwrap();
+                let bytes = serde_json::to_vec(&image).unwrap();
+                let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+                let RuntimeValue::Iterator(mut restored) =
+                    decoded.into_runtime_value_for_program(&owner).unwrap()
+                else {
+                    panic!("restored range iterator");
+                };
+                assert_eq!(restored.next(), None);
+            }
+        }
+    }
+}
+
+#[test]
+fn range_iterator_admission_and_restore_reject_forged_cursors() {
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
+    let (program, plan) = range_programs();
+    let signed = program.runtime_types[4].semantic_identity();
+    let unsigned = program.runtime_types[5].semantic_identity();
+    let limits = RuntimeSchemaLimits::engine_default();
+    for owner in [
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(plan)),
+        RuntimeProgramOwner::Awbc(std::sync::Arc::new(program)),
+    ] {
+        for (identity, range) in [
+            (
+                signed,
+                RuntimeRangeIterator::Int {
+                    width: RuntimeSignedIntWidth::I16,
+                    current: 0,
+                    end: i128::from(i16::MAX) + 1,
+                    inclusive: true,
+                    done: false,
+                },
+            ),
+            (
+                signed,
+                RuntimeRangeIterator::Int {
+                    width: RuntimeSignedIntWidth::I16,
+                    current: i128::from(i16::MAX) + 2,
+                    end: i128::from(i16::MAX),
+                    inclusive: true,
+                    done: false,
+                },
+            ),
+            (
+                signed,
+                RuntimeRangeIterator::Int {
+                    width: RuntimeSignedIntWidth::I16,
+                    current: 0,
+                    end: 3,
+                    inclusive: true,
+                    done: true,
+                },
+            ),
+            (
+                unsigned,
+                RuntimeRangeIterator::UInt {
+                    width: RuntimeUnsignedIntWidth::U16,
+                    current: u128::from(u16::MAX) + 1,
+                    end: u128::from(u16::MAX),
+                    inclusive: false,
+                    done: false,
+                },
+            ),
+        ] {
+            let value = RuntimeValue::Iterator(RuntimeIterator::Range(range.clone()));
+            assert!(
+                owner
+                    .types()
+                    .validate_live_value(identity, &value, limits)
+                    .is_err()
+            );
+            assert!(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).is_err()
+            );
+            let forged = serde_json::json!({"Iterator":{"Range":range}});
+            let decoded: AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+            assert!(decoded.into_runtime_value_for_program(&owner).is_err());
+        }
     }
 }
 

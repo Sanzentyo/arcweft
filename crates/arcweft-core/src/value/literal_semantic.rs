@@ -54,7 +54,7 @@ impl RuntimeValue {
                         }
                         RuntimeValue::Range(_)
                         | RuntimeValue::Iterator(
-                            RuntimeIterator::Range(_) | RuntimeIterator::Witness { .. },
+                            RuntimeIterator::Range(_) | RuntimeIterator::Witness(_),
                         )
                         | RuntimeValue::NeedHandle(_)
                         | RuntimeValue::Callable(_)
@@ -338,7 +338,7 @@ impl RuntimeValue {
                             encoder.tag(26);
                             range.encode_static_literal(encoder);
                         }
-                        RuntimeValue::Iterator(RuntimeIterator::Witness { .. })
+                        RuntimeValue::Iterator(RuntimeIterator::Witness(_))
                         | RuntimeValue::NeedHandle(_)
                         | RuntimeValue::Callable(_)
                         | RuntimeValue::Unit

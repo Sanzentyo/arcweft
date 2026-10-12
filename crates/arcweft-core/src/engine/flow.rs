@@ -1456,10 +1456,18 @@ impl Engine {
                         Vec::new(),
                         pure_backend,
                     )?;
-                    Ok(RuntimeIterator::witness(outcome.value, *next))
+                    Ok(RuntimeIterator::try_witness(
+                        crate::task::RuntimeProgramOwner::Plan(self.program_plan()),
+                        outcome.value,
+                        *next,
+                    )?)
                 }
                 RuntimeIteratorWitnessExecutable::IdentityIntoIterator { next } => {
-                    Ok(RuntimeIterator::witness(value, *next))
+                    Ok(RuntimeIterator::try_witness(
+                        crate::task::RuntimeProgramOwner::Plan(self.program_plan()),
+                        value,
+                        *next,
+                    )?)
                 }
             };
         }
@@ -1472,18 +1480,19 @@ impl Engine {
         iterator: &mut RuntimeIterator,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let RuntimeIterator::Witness { state, next } = iterator else {
+        let RuntimeIterator::Witness(witness) = iterator else {
             return Ok(iterator.next());
         };
+        witness.validate_for_owner(&crate::task::RuntimeProgramOwner::Plan(self.program_plan()))?;
         let outcome = self.evaluate_trait_method_values(
-            *next,
+            witness.next_method(),
             RuntimeReceiverMode::MutRef,
-            std::mem::replace(state.as_mut(), RuntimeValue::Unit),
+            std::mem::replace(witness.state_mut(), RuntimeValue::Unit),
             Vec::new(),
             pure_backend,
         )?;
         if let Some(updated_receiver) = outcome.updated_receiver {
-            **state = updated_receiver;
+            *witness.state_mut() = updated_receiver;
         }
         let label = runtime_value_label(&outcome.value);
         match outcome.value.try_into_builtin_variant_case() {

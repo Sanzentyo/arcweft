@@ -119,21 +119,33 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
     builder.finish().expect("iterator plan seals")
 }
 
-fn witness_with_need(plan: &RuntimePlan) -> RuntimeIterator {
-    RuntimeIterator::witness(
+fn witness_with_need(owner: &crate::task::RuntimeProgramOwner) -> RuntimeIterator {
+    let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
+        panic!("native witness fixture")
+    };
+    RuntimeIterator::try_witness(
+        owner.clone(),
         RuntimeValue::Seq(RuntimeSeq::values(vec![
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.iterator.first")),
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.iterator.second")),
+            RuntimeValue::NeedHandle(iterator_need("need.iterator.first")),
+            RuntimeValue::NeedHandle(iterator_need("need.iterator.second")),
         ])),
         plan.trait_methods()[0].id,
+    )
+    .unwrap()
+}
+
+fn iterator_need(argument: &str) -> crate::task::RuntimeNeedHandle {
+    crate::tests::reusable_need_with_outcome(
+        argument,
+        crate::task::TaskOutcomeContract::program(semantic(1)),
     )
 }
 
 fn remaining_need_identity_ptr(iterator: &RuntimeIterator) -> *const u8 {
-    let RuntimeIterator::Witness { state, .. } = iterator else {
+    let RuntimeIterator::Witness(witness) = iterator else {
         panic!("selected witness state must remain a witness iterator");
     };
-    let RuntimeValue::Seq(RuntimeSeq::Values(values)) = state.as_ref() else {
+    let RuntimeValue::Seq(RuntimeSeq::Values(values)) = witness.state() else {
         panic!("the affine Vec must remain the live witness state");
     };
     let Some(RuntimeValue::NeedHandle(handle)) = values.last() else {
@@ -146,13 +158,14 @@ fn remaining_need_identity_ptr(iterator: &RuntimeIterator) -> *const u8 {
 fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state() {
     let plan = iterator_plan(false);
     let mut engine = Engine::new(plan);
-    let mut iterator = witness_with_need(engine.program_plan().as_ref());
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+    let mut iterator = witness_with_need(&owner);
     let original = remaining_need_identity_ptr(&iterator);
     let mut backend = VmRuntimePureCallBackend::default();
 
     assert_eq!(
         engine.next_runtime_iterator_item(&mut iterator, &mut backend),
-        Ok(Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+        Ok(Some(RuntimeValue::NeedHandle(iterator_need(
             "need.iterator.first"
         ))))
     );
@@ -161,10 +174,10 @@ fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state()
         original,
         "Iterator::next must retain the original affine remainder allocation"
     );
-    let RuntimeIterator::Witness { state, .. } = &iterator else {
+    let RuntimeIterator::Witness(witness) = &iterator else {
         panic!("the selected witness remains active after its first item");
     };
-    assert!(!state.ownership().permits_copy());
+    assert!(!witness.state().ownership().permits_copy());
 
     let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
     let snapshot = AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&iterator, &owner)
@@ -178,7 +191,7 @@ fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state()
         .expect("the selected witness state restores under its plan lease");
     assert_eq!(
         engine.next_runtime_iterator_item(&mut iterator, &mut backend),
-        Ok(Some(RuntimeValue::NeedHandle(crate::tests::reusable_need(
+        Ok(Some(RuntimeValue::NeedHandle(iterator_need(
             "need.iterator.second"
         ))))
     );
@@ -189,10 +202,60 @@ fn witness_next_moves_affine_receiver_and_snapshot_restores_the_selected_state()
 }
 
 #[test]
+fn witness_lease_and_original_state_type_reject_foreign_and_forged_restores() {
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(iterator_plan(false)));
+    let mut iterator = witness_with_need(&owner);
+    let original = remaining_need_identity_ptr(&iterator);
+    let mut other_engine = Engine::new(iterator_plan(false));
+    let other_owner = crate::task::RuntimeProgramOwner::Plan(other_engine.program_plan());
+    assert!(matches!(
+        other_engine
+            .next_runtime_iterator_item(&mut iterator, &mut VmRuntimePureCallBackend::default()),
+        Err(RuntimeEvalError::IteratorWitness(
+            crate::value::RuntimeIteratorWitnessError::ForeignProgram
+        ))
+    ));
+    assert_eq!(remaining_need_identity_ptr(&iterator), original);
+    assert!(
+        AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&iterator, &other_owner)
+            .is_err()
+    );
+    let direct_bytes = serde_json::to_vec(&iterator).unwrap();
+    assert!(serde_json::from_slice::<RuntimeIterator>(&direct_bytes).is_err());
+    let image =
+        AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&iterator, &owner).unwrap();
+    for forged in [
+        serde_json::json!({"Iterator":{"Witness":{"state":{"Bool":true},"next":0}}}),
+        serde_json::json!({"Iterator":{"Witness":{"state":{"Unit":null},"next":999}}}),
+    ] {
+        let decoded: AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+        assert!(decoded.into_runtime_iterator_for_program(&owner).is_err());
+    }
+    let mut restored = image.into_runtime_iterator_for_program(&owner).unwrap();
+    let mut original_engine = Engine::new(iterator_plan(false));
+    // Even structurally equal freshly admitted plans cannot acquire this lease.
+    assert!(
+        original_engine
+            .next_runtime_iterator_item(&mut restored, &mut VmRuntimePureCallBackend::default())
+            .is_err()
+    );
+    assert!(
+        RuntimeIterator::try_witness(
+            owner,
+            RuntimeValue::Bool(true),
+            crate::plan::RuntimeTraitMethodId(0)
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn witness_next_rejects_a_copy_of_its_affine_receiver() {
     let plan = iterator_plan(true);
     let mut engine = Engine::new(plan);
-    let mut iterator = witness_with_need(engine.program_plan().as_ref());
+    let mut iterator = witness_with_need(&crate::task::RuntimeProgramOwner::Plan(
+        engine.program_plan(),
+    ));
     assert!(matches!(
         engine.next_runtime_iterator_item(&mut iterator, &mut VmRuntimePureCallBackend::default()),
         Err(RuntimeEvalError::AffineLocalCopy(_))

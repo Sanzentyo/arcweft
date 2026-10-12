@@ -172,7 +172,7 @@ impl<'a> LiteralEvents<'a> {
             RuntimeValueView::Scalar(_)
             | RuntimeValueView::RuntimeOnly(
                 RuntimeValue::Range(_)
-                | RuntimeValue::Iterator(RuntimeIterator::Range(_) | RuntimeIterator::Witness { .. })
+                | RuntimeValue::Iterator(RuntimeIterator::Range(_) | RuntimeIterator::Witness(_))
                 | RuntimeValue::NeedHandle(_)
                 | RuntimeValue::Callable(_)
                 | RuntimeValue::Unit

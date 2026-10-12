@@ -532,6 +532,9 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 match iterator {
                     RuntimeIterator::Values { .. } => Ok(Children::Repeated(Expected::Type(*item))),
                     RuntimeIterator::Range(range) => {
+                        if range.validated_end().is_none() {
+                            return Err(Self::mismatch(value));
+                        }
                         let matches = match (self.row(*item)?.shape(), range) {
                             (Type::Int(expected), RuntimeRangeIterator::Int { width, .. }) => {
                                 crate::value::RuntimeSignedIntWidth::from(*expected) == *width
@@ -547,7 +550,24 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                             Err(Self::mismatch(value))
                         }
                     }
-                    RuntimeIterator::Witness { .. } => Err(Self::mismatch(value)),
+                    RuntimeIterator::Witness(witness) => {
+                        if !matches!(witness.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), self.program))
+                        {
+                            return Err(Self::mismatch(value));
+                        }
+                        let (state, actual_item) =
+                            crate::program_types::RuntimeProgramTypes::Awbc(self.program)
+                                .iterator_witness_types(witness.next_method())
+                                .ok_or_else(|| Self::mismatch(value))?;
+                        if actual_item != self.row(*item)?.semantic_identity() {
+                            return Err(Self::mismatch(value));
+                        }
+                        Ok(Children::Single(Expected::Type(
+                            self.program
+                                .semantic_type_id(state)
+                                .ok_or_else(|| Self::mismatch(value))?,
+                        )))
+                    }
                 }
             }
             (Type::Variant { .. }, _) => self.variant(ty, row, value),

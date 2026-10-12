@@ -728,7 +728,7 @@ impl AwbcRuntimeValueSnapshot {
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
-    fn iterator_from_live(
+    pub(super) fn iterator_from_live(
         value: &RuntimeIterator,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<AwbcRuntimeIteratorSnapshot, AwbcRuntimeValueSnapshotError> {
@@ -739,11 +739,28 @@ impl AwbcRuntimeValueSnapshot {
                     .map(|value| Self::from_live_with_owner(value, owner))
                     .collect::<Result<_, _>>()?,
             },
-            RuntimeIterator::Range(value) => AwbcRuntimeIteratorSnapshot::Range(value.clone()),
-            RuntimeIterator::Witness { state, next } => AwbcRuntimeIteratorSnapshot::Witness {
-                state: Box::new(Self::from_live_with_owner(state, owner)?),
-                next: *next,
-            },
+            RuntimeIterator::Range(value) => {
+                value.validated_end().ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "range iterator has an invalid retained cursor",
+                    )
+                })?;
+                AwbcRuntimeIteratorSnapshot::Range(value.clone())
+            }
+            RuntimeIterator::Witness(witness) => {
+                let owner = owner.ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "iterator witnesses require their original executable program",
+                    )
+                })?;
+                witness
+                    .validate_for_owner(owner)
+                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+                AwbcRuntimeIteratorSnapshot::Witness {
+                    state: Box::new(Self::from_live_with_owner(witness.state(), Some(owner))?),
+                    next: witness.next_method(),
+                }
+            }
         })
     }
 
@@ -758,11 +775,29 @@ impl AwbcRuntimeValueSnapshot {
                     .map(|value| value.into_live_with_owner(program_owner))
                     .collect::<Result<VecDeque<_>, _>>()?,
             },
-            AwbcRuntimeIteratorSnapshot::Range(value) => RuntimeIterator::Range(value),
-            AwbcRuntimeIteratorSnapshot::Witness { state, next } => RuntimeIterator::Witness {
-                state: Box::new(state.into_live_with_owner(program_owner)?),
-                next,
-            },
+            AwbcRuntimeIteratorSnapshot::Range(value) => {
+                value.validated_end().ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "range iterator has an invalid retained cursor",
+                    )
+                })?;
+                RuntimeIterator::Range(value)
+            }
+            AwbcRuntimeIteratorSnapshot::Witness { state, next } => {
+                let owner = program_owner.ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "iterator witnesses require their original executable program",
+                    )
+                })?;
+                owner.types().iterator_witness_types(next).ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "iterator witness has no matching original next signature",
+                    )
+                })?;
+                let state = state.into_live_with_owner(Some(owner))?;
+                RuntimeIterator::try_witness(owner.clone(), state, next)
+                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?
+            }
         })
     }
 

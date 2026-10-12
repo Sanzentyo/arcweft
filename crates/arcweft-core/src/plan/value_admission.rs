@@ -522,6 +522,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
         match iterator {
             RuntimeIterator::Values { .. } => Some(Children::Repeated(Expected::Type(item))),
             RuntimeIterator::Range(range) => {
+                range.validated_end()?;
                 let matches = match (self.authority.declaration(item).projection(), range) {
                     (Type::Signed(expected), RuntimeRangeIterator::Int { width, .. }) => {
                         expected == width
@@ -533,7 +534,23 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 };
                 matches.then_some(Children::None)
             }
-            RuntimeIterator::Witness { .. } => None,
+            RuntimeIterator::Witness(witness) => {
+                let PlanValueAuthority::Inventory(plan) = &self.authority else {
+                    return None;
+                };
+                if !matches!(witness.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(&raw const owner.inventory, *plan))
+                {
+                    return None;
+                }
+                let (state, actual_item) = crate::program_types::RuntimeProgramTypes::Plan(plan)
+                    .iterator_witness_types(witness.next_method())?;
+                if actual_item != self.authority.declaration(item).semantic_identity() {
+                    return None;
+                }
+                Some(Children::Single(Expected::Type(
+                    self.authority.by_semantic(state)?,
+                )))
+            }
         }
     }
 
