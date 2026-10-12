@@ -64,6 +64,197 @@ fn admitted(
     plan.accepts_value(id(plan, tag), value, RuntimeSchemaLimits::engine_default())
 }
 
+fn need_resource_fixture() -> (
+    RuntimePlan,
+    crate::awbc::schema::AwbcProgram,
+    RuntimeValue,
+    RuntimeSchemaLimits,
+) {
+    use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
+    let handle = crate::tests::reusable_need("captured");
+    let outcome = handle.outcome().payload_semantic_identity();
+    let native = plan([
+        RuntimePlanTypeSeed::new(outcome, Type::String),
+        seed(2, Type::Need(outcome)),
+    ]);
+    let awbc = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::new(outcome, AwbcRuntimeTypeShape::String),
+            AwbcRuntimeType::new(semantic(2), AwbcRuntimeTypeShape::Need(AwbcTypeId(0))),
+        ],
+        ..AwbcProgram::default()
+    };
+    let value = RuntimeValue::NeedHandle(handle);
+    let bytes = value.try_canonical_bytes(1024).unwrap();
+    let exact = RuntimeSchemaLimits {
+        max_depth: 1,
+        max_nodes: 2,
+        max_sequence_items: 1,
+        max_string_bytes: 8,
+        max_encoded_bytes: u64::try_from(
+            bytes.len()
+                + RuntimeValue::String("captured".to_owned())
+                    .try_canonical_bytes(1024)
+                    .unwrap()
+                    .len(),
+        )
+        .unwrap(),
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    (native, awbc, value, exact)
+}
+
+#[test]
+fn need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awbc() {
+    use crate::awbc::schema::AwbcTypeId;
+    let (native, awbc, value, exact) = need_resource_fixture();
+    let bytes = value.try_canonical_bytes(1024).unwrap();
+    native
+        .validate_live_value(id(&native, 2), &value, exact)
+        .unwrap();
+    native
+        .validate_snapshot_value(id(&native, 2), &value, exact)
+        .unwrap();
+    awbc.validate_live_value(AwbcTypeId(1), &value, exact)
+        .unwrap();
+    awbc.validate_snapshot_value(AwbcTypeId(1), &value, exact)
+        .unwrap();
+    let wrong_outcome = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+        "captured",
+        crate::task::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Bool),
+    ));
+    assert!(
+        native
+            .validate_live_value(id(&native, 2), &wrong_outcome, exact)
+            .is_err()
+    );
+    assert!(
+        awbc.validate_live_value(AwbcTypeId(1), &wrong_outcome, exact)
+            .is_err()
+    );
+    for limits in [
+        RuntimeSchemaLimits {
+            max_depth: 0,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_nodes: 1,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_sequence_items: 0,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_string_bytes: 7,
+            ..exact
+        },
+    ] {
+        assert!(
+            native
+                .validate_live_value(id(&native, 2), &value, limits)
+                .is_err()
+        );
+        assert!(
+            native
+                .validate_snapshot_value(id(&native, 2), &value, limits)
+                .is_err()
+        );
+        assert!(
+            awbc.validate_live_value(AwbcTypeId(1), &value, limits)
+                .is_err()
+        );
+        assert!(
+            awbc.validate_snapshot_value(AwbcTypeId(1), &value, limits)
+                .is_err()
+        );
+        assert_eq!(value.try_canonical_bytes(1024).unwrap(), bytes);
+    }
+    let short = RuntimeSchemaLimits {
+        max_encoded_bytes: exact.max_encoded_bytes - 1,
+        ..exact
+    };
+    assert!(
+        native
+            .validate_snapshot_value(id(&native, 2), &value, short)
+            .is_err()
+    );
+    assert!(
+        awbc.validate_snapshot_value(AwbcTypeId(1), &value, short)
+            .is_err()
+    );
+    assert_eq!(value.try_canonical_bytes(1024).unwrap(), bytes);
+}
+
+#[test]
+fn snapshot_admission_shares_the_complete_value_byte_budget_in_native_and_awbc() {
+    use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
+    let native = plan([
+        seed(1, Type::String),
+        seed(
+            2,
+            Type::Tuple(vec![semantic(1), semantic(1)].into_boxed_slice()),
+        ),
+    ]);
+    let awbc = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::new(semantic(1), AwbcRuntimeTypeShape::String),
+            AwbcRuntimeType::new(
+                semantic(2),
+                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0), AwbcTypeId(0)]),
+            ),
+        ],
+        ..AwbcProgram::default()
+    };
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::String("captured".to_owned()),
+        RuntimeValue::String("retained".to_owned()),
+    ]);
+    let bytes = value.try_canonical_bytes(1024).unwrap();
+    let exact = RuntimeSchemaLimits {
+        max_string_bytes: 8,
+        max_encoded_bytes: u64::try_from(bytes.len()).unwrap(),
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let too_small = RuntimeSchemaLimits {
+        max_encoded_bytes: exact.max_encoded_bytes - 1,
+        ..exact
+    };
+    native
+        .validate_snapshot_value(id(&native, 2), &value, exact)
+        .unwrap();
+    awbc.validate_snapshot_value(AwbcTypeId(1), &value, exact)
+        .unwrap();
+    assert!(matches!(
+        native.validate_snapshot_value(id(&native, 2), &value, too_small),
+        Err(RuntimePlanValueAdmissionError::Value {
+            source: RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes"
+            },
+            ..
+        })
+    ));
+    assert!(matches!(
+        awbc.validate_snapshot_value(AwbcTypeId(1), &value, too_small),
+        Err(
+            crate::awbc::value_admission::AwbcValueAdmissionError::Value {
+                source: RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes"
+                },
+                ..
+            }
+        )
+    ));
+    // Live execution keeps its existing non-persistence allowance; this does
+    // not impose the snapshot byte policy on transient runtime computations.
+    native
+        .validate_live_value(id(&native, 2), &value, too_small)
+        .unwrap();
+    awbc.validate_live_value(AwbcTypeId(1), &value, too_small)
+        .unwrap();
+    assert_eq!(value.try_canonical_bytes(1024).unwrap(), bytes);
+}
+
 #[test]
 fn runtime_color_is_admitted_by_the_dedicated_plan_color_type() {
     let plan = plan([seed(1, Type::Color), seed(2, Type::String)]);

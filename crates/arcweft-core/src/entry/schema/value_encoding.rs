@@ -118,29 +118,6 @@ pub(crate) fn validate_snapshot<V: ValueValidation>(
     validate_without_digest(value, limits, validation, expected, ValueEncoding::Snapshot)
 }
 
-/// Emits one snapshot-admissible runtime value through the shared bounded
-/// visitor. Unlike constant encoding, this admits snapshot-only opaque values
-/// such as runtime Content while preserving the same node, depth, sequence,
-/// string, and encoded-byte limits.
-pub(super) fn visit_snapshot_bounded<S: CanonicalSink + ?Sized, V: ValueValidation>(
-    value: &RuntimeValue,
-    limits: super::RuntimeSchemaLimits,
-    writer: &mut CanonicalWriter<'_, S>,
-    validation: &mut V,
-    expected: V::Expected,
-) -> Result<(), RuntimeSchemaError> {
-    let mut budget = ValueBudget::new(limits);
-    visit_with_encoding(
-        value.view(),
-        0,
-        writer,
-        Some(&mut budget),
-        validation,
-        expected,
-        ValueEncoding::Snapshot,
-    )
-}
-
 fn validate_without_digest<V: ValueValidation>(
     value: &RuntimeValue,
     limits: super::RuntimeSchemaLimits,
@@ -159,10 +136,14 @@ fn validate_view_without_digest<V: ValueValidation>(
     encoding: ValueEncoding,
 ) -> Result<(), RuntimeSchemaError> {
     let mut budget = ValueBudget::new(limits);
-    let mut sink = VisitOutput::<super::CanonicalBlake3Sink>::Probe;
+    let mut sink = super::CanonicalCountingSink::default();
     let mut writer = CanonicalWriter {
         sink: &mut sink,
-        max_encoded_bytes: u64::MAX,
+        max_encoded_bytes: if matches!(encoding, ValueEncoding::Snapshot) {
+            limits.max_encoded_bytes
+        } else {
+            u64::MAX
+        },
         max_string_bytes: Some(limits.max_string_bytes),
     };
     visit_with_encoding(
@@ -342,6 +323,12 @@ enum Work<'a, E, C, A: Iterator<Item = E>> {
     Record(RuntimeRecordView<'a>, usize, usize, Rc<C>),
     Sequence(&'a RuntimeSeq, usize, usize, Rc<C>),
     Values(slice::Iter<'a, RuntimeValue>, usize, usize, Rc<C>),
+    BorrowedValues(
+        Box<dyn Iterator<Item = &'a RuntimeValue> + 'a>,
+        usize,
+        usize,
+        Rc<C>,
+    ),
     DequeValues(
         std::collections::vec_deque::Iter<'a, RuntimeValue>,
         usize,
@@ -511,6 +498,18 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                     if let Some(value) = values.next() {
                         let expected = validation.child(&children, index)?;
                         work.push(Work::Values(values, index + 1, depth, children));
+                        work.push(Work::Value(
+                            value.view(),
+                            depth,
+                            expected,
+                            Some(PathStep::Index(index)),
+                        ));
+                    }
+                }
+                Work::BorrowedValues(mut values, index, depth, children) => {
+                    if let Some(value) = values.next() {
+                        let expected = validation.child(&children, index)?;
+                        work.push(Work::BorrowedValues(values, index + 1, depth, children));
                         work.push(Work::Value(
                             value.view(),
                             depth,
@@ -850,6 +849,20 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         {
             writer.u8(20)?;
             writer.extend(handle.need_id().as_bytes())?;
+            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) {
+                if let Some(budget) = budget {
+                    budget.collection(handle.request_values().count())?;
+                }
+                // The producer contract owns request types; this traversal
+                // charges their complete resource graph without reinterpreting
+                // request arguments as children of the Need outcome type.
+                work.push(Work::BorrowedValues(
+                    Box::new(handle.request_values()),
+                    0,
+                    depth + 1,
+                    Rc::new(V::admitted_children()),
+                ));
+            }
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(callable))
             if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>

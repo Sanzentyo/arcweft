@@ -394,6 +394,12 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             {
                 Ok(Children::None)
             }
+            (Type::Need(item), View::RuntimeOnly(RuntimeValue::NeedHandle(handle)))
+                if handle.outcome().payload_semantic_identity()
+                    == self.row(*item)?.semantic_identity() =>
+            {
+                Ok(Children::None)
+            }
             (Type::UInt(kind), View::Scalar(Scalar::UInt(actual)))
                 if actual.width() == (*kind).into() =>
             {

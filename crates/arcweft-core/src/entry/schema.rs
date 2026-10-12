@@ -563,23 +563,14 @@ pub fn canonical_runtime_value_bytes(
     Ok(sink.finish())
 }
 
-/// Produces a bounded canonical transcript for one snapshot-admissible
-/// runtime value. Snapshot mode permits snapshot-only opaque owners while
-/// retaining the same deterministic value encoding and shared limits used by
-/// constant admission.
-pub(crate) fn canonical_runtime_snapshot_value_bytes(
+/// Checks a snapshot's resource graph through the shared logical-value visitor
+/// without allocating an otherwise unused encoded transcript.
+pub(crate) fn validate_runtime_snapshot_value(
     value: &RuntimeValue,
     limits: RuntimeSchemaLimits,
-) -> Result<Vec<u8>, RuntimeSchemaError> {
-    let mut sink = CanonicalBytesSink::default();
-    let mut writer = CanonicalWriter {
-        sink: &mut sink,
-        max_string_bytes: Some(limits.max_string_bytes),
-        max_encoded_bytes: limits.max_encoded_bytes,
-    };
+) -> Result<(), RuntimeSchemaError> {
     let mut validation = value_encoding::NoSchemaValidation;
-    value_encoding::visit_snapshot_bounded(value, limits, &mut writer, &mut validation, ())?;
-    Ok(sink.finish())
+    value_encoding::validate_snapshot(value, limits, &mut validation, ())
 }
 
 pub(crate) fn canonical_runtime_value_digest(
@@ -621,9 +612,44 @@ trait CanonicalSink {
 }
 
 #[derive(Default)]
+struct CanonicalByteCount(u64);
+
+impl CanonicalByteCount {
+    fn charge(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.0 = self
+            .0
+            .checked_add(u64::try_from(bytes.len()).map_err(|_| {
+                RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                }
+            })?)
+            .ok_or(RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            })?;
+        Ok(())
+    }
+}
+
+/// Counts the existing value transcript without allocating or publishing it.
+#[derive(Default)]
+struct CanonicalCountingSink {
+    bytes_written: CanonicalByteCount,
+}
+
+impl CanonicalSink for CanonicalCountingSink {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.bytes_written.charge(bytes)
+    }
+
+    fn bytes_written(&self) -> u64 {
+        self.bytes_written.0
+    }
+}
+
+#[derive(Default)]
 struct CanonicalBytesSink {
     bytes: Vec<u8>,
-    bytes_written: u64,
+    bytes_written: CanonicalByteCount,
 }
 
 impl CanonicalBytesSink {
@@ -634,29 +660,20 @@ impl CanonicalBytesSink {
 
 impl CanonicalSink for CanonicalBytesSink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.bytes_written.charge(bytes)?;
         self.bytes.extend_from_slice(bytes);
-        self.bytes_written = self
-            .bytes_written
-            .checked_add(u64::try_from(bytes.len()).map_err(|_| {
-                RuntimeSchemaError::BudgetExceeded {
-                    budget: "encoded_bytes",
-                }
-            })?)
-            .ok_or(RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes",
-            })?;
         Ok(())
     }
 
     fn bytes_written(&self) -> u64 {
-        self.bytes_written
+        self.bytes_written.0
     }
 }
 
 #[derive(Default)]
 struct CanonicalBlake3Sink {
     hasher: blake3::Hasher,
-    bytes_written: u64,
+    bytes_written: CanonicalByteCount,
 }
 
 impl CanonicalBlake3Sink {
@@ -667,22 +684,13 @@ impl CanonicalBlake3Sink {
 
 impl CanonicalSink for CanonicalBlake3Sink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.bytes_written.charge(bytes)?;
         self.hasher.update(bytes);
-        self.bytes_written = self
-            .bytes_written
-            .checked_add(u64::try_from(bytes.len()).map_err(|_| {
-                RuntimeSchemaError::BudgetExceeded {
-                    budget: "encoded_bytes",
-                }
-            })?)
-            .ok_or(RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes",
-            })?;
         Ok(())
     }
 
     fn bytes_written(&self) -> u64 {
-        self.bytes_written
+        self.bytes_written.0
     }
 }
 

@@ -134,6 +134,12 @@ Content の owning constructor と borrowed decoder／evaluated-binding producer
 failure policy と callback の affine descendant をコピー前に拒否する。
 既存の Content node budget は callback の元の retained value graph も計上する。
 
+Snapshot の値 admission は既存の logical-value visitor と byte count を使い、
+encoded-byte 上限を graph 全体で検証する。検証だけの caller は transcript を
+割り当てない。Need の要求値は元の借用値を走査し、outcome 型とは分けて同じ
+node・depth・collection・string・byte 予算に計上する。Need の outcome identity は
+Native と AWBC の両方で original program の型行に照合する。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

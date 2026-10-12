@@ -1344,7 +1344,7 @@ fn validate_runtime_value(
                 message: error.to_string(),
             }
         })?;
-    crate::entry::schema::canonical_runtime_snapshot_value_bytes(value, limits).map_err(
+    crate::entry::schema::validate_runtime_snapshot_value(value, limits).map_err(
         |error: RuntimeSchemaError| RuntimeArcErrorValueError::InvalidRuntimeValue {
             message: error.to_string(),
         },
