@@ -395,22 +395,25 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             | (Type::Color, View::Scalar(Scalar::Color(_)))
             | (Type::Char, View::Scalar(Scalar::Char(_)))
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Type::Progress, View::Scalar(Scalar::Progress(_)))
+            | (Type::Progress, View::Scalar(Scalar::Progress { .. }))
             | (Type::EntityRef, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            (shape, View::DenseNumeric(actual))
+                if shape.dense_numeric_type() == Some(actual.ty()) =>
+            {
+                Ok(Children::None)
+            }
             (Type::Int(kind), View::Scalar(Scalar::Int(actual)))
                 if actual.width() == (*kind).into() =>
             {
                 Ok(Children::None)
             }
-            (Type::Need(item), View::RuntimeOnly(RuntimeValue::NeedHandle(handle)))
+            (Type::Need(item), View::Need(handle))
                 if handle.outcome().payload_semantic_identity()
                     == self.row(*item)?.semantic_identity() =>
             {
                 Ok(Children::None)
             }
-            (Type::Range(item), View::RuntimeOnly(RuntimeValue::Range(range)))
-                if self.range(*item, range)? =>
-            {
+            (Type::Range(item), View::Range(range)) if self.range(*item, range)? => {
                 Ok(Children::None)
             }
             (Type::UInt(kind), View::Scalar(Scalar::UInt(actual)))
@@ -433,11 +436,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                         actual: "array with a bound length",
                     });
                 };
-                if u64::try_from(actual.len()) != Ok(expected) {
+                if u64::try_from(actual.len()?) != Ok(expected) {
                     return Err(RuntimeSchemaError::ArrayLength {
                         path: "$".to_owned(),
                         expected,
-                        actual: actual.len(),
+                        actual: actual.len()?,
                     });
                 }
                 Ok(Children::Repeated(Expected::Type(*item)))
@@ -508,13 +511,12 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Self::arity(fields.len(), actual.fields().len())?;
                 Ok(Children::Record(fields))
             }
-            (Type::Function { .. }, View::RuntimeOnly(RuntimeValue::Callable(callable))) => {
+            (Type::Function { .. }, View::Callable(callable)) => {
                 if !matches!(
                     callable.owner(),
-                    RuntimeProgramOwner::Awbc(owner)
+                    Some(RuntimeProgramOwner::Awbc(owner))
                         if std::ptr::eq(owner.as_ref(), self.program)
-                ) || callable.validate_retained().is_err()
-                {
+                ) {
                     return Err(Self::mismatch(value));
                 }
                 let state = self
@@ -528,48 +530,48 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Self::arity(state.retained.len(), callable.retained().len())?;
                 Ok(Children::Callable(&state.retained))
             }
-            (Type::Iterator(item), View::RuntimeOnly(RuntimeValue::Iterator(iterator))) => {
-                match iterator {
-                    RuntimeIterator::Values { .. } => Ok(Children::Repeated(Expected::Type(*item))),
-                    RuntimeIterator::Range(range) => {
-                        if range.validated_end().is_none() {
-                            return Err(Self::mismatch(value));
-                        }
-                        let matches = match (self.row(*item)?.shape(), range) {
-                            (Type::Int(expected), RuntimeRangeIterator::Int { width, .. }) => {
-                                crate::value::RuntimeSignedIntWidth::from(*expected) == *width
-                            }
-                            (Type::UInt(expected), RuntimeRangeIterator::UInt { width, .. }) => {
-                                crate::value::RuntimeUnsignedIntWidth::from(*expected) == *width
-                            }
-                            _ => false,
-                        };
-                        if matches {
-                            Ok(Children::None)
-                        } else {
-                            Err(Self::mismatch(value))
-                        }
+            (Type::Iterator(item), View::Iterator(iterator)) => match iterator.kind() {
+                crate::value::RuntimeIteratorKind::Values(_) => {
+                    Ok(Children::Repeated(Expected::Type(*item)))
+                }
+                crate::value::RuntimeIteratorKind::Range(range) => {
+                    if range.validated_end().is_none() {
+                        return Err(Self::mismatch(value));
                     }
-                    RuntimeIterator::Witness(witness) => {
-                        if !matches!(witness.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), self.program))
-                        {
-                            return Err(Self::mismatch(value));
+                    let matches = match (self.row(*item)?.shape(), range) {
+                        (Type::Int(expected), RuntimeRangeIterator::Int { width, .. }) => {
+                            crate::value::RuntimeSignedIntWidth::from(*expected) == *width
                         }
-                        let (state, actual_item) =
-                            crate::program_types::RuntimeProgramTypes::Awbc(self.program)
-                                .iterator_witness_types(witness.next_method())
-                                .ok_or_else(|| Self::mismatch(value))?;
-                        if actual_item != self.row(*item)?.semantic_identity() {
-                            return Err(Self::mismatch(value));
+                        (Type::UInt(expected), RuntimeRangeIterator::UInt { width, .. }) => {
+                            crate::value::RuntimeUnsignedIntWidth::from(*expected) == *width
                         }
-                        Ok(Children::Single(Expected::Type(
-                            self.program
-                                .semantic_type_id(state)
-                                .ok_or_else(|| Self::mismatch(value))?,
-                        )))
+                        _ => false,
+                    };
+                    if matches {
+                        Ok(Children::None)
+                    } else {
+                        Err(Self::mismatch(value))
                     }
                 }
-            }
+                crate::value::RuntimeIteratorKind::Witness(witness) => {
+                    if !matches!(witness.owner(), Some(RuntimeProgramOwner::Awbc(owner)) if std::ptr::eq(owner.as_ref(), self.program))
+                    {
+                        return Err(Self::mismatch(value));
+                    }
+                    let (state, actual_item) =
+                        crate::program_types::RuntimeProgramTypes::Awbc(self.program)
+                            .iterator_witness_types(witness.next_method())
+                            .ok_or_else(|| Self::mismatch(value))?;
+                    if actual_item != self.row(*item)?.semantic_identity() {
+                        return Err(Self::mismatch(value));
+                    }
+                    Ok(Children::Single(Expected::Type(
+                        self.program
+                            .semantic_type_id(state)
+                            .ok_or_else(|| Self::mismatch(value))?,
+                    )))
+                }
+            },
             (Type::Variant { .. }, _) => self.variant(ty, row, value),
             (Type::Opaque { arguments, .. }, _) => {
                 let owner = row
@@ -579,7 +581,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     })?
                     .expect("the selected row is opaque");
                 match value {
-                    View::Opaque(actual) if owner.accepts_opaque_value(actual) => Ok(Children::Any),
+                    View::Opaque(actual) if owner.accepts_opaque_view(actual) => Ok(Children::Any),
                     View::Reduction(actual)
                         if owner.admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
                             && RuntimeReductionProducer::accepts(owner.producer())
@@ -597,10 +599,15 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     }),
                 }
             }
-            (
-                Type::Agent(AwbcAgentTypeShape::DataShape(_)),
-                View::Agent(crate::value::RuntimeAgentValue::DataShape(shape)),
-            ) if shape.matches_awbc(self.program, row.semantic_identity()) => Ok(Children::None),
+            (Type::Agent(AwbcAgentTypeShape::DataShape(_)), View::Agent(shape)) if matches!(shape.kind(), crate::value::RuntimeAgentKind::DataShape(shape) if shape.matches_awbc(self.program, row.semantic_identity())) => {
+                Ok(Children::None)
+            }
+            (Type::Agent(AwbcAgentTypeShape::Probe(result)), View::Agent(actual))
+                if matches!(actual.kind(), crate::value::RuntimeAgentKind::Probe(_)) =>
+            {
+                self.row(*result)?;
+                Ok(Children::None)
+            }
             (Type::Agent(AwbcAgentTypeShape::Leaf(expected)), View::Agent(actual))
                 if RuntimeAgentTypeProjection::<AwbcTypeId>::try_leaf(*expected).is_some()
                     && *expected == actual.operational_type() =>
@@ -716,7 +723,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> ValueVali
     fn finish_alternative(&mut self, accepted: bool) {
         self.context.finish_alternative(accepted);
     }
-    fn finish_choice(&mut self) {
-        self.context.finish_choice();
+    fn finish_choice(&mut self, admitted: bool) {
+        self.context.finish_choice(admitted);
     }
 }

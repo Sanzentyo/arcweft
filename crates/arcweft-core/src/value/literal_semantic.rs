@@ -6,7 +6,7 @@ mod traversal;
 use super::{
     RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentCaptureTarget,
     RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue,
-    RuntimeCommand, RuntimeEntityReference, RuntimeInt, RuntimeIterator, RuntimeOpaquePersistence,
+    RuntimeCommand, RuntimeEntityReference, RuntimeInt, RuntimeOpaquePersistence,
     RuntimeOpaqueValueClass, RuntimeRange, RuntimeRangeIterator, RuntimeRecordView,
     RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth, RuntimeTupleView, RuntimeUInt,
     RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView,
@@ -27,7 +27,9 @@ impl RuntimeValue {
             match event {
                 Event::Value(value) => match value {
                     RuntimeValueView::Tuple(value) => visitor(value.len())?,
-                    RuntimeValueView::Sequence(value) => visitor(value.len())?,
+                    RuntimeValueView::Sequence(value) => {
+                        visitor(value.len().expect("literal sequence has live storage"))?
+                    }
                     RuntimeValueView::Record(value) => visitor(value.len())?,
                     RuntimeValueView::NominalRecord(value) => visitor(value.fields().len())?,
                     RuntimeValueView::Opaque(_) | RuntimeValueView::Agent(_) => visitor(1)?,
@@ -38,47 +40,20 @@ impl RuntimeValue {
                         visitor(value.commands().len())?;
                         visitor(1)?;
                     }
-                    RuntimeValueView::RuntimeOnly(value) => match value {
-                        RuntimeValue::MatrixF32(value) => visitor(value.values().len())?,
-                        RuntimeValue::MatrixF64(value) => visitor(value.values().len())?,
-                        RuntimeValue::TensorF32(value) => {
-                            visitor(value.shape().dims().len())?;
-                            visitor(value.values().len())?;
+                    RuntimeValueView::DenseNumeric(value) => {
+                        if matches!(value.ty(), crate::math::RuntimeDenseNumericType::Tensor(_)) {
+                            visitor(value.rank())?;
                         }
-                        RuntimeValue::TensorF64(value) => {
-                            visitor(value.shape().dims().len())?;
-                            visitor(value.values().len())?;
-                        }
-                        RuntimeValue::Iterator(RuntimeIterator::Values { items }) => {
+                        visitor(value.len())?;
+                    }
+                    RuntimeValueView::Iterator(iterator) => {
+                        if let crate::value::RuntimeIteratorKind::Values(items) = iterator.kind() {
                             visitor(items.len())?;
                         }
-                        RuntimeValue::Range(_)
-                        | RuntimeValue::Iterator(
-                            RuntimeIterator::Range(_) | RuntimeIterator::Witness(_),
-                        )
-                        | RuntimeValue::NeedHandle(_)
-                        | RuntimeValue::Callable(_)
-                        | RuntimeValue::Unit
-                        | RuntimeValue::Bool(_)
-                        | RuntimeValue::Int(_)
-                        | RuntimeValue::UInt(_)
-                        | RuntimeValue::F32(_)
-                        | RuntimeValue::F64(_)
-                        | RuntimeValue::String(_)
-                        | RuntimeValue::Color(_)
-                        | RuntimeValue::Char(_)
-                        | RuntimeValue::Duration(_)
-                        | RuntimeValue::Progress(_)
-                        | RuntimeValue::EntityRef(_)
-                        | RuntimeValue::Tuple(_)
-                        | RuntimeValue::Seq(_)
-                        | RuntimeValue::Record(_)
-                        | RuntimeValue::NominalRecord(_)
-                        | RuntimeValue::Opaque(_)
-                        | RuntimeValue::Reduction(_)
-                        | RuntimeValue::Agent(_)
-                        | RuntimeValue::Variant(_) => {}
-                    },
+                    }
+                    RuntimeValueView::Range(_)
+                    | RuntimeValueView::Need(_)
+                    | RuntimeValueView::Callable(_) => {}
                     RuntimeValueView::Scalar(_) => {}
                 },
                 Event::Predicate(predicate) => match predicate {
@@ -233,7 +208,7 @@ impl RuntimeValue {
                     }
                     RuntimeValueView::Sequence(sequence) => {
                         encoder.tag(13);
-                        encoder.count(sequence.len());
+                        encoder.count(sequence.len().expect("literal sequence has live storage"));
                     }
                     RuntimeValueView::Record(record) => {
                         encoder.tag(14);
@@ -279,92 +254,35 @@ impl RuntimeValue {
                         encoder.ordinal(variant.ordinal());
                         encoder.tag(u8::from(variant.payload().is_some()));
                     }
-                    RuntimeValueView::RuntimeOnly(value) => match value {
-                        RuntimeValue::Range(range) => {
-                            encoder.tag(18);
-                            range.encode_static_literal(encoder);
-                        }
-                        RuntimeValue::MatrixF32(value) => {
-                            encoder.tag(20);
-                            encoder.count(value.rows());
-                            encoder.count(value.cols());
-                            encoder.count(value.values().len());
-                            for element in value.values() {
-                                encoder.enter_element();
-                                encoder.ordinal(element.to_bits());
-                            }
-                        }
-                        RuntimeValue::MatrixF64(value) => {
-                            encoder.tag(21);
-                            encoder.count(value.rows());
-                            encoder.count(value.cols());
-                            encoder.count(value.values().len());
-                            for element in value.values() {
-                                encoder.enter_element();
-                                encoder.scalar_u64(element.to_bits());
-                            }
-                        }
-                        RuntimeValue::TensorF32(value) => {
-                            encoder.tag(22);
-                            encoder.count(value.shape().dims().len());
-                            for dim in value.shape().dims() {
-                                encoder.enter_element();
-                                encoder.count(*dim);
-                            }
-                            encoder.count(value.values().len());
-                            for element in value.values() {
-                                encoder.enter_element();
-                                encoder.ordinal(element.to_bits());
-                            }
-                        }
-                        RuntimeValue::TensorF64(value) => {
-                            encoder.tag(23);
-                            encoder.count(value.shape().dims().len());
-                            for dim in value.shape().dims() {
-                                encoder.enter_element();
-                                encoder.count(*dim);
-                            }
-                            encoder.count(value.values().len());
-                            for element in value.values() {
-                                encoder.enter_element();
-                                encoder.scalar_u64(element.to_bits());
-                            }
-                        }
-                        RuntimeValue::Iterator(RuntimeIterator::Values { items }) => {
+                    RuntimeValueView::DenseNumeric(value) => {
+                        let Some(value) = value.live_value() else {
+                            encoder.reject_owner();
+                            return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
+                        };
+                        encode_dense_static_literal(value, encoder)?;
+                    }
+                    RuntimeValueView::Range(range) => {
+                        encoder.tag(18);
+                        range.encode_static_literal(encoder);
+                    }
+                    RuntimeValueView::Iterator(iterator) => match iterator.kind() {
+                        crate::value::RuntimeIteratorKind::Values(items) => {
                             encoder.tag(25);
                             encoder.count(items.len());
                         }
-                        RuntimeValue::Iterator(RuntimeIterator::Range(range)) => {
+                        crate::value::RuntimeIteratorKind::Range(range) => {
                             encoder.tag(26);
                             range.encode_static_literal(encoder);
                         }
-                        RuntimeValue::Iterator(RuntimeIterator::Witness(_))
-                        | RuntimeValue::NeedHandle(_)
-                        | RuntimeValue::Callable(_)
-                        | RuntimeValue::Unit
-                        | RuntimeValue::Bool(_)
-                        | RuntimeValue::Int(_)
-                        | RuntimeValue::UInt(_)
-                        | RuntimeValue::F32(_)
-                        | RuntimeValue::F64(_)
-                        | RuntimeValue::String(_)
-                        | RuntimeValue::Color(_)
-                        | RuntimeValue::Char(_)
-                        | RuntimeValue::Duration(_)
-                        | RuntimeValue::Progress(_)
-                        | RuntimeValue::EntityRef(_)
-                        | RuntimeValue::Tuple(_)
-                        | RuntimeValue::Seq(_)
-                        | RuntimeValue::Record(_)
-                        | RuntimeValue::NominalRecord(_)
-                        | RuntimeValue::Opaque(_)
-                        | RuntimeValue::Reduction(_)
-                        | RuntimeValue::Agent(_)
-                        | RuntimeValue::Variant(_) => {
+                        crate::value::RuntimeIteratorKind::Witness(_) => {
                             encoder.reject_owner();
                             return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
                         }
                     },
+                    RuntimeValueView::Need(_) | RuntimeValueView::Callable(_) => {
+                        encoder.reject_owner();
+                        return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
+                    }
                     RuntimeValueView::Reduction(value) => {
                         encoder.tag(19);
                         encoder.string(value.owner().producer().as_str());
@@ -426,11 +344,11 @@ impl RuntimeScalarView<'_> {
                 encoder.tag(9);
                 encoder.scalar_u64(value.as_nanos());
             }
-            Self::Progress(value) => {
+            Self::Progress { ratio, label } => {
                 encoder.tag(10);
-                encoder.ordinal(value.ratio().to_bits());
-                encoder.tag(u8::from(value.label().is_some()));
-                if let Some(label) = value.label() {
+                encoder.ordinal(ratio.to_bits());
+                encoder.tag(u8::from(label.is_some()));
+                if let Some(label) = label {
                     encoder.string(label);
                 }
             }
@@ -619,4 +537,64 @@ impl RuntimeRangeIterator {
             }
         }
     }
+}
+
+fn encode_dense_static_literal(
+    value: &RuntimeValue,
+    encoder: &mut TaskSemanticEncoder<'_>,
+) -> Result<(), RuntimeBodySemanticError> {
+    match value {
+        RuntimeValue::MatrixF32(value) => {
+            encoder.tag(20);
+            encoder.count(value.rows());
+            encoder.count(value.cols());
+            encoder.count(value.values().len());
+            for element in value.values() {
+                encoder.enter_element();
+                encoder.ordinal(element.to_bits());
+            }
+        }
+        RuntimeValue::MatrixF64(value) => {
+            encoder.tag(21);
+            encoder.count(value.rows());
+            encoder.count(value.cols());
+            encoder.count(value.values().len());
+            for element in value.values() {
+                encoder.enter_element();
+                encoder.scalar_u64(element.to_bits());
+            }
+        }
+        RuntimeValue::TensorF32(value) => {
+            encoder.tag(22);
+            encoder.count(value.shape().dims().len());
+            for dim in value.shape().dims() {
+                encoder.enter_element();
+                encoder.count(*dim);
+            }
+            encoder.count(value.values().len());
+            for element in value.values() {
+                encoder.enter_element();
+                encoder.ordinal(element.to_bits());
+            }
+        }
+        RuntimeValue::TensorF64(value) => {
+            encoder.tag(23);
+            encoder.count(value.shape().dims().len());
+            for dim in value.shape().dims() {
+                encoder.enter_element();
+                encoder.count(*dim);
+            }
+            encoder.count(value.values().len());
+            for element in value.values() {
+                encoder.enter_element();
+                encoder.scalar_u64(element.to_bits());
+            }
+        }
+
+        _ => {
+            encoder.reject_owner();
+            return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
+        }
+    }
+    Ok(())
 }

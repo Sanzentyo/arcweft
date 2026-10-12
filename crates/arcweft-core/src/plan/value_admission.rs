@@ -487,7 +487,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             return self.variant(ty, value);
         }
         match value {
-            View::Opaque(actual) if owner.accepts_opaque_value(actual) => Ok(Children::Any),
+            View::Opaque(actual) if owner.accepts_opaque_view(actual) => Ok(Children::Any),
             View::Reduction(actual)
                 if owner.admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
                     && RuntimeReductionProducer::accepts(owner.producer())
@@ -517,11 +517,13 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
     fn iterator(
         &self,
         item: RuntimePlanTypeId,
-        iterator: &RuntimeIterator,
+        iterator: crate::value::RuntimeIteratorView<'_>,
     ) -> Option<Children<'a>> {
-        match iterator {
-            RuntimeIterator::Values { .. } => Some(Children::Repeated(Expected::Type(item))),
-            RuntimeIterator::Range(range) => {
+        match iterator.kind() {
+            crate::value::RuntimeIteratorKind::Values(_) => {
+                Some(Children::Repeated(Expected::Type(item)))
+            }
+            crate::value::RuntimeIteratorKind::Range(range) => {
                 range.validated_end()?;
                 let matches = match (self.authority.declaration(item).projection(), range) {
                     (Type::Signed(expected), RuntimeRangeIterator::Int { width, .. }) => {
@@ -534,11 +536,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 };
                 matches.then_some(Children::None)
             }
-            RuntimeIterator::Witness(witness) => {
+            crate::value::RuntimeIteratorKind::Witness(witness) => {
                 let PlanValueAuthority::Inventory(plan) = &self.authority else {
                     return None;
                 };
-                if !matches!(witness.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(&raw const owner.inventory, *plan))
+                if !matches!(witness.owner(), Some(crate::task::RuntimeProgramOwner::Plan(owner)) if std::ptr::eq(&raw const owner.inventory, *plan))
                 {
                     return None;
                 }
@@ -569,14 +571,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             | (Type::Color, View::Scalar(Scalar::Color(_)))
             | (Type::Char, View::Scalar(Scalar::Char(_)))
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Type::Progress, View::Scalar(Scalar::Progress(_)))
+            | (Type::Progress, View::Scalar(Scalar::Progress { .. }))
             | (Type::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
-            (Type::DenseNumeric(expected), View::RuntimeOnly(value))
-                if value.dense_numeric_type() == Some(*expected) =>
+            (Type::DenseNumeric(expected), View::DenseNumeric(value))
+                if value.ty() == *expected =>
             {
                 Ok(Children::None)
             }
-            (Type::Need(item), View::RuntimeOnly(RuntimeValue::NeedHandle(handle)))
+            (Type::Need(item), View::Need(handle))
                 if handle.outcome().payload_semantic_identity().as_bytes()
                     == self
                         .authority
@@ -611,11 +613,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             }
             (Type::Array { item, length }, View::Sequence(actual)) => {
                 let length = length.constant().ok_or_else(|| Self::mismatch(value))?;
-                if u64::try_from(actual.len()) != Ok(length) {
+                if u64::try_from(actual.len()?) != Ok(length) {
                     return Err(RuntimeSchemaError::ArrayLength {
                         path: "$".to_owned(),
                         expected: length,
-                        actual: actual.len(),
+                        actual: actual.len()?,
                     });
                 }
                 Ok(Children::Repeated(Expected::Type(*item)))
@@ -662,12 +664,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 arguments,
                 value,
             ),
-            (Type::Function { .. }, View::RuntimeOnly(RuntimeValue::Callable(callable))) => {
+            (Type::Function { .. }, View::Callable(callable)) => {
                 let PlanValueAuthority::Inventory(plan) = &self.authority else {
                     return Err(Self::mismatch(value));
                 };
-                if !matches!(callable.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(&owner.inventory, *plan))
-                    || callable.validate_retained().is_err()
+                if !matches!(callable.owner(), Some(crate::task::RuntimeProgramOwner::Plan(owner)) if std::ptr::eq(&owner.inventory, *plan))
                 {
                     return Err(Self::mismatch(value));
                 }
@@ -681,18 +682,18 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 Self::arity(state.retained.len(), callable.retained().len())?;
                 Ok(Children::Callable(&state.retained))
             }
-            (Type::Range(item), View::RuntimeOnly(RuntimeValue::Range(range)))
-                if self.range(*item, range) =>
-            {
+            (Type::Range(item), View::Range(range)) if self.range(*item, range) => {
                 Ok(Children::None)
             }
-            (Type::Iterator(item), View::RuntimeOnly(RuntimeValue::Iterator(iterator))) => self
+            (Type::Iterator(item), View::Iterator(iterator)) => self
                 .iterator(*item, iterator)
                 .ok_or_else(|| Self::mismatch(value)),
-            (
-                Type::Agent(RuntimeAgentTypeProjection::DataShape(_)),
-                View::Agent(crate::value::RuntimeAgentValue::DataShape(shape)),
-            ) if matches!(&self.authority, PlanValueAuthority::Inventory(plan) if shape.matches_plan(plan, declaration.semantic_identity())) => {
+            (Type::Agent(RuntimeAgentTypeProjection::DataShape(_)), View::Agent(shape)) if matches!((&self.authority, shape.kind()), (PlanValueAuthority::Inventory(plan), crate::value::RuntimeAgentKind::DataShape(shape)) if shape.matches_plan(plan, declaration.semantic_identity())) => {
+                Ok(Children::None)
+            }
+            (Type::Agent(RuntimeAgentTypeProjection::Probe(_)), View::Agent(actual))
+                if matches!(actual.kind(), crate::value::RuntimeAgentKind::Probe(_)) =>
+            {
                 Ok(Children::None)
             }
             (Type::Agent(expected), View::Agent(actual))
@@ -816,8 +817,8 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
     fn finish_alternative(&mut self, accepted: bool) {
         self.context.finish_alternative(accepted);
     }
-    fn finish_choice(&mut self) {
-        self.context.finish_choice();
+    fn finish_choice(&mut self, admitted: bool) {
+        self.context.finish_choice(admitted);
     }
 }
 

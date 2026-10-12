@@ -135,6 +135,76 @@ fn capture_checks_borrowed_dense_resources_before_projection_for_both_program_ow
 }
 
 #[test]
+fn inert_restore_checks_encoded_byte_limits_for_both_program_owners() {
+    let value =
+        RuntimeValue::MatrixF32(crate::math::DenseMatrixF32::new(1, 2, vec![1.25, 2.5]).unwrap());
+    let exact = RuntimeSchemaLimits {
+        max_encoded_bytes: 17,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in owners() {
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        assert_eq!(
+            snapshot
+                .clone()
+                .into_runtime_value_for_program_with_limits(&owner, exact)
+                .unwrap(),
+            value
+        );
+        for unrestricted in [false, true] {
+            let short = RuntimeSchemaLimits {
+                max_encoded_bytes: 16,
+                ..exact
+            };
+            let result = if unrestricted {
+                snapshot
+                    .clone()
+                    .into_unrestricted_runtime_value_for_program_with_limits(&owner, short)
+            } else {
+                snapshot
+                    .clone()
+                    .into_runtime_value_for_program_with_limits(&owner, short)
+            };
+            assert!(matches!(
+                result,
+                Err(AwbcRuntimeValueSnapshotError::Resource(
+                    crate::entry::RuntimeSchemaError::BudgetExceeded {
+                        budget: "encoded_bytes"
+                    }
+                ))
+            ));
+        }
+    }
+}
+
+#[test]
+fn inert_restore_rejects_bytes_before_resolving_a_missing_callable_state() {
+    for owner in owners() {
+        let snapshot = AwbcRuntimeValueSnapshot::Tuple(vec![AwbcRuntimeValueSnapshot::Callable(
+            AwbcRuntimeCallableSnapshot {
+                state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained: vec![],
+            },
+        )]);
+        assert!(matches!(
+            snapshot.into_runtime_value_for_program_with_limits(
+                &owner,
+                RuntimeSchemaLimits {
+                    max_encoded_bytes: 0,
+                    ..RuntimeSchemaLimits::engine_default()
+                }
+            ),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes"
+                }
+            ))
+        ));
+    }
+}
+
+#[test]
 fn owned_capture_preserves_affine_opaque_custody_and_copyable_capture_rejects_it() {
     let issued = crate::tests::program_custody::issued_program_handle();
     let owner = RuntimeProgramOwner::Plan(Arc::clone(&issued.plan));
@@ -452,6 +522,36 @@ fn empty_columnar_metadata_consumes_shared_inert_traversal_work() {
 }
 
 #[test]
+fn exhausted_storage_work_rejects_before_reading_the_next_column_header() {
+    let image = AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::TupleColumns {
+        len: 0,
+        columns: vec![
+            AwbcRuntimeSeqSnapshot::Values(vec![]),
+            AwbcRuntimeSeqSnapshot::Values(vec![AwbcRuntimeValueSnapshot::Bool(true)]),
+        ],
+    });
+    let limits = RuntimeSchemaLimits {
+        max_validation_work: 3,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    assert!(matches!(
+        image.validate_graph_limits(limits),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::ValidationWork { consumed: 4, .. }
+        )),
+    ));
+    assert!(matches!(
+        image.validate_graph_limits(RuntimeSchemaLimits {
+            max_validation_work: 4,
+            ..limits
+        }),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::Encoding { .. }
+        )),
+    ));
+}
+
+#[test]
 fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matching() {
     let binding: crate::program_types::RuntimeFunctionEffectInstantiation =
         serde_json::from_value(serde_json::json!({
@@ -641,6 +741,50 @@ fn inert_restore_checks_complete_nesting_before_live_construction() {
             ),
             "the complete inert graph rejects before a missing callable constructor"
         );
+    }
+}
+
+#[test]
+fn dense_atoms_at_the_value_nesting_boundary_obey_the_selected_logical_depth() {
+    let mut value =
+        RuntimeValue::MatrixF32(crate::math::DenseMatrixF32::new(1, 2, vec![1.25, 2.5]).unwrap());
+    for _ in 0..super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        value = RuntimeValue::Tuple(vec![value]);
+    }
+    let limits = RuntimeSchemaLimits {
+        max_depth: u32::try_from(super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH + 1).unwrap(),
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in owners() {
+        let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+            &value, &owner, limits,
+        )
+        .unwrap();
+        assert_eq!(
+            image
+                .clone()
+                .into_runtime_value_for_program_with_limits(&owner, limits)
+                .unwrap(),
+            value,
+        );
+        let shallower = RuntimeSchemaLimits {
+            max_depth: limits.max_depth - 1,
+            ..limits
+        };
+        assert!(matches!(
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                &value, &owner, shallower
+            ),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "depth" }
+            )),
+        ));
+        assert!(matches!(
+            image.into_runtime_value_for_program_with_limits(&owner, shallower),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "depth" }
+            )),
+        ));
     }
 }
 

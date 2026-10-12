@@ -634,54 +634,87 @@ impl RuntimeLineHandleToken {
     pub fn try_decode_payload(
         value: &crate::value::RuntimeValue,
     ) -> Result<Self, RuntimeLineHandleTokenDecodeError> {
-        let crate::value::RuntimeValue::Tuple(fields) = value else {
+        Self::try_decode_view(value.view())
+    }
+
+    pub(crate) fn try_decode_view(
+        value: crate::value::RuntimeValueView<'_>,
+    ) -> Result<Self, RuntimeLineHandleTokenDecodeError> {
+        let crate::value::RuntimeValueView::Tuple(fields) = value else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let [artifact, owner_fiber, content, occurrence, site, issuance] = fields.as_slice() else {
+        let [
+            Some(artifact),
+            Some(owner_fiber),
+            Some(content),
+            Some(occurrence),
+            Some(site),
+            Some(issuance),
+        ] = [
+            fields.get(0),
+            fields.get(1),
+            fields.get(2),
+            fields.get(3),
+            fields.get(4),
+            fields.get(5),
+        ]
+        else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let crate::value::RuntimeValue::Seq(artifact) = artifact else {
+        if fields.len() != 6 {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        }
+        let crate::value::RuntimeValueView::Sequence(artifact) = artifact else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
         let artifact: [u8; 32] = artifact
-            .as_bytes()
+            .byte_storage()
             .and_then(|bytes| bytes.try_into().ok())
             .ok_or(RuntimeLineHandleTokenDecodeError::Shape)?;
-        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U64(owner_fiber)) =
-            owner_fiber
+        let crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+            crate::value::RuntimeUInt::U64(owner_fiber),
+        )) = owner_fiber
         else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(content)) = content
+        let crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+            crate::value::RuntimeUInt::U32(content),
+        )) = content
         else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U64(occurrence)) =
-            occurrence
+        let crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+            crate::value::RuntimeUInt::U64(occurrence),
+        )) = occurrence
         else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(site)) = site else {
+        let crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+            crate::value::RuntimeUInt::U32(site),
+        )) = site
+        else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(issuance)) = issuance
+        let crate::value::RuntimeValueView::Scalar(crate::value::RuntimeScalarView::UInt(
+            crate::value::RuntimeUInt::U32(issuance),
+        )) = issuance
         else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
         let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes(artifact)
             .map_err(|_| RuntimeLineHandleTokenDecodeError::Artifact)?;
-        let content = NonZeroU32::new(*content)
+        let content = NonZeroU32::new(content)
             .map(RuntimeDialogueContentPlanId::from_accepted_ordinal)
             .ok_or(RuntimeLineHandleTokenDecodeError::Content)?;
         Ok(Self::new(
             DialogueActivationId::new(
                 artifact,
-                RuntimePersistentFiberId::from_allocated(*owner_fiber),
+                RuntimePersistentFiberId::from_allocated(owner_fiber),
                 content,
-                *occurrence,
+                occurrence,
             ),
-            RuntimeLineHandleSiteId::from_zero_based(*site),
-            *issuance,
+            RuntimeLineHandleSiteId::from_zero_based(site),
+            issuance,
         ))
     }
 }

@@ -82,15 +82,23 @@ nominal header はその型グラフで検証する。View の in-memory snapsho
 serde reader を残さず、mount identity・型付き slot・axis seed の検証を既存 View
 restore で実行してから session を公開する。
 
-Core の inert value graph は、live value を構築する前に共通の閉じた traversal
-で depth・node・collection・string・validation-work を検証する。予算は live
-admission の既存 authority を共有し、dense の各要素と columnar の論理行、
-predicate と callable の retained 値を計上する。durable root は選択された role、
-root rollback は元の root policy の上限を構築前に適用する。encoded-byte と
-original program の型照合は、それぞれの owning admission で検証する。
+Core の inert value graph は、live/inert 共通の borrowed logical view と
+canonical visitor の counting sink を使い、live value を構築する前に
+depth・node・collection・string・validation-work・encoded-byte を検証する。
+予算は live admission の既存 authority を共有し、dense の各要素と columnar の
+論理行、predicate と callable の retained 値を計上する。dense numeric の
+scalar atom の深さは選択された resource policy に従い、値 carrier の nesting
+上限はそのまま維持する。durable root は選択された role、root rollback は
+元の root policy の上限を構築前に適用する。original program の型照合は
+各 owning admission で検証する。
 unrestricted の保存場所では、同じ traversal が Need と
 affine opaque の全 descendant を拒否する。line-handle token inventory もこの
 traversal を使い、空の columnar storage の再帰 metadata を検証から除外しない。
+columnar の保存された column length・field identity・field name の不整合を論理行の
+読み取り前に拒否する。借用ビューからの Copy・custody 操作には live value
+または live sequence row が発行する capability を要求し、inert view を
+live capability に昇格させない。line-token の読み取りでは live payload を
+作り直さず、同じ借用ビューで固定幅の token field を検証する。
 Core value／sequence／predicate の内部 child は、構築前検証後の private な
 構築経路を使う。task request など別の owning codec の検証境界は保持する。
 

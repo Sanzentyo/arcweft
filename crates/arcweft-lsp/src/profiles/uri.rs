@@ -141,7 +141,9 @@ mod tests {
         assert_eq!(uri.as_str(), "file:///C:/Project%20Files/src/main.arcw");
         assert_eq!(
             file_path_from_uri(&uri),
-            Some(PathBuf::from(r"C:\Project Files\src\main.arcw"))
+            Some(PathBuf::from(
+                r"C:\Project Files\src\main.arcw".replace('\\', std::path::MAIN_SEPARATOR_STR),
+            ))
         );
     }
 

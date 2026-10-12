@@ -26,7 +26,7 @@ pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
     fn begin_choice(&mut self) {}
     fn begin_alternative(&mut self) {}
     fn finish_alternative(&mut self, _accepted: bool) {}
-    fn finish_choice(&mut self) {}
+    fn finish_choice(&mut self, _admitted: bool) {}
 }
 
 impl<T: Copy + Eq> RuntimeValueTypeContext<T> for () {
@@ -62,8 +62,8 @@ impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for
     fn finish_alternative(&mut self, accepted: bool) {
         (**self).finish_alternative(accepted);
     }
-    fn finish_choice(&mut self) {
-        (**self).finish_choice();
+    fn finish_choice(&mut self, admitted: bool) {
+        (**self).finish_choice(admitted);
     }
 }
 

@@ -6,11 +6,11 @@ use crate::plan::{
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::runtime_value_views_equal;
 use crate::value::{
-    RuntimeEntityReference, RuntimeEvalError, RuntimeExpr, RuntimeLocalBinding,
-    RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-    RuntimeOpaqueValueClass, RuntimeOpaqueValueError, RuntimePayload, RuntimeRecordFieldId,
-    RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
-    RuntimeValueView,
+    LiveRuntimeValueView, RuntimeEntityReference, RuntimeEvalError, RuntimeExpr,
+    RuntimeLocalBinding, RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeOpaquePersistence,
+    RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError, RuntimePayload,
+    RuntimeRecordFieldId, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView,
 };
 pub use arcweft_id::RuntimeSemanticTypeId;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -399,6 +399,10 @@ impl RuntimeOpaqueTypeOwner {
 
     #[must_use]
     pub fn accepts_opaque_value(&self, actual: &RuntimeOpaqueValue) -> bool {
+        self.accepts_opaque_view(crate::value::RuntimeOpaqueView::Live(actual))
+    }
+
+    pub(crate) fn accepts_opaque_view(&self, actual: crate::value::RuntimeOpaqueView<'_>) -> bool {
         &self.producer == actual.producer()
             && self.value_class == actual.value_class()
             && self.persistence == actual.persistence()
@@ -414,7 +418,7 @@ impl RuntimeOpaqueTypeOwner {
                 semantic_identity: self.semantic_identity,
             });
         }
-        if !crate::value::standard_asset_opaque_payload_is_valid(self, &payload) {
+        if !crate::value::standard_asset_opaque_payload_is_valid(self, payload.view()) {
             return Err(RuntimeOpaqueValueError::InvalidStandardPayload {
                 producer: self.producer.clone(),
             });
@@ -1133,7 +1137,7 @@ impl RuntimeCheckedType {
             return false;
         }
         match (value, self) {
-            (RuntimeValueView::RuntimeOnly(value), Self::DenseNumeric(expected)) => value.dense_numeric_type() == Some(*expected),
+            (RuntimeValueView::DenseNumeric(value), Self::DenseNumeric(expected)) => value.ty() == *expected,
             (RuntimeValueView::Scalar(RuntimeScalarView::Unit), Self::Unit)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), Self::Bool)
             | (RuntimeValueView::Scalar(RuntimeScalarView::F32(_)), Self::F32)
@@ -1142,26 +1146,22 @@ impl RuntimeCheckedType {
             | (RuntimeValueView::Scalar(RuntimeScalarView::Color(_)), Self::Color)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Char(_)), Self::Char)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), Self::Duration)
-            | (RuntimeValueView::Scalar(RuntimeScalarView::Progress(_)), Self::Progress)
+            | (RuntimeValueView::Scalar(RuntimeScalarView::Progress { .. }), Self::Progress)
             | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), Self::EntityReference) => true,
             (value, Self::AgentValue) => runtime_value_view_is_agent_value(value, depth),
             (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), Self::Signed(width)) => value.width() == *width,
             (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), Self::Unsigned(width)) => value.width() == *width,
-            (RuntimeValueView::Sequence(sequence), Self::Bytes) => (0..sequence.len()).all(|index| {
-                matches!(sequence.value_view(index), Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(value))) if value.width() == RuntimeUnsignedIntWidth::U8)
-            }),
-            (RuntimeValueView::Sequence(sequence), Self::Sequence(item)) => (0..sequence.len()).all(|index| {
-                sequence.value_view(index).is_some_and(|value| item.accepts_value_view(value, depth + 1))
-            }),
-            (RuntimeValueView::Sequence(sequence), Self::Map { key, value, .. }) => (0..sequence.len()).all(|index| {
-                let Some(RuntimeValueView::Tuple(pair)) = sequence.value_view(index) else { return false; };
+            (RuntimeValueView::Sequence(sequence), Self::Bytes) => sequence.all(|value| matches!(value, RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)) if value.width() == RuntimeUnsignedIntWidth::U8)),
+            (RuntimeValueView::Sequence(sequence), Self::Sequence(item)) => sequence.all(|value| item.accepts_value_view(value, depth + 1)),
+            (RuntimeValueView::Sequence(sequence), Self::Map { key, value, .. }) => sequence.all(|actual| {
+                let RuntimeValueView::Tuple(pair) = actual else { return false; };
                 pair.len() == 2
                     && pair.get(0).is_some_and(|actual| key.accepts_value_view(actual, depth + 1))
                     && pair.get(1).is_some_and(|actual| value.accepts_value_view(actual, depth + 1))
             }),
             (RuntimeValueView::Sequence(sequence), Self::Array { item, length }) => {
-                u64::try_from(sequence.len()) == Ok(*length)
-                    && (0..sequence.len()).all(|index| sequence.value_view(index).is_some_and(|value| item.accepts_value_view(value, depth + 1)))
+                sequence.len().ok().and_then(|length| u64::try_from(length).ok()) == Some(*length)
+                    && sequence.all(|value| item.accepts_value_view(value, depth + 1))
             }
             (RuntimeValueView::Tuple(values), Self::Tuple(items)) => {
                 values.len() == items.len()
@@ -1177,7 +1177,7 @@ impl RuntimeCheckedType {
                 .iter()
                 .any(|alternative| alternative.accepts_value_view(value, depth + 1)),
             (RuntimeValueView::Opaque(value), Self::Opaque { owner }) => {
-                owner.accepts_opaque_value(value)
+                owner.accepts_opaque_view(value)
             }
             (RuntimeValueView::Reduction(value), Self::Opaque { owner }) => {
                 owner.accepts_owner(value.owner())
@@ -1220,7 +1220,7 @@ impl RuntimeCheckedType {
         owner: &RuntimeVariantIdentity,
         ordinal: u32,
         name: &str,
-        payload: Option<&RuntimeValue>,
+        payload: Option<RuntimeValueView<'_>>,
         depth: usize,
     ) -> bool {
         let Some(expected_owner) = self.variant_identity() else {
@@ -1233,7 +1233,7 @@ impl RuntimeCheckedType {
             case.name == name
                 && match (case.payload.as_deref(), payload) {
                     (Some(expected), Some(actual)) => {
-                        expected.accepts_value_at_depth(actual, depth + 1)
+                        expected.accepts_value_view(actual, depth + 1)
                     }
                     (None, None) => true,
                     _ => false,
@@ -1246,7 +1246,7 @@ impl RuntimeCheckedType {
         owner: &RuntimeVariantIdentity,
         ordinal: u32,
         name: &str,
-        payload: Option<&RuntimeValue>,
+        payload: Option<RuntimeValueView<'_>>,
         depth: usize,
     ) -> bool {
         let Self::Variant {
@@ -1268,7 +1268,7 @@ impl RuntimeCheckedType {
                     && match (case.payload.as_deref(), payload) {
                         (None, None) => true,
                         (Some(expected), Some(actual)) => {
-                            expected.accepts_value_at_depth(actual, depth + 1)
+                            expected.accepts_value_view(actual, depth + 1)
                         }
                         (None, Some(_)) | (Some(_), None) => false,
                     }
@@ -1439,11 +1439,9 @@ fn runtime_value_view_is_agent_value(value: RuntimeValueView<'_>, depth: usize) 
         return false;
     }
     match value {
-        RuntimeValueView::Sequence(values) => (0..values.len()).all(|index| {
-            values
-                .value_view(index)
-                .is_some_and(|value| runtime_value_view_is_agent_value(value, depth + 1))
-        }),
+        RuntimeValueView::Sequence(values) => {
+            values.all(|value| runtime_value_view_is_agent_value(value, depth + 1))
+        }
         RuntimeValueView::Record(fields) => (0..fields.len()).all(|index| {
             fields
                 .get(index)
@@ -1538,7 +1536,7 @@ pub(crate) fn project_runtime_pattern_guard_bindings(
         }
     }
     let mut bindings = Vec::new();
-    collect_copy_guard_bindings(pattern, value.view(), &required, &mut bindings);
+    collect_copy_guard_bindings(pattern, value.live_view(), &required, &mut bindings);
     Ok(Some(bindings))
 }
 
@@ -1569,12 +1567,12 @@ pub(crate) fn prepare_runtime_pattern_guard_bindings(
 
 fn collect_copy_guard_bindings(
     pattern: &RuntimePattern,
-    value: RuntimeValueView<'_>,
+    value: LiveRuntimeValueView<'_>,
     required: &BTreeSet<RuntimeLocalDeclarationId>,
     bindings: &mut Vec<RuntimeLocalBinding>,
 ) {
     let add = |binding: &RuntimePatternBindingCoordinate,
-               value: RuntimeValueView<'_>,
+               value: LiveRuntimeValueView<'_>,
                bindings: &mut Vec<RuntimeLocalBinding>| {
         if required.contains(&binding.local()) {
             let value = value
@@ -1590,7 +1588,7 @@ fn collect_copy_guard_bindings(
         RuntimePatternKind::Or(alternatives) => {
             if let Some(selected) = alternatives
                 .iter()
-                .find(|pattern| pattern_matches_view(pattern, value))
+                .find(|pattern| pattern_matches_view(pattern, value.inspect()))
             {
                 collect_copy_guard_bindings(selected, value, required, bindings);
             }
@@ -1603,12 +1601,12 @@ fn collect_copy_guard_bindings(
             collect_copy_guard_bindings(pattern, value, required, bindings);
         }
         RuntimePatternKind::Tuple(items) => {
-            let RuntimeValueView::Tuple(values) = value else {
+            let RuntimeValueView::Tuple(_) = value.inspect() else {
                 unreachable!("checked tuple pattern retains a tuple view")
             };
             for (index, pattern) in items.iter().enumerate() {
-                let nested = values
-                    .get(index)
+                let nested = value
+                    .child_at(index)
                     .expect("checked tuple field remains present");
                 collect_copy_guard_bindings(pattern, nested, required, bindings);
             }
@@ -1619,14 +1617,12 @@ fn collect_copy_guard_bindings(
             }
             for field in fields {
                 let index = field.field().zero_based() as usize;
-                let nested = match value {
+                let nested = match value.inspect() {
                     RuntimeValueView::Record(values) => values
                         .get(index)
                         .filter(|(id, _, _)| *id == field.field())
-                        .map(|(_, _, value)| value),
-                    RuntimeValueView::NominalRecord(record) => {
-                        record.fields().get(index).map(RuntimeValue::view)
-                    }
+                        .and_then(|_| value.child_at(index)),
+                    RuntimeValueView::NominalRecord(_) => value.child_at(index),
                     _ => None,
                 }
                 .expect("checked record field remains present");
@@ -1634,12 +1630,12 @@ fn collect_copy_guard_bindings(
             }
         }
         RuntimePatternKind::Sequence { items, rest } => {
-            let RuntimeValueView::Sequence(sequence) = value else {
+            let Some(sequence) = value.sequence() else {
                 unreachable!("checked sequence pattern retains a sequence view")
             };
             for (index, pattern) in items.iter().enumerate() {
                 let nested = sequence
-                    .value_view(index)
+                    .live_value_view(index)
                     .expect("checked sequence item remains present");
                 collect_copy_guard_bindings(pattern, nested, required, bindings);
             }
@@ -1654,10 +1650,17 @@ fn collect_copy_guard_bindings(
         }
         RuntimePatternKind::Variant { payload, .. } => {
             if let Some(pattern) = payload
-                && let RuntimeValueView::Variant(variant) = value
-                && let Some(value) = variant.payload()
+                && let RuntimeValueView::Variant(variant) = value.inspect()
+                && variant.payload().is_some()
             {
-                collect_copy_guard_bindings(pattern, value.view(), required, bindings);
+                collect_copy_guard_bindings(
+                    pattern,
+                    value
+                        .child_at(0)
+                        .expect("checked variant retains its child"),
+                    required,
+                    bindings,
+                );
             }
         }
         RuntimePatternKind::Discard
@@ -1674,19 +1677,19 @@ pub(crate) fn runtime_pattern_binding_ownership(
     value: &RuntimeValue,
     local: RuntimeLocalDeclarationId,
 ) -> Option<crate::value::ownership::RuntimeValueOwnership> {
-    runtime_pattern_binding_ownership_view(pattern, value.view(), local)
+    runtime_pattern_binding_ownership_view(pattern, value.live_view(), local)
 }
 
 fn runtime_pattern_binding_ownership_view(
     pattern: &RuntimePattern,
-    value: RuntimeValueView<'_>,
+    value: LiveRuntimeValueView<'_>,
     local: RuntimeLocalDeclarationId,
 ) -> Option<crate::value::ownership::RuntimeValueOwnership> {
     use crate::value::ownership::RuntimeValueOwnership;
     match pattern.kind() {
         RuntimePatternKind::Or(alternatives) => alternatives
             .iter()
-            .find(|pattern| pattern_matches_view(pattern, value))
+            .find(|pattern| pattern_matches_view(pattern, value.inspect()))
             .and_then(|selected| runtime_pattern_binding_ownership_view(selected, value, local)),
         RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
             (binding.local() == local).then(|| value.ownership())
@@ -1702,12 +1705,12 @@ fn runtime_pattern_binding_ownership_view(
             }
         }
         RuntimePatternKind::Tuple(items) => {
-            let RuntimeValueView::Tuple(values) = value else {
+            let RuntimeValueView::Tuple(_) = value.inspect() else {
                 return None;
             };
             items.iter().enumerate().find_map(|(index, item)| {
-                values
-                    .get(index)
+                value
+                    .child_at(index)
                     .and_then(|value| runtime_pattern_binding_ownership_view(item, value, local))
             })
         }
@@ -1720,14 +1723,12 @@ fn runtime_pattern_binding_ownership_view(
             }
             fields.iter().find_map(|field| {
                 let index = field.field().zero_based() as usize;
-                let nested = match value {
+                let nested = match value.inspect() {
                     RuntimeValueView::Record(values) => values
                         .get(index)
                         .filter(|(id, _, _)| *id == field.field())
-                        .map(|(_, _, value)| value),
-                    RuntimeValueView::NominalRecord(record) => {
-                        record.fields().get(index).map(RuntimeValue::view)
-                    }
+                        .and_then(|_| value.child_at(index)),
+                    RuntimeValueView::NominalRecord(_) => value.child_at(index),
                     _ => None,
                 };
                 nested.and_then(|value| {
@@ -1736,7 +1737,7 @@ fn runtime_pattern_binding_ownership_view(
             })
         }
         RuntimePatternKind::Sequence { items, rest } => {
-            let RuntimeValueView::Sequence(sequence) = value else {
+            let Some(sequence) = value.sequence() else {
                 return None;
             };
             if rest
@@ -1745,7 +1746,7 @@ fn runtime_pattern_binding_ownership_view(
             {
                 return Some(
                     (items.len()..sequence.len())
-                        .filter_map(|index| sequence.value_view(index))
+                        .filter_map(|index| sequence.live_value_view(index))
                         .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
                             ownership.join(value.ownership())
                         }),
@@ -1753,19 +1754,19 @@ fn runtime_pattern_binding_ownership_view(
             }
             items.iter().enumerate().find_map(|(index, item)| {
                 sequence
-                    .value_view(index)
+                    .live_value_view(index)
                     .and_then(|value| runtime_pattern_binding_ownership_view(item, value, local))
             })
         }
         RuntimePatternKind::Variant { payload, .. } => {
-            let RuntimeValueView::Variant(variant) = value else {
+            let RuntimeValueView::Variant(_) = value.inspect() else {
                 return None;
             };
             payload
                 .as_deref()
-                .zip(variant.payload())
-                .and_then(|(pattern, value)| {
-                    runtime_pattern_binding_ownership_view(pattern, value.view(), local)
+                .zip(value.child_at(0))
+                .and_then(|(pattern, nested)| {
+                    runtime_pattern_binding_ownership_view(pattern, nested, local)
                 })
         }
         RuntimePatternKind::Discard
@@ -1822,13 +1823,13 @@ pub(crate) fn runtime_pattern_handle_destinations(
     token: &crate::runtime_id::RuntimeLineHandleToken,
 ) -> Result<Vec<RuntimeLocalDeclarationId>, crate::value::ownership::RuntimeAffineLineHandleError> {
     let mut destinations = Vec::new();
-    collect_pattern_handle_destinations(pattern, value.view(), token, &mut destinations)?;
+    collect_pattern_handle_destinations(pattern, value.live_view(), token, &mut destinations)?;
     Ok(destinations)
 }
 
 fn collect_pattern_handle_destinations(
     pattern: &RuntimePattern,
-    value: RuntimeValueView<'_>,
+    value: LiveRuntimeValueView<'_>,
     token: &crate::runtime_id::RuntimeLineHandleToken,
     destinations: &mut Vec<RuntimeLocalDeclarationId>,
 ) -> Result<(), crate::value::ownership::RuntimeAffineLineHandleError> {
@@ -1836,7 +1837,7 @@ fn collect_pattern_handle_destinations(
         RuntimePatternKind::Or(alternatives) => {
             if let Some(selected) = alternatives
                 .iter()
-                .find(|pattern| pattern_matches_view(pattern, value))
+                .find(|pattern| pattern_matches_view(pattern, value.inspect()))
             {
                 collect_pattern_handle_destinations(selected, value, token, destinations)?;
             }
@@ -1853,9 +1854,9 @@ fn collect_pattern_handle_destinations(
             collect_pattern_handle_destinations(pattern, value, token, destinations)?;
         }
         RuntimePatternKind::Tuple(items) => {
-            if let RuntimeValueView::Tuple(values) = value {
+            if let RuntimeValueView::Tuple(_) = value.inspect() {
                 for (index, item) in items.iter().enumerate() {
-                    if let Some(value) = values.get(index) {
+                    if let Some(value) = value.child_at(index) {
                         collect_pattern_handle_destinations(item, value, token, destinations)?;
                     }
                 }
@@ -1869,13 +1870,9 @@ fn collect_pattern_handle_destinations(
             }
             for field in fields {
                 let index = field.field().zero_based() as usize;
-                let nested = match value {
-                    RuntimeValueView::Record(record) => {
-                        record.get(index).map(|(_, _, value)| value)
-                    }
-                    RuntimeValueView::NominalRecord(record) => {
-                        record.fields().get(index).map(RuntimeValue::view)
-                    }
+                let nested = match value.inspect() {
+                    RuntimeValueView::Record(_) => value.child_at(index),
+                    RuntimeValueView::NominalRecord(_) => value.child_at(index),
                     _ => None,
                 };
                 if let Some(value) = nested {
@@ -1889,15 +1886,15 @@ fn collect_pattern_handle_destinations(
             }
         }
         RuntimePatternKind::Sequence { items, rest } => {
-            if let RuntimeValueView::Sequence(values) = value {
+            if let Some(values) = value.sequence() {
                 for (index, item) in items.iter().enumerate() {
-                    if let Some(value) = values.value_view(index) {
+                    if let Some(value) = values.live_value_view(index) {
                         collect_pattern_handle_destinations(item, value, token, destinations)?;
                     }
                 }
                 if let Some(binding) = rest.binding() {
                     for index in items.len()..values.len() {
-                        if let Some(value) = values.value_view(index) {
+                        if let Some(value) = values.live_value_view(index) {
                             if value.contains_line_handle(token)? {
                                 destinations.push(binding.local());
                                 break;
@@ -1911,10 +1908,17 @@ fn collect_pattern_handle_destinations(
             payload: Some(pattern),
             ..
         } => {
-            if let RuntimeValueView::Variant(variant) = value
-                && let Some(value) = variant.payload()
+            if let RuntimeValueView::Variant(variant) = value.inspect()
+                && variant.payload().is_some()
             {
-                collect_pattern_handle_destinations(pattern, value.view(), token, destinations)?;
+                collect_pattern_handle_destinations(
+                    pattern,
+                    value
+                        .child_at(0)
+                        .expect("checked variant retains its child"),
+                    token,
+                    destinations,
+                )?;
             }
         }
         RuntimePatternKind::Discard
@@ -1996,11 +2000,10 @@ fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -
                                 id == field.field() && pattern_matches_view(field.pattern(), value)
                             })
                         }
-                        RuntimeValueView::NominalRecord(record) => {
-                            record.fields().get(index).is_some_and(|value| {
-                                pattern_matches_view(field.pattern(), value.view())
-                            })
-                        }
+                        RuntimeValueView::NominalRecord(record) => record
+                            .fields()
+                            .get(index)
+                            .is_some_and(|value| pattern_matches_view(field.pattern(), value)),
                         _ => false,
                     }
                 })
@@ -2009,7 +2012,10 @@ fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -
             let RuntimeValueView::Sequence(sequence) = value else {
                 return false;
             };
-            if !rest.accepts_len(items.len(), sequence.len()) {
+            if !sequence
+                .len()
+                .is_ok_and(|length| rest.accepts_len(items.len(), length))
+            {
                 return false;
             }
             items.iter().enumerate().all(|(index, pattern)| {
@@ -2023,7 +2029,7 @@ fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -
         } => matches!(value,
         RuntimeValueView::Variant(variant)
             if *ordinal == variant.ordinal() && match (payload.as_deref(), variant.payload()) {
-                (Some(pattern), Some(value)) => pattern_matches_view(pattern, value.view()),
+                (Some(pattern), Some(value)) => pattern_matches_view(pattern, value),
                 (None, None) => true,
                 _ => false,
             }),
@@ -2034,17 +2040,17 @@ fn check_owned_pattern_overlap(
     pattern: &RuntimePattern,
     value: &RuntimeValue,
 ) -> Result<(), RuntimePatternMatchError> {
-    check_owned_pattern_overlap_view(pattern, value.view())
+    check_owned_pattern_overlap_view(pattern, value.live_view())
 }
 
 fn check_owned_pattern_overlap_view(
     pattern: &RuntimePattern,
-    value: RuntimeValueView<'_>,
+    value: LiveRuntimeValueView<'_>,
 ) -> Result<(), RuntimePatternMatchError> {
     match pattern.kind() {
         RuntimePatternKind::Or(alternatives) => alternatives
             .iter()
-            .find(|pattern| pattern_matches_view(pattern, value))
+            .find(|pattern| pattern_matches_view(pattern, value.inspect()))
             .map_or(Ok(()), |pattern| {
                 check_owned_pattern_overlap_view(pattern, value)
             }),
@@ -2065,13 +2071,9 @@ fn check_owned_pattern_overlap_view(
             }
             for field in fields {
                 let index = field.field().zero_based() as usize;
-                let nested = match value {
-                    RuntimeValueView::Record(record) => {
-                        record.get(index).map(|(_, _, value)| value)
-                    }
-                    RuntimeValueView::NominalRecord(record) => {
-                        record.fields().get(index).map(RuntimeValue::view)
-                    }
+                let nested = match value.inspect() {
+                    RuntimeValueView::Record(_) => value.child_at(index),
+                    RuntimeValueView::NominalRecord(_) => value.child_at(index),
                     _ => None,
                 };
                 if let Some(value) = nested {
@@ -2081,22 +2083,22 @@ fn check_owned_pattern_overlap_view(
             Ok(())
         }
         RuntimePatternKind::Tuple(items) => {
-            let RuntimeValueView::Tuple(values) = value else {
+            let RuntimeValueView::Tuple(_) = value.inspect() else {
                 return Ok(());
             };
             for (index, pattern) in items.iter().enumerate() {
-                if let Some(value) = values.get(index) {
+                if let Some(value) = value.child_at(index) {
                     check_owned_pattern_overlap_view(pattern, value)?;
                 }
             }
             Ok(())
         }
         RuntimePatternKind::Sequence { items, .. } => {
-            let RuntimeValueView::Sequence(sequence) = value else {
+            let Some(sequence) = value.sequence() else {
                 return Ok(());
             };
             for (index, pattern) in items.iter().enumerate() {
-                if let Some(value) = sequence.value_view(index) {
+                if let Some(value) = sequence.live_value_view(index) {
                     check_owned_pattern_overlap_view(pattern, value)?;
                 }
             }
@@ -2106,13 +2108,13 @@ fn check_owned_pattern_overlap_view(
             payload: Some(pattern),
             ..
         } => {
-            let RuntimeValueView::Variant(variant) = value else {
+            let RuntimeValueView::Variant(_) = value.inspect() else {
                 return Ok(());
             };
-            let Some(value) = variant.payload() else {
+            let Some(nested) = value.child_at(0) else {
                 return Ok(());
             };
-            check_owned_pattern_overlap_view(pattern, value.view())
+            check_owned_pattern_overlap_view(pattern, nested)
         }
         RuntimePatternKind::Bind { .. }
         | RuntimePatternKind::Typed { .. }

@@ -35,6 +35,9 @@ pub struct RuntimeNeedHandleSaveSnapshot {
 }
 
 impl RuntimeNeedHandleSaveSnapshot {
+    pub(crate) fn outcome(&self) -> &TaskOutcomeContract {
+        &self.spec.outcome
+    }
     pub(crate) const fn correlation(&self) -> TaskCorrelation {
         self.correlation
     }

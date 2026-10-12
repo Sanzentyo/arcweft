@@ -75,7 +75,14 @@ mod view;
 pub(crate) use view::runtime_value_views_equal;
 mod virtual_path;
 
-pub(crate) use view::{RuntimeRecordView, RuntimeScalarView, RuntimeTupleView, RuntimeValueView};
+pub(crate) use view::{
+    LiveRuntimeValueView, RuntimeAgentKind, RuntimeAgentView, RuntimeCallableView,
+    RuntimeCommandListView, RuntimeCommandView, RuntimeDenseNumericView, RuntimeIteratorKind,
+    RuntimeIteratorView, RuntimeNeedView, RuntimeNominalRecordView, RuntimeOpaqueView,
+    RuntimePredicateKind, RuntimePredicateListView, RuntimePredicateView, RuntimeRecordView,
+    RuntimeReductionView, RuntimeScalarView, RuntimeSequenceView, RuntimeTupleView,
+    RuntimeValueSource, RuntimeValueView, RuntimeVariantView,
+};
 
 mod runtime_public_id {
     use arcweft_id::PublicId;

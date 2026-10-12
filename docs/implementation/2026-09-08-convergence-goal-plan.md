@@ -1,4 +1,20 @@
-# 収束作業の再評価と実行 goal — 2026-09-08
+# Arcweft 収束作業の目標と実装記録
+
+## 継続目標
+
+Arcweftの採用済み仕様と全受入条件を満たし、意味解析、実行計画、生成物、Native/AWBC実行、保存復元、Native/Web表示、CLIが一貫した型付きモデルで動作する状態まで収束させる。再帰ジェネリック、異なる後段型を持つ共有prefix、関数値、効果、attached default、source order、capture、停止と復帰を実際の実行で成立させる。
+
+Generic Matchの完全なsemantic transcript、uninhabited-domainの受入、Never/let-elseの継続、exhaustiveな結果だけのatomic publicationを完成させる。retained Viewのoperation・value-slot・captureをproduct・bundle・runtime・replacementへ接続する。NeedとRuntimePlan/task-planの全14 familyで、構築、count/preflight、E14、共通F/Q/C、executable seal、expected-key、View capability、private codecを単一のtyped authorityに統合し、全producer/builder/decoder/consumerを一度のatomic public switchで移行する。構造的nominal型とSans-I/O scheduler・adapter・driverを完成させ、保存復元と置換を失敗原子的に成立させる。
+
+不変条件と状態遷移は正当な所有型に置き、layer方向、Sans-I/O、決定性、Arcweft-owned契約version 1を維持する。値、型instantiation、Need descriptor、frame、sessionの資源上限、元programのidentity、expected-key、capture、layoutを構築や複製より前に検証する。全利用側を最終契約へ揃え、置換されたreader、fallback、重複catalog、仮owner、旧成功経路を除去する。
+
+意味上の依存順に実装し、成立済みの型付き基盤と有効な検証証拠を再利用する。実際のCargo依存graphと推移的reverse dependenciesからnextestの対象を選び、共有契約、codec/golden、公開API、生成物、workspace check/Clippy、必要なdoctest・構造gate・Tier2・最終workspace受入を確認する。実Native/AWBCの停止復帰とNative/Webのcapture・画像parityを検証し、coverage、assertion、実行量、budget、batch、fusion、copy、captureの条件を弱めない。
+
+既存mainでユーザーの変更と検証証拠を保持し、新しいbranch/worktree/checkoutを作成しない。ビルド生成物を移動・コピー・退避しない。設計上の不足は必要な仕様と全利用側を揃えて解決し、外部条件に依存しない作業を継続する。検証済みのcoherentな変更について全差分を確認して通常commitとnon-forced pushを行い、公開commitとblobを照合する。設計判断、検証結果、受入の達成を実装記録に残し、必須実装・検証・移行・旧経路除去・公開がすべて完了した時点でgoalをcompleteにする。
+
+相談とサブエージェントの標準はgpt-6.1-solとする。Astra Maxは、極めて難しい設計に具体的な未解決の不安がある場合だけ、必要な契約・型・失敗経路・検討案に絞った履歴なしcontextで利用する。相談結果は採用仕様、所有境界、実行証拠で確認して実装へ接続する。
+
+## 2026-09-08 計画評価（履歴）
 
 ## 確認した状態
 
@@ -12784,3 +12800,91 @@ Remaining acceptance is not reduced: inert expected-type/encoded-byte admission 
 Published capture resource source/main/origin `770dd994bd3117de5bb996dc5169ccedb23375e3`, parent `7538a4959b8476c11bf111a565b9f94db128b85a`:9 explicit paths/539 insertions/72 deletions. Complete cached48420B/SHA256 `5a30c47040899682df0b87fdb8a116c1f617aa72e13accc00177bd75f6cf75d5` reviewed in complete groups, normal commit/nonforced push; `capture-resource.publication-receipt.json` verifies all9 prepared/cached/local/HEAD/origin blobs, complete commit diff, exact parent, held14 unchanged and empty index. Published production is identical to frozen r6 gates/fullr8; sole contract-test supplement35P and unchanged stdio focused1P are separate evidence. Fresh full5993P88F39ignored remains its actual FAIL receipt; stale affine snapshot expectation is repaired in the supplement, stdio deadline transient remains recorded, original86 causes/acceptance and historical645/277/153 ledgers retained. No aggregate “new full pass” is claimed.
 
 User-requested STOP CUT is complete after this publication receipt note. All actual validation/tool sessions are terminal; no background task is being left running. Goal will be PAUSED at the user's explicit request, not COMPLETE. Resume only on a new user instruction, from this published main checkout with held14/untracked WIP intact. Next implementation is inert expected-type/grammar bytes before construction and complete Need/binding/frame/session/original expected-key/capture/layout admission, followed by the unchanged full acceptance listed above. No cache deletion/relocation, branch/worktree/checkout/main switch, jobs/profile/feature/target/workload/assertion relaxation or further implementation occurs at this stop.
+
+## 2026-10-12（UTC）共通の保存値 admission と型検証の継続
+
+ユーザーの継続指示に従って再開した。上の停止記録と検証履歴は保持する。
+開始時の公開 main は `6d118b011190518c868f212488f746f484719724`。
+目標本文は本記録の冒頭に到達状態・受入基準・進め方として保存し、
+ユーザーが設定した goal と揃えた。以下はこの継続作業の実装・検証記録である。
+
+live/inert の双方が同じ閉じた borrowed value grammar を読む形へ移行した。
+scalar、dense numeric、tuple/record、sequence、nominal、opaque/reduction、
+Agent/predicate、callable、iterator、Need のビューは payload を所有しない。
+Copy・ownership・custody の操作は live-issued capability に置き、inert view
+からの昇格経路を設けていない。Snapshot の資源検証・unrestricted admission・
+line-token inventory を既存 canonical visitor と counting sink へ接続し、
+旧 `visit_graph_bounded` と別個の sequence metadata walker を除去した。
+line-token decoder も借用値を読むため、検証用 live tuple の再構築を除去した。
+
+型検証は既存の Native/AWBC 型表を使う。AWBC の matrix/tensor と双方の
+probe admission の不足を修正し、VM の独立した弱い型判定を既存 AWBC
+admission に統合した。Choice の試行では論理 node を重複計上しない。
+全候補を確認して一意に受け入れた場合だけ制約を採用し、曖昧・不一致・
+資源エラーでは checkpoint と effect obligation を開始前へ戻す。
+値 carrier の nesting 上限と選択された resource policy は維持し、dense
+numeric の scalar atom も元の logical depth 条件で計上する。
+
+実行証拠は `/workspace/convergence-evidence/` に保存した。
+開始時の Core snapshot 22 件は 22 PASS。追加した encoded-byte 上限の
+回帰 2 件、dense Choice の node 計数、Choice 中断時の checkpoint 残留は、
+各修正前の実行で FAIL を再現した。probe の codec/verify/実行は、型判定の
+統合後の Core 実行で FAIL を観測し、admission 修正後の focused 実行で PASS。
+最新の Core library inventory は 1,210 件、同一 all-features・host・test profile
+の実行は 1,210 PASS、0 FAIL、0 skipped（3.602 秒）。
+全受入や workspace 全体の完了を示す結果ではない。
+
+実際の `cargo metadata --all-features --filter-platform
+x86_64-unknown-linux-gnu` から、workspace 97 package 中の Core と推移的
+consumer 49 package を導出した。全 test target の list/build は 32 GiB の
+実行環境で容量不足となり、link 段階で停止したため、その slice の test は
+NOT RUN。条件を変更せず、library と個別 test target の slice へ分ける。
+まず 49 library の inventory/build を進めている。integration/binary target
+と最終 workspace・Tier2 受入は引き続き必要である。
+
+容量回復では、不要な生成済み ELF 12 ファイルを事前列挙した固定絶対パス
+配列で処理した。実絶対パス・regular file・symlink の不在・実行 process の
+不在を再確認し、literal unlink のみを実行した。各削除の不在と利用可能容量を
+照合し、5,927,645,184 byte の回復を確認した。Core の検証 binary、source、
+fixture、候補差分、検証証拠は保持した。移動・コピー・別領域への退避はない。
+手順・列挙・結果は `shared-view-capacity-recovery.json` に記録した。
+
+この変更は未公開。影響範囲の検証・lint・全差分レビューを終えた coherent cut
+で通常 commit/push と公開 blob 照合を行う。inert expected type/provenance、
+完全な binding/Need descriptor bytes、original per-site expected-key・capture・
+layout、frame/whole-session の共有 budget と typed admission seal の接続は
+継続する。Generic Match・構造的 nominal・retained View・task14 の atomic
+switch・scheduler/restore・Native/Web parity・最終受入も冒頭の目標どおり必要。
+goal は未完了であり、小さな cut を作業終了条件にしない。
+
+追加の storage metadata review で、全 column を pending stack へ先に積む経路を
+単一 cursor に置換した。metadata header は source order で work を確認し、
+次の column を確認する前に上限を適用する。対照ケースでは十分な work が
+ある場合だけ後続の column length 不整合を検出する。最新 Core inventory は
+1,211 件、fresh run は 1,211 PASS・0 skipped（3.518 秒）。receipt は
+`shared-cursor-core-r2-run.log`。
+
+49 library の完了した slice は 4,530 件、4,522 PASS・8 FAIL（69.621 秒）。
+8 件は LSP の URI/character definition。7 件は test fixture の Unix absolute
+path に余分な slash を付けた URI と accepted source URI の不一致で、既存
+session test helper へ統合した。1 件は Windows URI の decode 結果を host
+separator に応じた PathBuf で比較する fixture へ修正した。URI、location、
+work replay、generation、partial publication の assertion は保持する。
+変更後の LSP と逆依存全体の検証は未完了。
+
+追加の library/isolated build も容量不足となった。都度 process 終了を確認し、
+事前列挙・実絶対 path/type/link/open descriptor 照合後に固定 literal path の
+incremental cache のみを削除した。各回の一覧と実回復容量は個別 recovery
+receipt に保持し、source/fixture/evidence は保持した。compiler の feature
+unification が異なる slice の結果はその入力として記録し、workspace/full
+受入へ拡大した成功を主張しない。profile・feature・target・jobs・assertion
+の変更、生成物の移動・コピー・別領域退避はない。
+
+最新作業状態は `current-checkpoint.json` に保持した。全実装・受入・公開を
+満たしていないため goal は継続し、変更はまだ commit/push していない。
+
+現在の goal は実行環境の 32 GiB 容量制約による BLOCKED。複数の必須
+逆依存 build が容量不足で停止し、再検証・lint・公開まで完了できていない。
+全受入の完了ではなく、expected-type/Need/frame/session と全体の残実装も
+残る。source と全検証証拠は保持し、動作中の Cargo/tool session はない。
+容量を確保した同一条件の環境で検証と未完の実装・公開を再開する。

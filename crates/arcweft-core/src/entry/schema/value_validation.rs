@@ -301,10 +301,10 @@ impl<'a> SchemaValueValidation<'a> {
             | (Schema::Color, View::Scalar(Scalar::Color(_)))
             | (Schema::Char, View::Scalar(Scalar::Char(_)))
             | (Schema::Duration, View::Scalar(Scalar::Duration(_)))
-            | (Schema::Progress, View::Scalar(Scalar::Progress(_)))
+            | (Schema::Progress, View::Scalar(Scalar::Progress { .. }))
             | (Schema::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
-            (Schema::DenseNumeric(expected), View::RuntimeOnly(value))
-                if value.dense_numeric_type() == Some(*expected) =>
+            (Schema::DenseNumeric(expected), View::DenseNumeric(value))
+                if value.ty() == *expected =>
             {
                 Ok(Children::None)
             }
@@ -318,11 +318,11 @@ impl<'a> SchemaValueValidation<'a> {
                 Ok(Children::Repeated(Expected::Schema(inner)))
             }
             (Schema::Array { item, length }, View::Sequence(actual)) => {
-                if u64::try_from(actual.len()) != Ok(*length) {
+                if u64::try_from(actual.len()?) != Ok(*length) {
                     return Err(Error::ArrayLength {
                         path: "$".to_owned(),
                         expected: *length,
-                        actual: actual.len(),
+                        actual: actual.len()?,
                     });
                 }
                 Ok(Children::Repeated(Expected::Schema(item)))
@@ -351,7 +351,7 @@ impl<'a> SchemaValueValidation<'a> {
             }
             (Schema::ExactOpaque { owner, .. }, View::Opaque(actual)) => {
                 if owner.admission() != RuntimeOpaqueTypeAdmission::ExactIdentity
-                    || !owner.accepts_opaque_value(actual)
+                    || !owner.accepts_opaque_view(actual)
                 {
                     return Err(Error::OpaqueOwner {
                         path: "$".to_owned(),

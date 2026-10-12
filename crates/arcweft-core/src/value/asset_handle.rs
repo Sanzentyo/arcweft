@@ -1,6 +1,9 @@
 //! Typed Core carriers for bundle-owned image and voice resource handles.
 
-use super::{RuntimeOpaqueValueError, RuntimeValue, runtime_sequence_dense_bytes};
+use super::{
+    RuntimeOpaqueValueError, RuntimeScalarView as Scalar, RuntimeValue, RuntimeValueView as View,
+    runtime_sequence_dense_bytes,
+};
 use crate::pattern::{RuntimeOpaqueTypeOwner, runtime_standard_opaque_type};
 use crate::task::GenerationId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
@@ -317,7 +320,7 @@ impl RuntimeImageHandleValue {
         value: &RuntimeValue,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value, "ImageHandle")?;
-        decode_binding(payload).map(Self)
+        decode_binding(payload.view()).map(Self)
     }
 }
 
@@ -340,7 +343,7 @@ impl RuntimeAudioHandleValue {
         value: &RuntimeValue,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value, "AudioHandle")?;
-        decode_binding(payload).map(Self)
+        decode_binding(payload.view()).map(Self)
     }
 }
 
@@ -363,7 +366,7 @@ impl RuntimeAssetErrorValue {
         value: &RuntimeValue,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value, "AssetError")?;
-        decode_failure(payload).map(Self)
+        decode_failure(payload.view()).map(Self)
     }
 }
 
@@ -386,7 +389,7 @@ impl RuntimeVoiceErrorValue {
         value: &RuntimeValue,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value, "VoiceError")?;
-        decode_failure(payload).map(Self)
+        decode_failure(payload.view()).map(Self)
     }
 }
 
@@ -395,7 +398,7 @@ impl RuntimeVoiceErrorValue {
 /// opaque values cannot bypass the typed constructors above.
 pub(crate) fn standard_asset_opaque_payload_is_valid(
     owner: &RuntimeOpaqueTypeOwner,
-    payload: &RuntimeValue,
+    payload: View<'_>,
 ) -> bool {
     standard_asset_role_for_owner(owner).is_none_or(|role| match role {
         RuntimeBundleAssetOpaqueRole::ImageHandle | RuntimeBundleAssetOpaqueRole::AudioHandle => {
@@ -457,15 +460,28 @@ fn encode_binding(binding: &RuntimeBundleAssetBinding) -> RuntimeValue {
 }
 
 fn decode_binding(
-    value: &RuntimeValue,
+    value: View<'_>,
 ) -> Result<RuntimeBundleAssetBinding, RuntimeBundleAssetValueError> {
-    let RuntimeValue::Tuple(fields) = value else {
+    let View::Tuple(fields) = value else {
         return Err(invalid_payload("asset handle"));
     };
-    let [version, generation, artifact, id, content_digest] = fields.as_slice() else {
+    let [
+        Some(version),
+        Some(generation),
+        Some(artifact),
+        Some(id),
+        Some(content_digest),
+    ] = [
+        fields.get(0),
+        fields.get(1),
+        fields.get(2),
+        fields.get(3),
+        fields.get(4),
+    ]
+    else {
         return Err(invalid_payload("asset handle"));
     };
-    if decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
+    if fields.len() != 5 || decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
         return Err(invalid_payload("asset handle"));
     }
     let generation = GenerationId::new(decode_u64(generation)?);
@@ -495,15 +511,30 @@ fn encode_failure(failure: &RuntimeBundleAssetFailure) -> RuntimeValue {
 }
 
 fn decode_failure(
-    value: &RuntimeValue,
+    value: View<'_>,
 ) -> Result<RuntimeBundleAssetFailure, RuntimeBundleAssetValueError> {
-    let RuntimeValue::Tuple(fields) = value else {
+    let View::Tuple(fields) = value else {
         return Err(invalid_payload("asset error"));
     };
-    let [version, generation, artifact, id, reason, content_digest] = fields.as_slice() else {
+    let [
+        Some(version),
+        Some(generation),
+        Some(artifact),
+        Some(id),
+        Some(reason),
+        Some(content_digest),
+    ] = [
+        fields.get(0),
+        fields.get(1),
+        fields.get(2),
+        fields.get(3),
+        fields.get(4),
+        fields.get(5),
+    ]
+    else {
         return Err(invalid_payload("asset error"));
     };
-    if decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
+    if fields.len() != 6 || decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
         return Err(invalid_payload("asset error"));
     }
     let context = RuntimeBundleAssetContext::new(
@@ -518,7 +549,7 @@ fn decode_failure(
 }
 
 fn decode_option_digest(
-    value: &RuntimeValue,
+    value: View<'_>,
 ) -> Result<Option<RuntimeAssetContentDigest>, RuntimeBundleAssetValueError> {
     match value.builtin_variant_case() {
         Some((crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(None),
@@ -561,36 +592,33 @@ fn invalid_payload(role: &'static str) -> RuntimeBundleAssetValueError {
     RuntimeBundleAssetValueError::InvalidPayload { role }
 }
 
-fn decode_u8(value: &RuntimeValue) -> Result<u8, RuntimeBundleAssetValueError> {
+fn decode_u8(value: View<'_>) -> Result<u8, RuntimeBundleAssetValueError> {
     match value {
-        RuntimeValue::UInt(crate::value::RuntimeUInt::U8(value)) => Ok(*value),
+        View::Scalar(Scalar::UInt(crate::value::RuntimeUInt::U8(value))) => Ok(value),
         _ => Err(invalid_payload("bundle asset")),
     }
 }
 
-fn decode_u64(value: &RuntimeValue) -> Result<u64, RuntimeBundleAssetValueError> {
+fn decode_u64(value: View<'_>) -> Result<u64, RuntimeBundleAssetValueError> {
     match value {
-        RuntimeValue::UInt(crate::value::RuntimeUInt::U64(value)) => Ok(*value),
+        View::Scalar(Scalar::UInt(crate::value::RuntimeUInt::U64(value))) => Ok(value),
         _ => Err(invalid_payload("bundle asset")),
     }
 }
 
-fn decode_string(value: &RuntimeValue) -> Result<&str, RuntimeBundleAssetValueError> {
+fn decode_string(value: View<'_>) -> Result<&str, RuntimeBundleAssetValueError> {
     match value {
-        RuntimeValue::String(value) => Ok(value),
+        View::Scalar(Scalar::String(value)) => Ok(value),
         _ => Err(invalid_payload("bundle asset")),
     }
 }
 
-fn decode_digest(value: &RuntimeValue) -> Result<[u8; 32], RuntimeBundleAssetValueError> {
-    let RuntimeValue::Seq(sequence) = value else {
+fn decode_digest(value: View<'_>) -> Result<[u8; 32], RuntimeBundleAssetValueError> {
+    let View::Sequence(sequence) = value else {
         return Err(invalid_payload("bundle asset digest"));
     };
-    if sequence.dense_kind() != Some(super::DenseSeqKind::Bytes) {
-        return Err(invalid_payload("bundle asset digest"));
-    }
     sequence
-        .as_bytes()
+        .dense_bytes()
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
         .ok_or_else(|| invalid_payload("bundle asset digest"))
 }

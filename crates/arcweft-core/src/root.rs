@@ -1136,10 +1136,8 @@ fn validate_replay_safe_view(
         {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
-        RuntimeValueView::Scalar(RuntimeScalarView::Progress(value))
-            if value
-                .label()
-                .is_some_and(|label| !limits.permits_string_bytes(label.len())) =>
+        RuntimeValueView::Scalar(RuntimeScalarView::Progress { label, .. })
+            if label.is_some_and(|label| !limits.permits_string_bytes(label.len())) =>
         {
             Err("replay-safe progress label exceeds string byte budget".to_owned())
         }
@@ -1153,10 +1151,10 @@ fn validate_replay_safe_view(
             Ok(())
         }
         RuntimeValueView::Sequence(values) => {
-            if !limits.permits_sequence_items(values.len()) {
+            if !limits.permits_sequence_items(values.len().map_err(|error| error.to_string())?) {
                 return Err("replay-safe payload exceeds sequence item budget".to_owned());
             }
-            for index in 0..values.len() {
+            for index in 0..values.len().map_err(|error| error.to_string())? {
                 let value = values
                     .value_view(index)
                     .ok_or_else(|| "replay-safe payload has an invalid sequence item".to_owned())?;
@@ -1184,8 +1182,8 @@ fn validate_replay_safe_view(
             if !limits.permits_sequence_items(record.fields().len()) {
                 return Err("replay-safe payload exceeds nominal field budget".to_owned());
             }
-            for field in record.fields() {
-                validate_replay_safe_value(field, limits, depth + 1, nodes)?;
+            for field in record.fields().iter() {
+                validate_replay_safe_view(field, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
@@ -1193,22 +1191,31 @@ fn validate_replay_safe_view(
         RuntimeValueView::Reduction(value) => {
             validate_replay_safe_reduction(value, limits, depth, nodes)
         }
-        RuntimeValueView::Agent(value) => {
-            validate_replay_safe_agent_value(value, limits, depth, nodes)
-        }
+        RuntimeValueView::Agent(value) => validate_replay_safe_agent_value(
+            value
+                .live_value()
+                .ok_or_else(|| "replay-safe Agent validation requires its live value".to_owned())?,
+            limits,
+            depth,
+            nodes,
+        ),
         RuntimeValueView::Variant(variant) => {
             if let Some(payload) = variant.payload() {
-                validate_replay_safe_value(payload, limits, depth + 1, nodes)?;
+                validate_replay_safe_view(payload, limits, depth + 1, nodes)?;
             }
             Ok(())
         }
-        RuntimeValueView::RuntimeOnly(_) => Err("runtime-only value is not replay-safe".to_owned()),
+        RuntimeValueView::DenseNumeric(_)
+        | RuntimeValueView::Range(_)
+        | RuntimeValueView::Iterator(_)
+        | RuntimeValueView::Need(_)
+        | RuntimeValueView::Callable(_) => Err("runtime-only value is not replay-safe".to_owned()),
         RuntimeValueView::Scalar(_) => Ok(()),
     }
 }
 
 fn validate_replay_safe_opaque(
-    value: &crate::value::RuntimeOpaqueValue,
+    value: crate::value::RuntimeOpaqueView<'_>,
     limits: RuntimeSchemaLimits,
     depth: usize,
     nodes: &mut usize,
@@ -1221,11 +1228,11 @@ fn validate_replay_safe_opaque(
     {
         return Err("non-constant opaque value is not replay-safe".to_owned());
     }
-    validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
+    validate_replay_safe_view(value.payload(), limits, depth + 1, nodes)
 }
 
 fn validate_replay_safe_reduction(
-    value: &RuntimeReductionValue,
+    value: crate::value::RuntimeReductionView<'_>,
     limits: RuntimeSchemaLimits,
     depth: usize,
     nodes: &mut usize,
@@ -1236,8 +1243,8 @@ fn validate_replay_safe_reduction(
     if !limits.permits_sequence_items(value.commands().len()) {
         return Err("replay-safe Reduction exceeds command item budget".to_owned());
     }
-    validate_replay_safe_value(value.state(), limits, depth + 1, nodes)?;
-    for command in value.commands() {
+    validate_replay_safe_view(value.state(), limits, depth + 1, nodes)?;
+    for command in value.commands().iter() {
         if !limits.permits_string_bytes(command.constructor().as_str().len())
             || !limits.permits_string_bytes(command.target().as_str().len())
         {
@@ -1245,7 +1252,7 @@ fn validate_replay_safe_reduction(
                 "replay-safe Reduction command identity exceeds string byte budget".to_owned(),
             );
         }
-        validate_replay_safe_value(&command.payload().0, limits, depth + 2, nodes)?;
+        validate_replay_safe_view(command.payload(), limits, depth + 2, nodes)?;
     }
     Ok(())
 }

@@ -574,6 +574,47 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
         )
         .is_err()
     );
+    let RuntimeValue::Tuple(fields) = &value else {
+        unreachable!()
+    };
+    let oversized = RuntimeValue::Tuple(vec![
+        fields[0].clone(),
+        RuntimeValue::String(
+            "x".repeat(
+                usize::try_from(
+                    crate::entry::RuntimeSchemaLimits::engine_default().max_string_bytes,
+                )
+                .unwrap()
+                    + 1,
+            ),
+        ),
+    ]);
+    RuntimeFunctionEffectInstantiation::with_value_relation(
+        plan.as_ref(),
+        Some(&binding),
+        |context| {
+            let before = context.matcher.predicate.clone();
+            assert!(matches!(
+                plan.inventory
+                    .validate_value_relation(expected, oversized.view(), context),
+                Err(crate::plan::RuntimePlanValueAdmissionError::Value {
+                    source: crate::entry::RuntimeSchemaError::BudgetExceeded {
+                        budget: "string_bytes"
+                    },
+                    ..
+                })
+            ));
+            assert!(
+                context.choices.is_empty(),
+                "hard failure must release every Choice checkpoint"
+            );
+            assert_eq!(
+                context.matcher.predicate, before,
+                "failed admission preserves effect obligations"
+            );
+        },
+    )
+    .unwrap();
 }
 
 #[test]

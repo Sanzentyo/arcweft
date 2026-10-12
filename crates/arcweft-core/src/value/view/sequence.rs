@@ -1,0 +1,92 @@
+//! Physical storage metadata and logical rows share one borrowed sequence.
+
+mod metadata;
+
+use super::super::{RuntimeSeq, awbc_save::AwbcRuntimeSeqSnapshot};
+use super::{RuntimeRecordView, RuntimeTupleView, RuntimeValueView};
+use crate::entry::{
+    RuntimeSchemaError,
+    schema::value_budget::{ValidationWork, ValueBudget},
+};
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RuntimeSequenceView<'a> {
+    Live(&'a RuntimeSeq),
+    Snapshot(&'a AwbcRuntimeSeqSnapshot),
+}
+
+impl<'a> RuntimeSequenceView<'a> {
+    pub(crate) fn all(self, mut predicate: impl FnMut(RuntimeValueView<'a>) -> bool) -> bool {
+        self.len().is_ok_and(|length| {
+            (0..length).all(|index| self.value_view(index).is_some_and(&mut predicate))
+        })
+    }
+    pub(crate) fn dense_bytes(self) -> Option<&'a [u8]> {
+        match self {
+            Self::Live(v) if v.dense_kind() == Some(super::super::DenseSeqKind::Bytes) => {
+                v.as_bytes()
+            }
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(super::super::DenseSeq::Bytes(v))) => {
+                Some(v.as_slice())
+            }
+            _ => None,
+        }
+    }
+    pub(crate) fn byte_storage(self) -> Option<&'a [u8]> {
+        match self {
+            Self::Live(value) => value.as_bytes(),
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(value)) => value.as_bytes(),
+            _ => None,
+        }
+    }
+    pub(crate) fn len(self) -> Result<usize, RuntimeSchemaError> {
+        match self {
+            Self::Live(v) => Ok(v.len()),
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(v)) => Ok(v.len()),
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(v)) => Ok(v.len()),
+            Self::Snapshot(
+                AwbcRuntimeSeqSnapshot::TupleColumns { len, .. }
+                | AwbcRuntimeSeqSnapshot::RecordColumns { len, .. },
+            ) => usize::try_from(*len).map_err(|_| RuntimeSchemaError::Encoding {
+                message: "snapshot sequence length exceeds the selected target width".to_owned(),
+            }),
+        }
+    }
+    pub(crate) fn value_view(self, index: usize) -> Option<RuntimeValueView<'a>> {
+        if index >= self.len().ok()? {
+            return None;
+        }
+        Some(match self {
+            Self::Live(v) => v.value_view(index)?,
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(v)) => v.get(index)?.view(),
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(v)) => {
+                RuntimeValueView::Scalar(v.scalar_view(index)?)
+            }
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::TupleColumns { columns, .. }) => {
+                RuntimeValueView::Tuple(RuntimeTupleView::SnapshotColumns {
+                    columns,
+                    row: index,
+                })
+            }
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::RecordColumns { fields, .. }) => {
+                RuntimeValueView::Record(RuntimeRecordView::SnapshotColumns { fields, row: index })
+            }
+        })
+    }
+    fn column_length_error() -> RuntimeSchemaError {
+        RuntimeSchemaError::Encoding {
+            message: "snapshot column length does not match its row inventory".to_owned(),
+        }
+    }
+    fn record_error(error: super::super::RuntimeRecordAdmissionError) -> RuntimeSchemaError {
+        RuntimeSchemaError::Encoding {
+            message: error.to_string(),
+        }
+    }
+    pub(super) const fn live_value(self) -> Option<&'a RuntimeSeq> {
+        match self {
+            Self::Live(v) => Some(v),
+            Self::Snapshot(_) => None,
+        }
+    }
+}

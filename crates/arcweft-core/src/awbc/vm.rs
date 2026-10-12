@@ -36,13 +36,14 @@ use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeAgentValue, RuntimeArcError, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
-    RuntimeArcErrorContextStart, RuntimeArcErrorFrame, RuntimeCallableApplication,
-    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableMaterializedArgument,
-    RuntimeCallableValue, RuntimeDialogueContentValue, RuntimeFieldValue,
-    RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeReductionValue,
-    RuntimeScalarView, RuntimeSeq, RuntimeValue, RuntimeValueView, evaluate_binary, evaluate_unary,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+    LiveRuntimeValueView, RuntimeAgentValue, RuntimeArcError, RuntimeArcErrorContextKind,
+    RuntimeArcErrorContextPending, RuntimeArcErrorContextStart, RuntimeArcErrorFrame,
+    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
+    RuntimeCallableMaterializedArgument, RuntimeCallableValue, RuntimeDialogueContentValue,
+    RuntimeFieldValue, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue,
+    RuntimeReductionValue, RuntimeScalarView, RuntimeSeq, RuntimeValue, RuntimeValueView,
+    evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_value_label,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -914,7 +915,7 @@ fn execute_instruction(
                     program,
                     Some(fiber.active_frame()?),
                     *pattern,
-                    value_ref.view(),
+                    value_ref.live_view(),
                     0,
                     &mut |target, value| {
                         let value = value.copy_unrestricted().ok_or_else(|| {
@@ -4452,7 +4453,7 @@ fn test_pattern_view(
                                     program,
                                     frame,
                                     field.pattern,
-                                    value.view(),
+                                    value,
                                     depth + 1,
                                 )? {
                                     matched = false;
@@ -4467,7 +4468,9 @@ fn test_pattern_view(
         }
         AwbcPattern::Sequence { items, rest } => match value {
             RuntimeValueView::Sequence(sequence)
-                if rest.accepts_len(items.len(), sequence.len()) =>
+                if sequence
+                    .len()
+                    .is_ok_and(|length| rest.accepts_len(items.len(), length)) =>
             {
                 let mut matched = true;
                 for (index, pattern) in items.iter().enumerate() {
@@ -4503,7 +4506,7 @@ fn test_pattern_view(
                     match (payload, variant.payload()) {
                         (None, None) => true,
                         (Some(pattern), Some(value)) => {
-                            test_pattern_view(program, frame, *pattern, value.view(), depth + 1)?
+                            test_pattern_view(program, frame, *pattern, value, depth + 1)?
                         }
                         _ => false,
                     }
@@ -4518,197 +4521,21 @@ fn test_pattern_view(
     })
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "borrowed AWBC type admission mirrors the single runtime type table without materializing affine rows"
-)]
+/// Uses the executable type authority for borrowed frame and capture values.
 pub(crate) fn runtime_value_view_matches_type(
     program: &AwbcProgram,
     value: RuntimeValueView<'_>,
     ty: AwbcTypeId,
     depth: usize,
 ) -> bool {
-    if depth > 64 {
-        return false;
-    }
-    let Some(ty_row) = program.runtime_types.get(ty.index()) else {
+    let Some(remaining_depth) = 64_usize.checked_sub(depth) else {
         return false;
     };
-    if matches!(
-        ty_row.shape(),
-        AwbcRuntimeTypeShape::AgentValue | AwbcRuntimeTypeShape::Variant { .. }
-    ) {
-        return program
-            .validate_live_value_view(
-                ty,
-                value,
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            )
-            .is_ok();
-    }
-    match (value, ty_row.shape()) {
-        (RuntimeValueView::Reduction(value), AwbcRuntimeTypeShape::Opaque { arguments, .. }) => {
-            program.opaque_owner(ty).ok().flatten().is_some_and(|owner| {
-                owner == *value.owner()
-                    && arguments.len() == 1
-                    && runtime_value_view_matches_type(
-                        program,
-                        value.state().view(),
-                        arguments[0],
-                        depth + 1,
-                    )
-            })
-        }
-        (RuntimeValueView::RuntimeOnly(RuntimeValue::NeedHandle(need)), AwbcRuntimeTypeShape::Need(item)) => {
-            program.runtime_types.get(item.index()).is_some_and(|ty|
-                ty.semantic_identity() == need.outcome().payload_semantic_identity())
-        }
-        (_, AwbcRuntimeTypeShape::Dynamic)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Unit), AwbcRuntimeTypeShape::Unit)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Bool(_)), AwbcRuntimeTypeShape::Bool)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::F32(_)), AwbcRuntimeTypeShape::F32)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::F64(_)), AwbcRuntimeTypeShape::F64)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::String(_)), AwbcRuntimeTypeShape::String)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::String(_)), AwbcRuntimeTypeShape::Task(_))
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Color(_)), AwbcRuntimeTypeShape::Color)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Char(_)), AwbcRuntimeTypeShape::Char)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), AwbcRuntimeTypeShape::Duration)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::Progress(_)), AwbcRuntimeTypeShape::Progress)
-        | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), AwbcRuntimeTypeShape::EntityRef)
-        | (RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF32(_)), AwbcRuntimeTypeShape::MatrixF32)
-        | (RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF64(_)), AwbcRuntimeTypeShape::MatrixF64)
-        | (RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF32(_)), AwbcRuntimeTypeShape::TensorF32)
-        | (RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF64(_)), AwbcRuntimeTypeShape::TensorF64) => true,
-        (RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(value)), AwbcRuntimeTypeShape::Function { .. }) => {
-            matches!(value.owner(), RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program))
-                && value.function_type().ok().and_then(|identity| program.runtime_types.iter().position(|candidate| candidate.semantic_identity() == identity)).and_then(|index| u32::try_from(index).ok()).is_some_and(|actual| program.types_compatible(ty, AwbcTypeId(actual)))
-                && value.validate_retained().is_ok()
-        }
-        (RuntimeValueView::Agent(value), AwbcRuntimeTypeShape::Agent(expected)) => {
-            value.operational_type() == expected.operational_type()
-        }
-        (RuntimeValueView::Record(_), AwbcRuntimeTypeShape::Agent(expected)) => {
-            expected.operational_type().accepts_protocol_record()
-        }
-        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Bytes) => {
-            (0..values.len()).all(|index| matches!(values.value_view(index), Some(RuntimeValueView::Scalar(RuntimeScalarView::UInt(value))) if value.width() == crate::value::RuntimeUnsignedIntWidth::U8))
-        }
-        (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), AwbcRuntimeTypeShape::Int(kind)) => {
-            signed_kind(value) == *kind
-        }
-        (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), AwbcRuntimeTypeShape::UInt(kind)) => {
-            unsigned_kind(value) == *kind
-        }
-        (RuntimeValueView::Opaque(value), AwbcRuntimeTypeShape::Opaque { .. }) => program
-            .opaque_owner(ty)
-            .ok()
-            .flatten()
-            .is_some_and(|owner| owner.accepts_opaque_value(value)),
-        (RuntimeValueView::Tuple(values), AwbcRuntimeTypeShape::Tuple(types)) => {
-            values.len() == types.len()
-                && types.iter().enumerate().all(|(index, ty)| {
-                    values.get(index).is_some_and(|value| {
-                        runtime_value_view_matches_type(program, value, *ty, depth + 1)
-                    })
-                })
-        }
-        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Sequence { item, .. }) => {
-            (0..values.len()).all(|index| values.value_view(index).is_some_and(|value| {
-                runtime_value_view_matches_type(program, value, *item, depth + 1)
-            }))
-        }
-        (RuntimeValueView::Sequence(values), AwbcRuntimeTypeShape::Array { item, length }) => {
-            length.constant().and_then(|length| usize::try_from(length).ok()) == Some(values.len())
-                && (0..values.len()).all(|index| values.value_view(index).is_some_and(|value| {
-                    runtime_value_view_matches_type(program, value, *item, depth + 1)
-                }))
-        }
-        (RuntimeValueView::Record(values), AwbcRuntimeTypeShape::Record { fields, .. }) => {
-            values.len() == fields.len()
-                && fields.iter().enumerate().all(|(index, field)| {
-                    values.get(index).is_some_and(|(_, _, value)| {
-                        runtime_value_view_matches_type(program, value, field.ty, depth + 1)
-                    })
-                })
-        }
-        (value, AwbcRuntimeTypeShape::Choice(alternatives)) => alternatives
-            .iter()
-            .any(|alternative| runtime_value_view_matches_type(program, value, *alternative, depth + 1)),
-        (RuntimeValueView::NominalRecord(record), AwbcRuntimeTypeShape::Nominal { public_id, layout, .. }) => {
-            program.strings.get(public_id.index()).is_some_and(|expected| record.type_id().as_str() == expected)
-                && record.layout().as_bytes() == layout
-        }
-        (RuntimeValueView::NominalRecord(record), AwbcRuntimeTypeShape::NominalRecord { .. }) => program
-            .validate_live_value_view(ty, RuntimeValueView::NominalRecord(record), crate::entry::RuntimeSchemaLimits::engine_default())
-            .is_ok(),
-        (RuntimeValueView::RuntimeOnly(RuntimeValue::Range(range)), AwbcRuntimeTypeShape::Range(item)) => {
-            use crate::value::RuntimeRange;
-            match range {
-                RuntimeRange::Int { start, end, .. } => {
-                    (start.is_some() || end.is_some())
-                        && start.is_none_or(|value| {
-                            runtime_value_view_matches_type(
-                                program,
-                                RuntimeValueView::Scalar(RuntimeScalarView::Int(value)),
-                                *item,
-                                depth + 1,
-                            )
-                        })
-                        && end.is_none_or(|value| {
-                            runtime_value_view_matches_type(
-                                program,
-                                RuntimeValueView::Scalar(RuntimeScalarView::Int(value)),
-                                *item,
-                                depth + 1,
-                            )
-                        })
-                }
-                RuntimeRange::UInt { start, end, .. } => {
-                    (start.is_some() || end.is_some())
-                        && start.is_none_or(|value| {
-                            runtime_value_view_matches_type(
-                                program,
-                                RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)),
-                                *item,
-                                depth + 1,
-                            )
-                        })
-                        && end.is_none_or(|value| {
-                            runtime_value_view_matches_type(
-                                program,
-                                RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)),
-                                *item,
-                                depth + 1,
-                            )
-                        })
-                }
-            }
-        }
-        (RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(_)), AwbcRuntimeTypeShape::Iterator { .. }) => true,
-        _ => false,
-    }
-}
-
-fn signed_kind(value: crate::value::RuntimeInt) -> AwbcSignedIntKind {
-    match value.width() {
-        crate::value::RuntimeSignedIntWidth::I8 => AwbcSignedIntKind::I8,
-        crate::value::RuntimeSignedIntWidth::I16 => AwbcSignedIntKind::I16,
-        crate::value::RuntimeSignedIntWidth::I32 => AwbcSignedIntKind::I32,
-        crate::value::RuntimeSignedIntWidth::I64 => AwbcSignedIntKind::I64,
-        crate::value::RuntimeSignedIntWidth::I128 => AwbcSignedIntKind::I128,
-        crate::value::RuntimeSignedIntWidth::ISize => AwbcSignedIntKind::ISize,
-    }
-}
-
-fn unsigned_kind(value: crate::value::RuntimeUInt) -> AwbcUnsignedIntKind {
-    match value.width() {
-        crate::value::RuntimeUnsignedIntWidth::U8 => AwbcUnsignedIntKind::U8,
-        crate::value::RuntimeUnsignedIntWidth::U16 => AwbcUnsignedIntKind::U16,
-        crate::value::RuntimeUnsignedIntWidth::U32 => AwbcUnsignedIntKind::U32,
-        crate::value::RuntimeUnsignedIntWidth::U64 => AwbcUnsignedIntKind::U64,
-        crate::value::RuntimeUnsignedIntWidth::U128 => AwbcUnsignedIntKind::U128,
-        crate::value::RuntimeUnsignedIntWidth::USize => AwbcUnsignedIntKind::USize,
-    }
+    let limits = crate::entry::RuntimeSchemaLimits {
+        max_depth: u32::try_from(remaining_depth).expect("remaining depth fits u32"),
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    };
+    program.validate_live_value_view(ty, value, limits).is_ok()
 }
 
 pub(crate) fn bind_pattern_owned(
@@ -4763,7 +4590,7 @@ pub(crate) fn prepare_pattern_binding(
         program,
         Some(fiber.active_frame()?),
         pattern,
-        value.view(),
+        value.live_view(),
         0,
         &mut |register, view| {
             let slot =
@@ -4774,7 +4601,7 @@ pub(crate) fn prepare_pattern_binding(
                         register: register.0,
                         layout: frame.layout.0,
                     })?;
-            if !frame.value_view_matches_type(program, view, slot.ty) {
+            if !frame.value_view_matches_type(program, view.inspect(), slot.ty) {
                 return Err(VmError::Runtime(format!(
                     "pattern target register {} rejects the projected value type",
                     register.0
@@ -5024,7 +4851,7 @@ pub(crate) fn pattern_handle_destinations(
         program,
         Some(fiber.active_frame()?),
         pattern,
-        value.view(),
+        value.live_view(),
         0,
         &mut |register, view| {
             if view
@@ -5073,9 +4900,9 @@ fn visit_pattern_bindings_view(
     program: &AwbcProgram,
     frame: Option<&FiberFrame>,
     pattern: AwbcPatternId,
-    value: RuntimeValueView<'_>,
+    value: LiveRuntimeValueView<'_>,
     depth: usize,
-    visitor: &mut impl FnMut(AwbcRegisterId, RuntimeValueView<'_>) -> Result<(), VmError>,
+    visitor: &mut impl FnMut(AwbcRegisterId, LiveRuntimeValueView<'_>) -> Result<(), VmError>,
 ) -> Result<(), VmError> {
     if depth > 1024 {
         return Err(VmError::Runtime("pattern depth exceeded".to_owned()));
@@ -5087,7 +4914,7 @@ fn visit_pattern_bindings_view(
     match row {
         AwbcPattern::Or(alternatives) => {
             for alternative in alternatives {
-                if test_pattern_view(program, frame, *alternative, value, depth + 1)? {
+                if test_pattern_view(program, frame, *alternative, value.inspect(), depth + 1)? {
                     return visit_pattern_bindings_view(
                         program,
                         frame,
@@ -5103,11 +4930,11 @@ fn visit_pattern_bindings_view(
         AwbcPattern::Bind { target, .. } => visitor(*target, value),
         AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => Ok(()),
         AwbcPattern::Tuple(patterns) => {
-            let RuntimeValueView::Tuple(values) = value else {
+            let RuntimeValueView::Tuple(_) = value.inspect() else {
                 return Err(VmError::PatternMismatch);
             };
             for (index, pattern) in patterns.iter().enumerate() {
-                let value = values.get(index).ok_or(VmError::PatternMismatch)?;
+                let value = value.child_at(index).ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(program, frame, *pattern, value, depth + 1, visitor)?;
             }
             Ok(())
@@ -5127,17 +4954,15 @@ fn visit_pattern_bindings_view(
                 }
                 visitor(*register, value)?;
             }
-            let RuntimeValueView::Record(values) = value else {
-                return if matches!(value, RuntimeValueView::NominalRecord(_)) {
-                    let RuntimeValueView::NominalRecord(record) = value else {
+            let RuntimeValueView::Record(values) = value.inspect() else {
+                return if matches!(value.inspect(), RuntimeValueView::NominalRecord(_)) {
+                    let RuntimeValueView::NominalRecord(_) = value.inspect() else {
                         unreachable!()
                     };
                     for field in fields {
-                        let nested = record
-                            .fields()
-                            .get(field.field as usize)
-                            .ok_or(VmError::PatternMismatch)?
-                            .view();
+                        let nested = value
+                            .child_at(field.field as usize)
+                            .ok_or(VmError::PatternMismatch)?;
                         visit_pattern_bindings_view(
                             program,
                             frame,
@@ -5153,12 +4978,15 @@ fn visit_pattern_bindings_view(
                 };
             };
             for field in fields {
-                let (identity, _, nested) = values
+                let (identity, _, _) = values
                     .get(field.field as usize)
                     .ok_or(VmError::PatternMismatch)?;
                 if identity.zero_based() != field.field {
                     return Err(VmError::PatternMismatch);
                 }
+                let nested = value
+                    .child_at(field.field as usize)
+                    .ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(
                     program,
                     frame,
@@ -5171,32 +4999,29 @@ fn visit_pattern_bindings_view(
             Ok(())
         }
         AwbcPattern::Sequence { items, rest } => {
-            let RuntimeValueView::Sequence(values) = value else {
+            let Some(values) = value.sequence() else {
                 return Err(VmError::PatternMismatch);
             };
             for (index, pattern) in items.iter().enumerate() {
-                let nested = values.value_view(index).ok_or(VmError::PatternMismatch)?;
+                let nested = values
+                    .live_value_view(index)
+                    .ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
             }
             if let AwbcPatternRest::Bind(register) = rest {
                 for index in items.len()..values.len() {
-                    let nested = values.value_view(index).ok_or(VmError::PatternMismatch)?;
+                    let nested = values
+                        .live_value_view(index)
+                        .ok_or(VmError::PatternMismatch)?;
                     visitor(*register, nested)?;
                 }
             }
             Ok(())
         }
         AwbcPattern::Variant { payload, .. } => {
-            if let (Some(pattern), RuntimeValueView::Variant(variant)) = (payload, value) {
-                let value = variant.payload().ok_or(VmError::PatternMismatch)?;
-                visit_pattern_bindings_view(
-                    program,
-                    frame,
-                    *pattern,
-                    value.view(),
-                    depth + 1,
-                    visitor,
-                )?;
+            if let (Some(pattern), RuntimeValueView::Variant(_)) = (payload, value.inspect()) {
+                let nested = value.child_at(0).ok_or(VmError::PatternMismatch)?;
+                visit_pattern_bindings_view(program, frame, *pattern, nested, depth + 1, visitor)?;
             }
             Ok(())
         }
@@ -5273,7 +5098,7 @@ pub(crate) fn validate_function_input_ownership_values(
             program,
             None,
             pattern,
-            value.view(),
+            value.live_view(),
             0,
             &mut |register, projected| {
                 if required.contains(&register) {

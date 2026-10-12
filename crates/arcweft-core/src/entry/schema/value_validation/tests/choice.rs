@@ -47,6 +47,49 @@ fn unique_choice_emits_one_value_and_charges_every_alternative() {
 }
 
 #[test]
+fn dense_choice_charges_logical_elements_once_and_preserves_exact_byte_limit() {
+    use crate::math::{DenseMatrixF32, RuntimeDenseNumericType, RuntimeFloatWidth};
+    let value = RuntimeValue::MatrixF32(DenseMatrixF32::new(1, 2, vec![1.25, 2.5]).unwrap());
+    let schema = choice(vec![
+        Schema::DenseNumeric(RuntimeDenseNumericType::Matrix(RuntimeFloatWidth::F32)),
+        Schema::Bool,
+    ]);
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 3,
+        max_depth: 2,
+        max_sequence_items: 2,
+        max_encoded_bytes: u64::try_from(bytes(&value).len()).unwrap(),
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    assert_eq!(
+        schema.validate_value(&value, limits).unwrap(),
+        value.try_digest(limits.platform_encoded_bytes()).unwrap()
+    );
+    assert!(matches!(
+        schema.validate_value(
+            &value,
+            RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..limits
+            }
+        ),
+        Err(Error::BudgetExceeded { budget: "nodes" })
+    ));
+    assert!(matches!(
+        schema.validate_value(
+            &value,
+            RuntimeSchemaLimits {
+                max_encoded_bytes: limits.max_encoded_bytes - 1,
+                ..limits
+            }
+        ),
+        Err(Error::BudgetExceeded {
+            budget: "encoded_bytes"
+        })
+    ));
+}
+
+#[test]
 fn choice_reports_ordered_nested_mismatches() {
     let schema = choice(vec![
         Schema::Tuple(vec![Schema::Bool].into_boxed_slice()),

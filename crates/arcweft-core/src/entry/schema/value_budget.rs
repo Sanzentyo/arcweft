@@ -112,8 +112,8 @@ impl ValueBudget {
     pub(crate) fn shape(&self, value: RuntimeValueView<'_>) -> Result<(), RuntimeSchemaError> {
         match value {
             RuntimeValueView::Scalar(RuntimeScalarView::String(text)) => self.string(text)?,
-            RuntimeValueView::Scalar(RuntimeScalarView::Progress(progress)) => {
-                if let Some(label) = progress.label() {
+            RuntimeValueView::Scalar(RuntimeScalarView::Progress { label, .. }) => {
+                if let Some(label) = label {
                     self.string(label)?;
                 }
             }
@@ -141,6 +141,10 @@ impl ValueBudget {
                     self.string(&line.canonical_label())?
                 }
             },
+            RuntimeValueView::DenseNumeric(value) => {
+                self.collection(value.rank())?;
+                self.collection(value.len())?;
+            }
             RuntimeValueView::Tuple(tuple) => self.collection(tuple.len())?,
             RuntimeValueView::Record(record) => {
                 self.collection(record.len())?;
@@ -151,7 +155,7 @@ impl ValueBudget {
                     self.string(name)?;
                 }
             }
-            RuntimeValueView::Sequence(sequence) => self.collection(sequence.len())?,
+            RuntimeValueView::Sequence(sequence) => self.collection(sequence.len()?)?,
             RuntimeValueView::NominalRecord(record) => {
                 self.string(record.type_id().as_str())?;
                 self.collection(record.fields().len())?;
@@ -160,7 +164,7 @@ impl ValueBudget {
             RuntimeValueView::Reduction(value) => {
                 self.string(value.owner().producer().as_str())?;
                 self.collection(value.commands().len())?;
-                for command in value.commands() {
+                for command in value.commands().iter() {
                     self.string(command.constructor().as_str())?;
                     self.string(command.target().as_str())?;
                 }
@@ -177,7 +181,11 @@ impl ValueBudget {
                 // Agent strings and structural predicate nodes are checked by
                 // the same iterative visitor that emits their canonical atoms.
             }
-            RuntimeValueView::Scalar(_) | RuntimeValueView::RuntimeOnly(_) => {}
+            RuntimeValueView::Scalar(_)
+            | RuntimeValueView::Range(_)
+            | RuntimeValueView::Iterator(_)
+            | RuntimeValueView::Need(_)
+            | RuntimeValueView::Callable(_) => {}
         }
         Ok(())
     }

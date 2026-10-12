@@ -310,6 +310,8 @@ impl RuntimeSchemaLimits {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RuntimeSchemaError {
+    #[error(transparent)]
+    ValueNesting(#[from] crate::value::RuntimeValueNestingError),
     #[error("runtime builtin variant at `{path}` has owner {actual:?}, expected {expected:?}")]
     BuiltinVariantOwner {
         path: String,
@@ -569,8 +571,7 @@ pub(crate) fn validate_runtime_snapshot_value(
     value: &RuntimeValue,
     limits: RuntimeSchemaLimits,
 ) -> Result<(), RuntimeSchemaError> {
-    let mut validation = value_encoding::NoSchemaValidation::snapshot_resources(limits);
-    value_encoding::validate_snapshot(value, limits, &mut validation, ())
+    value_encoding::preflight_snapshot_view(value.view(), limits, None).map(|_| ())
 }
 
 pub(crate) fn canonical_runtime_value_digest(
@@ -924,14 +925,10 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                 self.u8(9)?;
                 self.u64(value.as_nanos())
             }
-            Scalar::Progress(value) => {
+            Scalar::Progress { ratio, label } => {
                 self.u8(19)?;
-                self.fixed_u32(if value.ratio() == 0.0 {
-                    0
-                } else {
-                    value.ratio().to_bits()
-                })?;
-                self.option(value.label(), Self::string)
+                self.fixed_u32(if ratio == 0.0 { 0 } else { ratio.to_bits() })?;
+                self.option(label, Self::string)
             }
             Scalar::EntityRef(value) => {
                 self.u8(10)?;

@@ -439,9 +439,13 @@ impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
         }
         self.matcher.predicate = choice.before.clone();
     }
-    fn finish_choice(&mut self) {
+    fn finish_choice(&mut self, admitted: bool) {
         let choice = self.choices.pop().expect("active value Choice");
-        self.matcher.predicate = choice.selected.unwrap_or(choice.before);
+        self.matcher.predicate = if admitted {
+            choice.selected.unwrap_or(choice.before)
+        } else {
+            choice.before
+        };
     }
 }
 impl AwbcProgram {

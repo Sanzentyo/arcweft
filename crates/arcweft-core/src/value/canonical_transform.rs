@@ -271,9 +271,13 @@ mod tests {
         let super::super::view::RuntimeValueView::Variant(borrowed) = value.view() else {
             unreachable!()
         };
-        assert!(std::ptr::eq(borrowed, original));
+        assert!(
+            std::ptr::eq(borrowed.owner(), original.owner())
+                && borrowed.ordinal() == original.ordinal()
+                && borrowed.name() == original.name()
+        );
         let copied = value
-            .view()
+            .live_view()
             .copy_unrestricted()
             .expect("unrestricted borrowed variant");
         assert_eq!(copied, value);
@@ -332,6 +336,6 @@ mod tests {
             Err(RuntimeValueMergeError::Affine)
         ));
         assert!(!value.ownership().permits_copy());
-        assert!(value.view().copy_unrestricted().is_none());
+        assert!(value.live_view().copy_unrestricted().is_none());
     }
 }

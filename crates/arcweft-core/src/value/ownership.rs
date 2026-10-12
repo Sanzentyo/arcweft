@@ -155,7 +155,7 @@ impl RuntimeValue {
             | Self::Range(_)
             | Self::EntityRef(_) => RuntimeValueOwnership::Unrestricted,
             Self::NeedHandle(_) => RuntimeValueOwnership::Affine,
-            Self::Iterator(iterator) => iterator_ownership(iterator),
+            Self::Iterator(iterator) => iterator.ownership(),
             Self::Tuple(values) => values_ownership(values),
             Self::Seq(sequence) => sequence.ownership(),
             Self::Record(fields) => fields
@@ -453,11 +453,13 @@ impl RuntimeSeq {
     }
 }
 
-fn iterator_ownership(iterator: &RuntimeIterator) -> RuntimeValueOwnership {
-    match iterator {
-        RuntimeIterator::Values { items } => values_ownership(items),
-        RuntimeIterator::Range(_) => RuntimeValueOwnership::Unrestricted,
-        RuntimeIterator::Witness(witness) => witness.state().ownership(),
+impl RuntimeIterator {
+    pub(crate) fn ownership(&self) -> RuntimeValueOwnership {
+        match self {
+            Self::Values { items } => values_ownership(items),
+            Self::Range(_) => RuntimeValueOwnership::Unrestricted,
+            Self::Witness(witness) => witness.state().ownership(),
+        }
     }
 }
 

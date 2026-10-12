@@ -1,3 +1,4 @@
+use super::tests::file_uri;
 use super::*;
 
 use arcweft_lang_sema::character_definition::{
@@ -11,7 +12,7 @@ use lsp_types::{
 };
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -421,11 +422,6 @@ fn position_of(source: &str, needle: &str) -> Position {
         u32::try_from(line).expect("line"),
         u32::try_from(character).expect("character"),
     )
-}
-
-fn file_uri(path: &Path) -> Uri {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    format!("file:///{normalized}").parse().expect("file URI")
 }
 
 fn character_manifest() -> &'static str {

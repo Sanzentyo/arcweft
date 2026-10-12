@@ -41,6 +41,122 @@ fn color_values_are_admitted_only_by_the_awbc_color_type() {
     assert!(admits(&program, 1, &color).is_err());
 }
 
+#[test]
+fn dense_numeric_admission_preserves_kind_width_and_snapshot_bits_for_both_owners() {
+    use crate::math::{
+        RuntimeDenseNumericElements as Elements, RuntimeDenseNumericPayload,
+        RuntimeDenseNumericType as Dense, RuntimeFloatWidth as Width,
+    };
+    use crate::plan::{
+        RuntimePlanBuilder, RuntimePlanTypeProjection as Projection, RuntimePlanTypeSeed,
+    };
+    let types = [
+        Dense::Matrix(Width::F32),
+        Dense::Matrix(Width::F64),
+        Dense::Tensor(Width::F32),
+        Dense::Tensor(Width::F64),
+    ];
+    let program = program(types.map(Type::from));
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            types.iter().enumerate().map(|(index, ty)| {
+                RuntimePlanTypeSeed::new(
+                    program.runtime_types[index].semantic_identity(),
+                    Projection::DenseNumeric(*ty),
+                )
+            }),
+            [],
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    let limits = RuntimeSchemaLimits::engine_default();
+    for (index, ty) in types.into_iter().enumerate() {
+        for finite in [true, false] {
+            let elements = match ty.scalar_width() {
+                Width::F32 => Elements::F32(vec![
+                    (-0.0_f32).to_bits(),
+                    if finite {
+                        1.25_f32.to_bits()
+                    } else {
+                        0x7fc0_0042
+                    },
+                ]),
+                Width::F64 => Elements::F64(vec![
+                    (-0.0_f64).to_bits(),
+                    if finite {
+                        1.25_f64.to_bits()
+                    } else {
+                        0x7ff8_0000_0000_0042
+                    },
+                ]),
+            };
+            let payload = RuntimeDenseNumericPayload::try_new(ty, vec![1, 2], elements).unwrap();
+            let value = RuntimeValue::try_from(&payload).unwrap();
+            for expected in 0..types.len() {
+                let semantic = program.runtime_types[expected].semantic_identity();
+                let native = plan.type_table().id_for_semantic(semantic).unwrap();
+                let awbc = AwbcTypeId(u32::try_from(expected).unwrap());
+                assert_eq!(
+                    program.validate_live_value(awbc, &value, limits).is_ok(),
+                    expected == index
+                );
+                assert_eq!(
+                    plan.validate_live_value(native, &value, limits).is_ok(),
+                    expected == index
+                );
+                assert_eq!(
+                    program
+                        .validate_snapshot_value(awbc, &value, limits)
+                        .is_ok(),
+                    expected == index
+                );
+                assert_eq!(
+                    plan.validate_snapshot_value(native, &value, limits).is_ok(),
+                    expected == index
+                );
+                assert_eq!(
+                    admits(&program, awbc.0, &value).is_ok(),
+                    expected == index && finite
+                );
+                assert_eq!(
+                    plan.accepts_value(native, &value, limits).is_ok(),
+                    expected == index && finite
+                );
+                assert_eq!(
+                    crate::entry::RuntimeTypeSchema::DenseNumeric(types[expected])
+                        .validate_value(&value, limits)
+                        .is_ok(),
+                    expected == index && finite
+                );
+                assert_eq!(
+                    crate::awbc::vm::runtime_value_view_matches_type(
+                        &program,
+                        value.view(),
+                        awbc,
+                        0,
+                    ),
+                    expected == index
+                );
+            }
+            for owner in [
+                RuntimeProgramOwner::Plan(std::sync::Arc::new(plan.clone())),
+                RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone())),
+            ] {
+                let image = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    &value, &owner,
+                )
+                .unwrap();
+                let restored = image.into_runtime_value_for_program(&owner).unwrap();
+                assert_eq!(
+                    RuntimeDenseNumericPayload::try_from(&restored).unwrap(),
+                    payload
+                );
+            }
+        }
+    }
+}
+
 fn range_programs() -> (AwbcProgram, crate::plan::RuntimePlan) {
     use crate::plan::{
         RuntimePlanBuilder, RuntimePlanTypeProjection as Projection, RuntimePlanTypeSeed,
