@@ -14,6 +14,8 @@ mod owner;
 mod owner_tests;
 mod part;
 mod replacement;
+mod snapshot;
+pub(crate) use snapshot::BundleViewRuntimeSaveSnapshot;
 mod style_scope;
 mod value;
 
@@ -459,10 +461,10 @@ impl BundleViewFrame {
     }
 }
 
-/// Exact persisted state for the View runtime owned by one bundle session.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// In-memory state for the View runtime owned by one bundle session.
+/// Session saves project its values through the selected runtime program.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BundleViewRuntimeSnapshot {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program_id: Option<ViewProgramId>,
     pub logical_time: FxLogicalTime,
     pub next_mount_id: u64,
@@ -471,8 +473,8 @@ pub struct BundleViewRuntimeSnapshot {
     pub axis_seeds: BundleViewAxisSeedRegistrySnapshot,
 }
 
-/// Exact persisted state for one root or nested mounted View occurrence.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// In-memory state for one root or nested mounted View occurrence.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BundleViewMountRuntimeSnapshot {
     pub handle: PresentationHandleId,
     pub path: BundleViewInstancePath,
@@ -488,8 +490,7 @@ pub struct BundleViewMountRuntimeSnapshot {
 }
 
 /// Exact typed retained value at one structural occurrence of a declaration.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BundleViewStateFieldSnapshot {
     pub path: BundleViewInstancePath,
     pub field: arcweft_view::ViewStateFieldId,

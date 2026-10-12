@@ -45,10 +45,10 @@ use arcweft_core::{
         RuntimeProgramOwner, TaskClass, TaskPolicy, TaskPriority,
     },
     value::{
-        RuntimeAssetContentDigest, RuntimeBinding, RuntimeBundleAssetArtifactDigest,
-        RuntimeBundleAssetBinding, RuntimeBundleAssetContext, RuntimeBundleAssetOpaqueRole,
-        RuntimeBundleAssetResourceId, RuntimeCallableValue, RuntimeEntityReference,
-        RuntimeImageHandleValue, RuntimeLocalReadMode, RuntimeValue,
+        RuntimeAssetContentDigest, RuntimeBundleAssetArtifactDigest, RuntimeBundleAssetBinding,
+        RuntimeBundleAssetContext, RuntimeBundleAssetOpaqueRole, RuntimeBundleAssetResourceId,
+        RuntimeCallableValue, RuntimeEntityReference, RuntimeImageHandleValue,
+        RuntimeLocalReadMode, RuntimeValue,
     },
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, LocaleTag};
@@ -428,7 +428,7 @@ fn default_session_import_requires_catalog_validator_for_asset_handles() {
     );
     let before = session.snapshot_session().expect("live snapshot exports");
     let save =
-        session_save_with_view_binding(&session, image_handle_for_bytes(b"saved image bytes"));
+        session_save_with_view_binding(&session, &image_handle_for_bytes(b"saved image bytes"));
 
     let error = session
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
@@ -458,7 +458,7 @@ fn supplied_session_value_validator_rejects_forged_asset_digest_before_commit() 
     );
     let before = session.snapshot_session().expect("live snapshot exports");
     let save =
-        session_save_with_view_binding(&session, image_handle_for_bytes(b"forged image bytes"));
+        session_save_with_view_binding(&session, &image_handle_for_bytes(b"forged image bytes"));
     let catalog_digest = RuntimeAssetContentDigest::try_for_bytes(b"catalog image bytes")
         .expect("catalog digest fits");
     let mut saw_image = false;
@@ -929,6 +929,79 @@ fn awbc_save_load_preserves_cleanup_stacks() {
             .executor,
         snapshot.executor
     );
+}
+
+#[test]
+fn session_view_wire_requires_strict_axis_seed_registry_atomically() {
+    assert_eq!(BUNDLE_SESSION_SAVE_SCHEMA_VERSION, 1);
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session.snapshot_session().expect("live snapshot");
+    let original = exported_session_json(&session);
+    let mut missing = original.clone();
+    missing["view_runtime"]
+        .as_object_mut()
+        .unwrap()
+        .remove("axis_seeds");
+    let mut unknown = original.clone();
+    unknown["view_runtime"]["axis_seeds"]["unknown"] = serde_json::json!(true);
+    for candidate in [missing, unknown] {
+        let error = session
+            .import_session_save_bytes(
+                &encode_session_json_value(&candidate),
+                &arcweft_save::SaveDecodeOptions::default(),
+            )
+            .expect_err("invalid inert View wire rejects");
+        assert!(
+            matches!(error, BundleSessionSaveError::Decode { .. }),
+            "{error:?}"
+        );
+        assert_eq!(
+            session.snapshot_session().expect("unchanged live state"),
+            before
+        );
+        assert_eq!(exported_session_json(&session), original);
+    }
+}
+
+#[test]
+fn session_view_wire_rebinds_callable_capture_and_rejects_unknown_state_atomically() {
+    let bytes = callable_product_awfb_bytes();
+    let session = product_session_from_bytes(&bytes);
+    let original_owner = session.program_owner();
+    let save = session_save_with_view_binding(
+        &session,
+        &captured_awbc_runtime_callable_value(original_owner.clone()),
+    );
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("program-bound View capture imports");
+    let before = restored.snapshot_session().expect("restored snapshot");
+    let RuntimeValue::Callable(callable) = &before.view_runtime.view_root_bindings[0].value else {
+        panic!("View binding retains the callable");
+    };
+    assert!(callable.owner().same_program(&restored.program_owner()));
+    assert!(!callable.owner().same_program(&original_owner));
+    assert_eq!(
+        callable.retained(),
+        &[RuntimeValue::String("saved value".to_owned())]
+    );
+    let original_wire = exported_session_json(&restored);
+    let mut invalid = original_wire.clone();
+    invalid["view_runtime"]["view_root_bindings"][0]["value"]["Callable"]["state"] =
+        serde_json::to_value(RuntimeCallableStateId::from_zero_based(1).unwrap()).unwrap();
+    restored
+        .import_session_save_bytes(
+            &encode_session_json_value(&invalid),
+            &arcweft_save::SaveDecodeOptions::default(),
+        )
+        .expect_err("absent callable state rejects before publication");
+    assert_eq!(
+        restored.snapshot_session().expect("unchanged snapshot"),
+        before
+    );
+    assert_eq!(exported_session_json(&restored), original_wire);
 }
 
 #[test]
@@ -1518,13 +1591,16 @@ fn encode_session_json_value(value: &serde_json::Value) -> Vec<u8> {
     .expect("save envelope encodes")
 }
 
-fn session_save_with_view_binding(session: &BundleSession, value: RuntimeValue) -> Vec<u8> {
+fn session_save_with_view_binding(session: &BundleSession, value: &RuntimeValue) -> Vec<u8> {
     let mut payload = exported_session_json(session);
-    payload["view_runtime"]["view_root_bindings"] = serde_json::to_value([RuntimeBinding {
-        name: "asset-image".to_owned(),
+    let value = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
         value,
-    }])
-    .expect("view runtime binding serializes");
+        &session.program_owner(),
+    )
+    .expect("binding projects through the actual session program");
+    payload["view_runtime"]["view_root_bindings"] = serde_json::json!([
+        { "name": "asset-image", "value": value }
+    ]);
     encode_session_json_value(&payload)
 }
 

@@ -6,7 +6,7 @@
 
 use crate::display::BundlePresentationSnapshot;
 use crate::task::RuntimeTaskStatus;
-use crate::view_runtime::BundleViewRuntimeSnapshot;
+use crate::view_runtime::{BundleViewRuntimeSaveSnapshot, BundleViewRuntimeSnapshot};
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_character::presentation_name::CharacterPresentationSemanticDigest;
@@ -65,7 +65,7 @@ pub(crate) struct BundleSessionSavePayload {
     pub executor: BundleSessionExecutorSavePayload,
     pub presentation: BundlePresentationSnapshot,
     pub view_virtualization: ViewVirtualizationSnapshot,
-    pub view_runtime: BundleViewRuntimeSnapshot,
+    pub view_runtime: BundleViewRuntimeSaveSnapshot,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -76,7 +76,10 @@ pub(crate) struct BundleSessionExecutorSavePayload {
 }
 
 impl BundleSessionSavePayload {
-    pub(crate) fn from_snapshot(snapshot: &BundleSessionSnapshot) -> Result<Self, String> {
+    pub(crate) fn from_snapshot(
+        snapshot: &BundleSessionSnapshot,
+        program_owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         Ok(Self {
             generation: snapshot.generation.clone(),
             active_locale: snapshot.active_locale.clone(),
@@ -90,13 +93,16 @@ impl BundleSessionSavePayload {
             },
             presentation: snapshot.presentation.clone(),
             view_virtualization: snapshot.view_virtualization.clone(),
-            view_runtime: snapshot.view_runtime.clone(),
+            view_runtime: BundleViewRuntimeSaveSnapshot::from_live(
+                &snapshot.view_runtime,
+                program_owner,
+            )?,
         })
     }
 
     pub(crate) fn into_snapshot(
         self,
-        _program_owner: &RuntimeProgramOwner,
+        program_owner: &RuntimeProgramOwner,
     ) -> Result<BundleSessionSnapshot, String> {
         Ok(BundleSessionSnapshot {
             generation: self.generation,
@@ -111,7 +117,7 @@ impl BundleSessionSavePayload {
             },
             presentation: self.presentation,
             view_virtualization: self.view_virtualization,
-            view_runtime: self.view_runtime,
+            view_runtime: self.view_runtime.into_live(program_owner)?,
         })
     }
 }

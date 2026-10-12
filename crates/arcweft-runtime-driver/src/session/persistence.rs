@@ -275,8 +275,9 @@ impl BundleSession {
 
     pub fn export_session_save_bytes(&self) -> Result<Vec<u8>, BundleSessionSaveError> {
         let snapshot = self.snapshot_session()?;
-        let payload = BundleSessionSavePayload::from_snapshot(&snapshot)
-            .map_err(|message| BundleSessionSaveError::Encode { message })?;
+        let payload =
+            BundleSessionSavePayload::from_snapshot(&snapshot, &self.executor.program_owner())
+                .map_err(|message| BundleSessionSaveError::Encode { message })?;
         arcweft_save::encode_typed_json_save(
             &payload,
             arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),

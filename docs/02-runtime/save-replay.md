@@ -74,6 +74,14 @@ Arcweft が所有する save・snapshot・codec の contract version は `1`。
 未公開の内部形式は同じ version のまま更新し、旧形式の reader や migration 経路を
 並置しない。host 内の worker 寿命証拠は保存形式に含めない。
 
+retained View の root binding・mount parameter・local state は、選択された
+runtime program の既存 Core value snapshot に投影して保存する。JSON decode
+では live value を構築せず、artifact/generation の照合後に同じ program authority
+で復元する。callable state と capture は復元先の immutable executable に束縛し、
+nominal header はその型グラフで検証する。View の in-memory snapshot に独立の
+serde reader を残さず、mount identity・型付き slot・axis seed の検証を既存 View
+restore で実行してから session を公開する。
+
 Product の queued `Ready` は、保持された task admission の完全な correlation から
 outcome を選び、既存の `BoundTaskOutcome` で検証してから保存・復元結果を公開する。
 program outcome は選択中の immutable executable に束縛し、standalone outcome は

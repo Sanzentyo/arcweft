@@ -218,34 +218,6 @@ fn handle(id: &str, view: &str) -> PresentationHandleRecord {
 }
 
 #[test]
-fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
-    assert_eq!(
-        arcweft_runtime_driver::session_save::BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-        1,
-        "the final dialogue-content generation identity is a breaking unpublished save schema"
-    );
-    let runtime = BundleViewRuntime::try_new(None, None, None).unwrap();
-    let snapshot = runtime.snapshot().unwrap();
-    let mut missing = serde_json::to_value(&snapshot).unwrap();
-    missing.as_object_mut().unwrap().remove("axis_seeds");
-    assert!(
-        serde_json::from_value::<arcweft_runtime_driver::view_runtime::BundleViewRuntimeSnapshot>(
-            missing
-        )
-        .is_err()
-    );
-
-    let mut unknown = serde_json::to_value(snapshot).unwrap();
-    unknown["axis_seeds"]["unknown"] = serde_json::json!(true);
-    assert!(
-        serde_json::from_value::<arcweft_runtime_driver::view_runtime::BundleViewRuntimeSnapshot>(
-            unknown
-        )
-        .is_err()
-    );
-}
-
-#[test]
 fn view_identity_catalog_preserves_host_views_and_registers_arcweft_definitions() {
     let host = ViewId::try_new("view.host.public").unwrap();
     let authored = ViewId::try_new("view.Authored").unwrap();
@@ -1902,7 +1874,14 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
         &mount.owner,
         SavedViewOwner::Arcweft { revision, .. } if revision == accepted_revision
     )));
-    let persisted = serde_json::to_string(&snapshot).unwrap();
+    let persisted = serde_json::to_string(
+        &snapshot
+            .mounts
+            .iter()
+            .map(|mount| &mount.owner)
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
     assert!(!persisted.contains("\"registry\""));
     assert!(!persisted.contains("\"definition\""));
     assert!(!persisted.contains("\"rust\""));
