@@ -568,6 +568,7 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub active_choice: Option<AwbcProductActiveChoiceSnapshot>,
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
     pub started_tasks: BTreeSet<TaskId>,
+    #[serde(with = "task_publication::rows")]
     pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
     pub need_publications: Vec<AwbcNeedPublicationSaveSnapshot>,
     pub need_producers: AwbcNeedProducerRegistrySaveSnapshot,
@@ -1592,7 +1593,13 @@ impl AwbcProductExecutorSaveSnapshot {
             queued_task_events: snapshot
                 .queued_task_events
                 .iter()
-                .map(|event| AwbcProductTaskEventSaveSnapshot::from_live(event, owner))
+                .map(|event| {
+                    AwbcProductTaskEventSaveSnapshot::from_live(
+                        event,
+                        owner,
+                        snapshot.need_producers.task_outcome(event.correlation),
+                    )
+                })
                 .collect::<Result<VecDeque<_>, _>>()
                 .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?,
             emitted_content: snapshot.emitted_content.clone(),
@@ -1620,6 +1627,15 @@ impl AwbcProductExecutorSaveSnapshot {
         if need_publications.len() != need_publication_count {
             return Err("Need publication snapshot contains duplicate waiter/Need rows".to_owned());
         }
+        let need_producers = restore_need_producer_registry(self.need_producers, owner)?;
+        let queued_task_events = self
+            .queued_task_events
+            .into_iter()
+            .map(|event| {
+                let outcome = need_producers.task_outcome(event.correlation);
+                event.into_live(owner, outcome)
+            })
+            .collect::<Result<VecDeque<_>, _>>()?;
         Ok(AwbcProductExecutorSnapshot {
             runtime_generation: self.runtime_generation,
             fiber: self.fiber,
@@ -1642,12 +1658,8 @@ impl AwbcProductExecutorSaveSnapshot {
             started_tasks: self.started_tasks,
             task_publications: self.task_publications,
             need_publications,
-            need_producers: restore_need_producer_registry(self.need_producers, owner)?,
-            queued_task_events: self
-                .queued_task_events
-                .into_iter()
-                .map(|event| event.into_live(owner))
-                .collect::<Result<VecDeque<_>, _>>()?,
+            need_producers,
+            queued_task_events,
             emitted_content: self.emitted_content,
             stream_sequences: self.stream_sequences,
             next_generation: self.next_generation,
@@ -1921,9 +1933,27 @@ pub struct AwbcProductPendingHostCallSnapshot {
 
 fn validate_task_publications(
     snapshot: &AwbcProductExecutorSnapshot,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<(), AwbcProductStepBuildError> {
     let mut queued_through = BTreeMap::<TaskId, TaskPublicationCursor>::new();
     for event in &snapshot.queued_task_events {
+        if let crate::task::TaskEventKind::Ready(value) = &event.kind {
+            let outcome = snapshot
+                .need_producers
+                .task_outcome(event.correlation)
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "queued Ready has no exact admitted task correlation".to_owned(),
+                })?
+                .bind_for_value(owner)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+            outcome.validate_value(value.value()).map_err(|error| {
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
+        }
         let cursor = TaskPublicationCursor::from_event(event);
         if queued_through
             .insert(event.correlation.task_id.clone(), cursor)
@@ -2086,7 +2116,13 @@ impl AwbcProductStepExecutor {
         let queued_task_events = self
             .queued_task_events
             .iter()
-            .map(|event| AwbcProductTaskEventSaveSnapshot::from_live(event, owner))
+            .map(|event| {
+                AwbcProductTaskEventSaveSnapshot::from_live(
+                    event,
+                    owner,
+                    self.need_producers.task_outcome(event.correlation),
+                )
+            })
             .collect::<Result<VecDeque<_>, _>>()
             .map_err(invalid)?;
         Ok(AwbcProductExecutorSaveSnapshot {
@@ -3495,7 +3531,10 @@ impl AwbcProductStepExecutor {
                     .to_owned(),
             });
         }
-        validate_task_publications(snapshot)?;
+        validate_task_publications(
+            snapshot,
+            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+        )?;
         Ok(observations)
     }
 

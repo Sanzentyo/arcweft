@@ -2032,6 +2032,87 @@ fn save_snapshot_preserves_queued_progress_publications() {
 }
 
 #[test]
+fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
+    let mut executor = AwbcProductStepExecutor::for_entry(return_program(), AwbcEntryId(0), 64)
+        .expect("product executor starts");
+    let submission = executor
+        .need_producers
+        .ensure_task(crate::tests::task_spec(
+            crate::task::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::String),
+            crate::task::HostTaskRequest::custom("fixture", "queued-ready", []),
+        ))
+        .unwrap();
+    let event = TaskEvent {
+        correlation: submission.handle().correlation,
+        cursor: crate::task::TaskPublicationCursor {
+            logical_epoch: LogicalEpoch(7),
+            sequence: TaskSequence(1),
+        },
+        kind: TaskEventKind::Ready(RuntimeValue::String("retained".to_owned()).into()),
+    };
+    let mut output = crate::step::RuntimeStepOutput::default();
+    executor.latch_task_events(vec![event.clone()], &mut output);
+    assert!(output.diagnostics.is_empty());
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor), &owner)
+        .expect("queued Ready snapshots");
+    let before = serde_json::to_vec(&saved).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<AwbcProductExecutorSaveSnapshot>(&before).unwrap(),
+        saved
+    );
+    let mut wire = serde_json::to_value(&saved).unwrap();
+    let row = wire["task_publications"][0].clone();
+    wire["task_publications"].as_array_mut().unwrap().push(row);
+    assert!(serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(wire.clone()).is_err());
+    wire["task_publications"] = serde_json::json!({});
+    assert!(serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(wire).is_err());
+    let restored = saved.clone().into_live_for_program(&owner).unwrap();
+    assert_eq!(
+        restored.queued_task_events,
+        std::collections::VecDeque::from([event])
+    );
+
+    for edit in 0..4 {
+        let mut forged = saved.clone();
+        match edit {
+            0 => {
+                forged.queued_task_events.front_mut().unwrap().kind =
+                    super::AwbcProductTaskEventKindSaveSnapshot::Ready(
+                        crate::value::AwbcRuntimeValueSnapshot::Bool(true),
+                    );
+            }
+            1 => {
+                forged
+                    .queued_task_events
+                    .front_mut()
+                    .unwrap()
+                    .correlation
+                    .generation = GenerationId::new(999);
+            }
+            2 => forged.need_producers.task_admissions.clear(),
+            _ => {
+                let row = forged.need_producers.task_admissions[0].clone();
+                forged.need_producers.task_admissions.push(row);
+            }
+        }
+        assert!(
+            forged.into_live_for_program(&owner).is_err(),
+            "queued Ready edit {edit} must reject before publishing a live snapshot"
+        );
+        assert_eq!(
+            serde_json::to_vec(
+                &AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor), &owner)
+                    .unwrap()
+            )
+            .unwrap(),
+            before,
+            "failed candidate restore leaves the live executor unchanged"
+        );
+    }
+}
+
+#[test]
 fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
     let program = return_program();
     let original = program.flow_bindings[0].flow.clone();

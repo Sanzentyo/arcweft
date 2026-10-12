@@ -74,6 +74,17 @@ Arcweft が所有する save・snapshot・codec の contract version は `1`。
 未公開の内部形式は同じ version のまま更新し、旧形式の reader や migration 経路を
 並置しない。host 内の worker 寿命証拠は保存形式に含めない。
 
+Product の queued `Ready` は、保持された task admission の完全な correlation から
+outcome を選び、既存の `BoundTaskOutcome` で検証してから保存・復元結果を公開する。
+program outcome は選択中の immutable executable に束縛し、standalone outcome は
+既存の有限 predicate を使う。欠落・不一致・重複 admission は復元を拒否する。
+この検証は inert save と直接の live snapshot restore の両方に適用する。
+
+固定 byte-array atom の `TaskId` を JSON object key にしない。
+`task_publications` の version `1` JSON は、task identity の昇順の
+`[TaskId, TaskPublicationCursor]` row 配列として保存する。
+decode は重複・順序逆転・旧 object grammar を拒否し、別の reader を残さない。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

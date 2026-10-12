@@ -1173,6 +1173,21 @@ pub struct NeedProducerRegistryRestore {
     pub launch_frontiers: Vec<NeedProducerLaunchFrontier>,
 }
 
+impl NeedProducerRegistryRestore {
+    pub(crate) fn task_outcome(
+        &self,
+        correlation: TaskCorrelation,
+    ) -> Option<&super::TaskOutcomeContract> {
+        let mut matches = self
+            .task_admissions
+            .iter()
+            .filter(|row| row.task_id() == correlation.task_id);
+        let row = matches.next()?;
+        (row.handle().correlation == correlation && matches.next().is_none())
+            .then_some(&row.spec().outcome)
+    }
+}
+
 /// In-memory rollback representation of a producer registry. Every runtime
 /// argument and Ready payload is inert until the prior live owner is gone.
 #[derive(Clone, Debug, PartialEq)]
@@ -1824,6 +1839,15 @@ impl NeedProducerRegistry {
 
     pub fn task_admissions(&self) -> impl Iterator<Item = TaskSubmission> + '_ {
         self.task_journal.submissions()
+    }
+
+    pub(crate) fn task_outcome(
+        &self,
+        correlation: TaskCorrelation,
+    ) -> Option<&super::TaskOutcomeContract> {
+        self.task_journal
+            .accepted_spec(super::TaskHandle { correlation })
+            .map(|spec| &spec.outcome)
     }
 
     pub(crate) fn ensure_task_with_publication(

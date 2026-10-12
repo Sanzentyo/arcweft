@@ -157,6 +157,20 @@ impl PartialEq for BoundTaskSpec {
 }
 
 impl TaskOutcomeContract {
+    /// Bind the exact retained outcome for value persistence. A standalone
+    /// predicate stays standalone; a program coordinate keeps the selected lease.
+    pub(crate) fn bind_for_value(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<BoundTaskOutcome, TaskOutcomeBindingError> {
+        match self {
+            Self::Standalone { .. } => self.bind_standalone(),
+            Self::Program { .. } => {
+                self.bind_program(owner.clone(), RuntimeSchemaLimits::engine_default())
+            }
+        }
+    }
+
     pub(crate) fn standalone_contract_is_valid(&self) -> bool {
         let Self::Standalone { payload } = self else {
             return false;
