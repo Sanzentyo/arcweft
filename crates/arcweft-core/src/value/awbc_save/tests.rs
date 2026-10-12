@@ -22,6 +22,160 @@ use crate::{
 };
 
 #[test]
+fn unrestricted_restore_rejects_nested_affine_values_before_any_live_constructor() {
+    let leaf = AwbcRuntimeValueSnapshot::from_standalone_value(&RuntimeValue::NeedHandle(
+        crate::tests::reusable_need("need.inert-preflight"),
+    ))
+    .unwrap();
+    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+    let opaque = AwbcRuntimeOpaqueSnapshot {
+        producer: super::super::RuntimeHandleKind::Cue.try_producer().unwrap(),
+        semantic_identity: semantic(99),
+        value_class: super::super::RuntimeOpaqueValueClass::AffineHandle(
+            super::super::RuntimeHandleKind::Cue,
+        ),
+        persistence: super::super::RuntimeOpaquePersistence::SnapshotOnly,
+        payload: Box::new(AwbcRuntimeValueSnapshot::Unit),
+    };
+    for owner in owners() {
+        let values = [
+            leaf.clone(),
+            AwbcRuntimeValueSnapshot::Tuple(vec![leaf.clone()]),
+            AwbcRuntimeValueSnapshot::Record(vec![AwbcRuntimeFieldSnapshot {
+                field,
+                name: "child".into(),
+                value: leaf.clone(),
+            }]),
+            AwbcRuntimeValueSnapshot::NominalRecord(AwbcRuntimeNominalRecordSnapshot {
+                type_id: RuntimeNominalTypeId::try_new("snapshot.Record").unwrap(),
+                semantic_identity: semantic(1),
+                layout: TypeLayoutHash::from_bytes([0; 32]),
+                type_instantiation: None,
+                fields: vec![AwbcRuntimeNominalFieldSnapshot {
+                    field,
+                    value: leaf.clone(),
+                }],
+            }),
+            AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::Values(vec![leaf.clone()])),
+            AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::TupleColumns {
+                len: 1,
+                columns: vec![AwbcRuntimeSeqSnapshot::Values(vec![leaf.clone()])],
+            }),
+            AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::RecordColumns {
+                len: 1,
+                fields: vec![AwbcRuntimeRecordSeqFieldSnapshot {
+                    field,
+                    name: "child".into(),
+                    values: AwbcRuntimeSeqSnapshot::Values(vec![leaf.clone()]),
+                }],
+            }),
+            AwbcRuntimeValueSnapshot::Iterator(AwbcRuntimeIteratorSnapshot::Values {
+                items: vec![leaf.clone()],
+            }),
+            AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
+                state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained: vec![leaf.clone()],
+            }),
+            AwbcRuntimeValueSnapshot::Agent(AwbcRuntimeAgentSnapshot::Predicate(
+                AwbcRuntimeAgentPredicateSnapshot::Compare {
+                    probe: RuntimeAgentProbe::Signal {
+                        target: RuntimeCommandTargetId::try_new("signal.test").unwrap(),
+                    },
+                    op: RuntimeAgentCompareOp::Eq,
+                    value: Box::new(leaf.clone()),
+                },
+            )),
+            AwbcRuntimeValueSnapshot::Opaque(opaque.clone()),
+            AwbcRuntimeValueSnapshot::Tuple(vec![AwbcRuntimeValueSnapshot::Opaque(opaque.clone())]),
+        ];
+        for value in values {
+            assert_eq!(
+                value.into_unrestricted_runtime_value_for_program(&owner),
+                Err(AwbcRuntimeValueSnapshotError::AffineValue),
+                "affine admission must precede nominal/callable/opaque construction"
+            );
+        }
+    }
+}
+
+#[test]
+fn inert_restore_checks_complete_nesting_before_live_construction() {
+    for owner in owners() {
+        let mut valid = AwbcRuntimeValueSnapshot::Bool(true);
+        for _ in 0..super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            valid = AwbcRuntimeValueSnapshot::Tuple(vec![valid]);
+        }
+        let restored = valid
+            .clone()
+            .into_unrestricted_runtime_value_for_program(&owner)
+            .unwrap();
+        restored
+            .validate_nesting_depth(super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH)
+            .unwrap();
+        let invalid = AwbcRuntimeValueSnapshot::Tuple(vec![valid]);
+        assert!(matches!(
+            invalid.into_runtime_value_for_program(&owner),
+            Err(AwbcRuntimeValueSnapshotError::Nesting(_))
+        ));
+        let mut hidden = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
+            state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained: vec![],
+        });
+        for _ in 0..=super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            hidden = AwbcRuntimeValueSnapshot::Tuple(vec![hidden]);
+        }
+        assert!(
+            matches!(
+                hidden.into_runtime_value_for_program(&owner),
+                Err(AwbcRuntimeValueSnapshotError::Nesting(_))
+            ),
+            "the complete inert graph rejects before a missing callable constructor"
+        );
+    }
+}
+
+#[test]
+fn inert_preflight_checks_empty_column_metadata_and_preserves_issued_handle_tokens() {
+    let mut storage = AwbcRuntimeSeqSnapshot::Values(vec![]);
+    for _ in 0..=super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        storage = AwbcRuntimeSeqSnapshot::TupleColumns {
+            len: 0,
+            columns: vec![storage],
+        };
+    }
+    for owner in owners() {
+        assert!(matches!(
+            AwbcRuntimeValueSnapshot::Seq(storage.clone())
+                .into_unrestricted_runtime_value_for_program(&owner),
+            Err(AwbcRuntimeValueSnapshotError::Nesting(_))
+        ));
+    }
+    let issued = crate::tests::program_custody::issued_program_handle();
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&issued.plan));
+    let image =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&issued.value, &owner).unwrap();
+    assert_eq!(
+        image.affine_line_handle_tokens().unwrap(),
+        vec![issued.token.clone()]
+    );
+    assert_eq!(
+        image.into_unrestricted_runtime_value_for_program(&owner),
+        Err(AwbcRuntimeValueSnapshotError::AffineValue)
+    );
+    assert!(
+        issued.ledger.lease(&issued.token).is_some(),
+        "inert rejection preserves the original issued ledger"
+    );
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
+            &issued.value,
+            &owner
+        ),
+        Err(AwbcRuntimeValueSnapshotError::AffineValue)
+    );
+}
+
+#[test]
 fn float_snapshots_preserve_scalar_bits_and_dense_storage_in_nested_values() {
     use crate::value::DenseSeqStorage;
 

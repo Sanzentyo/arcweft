@@ -14,6 +14,7 @@ use arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot;
 use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
+use arcweft_core::root::RootStateSaveSnapshotV1;
 pub use arcweft_core::root::RootStateSnapshotV1;
 use arcweft_core::task::{
     GenerationId, LogicalEpoch, NeedId, RuntimeProgramOwner, TaskId, TaskPublicationRevision,
@@ -60,7 +61,7 @@ pub(crate) struct BundleSessionSavePayload {
     #[serde(deserialize_with = "deserialize_required_option")]
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
-    pub root: Option<RootStateSnapshotV1>,
+    pub root: Option<RootStateSaveSnapshotV1>,
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSavePayload,
     pub presentation: BundlePresentationSnapshot,
@@ -85,7 +86,14 @@ impl BundleSessionSavePayload {
             active_locale: snapshot.active_locale.clone(),
             character_presentation: snapshot.character_presentation.clone(),
             active_entry: snapshot.active_entry.clone(),
-            root: snapshot.root.clone(),
+            root: snapshot
+                .root
+                .as_ref()
+                .map(|root| {
+                    RootStateSaveSnapshotV1::from_live(root, &snapshot.active_entry, program_owner)
+                })
+                .transpose()
+                .map_err(|error| error.to_string())?,
             runtime: snapshot.runtime.clone(),
             executor: BundleSessionExecutorSavePayload {
                 generation: snapshot.executor.generation,
@@ -104,12 +112,17 @@ impl BundleSessionSavePayload {
         self,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<BundleSessionSnapshot, String> {
+        let root = self
+            .root
+            .map(|root| root.into_live(&self.active_entry, program_owner))
+            .transpose()
+            .map_err(|error| error.to_string())?;
         Ok(BundleSessionSnapshot {
             generation: self.generation,
             active_locale: self.active_locale,
             character_presentation: self.character_presentation,
             active_entry: self.active_entry,
-            root: self.root,
+            root,
             runtime: self.runtime,
             executor: BundleSessionExecutorSnapshot {
                 generation: self.executor.generation,

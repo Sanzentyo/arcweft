@@ -60,6 +60,16 @@ pub struct RuntimeNominalRole {
 }
 
 impl RuntimeNominalRole {
+    /// Correlates persisted nominal coordinates with this selected role.
+    #[must_use]
+    pub fn matches_snapshot_header(
+        &self,
+        identity: &RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
+    ) -> bool {
+        &self.identity == identity && self.layout == layout
+    }
+
     /// Resolves the role in the active executable; the role owns no schema copy.
     pub fn validate_for_program(
         &self,

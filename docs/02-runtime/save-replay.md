@@ -82,6 +82,19 @@ nominal header はその型グラフで検証する。View の in-memory snapsho
 serde reader を残さず、mount identity・型付き slot・axis seed の検証を既存 View
 restore で実行してから session を公開する。
 
+Core の inert value graph は、live value を構築する前に共通の閉じた traversal
+で nesting を検証する。unrestricted の保存場所では、同じ traversal が Need と
+affine opaque の全 descendant を拒否する。line-handle token inventory もこの
+traversal を使い、空の columnar storage の再帰 metadata を検証から除外しない。
+Core value／sequence／predicate の内部 child は、構築前検証後の private な
+構築経路を使う。task request など別の owning codec の検証境界は保持する。
+
+durable root の保存値も Core DTO を使う。active entry の identity・kind・binding
+から original program の stateful roles を選び、state/event identity と layout を
+照合してから復元する。state payload はその role の original 型グラフと root
+limits で検証する。live root state と in-memory root snapshot の serde reader を
+残さず、保存 wire の version は `1` を維持する。
+
 Product の queued `Ready` は、保持された task admission の完全な correlation から
 outcome を選び、既存の `BoundTaskOutcome` で検証してから保存・復元結果を公開する。
 program outcome は選択中の immutable executable に束縛し、standalone outcome は

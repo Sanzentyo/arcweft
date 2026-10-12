@@ -164,12 +164,10 @@ impl RuntimeValue {
                     ownership.join(field.value().ownership())
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
-            Self::Opaque(value) => match value.value_class() {
-                RuntimeOpaqueValueClass::Plain => value.payload().ownership(),
-                RuntimeOpaqueValueClass::AffineHandle(_) => {
-                    RuntimeValueOwnership::Affine.join(value.payload().ownership())
-                }
-            },
+            Self::Opaque(value) => value
+                .value_class()
+                .intrinsic_ownership()
+                .join(value.payload().ownership()),
             Self::Reduction(value) => value
                 .commands()
                 .iter()

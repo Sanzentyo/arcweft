@@ -932,6 +932,51 @@ fn awbc_save_load_preserves_cleanup_stacks() {
 }
 
 #[test]
+fn session_view_wire_rejects_affine_leaf_before_catalog_validation_and_publication() {
+    use arcweft_core::value::{
+        AwbcRuntimeValueSnapshot, RuntimeHandleKind, RuntimeOpaquePersistence,
+        RuntimeOpaqueValueClass,
+    };
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session.snapshot_session().unwrap();
+    let original = exported_session_json(&session);
+    let mut invalid = original.clone();
+    let AwbcRuntimeValueSnapshot::Opaque(mut opaque) =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            &image_handle_for_bytes(b"inert preflight fixture"),
+            &session.program_owner(),
+        )
+        .unwrap()
+    else {
+        panic!("standard ImageHandle has the owning opaque wire grammar")
+    };
+    opaque.producer = RuntimeHandleKind::Cue.try_producer().unwrap();
+    opaque.value_class = RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue);
+    opaque.persistence = RuntimeOpaquePersistence::SnapshotOnly;
+    opaque.payload = Box::new(AwbcRuntimeValueSnapshot::Unit);
+    invalid["view_runtime"]["view_root_bindings"] = serde_json::json!([
+        { "name": "forged-handle", "value": AwbcRuntimeValueSnapshot::Opaque(opaque) }
+    ]);
+    let mut visited_catalog = false;
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &encode_session_json_value(&invalid),
+            &arcweft_save::SaveDecodeOptions::default(),
+            |_| {
+                visited_catalog = true;
+                Ok(())
+            },
+        )
+        .expect_err("affine inert admission precedes producer/token construction");
+    assert!(matches!(error, BundleSessionSaveError::Decode { message }
+        if message.contains("unrestricted snapshot contains an affine value")));
+    assert!(!visited_catalog);
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original);
+}
+
+#[test]
 fn session_view_wire_requires_strict_axis_seed_registry_atomically() {
     assert_eq!(BUNDLE_SESSION_SAVE_SCHEMA_VERSION, 1);
     let bytes = product_awfb_bytes("entry.main");

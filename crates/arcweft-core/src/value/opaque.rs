@@ -2925,6 +2925,13 @@ pub enum RuntimeOpaqueValueClass {
 }
 
 impl RuntimeOpaqueValueClass {
+    pub(crate) const fn intrinsic_ownership(self) -> super::ownership::RuntimeValueOwnership {
+        match self {
+            Self::Plain => super::ownership::RuntimeValueOwnership::Unrestricted,
+            Self::AffineHandle(_) => super::ownership::RuntimeValueOwnership::Affine,
+        }
+    }
+
     /// Stable semantic transcript tag used by catalog and ownership digests.
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {

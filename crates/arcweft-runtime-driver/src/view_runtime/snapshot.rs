@@ -5,7 +5,7 @@ use super::{
 };
 use arcweft_core::{
     task::RuntimeProgramOwner,
-    value::{AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeValue},
+    value::{AwbcRuntimeValueSnapshot, RuntimeBinding},
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,41 +52,24 @@ struct StateFieldSnapshot {
     value: AwbcRuntimeValueSnapshot,
 }
 
-fn snapshot_value(
-    value: &RuntimeValue,
-    owner: &RuntimeProgramOwner,
-) -> Result<AwbcRuntimeValueSnapshot, String> {
-    if !value.ownership().permits_copy() {
-        return Err("retained View snapshot requires unrestricted values".to_owned());
-    }
-    AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-        .map_err(|error| error.to_string())
-}
-
-fn restore_value(
-    value: AwbcRuntimeValueSnapshot,
-    owner: &RuntimeProgramOwner,
-) -> Result<RuntimeValue, String> {
-    let value = value
-        .into_runtime_value_for_program(owner)
-        .map_err(|error| error.to_string())?;
-    if !value.ownership().permits_copy() {
-        return Err("retained View restore requires unrestricted values".to_owned());
-    }
-    Ok(value)
-}
-
 impl BindingSnapshot {
     fn from_live(value: &RuntimeBinding, owner: &RuntimeProgramOwner) -> Result<Self, String> {
         Ok(Self {
             name: value.name.clone(),
-            value: snapshot_value(&value.value, owner)?,
+            value: AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
+                &value.value,
+                owner,
+            )
+            .map_err(|error| error.to_string())?,
         })
     }
     fn into_live(self, owner: &RuntimeProgramOwner) -> Result<RuntimeBinding, String> {
         Ok(RuntimeBinding {
             name: self.name,
-            value: restore_value(self.value, owner)?,
+            value: self
+                .value
+                .into_unrestricted_runtime_value_for_program(owner)
+                .map_err(|error| error.to_string())?,
         })
     }
 }
@@ -131,7 +114,9 @@ impl BundleViewRuntimeSaveSnapshot {
                                     path: field.path.clone(),
                                     field: field.field,
                                     value_type: field.value_type,
-                                    value: snapshot_value(&field.value, owner)?,
+                                    value: AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
+                                        &field.value, owner,
+                                    ).map_err(|error| error.to_string())?,
                                 })
                             })
                             .collect::<Result<_, String>>()?,
@@ -182,7 +167,10 @@ impl BundleViewRuntimeSaveSnapshot {
                                     path: field.path,
                                     field: field.field,
                                     value_type: field.value_type,
-                                    value: restore_value(field.value, owner)?,
+                                    value: field
+                                        .value
+                                        .into_unrestricted_runtime_value_for_program(owner)
+                                        .map_err(|error| error.to_string())?,
                                 })
                             })
                             .collect::<Result<_, String>>()?,

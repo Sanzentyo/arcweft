@@ -324,6 +324,72 @@ fn digest(
 }
 
 #[test]
+fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
+    use crate::root::{RootStateSaveSnapshotV1, RootStateSnapshotV1, TransitionSequence};
+    use crate::task::RuntimeProgramOwner;
+    use crate::value::RuntimePayload;
+    let owner =
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(stateful_plan(RuntimeTypeSchema::Bool)));
+    let RuntimeProgramOwner::Plan(plan) = &owner else {
+        unreachable!()
+    };
+    let entry = &plan.entries()[0];
+    let active = ActiveEntrySnapshotV1 {
+        id: entry.id.clone(),
+        kind: entry.kind.clone(),
+        binding: entry.binding,
+    };
+    let roles = entry.roles.stateful().unwrap();
+    let value = owner
+        .types()
+        .try_record_value(
+            roles.state.semantic_identity,
+            vec![],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let snapshot = RootStateSnapshotV1 {
+        state_identity: roles.state.identity.clone(),
+        state_layout: roles.state.layout,
+        event_identity: roles.event.identity.clone(),
+        event_layout: roles.event.layout,
+        value: RuntimePayload(value),
+        next_sequence: TransitionSequence::from_u64(27),
+    };
+    let wire = RootStateSaveSnapshotV1::from_live(&snapshot, &active, &owner).unwrap();
+    let bytes = serde_json::to_vec(&wire).unwrap();
+    let decoded: RootStateSaveSnapshotV1 = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(decoded.into_live(&active, &owner).unwrap(), snapshot);
+    let original = serde_json::to_value(&wire).unwrap();
+    let mut wrong_value = original.clone();
+    wrong_value["value"] =
+        serde_json::to_value(crate::value::AwbcRuntimeValueSnapshot::Bool(true)).unwrap();
+    let mut wrong_layout = original.clone();
+    wrong_layout["state_layout"] =
+        serde_json::to_value(TypeLayoutHash::from_bytes([0; 32])).unwrap();
+    for candidate in [wrong_value, wrong_layout] {
+        let decoded: RootStateSaveSnapshotV1 = serde_json::from_value(candidate).unwrap();
+        assert!(decoded.into_live(&active, &owner).is_err());
+        assert_eq!(serde_json::to_vec(&wire).unwrap(), bytes);
+    }
+    let mut wrong_entry = active.clone();
+    wrong_entry.binding = EntryBindingIdentity::from_bytes([0; 32]);
+    assert!(wire.clone().into_live(&wrong_entry, &owner).is_err());
+    assert!(RootStateSaveSnapshotV1::from_live(&snapshot, &wrong_entry, &owner).is_err());
+    assert_eq!(
+        snapshot.value.0,
+        owner
+            .types()
+            .try_record_value(
+                roles.state.semantic_identity,
+                vec![],
+                RuntimeSchemaLimits::engine_default()
+            )
+            .unwrap()
+    );
+}
+
+#[test]
 fn stateful_entry_commits_actual_command_schema_layout_and_rejects_a_false_leaf() {
     let first = stateful_plan(RuntimeTypeSchema::Bool);
     let changed = stateful_plan(RuntimeTypeSchema::String);

@@ -4,6 +4,9 @@
 //! transactional state boundary but performs no host I/O and dispatches no
 //! command.
 
+mod snapshot;
+pub use snapshot::{RootStateSaveSnapshotError, RootStateSaveSnapshotV1};
+
 use crate::entry::{
     EntryBindingIdentity, RootExecutionLimits, RuntimeCallableRole, RuntimeCommandContract,
     RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest, TypeLayoutHash,
@@ -65,7 +68,7 @@ impl RootEventInput {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 struct SequencedRootEvent {
     sequence: TransitionSequence,
     payload: RuntimePayload,
@@ -111,7 +114,7 @@ impl RootTransitionOutcome {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ActiveRootState {
     pub entry: EntryRuntimeId,
     pub binding: EntryBindingIdentity,
@@ -121,11 +124,8 @@ pub struct ActiveRootState {
     pub event_layout: TypeLayoutHash,
     pub value: RuntimePayload,
     pub next_sequence: TransitionSequence,
-    #[serde(skip)]
     queued_events: VecDeque<SequencedRootEvent>,
-    #[serde(skip)]
     committed_commands: VecDeque<RuntimeCommandEnvelope>,
-    #[serde(skip)]
     reducer_active: bool,
 }
 
@@ -581,13 +581,15 @@ impl RootRuntime {
             initial_flow: _,
             initial_state_parameter: _,
         } = contract;
-        if snapshot.state_identity != roles.state.identity
-            || snapshot.state_layout != roles.state.layout
+        if !roles
+            .state
+            .matches_snapshot_header(&snapshot.state_identity, snapshot.state_layout)
         {
             return Err(RootRuntimeError::SnapshotRoleMismatch("state"));
         }
-        if snapshot.event_identity != roles.event.identity
-            || snapshot.event_layout != roles.event.layout
+        if !roles
+            .event
+            .matches_snapshot_header(&snapshot.event_identity, snapshot.event_layout)
         {
             return Err(RootRuntimeError::SnapshotRoleMismatch("event"));
         }
@@ -1282,8 +1284,8 @@ fn validate_replay_safe_agent_value(
     Ok(())
 }
 
-/// Final in-place session payload for one durable root state.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+/// In-memory snapshot for one durable unrestricted root state.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RootStateSnapshotV1 {
     pub state_identity: crate::entry::RuntimeNominalTypeId,
     pub state_layout: TypeLayoutHash,
