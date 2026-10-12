@@ -47,6 +47,12 @@ fn iterator_plan(copy_receiver: bool) -> RuntimePlan {
                         item,
                     },
                 ),
+                RuntimePlanTypeSeed::new(semantic(6), RuntimePlanTypeProjection::Iterator(item)),
+                RuntimePlanTypeSeed::new(semantic(7), RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    semantic(8),
+                    RuntimePlanTypeProjection::Iterator(semantic(7)),
+                ),
             ],
             [
                 RuntimeLocalDeclarationSeed::new(
@@ -247,6 +253,61 @@ fn witness_lease_and_original_state_type_reject_foreign_and_forged_restores() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn witness_snapshot_admission_checks_expected_item_and_complete_header_budget() {
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(iterator_plan(false)));
+    let value = RuntimeValue::Iterator(
+        RuntimeIterator::try_witness(
+            owner.clone(),
+            RuntimeValue::Seq(RuntimeSeq::values(Vec::new())),
+            crate::plan::RuntimeTraitMethodId(0),
+        )
+        .unwrap(),
+    );
+    let exact = crate::entry::RuntimeSchemaLimits {
+        max_encoded_bytes: 4,
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    };
+    owner
+        .types()
+        .validate_snapshot_value(semantic(6), &value, exact)
+        .unwrap();
+    assert!(
+        owner
+            .types()
+            .validate_snapshot_value(
+                semantic(6),
+                &value,
+                crate::entry::RuntimeSchemaLimits {
+                    max_encoded_bytes: 3,
+                    ..exact
+                }
+            )
+            .is_err()
+    );
+    assert!(
+        owner
+            .types()
+            .validate_snapshot_value(semantic(8), &value, exact)
+            .is_err()
+    );
+    let other = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(iterator_plan(false)));
+    assert!(
+        other
+            .types()
+            .validate_snapshot_value(semantic(6), &value, exact)
+            .is_err()
+    );
+    let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+    let decoded: AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&serde_json::to_vec(&image).unwrap()).unwrap();
+    let restored = decoded.into_runtime_value_for_program(&owner).unwrap();
+    owner
+        .types()
+        .validate_snapshot_value(semantic(6), &restored, exact)
+        .unwrap();
 }
 
 #[test]

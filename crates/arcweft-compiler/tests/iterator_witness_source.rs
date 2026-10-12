@@ -127,7 +127,74 @@ fn run_witness_plan(compiled: &arcweft_compiler::types::CompiledSource) {
     .lower()
     .unwrap()
     .program;
-    run_and_restore_awbc_witness_plan(std::sync::Arc::new(program));
+    let program = std::sync::Arc::new(program);
+    let next = compiled
+        .plan
+        .trait_methods()
+        .iter()
+        .find(|method| method.receiver == RuntimeReceiverMode::MutRef)
+        .unwrap();
+    let state_type = compiled
+        .plan
+        .local_declarations()
+        .get(next.inputs[0].local())
+        .unwrap()
+        .ty();
+    let state_type = compiled
+        .plan
+        .type_table()
+        .get(state_type)
+        .unwrap()
+        .semantic_identity();
+    for owner in [
+        arcweft_core::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(compiled.plan.clone())),
+        arcweft_core::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)),
+    ] {
+        round_trip_source_witness(&owner, state_type, next.id);
+    }
+    run_and_restore_awbc_witness_plan(program);
+}
+
+fn round_trip_source_witness(
+    owner: &arcweft_core::task::RuntimeProgramOwner,
+    state_type: arcweft_core::pattern::RuntimeSemanticTypeId,
+    next: arcweft_core::plan::RuntimeTraitMethodId,
+) {
+    use arcweft_core::{
+        entry::RuntimeSchemaLimits,
+        value::{AwbcRuntimeValueSnapshot, RuntimeIterator, RuntimeValue},
+    };
+    let state = owner
+        .types()
+        .try_record_value(
+            state_type,
+            vec![RuntimeValue::i64(0), RuntimeValue::i64(3)],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let value =
+        RuntimeValue::Iterator(RuntimeIterator::try_witness(owner.clone(), state, next).unwrap());
+    let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, owner).unwrap();
+    let bytes = serde_json::to_vec(&image).unwrap();
+    let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+    let restored = decoded.into_runtime_value_for_program(owner).unwrap();
+    assert_eq!(
+        restored, value,
+        "the exact original receiver and method survive the inert wire"
+    );
+    assert!(RuntimeIterator::try_witness(owner.clone(), RuntimeValue::Bool(true), next).is_err());
+    assert!(
+        RuntimeIterator::try_witness(
+            owner.clone(),
+            RuntimeValue::Unit,
+            arcweft_core::plan::RuntimeTraitMethodId(usize::MAX)
+        )
+        .is_err()
+    );
+    let mut forged = serde_json::to_value(&image).unwrap();
+    forged["Iterator"]["Witness"]["state"] = serde_json::json!({"Bool":true});
+    let forged: AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+    assert!(forged.into_runtime_value_for_program(owner).is_err());
 }
 
 fn run_native_witness_plan(plan: arcweft_core::plan::RuntimePlan) {
