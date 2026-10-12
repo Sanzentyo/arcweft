@@ -1545,6 +1545,68 @@ mod dynamic_character_dialogue_context_tests {
             }
         }
 
+        fn presentation(frame: LineDisplayFrame) -> BundlePresentationSnapshot {
+            let activation = arcweft_core::runtime_id::DialogueActivationId::new(
+                frame.content.artifact(),
+                arcweft_core::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+                serde_json::from_value(serde_json::json!(1)).unwrap(),
+                1,
+            );
+            let mut presentation = BundlePresentationSnapshot::default();
+            presentation
+                .dialogue
+                .apply_operations(&[DialoguePresentationOperation::append(
+                    activation,
+                    crate::dialogue::DialogueViewDefinition::new(frame.effective.view().clone()),
+                    frame,
+                )])
+                .unwrap();
+            let retained = presentation.dialogue.iter().next().unwrap().entries()[0]
+                .frame()
+                .clone();
+            presentation
+                .view
+                .mounts
+                .push(crate::view_runtime::BundleViewMountOutput {
+                    handle: crate::presentation_handles::PresentationHandleId::try_new("capture.view")
+                        .unwrap(),
+                    mount: arcweft_view::ViewMountId::from_raw(1),
+                    view: retained.effective.view().clone(),
+                    path: crate::view_runtime::BundleViewInstancePath::default(),
+                    host_axis_seed: None,
+                    dialogue: None,
+                    active_targets: Vec::new(),
+                    active_images: Vec::new(),
+                    action_buttons: Vec::new(),
+                    paint: Vec::new(),
+                    text: vec![
+                        crate::view_runtime::BundleViewTextOutput {
+                            source_id: "name".to_owned(),
+                            targets: Vec::new(),
+                            value: crate::view_runtime::BundleViewTextValue::CharacterDisplayName {
+                                frame: Box::new(retained.clone()),
+                            },
+                            classification: arcweft_bundle::resource_codec::view::ViewObserveClassification::default(),
+                            replacement: None,
+                        },
+                        crate::view_runtime::BundleViewTextOutput {
+                            source_id: "content".to_owned(),
+                            targets: Vec::new(),
+                            value: crate::view_runtime::BundleViewTextValue::DisplayFrame {
+                                frame: Box::new(retained),
+                                stage_index: 0,
+                            },
+                            classification: arcweft_bundle::resource_codec::view::ViewObserveClassification::default(),
+                            replacement: None,
+                        },
+                    ],
+                    fx: Vec::new(),
+                    events: Vec::new(),
+                    style_nodes: Vec::new(),
+                });
+            presentation
+        }
+
         fn spec(
             &self,
             target: CharacterPresentationTargetEvidence,
@@ -1698,6 +1760,171 @@ mod dynamic_character_dialogue_context_tests {
             AcceptedViewProgramRevision::try_from_bytes([0x46; 32]).expect("View program revision"),
             ResourceTypeRegistry::empty().digest(),
         )
+    }
+
+    #[test]
+    fn fallback_style_capture_uses_original_role_schema_and_one_config_wire() {
+        use arcweft_dialogue::{
+            CharacterDialogueStyleValue, CharacterDialogueTypedValue, FallbackStylePolicy,
+            InlineFailurePolicy, InlineFallback, InlineTextFailure,
+        };
+        let fixture = Fixture::new();
+        let spec = fixture.spec(
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+                generation: fixture.schema.generation_digest(),
+            },
+            "fallback_capture",
+        );
+        let target = fixture.value(&fixture.alice, true);
+        let mut frame = fixture.frame(&spec, &target);
+        let style = frame
+            .effective
+            .admitted()
+            .unwrap()
+            .dialogue()
+            .config()
+            .style()
+            .clone();
+        let policy = |style| InlineFailurePolicy::Fallback {
+            fallback: InlineFallback::Text {
+                text: "fallback".to_owned(),
+                style: FallbackStylePolicy::Apply {
+                    styles: vec![style],
+                },
+            },
+        };
+        frame.inline_failures.push(InlineTextFailure {
+            expr: "capture".to_owned(),
+            reason: "fixture".to_owned(),
+            policy: policy(style.clone()),
+        });
+        let valid = arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+            &frame,
+            Some(&fixture.owner),
+            Some(&fixture.schema),
+        )
+        .unwrap();
+        assert_eq!(
+            valid
+                .clone()
+                .into_live(Some(&fixture.owner), Some(&fixture.schema))
+                .unwrap(),
+            frame
+        );
+        let bytes = serde_json::to_vec(&valid).unwrap();
+        let config = arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
+            frame.effective.view().clone(),
+            policy(style),
+        );
+        let config_wire =
+            arcweft_text_model::CharacterDialoguePresentationConfigSnapshot::from_live(
+                &config,
+                Some(&fixture.owner),
+                Some(&fixture.schema),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&config).unwrap(),
+            serde_json::to_value(&config_wire).unwrap()
+        );
+        assert_eq!(
+            config_wire
+                .into_live(Some(&fixture.owner), Some(&fixture.schema))
+                .unwrap(),
+            config
+        );
+        let invalid_style = CharacterDialogueStyleValue::try_new(
+            CharacterDialogueTypedValue::try_new(RuntimeValue::Bool(true)).unwrap(),
+        )
+        .unwrap();
+        frame.inline_failures[0].policy = policy(invalid_style.clone());
+        assert!(
+            arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+                &frame,
+                Some(&fixture.owner),
+                Some(&fixture.schema),
+            )
+            .is_err()
+        );
+        let invalid_config = arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
+            frame.effective.view().clone(),
+            policy(invalid_style),
+        );
+        assert!(
+            arcweft_text_model::CharacterDialoguePresentationConfigSnapshot::from_live(
+                &invalid_config,
+                Some(&fixture.owner),
+                Some(&fixture.schema),
+            )
+            .is_err()
+        );
+        assert_eq!(serde_json::to_vec(&valid).unwrap(), bytes);
+    }
+
+    #[test]
+    fn presentation_capture_admission_rejects_foreign_lease_and_standalone_downgrade() {
+        let fixture = Fixture::new();
+        let foreign = Fixture::new();
+        let spec = fixture.spec(
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+                generation: fixture.schema.generation_digest(),
+            },
+            "capture_admission",
+        );
+        let target = fixture.value(&fixture.alice, true);
+        let frame = fixture.frame(&spec, &target);
+        let presentation = Fixture::presentation(frame);
+        let mut visited = 0;
+        presentation
+            .try_visit_frames(|_| {
+                visited += 1;
+                Ok::<_, String>(())
+            })
+            .unwrap();
+        assert_eq!(visited, 3);
+        presentation
+            .validate_runtime_context(&fixture.owner, Some(&fixture.schema))
+            .unwrap();
+        let before = serde_json::to_vec(&presentation).unwrap();
+        assert!(
+            presentation
+                .validate_runtime_context(&foreign.owner, Some(&foreign.schema))
+                .is_err()
+        );
+        assert_eq!(serde_json::to_vec(&presentation).unwrap(), before);
+        let mut view_only = presentation.clone();
+        view_only.dialogue = DialoguePresentationStore::default();
+        assert!(
+            view_only
+                .validate_runtime_context(&foreign.owner, Some(&foreign.schema))
+                .is_err()
+        );
+        view_only
+            .validate_runtime_context(&fixture.owner, Some(&fixture.schema))
+            .unwrap();
+        let mut downgraded = presentation
+            .clone()
+            .try_map_frames(|mut frame| {
+                frame.effective =
+                    arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
+                        frame.effective.view().clone(),
+                        arcweft_dialogue::InlineFailurePolicy::FailLine,
+                    );
+                Ok::<_, String>(frame)
+            })
+            .unwrap();
+        assert!(
+            downgraded
+                .validate_runtime_context(&fixture.owner, Some(&fixture.schema))
+                .is_err()
+        );
+        // A renderer-only standalone frame remains legitimate without a
+        // CharacterDialogue generation schema.
+        downgraded
+            .validate_runtime_context(&fixture.owner, None)
+            .unwrap();
+        downgraded.revision = 1;
+        assert_eq!(serde_json::to_vec(&presentation).unwrap(), before);
     }
 
     #[test]

@@ -82,6 +82,9 @@ impl BundleSessionSavePayload {
         program_owner: &RuntimeProgramOwner,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
+        snapshot
+            .presentation
+            .validate_runtime_context(program_owner, dialogue_schema)?;
         Ok(Self {
             generation: snapshot.generation.clone(),
             active_locale: snapshot.active_locale.clone(),

@@ -561,6 +561,48 @@ fn build_dialogue_content_value(
 }
 
 impl BundlePresentationSnapshot {
+    /// Visits every retained frame once through the owning presentation grammar.
+    pub(crate) fn try_visit_frames<E>(
+        &self,
+        mut visit: impl FnMut(&arcweft_text_model::LineDisplayFrame) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for dialogue in self.dialogue.iter() {
+            for entry in dialogue.entries() {
+                visit(entry.frame())?;
+            }
+        }
+        for mount in &self.view.mounts {
+            for text in &mount.text {
+                match &text.value {
+                    crate::view_runtime::BundleViewTextValue::CharacterDisplayName { frame }
+                    | crate::view_runtime::BundleViewTextValue::DisplayFrame { frame, .. } => {
+                        visit(frame)?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Uses the same frame admission as the inert wire producer before copying
+    /// presentation state or accepting a direct live snapshot candidate.
+    pub(crate) fn validate_runtime_context(
+        &self,
+        owner: &arcweft_core::task::RuntimeProgramOwner,
+        schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    ) -> Result<(), String> {
+        self.try_visit_frames(|frame| {
+            if schema.is_some() && frame.effective.admitted().is_none() {
+                return Err(
+                    "session display frame has no generation-admitted CharacterDialogue".to_owned(),
+                );
+            }
+            arcweft_text_model::LineDisplayFrameSnapshot::from_live(frame, Some(owner), schema)
+                .map(|_| ())
+        })
+    }
+
     pub(crate) fn advance_fx_clock(&mut self, milliseconds: u64) {
         match self.fx.advance_millis(milliseconds) {
             Ok(()) => {

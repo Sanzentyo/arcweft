@@ -126,6 +126,14 @@ program-owned descendant を構築できない Core の共通 decoder を使う�
 session catalog validator に渡してから facade を公開する。表示文字列から
 Content を再構成せず、元の Content envelope と捕捉値を保持する。
 
+直接の live session snapshot も、wire の frame producer と同じ original
+program／generation admission を通してから presentation をコピー・公開する。
+dialogue 履歴と View の Character display name／Content frame は同じ owning
+traversal で検証する。fallback Style は保存側も元の generation role で検証する。
+Content の owning constructor と borrowed decoder／evaluated-binding producer は、
+failure policy と callback の affine descendant をコピー前に拒否する。
+既存の Content node budget は callback の元の retained value graph も計上する。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

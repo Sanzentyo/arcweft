@@ -98,6 +98,9 @@ impl CharacterDialoguePresentationConfigSnapshot {
                 view: view.clone(),
                 style_sheet: config.style_sheet.clone(),
                 inline_failure: inline_failure.borrow_styles().try_map_styles(&mut |style| {
+                    if let Some(schema) = schema {
+                        schema.admit_style(owner.ok_or("fallback Style executable is unavailable")?, style.typed().value()).map_err(|error| error.to_string())?;
+                    }
                     match owner { Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(style.typed().value(), owner), None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(style.typed().value()) }
                         .map_err(|error| error.to_string())
                 })?,
@@ -356,45 +359,8 @@ impl CharacterDialoguePresentationConfig {
 
 impl Serialize for CharacterDialoguePresentationConfig {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match &self.source {
-            CharacterDialoguePresentationSource::Standalone {
-                view,
-                inline_failure,
-            } => {
-                #[derive(Serialize)]
-                struct Standalone<'a> {
-                    kind: &'static str,
-                    view: &'a ViewId,
-                    style_sheet: &'a Option<ViewStyleSheetId>,
-                    inline_failure: &'a InlineFailurePolicy,
-                }
-                Standalone {
-                    kind: "standalone",
-                    view,
-                    style_sheet: &self.style_sheet,
-                    inline_failure,
-                }
-                .serialize(serializer)
-            }
-            CharacterDialoguePresentationSource::Program {
-                owner,
-                generation,
-                config_digest,
-                value,
-            } => {
-                let value = AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
-                    &RuntimeValue::Opaque(value.opaque().clone()),
-                    owner,
-                )
-                .map_err(serde::ser::Error::custom)?;
-                CharacterDialoguePresentationConfigSnapshot::Program {
-                    generation: *generation,
-                    config_digest: *config_digest,
-                    style_sheet: self.style_sheet.clone(),
-                    value,
-                }
-                .serialize(serializer)
-            }
-        }
+        CharacterDialoguePresentationConfigSnapshot::from_live(self, self.program_owner(), None)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
     }
 }

@@ -91,6 +91,15 @@ impl DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> {
         schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
         store.validate().map_err(|error| error.to_string())?;
+        for dialogue in store.iter() {
+            for entry in dialogue.entries() {
+                arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+                    entry.frame(),
+                    owner,
+                    schema,
+                )?;
+            }
+        }
         store.clone().try_map_frames(&mut |frame| {
             arcweft_text_model::LineDisplayFrameSnapshot::from_live(&frame, owner, schema)
         })

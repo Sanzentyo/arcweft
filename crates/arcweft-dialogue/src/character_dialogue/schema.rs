@@ -457,6 +457,18 @@ impl CharacterDialogueRuntimeSchema {
         value: &RuntimeValue,
     ) -> Result<CharacterDialogueStyleValue, Box<CharacterDialogueValueError>> {
         self.ensure_program_owner(owner)?;
+        value
+            .validate_nesting_depth(arcweft_core::value::MAX_RUNTIME_VALUE_NESTING_DEPTH)
+            .map_err(|error| CharacterDialogueValueError::Field {
+                field: "style",
+                reason: error.to_string(),
+            })?;
+        if !value.ownership().permits_copy() {
+            return Err(Box::new(CharacterDialogueValueError::Field {
+                field: "style",
+                reason: "retained Style contains an affine value".to_owned(),
+            }));
+        }
         self.validate_role(super::CharacterDialogueRuntimeRole::Style, value)?;
         Ok(CharacterDialogueStyleValue::try_new(
             CharacterDialogueTypedValue::try_new(value.clone())?,

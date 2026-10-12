@@ -141,17 +141,51 @@ impl LineDisplayFrameSnapshot {
                 "display frame Character differs from its admitted configuration".to_owned(),
             );
         }
-        frame.clone().try_map_runtime(
-            |config| CharacterDialoguePresentationConfigSnapshot::from_live(&config, owner, schema),
-            |content| match owner { Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(&content.into_runtime_value(), owner), None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&content.into_runtime_value()) }.map_err(|error| error.to_string()),
-            |failure| Ok(InlineTextFailureSnapshot {
-                expr: failure.expr,
-                reason: failure.reason,
+        let effective = CharacterDialoguePresentationConfigSnapshot::from_live(
+            &frame.effective,
+            owner,
+            schema,
+        )?;
+        let content = match owner {
+            Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
+                &frame.content.clone().into_runtime_value(),
+                owner,
+            ),
+            None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                &frame.content.clone().into_runtime_value(),
+            ),
+        }
+        .map_err(|error| error.to_string())?;
+        let inline_failures = frame.inline_failures.iter().map(|failure| {
+            Ok(InlineTextFailureSnapshot {
+                expr: failure.expr.clone(),
+                reason: failure.reason.clone(),
                 policy: failure.policy.borrow_styles().try_map_styles(&mut |style| {
-                    match owner { Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(style.typed().value(), owner), None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(style.typed().value()) }.map_err(|error| error.to_string())
+                    if let Some(schema) = schema {
+                        schema.admit_style(owner.ok_or("fallback Style executable is unavailable")?, style.typed().value()).map_err(|error| error.to_string())?;
+                    }
+                    match owner {
+                        Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(style.typed().value(), owner),
+                        None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(style.typed().value()),
+                    }.map_err(|error| error.to_string())
                 })?,
-            }),
-        )
+            })
+        }).collect::<Result<_, String>>()?;
+        Ok(Self {
+            line: frame.line.clone(),
+            character: frame.character.clone(),
+            text_key: frame.text_key.clone(),
+            effective,
+            text: frame.text.clone(),
+            base_styles: frame.base_styles.clone(),
+            style_contributions: frame.style_contributions.clone(),
+            nodes: frame.nodes.clone(),
+            display_map: frame.display_map.clone(),
+            host_events: frame.host_events.clone(),
+            inline_failures,
+            unresolved: frame.unresolved.clone(),
+            content,
+        })
     }
 
     pub fn into_live(

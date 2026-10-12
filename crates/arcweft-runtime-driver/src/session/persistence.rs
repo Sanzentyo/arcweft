@@ -84,29 +84,9 @@ impl<'a> SessionRestoreValueValidator<'a> {
         &mut self,
         presentation: &BundlePresentationSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
-        let result = (|| {
-            for dialogue in presentation.dialogue.iter() {
-                for entry in dialogue.entries() {
-                    entry
-                        .frame()
-                        .visit_runtime_values(|value| self.validate_value(value))?;
-                }
-            }
-            for mount in &presentation.view.mounts {
-                for text in &mount.text {
-                    match &text.value {
-                        crate::view_runtime::BundleViewTextValue::CharacterDisplayName {
-                            frame,
-                        }
-                        | crate::view_runtime::BundleViewTextValue::DisplayFrame {
-                            frame, ..
-                        } => frame.visit_runtime_values(|value| self.validate_value(value))?,
-                        _ => {}
-                    }
-                }
-            }
-            Ok(())
-        })();
+        let result = presentation.try_visit_frames(|frame| {
+            frame.visit_runtime_values(|value| self.validate_value(value))
+        });
         self.finish(result)
     }
 }
@@ -163,6 +143,7 @@ impl BundleSession {
             )
             .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
+        self.validate_presentation_runtime_context(&self.presentation)?;
         validate_dialogue_content_frames(&self.dialogue_content, &self.presentation)?;
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
         validate_presentation_runtime_status(
@@ -239,6 +220,21 @@ impl BundleSession {
             presentation,
         )?;
         Ok(snapshot)
+    }
+
+    fn validate_presentation_runtime_context(
+        &self,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let owner = self.executor.program_owner();
+        let schema = self
+            .runtime_images
+            .images()
+            .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
+            .find(|schema| schema.program_owner().same_program(&owner));
+        presentation
+            .validate_runtime_context(&owner, schema)
+            .map_err(|message| BundleSessionSaveError::Presentation { message })
     }
 
     fn character_presentation_identity(
@@ -431,6 +427,7 @@ impl BundleSession {
             &snapshot.presentation,
         )?;
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
+        self.validate_presentation_runtime_context(&snapshot.presentation)?;
         validate_dialogue_content_frames(&self.dialogue_content, &snapshot.presentation)?;
         let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;

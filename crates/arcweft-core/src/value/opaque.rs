@@ -173,6 +173,8 @@ pub enum RuntimeDialogueContentValueError {
     NodeLimit { maximum: usize },
     #[error("runtime dialogue content value exceeds the shared string limit of {maximum} bytes")]
     StringLimit { maximum: usize },
+    #[error("runtime dialogue content cannot retain an affine value")]
+    AffineValue,
 }
 
 /// Closed, deterministic textual capture used by a dialogue interpolation.
@@ -1142,6 +1144,34 @@ impl<'de> Deserialize<'de> for RuntimeDialogueContentValue {
 }
 
 impl RuntimeDialogueContentValue {
+    fn require_unrestricted_value(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        let maximum = usize::try_from(limits.max_depth)
+            .unwrap_or(usize::MAX)
+            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH);
+        value
+            .validate_nesting_depth(maximum)
+            .map_err(|_| RuntimeDialogueContentValueError::NestingLimit { maximum })?;
+        if !value.ownership().permits_copy() {
+            return Err(RuntimeDialogueContentValueError::AffineValue);
+        }
+        Ok(())
+    }
+
+    fn require_unrestricted_effects(
+        effects: &[RuntimeDialogueContentEffectBinding],
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        if effects
+            .iter()
+            .any(|effect| !effect.callback().ownership().permits_copy())
+        {
+            return Err(RuntimeDialogueContentValueError::AffineValue);
+        }
+        Ok(())
+    }
+
     /// Constructs a content envelope using the named engine schema policy.
     pub fn try_new(
         artifact: RuntimeArtifactFingerprint,
@@ -1366,6 +1396,7 @@ impl RuntimeDialogueContentValue {
                     role: evaluated.role,
                 });
             }
+            Self::require_unrestricted_value(&evaluated.value, limits)?;
             let binding = match slot.role() {
                 RuntimeDialogueValueRole::Interpolation => {
                     let value = RuntimeInlineTextValue::try_from_runtime_value(
@@ -1412,6 +1443,7 @@ impl RuntimeDialogueContentValue {
                 actual: effects.len(),
             });
         }
+        Self::require_unrestricted_effects(effects)?;
         for (index, (declared, binding)) in template.effects().iter().zip(effects).enumerate() {
             let expected = declared.site();
             if binding.site() != expected {
@@ -1516,6 +1548,7 @@ impl RuntimeDialogueContentValue {
         evaluated: &[RuntimeDialogueValueBinding],
         effects: &[RuntimeDialogueContentEffectBinding],
     ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::require_unrestricted_effects(effects)?;
         let mut value = Self::try_from_evaluated_bindings_parts(
             artifact,
             template,
@@ -1744,6 +1777,7 @@ impl RuntimeDialogueContentValue {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::require_unrestricted_value(value, limits)?;
         let payload = exact_dialogue_payload(value, RuntimeDialogueOpaqueRole::Content)
             .map_err(|_| RuntimeDialogueContentValueError::InvalidOwner)?;
         let value = Self::decode_payload(payload, limits, 0)?;
@@ -2120,6 +2154,11 @@ impl RuntimeDialogueContentValue {
                     value,
                     ..
                 } => {
+                    if let RuntimeDialogueFormattedFailureSelection::OnError(policy) =
+                        value.failure_selection()
+                    {
+                        Self::require_unrestricted_value(policy, limits)?;
+                    }
                     value.validate_string_limits(limits).map_err(|source| {
                         RuntimeDialogueContentValueError::InvalidFormattedValue { index, source }
                     })?;
@@ -2149,6 +2188,7 @@ impl RuntimeDialogueContentValue {
                 maximum: usize::try_from(limits.max_sequence_items).unwrap_or(usize::MAX),
             });
         }
+        Self::require_unrestricted_effects(&self.effects)?;
         for (index, effect) in self.effects.iter().enumerate() {
             let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
                 .ok_or(RuntimeDialogueContentValueError::NodeLimit {
@@ -2560,8 +2600,8 @@ impl RuntimeContentValueBudget {
                     self.visit(payload)?;
                 }
             }
-            RuntimeValue::Callable(_)
-            | RuntimeValue::Unit
+            RuntimeValue::Callable(callable) => self.visit_values(callable.retained().iter())?,
+            RuntimeValue::Unit
             | RuntimeValue::Bool(_)
             | RuntimeValue::Int(_)
             | RuntimeValue::UInt(_)
@@ -3602,6 +3642,125 @@ mod tests {
                 .map(RuntimeInlineTextValue::text),
             Some("hello")
         );
+    }
+
+    #[test]
+    fn content_node_budget_includes_original_awbc_callback_captures() {
+        let limits = RuntimeSchemaLimits {
+            max_nodes: 80,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        let site = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0).unwrap();
+        let (empty, _) = awbc_test_callable(Vec::new());
+        RuntimeDialogueContentValue::try_new_with_limits(
+            content_artifact(0x51),
+            content_template(),
+            content_digest(),
+            [],
+            [RuntimeDialogueContentEffectBinding::new(site, empty)],
+            limits,
+        )
+        .expect("the same envelope without captures fits the budget");
+        let (captured, owner) = awbc_test_callable((0..20).map(RuntimeValue::u32).collect());
+        assert_eq!(
+            RuntimeDialogueContentValue::try_new_with_limits(
+                content_artifact(0x51),
+                content_template(),
+                content_digest(),
+                [],
+                [RuntimeDialogueContentEffectBinding::new(
+                    site,
+                    captured.clone()
+                )],
+                limits,
+            ),
+            Err(RuntimeDialogueContentValueError::NodeLimit { maximum: 80 }),
+        );
+        let content = RuntimeDialogueContentValue::try_new_with_limits(
+            content_artifact(0x51),
+            content_template(),
+            content_digest(),
+            [],
+            [RuntimeDialogueContentEffectBinding::new(site, captured)],
+            RuntimeSchemaLimits {
+                max_nodes: 200,
+                ..limits
+            },
+        )
+        .unwrap();
+        let runtime = content.clone().into_runtime_value();
+        let snapshot =
+            AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(&runtime, &owner)
+                .unwrap();
+        let restored = snapshot
+            .into_unrestricted_runtime_value_for_program(&owner)
+            .unwrap();
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&restored).unwrap(),
+            content
+        );
+    }
+
+    #[test]
+    fn content_admission_rejects_affine_failure_policy_before_cloning_envelope() {
+        fn formatted(policy: RuntimeValue) -> RuntimeDialogueFormattedValue {
+            RuntimeDialogueFormattedValue::try_new(
+                RuntimeDialogueFormattedOutcome::Failure {
+                    reason: "capture".to_owned(),
+                    value_plain: None,
+                },
+                RuntimeDialogueFormattedFailureSelection::OnError(policy),
+            )
+            .unwrap()
+        }
+        fn binding(policy: RuntimeValue) -> RuntimeDialogueContentBinding {
+            RuntimeDialogueContentBinding::Formatted {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(0).unwrap(),
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: formatted(policy),
+            }
+        }
+        assert_eq!(
+            RuntimeDialogueContentValue::try_new(
+                content_artifact(0x51),
+                content_template(),
+                content_digest(),
+                [binding(RuntimeValue::NeedHandle(
+                    crate::tests::reusable_need("content.affine")
+                ))],
+            ),
+            Err(RuntimeDialogueContentValueError::AffineValue),
+        );
+        // A raw envelope can arrive without passing the typed constructor.
+        // Borrowed decoding must reject it before cloning its live descendants.
+        let forged = RuntimeDialogueContentValue {
+            artifact: content_artifact(0x51),
+            template: content_template(),
+            template_digest: content_digest(),
+            bindings: vec![binding(RuntimeValue::NeedHandle(
+                crate::tests::reusable_need("content.raw-affine"),
+            ))]
+            .into_boxed_slice(),
+            effects: Box::new([]),
+        }
+        .into_runtime_value();
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&forged),
+            Err(RuntimeDialogueContentValueError::AffineValue)
+        );
+        let mut deep = RuntimeValue::Bool(true);
+        for _ in 0..=MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            deep = RuntimeValue::Tuple(vec![deep]);
+        }
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_new(
+                content_artifact(0x51),
+                content_template(),
+                content_digest(),
+                [binding(deep)],
+            ),
+            Err(RuntimeDialogueContentValueError::NestingLimit { .. }),
+        ));
     }
 
     #[test]
