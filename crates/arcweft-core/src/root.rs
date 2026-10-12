@@ -408,9 +408,10 @@ impl RootRuntime {
         image: RootRuntimeRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        let limits = image.limits.schema;
         let value = |image: crate::value::AwbcRuntimeValueSnapshot| {
             image
-                .into_runtime_value_for_program(owner)
+                .into_runtime_value_for_program_with_limits(owner, limits)
                 .map_err(|error| error.to_string())
         };
         Ok(Self {

@@ -385,7 +385,7 @@ impl RuntimeSeq {
 }
 
 impl DenseSeq {
-    fn scalar_view(&self, index: usize) -> Option<RuntimeScalarView<'_>> {
+    pub(super) fn scalar_view(&self, index: usize) -> Option<RuntimeScalarView<'_>> {
         use RuntimeScalarView as Scalar;
         Some(match self {
             Self::Units(length) => {

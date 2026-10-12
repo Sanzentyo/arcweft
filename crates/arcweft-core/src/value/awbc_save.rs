@@ -12,6 +12,7 @@ use super::{
     RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload, RuntimeReductionValue,
     RuntimeSeq, RuntimeValue, TupleSeq,
 };
+use crate::entry::schema::value_budget::{ValidationWork, ValueBudget};
 use crate::entry::{RuntimeCommandConstructorId, RuntimeCommandTargetId};
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
 use crate::runtime_id::RuntimeCallableStateId;
@@ -33,6 +34,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     AffineValue,
     #[error(transparent)]
     Nesting(#[from] super::RuntimeValueNestingError),
+    #[error(transparent)]
+    Resource(#[from] crate::entry::RuntimeSchemaError),
 }
 
 impl AwbcRuntimeValueSnapshotError {
@@ -305,15 +308,33 @@ impl AwbcRuntimeValueSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        self.visit_graph(0, &mut |value| {
-            if matches!(value, Self::NeedHandle(_))
-                || matches!(value, Self::Opaque(opaque)
+        self.into_unrestricted_runtime_value_for_program_with_limits(
+            owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Restores a copyable value after applying the selected entry's graph
+    /// limits and rejecting affine descendants while the complete graph is inert.
+    pub fn into_unrestricted_runtime_value_for_program_with_limits(
+        self,
+        owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.visit_graph_bounded(
+            0,
+            &mut ValueBudget::new(limits),
+            &mut ValidationWork::new(limits),
+            &mut |value| {
+                if matches!(value, Self::NeedHandle(_))
+                    || matches!(value, Self::Opaque(opaque)
                     if !opaque.value_class.intrinsic_ownership().permits_copy())
-            {
-                return Err(AwbcRuntimeValueSnapshotError::AffineValue);
-            }
-            Ok(())
-        })?;
+                {
+                    return Err(AwbcRuntimeValueSnapshotError::AffineValue);
+                }
+                Ok(())
+            },
+        )?;
         self.into_live_with_owner(Some(owner))
     }
 
@@ -531,13 +552,25 @@ impl AwbcRuntimeValueSnapshot {
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
-    /// Restores values, including DataShape witnesses, after the enclosing
+    /// Restores values, including `DataShape` witnesses, after the enclosing
     /// snapshot has been correlated with this exact executable artifact.
     pub fn into_runtime_value_for_program(
         self,
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        self.visit_graph(0, &mut |_| Ok(()))?;
+        self.into_runtime_value_for_program_with_limits(
+            program_owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Applies the selected graph policy before entering any live constructor.
+    pub fn into_runtime_value_for_program_with_limits(
+        self,
+        program_owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.validate_graph_limits(limits)?;
         self.into_live_with_owner(Some(program_owner))
     }
 
@@ -1210,76 +1243,119 @@ impl AwbcRuntimeValueSnapshot {
         Ok(())
     }
 
-    /// The sole inert value-graph traversal used by resource and copy admission.
+    /// Checks graph depth, nodes, collections, strings and traversal work using
+    /// the same budget authorities as live admission, before live construction.
+    pub fn validate_graph_limits(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let mut budget = ValueBudget::new(limits);
+        let mut work = ValidationWork::new(limits);
+        self.visit_graph_bounded(0, &mut budget, &mut work, &mut |_| Ok(()))
+    }
+
     fn visit_graph(
         &self,
         depth: usize,
         visitor: &mut impl FnMut(&Self) -> Result<(), AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        self.visit_graph_bounded(
+            depth,
+            &mut ValueBudget::new(limits),
+            &mut ValidationWork::new(limits),
+            visitor,
+        )
+    }
+
+    /// The sole inert value-graph traversal used by resource and copy admission.
+    fn visit_graph_bounded(
+        &self,
+        depth: usize,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
+        visitor: &mut impl FnMut(&Self) -> Result<(), AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         Self::ensure_graph_depth(depth)?;
+        budget.node(depth)?;
+        work.charge(depth)?;
+        self.validate_leaf_graph_limits(depth, budget, work)?;
         visitor(self)?;
         match self {
-            Self::Tuple(items) => {
+            Self::Tuple(items)
+            | Self::Callable(AwbcRuntimeCallableSnapshot {
+                retained: items, ..
+            }) => {
+                budget.collection(items.len())?;
                 for item in items {
-                    item.visit_graph(depth + 1, visitor)?;
+                    item.visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 }
             }
             Self::Record(fields) => {
+                budget.collection(fields.len())?;
                 for field in fields {
-                    field.value.visit_graph(depth + 1, visitor)?;
+                    budget.string(&field.name)?;
+                    field
+                        .value
+                        .visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 }
             }
-            Self::Seq(sequence) => sequence.visit_graph(depth + 1, visitor)?,
+            Self::Seq(sequence) => {
+                sequence.visit_graph_bounded(depth + 1, budget, work, visitor)?;
+            }
             Self::NominalRecord(record) => {
+                budget.string(record.type_id.as_str())?;
+                budget.collection(record.fields.len())?;
                 for field in &record.fields {
-                    field.value.visit_graph(depth + 1, visitor)?;
+                    field
+                        .value
+                        .visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 }
             }
-            Self::Opaque(opaque) => opaque.payload.visit_graph(depth + 1, visitor)?,
+            Self::Opaque(opaque) => {
+                budget.string(opaque.producer.as_str())?;
+                opaque
+                    .payload
+                    .visit_graph_bounded(depth + 1, budget, work, visitor)?;
+            }
             Self::Reduction(reduction) => {
-                reduction.state.visit_graph(depth + 1, visitor)?;
+                budget.string(reduction.owner.producer().as_str())?;
+                budget.collection(reduction.commands.len())?;
+                reduction
+                    .state
+                    .visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 for command in &reduction.commands {
-                    command.payload.visit_graph(depth + 2, visitor)?;
+                    budget.string(command.constructor.as_str())?;
+                    budget.string(command.target.as_str())?;
+                    command
+                        .payload
+                        .visit_graph_bounded(depth + 2, budget, work, visitor)?;
                 }
             }
-            Self::Iterator(iterator) => match iterator {
-                AwbcRuntimeIteratorSnapshot::Values { items } => {
-                    for value in items {
-                        value.visit_graph(depth + 1, visitor)?;
-                    }
-                }
-                AwbcRuntimeIteratorSnapshot::Witness { state, .. } => {
-                    state.visit_graph(depth + 1, visitor)?;
-                }
-                AwbcRuntimeIteratorSnapshot::Range(_) => {}
-            },
-            Self::Agent(agent) => match agent {
-                AwbcRuntimeAgentSnapshot::Predicate(predicate) => {
-                    predicate.visit_graph(depth, visitor)?;
-                }
-                AwbcRuntimeAgentSnapshot::ActionTarget(_)
-                | AwbcRuntimeAgentSnapshot::CaptureTarget(_)
-                | AwbcRuntimeAgentSnapshot::DebugStatePath(_)
-                | AwbcRuntimeAgentSnapshot::ObservationFieldPath(_)
-                | AwbcRuntimeAgentSnapshot::Probe(_)
-                | AwbcRuntimeAgentSnapshot::Diagnostics
-                | AwbcRuntimeAgentSnapshot::ViewportPoint { .. }
-                | AwbcRuntimeAgentSnapshot::BinaryData(_)
-                | AwbcRuntimeAgentSnapshot::DataShape { .. } => {}
-            },
-            Self::Callable(callable) => {
-                for value in &callable.retained {
-                    value.visit_graph(depth + 1, visitor)?;
-                }
+            Self::Iterator(iterator) => {
+                iterator.visit_graph_bounded(depth, budget, work, visitor)?;
             }
-            Self::Variant { payload, .. } => {
+            Self::Agent(agent) => {
+                agent.visit_graph_bounded(depth, budget, work, visitor)?;
+            }
+            Self::Variant {
+                owner,
+                name,
+                payload,
+                ..
+            } => {
+                if let super::RuntimeVariantIdentity::Nominal { nominal, .. } = owner {
+                    budget.string(nominal.as_str())?;
+                }
+                budget.string(name)?;
                 if let Some(payload) = payload {
-                    payload.visit_graph(depth + 1, visitor)?;
+                    payload.visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 }
             }
             Self::NeedHandle(handle) => {
+                budget.collection(handle.request_values().count())?;
                 for value in handle.request_values() {
-                    value.visit_graph(depth + 1, visitor)?;
+                    value.visit_graph_bounded(depth + 1, budget, work, visitor)?;
                 }
             }
             Self::Unit
@@ -1288,53 +1364,174 @@ impl AwbcRuntimeValueSnapshot {
             | Self::UInt(_)
             | Self::F32(_)
             | Self::F64(_)
-            | Self::DenseNumeric(_)
-            | Self::String(_)
             | Self::Color(_)
             | Self::Char(_)
             | Self::Duration(_)
-            | Self::Progress { .. }
             | Self::Range(_)
-            | Self::EntityRef(_) => {}
+            | Self::String(_)
+            | Self::Progress { .. }
+            | Self::EntityRef(_)
+            | Self::DenseNumeric(_) => {}
+        }
+        Ok(())
+    }
+
+    fn validate_leaf_graph_limits(
+        &self,
+        depth: usize,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::String(value) => budget.string(value)?,
+            Self::Progress {
+                label: Some(label), ..
+            } => budget.string(label)?,
+            Self::EntityRef(value) => budget.shape(super::RuntimeValueView::Scalar(
+                super::RuntimeScalarView::EntityRef(value),
+            ))?,
+            Self::DenseNumeric(value) => {
+                budget.collection(value.dimensions().len())?;
+                budget.collection(value.elements().len())?;
+                for _ in 0..value.elements().len() {
+                    budget.node(depth + 1)?;
+                    work.charge(depth + 1)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+impl AwbcRuntimeIteratorSnapshot {
+    fn visit_graph_bounded(
+        &self,
+        depth: usize,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
+        visitor: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::Values { items } => {
+                budget.collection(items.len())?;
+                for value in items {
+                    value.visit_graph_bounded(depth + 1, budget, work, visitor)?;
+                }
+            }
+            Self::Witness { state, .. } => {
+                state.visit_graph_bounded(depth + 1, budget, work, visitor)?;
+            }
+            Self::Range(_) => {}
+        }
+        Ok(())
+    }
+}
+
+impl AwbcRuntimeAgentSnapshot {
+    fn visit_graph_bounded(
+        &self,
+        depth: usize,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
+        visitor: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::Predicate(predicate) => {
+                predicate.visit_graph_bounded(depth, false, budget, work, visitor)?;
+            }
+            Self::ActionTarget(target) => {
+                budget.string(target.id().as_str())?;
+                budget.string(target.target().as_str())?;
+            }
+            Self::CaptureTarget(target) => match target {
+                RuntimeAgentCaptureTarget::Viewport => {}
+                RuntimeAgentCaptureTarget::Layer { target }
+                | RuntimeAgentCaptureTarget::Object { target } => {
+                    budget.string(target.as_str())?;
+                }
+            },
+            Self::DebugStatePath(path) | Self::ObservationFieldPath(path) => {
+                budget.string(path.as_str())?;
+            }
+            Self::Probe(probe) => validate_probe_limits(probe, budget)?,
+            Self::BinaryData(value) => budget.string(value)?,
+            Self::Diagnostics | Self::ViewportPoint { .. } | Self::DataShape { .. } => {}
         }
         Ok(())
     }
 }
 
 impl AwbcRuntimeSeqSnapshot {
-    fn visit_graph(
+    fn visit_graph_bounded(
         &self,
         item_depth: usize,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
         visitor: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         // Empty columnar storage still carries recursive metadata even when
         // there is no logical item to visit.
         AwbcRuntimeValueSnapshot::ensure_graph_depth(item_depth.saturating_sub(1))?;
+        work.charge(item_depth.saturating_sub(1))?;
         match self {
             Self::Values(values) => {
+                budget.collection(values.len())?;
                 for value in values {
-                    value.visit_graph(item_depth, visitor)?;
+                    value.visit_graph_bounded(item_depth, budget, work, visitor)?;
                 }
             }
             Self::TupleColumns { len, columns } => {
+                budget.collection(usize::try_from(*len).map_err(|_| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "snapshot sequence length does not fit this platform",
+                    )
+                })?)?;
+                budget.collection(columns.len())?;
                 if *len != 0 {
                     AwbcRuntimeValueSnapshot::ensure_graph_depth(item_depth)?;
                 }
+                for _ in 0..*len {
+                    budget.node(item_depth)?;
+                    work.charge(item_depth)?;
+                }
                 for column in columns {
-                    column.visit_graph(item_depth + 1, visitor)?;
+                    column.visit_graph_bounded(item_depth + 1, budget, work, visitor)?;
                 }
             }
             Self::RecordColumns { len, fields } => {
+                budget.collection(usize::try_from(*len).map_err(|_| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "snapshot sequence length does not fit this platform",
+                    )
+                })?)?;
+                budget.collection(fields.len())?;
                 if *len != 0 {
                     AwbcRuntimeValueSnapshot::ensure_graph_depth(item_depth)?;
                 }
+                for _ in 0..*len {
+                    budget.node(item_depth)?;
+                    work.charge(item_depth)?;
+                }
                 for field in fields {
-                    field.values.visit_graph(item_depth + 1, visitor)?;
+                    budget.string(&field.name)?;
+                    field
+                        .values
+                        .visit_graph_bounded(item_depth + 1, budget, work, visitor)?;
                 }
             }
             Self::Dense(values) => {
+                budget.collection(values.len())?;
                 if !values.is_empty() {
                     AwbcRuntimeValueSnapshot::ensure_graph_depth(item_depth)?;
+                }
+                for index in 0..values.len() {
+                    budget.node(item_depth)?;
+                    work.charge(item_depth)?;
+                    let value = values
+                        .scalar_view(index)
+                        .expect("dense storage owns every indexed scalar");
+                    budget.shape(super::RuntimeValueView::Scalar(value))?;
                 }
             }
         }
@@ -1343,24 +1540,54 @@ impl AwbcRuntimeSeqSnapshot {
 }
 
 impl AwbcRuntimeAgentPredicateSnapshot {
-    fn visit_graph(
+    fn visit_graph_bounded(
         &self,
         depth: usize,
+        charge_node: bool,
+        budget: &mut ValueBudget,
+        work: &mut ValidationWork,
         visitor: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         AwbcRuntimeValueSnapshot::ensure_graph_depth(depth)?;
+        if charge_node {
+            budget.node(depth)?;
+        }
+        work.charge(depth)?;
         match self {
-            Self::Compare { value, .. } => value.visit_graph(depth + 1, visitor)?,
+            Self::Compare { probe, value, .. } => {
+                validate_probe_limits(probe, budget)?;
+                value.visit_graph_bounded(depth + 1, budget, work, visitor)?;
+            }
             Self::All { predicates } | Self::Any { predicates } => {
+                budget.collection(predicates.len())?;
                 for predicate in predicates {
-                    predicate.visit_graph(depth + 1, visitor)?;
+                    predicate.visit_graph_bounded(depth + 1, true, budget, work, visitor)?;
                 }
             }
-            Self::Not { predicate } => predicate.visit_graph(depth + 1, visitor)?,
-            Self::Exists { .. } | Self::ActionEnabled { .. } | Self::DiagnosticsHasError => {}
+            Self::Not { predicate } => {
+                predicate.visit_graph_bounded(depth + 1, true, budget, work, visitor)?;
+            }
+            Self::Exists { probe } => validate_probe_limits(probe, budget)?,
+            Self::ActionEnabled { target } => budget.string(target.as_str())?,
+            Self::DiagnosticsHasError => {}
         }
         Ok(())
     }
+}
+
+fn validate_probe_limits(
+    probe: &RuntimeAgentProbe,
+    budget: &ValueBudget,
+) -> Result<(), AwbcRuntimeValueSnapshotError> {
+    match probe {
+        RuntimeAgentProbe::Signal { target } | RuntimeAgentProbe::Metric { target } => {
+            budget.string(target.as_str())?;
+        }
+        RuntimeAgentProbe::StatePath { path } | RuntimeAgentProbe::ObservationField { path } => {
+            budget.string(path.as_str())?;
+        }
+    }
+    Ok(())
 }
 
 fn snapshot_line_handle_token(

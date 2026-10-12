@@ -59,6 +59,154 @@ fn standalone_snapshot_uses_the_shared_decoder_and_rejects_program_and_affine_le
     );
 }
 
+fn dense_string_graph_fixture() -> (AwbcRuntimeValueSnapshot, RuntimeSchemaLimits) {
+    let dense = AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::Dense(DenseSeq::Strings(
+        super::super::DenseSeqStorage::new(vec![
+            "captured".to_owned(),
+            "retained".to_owned(),
+            "captured".to_owned(),
+        ]),
+    )));
+    let exact = RuntimeSchemaLimits {
+        max_depth: 1,
+        max_nodes: 4,
+        max_sequence_items: 3,
+        max_string_bytes: 8,
+        max_validation_work: 5,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    (dense, exact)
+}
+
+#[test]
+fn inert_graph_limits_cover_dense_columnar_predicate_and_retained_values_before_restore() {
+    let defaults = RuntimeSchemaLimits::engine_default();
+    let (dense, exact) = dense_string_graph_fixture();
+    dense.validate_graph_limits(exact).unwrap();
+    for limits in [
+        RuntimeSchemaLimits {
+            max_depth: 0,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_nodes: 3,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_sequence_items: 2,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_string_bytes: 7,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_validation_work: 4,
+            ..exact
+        },
+    ] {
+        assert!(matches!(
+            dense.validate_graph_limits(limits),
+            Err(AwbcRuntimeValueSnapshotError::Resource(_))
+        ));
+    }
+    let columns = AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::TupleColumns {
+        len: 2,
+        columns: vec![
+            AwbcRuntimeSeqSnapshot::Dense(DenseSeq::Units(2)),
+            AwbcRuntimeSeqSnapshot::Values(vec![
+                AwbcRuntimeValueSnapshot::Bool(true),
+                AwbcRuntimeValueSnapshot::Bool(false),
+            ]),
+        ],
+    });
+    let column_limits = RuntimeSchemaLimits {
+        max_nodes: 7,
+        max_depth: 2,
+        max_validation_work: 10,
+        ..defaults
+    };
+    columns.validate_graph_limits(column_limits).unwrap();
+    assert!(matches!(
+        columns.validate_graph_limits(RuntimeSchemaLimits {
+            max_nodes: 6,
+            ..column_limits
+        }),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" }
+        ))
+    ));
+    let predicate = AwbcRuntimeValueSnapshot::Agent(AwbcRuntimeAgentSnapshot::Predicate(
+        AwbcRuntimeAgentPredicateSnapshot::Not {
+            predicate: Box::new(AwbcRuntimeAgentPredicateSnapshot::DiagnosticsHasError),
+        },
+    ));
+    predicate
+        .validate_graph_limits(RuntimeSchemaLimits {
+            max_nodes: 2,
+            ..defaults
+        })
+        .unwrap();
+    assert!(
+        predicate
+            .validate_graph_limits(RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..defaults
+            })
+            .is_err()
+    );
+
+    for owner in owners() {
+        let image = AwbcRuntimeValueSnapshot::Tuple(vec![AwbcRuntimeValueSnapshot::Callable(
+            AwbcRuntimeCallableSnapshot {
+                state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained: vec![AwbcRuntimeValueSnapshot::String("captured".into())],
+            },
+        )]);
+        let limits = RuntimeSchemaLimits {
+            max_nodes: 2,
+            ..defaults
+        };
+        assert!(matches!(
+            image.into_runtime_value_for_program_with_limits(&owner, limits),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" }
+            ))
+        ));
+        let restored = dense
+            .clone()
+            .into_runtime_value_for_program_with_limits(&owner, exact)
+            .unwrap();
+        assert!(matches!(restored, RuntimeValue::Seq(value) if value.len() == 3));
+    }
+}
+
+#[test]
+fn empty_columnar_metadata_consumes_shared_inert_traversal_work() {
+    let image = AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::TupleColumns {
+        len: 0,
+        columns: vec![AwbcRuntimeSeqSnapshot::TupleColumns {
+            len: 0,
+            columns: vec![AwbcRuntimeSeqSnapshot::Values(vec![])],
+        }],
+    });
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 1,
+        max_validation_work: 4,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    image.validate_graph_limits(limits).unwrap();
+    assert!(matches!(
+        image.validate_graph_limits(RuntimeSchemaLimits {
+            max_validation_work: 3,
+            ..limits
+        }),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::ValidationWork { .. }
+        ))
+    ));
+}
+
 #[test]
 fn unrestricted_restore_rejects_nested_affine_values_before_any_live_constructor() {
     let leaf = AwbcRuntimeValueSnapshot::from_standalone_value(&RuntimeValue::NeedHandle(

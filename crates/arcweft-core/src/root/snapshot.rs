@@ -87,7 +87,10 @@ impl RootStateSaveSnapshotV1 {
         )?;
         let value = RuntimePayload(
             self.value
-                .into_unrestricted_runtime_value_for_program(owner)?,
+                .into_unrestricted_runtime_value_for_program_with_limits(
+                    owner,
+                    roles.command_policy.root_limits.schema,
+                )?,
         );
         roles
             .state

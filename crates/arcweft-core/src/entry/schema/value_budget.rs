@@ -4,7 +4,7 @@ use crate::value::{RuntimeEntityReference, RuntimeScalarView, RuntimeValueView};
 
 use super::{RuntimeSchemaError, RuntimeSchemaLimits};
 
-pub(super) struct ValueBudget {
+pub(crate) struct ValueBudget {
     limits: RuntimeSchemaLimits,
     nodes: usize,
 }
@@ -64,11 +64,11 @@ impl ValidationWork {
 }
 
 impl ValueBudget {
-    pub(super) const fn new(limits: RuntimeSchemaLimits) -> Self {
+    pub(crate) const fn new(limits: RuntimeSchemaLimits) -> Self {
         Self { limits, nodes: 0 }
     }
 
-    pub(super) fn node(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn node(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
         if !self.limits.permits_depth(depth) {
             return Err(RuntimeSchemaError::BudgetExceeded { budget: "depth" });
         }
@@ -82,7 +82,7 @@ impl ValueBudget {
         Ok(())
     }
 
-    pub(super) fn collection(&self, length: usize) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn collection(&self, length: usize) -> Result<(), RuntimeSchemaError> {
         if !self.limits.permits_sequence_items(length) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "sequence_items",
@@ -91,7 +91,7 @@ impl ValueBudget {
         Ok(())
     }
 
-    pub(super) fn string(&self, text: &str) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn string(&self, text: &str) -> Result<(), RuntimeSchemaError> {
         if !self.limits.permits_string_bytes(text.len()) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "string_bytes",
@@ -109,7 +109,7 @@ impl ValueBudget {
         self.shape(value)
     }
 
-    pub(super) fn shape(&self, value: RuntimeValueView<'_>) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn shape(&self, value: RuntimeValueView<'_>) -> Result<(), RuntimeSchemaError> {
         match value {
             RuntimeValueView::Scalar(RuntimeScalarView::String(text)) => self.string(text)?,
             RuntimeValueView::Scalar(RuntimeScalarView::Progress(progress)) => {
