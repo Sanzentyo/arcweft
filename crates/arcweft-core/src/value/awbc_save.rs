@@ -394,13 +394,13 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::Callable(value) => {
                 Self::Callable(Self::callable_from_live(value, owner)?)
             }
-            RuntimeValue::Variant {
+            RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                 owner: variant_owner,
                 ordinal,
                 name,
                 payload,
                 type_instantiation,
-            } => {
+            }) => {
                 if let super::RuntimeVariantIdentity::Nominal {
                     semantic_identity, ..
                 } = variant_owner
@@ -556,25 +556,39 @@ impl AwbcRuntimeValueSnapshot {
                 )
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()));
         }
-        let value = RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload: payload
-                .map(|value| {
-                    value
-                        .into_runtime_value_for_program(program_owner)
-                        .map(Box::new)
-                })
-                .transpose()?,
-            type_instantiation: type_instantiation.map(std::sync::Arc::new),
+        let super::RuntimeVariantIdentity::Builtin(owner) = owner else {
+            unreachable!()
         };
-        if value.builtin_variant_case().is_none() {
+        let case = owner.case_at(ordinal).ok_or_else(|| {
+            AwbcRuntimeValueSnapshotError::new("unknown builtin variant snapshot case")
+        })?;
+        if name != case.name()
+            || type_instantiation.is_some()
+            || match (case.payload_arity(), payload.as_deref()) {
+                (None, None) => false,
+                (Some(arity), Some(Self::Tuple(fields))) if fields.len() == arity => false,
+                _ => true,
+            }
+        {
             return Err(AwbcRuntimeValueSnapshotError::new(
                 "invalid builtin variant snapshot",
             ));
         }
-        Ok(value)
+        let payload = match payload {
+            Some(payload) => {
+                let Self::Tuple(mut fields) = *payload else {
+                    unreachable!()
+                };
+                Some(
+                    fields
+                        .remove(0)
+                        .into_runtime_value_for_program(program_owner)?,
+                )
+            }
+            None => None,
+        };
+        RuntimeValue::try_builtin_variant(case.identity(), payload)
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
     fn iterator_from_live(

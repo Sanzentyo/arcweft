@@ -567,17 +567,13 @@ fn anonymous_record_and_variant_constants_read_names_only_from_the_type_table() 
             .collect::<Vec<_>>(),
         ["zeta", "alpha"]
     );
-    let RuntimeValue::Variant {
-        name,
-        ordinal,
-        payload,
-        ..
-    } = crate::awbc::vm::constant_value(&decoded, AwbcConstantId(2)).unwrap()
+    let RuntimeValue::Variant(variant) =
+        crate::awbc::vm::constant_value(&decoded, AwbcConstantId(2)).unwrap()
     else {
         panic!("variant")
     };
     assert_eq!(
-        (name.as_str(), ordinal, payload.as_deref()),
+        (variant.name(), variant.ordinal(), variant.payload()),
         ("Full", 0, Some(&RuntimeValue::Bool(true)))
     );
     let mut wrong_owner = decoded.clone();

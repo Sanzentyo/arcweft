@@ -37,10 +37,10 @@ pub fn visit_runtime_value_graph<E>(
             RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
                 pending.push(state);
             }
-            RuntimeValue::Variant {
+            RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                 payload: Some(value),
                 ..
-            } => pending.push(value),
+            }) => pending.push(value),
             RuntimeValue::Unit
             | RuntimeValue::Bool(_)
             | RuntimeValue::Int(_)
@@ -59,7 +59,7 @@ pub fn visit_runtime_value_graph<E>(
             | RuntimeValue::Range(_)
             | RuntimeValue::Iterator(RuntimeIterator::Range(_))
             | RuntimeValue::EntityRef(_)
-            | RuntimeValue::Variant { payload: None, .. } => {}
+            | RuntimeValue::Variant(crate::value::RuntimeVariantValue { payload: None, .. }) => {}
         }
     }
     Ok(())

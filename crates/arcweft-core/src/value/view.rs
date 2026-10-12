@@ -40,14 +40,7 @@ pub(crate) enum RuntimeValueView<'a> {
     Opaque(&'a RuntimeOpaqueValue),
     Reduction(&'a RuntimeReductionValue),
     Agent(&'a RuntimeAgentValue),
-    Variant {
-        owner: &'a RuntimeVariantIdentity,
-        ordinal: u32,
-        name: &'a str,
-        type_instantiation:
-            Option<&'a std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
-        payload: Option<&'a RuntimeValue>,
-    },
+    Variant(&'a super::RuntimeVariantValue),
     RuntimeOnly(&'a RuntimeValue),
 }
 
@@ -63,14 +56,12 @@ impl<'a> RuntimeValueView<'a> {
             Self::NominalRecord(record) => {
                 Some((record.semantic_identity(), record.type_instantiation()?))
             }
-            Self::Variant {
-                owner:
-                    RuntimeVariantIdentity::Nominal {
-                        semantic_identity, ..
-                    },
-                type_instantiation: Some(binding),
-                ..
-            } => Some((*semantic_identity, binding.as_ref())),
+            Self::Variant(variant) => match variant.owner() {
+                RuntimeVariantIdentity::Nominal {
+                    semantic_identity, ..
+                } => Some((*semantic_identity, variant.type_instantiation()?)),
+                RuntimeVariantIdentity::Builtin(_) => None,
+            },
             _ => None,
         }
     }
@@ -117,19 +108,7 @@ impl<'a> RuntimeValueView<'a> {
             Self::Opaque(value) => RuntimeValue::Opaque(value.clone()),
             Self::Reduction(value) => RuntimeValue::Reduction(value.clone()),
             Self::Agent(value) => RuntimeValue::Agent(value.clone()),
-            Self::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            } => RuntimeValue::Variant {
-                owner: owner.clone(),
-                ordinal,
-                name: name.to_owned(),
-                payload: payload.map(|value| Box::new(value.clone())),
-                type_instantiation: type_instantiation.cloned(),
-            },
+            Self::Variant(value) => RuntimeValue::Variant(value.clone()),
             Self::RuntimeOnly(value) => value.clone(),
         })
     }
@@ -211,9 +190,9 @@ impl<'a> RuntimeValueView<'a> {
                 }
                 Ok(false)
             }
-            Self::Variant { payload, .. } => {
-                payload.map_or(Ok(false), |value| value.view().contains_line_handle(token))
-            }
+            Self::Variant(variant) => variant
+                .payload()
+                .map_or(Ok(false), |value| value.view().contains_line_handle(token)),
             Self::RuntimeOnly(value) => Ok(value
                 .affine_line_handles()?
                 .iter()
@@ -257,9 +236,9 @@ impl<'a> RuntimeValueView<'a> {
                     current.join(command.payload().0.ownership())
                 }),
             Self::Agent(value) => value.ownership(),
-            Self::Variant { payload, .. } => {
-                payload.map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership)
-            }
+            Self::Variant(variant) => variant
+                .payload()
+                .map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership),
             Self::RuntimeOnly(value) => value.ownership(),
         }
     }
@@ -285,7 +264,7 @@ impl<'a> RuntimeValueView<'a> {
             Self::Opaque(_) => "opaque value",
             Self::Reduction(_) => "Reduction value",
             Self::Agent(_) => "Agent value",
-            Self::Variant { .. } => "variant",
+            Self::Variant(_) => "variant",
             Self::RuntimeOnly(value) => match value {
                 RuntimeValue::MatrixF32(_) => "f32 matrix",
                 RuntimeValue::MatrixF64(_) => "f64 matrix",
@@ -322,7 +301,7 @@ impl<'a> RuntimeValueView<'a> {
             | Self::Opaque(_)
             | Self::Reduction(_)
             | Self::Agent(_)
-            | Self::Variant { .. }
+            | Self::Variant(_)
             | Self::RuntimeOnly(_) => false,
         }
     }
@@ -372,19 +351,7 @@ impl RuntimeValue {
             Self::Opaque(value) => View::Opaque(value),
             Self::Reduction(value) => View::Reduction(value),
             Self::Agent(value) => View::Agent(value),
-            Self::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            } => View::Variant {
-                owner,
-                ordinal: *ordinal,
-                name,
-                payload: payload.as_deref(),
-                type_instantiation: type_instantiation.as_ref(),
-            },
+            Self::Variant(variant) => View::Variant(variant),
             Self::MatrixF32(_)
             | Self::MatrixF64(_)
             | Self::TensorF32(_)
@@ -498,5 +465,64 @@ impl<'a> RuntimeRecordView<'a> {
                 Some((field.field(), field.name(), field.values().value_view(row)?))
             }
         }
+    }
+}
+
+pub(crate) fn runtime_value_views_equal(
+    left: RuntimeValueView<'_>,
+    right: RuntimeValueView<'_>,
+) -> bool {
+    match (left, right) {
+        (RuntimeValueView::Scalar(left), RuntimeValueView::Scalar(right)) => left == right,
+        (RuntimeValueView::Tuple(left), RuntimeValueView::Tuple(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Record(left), RuntimeValueView::Record(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
+                    (Some((left_id, left_name, left)), Some((right_id, right_name, right))) => {
+                        left_id == right_id
+                            && left_name == right_name
+                            && runtime_value_views_equal(left, right)
+                    }
+                    _ => false,
+                })
+        }
+        (RuntimeValueView::Sequence(left), RuntimeValueView::Sequence(right)) => {
+            left.len() == right.len()
+                && (0..left.len()).all(|index| {
+                    match (left.value_view(index), right.value_view(index)) {
+                        (Some(left), Some(right)) => runtime_value_views_equal(left, right),
+                        _ => false,
+                    }
+                })
+        }
+        (RuntimeValueView::NominalRecord(left), RuntimeValueView::NominalRecord(right)) => {
+            left == right
+        }
+        (RuntimeValueView::Opaque(left), RuntimeValueView::Opaque(right)) => left == right,
+        (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => left == right,
+        (RuntimeValueView::Agent(left), RuntimeValueView::Agent(right)) => left == right,
+        (RuntimeValueView::Variant(left), RuntimeValueView::Variant(right)) => {
+            left.owner() == right.owner()
+                && left.type_instantiation() == right.type_instantiation()
+                && left.ordinal() == right.ordinal()
+                && left.name() == right.name()
+                && match (left.payload(), right.payload()) {
+                    (Some(left), Some(right)) => {
+                        runtime_value_views_equal(left.view(), right.view())
+                    }
+                    (None, None) => true,
+                    _ => false,
+                }
+        }
+        (RuntimeValueView::RuntimeOnly(left), RuntimeValueView::RuntimeOnly(right)) => {
+            left == right
+        }
+        _ => false,
     }
 }

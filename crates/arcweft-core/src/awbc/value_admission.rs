@@ -291,16 +291,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             .map_err(|error| RuntimeSchemaError::Encoding {
                 message: error.to_string(),
             })?;
-        let View::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation,
-        } = value
-        else {
+        let View::Variant(variant) = value else {
             return Err(Self::mismatch(value));
         };
+        let owner = variant.owner();
+        let ordinal = variant.ordinal();
+        let name = variant.name();
+        let payload = variant.payload();
+        let type_instantiation = variant.type_instantiation();
         let owner_matches = match (expected_owner, owner) {
             (AwbcVariantIdentity::Builtin(expected), RuntimeVariantIdentity::Builtin(actual)) => {
                 expected == actual
@@ -345,11 +343,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     && layout == actual_layout.as_bytes()
                     && self.string(actual_case.name)? == name
                     && actual_case.payload.is_some() == payload.is_some()
-                    && self.context.nominal(
-                        ty,
-                        actual_ty,
-                        type_instantiation.map(std::sync::Arc::as_ref),
-                    )
+                    && self.context.nominal(ty, actual_ty, type_instantiation)
             }
             _ => false,
         };

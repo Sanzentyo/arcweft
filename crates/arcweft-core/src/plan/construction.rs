@@ -3636,19 +3636,24 @@ mod tests {
         let ty = plan.type_table().id_for_semantic(identity(1)).unwrap();
         assert_eq!(plan.variant_domains().get(ty).unwrap().layout(), layout);
         let checked = plan.checked_type(ty).unwrap().unwrap();
-        let value = |layout| RuntimeValue::Variant {
-            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
-                nominal: nominal(),
-                semantic_identity: identity(1),
-                layout,
-            },
-            ordinal: 0,
-            name: "Ready".to_owned(),
-            payload: None,
-            type_instantiation: None,
+        let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(plan.clone()));
+        let value = owner
+            .types()
+            .try_variant_value(identity(1), 0, None, RuntimeSchemaLimits::engine_default())
+            .unwrap();
+        assert!(checked.accepts_value(&value));
+        let mut invalid =
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                .unwrap();
+        let crate::value::AwbcRuntimeValueSnapshot::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal { layout, .. },
+            ..
+        } = &mut invalid
+        else {
+            unreachable!()
         };
-        assert!(checked.accepts_value(&value(layout)));
-        assert!(!checked.accepts_value(&value(wrong_layout)));
+        *layout = wrong_layout;
+        assert!(invalid.into_runtime_value_for_program(&owner).is_err());
         let mut other_layout = checked.clone();
         let RuntimeCheckedType::Variant {
             owner: crate::pattern::RuntimeVariantIdentity::Nominal { layout, .. },

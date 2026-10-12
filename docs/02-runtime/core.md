@@ -87,6 +87,42 @@ Manually constructed plans supply explicit identities for their own declared
 semantic recipes. Transporting such an identity, or a source-backed origin,
 does not itself establish executable body admission or the complete image seal.
 
+### Checked variant values
+
+`RuntimeValue::Variant` owns one `RuntimeVariantValue` with private owner,
+ordinal, canonical name, source-shaped payload and optional scoped effect
+instantiation. Consumers read its accessors; they cannot assemble or mutate a
+live header. Consuming `into_payload` transfers the retained child and destroys
+the enclosing header. A copied scoped value retains the same immutable
+instantiation lease. The internal logical View also borrows this same carrier;
+it has no copied variant header or reconstruction path. Native and AWBC pattern
+comparison share the value owner's logical comparison implementation.
+
+Construction uses the complete defining authority. `RuntimeNominalSchemaGraph`
+admits a source-ordered case and payload through its original graph.
+`RuntimeProgramTypes` selects the original Plan or AWBC case and validates the
+complete candidate before publication. Native and pure execution use the
+selected Plan case with the active function environment; AWBC uses the selected
+type row with its active frame. A finite `RuntimeCheckedVariantCase` projection
+does not replace those descriptors for recursive, generic or function-bearing
+payloads. Builtin helpers use the sole builtin registry and retain its physical
+single-item tuple payload ABI.
+
+Nominal live values reject generic Serde serialization and deserialization.
+Their inert snapshot headers are admitted against the selected program before
+children become live values. Builtin snapshot headers likewise check the exact
+case, name, payload presence and tuple shape before child restore. Snapshot and
+codec contract versions remain `1`.
+
+An arbitrary public payload mapper cannot preserve this admission invariant.
+Core owns the narrow finite-float normalization and sparse typed patch merge
+operations. They retain container identities and scoped origins; merge rejects
+affine inputs before any copying and both operations enforce the existing
+nesting limit. Normalization uses canonical ordered sequence rows so equivalent
+Native and AWBC values do not publish different storage representations in a
+codec. Callers still admit the resulting value against its expected
+role or executable type at the consuming boundary.
+
 ```rust
 pub struct Engine {
     plan: RuntimePlan,

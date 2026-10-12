@@ -394,14 +394,7 @@ fn data_format_arg(
             "format type must be nominal DataFormat",
         ));
     }
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload: None,
-        type_instantiation,
-    } = value
-    else {
+    let RuntimeValue::Variant(variant) = value else {
         return Err(data_runtime_error(
             label,
             format!(
@@ -410,16 +403,25 @@ fn data_format_arg(
             ),
         ));
     };
+    if variant.payload().is_some() {
+        return Err(data_runtime_error(
+            label,
+            "DataFormat case must have no payload",
+        ));
+    }
+    let owner = variant.owner();
+    let ordinal = variant.ordinal();
+    let name = variant.name();
     if owner != &expected_owner {
         return Err(data_runtime_error(
             label,
             "format value has the wrong DataFormat owner",
         ));
     }
-    let case = usize::try_from(*ordinal)
+    let case = usize::try_from(ordinal)
         .ok()
         .and_then(|ordinal| cases.get(ordinal))
-        .filter(|case| case.name == *name && case.payload.is_none())
+        .filter(|case| case.name == name && case.payload.is_none())
         .ok_or_else(|| {
             data_runtime_error(
                 label,
@@ -905,29 +907,26 @@ fn runtime_value_to_data_value(
             Ok(Value::Record(converted))
         }
         (
-            RuntimeValue::Variant {
-                ordinal,
-                name,
-                payload,
-                ..
-            },
+            RuntimeValue::Variant(variant),
             TypeShape::Enum {
                 name: enum_name,
                 variants,
                 ..
             },
         ) => {
-            let case = usize::try_from(*ordinal)
+            let ordinal = variant.ordinal();
+            let name = variant.name();
+            let case = usize::try_from(ordinal)
                 .ok()
                 .and_then(|ordinal| variants.get(ordinal))
-                .filter(|case| case.rust_name == *name)
+                .filter(|case| case.rust_name == name)
                 .ok_or_else(|| {
                     DataError::new(
                         DataErrorKind::InvalidEnumTag,
                         format!("runtime case `{name}` is absent from selected enum `{enum_name}`"),
                     )
                 })?;
-            let value = match (payload.as_deref(), case.payload.as_ref()) {
+            let value = match (variant.payload(), case.payload.as_ref()) {
                 (None, None) => None,
                 (Some(payload), Some(payload_shape)) => Some(Box::new(
                     runtime_value_to_data_value(

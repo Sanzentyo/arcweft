@@ -41,39 +41,28 @@ fn builtin_schema_and_value_constructors_agree_on_every_case_and_wrapper() {
             );
             assert_eq!(builtin.case(ordinal).unwrap().0, *case);
 
-            let RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                ..
-            } = value
-            else {
+            let RuntimeValue::Variant(variant) = &value else {
                 unreachable!();
             };
+            assert_eq!(variant.ordinal(), u32::try_from(ordinal).unwrap());
+            assert_eq!(variant.name(), case.name());
             for payload in [
                 Some(RuntimeValue::Bool(true)),
                 Some(RuntimeValue::Tuple(vec![])),
                 Some(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true); 2])),
                 Some(RuntimeValue::Tuple(vec![RuntimeValue::Unit])),
             ] {
-                let malformed = RuntimeValue::Variant {
-                    owner: owner.clone(),
-                    ordinal,
-                    name: name.clone(),
-                    payload: payload.map(Box::new),
-                    type_instantiation: None,
-                };
-                assert!(schema.validate_value(&malformed, limits).is_err());
+                let mut malformed = serde_json::to_value(&value).unwrap();
+                malformed["Variant"]["payload"] = serde_json::to_value(payload).unwrap();
+                match serde_json::from_value::<RuntimeValue>(malformed) {
+                    Ok(malformed) => assert!(schema.validate_value(&malformed, limits).is_err()),
+                    Err(error) => assert!(!error.to_string().is_empty()),
+                }
             }
             if case.has_payload() {
-                let missing = RuntimeValue::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload: None,
-                    type_instantiation: None,
-                };
-                assert!(schema.validate_value(&missing, limits).is_err());
+                let mut missing = serde_json::to_value(&value).unwrap();
+                missing["Variant"]["payload"] = serde_json::Value::Null;
+                assert!(serde_json::from_value::<RuntimeValue>(missing).is_err());
             }
         }
         assert!(builtin.case(owner.cases().len()).is_none());
@@ -100,19 +89,11 @@ fn builtin_schema_rejects_wrong_owner_case_and_name_before_payload_admission() {
         })
     ));
     for (ordinal, name) in [(0, "None"), (1, "Some"), (u32::MAX, "Some")] {
-        let value = RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-            ordinal,
-            name: name.to_owned(),
-            payload: Some(Box::new(RuntimeValue::Tuple(vec![RuntimeValue::Bool(
-                true,
-            )]))),
-            type_instantiation: None,
-        };
-        assert!(matches!(
-            schema.validate_value(&value, limits),
-            Err(RuntimeSchemaError::UnknownVariant { .. })
-        ));
+        let mut value =
+            serde_json::to_value(RuntimeValue::option_some(RuntimeValue::Bool(true))).unwrap();
+        value["Variant"]["ordinal"] = serde_json::json!(ordinal);
+        value["Variant"]["name"] = serde_json::json!(name);
+        assert!(serde_json::from_value::<RuntimeValue>(value).is_err());
     }
 }
 

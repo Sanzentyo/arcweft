@@ -29,26 +29,14 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
         .expect("Result::Ok payload is admitted");
     assert!(matches!(
         ready.value(),
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Result,
-            ),
-            ordinal: 0,
-            ..
-        }
+        RuntimeValue::Variant(variant) if variant.owner() == &RuntimeVariantIdentity::Builtin(crate::pattern::RuntimeBuiltinVariantIdentity::Result) && variant.ordinal() == 0
     ));
     let error = fallible
         .try_result_err(RuntimeValue::String("domain".to_owned()))
         .expect("Result::Err payload is admitted");
     assert!(matches!(
         error.value(),
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Result,
-            ),
-            ordinal: 1,
-            ..
-        }
+        RuntimeValue::Variant(variant) if variant.owner() == &RuntimeVariantIdentity::Builtin(crate::pattern::RuntimeBuiltinVariantIdentity::Result) && variant.ordinal() == 1
     ));
     assert!(fallible.try_result_ok(RuntimeValue::Bool(true)).is_err());
     assert!(fallible.try_result_err(RuntimeValue::Bool(false)).is_err());

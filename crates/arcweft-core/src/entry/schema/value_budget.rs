@@ -165,11 +165,13 @@ impl ValueBudget {
                     self.string(command.target().as_str())?;
                 }
             }
-            RuntimeValueView::Variant { owner, name, .. } => {
-                if let crate::pattern::RuntimeVariantIdentity::Nominal { nominal, .. } = owner {
+            RuntimeValueView::Variant(variant) => {
+                if let crate::pattern::RuntimeVariantIdentity::Nominal { nominal, .. } =
+                    variant.owner()
+                {
                     self.string(nominal.as_str())?;
                 }
-                self.string(name)?;
+                self.string(variant.name())?;
             }
             RuntimeValueView::Agent(_) => {
                 // Agent strings and structural predicate nodes are checked by

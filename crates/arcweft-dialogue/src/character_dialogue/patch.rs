@@ -626,7 +626,10 @@ pub(super) fn merge_style_set(
     let value = if matches!(incoming, RuntimeValue::EntityRef(_)) {
         incoming
     } else {
-        merge_runtime_value(base.typed().value(), &incoming)
+        base.typed()
+            .value()
+            .try_merge_sparse_patch(&incoming)
+            .map_err(value_merge_error)?
     };
     CharacterDialogueStyleValue::try_new(super::CharacterDialogueTypedValue::try_new(value)?)
 }
@@ -635,132 +638,27 @@ pub(super) fn merge_rich_text_set(
     base: &CharacterDialogueRichTextValue,
     incoming: RuntimeValue,
 ) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
-    let value = merge_runtime_value(base.typed().value(), &incoming);
+    let value = base
+        .typed()
+        .value()
+        .try_merge_sparse_patch(&incoming)
+        .map_err(value_merge_error)?;
     CharacterDialogueRichTextValue::try_new(super::CharacterDialogueTypedValue::try_new(value)?)
 }
 
-fn merge_runtime_value(base: &RuntimeValue, incoming: &RuntimeValue) -> RuntimeValue {
-    if matches!(
-        incoming.builtin_variant_case(),
-        Some((
-            arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone,
-            None
-        ))
-    ) {
-        return base.clone();
-    }
-    if let Some((
-        arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
-        Some(patch),
-    )) = incoming.builtin_variant_case()
-    {
-        let value = match base.builtin_variant_case() {
-            Some((
-                arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
-                Some(current),
-            )) => merge_runtime_value(current, patch),
-            _ => patch.clone(),
-        };
-        return RuntimeValue::option_some(value);
-    }
-
-    match (base, incoming) {
-        (RuntimeValue::Opaque(base), RuntimeValue::Opaque(incoming))
-            if base.producer() == incoming.producer()
-                && base.semantic_identity() == incoming.semantic_identity()
-                && base.value_class() == incoming.value_class()
-                && base.persistence() == incoming.persistence() =>
-        {
-            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
-                base.producer().clone(),
-                base.semantic_identity(),
-                base.value_class(),
-                base.persistence(),
-            );
-            let payload = merge_runtime_value(base.payload(), incoming.payload());
-            owner
-                .try_wrap(payload)
-                .expect("merging a validated opaque payload preserves its exact owner")
-        }
-        (RuntimeValue::Tuple(base), RuntimeValue::Tuple(incoming))
-            if base.len() == incoming.len() =>
-        {
-            RuntimeValue::Tuple(
-                base.iter()
-                    .zip(incoming)
-                    .map(|(base, incoming)| merge_runtime_value(base, incoming))
-                    .collect(),
-            )
-        }
-        (RuntimeValue::Record(base), RuntimeValue::Record(incoming))
-            if base.len() == incoming.len()
-                && base.iter().zip(incoming).all(|(base, incoming)| {
-                    base.field() == incoming.field() && base.name() == incoming.name()
-                }) =>
-        {
-            RuntimeValue::try_record(
-                base.iter()
-                    .zip(incoming)
-                    .map(|(base, incoming)| {
-                        (
-                            base.name().to_owned(),
-                            merge_runtime_value(base.value(), incoming.value()),
-                        )
-                    })
-                    .collect(),
-            )
-            .expect("merging a validated record preserves its unique field layout")
-        }
-        (RuntimeValue::NominalRecord(base), RuntimeValue::NominalRecord(incoming))
-            if base.type_id() == incoming.type_id()
-                && base.semantic_identity() == incoming.semantic_identity()
-                && base.layout() == incoming.layout()
-                && base.fields().len() == incoming.fields().len()
-                && base.type_instantiation() == incoming.type_instantiation() =>
-        {
-            let mut base_fields = base.fields().iter();
-            RuntimeValue::NominalRecord(incoming.clone().map_fields(|incoming| {
-                merge_runtime_value(
-                    base_fields
-                        .next()
-                        .expect("equal defining-order field counts"),
-                    &incoming,
-                )
-            }))
-        }
-        (
-            RuntimeValue::Variant {
-                owner: base_owner,
-                ordinal: base_ordinal,
-                name: base_name,
-                payload: Some(base_payload),
-                type_instantiation: base_instantiation,
-            },
-            RuntimeValue::Variant {
-                owner: incoming_owner,
-                ordinal: incoming_ordinal,
-                name: incoming_name,
-                payload: Some(incoming_payload),
-                type_instantiation: incoming_instantiation,
-            },
-        ) if base_owner == incoming_owner
-            && base_ordinal == incoming_ordinal
-            && base_instantiation == incoming_instantiation
-            && base_name == incoming_name =>
-        {
-            RuntimeValue::Variant {
-                owner: incoming_owner.clone(),
-                ordinal: *incoming_ordinal,
-                name: incoming_name.clone(),
-                payload: Some(Box::new(merge_runtime_value(
-                    base_payload,
-                    incoming_payload,
-                ))),
-                type_instantiation: incoming_instantiation.clone(),
+fn value_merge_error(
+    error: arcweft_core::value::RuntimeValueMergeError,
+) -> CharacterDialogueValueError {
+    match error {
+        arcweft_core::value::RuntimeValueMergeError::Nesting(_) => {
+            CharacterDialogueValueError::Limit {
+                limit: "runtime_value_nesting_depth",
+                maximum: arcweft_core::value::MAX_RUNTIME_VALUE_NESTING_DEPTH,
             }
         }
-        // A leaf Set replaces the prior leaf. Structured containers recurse
-        // only when both values carry the same exact structural identity.
-        _ => incoming.clone(),
+        arcweft_core::value::RuntimeValueMergeError::Affine => CharacterDialogueValueError::Field {
+            field: "structured_value",
+            reason: "sparse value merging requires unrestricted values".to_owned(),
+        },
     }
 }

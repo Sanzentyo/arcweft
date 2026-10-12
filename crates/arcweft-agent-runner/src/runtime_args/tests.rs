@@ -101,33 +101,29 @@ fn runtime_enum_arguments_reject_labels_wrong_owners_and_malformed_cases() {
                 owner == RuntimeBuiltinVariantIdentity::PointerButton
             );
             let (_, case) = owner.resolve_case(schema.identity()).unwrap();
-            let mut bad_ordinal = value.clone();
-            let RuntimeValue::Variant { ordinal, .. } = &mut bad_ordinal else {
-                unreachable!()
-            };
-            *ordinal = u32::MAX;
-            let mut bad_name = value.clone();
-            let RuntimeValue::Variant { name, .. } = &mut bad_name else {
-                unreachable!()
-            };
-            *name = "forged".to_owned();
-            let mut bad_payload = value.clone();
-            let RuntimeValue::Variant { payload, .. } = &mut bad_payload else {
-                unreachable!()
-            };
-            *payload = Some(Box::new(RuntimeValue::Unit));
+            let wire = serde_json::to_value(&value).expect("builtin variant wire");
+            for (field, malformed) in [
+                ("ordinal", serde_json::json!(u32::MAX)),
+                ("name", serde_json::json!("forged")),
+                ("payload", serde_json::to_value(RuntimeValue::Unit).unwrap()),
+                (
+                    "owner",
+                    serde_json::to_value(RuntimeVariantIdentity::Builtin(
+                        RuntimeBuiltinVariantIdentity::Option,
+                    ))
+                    .unwrap(),
+                ),
+            ] {
+                let mut invalid = wire.clone();
+                invalid["Variant"][field] = malformed;
+                assert!(
+                    serde_json::from_value::<RuntimeValue>(invalid).is_err(),
+                    "{field}"
+                );
+            }
             for invalid in [
                 RuntimeValue::String(case.name().to_owned()),
-                bad_ordinal,
-                bad_name,
-                bad_payload,
-                RuntimeValue::Variant {
-                    owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                    ordinal: 0,
-                    name: case.name().to_owned(),
-                    payload: None,
-                    type_instantiation: None,
-                },
+                RuntimeValue::option_none(),
             ] {
                 assert!(runtime_capture_format(&invalid).is_err());
                 assert!(runtime_capture_kind(&invalid).is_err());

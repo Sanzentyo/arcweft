@@ -21,6 +21,7 @@ use crate::{
 };
 
 mod construction;
+pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
 pub use function_contract::RuntimeFunctionEffectInstantiation;
 pub(crate) use function_contract::RuntimeValueTypeContext;

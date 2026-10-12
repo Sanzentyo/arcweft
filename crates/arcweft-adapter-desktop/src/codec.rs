@@ -318,20 +318,60 @@ mod tests {
     }
 
     fn variant_arg(owner: &str, ordinal: u32, name: &str) -> RuntimePayload {
-        RuntimePayload(RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal: arcweft_core::entry::RuntimeNominalTypeId::try_new(owner)
-                    .expect("test nominal identity"),
-                semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
-                    [7; 32],
+        use arcweft_core::entry::{
+            RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+            RuntimeNominalSchemaDefinition, RuntimeNominalSchemaGraph,
+            RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaLimits,
+        };
+        let manifest = crate::manifest::desktop_owned_window_manifest();
+        let declaration = manifest
+            .rust_types()
+            .iter()
+            .map(|ty| ty.decl())
+            .find(|ty| ty.rust_path.ends_with(&format!("::{owner}")))
+            .expect("declared desktop enum");
+        let arcweft_rust_abi::ArcweftRustTypeKind::Enum { variants } = &declaration.kind else {
+            panic!("desktop type is an enum");
+        };
+        let semantic = arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([7; 32]);
+        let graph = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
+                RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new(owner).unwrap(),
+                    semantic,
                 ),
-                layout: arcweft_core::entry::TypeLayoutHash::from_bytes([8; 32]),
-            },
-            ordinal,
-            name: name.to_owned(),
-            payload: None,
-            type_instantiation: None,
-        })
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: variants
+                        .iter()
+                        .enumerate()
+                        .map(|(ordinal, case)| {
+                            RuntimeNominalSchemaCase::new(
+                                u32::try_from(ordinal).unwrap(),
+                                case.name.clone(),
+                                None,
+                            )
+                        })
+                        .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let value = graph
+            .try_variant_value(
+                semantic,
+                ordinal,
+                None,
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .unwrap();
+        let RuntimeValue::Variant(variant) = &value else {
+            unreachable!()
+        };
+        assert_eq!(variant.name(), name);
+        RuntimePayload(value)
     }
 
     fn task<const N: usize>(

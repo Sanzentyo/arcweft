@@ -45,7 +45,22 @@ impl CharacterDialogueTypedValue {
                 limit: "runtime_value_nesting_depth",
                 maximum: MAX_RUNTIME_VALUE_NESTING_DEPTH,
             })?;
-        let value = normalize_runtime_value(value)?;
+        let value = value
+            .try_normalize_finite_floats()
+            .map_err(|error| match error {
+                arcweft_core::value::RuntimeValueNormalizationError::Schema(error) => {
+                    CharacterDialogueValueError::from(error)
+                }
+                arcweft_core::value::RuntimeValueNormalizationError::Opaque(error) => {
+                    CharacterDialogueValueError::from(error)
+                }
+                arcweft_core::value::RuntimeValueNormalizationError::Nesting(_) => {
+                    CharacterDialogueValueError::Limit {
+                        limit: "runtime_value_nesting_depth",
+                        maximum: MAX_RUNTIME_VALUE_NESTING_DEPTH,
+                    }
+                }
+            })?;
         validate_config_strings(&value)?;
         value.try_canonical_bytes(
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
@@ -247,10 +262,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
             }
             Ok(())
         }
-        RuntimeValue::Variant {
-            payload: Some(payload),
-            ..
-        } => validate_config_strings(payload),
+        RuntimeValue::Variant(variant) => variant.payload().map_or(Ok(()), validate_config_strings),
         RuntimeValue::Unit
         | RuntimeValue::NeedHandle(_)
         | RuntimeValue::Bool(_)
@@ -270,8 +282,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Callable(_)
-        | RuntimeValue::EntityRef(_)
-        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+        | RuntimeValue::EntityRef(_) => Ok(()),
     }
 }
 
@@ -358,10 +369,10 @@ fn count_structured_leaves(
         RuntimeValue::Opaque(value) => {
             count_structured_leaves(value.payload(), depth + 1, leaves)?;
         }
-        RuntimeValue::Variant {
-            payload: Some(payload),
-            ..
-        } => count_structured_leaves(payload, depth, leaves)?,
+        RuntimeValue::Variant(variant) => match variant.payload() {
+            Some(payload) => count_structured_leaves(payload, depth, leaves)?,
+            None => count_structured_leaf(leaves)?,
+        },
         RuntimeValue::Callable(_)
         | RuntimeValue::NeedHandle(_)
         | RuntimeValue::Iterator(_)
@@ -388,97 +399,26 @@ fn count_structured_leaves(
         | RuntimeValue::Color(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
-        | RuntimeValue::EntityRef(_)
-        | RuntimeValue::Variant { payload: None, .. } => {
-            *leaves = leaves
-                .checked_add(1)
-                .ok_or(CharacterDialogueValueError::Limit {
-                    limit: "structured_leaves",
-                    maximum: usize::from(
-                        PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_structured_leaves,
-                    ),
-                })?;
-            let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_structured_leaves);
-            if *leaves > maximum {
-                return Err(CharacterDialogueValueError::Limit {
-                    limit: "structured_leaves",
-                    maximum,
-                });
-            }
-        }
+        | RuntimeValue::EntityRef(_) => count_structured_leaf(leaves)?,
     }
     Ok(())
 }
 
-fn normalize_runtime_value(
-    value: RuntimeValue,
-) -> Result<RuntimeValue, CharacterDialogueValueError> {
-    match value {
-        RuntimeValue::F32(value) => {
-            if !value.is_finite() {
-                return Err(RuntimeSchemaError::NonFinite {
-                    path: "$".to_owned(),
-                    kind: "f32",
-                }
-                .into());
-            }
-            Ok(RuntimeValue::F32(if value == 0.0 { 0.0 } else { value }))
-        }
-        RuntimeValue::F64(value) => {
-            if !value.is_finite() {
-                return Err(RuntimeSchemaError::NonFinite {
-                    path: "$".to_owned(),
-                    kind: "f64",
-                }
-                .into());
-            }
-            Ok(RuntimeValue::F64(if value == 0.0 { 0.0 } else { value }))
-        }
-        RuntimeValue::Tuple(values) => values
-            .into_iter()
-            .map(normalize_runtime_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Tuple),
-        RuntimeValue::Seq(sequence) => sequence
-            .into_values()
-            .into_iter()
-            .map(normalize_runtime_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeSeq::values)
-            .map(RuntimeValue::Seq),
-        RuntimeValue::Record(fields) => fields
-            .try_map_values(normalize_runtime_value)
-            .map(RuntimeValue::Record),
-        RuntimeValue::Opaque(value) => {
-            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
-                value.producer().clone(),
-                value.semantic_identity(),
-                value.value_class(),
-                value.persistence(),
-            );
-            Ok(owner.try_wrap(normalize_runtime_value(value.into_payload())?)?)
-        }
-        RuntimeValue::NominalRecord(record) => record
-            .try_map_fields(normalize_runtime_value)
-            .map(RuntimeValue::NominalRecord),
-        RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation,
-        } => payload
-            .map(|payload| normalize_runtime_value(*payload).map(Box::new))
-            .transpose()
-            .map(|payload| RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            }),
-        value => Ok(value),
+fn count_structured_leaf(leaves: &mut usize) -> Result<(), CharacterDialogueValueError> {
+    *leaves = leaves
+        .checked_add(1)
+        .ok_or(CharacterDialogueValueError::Limit {
+            limit: "structured_leaves",
+            maximum: usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_structured_leaves),
+        })?;
+    let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_structured_leaves);
+    if *leaves > maximum {
+        return Err(CharacterDialogueValueError::Limit {
+            limit: "structured_leaves",
+            maximum,
+        });
     }
+    Ok(())
 }
 
 pub(super) fn empty_like(

@@ -628,23 +628,20 @@ impl RuntimeNominalSchemaGraph {
             .map_err(|source| RuntimeSchemaError::NominalGraph {
                 source: Box::new(source),
             })?;
-        let candidate = crate::value::RuntimeValue::Variant {
-            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
-                nominal: definition.identity().nominal().clone(),
-                semantic_identity: root,
-                layout,
+        crate::value::RuntimeVariantValue::try_from_nominal_case(
+            definition.identity(),
+            layout,
+            case,
+            payload,
+            |candidate| {
+                super::value_validation::SchemaValueValidation::with_graph_layouts(layouts, limits)
+                    .validate(
+                        candidate,
+                        super::value_validation::Expected::GraphRoot(root),
+                    )
+                    .map(|_| ())
             },
-            ordinal,
-            name: case.name().to_owned(),
-            type_instantiation: None,
-            payload: payload.map(Box::new),
-        };
-        super::value_validation::SchemaValueValidation::with_graph_layouts(layouts, limits)
-            .validate(
-                &candidate,
-                super::value_validation::Expected::GraphRoot(root),
-            )?;
-        Ok(candidate)
+        )
     }
 }
 

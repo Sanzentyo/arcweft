@@ -1194,21 +1194,46 @@ mod visitor_tests {
 
     #[test]
     fn canonical_variant_ordinal_uses_the_shared_shortest_varint() {
-        let value = RuntimeValue::Variant {
-            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
-                nominal: super::RuntimeNominalTypeId::try_new("aw.test.variant").unwrap(),
-                semantic_identity: crate::pattern::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                layout: super::TypeLayoutHash::from_bytes([0x22; 32]),
-            },
-            ordinal: 300,
-            name: "case".to_owned(),
-            payload: None,
-            type_instantiation: None,
+        use crate::entry::{
+            RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
+            RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeSchemaLimits,
         };
+        let semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([0x11; 32]);
+        let graph = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
+                RuntimeNominalSchemaIdentity::new(
+                    super::RuntimeNominalTypeId::try_new("aw.test.variant").unwrap(),
+                    semantic,
+                ),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: (0..=300)
+                        .map(|ordinal| {
+                            RuntimeNominalSchemaCase::new(
+                                ordinal,
+                                if ordinal == 300 {
+                                    "case".to_owned()
+                                } else {
+                                    format!("case{ordinal}")
+                                },
+                                None,
+                            )
+                        })
+                        .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let value = graph
+            .try_variant_value(semantic, 300, None, RuntimeSchemaLimits::engine_default())
+            .unwrap();
+
         let mut expected = vec![14, 0, 15];
         expected.extend_from_slice(b"aw.test.variant");
         expected.extend_from_slice(&[0x11; 32]);
-        expected.extend_from_slice(&[0x22; 32]);
+        expected.extend_from_slice(graph.try_layout_hash(semantic).unwrap().as_bytes());
         expected.extend_from_slice(&[0xac, 0x02, 4]);
         expected.extend_from_slice(b"case");
         expected.push(0);

@@ -6,11 +6,11 @@ use super::schema::{
     AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcPatternId, AwbcProgram, AwbcRegisterId,
     AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignatureId,
     AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTraitReceiverMode, AwbcTrapCode,
-    AwbcTypeId, AwbcVariantIdentity,
+    AwbcTypeId,
 };
-use crate::entry::{FlowParameterCoordinate, RuntimeNominalTypeId};
+use crate::entry::FlowParameterCoordinate;
+#[cfg(test)]
 use crate::pattern::RuntimeSemanticTypeId;
-use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableInputSource, RuntimeCallableTransition,
     RuntimeDialogueValueBinding,
@@ -4493,10 +4493,9 @@ fn validate_nested_runtime_value(
         RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
             validate_nested_runtime_value(program, state, depth + 1)
         }
-        RuntimeValue::Variant {
-            payload: Some(payload),
-            ..
-        } => validate_nested_runtime_value(program, payload, depth + 1),
+        RuntimeValue::Variant(variant) => variant.payload().map_or(Ok(()), |payload| {
+            validate_nested_runtime_value(program, payload, depth + 1)
+        }),
         RuntimeValue::Unit
         | RuntimeValue::Bool(_)
         | RuntimeValue::Int(_)
@@ -4515,8 +4514,7 @@ fn validate_nested_runtime_value(
         | RuntimeValue::Progress(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(RuntimeIterator::Range(_))
-        | RuntimeValue::EntityRef(_)
-        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+        | RuntimeValue::EntityRef(_) => Ok(()),
     }
 }
 
@@ -6329,26 +6327,6 @@ pub(crate) fn runtime_value_matches_type(
     super::vm::runtime_value_view_matches_type(program, value.view(), ty, depth)
 }
 
-pub(crate) fn runtime_variant_identity(
-    program: &AwbcProgram,
-    semantic_identity: RuntimeSemanticTypeId,
-    owner: &AwbcVariantIdentity,
-) -> Option<RuntimeVariantIdentity> {
-    match owner {
-        AwbcVariantIdentity::Nominal { public_id, layout } => {
-            Some(RuntimeVariantIdentity::Nominal {
-                nominal: RuntimeNominalTypeId::try_new(
-                    program.strings.get(public_id.index())?.clone(),
-                )
-                .ok()?,
-                semantic_identity,
-                layout: crate::entry::TypeLayoutHash::from_bytes(*layout),
-            })
-        }
-        AwbcVariantIdentity::Builtin(owner) => Some(RuntimeVariantIdentity::Builtin(*owner)),
-    }
-}
-
 fn runtime_type_label(program: &AwbcProgram, ty: AwbcTypeId) -> String {
     program
         .runtime_types
@@ -6385,7 +6363,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Callable(_) => "callable",
-        RuntimeValue::Variant { .. } => "variant",
+        RuntimeValue::Variant(_) => "variant",
     }
     .to_owned()
 }

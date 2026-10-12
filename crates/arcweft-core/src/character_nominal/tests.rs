@@ -24,7 +24,6 @@ use crate::{
         RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
     },
     task::RuntimeProgramOwner,
-    value::RuntimeValue,
 };
 
 fn manifest(name: &str) -> CharacterManifest {
@@ -144,13 +143,10 @@ fn look_source_requires_manifest_row_and_exact_program_lease() {
     else {
         panic!("Look<C> is a nominal variant");
     };
-    let value = RuntimeValue::Variant {
-        owner: variant_owner.clone(),
-        ordinal: 0,
-        name: "normal".to_owned(),
-        payload: None,
-        type_instantiation: None,
-    };
+    let value = owner
+        .types()
+        .try_variant_value(semantic, 0, None, RuntimeSchemaLimits::engine_default())
+        .unwrap();
     assert_eq!(
         authority.decode(&owner, &akane, &value).unwrap().as_str(),
         "normal"

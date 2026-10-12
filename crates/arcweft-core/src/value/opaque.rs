@@ -2549,7 +2549,7 @@ impl RuntimeContentValueBudget {
                 crate::value::RuntimeIterator::Witness { state, .. } => self.visit(state)?,
                 crate::value::RuntimeIterator::Range(_) => {}
             },
-            RuntimeValue::Variant { name, payload, .. } => {
+            RuntimeValue::Variant(crate::value::RuntimeVariantValue { name, payload, .. }) => {
                 if !self.limits.permits_string_bytes(name.len()) {
                     return Err(RuntimeDialogueContentValueError::StringLimit {
                         maximum: usize::try_from(self.limits.max_string_bytes)

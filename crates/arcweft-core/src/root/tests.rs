@@ -368,17 +368,16 @@ impl Fixture {
         ))
     }
     fn event(&self, field_value: RuntimeValue) -> RootEventInput {
-        RootEventInput::new(RuntimePayload(RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal: nominal(2),
-                semantic_identity: semantic(2),
-                layout: self.contract.roles.event.layout,
-            },
-            ordinal: 1,
-            name: "Set".into(),
-            payload: Some(Box::new(RuntimeValue::Tuple(vec![field_value]))),
-            type_instantiation: None,
-        }))
+        RootEventInput::new(RuntimePayload(
+            RuntimeProgramTypes::Plan(&self.plan)
+                .try_variant_value(
+                    semantic(2),
+                    1,
+                    Some(RuntimeValue::Tuple(vec![field_value])),
+                    RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap(),
+        ))
     }
     fn start(&self, program: RuntimeProgramTypes<'_>) -> RootRuntime {
         RootRuntime::start(
@@ -531,7 +530,9 @@ fn event_batch_admission_is_atomic_and_preserves_the_transition_cursor() {
             root.ingress(
                 vec![
                     fixture.event(RuntimeValue::Bool(true)),
-                    fixture.event(RuntimeValue::Unit)
+                    RootEventInput::new(RuntimePayload(RuntimeValue::option_some(
+                        RuntimeValue::Tuple(vec![RuntimeValue::Unit])
+                    )))
                 ],
                 program
             ),

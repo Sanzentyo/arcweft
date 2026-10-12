@@ -321,24 +321,22 @@ fn source_rust_nominals_preserve_shapes_recursion_and_exact_arguments_in_native_
         (1, Some(tuple.clone()), Some(record.clone())),
         (2, Some(record), Some(tuple)),
     ] {
-        let case = plan.variant_case(cases.owner(), ordinal).unwrap();
-        let variant = |payload: Option<RuntimeValue>| RuntimeValue::Variant {
-            owner: case.owner().clone(),
-            ordinal,
-            name: case.name().to_owned(),
-            payload: payload.map(Box::new),
-            type_instantiation: None,
-        };
-        let correct = variant(correct);
+        let correct = arcweft_core::program_types::RuntimeProgramTypes::Plan(&plan)
+            .try_variant_value(identity, ordinal, correct, limits)
+            .unwrap();
         assert_eq!(
             plan.accepts_value(cases.owner(), &correct, limits).unwrap(),
             program.accepts_value(awbc, &correct, limits).unwrap()
         );
-        let incorrect = variant(incorrect);
-        assert!(
-            plan.accepts_value(cases.owner(), &incorrect, limits)
-                .is_err()
-        );
-        assert!(program.accepts_value(awbc, &incorrect, limits).is_err());
+        for authority in [
+            arcweft_core::program_types::RuntimeProgramTypes::Plan(&plan),
+            arcweft_core::program_types::RuntimeProgramTypes::Awbc(&program),
+        ] {
+            assert!(
+                authority
+                    .try_variant_value(identity, ordinal, incorrect.clone(), limits)
+                    .is_err()
+            );
+        }
     }
 }

@@ -136,21 +136,14 @@ fn data_construction_uses_exact_graph_headers_shapes_and_source_ordered_cases() 
                 limits,
             )
             .unwrap();
-        let RuntimeValue::Variant {
-            owner,
-            ordinal: actual,
-            name: actual_name,
-            payload: actual_payload,
-            ..
-        } = &value
-        else {
+        let RuntimeValue::Variant(variant) = &value else {
             unreachable!();
         };
-        assert_eq!(*actual, ordinal);
-        assert_eq!(actual_name, name);
-        assert_eq!(actual_payload.as_deref(), payload.as_ref());
+        assert_eq!(variant.ordinal(), ordinal);
+        assert_eq!(variant.name(), name);
+        assert_eq!(variant.payload(), payload.as_ref());
         assert_eq!(
-            *owner,
+            *variant.owner(),
             crate::pattern::RuntimeVariantIdentity::Nominal {
                 nominal: identity(3).nominal().clone(),
                 semantic_identity: identity(3).semantic_identity(),
@@ -608,7 +601,6 @@ fn recursive_nominal_values_follow_typed_references_and_builtin_payloads() {
 
 #[test]
 fn graph_variants_require_exact_owner_layout_case_and_payload_shape() {
-    use crate::pattern::RuntimeVariantIdentity;
     let graph = graph(vec![RuntimeNominalSchemaDefinition::new(
         crate::entry::RuntimeNominalDeclarationId::from_bytes(
             *(identity(7)).semantic_identity().as_bytes(),
@@ -653,102 +645,85 @@ fn graph_variants_require_exact_owner_layout_case_and_payload_shape() {
             .into_boxed_slice(),
         },
     )]);
-    let owner = RuntimeVariantIdentity::Nominal {
-        nominal: identity(7).nominal().clone(),
-        semantic_identity: identity(7).semantic_identity(),
-        layout: hash(&graph, 7),
-    };
-    let value = |ordinal, name: &str, payload: Option<RuntimeValue>| RuntimeValue::Variant {
-        owner: owner.clone(),
-        ordinal,
-        name: name.to_owned(),
-        payload: payload.map(Box::new),
-        type_instantiation: None,
-    };
     let limits = RuntimeSchemaLimits::engine_default();
-    let validate =
-        |value: &RuntimeValue| graph.accepts_value(identity(7).semantic_identity(), value, limits);
-    for value in [
-        value(0, "Unit", None),
-        value(1, "EmptyTuple", Some(RuntimeValue::Tuple(vec![]))),
-        value(
-            2,
-            "Single",
-            Some(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])),
-        ),
-        value(
-            3,
-            "EmptyRecord",
-            Some(RuntimeValue::try_record(vec![]).unwrap()),
-        ),
-        value(
+    let value = |ordinal, payload| {
+        graph.try_variant_value(identity(7).semantic_identity(), ordinal, payload, limits)
+    };
+    for (ordinal, payload) in [
+        (0, None),
+        (1, Some(RuntimeValue::Tuple(vec![]))),
+        (2, Some(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]))),
+        (3, Some(RuntimeValue::try_record(vec![]).unwrap())),
+        (
             4,
-            "Named",
             Some(
                 RuntimeValue::try_record(vec![("value".to_owned(), RuntimeValue::i64(1))]).unwrap(),
             ),
         ),
     ] {
+        let value = value(ordinal, payload).unwrap();
         assert_eq!(
-            validate(&value).unwrap(),
+            graph
+                .accepts_value(identity(7).semantic_identity(), &value, limits)
+                .unwrap(),
             value.try_digest(1_000_000).unwrap()
         );
     }
     assert!(matches!(
-        validate(&value(0, "Unit", Some(RuntimeValue::Unit))),
+        value(0, Some(RuntimeValue::Unit)),
         Err(RuntimeSchemaError::VariantPayload { .. })
     ));
     assert!(matches!(
-        validate(&value(1, "EmptyTuple", None)),
+        value(1, None),
         Err(RuntimeSchemaError::VariantPayload { .. })
     ));
     assert!(matches!(
-        validate(&value(2, "Single", Some(RuntimeValue::Bool(true)))),
+        value(2, Some(RuntimeValue::Bool(true))),
         Err(RuntimeSchemaError::Type {
             expected: "tuple",
             ..
         })
     ));
     assert!(matches!(
-        validate(&value(1, "Unit", None)),
+        value(u32::MAX, None),
         Err(RuntimeSchemaError::UnknownVariant { .. })
     ));
     assert!(matches!(
-        validate(&value(
+        value(
             4,
-            "Named",
             Some(
                 RuntimeValue::try_record(vec![("other".to_owned(), RuntimeValue::i64(1))]).unwrap()
             )
-        )),
+        ),
         Err(RuntimeSchemaError::RecordField { .. })
     ));
-    let mut wrong_layout = value(0, "Unit", None);
-    let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal { layout, .. },
-        ..
-    } = &mut wrong_layout
-    else {
-        unreachable!()
+    let foreign = |semantic_byte| {
+        RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                crate::entry::RuntimeNominalDeclarationId::from_bytes(
+                    *identity(semantic_byte).semantic_identity().as_bytes(),
+                ),
+                RuntimeNominalSchemaIdentity::new(
+                    identity(7).nominal().clone(),
+                    identity(semantic_byte).semantic_identity(),
+                ),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: vec![RuntimeNominalSchemaCase::new(0, "Unit".to_owned(), None)].into(),
+                },
+            )],
+            limits,
+        )
+        .unwrap()
+        .try_variant_value(identity(semantic_byte).semantic_identity(), 0, None, limits)
+        .unwrap()
     };
-    *layout = TypeLayoutHash::from_bytes([9; 32]);
     assert!(matches!(
-        validate(&wrong_layout),
+        graph.accepts_value(identity(7).semantic_identity(), &foreign(7), limits),
         Err(RuntimeSchemaError::NominalLayout { .. })
     ));
-    let mut wrong_semantic = value(0, "Unit", None);
-    let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            semantic_identity, ..
-        },
-        ..
-    } = &mut wrong_semantic
-    else {
-        unreachable!()
-    };
-    *semantic_identity = identity(9).semantic_identity();
     assert!(matches!(
-        validate(&wrong_semantic),
+        graph.accepts_value(identity(7).semantic_identity(), &foreign(9), limits),
         Err(RuntimeSchemaError::NominalSemanticIdentity { .. })
     ));
 }

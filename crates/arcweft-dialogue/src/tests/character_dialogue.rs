@@ -442,19 +442,11 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
     assert_eq!(record.fields().len(), 2);
     assert!(matches!(
         &record.fields()[0],
-        RuntimeValue::Variant {
-            name,
-            payload: None,
-            ..
-        } if name == "None"
+        RuntimeValue::Variant(variant) if variant.name() == "None" && variant.payload().is_none()
     ));
     assert!(matches!(
         &record.fields()[1],
-        RuntimeValue::Variant {
-            name,
-            payload: Some(_),
-            ..
-        } if name == "Some"
+        RuntimeValue::Variant(variant) if variant.name() == "Some" && variant.payload().is_some()
     ));
 
     let cleared = patched
@@ -466,11 +458,7 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
     assert_eq!(record.fields().len(), 2);
     assert!(record.fields().iter().all(|field| matches!(
         field,
-        RuntimeValue::Variant {
-            name,
-            payload: None,
-            ..
-        } if name == "None"
+        RuntimeValue::Variant(variant) if variant.name() == "None" && variant.payload().is_none()
     )));
 
     let structural_style = CharacterDialogueStyleValue::try_new(

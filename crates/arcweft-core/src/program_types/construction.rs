@@ -54,10 +54,17 @@ pub enum RuntimeProgramValueConstructionError {
 
 /// An ephemeral source-ordered case resolved from the selected executable.
 /// It is never a second type catalog or a published runtime carrier.
-struct ProgramVariantCase {
+pub(crate) struct ProgramVariantCase {
     owner: RuntimeVariantIdentity,
+    ordinal: u32,
     name: String,
     payload: Option<RuntimeSemanticTypeId>,
+}
+
+impl ProgramVariantCase {
+    pub(crate) fn into_header(self) -> (RuntimeVariantIdentity, u32, String) {
+        (self.owner, self.ordinal, self.name)
+    }
 }
 
 impl RuntimeProgramTypes<'_> {
@@ -306,15 +313,10 @@ impl RuntimeProgramTypes<'_> {
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
         let case = self.variant_case(semantic_type, ordinal)?;
-        let value = RuntimeValue::Variant {
-            owner: case.owner,
-            ordinal,
-            name: case.name,
-            payload: payload.map(Box::new),
-            type_instantiation: None,
-        };
-        self.validate_live_value(semantic_type, &value, limits)?;
-        Ok(value)
+        crate::value::RuntimeVariantValue::try_from_program_case(case, payload, None, |value| {
+            self.validate_live_value(semantic_type, value, limits)
+                .map_err(Into::into)
+        })
     }
 
     pub(crate) fn require_variant_snapshot_header(
@@ -350,18 +352,13 @@ impl RuntimeProgramTypes<'_> {
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeProgramValueConstructionError> {
         let case = self.variant_case(semantic_type, ordinal)?;
-        let value = RuntimeValue::Variant {
-            owner: case.owner,
-            ordinal,
-            name: case.name,
-            payload: payload.map(Box::new),
-            type_instantiation: binding,
-        };
-        self.validate_snapshot_value(semantic_type, &value, limits)?;
-        Ok(value)
+        crate::value::RuntimeVariantValue::try_from_program_case(case, payload, binding, |value| {
+            self.validate_snapshot_value(semantic_type, value, limits)
+                .map_err(Into::into)
+        })
     }
 
-    fn variant_case(
+    pub(crate) fn variant_case(
         &self,
         semantic_type: RuntimeSemanticTypeId,
         ordinal: u32,
@@ -375,6 +372,7 @@ impl RuntimeProgramTypes<'_> {
                     .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?;
                 let case = plan.variant_case(ty, ordinal)?;
                 ProgramVariantCase {
+                    ordinal,
                     owner: case.owner().clone(),
                     name: case.name().to_owned(),
                     payload: case.payload().map(|ty| {
@@ -432,6 +430,7 @@ impl RuntimeProgramTypes<'_> {
                     }
                 };
                 ProgramVariantCase {
+                    ordinal,
                     owner,
                     name: string(case.name, "variant case")?,
                     payload: case

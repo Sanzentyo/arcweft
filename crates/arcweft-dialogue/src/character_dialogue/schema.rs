@@ -367,7 +367,7 @@ pub(super) fn effective_default_config_digest<T: CharacterDialogueTypeReference>
     )?;
     RuntimeValue::Tuple(CharacterDialogueRuntimeSchema::encode_config_fields(
         config, &policies,
-    ))
+    )?)
     .try_digest_with_limits(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits())
     .map_err(CharacterDialogueValueError::from)
 }
@@ -626,7 +626,7 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         config: &CharacterDialogueConfig,
     ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
-        RuntimeValue::Tuple(Self::encode_config_fields(config, &self.policies))
+        RuntimeValue::Tuple(Self::encode_config_fields(config, &self.policies)?)
             .try_digest_with_limits(Self::limits())
             .map_err(CharacterDialogueValueError::from)
     }
@@ -650,7 +650,7 @@ impl CharacterDialogueRuntimeSchema {
         value: &CharacterDialogue,
     ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
         self.validate_dialogue(value)?;
-        let payload = self.encode_payload(value);
+        let payload = self.encode_payload(value)?;
         let owner =
             super::CharacterDialogueType::exact(value.character.clone()).runtime_opaque_owner();
         let runtime = owner.try_wrap(payload)?;
@@ -1099,20 +1099,17 @@ impl CharacterDialogueRuntimeSchema {
                 reason: "accepted Voice type is not a nominal enum",
             });
         };
-        let RuntimeValue::Variant {
-            owner: value_owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } = value
-        else {
+        let RuntimeValue::Variant(variant) = value else {
             return Err(field_shape(
                 "voice",
                 "expected accepted DialogueVoice value",
             ));
         };
-        if value_owner != &owner || *ordinal != 0 || name != &cases[0].name || payload.is_some() {
+        if variant.owner() != &owner
+            || variant.ordinal() != 0
+            || variant.name() != cases[0].name
+            || variant.payload().is_some()
+        {
             return Err(field_shape(
                 "voice",
                 "value does not match the accepted DialogueVoice case row",
@@ -1285,7 +1282,10 @@ impl CharacterDialogueValue {
 }
 
 impl CharacterDialogueRuntimeSchema {
-    fn encode_payload(&self, dialogue: &CharacterDialogue) -> RuntimeValue {
+    fn encode_payload(
+        &self,
+        dialogue: &CharacterDialogue,
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
         let contract = dialogue.contract;
         let config = &dialogue.config;
         let mut fields = vec![
@@ -1298,20 +1298,21 @@ impl CharacterDialogueRuntimeSchema {
             Self::digest_value(contract.custom_schema()),
             Self::digest_value(contract.view_contracts()),
         ];
-        fields.extend(Self::encode_config_fields(config, &self.policies));
-        RuntimeValue::Tuple(fields)
+        fields.extend(Self::encode_config_fields(config, &self.policies)?);
+        Ok(RuntimeValue::Tuple(fields))
     }
 
     fn encode_config_fields(
         config: &CharacterDialogueConfig,
         policies: &CharacterDialoguePolicyTypeGraph,
-    ) -> Vec<RuntimeValue> {
-        vec![
+    ) -> Result<Vec<RuntimeValue>, CharacterDialogueValueError> {
+        Ok(vec![
             Self::encode_option(
                 config
                     .voice
                     .as_ref()
-                    .map(|voice| Self::encode_voice(voice, policies)),
+                    .map(|voice| Self::encode_voice(voice, policies))
+                    .transpose()?,
             ),
             Self::encode_option(
                 config
@@ -1362,9 +1363,9 @@ impl CharacterDialogueRuntimeSchema {
             )),
             config.style.typed().value().clone(),
             config.rich_text.typed().value().clone(),
-            Self::encode_inline_failure(&config.inline_failure, policies),
+            Self::encode_inline_failure(&config.inline_failure, policies)?,
             Self::encode_custom(&config.custom),
-        ]
+        ])
     }
 
     fn decode_payload(
@@ -1472,7 +1473,7 @@ impl CharacterDialogueRuntimeSchema {
     fn encode_voice(
         voice: &CharacterDialogueVoice,
         policies: &CharacterDialoguePolicyTypeGraph,
-    ) -> RuntimeValue {
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
         match voice {
             CharacterDialogueVoice::Auto => {
                 Self::dialogue_variant(policies, CharacterDialoguePolicyCase::VoiceAuto, None)
@@ -1489,28 +1490,21 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         value: &RuntimeValue,
     ) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
-        let RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } = value
-        else {
+        let RuntimeValue::Variant(variant) = value else {
             return Err(field_shape("voice", "expected DialogueVoice variant"));
         };
         self.expect_dialogue_variant_owner(
-            owner,
+            variant.owner(),
             CharacterDialoguePolicyVariantOwner::Voice,
             "voice",
         )?;
         match (
             CharacterDialoguePolicyTypeGraph::case_for_value(
                 CharacterDialoguePolicyVariantOwner::Voice,
-                *ordinal,
-                name,
+                variant.ordinal(),
+                variant.name(),
             ),
-            payload.as_deref(),
+            variant.payload(),
         ) {
             (Some(CharacterDialoguePolicyCase::VoiceAuto), None) => {
                 Ok(CharacterDialogueVoice::Auto)
@@ -1601,7 +1595,7 @@ impl CharacterDialogueRuntimeSchema {
     fn encode_inline_failure(
         policy: &InlineFailurePolicy,
         policies: &CharacterDialoguePolicyTypeGraph,
-    ) -> RuntimeValue {
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
         match policy {
             InlineFailurePolicy::FailLine => Self::dialogue_variant(
                 policies,
@@ -1616,7 +1610,7 @@ impl CharacterDialogueRuntimeSchema {
             InlineFailurePolicy::Fallback { fallback } => Self::dialogue_variant(
                 policies,
                 CharacterDialoguePolicyCase::InlineFailureFallback,
-                Some(Self::encode_fallback(fallback, policies)),
+                Some(Self::encode_fallback(fallback, policies)?),
             ),
         }
     }
@@ -1625,28 +1619,21 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         value: &RuntimeValue,
     ) -> Result<InlineFailurePolicy, CharacterDialogueValueError> {
-        let RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } = value
-        else {
+        let RuntimeValue::Variant(variant) = value else {
             return Err(field_shape("inline_failure", "expected policy variant"));
         };
         self.expect_dialogue_variant_owner(
-            owner,
+            variant.owner(),
             CharacterDialoguePolicyVariantOwner::InlineFailure,
             "inline_failure",
         )?;
         match (
             CharacterDialoguePolicyTypeGraph::case_for_value(
                 CharacterDialoguePolicyVariantOwner::InlineFailure,
-                *ordinal,
-                name,
+                variant.ordinal(),
+                variant.name(),
             ),
-            payload.as_deref(),
+            variant.payload(),
         ) {
             (Some(CharacterDialoguePolicyCase::InlineFailureFailLine), None) => {
                 Ok(InlineFailurePolicy::FailLine)
@@ -1666,25 +1653,25 @@ impl CharacterDialogueRuntimeSchema {
     fn encode_fallback(
         fallback: &InlineFallback,
         policies: &CharacterDialoguePolicyTypeGraph,
-    ) -> RuntimeValue {
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
         match fallback {
             InlineFallback::Text { text, style } => Self::dialogue_variant(
                 policies,
                 CharacterDialoguePolicyCase::InlineFallbackText,
                 Some(RuntimeValue::Tuple(vec![
                     RuntimeValue::String(text.clone()),
-                    Self::encode_fallback_style(style, policies),
+                    Self::encode_fallback_style(style, policies)?,
                 ])),
             ),
             InlineFallback::ExprSource { style } => Self::dialogue_variant(
                 policies,
                 CharacterDialoguePolicyCase::InlineFallbackExprSource,
-                Some(Self::encode_fallback_style(style, policies)),
+                Some(Self::encode_fallback_style(style, policies)?),
             ),
             InlineFallback::CallSource { style } => Self::dialogue_variant(
                 policies,
                 CharacterDialoguePolicyCase::InlineFallbackCallSource,
-                Some(Self::encode_fallback_style(style, policies)),
+                Some(Self::encode_fallback_style(style, policies)?),
             ),
             InlineFallback::ValuePlain => Self::dialogue_variant(
                 policies,
@@ -1698,28 +1685,21 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         value: &RuntimeValue,
     ) -> Result<InlineFallback, CharacterDialogueValueError> {
-        let RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } = value
-        else {
+        let RuntimeValue::Variant(variant) = value else {
             return Err(field_shape("inline_failure", "expected fallback variant"));
         };
         self.expect_dialogue_variant_owner(
-            owner,
+            variant.owner(),
             CharacterDialoguePolicyVariantOwner::InlineFallback,
             "inline_failure",
         )?;
         match (
             CharacterDialoguePolicyTypeGraph::case_for_value(
                 CharacterDialoguePolicyVariantOwner::InlineFallback,
-                *ordinal,
-                name,
+                variant.ordinal(),
+                variant.name(),
             ),
-            payload.as_deref(),
+            variant.payload(),
         ) {
             (
                 Some(CharacterDialoguePolicyCase::InlineFallbackText),
@@ -1756,7 +1736,7 @@ impl CharacterDialogueRuntimeSchema {
     fn encode_fallback_style(
         style: &FallbackStylePolicy,
         policies: &CharacterDialoguePolicyTypeGraph,
-    ) -> RuntimeValue {
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
         match style {
             FallbackStylePolicy::Plain => Self::dialogue_variant(
                 policies,
@@ -1785,31 +1765,24 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         value: &RuntimeValue,
     ) -> Result<FallbackStylePolicy, CharacterDialogueValueError> {
-        let RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } = value
-        else {
+        let RuntimeValue::Variant(variant) = value else {
             return Err(field_shape(
                 "inline_failure",
                 "expected fallback style variant",
             ));
         };
         self.expect_dialogue_variant_owner(
-            owner,
+            variant.owner(),
             CharacterDialoguePolicyVariantOwner::FallbackStyle,
             "inline_failure",
         )?;
         match (
             CharacterDialoguePolicyTypeGraph::case_for_value(
                 CharacterDialoguePolicyVariantOwner::FallbackStyle,
-                *ordinal,
-                name,
+                variant.ordinal(),
+                variant.name(),
             ),
-            payload.as_deref(),
+            variant.payload(),
         ) {
             (Some(CharacterDialoguePolicyCase::FallbackStylePlain), None) => {
                 Ok(FallbackStylePolicy::Plain)
@@ -1842,15 +1815,11 @@ impl CharacterDialogueRuntimeSchema {
         policies: &CharacterDialoguePolicyTypeGraph,
         case: CharacterDialoguePolicyCase,
         payload: Option<RuntimeValue>,
-    ) -> RuntimeValue {
-        let (owner, ordinal, name) = CharacterDialoguePolicyTypeGraph::case_spec(case);
-        RuntimeValue::Variant {
-            owner: policies.identity(owner).clone(),
-            ordinal,
-            name: name.to_owned(),
-            payload: payload.map(Box::new),
-            type_instantiation: None,
-        }
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
+        let (owner, ordinal, _) = CharacterDialoguePolicyTypeGraph::case_spec(case);
+        policies
+            .try_variant_value(owner, ordinal, payload, Self::limits())
+            .map_err(Into::into)
     }
 
     fn expect_dialogue_variant_owner(

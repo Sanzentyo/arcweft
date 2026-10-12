@@ -330,18 +330,27 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
         .unwrap();
     let plan = builder.finish().unwrap();
     assert!(plan.checked_type(id(&plan, 1)).is_err());
-    let variant = |ordinal, name: &str, payload: Option<RuntimeValue>| RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: nominal(),
-            semantic_identity: semantic(1),
-            layout,
-        },
-        ordinal,
-        name: name.to_owned(),
-        payload: payload.map(Box::new),
-        type_instantiation: None,
+    let variant = |ordinal, name: &str, payload: Option<RuntimeValue>| {
+        let value = crate::program_types::RuntimeProgramTypes::Plan(&plan).try_variant_value(
+            semantic(1),
+            ordinal,
+            payload,
+            RuntimeSchemaLimits::engine_default(),
+        )?;
+        let RuntimeValue::Variant(variant) = &value else {
+            unreachable!()
+        };
+        if variant.name() != name {
+            return Err(
+                crate::program_types::RuntimeProgramValueConstructionError::VariantSnapshotHeader {
+                    semantic_type: semantic(1),
+                    ordinal,
+                },
+            );
+        }
+        Ok(value)
     };
-    let nil = variant(0, "Nil", None);
+    let nil = variant(0, "Nil", None).unwrap();
     let value = variant(
         1,
         "Cons",
@@ -349,7 +358,8 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
             RuntimeValue::Bool(true),
             nil.clone(),
         ])),
-    );
+    )
+    .unwrap();
     assert_eq!(
         admitted(&plan, 1, &value).unwrap(),
         value.try_digest(100_000).unwrap()
@@ -365,7 +375,7 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
             Some(RuntimeValue::Tuple(vec![RuntimeValue::i8(1), nil])),
         ),
     ] {
-        assert!(admitted(&plan, 1, &wrong).is_err());
+        assert!(wrong.is_err());
     }
     for owner in [
         RuntimeVariantIdentity::Nominal {
@@ -379,19 +389,19 @@ fn recursive_variants_require_exact_owner_case_and_payload() {
             layout: TypeLayoutHash::from_bytes([20; 32]),
         },
     ] {
+        let program_owner =
+            crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(plan.clone()));
+        let invalid = crate::value::AwbcRuntimeValueSnapshot::Variant {
+            owner,
+            ordinal: 0,
+            name: "Nil".to_owned(),
+            payload: None,
+            type_instantiation: None,
+        };
         assert!(
-            admitted(
-                &plan,
-                1,
-                &RuntimeValue::Variant {
-                    owner,
-                    ordinal: 0,
-                    name: "Nil".to_owned(),
-                    payload: None,
-                    type_instantiation: None,
-                }
-            )
-            .is_err()
+            invalid
+                .into_runtime_value_for_program(&program_owner)
+                .is_err()
         );
     }
 }
@@ -654,20 +664,10 @@ fn builtin_payloads_are_correlated_before_type_rows_are_published() {
         )
         .is_ok()
     );
-    assert!(
-        admitted(
-            &plan,
-            1,
-            &RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                ordinal: 0,
-                name: "Some".to_owned(),
-                payload: Some(Box::new(RuntimeValue::Bool(true))),
-                type_instantiation: None,
-            }
-        )
-        .is_err()
-    );
+    let mut invalid =
+        serde_json::to_value(RuntimeValue::option_some(RuntimeValue::Bool(true))).unwrap();
+    invalid["Variant"]["payload"] = serde_json::to_value(RuntimeValue::Bool(true)).unwrap();
+    assert!(serde_json::from_value::<RuntimeValue>(invalid).is_err());
 }
 
 #[test]

@@ -277,21 +277,15 @@ fn nominal_variant_payloads_use_runtime_scalar_schema_authority() {
         limits,
     )
     .unwrap();
-    let owner = RuntimeVariantIdentity::Nominal {
-        nominal: identity.nominal().clone(),
-        semantic_identity: identity.semantic_identity(),
-        layout: graph.try_layout_hash(identity.semantic_identity()).unwrap(),
+    let value = |fade| {
+        graph.try_variant_value(
+            identity.semantic_identity(),
+            0,
+            Some(RuntimeValue::try_record(vec![("fade".to_owned(), fade)]).unwrap()),
+            limits,
+        )
     };
-    let value = |fade| RuntimeValue::Variant {
-        owner: owner.clone(),
-        ordinal: 0,
-        name: "Stop".to_owned(),
-        payload: Some(Box::new(
-            RuntimeValue::try_record(vec![("fade".to_owned(), fade)]).unwrap(),
-        )),
-        type_instantiation: None,
-    };
-    let valid = value(RuntimeValue::Duration(LogicalDuration::from_nanos(10)));
+    let valid = value(RuntimeValue::Duration(LogicalDuration::from_nanos(10))).unwrap();
     assert_eq!(
         graph
             .accepts_value(identity.semantic_identity(), &valid, limits)
@@ -299,6 +293,6 @@ fn nominal_variant_payloads_use_runtime_scalar_schema_authority() {
         valid.try_digest(limits.platform_encoded_bytes()).unwrap()
     );
     assert!(
-        matches!(graph.accepts_value(identity.semantic_identity(), &value(RuntimeValue::u64(10)), limits), Err(Error::Type { path, expected: "duration", .. }) if path == "$.Stop.fade")
+        matches!(value(RuntimeValue::u64(10)), Err(Error::Type { path, expected: "duration", .. }) if path == "$.Stop.fade")
     );
 }

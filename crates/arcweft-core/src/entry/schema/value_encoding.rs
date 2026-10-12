@@ -774,24 +774,18 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 children,
             )?;
         }
-        RuntimeValueView::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } => {
+        RuntimeValueView::Variant(variant) => {
             writer.u8(14)?;
-            writer.variant_identity(owner)?;
-            writer.var_u32(ordinal)?;
-            writer.string(name)?;
-            writer.u8(u8::from(payload.is_some()))?;
-            if let Some(payload) = payload {
+            writer.variant_identity(variant.owner())?;
+            writer.var_u32(variant.ordinal())?;
+            writer.string(variant.name())?;
+            writer.u8(u8::from(variant.payload().is_some()))?;
+            if let Some(payload) = variant.payload() {
                 work.push(Work::Value(
                     payload.view(),
                     depth + 1,
                     validation.child(&children, 0)?,
-                    Some(PathStep::Name(name)),
+                    Some(PathStep::Name(variant.name())),
                 ));
             }
         }

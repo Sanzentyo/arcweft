@@ -856,14 +856,14 @@ fn data_codec_errors_are_returned_as_the_selected_data_error_variant() {
     };
     assert_eq!(error.type_id().as_str(), "DataError");
     let [
-        RuntimeValue::Variant { name: kind, .. },
+        RuntimeValue::Variant(kind),
         RuntimeValue::NominalRecord(path),
         RuntimeValue::String(message),
     ] = error.fields()
     else {
         panic!("DataError retains its kind, path, and message fields");
     };
-    assert_eq!(kind, "InvalidEncoding");
+    assert_eq!(kind.name(), "InvalidEncoding");
     assert!(!message.is_empty());
     let [RuntimeValue::Seq(segments)] = path.fields() else {
         panic!("DataPath retains its ordered segments field");
@@ -889,18 +889,25 @@ fn data_calls_reject_unbound_context_and_wrong_format_identity() {
             .is_err()
     );
 
-    let wrong_format = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("OtherFormat")
-                .expect("test nominal identity is valid"),
-            semantic_identity: semantic(DATA_FORMAT),
-            layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0xF0; 32]),
-        },
-        ordinal: 0,
-        name: "Json".to_owned(),
-        payload: None,
-        type_instantiation: None,
-    };
+    let owner = fixture.owner.clone();
+    let mut invalid = serde_json::to_value(
+        arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            &valid_format,
+            &owner,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    invalid["Variant"]["owner"] = serde_json::to_value(RuntimeVariantIdentity::Nominal {
+        nominal: RuntimeNominalTypeId::try_new("OtherFormat").unwrap(),
+        semantic_identity: semantic(DATA_FORMAT),
+        layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0xF0; 32]),
+    })
+    .unwrap();
+    let invalid: arcweft_core::value::AwbcRuntimeValueSnapshot =
+        serde_json::from_value(invalid).unwrap();
+    assert!(invalid.into_runtime_value_for_program(&owner).is_err());
+    let wrong_format = RuntimeValue::option_none();
     assert!(
         accelerator
             .call_external(

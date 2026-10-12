@@ -85,12 +85,12 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
         }
         RuntimeValue::Range(range) => range.label(),
         RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            ..
-        } => format!("variant/{owner:?}/#{ordinal}/{name}"),
+        RuntimeValue::Variant(variant) => format!(
+            "variant/{:?}/#{}/{}",
+            variant.owner(),
+            variant.ordinal(),
+            variant.name()
+        ),
         RuntimeValue::Color(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::NeedHandle(_)

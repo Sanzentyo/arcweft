@@ -413,11 +413,8 @@ fn option_and_result_validate_the_real_builtin_payload_tuple() {
         RuntimeValue::Tuple(vec![]),
         RuntimeValue::Tuple(vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)]),
     ] {
-        let mut malformed = actual.clone();
-        let RuntimeValue::Variant { payload: slot, .. } = &mut malformed else {
-            unreachable!()
-        };
-        *slot = Some(Box::new(payload));
-        assert!(schema.validate_value(&malformed, limits).is_err());
+        let mut malformed = serde_json::to_value(&actual).unwrap();
+        malformed["Variant"]["payload"] = serde_json::to_value(payload).unwrap();
+        assert!(serde_json::from_value::<RuntimeValue>(malformed).is_err());
     }
 }

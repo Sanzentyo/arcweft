@@ -4,6 +4,7 @@ use crate::plan::{
     RuntimePlanTypeProjection, RuntimePlanValueTypeError,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
+use crate::value::runtime_value_views_equal;
 use crate::value::{
     RuntimeEntityReference, RuntimeEvalError, RuntimeExpr, RuntimeLocalBinding,
     RuntimeLocalReadMode, RuntimeNominalRecordValue, RuntimeOpaquePersistence, RuntimeOpaqueValue,
@@ -1190,23 +1191,19 @@ impl RuntimeCheckedType {
                 && record.semantic_identity() == *semantic_identity
                 && record.layout() == *layout,
             (
-                RuntimeValueView::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload, type_instantiation,},
+                RuntimeValueView::Variant(variant),
                 Self::Variant { .. },
             ) => self.accepts_nominal_variant_at_depth(
-                owner,
-                ordinal,
-                name,
-                payload,
+                variant.owner(),
+                variant.ordinal(),
+                variant.name(),
+                variant.payload(),
                 depth,
             ),
             (
-                RuntimeValueView::Variant { owner, ordinal, name, payload , type_instantiation,},
+                RuntimeValueView::Variant(variant),
                 Self::Result { .. } | Self::Option(_),
-            ) => self.accepts_builtin_variant_parts_at_depth(owner, ordinal, name, payload, depth),
+            ) => self.accepts_builtin_variant_parts_at_depth(variant.owner(), variant.ordinal(), variant.name(), variant.payload(), depth),
             (RuntimeValueView::Agent(value), Self::Agent(expected)) => {
                 !matches!(expected, crate::plan::RuntimeAgentTypeProjection::DataShape(_))
                     && value.operational_type() == expected.operational_type()
@@ -1657,10 +1654,8 @@ fn collect_copy_guard_bindings(
         }
         RuntimePatternKind::Variant { payload, .. } => {
             if let Some(pattern) = payload
-                && let RuntimeValueView::Variant {
-                    payload: Some(value),
-                    ..
-                } = value
+                && let RuntimeValueView::Variant(variant) = value
+                && let Some(value) = variant.payload()
             {
                 collect_copy_guard_bindings(pattern, value.view(), required, bindings);
             }
@@ -1763,15 +1758,15 @@ fn runtime_pattern_binding_ownership_view(
             })
         }
         RuntimePatternKind::Variant { payload, .. } => {
-            let RuntimeValueView::Variant {
-                payload: actual, ..
-            } = value
-            else {
+            let RuntimeValueView::Variant(variant) = value else {
                 return None;
             };
-            payload.as_deref().zip(actual).and_then(|(pattern, value)| {
-                runtime_pattern_binding_ownership_view(pattern, value.view(), local)
-            })
+            payload
+                .as_deref()
+                .zip(variant.payload())
+                .and_then(|(pattern, value)| {
+                    runtime_pattern_binding_ownership_view(pattern, value.view(), local)
+                })
         }
         RuntimePatternKind::Discard
         | RuntimePatternKind::Literal(_)
@@ -1916,10 +1911,8 @@ fn collect_pattern_handle_destinations(
             payload: Some(pattern),
             ..
         } => {
-            if let RuntimeValueView::Variant {
-                payload: Some(value),
-                ..
-            } = value
+            if let RuntimeValueView::Variant(variant) = value
+                && let Some(value) = variant.payload()
             {
                 collect_pattern_handle_destinations(pattern, value.view(), token, destinations)?;
             }
@@ -2028,83 +2021,12 @@ fn pattern_matches_view(pattern: &RuntimePattern, value: RuntimeValueView<'_>) -
         RuntimePatternKind::Variant {
             ordinal, payload, ..
         } => matches!(value,
-        RuntimeValueView::Variant { ordinal: actual, payload: actual_payload, .. }
-            if *ordinal == actual && match (payload.as_deref(), actual_payload) {
+        RuntimeValueView::Variant(variant)
+            if *ordinal == variant.ordinal() && match (payload.as_deref(), variant.payload()) {
                 (Some(pattern), Some(value)) => pattern_matches_view(pattern, value.view()),
                 (None, None) => true,
                 _ => false,
             }),
-    }
-}
-
-fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView<'_>) -> bool {
-    match (left, right) {
-        (RuntimeValueView::Scalar(left), RuntimeValueView::Scalar(right)) => left == right,
-        (RuntimeValueView::Tuple(left), RuntimeValueView::Tuple(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
-                    (Some(left), Some(right)) => runtime_value_views_equal(left, right),
-                    _ => false,
-                })
-        }
-        (RuntimeValueView::Record(left), RuntimeValueView::Record(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
-                    (Some((left_id, left_name, left)), Some((right_id, right_name, right))) => {
-                        left_id == right_id
-                            && left_name == right_name
-                            && runtime_value_views_equal(left, right)
-                    }
-                    _ => false,
-                })
-        }
-        (RuntimeValueView::Sequence(left), RuntimeValueView::Sequence(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| {
-                    match (left.value_view(index), right.value_view(index)) {
-                        (Some(left), Some(right)) => runtime_value_views_equal(left, right),
-                        _ => false,
-                    }
-                })
-        }
-        (RuntimeValueView::NominalRecord(left), RuntimeValueView::NominalRecord(right)) => {
-            left == right
-        }
-        (RuntimeValueView::Opaque(left), RuntimeValueView::Opaque(right)) => left == right,
-        (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => left == right,
-        (RuntimeValueView::Agent(left), RuntimeValueView::Agent(right)) => left == right,
-        (
-            RuntimeValueView::Variant {
-                owner: left_owner,
-                ordinal: left_ordinal,
-                name: left_name,
-                payload: left_payload,
-                type_instantiation: left_instantiation,
-            },
-            RuntimeValueView::Variant {
-                owner: right_owner,
-                ordinal: right_ordinal,
-                name: right_name,
-                payload: right_payload,
-                type_instantiation: right_instantiation,
-            },
-        ) => {
-            left_owner == right_owner
-                && left_instantiation == right_instantiation
-                && left_ordinal == right_ordinal
-                && left_name == right_name
-                && match (left_payload, right_payload) {
-                    (Some(left), Some(right)) => {
-                        runtime_value_views_equal(left.view(), right.view())
-                    }
-                    (None, None) => true,
-                    _ => false,
-                }
-        }
-        (RuntimeValueView::RuntimeOnly(left), RuntimeValueView::RuntimeOnly(right)) => {
-            left == right
-        }
-        _ => false,
     }
 }
 
@@ -2184,11 +2106,10 @@ fn check_owned_pattern_overlap_view(
             payload: Some(pattern),
             ..
         } => {
-            let RuntimeValueView::Variant {
-                payload: Some(value),
-                ..
-            } = value
-            else {
+            let RuntimeValueView::Variant(variant) = value else {
+                return Ok(());
+            };
+            let Some(value) = variant.payload() else {
                 return Ok(());
             };
             check_owned_pattern_overlap_view(pattern, value.view())
@@ -2310,14 +2231,14 @@ fn collect_pattern_bindings_owned(
             payload: Some(pattern),
             ..
         } => {
-            let RuntimeValue::Variant {
-                payload: Some(value),
-                ..
-            } = value
-            else {
+            let RuntimeValue::Variant(variant) = value else {
                 unreachable!("preflight matched variant");
             };
-            collect_pattern_bindings_owned(pattern, *value, bindings);
+            collect_pattern_bindings_owned(
+                pattern,
+                variant.into_payload().expect("preflight matched payload"),
+                bindings,
+            );
         }
         RuntimePatternKind::Variant { payload: None, .. }
         | RuntimePatternKind::Discard
@@ -2813,18 +2734,13 @@ fn collect_pattern_bindings(
         RuntimePatternKind::Variant {
             ordinal, payload, ..
         } => {
-            let RuntimeValue::Variant {
-                ordinal: actual_ordinal,
-                payload: actual_payload,
-                ..
-            } = value
-            else {
+            let RuntimeValue::Variant(variant) = value else {
                 return Ok(false);
             };
-            if ordinal != actual_ordinal {
+            if *ordinal != variant.ordinal() {
                 return Ok(false);
             }
-            match (payload.as_deref(), actual_payload.as_deref()) {
+            match (payload.as_deref(), variant.payload()) {
                 (Some(pattern), Some(value)) => {
                     collect_pattern_bindings(plan, pattern, value, bindings)
                 }
@@ -3032,10 +2948,7 @@ fn runtime_value_matches_type_inner(
         ) => runtime_nominal_record_matches_type(plan, ty, nominal, *layout, record, depth),
         (
             RuntimePlanTypeProjection::Nominal { .. } | RuntimePlanTypeProjection::Opaque { .. },
-            value @ RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Nominal { .. },
-                ..
-            },
+            value @ RuntimeValue::Variant(_),
         ) => runtime_variant_matches_type(plan, ty, value, depth),
         (
             RuntimePlanTypeProjection::Opaque {
@@ -3143,22 +3056,15 @@ fn runtime_variant_matches_type(
     value: &RuntimeValue,
     depth: usize,
 ) -> bool {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-        type_instantiation: _,
-    } = value
-    else {
+    let RuntimeValue::Variant(variant) = value else {
         return false;
     };
-    let Ok(case) = plan.variant_case(ty, *ordinal) else {
+    let Ok(case) = plan.variant_case(ty, variant.ordinal()) else {
         return false;
     };
-    owner == case.owner()
-        && name == case.name()
-        && match (case.payload(), payload.as_deref()) {
+    variant.owner() == case.owner()
+        && variant.name() == case.name()
+        && match (case.payload(), variant.payload()) {
             (Some(expected), Some(payload)) => {
                 runtime_value_matches_type_inner(plan, expected, payload, depth + 1)
             }
@@ -3553,18 +3459,11 @@ mod tests {
         let (_, json_schema) = owner
             .resolve_case(RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson)
             .expect("Json case");
-        let wrong_name = RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(owner),
-            ordinal: owner
-                .resolve_case(RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson)
-                .expect("Json case")
-                .0,
-            name: "not-a-resource-case".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Unit)),
-            type_instantiation: None,
-        };
-        assert!(wrong_name.builtin_variant_case().is_none());
-        assert!(!expected.accepts_value(&wrong_name));
+        let mut wrong_name = serde_json::to_value(&json).unwrap();
+        wrong_name["Variant"]["name"] = serde_json::json!("not-a-resource-case");
+        assert!(serde_json::from_value::<RuntimeValue>(wrong_name.clone()).is_err());
+        wrong_name["Variant"]["payload"] = serde_json::to_value(RuntimeValue::Unit).unwrap();
+        assert!(serde_json::from_value::<RuntimeValue>(wrong_name).is_err());
         assert!(owner.case_at(u32::MAX).is_none());
         assert_eq!(
             json_schema.identity(),

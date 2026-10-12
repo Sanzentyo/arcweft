@@ -396,6 +396,22 @@ impl CharacterDialoguePolicyTypeGraph {
         &self.identities[owner.index()]
     }
 
+    /// Admits a source-shaped policy payload through this retained schema graph.
+    pub fn try_variant_value(
+        &self,
+        owner: CharacterDialoguePolicyVariantOwner,
+        ordinal: u32,
+        payload: Option<arcweft_core::value::RuntimeValue>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<arcweft_core::value::RuntimeValue, arcweft_core::entry::RuntimeSchemaError> {
+        self.schema_graph.try_variant_value(
+            owner.schema_identity().semantic_identity(),
+            ordinal,
+            payload,
+            limits,
+        )
+    }
+
     pub(super) fn case_spec(
         case: CharacterDialoguePolicyCase,
     ) -> (CharacterDialoguePolicyVariantOwner, u32, &'static str) {

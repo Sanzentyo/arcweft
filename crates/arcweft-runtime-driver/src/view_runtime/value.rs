@@ -226,7 +226,7 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         | RuntimeValue::Callable(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::NeedHandle(_)
-        | RuntimeValue::Variant { .. } => None,
+        | RuntimeValue::Variant(_) => None,
     }
 }
 
@@ -350,7 +350,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Callable(_) => "function",
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::NeedHandle(_) => "need",
-        RuntimeValue::Variant { .. } => "variant",
+        RuntimeValue::Variant(_) => "variant",
     }
 }
 

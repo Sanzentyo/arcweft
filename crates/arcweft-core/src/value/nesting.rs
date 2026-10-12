@@ -68,10 +68,10 @@ fn validate_value(
         RuntimeValue::Iterator(RuntimeIterator::Witness { state, .. }) => {
             validate_value(state, depth + 1, maximum)
         }
-        RuntimeValue::Variant {
+        RuntimeValue::Variant(crate::value::RuntimeVariantValue {
             payload: Some(payload),
             ..
-        } => validate_value(payload, depth + 1, maximum),
+        }) => validate_value(payload, depth + 1, maximum),
         RuntimeValue::Unit
         | RuntimeValue::Bool(_)
         | RuntimeValue::Int(_)
@@ -90,7 +90,7 @@ fn validate_value(
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(RuntimeIterator::Range(_))
         | RuntimeValue::EntityRef(_)
-        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+        | RuntimeValue::Variant(crate::value::RuntimeVariantValue { payload: None, .. }) => Ok(()),
     }
 }
 

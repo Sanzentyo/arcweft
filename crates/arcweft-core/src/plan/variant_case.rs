@@ -14,11 +14,16 @@ use crate::runtime_id::RuntimePlanTypeId;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanVariantCase<'a> {
     owner: RuntimeVariantIdentity,
+    ordinal: u32,
     name: &'a str,
     payload: Option<RuntimePlanTypeId>,
 }
 
 impl<'a> RuntimePlanVariantCase<'a> {
+    #[must_use]
+    pub const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
     #[must_use]
     pub const fn owner(&self) -> &RuntimeVariantIdentity {
         &self.owner
@@ -128,6 +133,7 @@ impl RuntimePlanTypeDeclaration {
                     nominal_domain.ok_or(RuntimePlanVariantCaseError::MissingDomain { ty })?;
                 let case = domain.case(ordinal).ok_or_else(unknown_case)?;
                 return Ok(RuntimePlanVariantCase {
+                    ordinal,
                     owner: RuntimeVariantIdentity::Nominal {
                         nominal: domain.nominal().clone(),
                         semantic_identity: self.semantic_identity(),
@@ -141,6 +147,7 @@ impl RuntimePlanTypeDeclaration {
         };
         let schema = builtin.case_at(ordinal).ok_or_else(unknown_case)?;
         Ok(RuntimePlanVariantCase {
+            ordinal,
             owner: RuntimeVariantIdentity::Builtin(builtin),
             name: schema.name(),
             payload,

@@ -58,11 +58,7 @@ flow main() -> DataFormat {
         .expect("selected plan issues the exact first DataFormat case");
     assert!(matches!(
         &native,
-        RuntimeValue::Variant {
-            ordinal: 0,
-            name,
-            ..
-        } if name == "Json"
+        RuntimeValue::Variant(variant) if variant.ordinal() == 0 && variant.name() == "Json"
     ));
 
     let awbc = AwbcLowerer::new(

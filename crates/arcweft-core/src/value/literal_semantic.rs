@@ -31,8 +31,8 @@ impl RuntimeValue {
                     RuntimeValueView::Record(value) => visitor(value.len())?,
                     RuntimeValueView::NominalRecord(value) => visitor(value.fields().len())?,
                     RuntimeValueView::Opaque(_) | RuntimeValueView::Agent(_) => visitor(1)?,
-                    RuntimeValueView::Variant { payload, .. } => {
-                        visitor(usize::from(payload.is_some()))?;
+                    RuntimeValueView::Variant(variant) => {
+                        visitor(usize::from(variant.payload().is_some()))?;
                     }
                     RuntimeValueView::Reduction(value) => {
                         visitor(value.commands().len())?;
@@ -77,7 +77,7 @@ impl RuntimeValue {
                         | RuntimeValue::Opaque(_)
                         | RuntimeValue::Reduction(_)
                         | RuntimeValue::Agent(_)
-                        | RuntimeValue::Variant { .. } => {}
+                        | RuntimeValue::Variant(_) => {}
                     },
                     RuntimeValueView::Scalar(_) => {}
                 },
@@ -261,14 +261,9 @@ impl RuntimeValue {
                         encoder.tag(value.value_class().semantic_tag());
                         encoder.tag(value.persistence().semantic_tag());
                     }
-                    RuntimeValueView::Variant {
-                        owner,
-                        ordinal,
-                        payload,
-                        ..
-                    } => {
+                    RuntimeValueView::Variant(variant) => {
                         encoder.tag(17);
-                        match owner {
+                        match variant.owner() {
                             crate::pattern::RuntimeVariantIdentity::Builtin(owner) => {
                                 encoder.tag(0);
                                 encoder.tag(owner.semantic_tag());
@@ -281,8 +276,8 @@ impl RuntimeValue {
                                 encoder.digest(semantic_identity.as_bytes());
                             }
                         }
-                        encoder.ordinal(ordinal);
-                        encoder.tag(u8::from(payload.is_some()));
+                        encoder.ordinal(variant.ordinal());
+                        encoder.tag(u8::from(variant.payload().is_some()));
                     }
                     RuntimeValueView::RuntimeOnly(value) => match value {
                         RuntimeValue::Range(range) => {
@@ -365,7 +360,7 @@ impl RuntimeValue {
                         | RuntimeValue::Opaque(_)
                         | RuntimeValue::Reduction(_)
                         | RuntimeValue::Agent(_)
-                        | RuntimeValue::Variant { .. } => {
+                        | RuntimeValue::Variant(_) => {
                             encoder.reject_owner();
                             return Err(RuntimeBodySemanticError::InvalidStaticLiteral);
                         }

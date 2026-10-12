@@ -156,8 +156,8 @@ impl<'a> LiteralEvents<'a> {
             RuntimeValueView::Opaque(value) => {
                 self.work.push(Work::Value(value.payload().view()));
             }
-            RuntimeValueView::Variant { payload, .. } => {
-                if let Some(payload) = payload {
+            RuntimeValueView::Variant(variant) => {
+                if let Some(payload) = variant.payload() {
                     self.work.push(Work::Value(payload.view()));
                 }
             }
@@ -194,7 +194,7 @@ impl<'a> LiteralEvents<'a> {
                 | RuntimeValue::Opaque(_)
                 | RuntimeValue::Reduction(_)
                 | RuntimeValue::Agent(_)
-                | RuntimeValue::Variant { .. }
+                | RuntimeValue::Variant(_)
                 | RuntimeValue::MatrixF32(_)
                 | RuntimeValue::MatrixF64(_)
                 | RuntimeValue::TensorF32(_)

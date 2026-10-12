@@ -502,10 +502,10 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                     .try_variant_value(semantic(3), 0, None, RuntimeSchemaLimits::engine_default())
                     .unwrap()
                 {
-                    RuntimeValue::Variant {
+                    RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                         owner: super::super::RuntimeVariantIdentity::Nominal { layout, .. },
                         ..
-                    } => layout,
+                    }) => layout,
                     _ => unreachable!(),
                 },
             },
@@ -513,7 +513,7 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             name: "Set".to_owned(),
             payload: None,
         };
-        let wrong_case_live = RuntimeValue::Variant {
+        let wrong_case_live = RuntimeValue::Variant(crate::value::RuntimeVariantValue {
             owner: match &wrong_case {
                 AwbcRuntimeValueSnapshot::Variant { owner, .. } => owner.clone(),
                 _ => unreachable!(),
@@ -522,7 +522,7 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             name: "Set".to_owned(),
             type_instantiation: None,
             payload: None,
-        };
+        });
         assert!(
             AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&wrong_case_live, &owner)
                 .is_err()

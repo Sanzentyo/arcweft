@@ -77,15 +77,12 @@ fn runtime_value_to_json_at(
             runtime_value_to_json_at(value.payload(), &format!("{path}.payload"))
         }
         RuntimeValue::Agent(value) => runtime_agent_to_json(value, path),
-        RuntimeValue::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation: _,
-        } => {
-            let payload = payload
-                .as_deref()
+        RuntimeValue::Variant(variant) => {
+            let owner = variant.owner();
+            let ordinal = variant.ordinal();
+            let name = variant.name();
+            let payload = variant
+                .payload()
                 .map(|payload| runtime_value_to_json_at(payload, &format!("{path}.payload")))
                 .transpose()?;
             Ok(serde_json::json!({
@@ -234,10 +231,9 @@ fn ensure_finite_runtime_value(
         RuntimeValue::Agent(RuntimeAgentValue::Predicate(predicate)) => {
             ensure_finite_runtime_predicate(predicate, path)
         }
-        RuntimeValue::Variant {
-            payload: Some(payload),
-            ..
-        } => ensure_finite_runtime_value(payload, &format!("{path}.payload")),
+        RuntimeValue::Variant(variant) => variant.payload().map_or(Ok(()), |payload| {
+            ensure_finite_runtime_value(payload, &format!("{path}.payload"))
+        }),
         RuntimeValue::Callable(callable) => {
             callable
                 .retained()
@@ -265,8 +261,7 @@ fn ensure_finite_runtime_value(
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::Color(_)
-        | RuntimeValue::Agent(_)
-        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+        | RuntimeValue::Agent(_) => Ok(()),
     }
 }
 

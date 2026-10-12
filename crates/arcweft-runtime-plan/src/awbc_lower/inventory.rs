@@ -1042,13 +1042,11 @@ impl AwbcInventory {
                 "typed Agent runtime value `{}` must be produced by AWBC MakeAgent and cannot be encoded as a constant",
                 value.label()
             ),
-            RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                ..
-            } => panic!(
-                "runtime variant `{owner:?}` case {ordinal} `{name}` requires a checked RuntimeExpr::Variant type and cannot be encoded through the type-erased constant API"
+            RuntimeValue::Variant(variant) => panic!(
+                "runtime variant `{:?}` case {} `{}` requires a checked RuntimeExpr::Variant type and cannot be encoded through the type-erased constant API",
+                variant.owner(),
+                variant.ordinal(),
+                variant.name()
             ),
             RuntimeValue::Range(range) => self.range_constant(range),
             RuntimeValue::Iterator(_) => {
@@ -1185,20 +1183,14 @@ impl AwbcInventory {
                 }
             }
             (
-                RuntimeValue::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload,
-                    type_instantiation: _,
-                },
+                RuntimeValue::Variant(variant),
                 AwbcRuntimeTypeShape::Variant {
                     owner: expected_owner,
                     cases,
                     ..
                 },
             ) => {
-                let owner_matches = match (owner, expected_owner) {
+                let owner_matches = match (variant.owner(), expected_owner) {
                     (
                         RuntimeVariantIdentity::Nominal {
                             nominal,
@@ -1224,16 +1216,17 @@ impl AwbcInventory {
                     owner_matches,
                     "accepted variant constant must retain its exact AWBC owner"
                 );
-                let case = usize::try_from(*ordinal)
+                let ordinal = variant.ordinal();
+                let case = usize::try_from(ordinal)
                     .ok()
                     .and_then(|ordinal| cases.get(ordinal))
                     .expect("accepted variant constant ordinal exists in its exact AWBC type");
                 assert_eq!(
-                    name,
+                    variant.name(),
                     self.string(case.name),
                     "accepted variant constant must retain its exact case name"
                 );
-                let payload = match (payload.as_deref(), case.payload) {
+                let payload = match (variant.payload(), case.payload) {
                     (Some(value), Some(payload_ty)) => {
                         Some(self.constant_runtime_value_typed(value, payload_ty))
                     }
@@ -1244,7 +1237,7 @@ impl AwbcInventory {
                 };
                 AwbcConstant::Variant {
                     ty,
-                    case: *ordinal,
+                    case: ordinal,
                     payload,
                 }
             }

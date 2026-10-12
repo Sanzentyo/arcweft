@@ -178,7 +178,7 @@ impl RuntimeValue {
                 }),
             Self::Agent(value) => value.ownership(),
             Self::Callable(callable) => callable.ownership(),
-            Self::Variant { payload, .. } => payload
+            Self::Variant(crate::value::RuntimeVariantValue { payload, .. }) => payload
                 .as_deref()
                 .map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership),
         }
@@ -313,7 +313,7 @@ impl RuntimeValue {
                 &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
                 handles,
             ),
-            Self::Variant { payload, .. } => match payload {
+            Self::Variant(crate::value::RuntimeVariantValue { payload, .. }) => match payload {
                 Some(payload) => payload.collect_resources(
                     &path.child(RuntimeValuePathSegment::VariantPayload)?,
                     handles,
@@ -506,7 +506,7 @@ mod tests {
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::try_record(vec![(
                 "payload".to_owned(),
-                RuntimeValue::Variant {
+                RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                     owner: RuntimeVariantIdentity::Builtin(
                         crate::pattern::RuntimeBuiltinVariantIdentity::Result,
                     ),
@@ -516,7 +516,7 @@ mod tests {
                         RuntimeValue::String("value".to_owned()),
                     ])))),
                     type_instantiation: None,
-                },
+                }),
             )])
             .unwrap(),
             RuntimeValue::Bool(true),

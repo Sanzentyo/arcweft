@@ -69,7 +69,7 @@ impl RuntimeValue {
             Self::Reduction(_) => RuntimeValueShape::Reduction,
             Self::Agent(_) => RuntimeValueShape::Agent,
             Self::Callable(_) => RuntimeValueShape::Function,
-            Self::Variant { .. } => RuntimeValueShape::Variant,
+            Self::Variant(_) => RuntimeValueShape::Variant,
         }
     }
 }
@@ -96,7 +96,7 @@ mod tests {
             RuntimeValueShape::Tuple
         );
         assert_eq!(
-            RuntimeValue::Variant {
+            RuntimeValue::Variant(crate::value::RuntimeVariantValue {
                 owner: crate::pattern::RuntimeVariantIdentity::Builtin(
                     crate::pattern::RuntimeBuiltinVariantIdentity::Option,
                 ),
@@ -104,7 +104,7 @@ mod tests {
                 name: "None".to_owned(),
                 payload: None,
                 type_instantiation: None,
-            }
+            })
             .shape(),
             RuntimeValueShape::Variant
         );

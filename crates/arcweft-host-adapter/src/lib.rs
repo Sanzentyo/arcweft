@@ -828,17 +828,11 @@ impl<'a> HostCallArgs<'a> {
 
     pub fn variant(&self, index: usize) -> Result<HostCallVariantArg<'a>, String> {
         match self.positional.get(index).map(|payload| &payload.0) {
-            Some(RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            }) => Ok(HostCallVariantArg {
-                owner,
-                ordinal: *ordinal,
-                name,
-                payload: payload.as_deref(),
+            Some(RuntimeValue::Variant(variant)) => Ok(HostCallVariantArg {
+                owner: variant.owner(),
+                ordinal: variant.ordinal(),
+                name: variant.name(),
+                payload: variant.payload(),
             }),
             Some(value) => Err(format!(
                 "host-call argument #{index} must be Variant, got {}",
@@ -900,7 +894,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Callable(_) => "Function",
-        RuntimeValue::Variant { .. } => "Variant",
+        RuntimeValue::Variant(_) => "Variant",
         RuntimeValue::Iterator(_) => "Iterator",
     }
 }
@@ -1071,24 +1065,51 @@ mod tests {
 
     #[test]
     fn custom_host_call_args_decode_variant_payloads() {
-        let nominal = arcweft_core::entry::RuntimeNominalTypeId::try_new("WindowMode")
-            .expect("test nominal identity");
-        let owner = arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
-            nominal,
-            semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([7; 32]),
-            layout: arcweft_core::entry::TypeLayoutHash::from_bytes([8; 32]),
+        use arcweft_core::entry::{
+            RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+            RuntimeNominalSchemaDefinition, RuntimeNominalSchemaGraph,
+            RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaLimits,
         };
-        let request = HostTaskRequest::custom(
-            "fixture",
-            "op",
-            [RuntimePayload(RuntimeValue::Variant {
-                owner: owner.clone(),
-                ordinal: 4,
-                name: "Fullscreen".to_owned(),
-                payload: None,
-                type_instantiation: None,
-            })],
-        );
+        let semantic = arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([7; 32]);
+        let graph = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
+                RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new("WindowMode").unwrap(),
+                    semantic,
+                ),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: [
+                        "Normal",
+                        "Minimized",
+                        "Maximized",
+                        "BorderlessFullscreen",
+                        "Fullscreen",
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, name)| {
+                        RuntimeNominalSchemaCase::new(
+                            u32::try_from(ordinal).unwrap(),
+                            name.to_owned(),
+                            None,
+                        )
+                    })
+                    .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let value = graph
+            .try_variant_value(semantic, 4, None, RuntimeSchemaLimits::engine_default())
+            .unwrap();
+        let RuntimeValue::Variant(variant) = &value else {
+            unreachable!()
+        };
+        let owner = variant.owner().clone();
+        let request = HostTaskRequest::custom("fixture", "op", [RuntimePayload(value)]);
         let args = HostCallArgs::from_custom_request(&request).expect("custom args");
         let variant = args.variant(0).expect("variant arg");
 

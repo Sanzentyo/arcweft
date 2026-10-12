@@ -1,6 +1,4 @@
-use arcweft_core::pattern::{
-    RuntimeBuiltinVariantIdentity, RuntimeSemanticTypeId, RuntimeVariantIdentity,
-};
+use arcweft_core::pattern::{RuntimeBuiltinVariantIdentity, RuntimeSemanticTypeId};
 use arcweft_core::plan::{
     RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection as Type,
     RuntimePlanTypeSeed, RuntimePlanTypeTableError,
@@ -61,15 +59,15 @@ fn every_builtin_payload_case_requires_one_tuple_item_before_publication() {
         let ty = plan.type_table().id_for_semantic(semantic(1)).unwrap();
         let checked = plan.checked_type(ty).unwrap().unwrap();
         for (ordinal, case) in owner.cases().iter().enumerate() {
-            let value = RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Builtin(owner),
-                ordinal: u32::try_from(ordinal).unwrap(),
-                name: case.name().to_owned(),
-                payload: case
-                    .has_payload()
-                    .then(|| Box::new(RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]))),
-                type_instantiation: None,
-            };
+            let value = arcweft_core::program_types::RuntimeProgramTypes::Plan(&plan)
+                .try_variant_value(
+                    semantic(1),
+                    u32::try_from(ordinal).unwrap(),
+                    case.has_payload()
+                        .then(|| RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)])),
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .unwrap();
             assert!(checked.accepts_value(&value), "{owner:?}::{case:?}");
         }
         if owner.cases().iter().any(|case| case.has_payload()) {

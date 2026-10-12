@@ -1,9 +1,6 @@
 use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
-    pattern::{
-        RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
-        RuntimeVariantIdentity,
-    },
+    pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId},
     pure::{RuntimeExternalCallContext, VmRuntimePureCallBackend},
     runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
@@ -207,40 +204,17 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
     let option = RuntimeValue::option_some(RuntimeValue::Bool(true));
     assert_eq!(
         option.option_none_with_same_owner(),
-        Some(RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-            ),
-            ordinal: 1,
-            name: "None".to_owned(),
-            payload: None,
-            type_instantiation: None,
-        })
+        Some(RuntimeValue::option_none())
     );
-
-    let unrelated = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal identity"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([3; 32]),
-            layout: crate::entry::TypeLayoutHash::from_bytes([7; 32]),
-        },
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Bool(true))),
-        type_instantiation: None,
-    };
+    let unrelated = source_variant_fixture(
+        [3; 32],
+        crate::entry::RuntimeTypeSchema::Bool,
+        RuntimeValue::Unit,
+    );
     assert_eq!(unrelated.option_none_with_same_owner(), None);
-
-    let malformed = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(
-            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-        ),
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: None,
-        type_instantiation: None,
-    };
-    assert_eq!(malformed.option_none_with_same_owner(), None);
+    let mut malformed = serde_json::to_value(&option).unwrap();
+    malformed["Variant"]["payload"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<RuntimeValue>(malformed).is_err());
 }
 
 #[test]
@@ -262,15 +236,11 @@ fn option_and_result_values_store_structural_tuple_payloads_but_expose_raw_opera
             RuntimeValue::i64(9),
         ),
     ] {
-        let RuntimeValue::Variant {
-            payload: Some(stored),
-            ..
-        } = &value
-        else {
+        let RuntimeValue::Variant(variant) = &value else {
             panic!("payload-bearing builtin variant stores one payload")
         };
         assert_eq!(
-            stored.as_ref(),
+            variant.payload().expect("stored builtin payload"),
             &RuntimeValue::Tuple(vec![expected_payload.clone()])
         );
         assert_eq!(
@@ -304,83 +274,78 @@ fn option_and_result_values_store_structural_tuple_payloads_but_expose_raw_opera
 
 #[test]
 fn builtin_option_and_result_reject_flat_legacy_payloads() {
-    let option = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(
-            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(
+        crate::plan::RuntimePlanBuilder::new().finish().unwrap(),
+    ));
+    for (value, payload) in [
+        (
+            RuntimeValue::option_some(RuntimeValue::i64(7)),
+            RuntimeValue::i64(7),
         ),
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::i64(7))),
-        type_instantiation: None,
-    };
-    let result = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(
-            crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+        (
+            RuntimeValue::result_ok(RuntimeValue::i64(8)),
+            RuntimeValue::i64(8),
         ),
-        ordinal: 0,
-        name: "Ok".to_owned(),
-        payload: Some(Box::new(RuntimeValue::i64(8))),
-        type_instantiation: None,
-    };
-
-    assert_eq!(option.builtin_variant_case(), None);
-    assert_eq!(result.builtin_variant_case(), None);
-    assert!(option.clone().try_into_builtin_variant_case().is_err());
-    assert!(result.clone().try_into_builtin_variant_case().is_err());
-    assert!(
-        !RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Signed(
-            crate::value::RuntimeSignedIntWidth::I64,
-        )))
-        .accepts_value(&option)
-    );
-    assert!(
-        !RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::Signed(
-                crate::value::RuntimeSignedIntWidth::I64,
-            )),
-            error: Box::new(RuntimeCheckedType::Signed(
-                crate::value::RuntimeSignedIntWidth::I64,
-            )),
-        }
-        .accepts_value(&result)
-    );
-    assert!(crate::value::evaluate_core_option_is_some_intrinsic(&option).is_err());
-    assert!(crate::value::evaluate_core_option_unwrap_intrinsic(option).is_err());
+    ] {
+        let mut malformed = serde_json::to_value(&value).unwrap();
+        malformed["Variant"]["payload"] = serde_json::to_value(&payload).unwrap();
+        assert!(serde_json::from_value::<RuntimeValue>(malformed.clone()).is_err());
+        assert!(
+            serde_json::from_value::<crate::value::RuntimeVariantValue>(
+                malformed["Variant"].clone()
+            )
+            .is_err()
+        );
+        let mut snapshot = serde_json::to_value(
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                .unwrap(),
+        )
+        .unwrap();
+        snapshot["Variant"]["payload"] = serde_json::to_value(
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                &payload, &owner,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let snapshot: crate::value::AwbcRuntimeValueSnapshot =
+            serde_json::from_value(snapshot).unwrap();
+        assert!(snapshot.into_runtime_value_for_program(&owner).is_err());
+        assert!(value.builtin_variant_case().is_some());
+        assert!(value.try_into_builtin_variant_case().is_ok());
+    }
 }
 
 #[test]
 fn variant_canonical_bytes_retain_closed_owner_ordinal_semantic_identity_and_layout() {
-    let option = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(
-            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-        ),
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Unit)),
-        type_instantiation: None,
-    };
-    let result = RuntimeValue::result_ok(RuntimeValue::Unit);
-    let nominal = |semantic_identity, layout| RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes(semantic_identity),
-            layout: crate::entry::TypeLayoutHash::from_bytes(layout),
-        },
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Unit)),
-        type_instantiation: None,
-    };
-
     let encode = |value: RuntimeValue| value.try_canonical_bytes(1024).expect("canonical value");
-    assert_ne!(encode(option), encode(result));
     assert_ne!(
-        encode(nominal([1; 32], [3; 32])),
-        encode(nominal([2; 32], [3; 32]))
+        encode(RuntimeValue::option_some(RuntimeValue::Unit)),
+        encode(RuntimeValue::result_ok(RuntimeValue::Unit))
     );
     assert_ne!(
-        encode(nominal([1; 32], [3; 32])),
-        encode(nominal([1; 32], [4; 32]))
+        encode(source_variant_fixture(
+            [1; 32],
+            crate::entry::RuntimeTypeSchema::Bool,
+            RuntimeValue::Unit
+        )),
+        encode(source_variant_fixture(
+            [2; 32],
+            crate::entry::RuntimeTypeSchema::Bool,
+            RuntimeValue::Unit
+        ))
+    );
+    assert_ne!(
+        encode(source_variant_fixture(
+            [1; 32],
+            crate::entry::RuntimeTypeSchema::Bool,
+            RuntimeValue::Unit
+        )),
+        encode(source_variant_fixture(
+            [1; 32],
+            crate::entry::RuntimeTypeSchema::String,
+            RuntimeValue::Unit
+        ))
     );
 }
 
@@ -1151,24 +1116,8 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
     assert!(record_seq.field_by_name("missing").is_none());
 
     let RuntimeValue::Seq(variant_seq) = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-            ),
-            ordinal: 0,
-            name: "Some".to_owned(),
-            payload: Some(Box::new(RuntimeValue::i64(1))),
-            type_instantiation: None,
-        },
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-            ),
-            ordinal: 0,
-            name: "Some".to_owned(),
-            payload: Some(Box::new(RuntimeValue::i64(2))),
-            type_instantiation: None,
-        },
+        RuntimeValue::option_some(RuntimeValue::i64(1)),
+        RuntimeValue::option_some(RuntimeValue::i64(2)),
     ]) else {
         panic!("variant literals lower to a sequence");
     };
@@ -1651,4 +1600,45 @@ fn sequence_equality_preserves_float_rules_and_empty_element_content() {
     }
     assert_eq!(empty[1].dense_kind(), Some(DenseSeqKind::I8));
     assert_eq!(empty[2].dense_kind(), Some(DenseSeqKind::F32));
+}
+
+fn source_variant_fixture(
+    semantic: [u8; 32],
+    argument: crate::entry::RuntimeTypeSchema,
+    payload: RuntimeValue,
+) -> RuntimeValue {
+    use crate::entry::{
+        RuntimeNominalDeclarationId, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+        RuntimeNominalSchemaDefinition, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeSchemaLimits, RuntimeTypeSchema,
+    };
+    let semantic = RuntimeSemanticTypeId::from_bytes(semantic);
+    let graph = RuntimeNominalSchemaGraph::try_new(
+        vec![RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalDeclarationId::from_bytes(*semantic.as_bytes()),
+            RuntimeNominalSchemaIdentity::new(
+                RuntimeNominalTypeId::try_new("game.State").unwrap(),
+                semantic,
+            ),
+            vec![argument],
+            RuntimeNominalSchemaBody::Variant {
+                cases: vec![RuntimeNominalSchemaCase::new(
+                    0,
+                    "Some".to_owned(),
+                    Some(RuntimeTypeSchema::Unit),
+                )]
+                .into(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    graph
+        .try_variant_value(
+            semantic,
+            0,
+            Some(payload),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap()
 }

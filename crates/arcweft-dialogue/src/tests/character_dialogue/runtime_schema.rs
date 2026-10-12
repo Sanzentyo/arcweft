@@ -23,7 +23,7 @@ use arcweft_core::{
         TypeLayoutHash,
     },
     pattern::{
-        RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeCheckedType,
+        RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity,
         RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
         RuntimeVariantIdentity,
     },
@@ -365,20 +365,20 @@ fn source_variant_value(
     name: &str,
     payload: Option<RuntimeValue>,
 ) -> RuntimeValue {
-    let RuntimeCheckedType::Variant {
-        owner: variant_owner,
-        ..
-    } = owner.types().checked_type(semantic_type).unwrap()
-    else {
-        panic!("source binding must name an accepted variant type")
+    let value = owner
+        .types()
+        .try_variant_value(
+            semantic_type,
+            ordinal,
+            payload,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("accepted source variant");
+    let RuntimeValue::Variant(variant) = &value else {
+        unreachable!()
     };
-    RuntimeValue::Variant {
-        owner: variant_owner,
-        ordinal,
-        name: name.to_owned(),
-        payload: payload.map(Box::new),
-        type_instantiation: None,
-    }
+    assert_eq!(variant.name(), name);
+    value
 }
 
 struct Types {
@@ -833,10 +833,10 @@ fn native_and_awbc_round_trip_the_tuple_and_every_policy_case() {
                 };
                 assert_eq!(fields.len(), 18);
                 assert!(matches!(
-                    fields[1],
-                    RuntimeValue::Variant { ordinal: 0, .. }
+                    &fields[1],
+                    RuntimeValue::Variant(variant) if variant.ordinal() == 0
                 ));
-                assert!(matches!(&fields[16], RuntimeValue::Variant { .. }));
+                assert!(matches!(&fields[16], RuntimeValue::Variant(_)));
                 assert_eq!(
                     schema
                         .try_decode_opaque(encoded.opaque())
@@ -932,33 +932,38 @@ fn rejects_stale_contracts_and_tampered_policy_headers() {
             );
         }
         for edit in 0..4 {
-            let mut changed = fields.clone();
-            let RuntimeValue::Variant {
-                owner,
+            let mut image =
+                arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    &fields[16],
+                    &owner,
+                )
+                .unwrap();
+            let arcweft_core::value::AwbcRuntimeValueSnapshot::Variant {
+                owner: image_owner,
                 ordinal,
                 name,
                 payload,
                 type_instantiation: _,
-            } = &mut changed[16]
+            } = &mut image
             else {
                 unreachable!()
             };
             match edit {
                 0 => {
-                    let RuntimeVariantIdentity::Nominal { layout, .. } = owner else {
+                    let RuntimeVariantIdentity::Nominal { layout, .. } = image_owner else {
                         unreachable!()
                     };
                     *layout = TypeLayoutHash::from_bytes([0; 32]);
                 }
                 1 => *ordinal = 99,
                 2 => *name = "Other".into(),
-                _ => *payload = Some(Box::new(RuntimeValue::Unit)),
+                _ => {
+                    *payload = Some(Box::new(
+                        arcweft_core::value::AwbcRuntimeValueSnapshot::Unit,
+                    ))
+                }
             }
-            assert!(
-                schema
-                    .try_decode_opaque(&rewrap(&dialogue, RuntimeValue::Tuple(changed)))
-                    .is_err()
-            );
+            assert!(image.into_runtime_value_for_program(&owner).is_err());
         }
     }
 }
@@ -1587,8 +1592,8 @@ fn source_voice_and_look_values_are_joined_through_exact_program_rows() {
         assert!(matches!(
             payload[5].builtin_variant_case(),
             Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(
-                RuntimeValue::Variant { ordinal: 0, name, payload: None, .. }
-            ))) if name == "Auto"
+                RuntimeValue::Variant(variant)
+            ))) if variant.ordinal() == 0 && variant.name() == "Auto" && variant.payload().is_none()
         ));
         assert_eq!(
             payload[6],
@@ -1610,31 +1615,25 @@ fn source_patch_rows_reject_values_outside_the_exact_voice_and_character_look_ca
     });
     let valid_voice = source_variant_value(&owner, voice_source_type(), 0, "auto", None);
     let valid_look = source_variant_value(&owner, look_source_type(), 0, "normal", None);
-    let RuntimeValue::Variant {
-        owner: look_owner, ..
-    } = source_variant_value(&owner, look_source_type(), 0, "normal", None)
-    else {
-        unreachable!()
-    };
-    let mut foreign_voice_owner = valid_voice.clone();
-    let RuntimeValue::Variant {
-        owner: value_owner, ..
-    } = &mut foreign_voice_owner
-    else {
-        unreachable!()
-    };
-    *value_owner = look_owner;
-    let invalid_voice_values = [
-        foreign_voice_owner,
-        source_variant_value(&owner, voice_source_type(), 0, "Auto", None),
-        source_variant_value(
-            &owner,
-            voice_source_type(),
-            0,
-            "auto",
-            Some(RuntimeValue::Unit),
+    let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        &valid_voice,
+        &owner,
+    )
+    .unwrap();
+    for (field, replacement) in [
+        ("name", serde_json::json!("Auto")),
+        (
+            "payload",
+            serde_json::to_value(arcweft_core::value::AwbcRuntimeValueSnapshot::Unit).unwrap(),
         ),
-    ];
+    ] {
+        let mut invalid = serde_json::to_value(&image).unwrap();
+        invalid["Variant"][field] = replacement;
+        let invalid: arcweft_core::value::AwbcRuntimeValueSnapshot =
+            serde_json::from_value(invalid).unwrap();
+        assert!(invalid.into_runtime_value_for_program(&owner).is_err());
+    }
+    let invalid_voice_values = [valid_look.clone()];
     for value in invalid_voice_values {
         assert!(
             schema
@@ -1650,11 +1649,22 @@ fn source_patch_rows_reject_values_outside_the_exact_voice_and_character_look_ca
                 .is_err()
         );
     }
-    for value in [
-        RuntimeValue::String("normal".into()),
-        source_variant_value(&owner, look_source_type(), 0, "Normal", None),
-        source_variant_value(&owner, look_source_type(), 1, "normal", None),
+    let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+        &valid_look,
+        &owner,
+    )
+    .unwrap();
+    for (field, replacement) in [
+        ("name", serde_json::json!("Normal")),
+        ("ordinal", serde_json::json!(1)),
     ] {
+        let mut invalid = serde_json::to_value(&image).unwrap();
+        invalid["Variant"][field] = replacement;
+        let invalid: arcweft_core::value::AwbcRuntimeValueSnapshot =
+            serde_json::from_value(invalid).unwrap();
+        assert!(invalid.into_runtime_value_for_program(&owner).is_err());
+    }
+    for value in [RuntimeValue::String("normal".into()), valid_voice.clone()] {
         assert!(
             schema
                 .construct(

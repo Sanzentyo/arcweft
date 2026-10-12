@@ -415,22 +415,19 @@ fn decode_policy_variant<'a>(
     ),
     InlineFailurePolicyDecodeError,
 > {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-        type_instantiation: _,
-    } = value
-    else {
+    let RuntimeValue::Variant(variant) = value else {
         return Err(InlineFailurePolicyDecodeError::InvalidValue { field });
     };
-    if !expected.matches_runtime_identity(owner) {
+    if !expected.matches_runtime_identity(variant.owner()) {
         return Err(InlineFailurePolicyDecodeError::InvalidValue { field });
     }
-    let case = CharacterDialoguePolicyTypeGraph::case_spec_for_value(expected, *ordinal, name)
-        .ok_or(InlineFailurePolicyDecodeError::InvalidValue { field })?;
-    Ok((case, payload.as_deref()))
+    let case = CharacterDialoguePolicyTypeGraph::case_spec_for_value(
+        expected,
+        variant.ordinal(),
+        variant.name(),
+    )
+    .ok_or(InlineFailurePolicyDecodeError::InvalidValue { field })?;
+    Ok((case, variant.payload()))
 }
 
 impl InlineFailureSelection {
@@ -484,13 +481,14 @@ mod tests {
             .iter()
             .find(|case| case.language_name() == language_name)
             .expect("policy case");
-        RuntimeValue::Variant {
-            owner: graph.identity(owner).clone(),
-            ordinal: case.ordinal(),
-            name: case.name().to_owned(),
-            payload: payload.map(Box::new),
-            type_instantiation: None,
-        }
+        graph
+            .try_variant_value(
+                owner,
+                case.ordinal(),
+                payload,
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .expect("policy fixture")
     }
 
     #[test]

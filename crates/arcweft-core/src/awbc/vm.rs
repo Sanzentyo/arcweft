@@ -4,6 +4,8 @@
 //! await-many and budget yields are surfaced as typed exits over `FiberState`.
 //! This module never falls back to the structured VM.
 
+use crate::value::runtime_value_views_equal;
+
 #[cfg(test)]
 mod dense_numeric_tests;
 
@@ -12,7 +14,6 @@ use super::fiber::{
     FiberResumeTarget, FiberReturnContinuation, FiberReturnPoint, FiberSafePoint,
     FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap, runtime_value_matches_type,
-    runtime_variant_identity,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
@@ -1136,8 +1137,7 @@ fn execute_instruction(
         } => {
             let payload = payload
                 .map(|payload| fiber.active_frame_mut()?.take_register(payload))
-                .transpose()?
-                .map(Box::new);
+                .transpose()?;
             let type_instantiation = (!program.runtime_types[ty.index()].scope().is_root())
                 .then(|| {
                     fiber
@@ -1146,16 +1146,22 @@ fn execute_instruction(
                 })
                 .transpose()?
                 .flatten();
-            fiber.active_frame_mut()?.set_register(
-                *dst,
-                RuntimeValue::Variant {
-                    owner: variant_identity_for_type(program, *ty)?,
-                    ordinal: *case,
-                    name: string(program, *case_name)?.to_owned(),
-                    payload,
-                    type_instantiation,
-                },
+            let value = program.make_variant_value(
+                *ty,
+                *case,
+                payload,
+                type_instantiation,
+                Some(fiber.active_frame()?),
             )?;
+            let RuntimeValue::Variant(variant) = &value else {
+                unreachable!()
+            };
+            if variant.name() != string(program, *case_name)? {
+                return Err(VmError::Runtime(
+                    "variant instruction has a foreign case name".to_owned(),
+                ));
+            }
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::MakeAgent {
             dst,
@@ -4039,6 +4045,43 @@ pub(crate) fn terminal_exit(fiber: &mut FiberState) -> VmExit {
     reason = "constant materialization exhaustively mirrors the closed AWBC constant family"
 )]
 impl AwbcProgram {
+    fn make_variant_value(
+        &self,
+        ty: AwbcTypeId,
+        ordinal: u32,
+        payload: Option<RuntimeValue>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        frame: Option<&FiberFrame>,
+    ) -> Result<RuntimeValue, VmError> {
+        let row = self
+            .runtime_types
+            .get(ty.index())
+            .ok_or(VmError::MissingType(ty))?;
+        let case = crate::program_types::RuntimeProgramTypes::Awbc(self)
+            .variant_case(row.semantic_identity(), ordinal)
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        crate::value::RuntimeVariantValue::try_from_program_case(case, payload, binding, |value| {
+            let accepted = frame.map_or_else(
+                || {
+                    self.validate_live_value(
+                        ty,
+                        value,
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .is_ok()
+                },
+                |frame| frame.value_matches_type(self, value, ty),
+            );
+            if accepted {
+                Ok(())
+            } else {
+                Err(VmError::Runtime(
+                    "variant payload does not match the selected program type".to_owned(),
+                ))
+            }
+        })
+    }
+
     fn make_record_value(
         &self,
         ty: AwbcTypeId,
@@ -4184,19 +4227,16 @@ pub(crate) fn constant_value(
                     "variant constant references a non-variant type".to_owned(),
                 ));
             };
-            let selected = cases.get(*case as usize).ok_or_else(|| {
+            cases.get(*case as usize).ok_or_else(|| {
                 VmError::Runtime("variant constant case is out of bounds".to_owned())
             })?;
-            Ok(RuntimeValue::Variant {
-                owner: variant_identity_for_type(program, *ty)?,
-                ordinal: *case,
-                name: string(program, selected.name)?.to_owned(),
-                payload: payload
-                    .map(|id| constant_value(program, id))
-                    .transpose()?
-                    .map(Box::new),
-                type_instantiation: None,
-            })
+            program.make_variant_value(
+                *ty,
+                *case,
+                payload.map(|id| constant_value(program, id)).transpose()?,
+                None,
+                None,
+            )
         }
         AwbcConstant::Opaque { ty, payload } => {
             let owner = program
@@ -4296,24 +4336,6 @@ fn string(program: &AwbcProgram, id: AwbcStringId) -> Result<&str, VmError> {
         .get(id.index())
         .map(String::as_str)
         .ok_or(VmError::MissingString(id))
-}
-
-fn variant_identity_for_type(
-    program: &AwbcProgram,
-    ty: AwbcTypeId,
-) -> Result<crate::pattern::RuntimeVariantIdentity, VmError> {
-    match program.runtime_types.get(ty.index()) {
-        Some(runtime_type) => match runtime_type.shape() {
-            AwbcRuntimeTypeShape::Variant { owner, .. } => {
-                runtime_variant_identity(program, runtime_type.semantic_identity(), owner)
-                    .ok_or_else(|| VmError::Runtime("variant owner identity is invalid".to_owned()))
-            }
-            _ => Err(VmError::Runtime(
-                "variant value references a non-variant runtime type".to_owned(),
-            )),
-        },
-        None => Err(VmError::MissingType(ty)),
-    }
 }
 
 #[cfg(test)]
@@ -4474,17 +4496,11 @@ fn test_pattern_view(
                 |frame| frame.value_view_matches_type(program, value, *ty),
             ) {
                 false
-            } else if let RuntimeValueView::Variant {
-                ordinal,
-                name,
-                payload: actual,
-                ..
-            } = value
-            {
-                if *case != ordinal || case_name != name {
+            } else if let RuntimeValueView::Variant(variant) = value {
+                if *case != variant.ordinal() || case_name != variant.name() {
                     false
                 } else {
-                    match (payload, actual) {
+                    match (payload, variant.payload()) {
                         (None, None) => true,
                         (Some(pattern), Some(value)) => {
                             test_pattern_view(program, frame, *pattern, value.view(), depth + 1)?
@@ -4500,77 +4516,6 @@ fn test_pattern_view(
             test_pattern_view(program, frame, *inner, value, depth + 1)?
         }
     })
-}
-
-fn runtime_value_views_equal(left: RuntimeValueView<'_>, right: RuntimeValueView<'_>) -> bool {
-    match (left, right) {
-        (RuntimeValueView::Scalar(left), RuntimeValueView::Scalar(right)) => left == right,
-        (RuntimeValueView::Tuple(left), RuntimeValueView::Tuple(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
-                    (Some(left), Some(right)) => runtime_value_views_equal(left, right),
-                    _ => false,
-                })
-        }
-        (RuntimeValueView::Record(left), RuntimeValueView::Record(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| match (left.get(index), right.get(index)) {
-                    (Some((left_id, left_name, left)), Some((right_id, right_name, right))) => {
-                        left_id == right_id
-                            && left_name == right_name
-                            && runtime_value_views_equal(left, right)
-                    }
-                    _ => false,
-                })
-        }
-        (RuntimeValueView::Sequence(left), RuntimeValueView::Sequence(right)) => {
-            left.len() == right.len()
-                && (0..left.len()).all(|index| {
-                    match (left.value_view(index), right.value_view(index)) {
-                        (Some(left), Some(right)) => runtime_value_views_equal(left, right),
-                        _ => false,
-                    }
-                })
-        }
-        (RuntimeValueView::NominalRecord(left), RuntimeValueView::NominalRecord(right)) => {
-            left == right
-        }
-        (RuntimeValueView::Opaque(left), RuntimeValueView::Opaque(right)) => left == right,
-        (RuntimeValueView::Reduction(left), RuntimeValueView::Reduction(right)) => left == right,
-        (RuntimeValueView::Agent(left), RuntimeValueView::Agent(right)) => left == right,
-        (
-            RuntimeValueView::Variant {
-                owner: left_owner,
-                ordinal: left_ordinal,
-                name: left_name,
-                payload: left_payload,
-                type_instantiation: left_instantiation,
-            },
-            RuntimeValueView::Variant {
-                owner: right_owner,
-                ordinal: right_ordinal,
-                name: right_name,
-                payload: right_payload,
-                type_instantiation: right_instantiation,
-            },
-        ) => {
-            left_owner == right_owner
-                && left_instantiation == right_instantiation
-                && left_ordinal == right_ordinal
-                && left_name == right_name
-                && match (left_payload, right_payload) {
-                    (None, None) => true,
-                    (Some(left), Some(right)) => {
-                        runtime_value_views_equal(left.view(), right.view())
-                    }
-                    _ => false,
-                }
-        }
-        (RuntimeValueView::RuntimeOnly(left), RuntimeValueView::RuntimeOnly(right)) => {
-            left == right
-        }
-        _ => false,
-    }
 }
 
 #[allow(
@@ -4997,16 +4942,12 @@ fn bind_tested_pattern_owned(
             }
         }
         AwbcPattern::Variant { payload, .. } => {
-            if let (
-                Some(pattern),
-                RuntimeValue::Variant {
-                    payload: Some(value),
-                    ..
-                },
-            ) = (payload, value)
-            {
+            if let (Some(pattern), RuntimeValue::Variant(variant)) = (payload, value) {
                 if pattern_has_binding(program, pattern, 0)? {
-                    bind_tested_pattern_owned(program, fiber, pattern, *value)?;
+                    let value = variant.into_payload().ok_or_else(|| {
+                        VmError::Runtime("matched variant has no payload".to_owned())
+                    })?;
+                    bind_tested_pattern_owned(program, fiber, pattern, value)?;
                 }
             }
         }
@@ -5246,14 +5187,8 @@ fn visit_pattern_bindings_view(
             Ok(())
         }
         AwbcPattern::Variant { payload, .. } => {
-            if let (
-                Some(pattern),
-                RuntimeValueView::Variant {
-                    payload: Some(value),
-                    ..
-                },
-            ) = (payload, value)
-            {
+            if let (Some(pattern), RuntimeValueView::Variant(variant)) = (payload, value) {
+                let value = variant.payload().ok_or(VmError::PatternMismatch)?;
                 visit_pattern_bindings_view(
                     program,
                     frame,

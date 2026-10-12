@@ -63,7 +63,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Callable(_) => "function",
-        RuntimeValue::Variant { .. } => "variant",
+        RuntimeValue::Variant(_) => "variant",
         RuntimeValue::Iterator(_) => "iterator",
     }
     .to_owned()

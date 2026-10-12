@@ -134,18 +134,15 @@ impl<'a> SchemaValueValidation<'a> {
                 }
                 record.layout()
             }
-            (
-                RuntimeNominalSchemaBody::Variant { .. },
-                View::Variant {
-                    owner:
-                        RuntimeVariantIdentity::Nominal {
-                            nominal,
-                            semantic_identity,
-                            layout,
-                        },
-                    ..
-                },
-            ) => {
+            (RuntimeNominalSchemaBody::Variant { .. }, View::Variant(variant)) => {
+                let RuntimeVariantIdentity::Nominal {
+                    nominal,
+                    semantic_identity,
+                    layout,
+                } = variant.owner()
+                else {
+                    return Err(Self::mismatch("nominal variant", value));
+                };
                 super::validate_nominal_identity(identity.nominal(), nominal, "$")?;
                 if *semantic_identity != identity.semantic_identity() {
                     return Err(Error::NominalSemanticIdentity {
@@ -180,15 +177,10 @@ impl<'a> SchemaValueValidation<'a> {
                     fields.iter().map(|field| field.schema()).collect(),
                 ))
             }
-            (
-                RuntimeNominalSchemaBody::Variant { cases },
-                View::Variant {
-                    ordinal,
-                    name,
-                    payload,
-                    ..
-                },
-            ) => {
+            (RuntimeNominalSchemaBody::Variant { cases }, View::Variant(variant)) => {
+                let ordinal = variant.ordinal();
+                let name = variant.name();
+                let payload = variant.payload();
                 let case = usize::try_from(ordinal)
                     .ok()
                     .and_then(|index| cases.get(index))
@@ -367,16 +359,11 @@ impl<'a> SchemaValueValidation<'a> {
                 }
                 Ok(Children::Single(Expected::OpaquePayload))
             }
-            (
-                Schema::Builtin(builtin),
-                View::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload,
-                    type_instantiation: _,
-                },
-            ) => {
+            (Schema::Builtin(builtin), View::Variant(variant)) => {
+                let owner = variant.owner();
+                let ordinal = variant.ordinal();
+                let name = variant.name();
+                let payload = variant.payload();
                 if owner != &RuntimeVariantIdentity::Builtin(builtin.owner()) {
                     return Err(Error::BuiltinVariantOwner {
                         path: "$".to_owned(),
@@ -419,15 +406,16 @@ impl<'a> SchemaValueValidation<'a> {
                     variants,
                     ..
                 },
-                View::Variant {
-                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
-                    ordinal,
-                    name,
-                    payload,
-                    type_instantiation: None,
-                },
-            ) if nominal.as_str() == expected_owner => {
-                Self::serde_enum(variants, ordinal, name, payload.is_some())
+                View::Variant(variant),
+            ) if matches!(variant.owner(), RuntimeVariantIdentity::Nominal { nominal, .. } if nominal.as_str() == expected_owner)
+                && variant.type_instantiation().is_none() =>
+            {
+                Self::serde_enum(
+                    variants,
+                    variant.ordinal(),
+                    variant.name(),
+                    variant.payload().is_some(),
+                )
             }
             _ => Err(Self::mismatch(schema.type_label(), value)),
         }

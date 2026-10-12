@@ -361,11 +361,6 @@ fn bounds_and_dangling_references_fail_without_a_digest() {
 
 #[test]
 fn nominal_variant_correlates_every_owner_atom_and_the_complete_case_row() {
-    let owner = RuntimeVariantIdentity::Nominal {
-        nominal: RuntimeNominalTypeId::try_new("fixture.Cases").unwrap(),
-        semantic_identity: RuntimeSemanticTypeId::from_bytes([1; 32]),
-        layout: TypeLayoutHash::from_bytes([7; 32]),
-    };
     let mut program = program([
         Type::Bool,
         Type::Variant {
@@ -392,17 +387,23 @@ fn nominal_variant_correlates_every_owner_atom_and_the_complete_case_row() {
         "Empty".to_owned(),
         String::new(),
     ];
-    let good = RuntimeValue::Variant {
-        owner: owner.clone(),
-        ordinal: 0,
-        name: "Full".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Bool(true))),
-        type_instantiation: None,
-    };
+    let authority = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+    let good = authority
+        .types()
+        .try_variant_value(
+            RuntimeSemanticTypeId::from_bytes([1; 32]),
+            0,
+            Some(RuntimeValue::Bool(true)),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
     assert!(admits(&program, 1, &good).is_ok());
     for changed in 0..6 {
-        let mut value = good.clone();
-        let RuntimeValue::Variant {
+        let mut value = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            &good, &authority,
+        )
+        .unwrap();
+        let crate::value::AwbcRuntimeValueSnapshot::Variant {
             owner:
                 RuntimeVariantIdentity::Nominal {
                     nominal,
@@ -423,10 +424,13 @@ fn nominal_variant_correlates_every_owner_atom_and_the_complete_case_row() {
             2 => *layout = TypeLayoutHash::from_bytes([9; 32]),
             3 => *ordinal = 1,
             4 => *name = "Empty".to_owned(),
-            5 => *payload = Some(Box::new(RuntimeValue::Unit)),
+            5 => *payload = Some(Box::new(crate::value::AwbcRuntimeValueSnapshot::Unit)),
             _ => unreachable!(),
         }
-        assert!(admits(&program, 1, &value).is_err(), "{changed}");
+        assert!(
+            value.into_runtime_value_for_program(&authority).is_err(),
+            "{changed}"
+        );
     }
     for name in [AwbcStringId(1), AwbcStringId(3), AwbcStringId(99)] {
         let mut candidate = program.clone();

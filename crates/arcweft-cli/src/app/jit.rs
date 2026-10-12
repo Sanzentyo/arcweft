@@ -397,8 +397,9 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             callable.remaining_arity().unwrap_or_default()
         ),
         RuntimeValue::NeedHandle(need) => format!("need/{}", need.need_id()),
-        RuntimeValue::Variant { name, payload, .. } => {
-            if payload.is_some() {
+        RuntimeValue::Variant(variant) => {
+            let name = variant.name();
+            if variant.payload().is_some() {
                 format!(".{name}(...)")
             } else {
                 format!(".{name}")

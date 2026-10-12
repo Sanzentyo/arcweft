@@ -935,29 +935,25 @@ impl Engine {
         let payload = payload
             .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
             .transpose()?;
-        match (case.payload(), payload.as_ref()) {
-            (Some(expected), Some(value))
-                if self
-                    .fiber
-                    .frame
-                    .env
-                    .value_matches_type(plan.as_ref(), expected, value)? => {}
-            (None, None) => {}
-            _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
-        }
-        Ok(RuntimeValue::Variant {
-            owner: case.owner().clone(),
-            ordinal,
-            name: case.name().to_owned(),
-            payload: payload.map(Box::new),
-            type_instantiation: (!plan
-                .type_table()
-                .get(ty)
-                .ok_or(RuntimeEvalError::UnknownPlanType(ty))?
-                .scope()
-                .is_root())
-            .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
-            .flatten(),
+        let binding = (!plan
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?
+            .scope()
+            .is_root())
+        .then(|| self.fiber.frame.env.function_instantiation_lease().cloned())
+        .flatten();
+        crate::value::RuntimeVariantValue::try_from_plan_case(&case, payload, binding, |value| {
+            if self
+                .fiber
+                .frame
+                .env
+                .value_matches_type(plan.as_ref(), ty, value)?
+            {
+                Ok(())
+            } else {
+                Err(RuntimeEvalError::InvalidExpressionType(ty))
+            }
         })
     }
 

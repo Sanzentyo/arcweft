@@ -959,13 +959,16 @@ fn parse_reducer_error(value: RuntimeValue) -> Result<ParsedReducerResult, Strin
 
 fn unwrap_named_variant(value: RuntimeValue, expected: &str) -> Result<RuntimeValue, String> {
     match value {
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal { nominal, .. },
-            ordinal: 0,
-            name,
-            payload: Some(payload),
-            type_instantiation: None,
-        } if nominal.as_str() == expected && name == expected => Ok(*payload),
+        RuntimeValue::Variant(variant)
+            if matches!(variant.owner(), RuntimeVariantIdentity::Nominal { nominal, .. } if nominal.as_str() == expected)
+                && variant.ordinal() == 0
+                && variant.name() == expected
+                && variant.type_instantiation().is_none() =>
+        {
+            variant
+                .into_payload()
+                .ok_or_else(|| format!("expected `{expected}` payload"))
+        }
         RuntimeValue::Record(_) => Ok(value),
         _ => Err(format!("expected `{expected}` value")),
     }
@@ -1190,8 +1193,8 @@ fn validate_replay_safe_view(
         RuntimeValueView::Agent(value) => {
             validate_replay_safe_agent_value(value, limits, depth, nodes)
         }
-        RuntimeValueView::Variant { payload, .. } => {
-            if let Some(payload) = payload {
+        RuntimeValueView::Variant(variant) => {
+            if let Some(payload) = variant.payload() {
                 validate_replay_safe_value(payload, limits, depth + 1, nodes)?;
             }
             Ok(())

@@ -33,6 +33,8 @@ pub use arc_error::{
 pub(crate) use arc_error::{RuntimeArcErrorContextKind, RuntimeArcErrorContextStart};
 mod awbc_save;
 mod callable;
+mod canonical_transform;
+pub use canonical_transform::{RuntimeValueMergeError, RuntimeValueNormalizationError};
 mod character_dialogue;
 mod collection;
 mod color;
@@ -70,6 +72,7 @@ mod sequence_constructors;
 mod sequence_impls;
 mod shape;
 mod view;
+pub(crate) use view::runtime_value_views_equal;
 mod virtual_path;
 
 pub(crate) use view::{RuntimeRecordView, RuntimeScalarView, RuntimeTupleView, RuntimeValueView};
@@ -306,14 +309,214 @@ pub enum RuntimeValue {
     Reduction(RuntimeReductionValue),
     Agent(RuntimeAgentValue),
     Callable(RuntimeCallableValue),
-    Variant {
+    Variant(RuntimeVariantValue),
+}
+
+/// Immutable variant header and its source-shaped owned payload.
+/// Owning schema/program constructors admit candidates before publication.
+///
+/// External callers cannot forge a live header:
+/// ```compile_fail
+/// use arcweft_core::value::{RuntimeValue, RuntimeVariantValue};
+/// use arcweft_core::pattern::{RuntimeVariantIdentity, RuntimeBuiltinVariantIdentity};
+/// let value = RuntimeValue::Variant(RuntimeVariantValue {
+///     owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+///     ordinal: 0,
+///     name: "Forged".to_owned(),
+///     payload: None,
+///     type_instantiation: None,
+/// });
+/// ```
+/// Payload mutation also remains inside the value owner's type-preserving operations:
+/// ```compile_fail
+/// use arcweft_core::value::RuntimeValue;
+/// let RuntimeValue::Variant(value) = RuntimeValue::option_some(RuntimeValue::Bool(true)) else {
+///     unreachable!()
+/// };
+/// let forged = value.try_map_payload(|_| Ok::<_, ()>(RuntimeValue::String("wrong type".into())));
+/// ```
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeVariantValue {
+    owner: RuntimeVariantIdentity,
+    ordinal: u32,
+    name: String,
+    type_instantiation:
+        Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+    payload: Option<Box<RuntimeValue>>,
+}
+
+impl RuntimeVariantValue {
+    pub(crate) fn try_from_plan_case<E>(
+        case: &crate::plan::RuntimePlanVariantCase<'_>,
+        payload: Option<RuntimeValue>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        validate: impl FnOnce(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<RuntimeValue, E> {
+        Self::admit(
+            case.owner().clone(),
+            case.ordinal(),
+            case.name().to_owned(),
+            payload,
+            binding,
+            validate,
+        )
+    }
+
+    pub(crate) fn try_from_nominal_case<E>(
+        identity: &crate::entry::RuntimeNominalSchemaIdentity,
+        layout: crate::entry::TypeLayoutHash,
+        case: &crate::entry::RuntimeNominalSchemaCase,
+        payload: Option<RuntimeValue>,
+        validate: impl FnOnce(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<RuntimeValue, E> {
+        Self::admit(
+            RuntimeVariantIdentity::Nominal {
+                nominal: identity.nominal().clone(),
+                semantic_identity: identity.semantic_identity(),
+                layout,
+            },
+            case.ordinal(),
+            case.name().to_owned(),
+            payload,
+            None,
+            validate,
+        )
+    }
+
+    pub(crate) fn try_from_program_case<E>(
+        case: crate::program_types::ProgramVariantCase,
+        payload: Option<RuntimeValue>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        validate: impl FnOnce(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<RuntimeValue, E> {
+        let (owner, ordinal, name) = case.into_header();
+        Self::admit(owner, ordinal, name, payload, binding, validate)
+    }
+
+    fn admit<E>(
         owner: RuntimeVariantIdentity,
         ordinal: u32,
         name: String,
-        type_instantiation:
-            Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
-        payload: Option<Box<RuntimeValue>>,
-    },
+        payload: Option<RuntimeValue>,
+        binding: Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        validate: impl FnOnce(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<RuntimeValue, E> {
+        let value = RuntimeValue::Variant(Self {
+            owner,
+            ordinal,
+            name,
+            payload: payload.map(Box::new),
+            type_instantiation: binding,
+        });
+        validate(&value)?;
+        Ok(value)
+    }
+    #[must_use]
+    pub fn into_payload(self) -> Option<RuntimeValue> {
+        self.payload.map(|payload| *payload)
+    }
+    #[must_use]
+    pub const fn owner(&self) -> &RuntimeVariantIdentity {
+        &self.owner
+    }
+    #[must_use]
+    pub const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    #[must_use]
+    pub fn payload(&self) -> Option<&RuntimeValue> {
+        self.payload.as_deref()
+    }
+    #[must_use]
+    pub fn type_instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.type_instantiation.as_deref()
+    }
+
+    #[must_use]
+    pub fn type_instantiation_lease(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>> {
+        self.type_instantiation.as_ref()
+    }
+
+    /// Maps a retained child without copying or reconstructing the header.
+    fn try_map_payload<E>(
+        mut self,
+        map: impl FnOnce(RuntimeValue) -> Result<RuntimeValue, E>,
+    ) -> Result<Self, E> {
+        self.payload = self
+            .payload
+            .map(|value| map(*value).map(Box::new))
+            .transpose()?;
+        Ok(self)
+    }
+}
+
+impl Serialize for RuntimeVariantValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if matches!(self.owner, RuntimeVariantIdentity::Nominal { .. }) {
+            return Err(serde::ser::Error::custom(
+                "nominal variant values require a program-bound snapshot",
+            ));
+        }
+        use serde::ser::SerializeStruct;
+        let mut row = serializer.serialize_struct("RuntimeVariantValue", 5)?;
+        row.serialize_field("owner", &self.owner)?;
+        row.serialize_field("ordinal", &self.ordinal)?;
+        row.serialize_field("name", &self.name)?;
+        row.serialize_field("type_instantiation", &self.type_instantiation)?;
+        row.serialize_field("payload", &self.payload)?;
+        row.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeVariantValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            owner: RuntimeVariantIdentity,
+            ordinal: u32,
+            name: String,
+            type_instantiation:
+                Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+            payload: Option<Box<RuntimeValue>>,
+        }
+        let input = Input::deserialize(deserializer)?;
+        let RuntimeVariantIdentity::Builtin(owner) = input.owner else {
+            return Err(serde::de::Error::custom(
+                "nominal variant values require program-bound restore",
+            ));
+        };
+        let case = owner
+            .case_at(input.ordinal)
+            .ok_or_else(|| serde::de::Error::custom("unknown builtin variant case"))?;
+        if input.name != case.name()
+            || input.type_instantiation.is_some()
+            || match (case.payload_arity(), input.payload.as_deref()) {
+                (None, None) => false,
+                (Some(arity), Some(RuntimeValue::Tuple(fields))) if fields.len() == arity => false,
+                _ => true,
+            }
+        {
+            return Err(serde::de::Error::custom(
+                "invalid builtin variant header or payload",
+            ));
+        }
+        Ok(Self {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            ordinal: input.ordinal,
+            name: input.name,
+            type_instantiation: None,
+            payload: input.payload,
+        })
+    }
 }
 
 /// Rejection produced when a caller attempts to construct a builtin variant
@@ -381,7 +584,7 @@ impl RuntimeValue {
             Self::Iterator(RuntimeIterator::Witness { state, .. }) => {
                 state.contains_nonconstant_opaque()
             }
-            Self::Variant { payload, .. } => payload
+            Self::Variant(crate::value::RuntimeVariantValue { payload, .. }) => payload
                 .as_deref()
                 .is_some_and(Self::contains_nonconstant_opaque),
             Self::Unit
@@ -441,10 +644,10 @@ impl RuntimeValue {
                 items.iter().any(Self::contains_function)
             }
             Self::Iterator(RuntimeIterator::Witness { state, .. }) => state.contains_function(),
-            Self::Variant {
+            Self::Variant(crate::value::RuntimeVariantValue {
                 payload: Some(payload),
                 ..
-            } => payload.contains_function(),
+            }) => payload.contains_function(),
             Self::Unit
             | Self::Bool(_)
             | Self::Int(_)
@@ -463,7 +666,7 @@ impl RuntimeValue {
             | Self::Range(_)
             | Self::Iterator(RuntimeIterator::Range(_))
             | Self::EntityRef(_)
-            | Self::Variant { payload: None, .. } => false,
+            | Self::Variant(crate::value::RuntimeVariantValue { payload: None, .. }) => false,
         }
     }
 }
@@ -901,13 +1104,13 @@ impl RuntimeValue {
         if schema.has_payload() != payload.is_some() {
             return Err(RuntimeBuiltinVariantValueError::InvalidPayloadPresence);
         }
-        Ok(Self::Variant {
+        Ok(Self::Variant(crate::value::RuntimeVariantValue {
             owner: RuntimeVariantIdentity::Builtin(owner),
             ordinal,
             name: schema.name().to_owned(),
             payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
             type_instantiation: None,
-        })
+        }))
     }
 
     /// Returns the admitted semantic case coordinate and payload for one
@@ -917,13 +1120,13 @@ impl RuntimeValue {
     pub fn builtin_variant_case(
         &self,
     ) -> Option<(RuntimeBuiltinVariantCaseIdentity, Option<&RuntimeValue>)> {
-        let Self::Variant {
+        let Self::Variant(crate::value::RuntimeVariantValue {
             owner: RuntimeVariantIdentity::Builtin(owner),
             ordinal,
             name,
             payload,
             type_instantiation: _,
-        } = self
+        }) = self
         else {
             return None;
         };
@@ -941,57 +1144,57 @@ impl RuntimeValue {
     pub fn try_into_builtin_variant_case(
         self,
     ) -> Result<(RuntimeBuiltinVariantCaseIdentity, Option<RuntimeValue>), Self> {
-        let Self::Variant {
+        let Self::Variant(crate::value::RuntimeVariantValue {
             owner: RuntimeVariantIdentity::Builtin(owner),
             ordinal,
             name,
             payload,
             type_instantiation,
-        } = self
+        }) = self
         else {
             return Err(self);
         };
         let Some(schema) = owner.case_at(ordinal) else {
-            return Err(Self::Variant {
+            return Err(Self::Variant(crate::value::RuntimeVariantValue {
                 owner: RuntimeVariantIdentity::Builtin(owner),
                 ordinal,
                 name,
                 payload,
                 type_instantiation,
-            });
+            }));
         };
         let payload = match (schema.payload_arity(), payload) {
             (None, None) => None,
             (Some(arity), Some(payload)) => match *payload {
                 Self::Tuple(mut fields) if fields.len() == arity => fields.pop(),
                 payload => {
-                    return Err(Self::Variant {
+                    return Err(Self::Variant(crate::value::RuntimeVariantValue {
                         owner: RuntimeVariantIdentity::Builtin(owner),
                         ordinal,
                         name,
                         payload: Some(Box::new(payload)),
                         type_instantiation,
-                    });
+                    }));
                 }
             },
             (_, payload) => {
-                return Err(Self::Variant {
+                return Err(Self::Variant(crate::value::RuntimeVariantValue {
                     owner: RuntimeVariantIdentity::Builtin(owner),
                     ordinal,
                     name,
                     payload,
                     type_instantiation,
-                });
+                }));
             }
         };
         if name != schema.name() {
-            return Err(Self::Variant {
+            return Err(Self::Variant(crate::value::RuntimeVariantValue {
                 owner: RuntimeVariantIdentity::Builtin(owner),
                 ordinal,
                 name,
                 payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
                 type_instantiation,
-            });
+            }));
         }
         Ok((schema.identity(), payload))
     }
@@ -4041,7 +4244,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             |_| "function/invalid".to_owned(),
             |arity| format!("function/{arity}"),
         ),
-        RuntimeValue::Variant { name, payload, .. } => {
+        RuntimeValue::Variant(crate::value::RuntimeVariantValue { name, payload, .. }) => {
             if payload.is_some() {
                 format!(".{name}(...)")
             } else {

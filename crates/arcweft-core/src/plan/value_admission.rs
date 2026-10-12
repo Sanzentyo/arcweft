@@ -367,16 +367,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
         ty: RuntimePlanTypeId,
         value: View<'_>,
     ) -> Result<Children<'a>, RuntimeSchemaError> {
-        let View::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-            type_instantiation,
-        } = value
-        else {
+        let View::Variant(variant) = value else {
             return Err(Self::mismatch(value));
         };
+        let owner = variant.owner();
+        let ordinal = variant.ordinal();
+        let name = variant.name();
+        let payload = variant.payload();
+        let type_instantiation = variant.type_instantiation();
         let declaration = self.authority.declaration(ty);
         let case = declaration
             .select_variant_case(ty, self.authority.variant(ty), ordinal)
@@ -405,11 +403,7 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             || (matches!(
                 owner,
                 crate::pattern::RuntimeVariantIdentity::Nominal { .. }
-            ) && !self.context.nominal(
-                ty,
-                actual_ty,
-                type_instantiation.map(std::sync::Arc::as_ref),
-            ))
+            ) && !self.context.nominal(ty, actual_ty, type_instantiation))
         {
             return Err(Self::mismatch(value));
         }

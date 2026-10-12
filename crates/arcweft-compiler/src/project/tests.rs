@@ -1584,27 +1584,19 @@ fn source_project_call_failure_enters_fmt_inline_fallback() {
     };
 
     fn is_recovered_fallback(failure: &RuntimeDialogueFormattedFailureSelection) -> bool {
-        let RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::Variant {
-            name: policy,
-            payload: Some(fallback),
-            ..
-        }) = failure
+        let RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::Variant(policy)) =
+            failure
         else {
             return false;
         };
-        let RuntimeValue::Variant {
-            name: source,
-            payload: Some(value),
-            ..
-        } = fallback.as_ref()
-        else {
+        let Some(RuntimeValue::Variant(source)) = policy.payload() else {
             return false;
         };
-        let RuntimeValue::Tuple(fields) = value.as_ref() else {
+        let Some(RuntimeValue::Tuple(fields)) = source.payload() else {
             return false;
         };
-        policy == "Fallback"
-            && source == "Text"
+        policy.name() == "Fallback"
+            && source.name() == "Text"
             && matches!(fields.first(), Some(RuntimeValue::String(text)) if text == "recovered")
     }
 

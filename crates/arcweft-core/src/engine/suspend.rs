@@ -1781,7 +1781,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Agent(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Callable(_)
-        | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
+        | RuntimeValue::Variant(_) => super::runtime_value_label(value),
     }
 }
 

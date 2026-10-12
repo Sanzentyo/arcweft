@@ -1052,7 +1052,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             0 | 1 => assert_eq!(*value, RuntimeValue::String("hello".to_owned())),
             2 => assert_eq!(*value, RuntimeValue::Tuple(vec![RuntimeValue::String("hello".to_owned()), RuntimeValue::String("world".to_owned())])),
             3 => { let RuntimeValue::NominalRecord(record) = value else { panic!("expected nominal record: {value:?}") }; assert_eq!(record.fields(), [RuntimeValue::String("hello".to_owned())]); }
-            4 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 0, .. } if name == "On")),
+            4 => assert!(matches!(value, RuntimeValue::Variant(variant) if variant.name() == "On" && variant.ordinal() == 0)),
             5 | 6 | 7 => assert!(matches!(value, RuntimeValue::Callable(_))),
             8 | 9 => { let RuntimeValue::Seq(values) = value else { panic!("expected callback container: {value:?}") }; assert_eq!(values.len(), 1); assert!(matches!(values.value_at(0), RuntimeValue::Callable(_))); }
             10 | 11 => {
@@ -1082,7 +1082,7 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
                     assert!(forged.into_runtime_value_for_program(&owner).is_err());
                 }
             }
-            12 => assert!(matches!(value, RuntimeValue::Variant { name, ordinal: 1, payload: Some(payload), .. } if name == "Full" && matches!(payload.as_ref(), RuntimeValue::Tuple(fields) if matches!(fields.as_slice(), [RuntimeValue::Callable(_)]))), "{value:?}"),
+            12 => assert!(matches!(value, RuntimeValue::Variant(variant) if variant.name() == "Full" && variant.ordinal() == 1 && matches!(variant.payload(), Some(RuntimeValue::Tuple(fields)) if matches!(fields.as_slice(), [RuntimeValue::Callable(_)]))), "{value:?}"),
             _ => unreachable!(),
         }
         runtime.restore(&snapshot, &handles).unwrap();
@@ -1471,29 +1471,29 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
         .unwrap()
         .value;
     assert_eq!(value, copied);
-    let arcweft_core::value::RuntimeValue::Variant {
-        owner:
-            arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
-                semantic_identity, ..
-            },
-        type_instantiation: Some(origin),
-        ..
-    } = value
-    else {
+    let arcweft_core::value::RuntimeValue::Variant(variant) = value else {
         panic!("scoped enum origin")
     };
+    let arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+        semantic_identity, ..
+    } = variant.owner()
+    else {
+        panic!("scoped enum nominal owner");
+    };
+    let origin = variant
+        .type_instantiation_lease()
+        .expect("scoped enum origin");
     assert!(
         !awbc.runtime_types[awbc.semantic_type_id(*semantic_identity).unwrap().index()]
             .scope()
             .is_root()
     );
-    let arcweft_core::value::RuntimeValue::Variant {
-        type_instantiation: Some(copied_origin),
-        ..
-    } = copied
-    else {
+    let arcweft_core::value::RuntimeValue::Variant(copied_variant) = copied else {
         panic!("transferred enum origin")
     };
+    let copied_origin = copied_variant
+        .type_instantiation_lease()
+        .expect("transferred enum origin");
     assert!(Arc::ptr_eq(origin, copied_origin));
     let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc));
     let image = arcweft_core::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
@@ -1572,16 +1572,13 @@ view Main(first: i64 -> i64 = |input: i64| input + 1,
     };
     let first = finish(default("first"), vec![]);
     let native = finish(default("value"), vec![first.clone()]);
-    let arcweft_core::value::RuntimeValue::Variant {
-        payload: Some(payload),
-        type_instantiation: Some(_),
-        ..
-    } = &native
-    else {
+    let arcweft_core::value::RuntimeValue::Variant(variant) = &native else {
         panic!("native enum origin")
     };
+    assert!(variant.type_instantiation().is_some());
+    let payload = variant.payload().expect("native enum payload");
     assert_eq!(
-        payload.as_ref(),
+        payload,
         &arcweft_core::value::RuntimeValue::Tuple(vec![first])
     );
     assert_eq!(finish(default("copied"), vec![native.clone()]), native);
