@@ -57,6 +57,80 @@ use arcweft_data::{
     TypeShape, Value, VariantShape,
 };
 
+#[test]
+fn json_preflight_and_decode_share_resource_and_duplicate_admission() {
+    let shape = TypeShape::Seq(Box::new(TypeShape::String));
+    for input in [
+        br#"["captured"]"#.as_slice(),
+        br#"["\u0063aptured"]"#.as_slice(),
+    ] {
+        let limits = DecodeLimits {
+            max_nodes: 2,
+            max_depth: 1,
+            max_sequence_len: 1,
+            max_collection_items: 1,
+            max_string_len: 8,
+            ..DecodeLimits::default()
+        };
+        JsonCodec::validate_document(input, &limits).unwrap();
+        JsonCodec
+            .decode_value(input, &shape, &DecodeOptions { limits })
+            .unwrap();
+        let short = DecodeLimits {
+            max_string_len: 7,
+            ..limits
+        };
+        assert_eq!(
+            JsonCodec::validate_document(input, &short)
+                .unwrap_err()
+                .kind(),
+            &DataErrorKind::LimitExceeded
+        );
+        assert_eq!(
+            JsonCodec
+                .decode_value(input, &shape, &DecodeOptions { limits: short })
+                .unwrap_err()
+                .kind(),
+            &DataErrorKind::LimitExceeded
+        );
+    }
+    let duplicate = br#"{"a":1,"\u0061":2}"#;
+    let map = TypeShape::Map {
+        key: Box::new(TypeShape::String),
+        value: Box::new(TypeShape::U64),
+        kind: MapKind::BTree,
+    };
+    assert_eq!(
+        JsonCodec::validate_document(duplicate, &DecodeLimits::default())
+            .unwrap_err()
+            .kind(),
+        &DataErrorKind::DuplicateField
+    );
+    assert_eq!(
+        JsonCodec
+            .decode_value(duplicate, &map, &DecodeOptions::default())
+            .unwrap_err()
+            .kind(),
+        &DataErrorKind::DuplicateField
+    );
+    for invalid in [
+        b"[".as_slice(),
+        b"[1,]".as_slice(),
+        b"true false".as_slice(),
+    ] {
+        assert!(
+            JsonCodec::validate_document(
+                invalid,
+                &DecodeLimits {
+                    allow_trailing_data: true,
+                    ..DecodeLimits::default()
+                }
+            )
+            .is_err()
+        );
+    }
+}
+
 fn asset_shape() -> TypeShape {
     TypeShape::Record {
         name: "Asset".to_owned(),

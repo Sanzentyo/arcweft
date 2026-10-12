@@ -1615,6 +1615,7 @@ dependencies = [
 name = "arcweft-save"
 version = "0.1.0"
 dependencies = [
+ "arcweft-codec-json",
  "arcweft-core",
  "arcweft-data",
  "blake3",

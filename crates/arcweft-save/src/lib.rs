@@ -415,6 +415,7 @@ where
         current_schema_version,
         &strict_options,
     )?;
+    arcweft_codec_json::JsonCodec::validate_document(&payload, &options.codec.limits)?;
     let mut deserializer = serde_json::Deserializer::from_slice(&payload);
     let mut ignored = Vec::new();
     let value = serde_ignored::deserialize(&mut deserializer, |path| {

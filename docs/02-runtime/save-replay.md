@@ -140,6 +140,13 @@ encoded-byte 上限を graph 全体で検証する。検証だけの caller は 
 node・depth・collection・string・byte 予算に計上する。Need の outcome identity は
 Native と AWBC の両方で original program の型行に照合する。
 
+strict typed JSON save は、型付き DTO を構築する前に JSON codec の共通 parser
+と既存 DecodeBudget で input・depth・node・collection・string を検証する。
+同じ parser の検証出力は value graph を保持せず、duplicate key の照合に必要な
+key だけを保持する。未知 field・重複 key・末尾 data の拒否を維持し、検証後の
+型付き decoder は元の bytes を読む。wide integer と float bit を検証のために
+再エンコードしない。早期拒否の構造化 kind・path は decode context が保持する。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

@@ -177,6 +177,7 @@ arcweft-launch
   filesystem、asset loading、windowing、clock には依存しない。
 - Data-format crate は Sans I/O を保つ。manifest、schema、bytecode、bundle、save snapshot は構造体と bytes/string codec までを担当し、path read/write、network、clock、backend resource 確保は CLI / build / player adapter に置く。
 - `arcweft-data` は format-neutral な `Value`、type shape、Encode / Decode、decode limits、codec registry を所有する builtin data contract とする。`arcweft-codec-json`、`arcweft-codec-toml`、`arcweft-codec-yaml`、`arcweft-codec-msgpack`、`arcweft-codec-cbor`、`arcweft-codec-csv`、`arcweft-codec-arrow`、`arcweft-codec-avro`、`arcweft-codec-binary` は concrete external format adapter crate として分離し、`arcweft-save`、`arcweft-config`、`arcweft-http-codec` はこの registry 境界を使う。
+  typed JSON save の構築前検証は `arcweft-save -> arcweft-codec-json -> arcweft-data` の同じ parser／DecodeBudget を使う。型付き decode は元の payload bytes を保持する。
 - `arcweft-data-derive-support` は Rust data 属性の構文と検証を所有する
   macro 内部用 crate とし、`arcweft-data-derive` と
   `arcweft-rust-abi-macros` が共有する。依存は `syn` / `quote` /
