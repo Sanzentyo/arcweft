@@ -94,6 +94,11 @@ traversal を使い、空の columnar storage の再帰 metadata を検証から
 Core value／sequence／predicate の内部 child は、構築前検証後の private な
 構築経路を使う。task request など別の owning codec の検証境界は保持する。
 
+inert nominal／variant に保持された宣言 effect 解の row と label も、元の
+immutable instantiation 上で同じ collection・string・depth・validation-work
+予算を検証する。metadata は logical payload node を増やさず、元の型を照合し
+effect row を複製する前に共有 work allowance を消費する。
+
 Iterator witness の live receiver は original executable lease を保持する。
 `next` の method identity、唯一の mutable receiver parameter、builtin Option の
 item 型をその program の型・signature・frame layout から読み、receiver state と

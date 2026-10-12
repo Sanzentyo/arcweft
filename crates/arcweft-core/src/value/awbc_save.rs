@@ -1418,6 +1418,16 @@ impl AwbcRuntimeValueSnapshot {
         budget: &mut ValueBudget,
         work: &mut ValidationWork,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let binding = match self {
+            Self::NominalRecord(record) => record.type_instantiation.as_ref(),
+            Self::Variant {
+                type_instantiation, ..
+            } => type_instantiation.as_ref(),
+            _ => None,
+        };
+        if let Some(binding) = binding {
+            binding.validate_resource_limits(depth + 1, budget, work)?;
+        }
         match self {
             Self::String(value) => budget.string(value)?,
             Self::Progress {

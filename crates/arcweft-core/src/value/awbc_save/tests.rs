@@ -233,6 +233,86 @@ fn empty_columnar_metadata_consumes_shared_inert_traversal_work() {
 }
 
 #[test]
+fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matching() {
+    let binding: crate::program_types::RuntimeFunctionEffectInstantiation =
+        serde_json::from_value(serde_json::json!({
+            "context": semantic(250),
+            "effects": [["log.write", "metric.write"]]
+        }))
+        .unwrap();
+    let nominal = RuntimeNominalTypeId::try_new("n.T").unwrap();
+    let layout = TypeLayoutHash::from_bytes([0; 32]);
+    let images = [
+        AwbcRuntimeValueSnapshot::NominalRecord(AwbcRuntimeNominalRecordSnapshot {
+            type_id: nominal.clone(),
+            semantic_identity: semantic(250),
+            layout,
+            type_instantiation: Some(binding.clone()),
+            fields: Vec::new(),
+        }),
+        AwbcRuntimeValueSnapshot::Variant {
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity: semantic(250),
+                layout,
+            },
+            ordinal: 0,
+            name: "case".into(),
+            type_instantiation: Some(binding),
+            payload: None,
+        },
+    ];
+    let exact = RuntimeSchemaLimits {
+        max_nodes: 1,
+        max_depth: 3,
+        max_sequence_items: 2,
+        max_string_bytes: 12,
+        max_validation_work: 5,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for image in images {
+        image.validate_graph_limits(exact).unwrap();
+        for limits in [
+            RuntimeSchemaLimits {
+                max_depth: 2,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_sequence_items: 1,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_validation_work: 4,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_string_bytes: 11,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                image.validate_graph_limits(limits),
+                Err(AwbcRuntimeValueSnapshotError::Resource(_))
+            ));
+        }
+        for owner in owners() {
+            assert!(matches!(
+                image.clone().into_runtime_value_for_program_with_limits(
+                    &owner,
+                    RuntimeSchemaLimits {
+                        max_validation_work: 4,
+                        ..exact
+                    }
+                ),
+                Err(AwbcRuntimeValueSnapshotError::Resource(
+                    crate::entry::RuntimeSchemaError::ValidationWork { .. }
+                ))
+            ));
+        }
+    }
+}
+
+#[test]
 fn unrestricted_restore_rejects_nested_affine_values_before_any_live_constructor() {
     let leaf = AwbcRuntimeValueSnapshot::from_standalone_value(&RuntimeValue::NeedHandle(
         crate::tests::reusable_need("need.inert-preflight"),
