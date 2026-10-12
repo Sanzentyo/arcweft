@@ -17,8 +17,8 @@ use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeVariantIdentity};
 use crate::plan::RuntimeAgentTypeProjection;
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeIterator, RuntimeRangeIterator, RuntimeReductionProducer, RuntimeScalarView as Scalar,
-    RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView as View,
+    RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
+    RuntimeScalarView as Scalar, RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView as View,
 };
 
 /// Failure to admit a finite persistent value under an executable program type.
@@ -372,6 +372,14 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
         }
     }
 
+    fn range(&self, item: AwbcTypeId, range: &RuntimeRange) -> Result<bool, RuntimeSchemaError> {
+        Ok(match self.row(item)?.shape() {
+            Type::Int(width) => range.signed_width() == Some((*width).into()),
+            Type::UInt(width) => range.unsigned_width() == Some((*width).into()),
+            _ => false,
+        })
+    }
+
     fn check(
         &mut self,
         ty: AwbcTypeId,
@@ -397,6 +405,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
             (Type::Need(item), View::RuntimeOnly(RuntimeValue::NeedHandle(handle)))
                 if handle.outcome().payload_semantic_identity()
                     == self.row(*item)?.semantic_identity() =>
+            {
+                Ok(Children::None)
+            }
+            (Type::Range(item), View::RuntimeOnly(RuntimeValue::Range(range)))
+                if self.range(*item, range)? =>
             {
                 Ok(Children::None)
             }

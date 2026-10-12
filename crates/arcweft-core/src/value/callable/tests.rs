@@ -151,6 +151,41 @@ fn captured_identity_plan() -> RuntimePlan {
 }
 
 #[test]
+fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
+    let owner = RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan()));
+    let value = RuntimeValue::Callable(
+        RuntimeCallableValue::try_new(
+            owner.clone(),
+            RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            [RuntimeValue::i64(42)],
+        )
+        .unwrap(),
+    );
+    let function = RuntimeSemanticTypeId::from_bytes([0x8b; 32]);
+    let exact = crate::entry::RuntimeSchemaLimits {
+        max_encoded_bytes: 21,
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    };
+    owner
+        .types()
+        .validate_snapshot_value(function, &value, exact)
+        .unwrap();
+    assert!(
+        owner
+            .types()
+            .validate_snapshot_value(
+                function,
+                &value,
+                crate::entry::RuntimeSchemaLimits {
+                    max_encoded_bytes: 20,
+                    ..exact
+                }
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn callable_admission_requires_the_complete_retained_layout_and_exact_owner() {
     let owner = RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan()));
     let state = RuntimeCallableStateId::from_zero_based(0).unwrap();

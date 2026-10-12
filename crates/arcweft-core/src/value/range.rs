@@ -32,7 +32,13 @@ impl RuntimeRange {
     ) -> Result<Self, RuntimeEvalError> {
         match (start, end) {
             (Some(RuntimeValue::Int(start)), Some(RuntimeValue::Int(end)))
-                if runtime_int_same_kind(start, end) =>
+                if Self::Int {
+                    start: Some(start),
+                    end: Some(end),
+                    inclusive,
+                }
+                .signed_width()
+                .is_some() =>
             {
                 Ok(Self::Int {
                     start: Some(start),
@@ -41,7 +47,13 @@ impl RuntimeRange {
                 })
             }
             (Some(RuntimeValue::UInt(start)), Some(RuntimeValue::UInt(end)))
-                if runtime_uint_same_kind(start, end) =>
+                if Self::UInt {
+                    start: Some(start),
+                    end: Some(end),
+                    inclusive,
+                }
+                .unsigned_width()
+                .is_some() =>
             {
                 Ok(Self::UInt {
                     start: Some(start),
@@ -82,7 +94,34 @@ impl RuntimeRange {
         }
     }
 
+    pub(crate) fn signed_width(&self) -> Option<RuntimeSignedIntWidth> {
+        let Self::Int { start, end, .. } = self else {
+            return None;
+        };
+        let width = start.or(*end)?.width();
+        start
+            .iter()
+            .chain(end)
+            .all(|value| value.width() == width)
+            .then_some(width)
+    }
+
+    pub(crate) fn unsigned_width(&self) -> Option<RuntimeUnsignedIntWidth> {
+        let Self::UInt { start, end, .. } = self else {
+            return None;
+        };
+        let width = start.or(*end)?.width();
+        start
+            .iter()
+            .chain(end)
+            .all(|value| value.width() == width)
+            .then_some(width)
+    }
+
     pub fn into_iterator(self) -> Result<RuntimeIterator, Self> {
+        if self.signed_width().is_none() && self.unsigned_width().is_none() {
+            return Err(self);
+        }
         match self {
             Self::Int {
                 start: Some(start),
@@ -260,14 +299,6 @@ impl Iterator for RuntimeRangeIterator {
             } => next_unsigned_range_value(*width, current, *end, *inclusive, done),
         }
     }
-}
-
-fn runtime_int_same_kind(lhs: RuntimeInt, rhs: RuntimeInt) -> bool {
-    lhs.width() == rhs.width()
-}
-
-fn runtime_uint_same_kind(lhs: RuntimeUInt, rhs: RuntimeUInt) -> bool {
-    lhs.width() == rhs.width()
 }
 
 fn next_signed_range_value(

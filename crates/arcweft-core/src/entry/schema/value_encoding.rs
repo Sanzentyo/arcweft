@@ -867,6 +867,9 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(callable))
             if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
         {
+            writer.u8(26)?;
+            writer.var_u32(callable.state().get().get())?;
+            writer.len(callable.retained().len())?;
             if let Some(budget) = budget {
                 budget.collection(callable.retained().len())?;
             }
@@ -876,6 +879,21 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 depth + 1,
                 children,
             ));
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Range(range))
+            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+        {
+            writer.runtime_range(range)?;
+        }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
+            crate::value::RuntimeIterator::Values { items },
+        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
+            writer.u8(24)?;
+            writer.len(items.len())?;
+            if let Some(budget) = budget {
+                budget.collection(items.len())?;
+            }
+            work.push(Work::DequeValues(items.iter(), 0, depth + 1, children));
         }
         RuntimeValueView::RuntimeOnly(value)
             if matches!(encoding, ValueEncoding::Literal | ValueEncoding::Live) =>
@@ -1038,6 +1056,43 @@ fn predicate_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
 }
 
 impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
+    fn runtime_range(
+        &mut self,
+        range: &crate::value::RuntimeRange,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::{RuntimeRange, RuntimeScalarView as Scalar};
+        self.u8(22)?;
+        match range {
+            RuntimeRange::Int {
+                start,
+                end,
+                inclusive,
+            } => {
+                self.u8(u8::from(*inclusive))?;
+                self.option(start.as_ref(), |writer, value| {
+                    writer.scalar(Scalar::Int(*value))
+                })?;
+                self.option(end.as_ref(), |writer, value| {
+                    writer.scalar(Scalar::Int(*value))
+                })?;
+            }
+            RuntimeRange::UInt {
+                start,
+                end,
+                inclusive,
+            } => {
+                self.u8(u8::from(*inclusive))?;
+                self.option(start.as_ref(), |writer, value| {
+                    writer.scalar(Scalar::UInt(*value))
+                })?;
+                self.option(end.as_ref(), |writer, value| {
+                    writer.scalar(Scalar::UInt(*value))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     fn scalar_for_encoding(
         &mut self,
         value: crate::value::RuntimeScalarView<'_>,

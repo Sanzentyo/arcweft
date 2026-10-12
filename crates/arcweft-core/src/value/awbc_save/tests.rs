@@ -182,6 +182,31 @@ fn inert_graph_limits_cover_dense_columnar_predicate_and_retained_values_before_
 }
 
 #[test]
+fn engine_iterator_restore_applies_shared_graph_limits_before_private_construction() {
+    for owner in owners() {
+        let mut deep = AwbcRuntimeValueSnapshot::Bool(true);
+        for _ in 0..=super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            deep = AwbcRuntimeValueSnapshot::Tuple(vec![deep]);
+        }
+        let image = AwbcRuntimeValueSnapshot::Iterator(AwbcRuntimeIteratorSnapshot::Values {
+            items: vec![deep],
+        });
+        assert!(matches!(
+            image.into_runtime_iterator_for_program(&owner),
+            Err(AwbcRuntimeValueSnapshotError::Nesting(_))
+        ));
+        let image = AwbcRuntimeValueSnapshot::Iterator(AwbcRuntimeIteratorSnapshot::Values {
+            items: vec![AwbcRuntimeValueSnapshot::Bool(true)],
+        });
+        let bytes = serde_json::to_vec(&image).unwrap();
+        let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+        let mut restored = decoded.into_runtime_iterator_for_program(&owner).unwrap();
+        assert_eq!(restored.next(), Some(RuntimeValue::Bool(true)));
+        assert_eq!(restored.next(), None);
+    }
+}
+
+#[test]
 fn empty_columnar_metadata_consumes_shared_inert_traversal_work() {
     let image = AwbcRuntimeValueSnapshot::Seq(AwbcRuntimeSeqSnapshot::TupleColumns {
         len: 0,

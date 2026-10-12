@@ -145,6 +145,12 @@ encoded-byte 上限を graph 全体で検証する。検証だけの caller は 
 node・depth・collection・string・byte 予算に計上する。Need の outcome identity は
 Native と AWBC の両方で original program の型行に照合する。
 
+Range の幅は元の bound に基づく owning value の検証を Native と AWBC が共有する。
+Values iterator の snapshot は残りの各要素を original item 型で検証する。
+snapshot の byte 計上は Range の bound と inclusive flag、Values iterator の長さ、
+callable の state/header と retained 値を含む。Engine の専用 iterator rollback
+復元も private constructor の前に Core の同じ graph policy を適用する。
+
 strict typed JSON save は、型付き DTO を構築する前に JSON codec の共通 parser
 と既存 DecodeBudget で input・depth・node・collection・string を検証する。
 同じ parser の検証出力は value graph を保持せず、duplicate key の照合に必要な

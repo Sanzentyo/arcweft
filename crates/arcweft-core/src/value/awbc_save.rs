@@ -429,6 +429,7 @@ impl AwbcRuntimeValueSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
+        self.validate_graph_limits(crate::entry::RuntimeSchemaLimits::engine_default())?;
         let Self::Iterator(iterator) = self else {
             return Err(AwbcRuntimeValueSnapshotError::new(
                 "rollback image does not contain an iterator",

@@ -41,6 +41,125 @@ fn color_values_are_admitted_only_by_the_awbc_color_type() {
     assert!(admits(&program, 1, &color).is_err());
 }
 
+fn range_programs() -> (AwbcProgram, crate::plan::RuntimePlan) {
+    use crate::plan::{
+        RuntimePlanBuilder, RuntimePlanTypeProjection as Projection, RuntimePlanTypeSeed,
+    };
+    use crate::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
+    let program = program([
+        Type::Int(AwbcSignedIntKind::I16),
+        Type::UInt(AwbcUnsignedIntKind::U16),
+        Type::Range(AwbcTypeId(0)),
+        Type::Range(AwbcTypeId(1)),
+    ]);
+    let identity = |index: usize| program.runtime_types[index].semantic_identity();
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    identity(0),
+                    Projection::Signed(RuntimeSignedIntWidth::I16),
+                ),
+                RuntimePlanTypeSeed::new(
+                    identity(1),
+                    Projection::Unsigned(RuntimeUnsignedIntWidth::U16),
+                ),
+                RuntimePlanTypeSeed::new(identity(2), Projection::Range(identity(0))),
+                RuntimePlanTypeSeed::new(identity(3), Projection::Range(identity(1))),
+            ],
+            [],
+        )
+        .unwrap();
+    let plan = builder.finish().unwrap();
+    (program, plan)
+}
+
+#[test]
+fn range_width_admission_agrees_with_native_for_bounded_and_partial_ranges() {
+    use crate::value::RuntimeRange;
+    let (program, plan) = range_programs();
+    let identity = |index: usize| program.runtime_types[index].semantic_identity();
+    let limits = RuntimeSchemaLimits::engine_default();
+    let signed = |start, end| {
+        RuntimeValue::Range(RuntimeRange::Int {
+            start,
+            end,
+            inclusive: true,
+        })
+    };
+    let unsigned = |start, end| {
+        RuntimeValue::Range(RuntimeRange::UInt {
+            start,
+            end,
+            inclusive: false,
+        })
+    };
+    for (type_index, cases) in [
+        (
+            2,
+            vec![
+                (
+                    signed(Some(RuntimeInt::I16(1)), Some(RuntimeInt::I16(3))),
+                    true,
+                ),
+                (signed(None, Some(RuntimeInt::I16(3))), true),
+                (signed(Some(RuntimeInt::I16(1)), None), true),
+                (
+                    signed(Some(RuntimeInt::I16(1)), Some(RuntimeInt::I32(3))),
+                    false,
+                ),
+                (signed(Some(RuntimeInt::I32(1)), None), false),
+                (signed(None, None), false),
+                (
+                    unsigned(Some(RuntimeUInt::U16(1)), Some(RuntimeUInt::U16(3))),
+                    false,
+                ),
+            ],
+        ),
+        (
+            3,
+            vec![
+                (
+                    unsigned(Some(RuntimeUInt::U16(1)), Some(RuntimeUInt::U16(3))),
+                    true,
+                ),
+                (unsigned(None, Some(RuntimeUInt::U16(3))), true),
+                (unsigned(Some(RuntimeUInt::U16(1)), None), true),
+                (
+                    unsigned(Some(RuntimeUInt::U16(1)), Some(RuntimeUInt::U32(3))),
+                    false,
+                ),
+                (unsigned(Some(RuntimeUInt::U32(1)), None), false),
+                (unsigned(None, None), false),
+                (
+                    signed(Some(RuntimeInt::I16(1)), Some(RuntimeInt::I16(3))),
+                    false,
+                ),
+            ],
+        ),
+    ] {
+        let plan_type = plan
+            .type_table()
+            .id_for_semantic(identity(type_index))
+            .unwrap();
+        let awbc_type = AwbcTypeId(u32::try_from(type_index).unwrap());
+        for (value, accepted) in cases {
+            assert_eq!(
+                program
+                    .validate_live_value(awbc_type, &value, limits)
+                    .is_ok(),
+                accepted
+            );
+            assert_eq!(
+                plan.validate_live_value(plan_type, &value, limits).is_ok(),
+                accepted
+            );
+            assert!(admits(&program, awbc_type.0, &value).is_err());
+        }
+    }
+}
+
 #[test]
 fn live_iterator_admission_checks_each_remaining_tuple_item() {
     let program = program([
@@ -82,11 +201,60 @@ fn live_iterator_admission_checks_each_remaining_tuple_item() {
         );
     }
     assert!(admits(&program, 3, &valid).is_err());
-    assert!(
-        program
-            .validate_snapshot_value(AwbcTypeId(3), &valid, limits)
-            .is_err()
-    );
+    program
+        .validate_snapshot_value(AwbcTypeId(3), &valid, limits)
+        .unwrap();
+}
+
+#[test]
+fn range_snapshot_byte_budget_and_restore_preserve_both_program_owners() {
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeRange};
+    let (program, plan) = range_programs();
+    let identity = program.runtime_types[2].semantic_identity();
+    let value = RuntimeValue::Range(RuntimeRange::Int {
+        start: Some(RuntimeInt::I16(1)),
+        end: Some(RuntimeInt::I16(3)),
+        inclusive: true,
+    });
+    let exact = RuntimeSchemaLimits {
+        max_encoded_bytes: 40,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in [
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(plan)),
+        RuntimeProgramOwner::Awbc(std::sync::Arc::new(program)),
+    ] {
+        owner
+            .types()
+            .validate_snapshot_value(identity, &value, exact)
+            .unwrap();
+        assert!(
+            owner
+                .types()
+                .validate_snapshot_value(
+                    identity,
+                    &value,
+                    RuntimeSchemaLimits {
+                        max_encoded_bytes: 39,
+                        ..exact
+                    }
+                )
+                .is_err()
+        );
+        let image =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        let bytes = serde_json::to_vec(&image).unwrap();
+        let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+        let restored = decoded.into_runtime_value_for_program(&owner).unwrap();
+        let RuntimeValue::Range(range) = restored else {
+            panic!("restored range")
+        };
+        let mut iterator = range.into_iterator().unwrap();
+        assert_eq!(iterator.next(), Some(RuntimeValue::Int(RuntimeInt::I16(1))));
+        assert_eq!(iterator.next(), Some(RuntimeValue::Int(RuntimeInt::I16(2))));
+        assert_eq!(iterator.next(), Some(RuntimeValue::Int(RuntimeInt::I16(3))));
+        assert_eq!(iterator.next(), None);
+    }
 }
 
 #[test]

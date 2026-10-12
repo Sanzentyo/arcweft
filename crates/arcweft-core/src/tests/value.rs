@@ -387,6 +387,26 @@ fn runtime_range_iterates_one_value_at_a_time() {
 }
 
 #[test]
+fn decoded_range_rejects_mismatched_bound_widths_before_lazy_iteration() {
+    for forged in [
+        RuntimeRange::Int {
+            start: Some(crate::value::RuntimeInt::I8(1)),
+            end: Some(crate::value::RuntimeInt::I64(300)),
+            inclusive: true,
+        },
+        RuntimeRange::UInt {
+            start: Some(crate::value::RuntimeUInt::U8(1)),
+            end: Some(crate::value::RuntimeUInt::U64(300)),
+            inclusive: true,
+        },
+    ] {
+        let bytes = serde_json::to_vec(&forged).unwrap();
+        let decoded: RuntimeRange = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.clone().into_iterator().unwrap_err(), decoded);
+    }
+}
+
+#[test]
 fn runtime_iterator_moves_affine_items_out_of_its_owned_sequence() {
     let mut iterator = RuntimeIterator::values(vec![RuntimeValue::NeedHandle(
         crate::tests::reusable_need("need.iterator"),

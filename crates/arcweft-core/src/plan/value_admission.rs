@@ -507,15 +507,9 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
     }
 
     fn range(&self, item: RuntimePlanTypeId, range: &RuntimeRange) -> bool {
-        match (self.authority.declaration(item).projection(), range) {
-            (Type::Signed(width), RuntimeRange::Int { start, end, .. }) => {
-                (start.is_some() || end.is_some())
-                    && start.iter().chain(end).all(|value| value.width() == *width)
-            }
-            (Type::Unsigned(width), RuntimeRange::UInt { start, end, .. }) => {
-                (start.is_some() || end.is_some())
-                    && start.iter().chain(end).all(|value| value.width() == *width)
-            }
+        match self.authority.declaration(item).projection() {
+            Type::Signed(width) => range.signed_width() == Some(*width),
+            Type::Unsigned(width) => range.unsigned_width() == Some(*width),
             _ => false,
         }
     }
