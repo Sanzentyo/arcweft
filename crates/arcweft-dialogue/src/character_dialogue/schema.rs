@@ -192,6 +192,17 @@ pub struct CharacterDialogueValue {
     dialogue: CharacterDialogue,
 }
 
+impl PartialEq for CharacterDialogueValue {
+    fn eq(&self, other: &Self) -> bool {
+        // The private schema constructors correlate this domain with its
+        // opaque representation. Domain equality compares canonical retained
+        // values, independent of the Native/AWBC executable lease allocation.
+        self.dialogue == other.dialogue
+    }
+}
+
+impl Eq for CharacterDialogueValue {}
+
 impl<T> CharacterDialogueRuntimeCustomFieldDescriptor<T> {
     pub fn new(
         id: CharacterDialogueCustomFieldId,
@@ -439,6 +450,19 @@ impl CustomFieldCatalogDigestEncoder {
 }
 
 impl CharacterDialogueRuntimeSchema {
+    /// Admits a retained fallback Style through the original generation role.
+    pub fn admit_style(
+        &self,
+        owner: &RuntimeProgramOwner,
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueStyleValue, Box<CharacterDialogueValueError>> {
+        self.ensure_program_owner(owner)?;
+        self.validate_role(super::CharacterDialogueRuntimeRole::Style, value)?;
+        Ok(CharacterDialogueStyleValue::try_new(
+            CharacterDialogueTypedValue::try_new(value.clone())?,
+        )?)
+    }
+
     /// Sole producer for configuration roles and exact `CharacterDialogue` values.
     pub fn opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
         super::runtime_type::character_dialogue_opaque_type_producer()

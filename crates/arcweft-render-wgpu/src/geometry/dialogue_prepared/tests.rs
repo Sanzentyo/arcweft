@@ -5,7 +5,7 @@ use arcweft_character::{
         CharacterPresentationSemanticDigest,
     },
 };
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy,
     character_presentation::{
@@ -35,7 +35,6 @@ use arcweft_text_model::{
     RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-use std::collections::BTreeMap;
 
 use super::*;
 
@@ -89,22 +88,11 @@ fn runtime_line_context() -> RuntimeLineContext {
             id: CharacterId::try_new("character.narrator").expect("character identity"),
             display_name: "Narrator".to_owned(),
         },
-        CharacterDialoguePresentationConfig {
-            view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
+        CharacterDialoguePresentationConfig::standalone(
+            arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
                 .expect("standard dialogue View id"),
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+            InlineFailurePolicy::FailLine,
+        ),
         Vec::new(),
         Vec::new(),
     )

@@ -1,7 +1,5 @@
 use arcweft_character::id::CharacterId;
-use arcweft_core::{
-    entry::RuntimeValueDigest, plan::RuntimeLineId, runtime_id::RuntimeDialogueValueSlotId,
-};
+use arcweft_core::{plan::RuntimeLineId, runtime_id::RuntimeDialogueValueSlotId};
 use arcweft_dialogue::{InlineFailurePolicy, InlineFailureSelection};
 use arcweft_id::TextKey;
 use arcweft_render_text::{
@@ -19,7 +17,6 @@ use arcweft_text_model::{
     RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::ViewId;
-use std::collections::BTreeMap;
 
 mod support;
 
@@ -57,21 +54,10 @@ fn context() -> RuntimeLineContext {
             id: CharacterId::try_new("character.narrator").expect("character identity"),
             display_name: "Narrator".to_owned(),
         },
-        CharacterDialoguePresentationConfig {
-            view: ViewId::try_new("view.resolved-document.test").expect("View identity"),
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+        CharacterDialoguePresentationConfig::standalone(
+            ViewId::try_new("view.resolved-document.test").expect("View identity"),
+            InlineFailurePolicy::FailLine,
+        ),
         Vec::new(),
         Vec::new(),
     )

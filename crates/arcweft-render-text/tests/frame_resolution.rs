@@ -2,7 +2,6 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::value::{RuntimeDialogueContentBinding, RuntimeInlineTextValue, RuntimeValue};
 use arcweft_core::{
-    entry::RuntimeValueDigest,
     pattern::RuntimeCheckedType,
     plan::{RuntimeDialogueValueBinding, RuntimeDialogueValueRole, RuntimeLineId},
 };
@@ -88,21 +87,10 @@ fn context_with_styles(
             id: CharacterId::try_new("character.alice").expect("character identity"),
             display_name: "Alice".to_owned(),
         },
-        CharacterDialoguePresentationConfig {
-            view: ViewId::try_new("view.frame-resolution.test").expect("View identity"),
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+        CharacterDialoguePresentationConfig::standalone(
+            ViewId::try_new("view.frame-resolution.test").expect("View identity"),
+            InlineFailurePolicy::FailLine,
+        ),
         base_styles,
         Vec::new(),
     )

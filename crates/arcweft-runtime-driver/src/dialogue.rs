@@ -199,16 +199,16 @@ pub enum BundlePresentationTransition {
 /// Ordered update applied to one authored dialogue View target.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum DialoguePresentationOperation {
+pub enum DialoguePresentationOperation<F = LineDisplayFrame> {
     Append {
         activation: DialogueActivationId,
         view: DialogueViewDefinition,
-        frame: LineDisplayFrame,
+        frame: F,
     },
     Replace {
         activation: DialogueActivationId,
         view: DialogueViewDefinition,
-        frame: LineDisplayFrame,
+        frame: F,
     },
     Clear {
         view: DialogueViewDefinition,
@@ -250,7 +250,7 @@ impl DialoguePresentationOperation {
 
 /// One retained dialogue occurrence evaluated as its own authored View mount.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct DialogueEntryState {
+pub struct DialogueEntryState<F = LineDisplayFrame> {
     pub(super) activation: DialogueActivationId,
     pub(super) id: DialogueEntryId,
     pub(super) instance: DialogueInstanceId,
@@ -259,7 +259,7 @@ pub struct DialogueEntryState {
     pub(super) reveal_elapsed: LogicalDuration,
     pub(super) reveal_complete: bool,
     pub(super) revealed_content_events: std::collections::BTreeSet<RuntimeDialogueContentEventKind>,
-    pub(super) frame: LineDisplayFrame,
+    pub(super) frame: F,
 }
 
 impl DialogueEntryState {
@@ -409,11 +409,11 @@ impl DialogueEntryState {
 
 /// Persistent dialogue history attached to one authored View definition.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct DialoguePresentation {
+pub struct DialoguePresentation<F = LineDisplayFrame> {
     pub(super) id: DialoguePresentationId,
     pub(super) view: DialogueViewDefinition,
     pub(super) revision: DialogueRevision,
-    pub(super) entries: Vec<DialogueEntryState>,
+    pub(super) entries: Vec<DialogueEntryState<F>>,
     pub(super) active: Option<DialogueEntryId>,
 }
 

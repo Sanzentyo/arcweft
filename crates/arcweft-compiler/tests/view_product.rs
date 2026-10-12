@@ -15,9 +15,7 @@ use arcweft_compiler::project::{
     CompiledProject, ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
     ProjectCompileStage, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
 };
-use arcweft_core::{
-    effect::RuntimeArtifactFingerprint, entry::RuntimeValueDigest, plan::RuntimeLineId,
-};
+use arcweft_core::{effect::RuntimeArtifactFingerprint, plan::RuntimeLineId};
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::{PublicId, TextKey};
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
@@ -1805,21 +1803,10 @@ fn minimal_dialogue_frame(view: ViewId) -> LineDisplayFrame {
             display_name: "Compiler".to_owned(),
         },
         text_key: TextKey::try_new("text.compiler.view.handler").expect("dialogue text key"),
-        effective: CharacterDialoguePresentationConfig {
+        effective: CharacterDialoguePresentationConfig::standalone(
             view,
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+            InlineFailurePolicy::FailLine,
+        ),
         text: String::new(),
         base_styles: Vec::new(),
         style_contributions: Vec::new(),

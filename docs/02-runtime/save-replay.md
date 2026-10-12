@@ -106,6 +106,26 @@ program outcome は選択中の immutable executable に束縛し、standalone o
 `[TaskId, TaskPublicationCursor]` row 配列として保存する。
 decode は重複・順序逆転・旧 object grammar を拒否し、別の reader を残さない。
 
+表示フレームの effective configuration は、元の generation-admitted
+`CharacterDialogue` と executable lease を保持する。Style／RichText／custom／
+capture を失う表示用の field projection から保存値を再構成しない。
+`LineDisplayFrameSnapshot` と stage observation は、同じ display/source metadata
+に Core の inert value carrier を接続する。セッションの dialogue store と View
+text output、bundle の retained display-frame resource もこの carrier を使う。
+live frame／stage の Serialize はこの wire を生成し、live configuration の
+context-free Deserialize は提供しない。
+
+復元は original executable と generation schema で CharacterDialogue の全 role
+と custom field を再検証し、config digest・Character identity・元の Style と
+stylesheet の一致を確認する。generation schema を持つセッションを standalone
+configuration に downgrade する保存値は拒否する。正当な standalone 描画入力は
+program-owned descendant を構築できない Core の共通 decoder を使う。
+保存・復元・observation の contract version は引き続き `1`。
+
+表示フレーム内の role/custom／Content callback／fallback Style も、既存の
+session catalog validator に渡してから facade を公開する。表示文字列から
+Content を再構成せず、元の Content envelope と捕捉値を保持する。
+
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.

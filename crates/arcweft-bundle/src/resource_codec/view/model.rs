@@ -9,7 +9,7 @@ use arcweft_presentation::fx::{
     FxRuntimeType,
 };
 use arcweft_source::ProductSourceRef;
-use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
+use arcweft_text_model::{LineDisplayFrameSnapshot, RichTextDocument};
 pub use arcweft_view::ViewProgramId;
 pub use arcweft_view::program::{EventKind, ViewElementKind};
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
@@ -1039,7 +1039,7 @@ pub struct ViewRichTextDocumentResource {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ViewDisplayFrameResource {
     pub public_id: String,
-    pub frame: LineDisplayFrame,
+    pub frame: LineDisplayFrameSnapshot,
     pub stage_index: u32,
 }
 

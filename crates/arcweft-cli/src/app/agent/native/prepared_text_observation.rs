@@ -18,7 +18,7 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 use arcweft_text_model::{
-    LineDisplayStageProjection, RichTextNodeIndex, RichTextObjectProxy, RichTextPresentation,
+    LineDisplayStageSnapshot, RichTextNodeIndex, RichTextObjectProxy, RichTextPresentation,
     RichTextTextRun, RichTextTextSource,
 };
 
@@ -120,7 +120,7 @@ pub(super) fn agent_dialogue_prepared_text_objects(
 
 fn dialogue_view_object(
     capture_step: usize,
-    frame: &LineDisplayStageProjection,
+    frame: &LineDisplayStageSnapshot,
     owner: &PreparedTextObservationOwner<'_>,
     reference: arcweft_agent_protocol::text_context::AgentTextContextReference,
     geometry: &PreparedTextGeometry,
@@ -197,7 +197,7 @@ fn dialogue_view_object(
 fn dialogue_children(
     capture_step: usize,
     dialogue_object: &AgentObservedObject,
-    frame: &LineDisplayStageProjection,
+    frame: &LineDisplayStageSnapshot,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
     geometry: &PreparedTextGeometry,
@@ -226,7 +226,7 @@ fn dialogue_children(
 struct DialogueProjection<'a> {
     capture_step: usize,
     dialogue_object: &'a AgentObservedObject,
-    frame: &'a LineDisplayStageProjection,
+    frame: &'a LineDisplayStageSnapshot,
     page_index: usize,
     owner: &'a PreparedTextOwner,
     item: &'a PreparedTextItem,
@@ -675,7 +675,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
 }
 
 fn dialogue_run_geometry<'a>(
-    frame: &'a LineDisplayStageProjection,
+    frame: &'a LineDisplayStageSnapshot,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
     geometry: &PreparedTextGeometry,
@@ -870,12 +870,12 @@ fn valid_range(range: RichTextRange, text_len: usize) -> Option<std::ops::Range<
     (range.start <= range.end && range.end <= text_len).then_some(range.start..range.end)
 }
 
-fn text_for_range(frame: &LineDisplayStageProjection, range: RichTextRange) -> Option<&str> {
+fn text_for_range(frame: &LineDisplayStageSnapshot, range: RichTextRange) -> Option<&str> {
     frame.text.get(valid_range(range, frame.text.len())?)
 }
 
 fn find_run(
-    frame: &LineDisplayStageProjection,
+    frame: &LineDisplayStageSnapshot,
     range: RichTextRange,
 ) -> Option<(usize, &RichTextTextRun)> {
     let runs = &frame.display_map.text_runs;
@@ -889,7 +889,7 @@ fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
     left.start < right.end && right.start < left.end
 }
 
-fn range_node_index(frame: &LineDisplayStageProjection, range: RichTextRange) -> RichTextNodeIndex {
+fn range_node_index(frame: &LineDisplayStageSnapshot, range: RichTextRange) -> RichTextNodeIndex {
     frame
         .display_map
         .text_runs
@@ -899,7 +899,7 @@ fn range_node_index(frame: &LineDisplayStageProjection, range: RichTextRange) ->
 }
 
 fn presentation_for_range(
-    frame: &LineDisplayStageProjection,
+    frame: &LineDisplayStageSnapshot,
     range: RichTextRange,
 ) -> Option<RichTextPresentation> {
     frame
@@ -914,7 +914,7 @@ fn presentation_for_range(
         })
 }
 
-fn object_depth_for_range(frame: &LineDisplayStageProjection, range: RichTextRange) -> Option<i32> {
+fn object_depth_for_range(frame: &LineDisplayStageSnapshot, range: RichTextRange) -> Option<i32> {
     frame
         .display_map
         .text_runs
@@ -925,7 +925,7 @@ fn object_depth_for_range(frame: &LineDisplayStageProjection, range: RichTextRan
 }
 
 fn object_layer_for_range(
-    frame: &LineDisplayStageProjection,
+    frame: &LineDisplayStageSnapshot,
     range: RichTextRange,
 ) -> Option<String> {
     frame

@@ -440,6 +440,11 @@ pub(super) fn build_session_runtime(
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
     let character_presentation = accepted_character_presentation(bundle)?;
+    let view_runtime = if let Some(schema) = &character_dialogue_schema {
+        view_runtime.with_character_dialogue_schema(Arc::clone(schema))?
+    } else {
+        view_runtime
+    };
     let resources = SessionRuntimeResources {
         dialogue_content: bundle.dialogue_content.clone(),
         character_dialogue_schema,

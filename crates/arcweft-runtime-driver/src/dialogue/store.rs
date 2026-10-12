@@ -16,13 +16,96 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// Runtime-driver-owned state for independently targeted authored dialogue Views.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct DialoguePresentationStore {
-    presentations: BTreeMap<DialoguePresentationId, DialoguePresentation>,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct DialoguePresentationStore<F = LineDisplayFrame> {
+    presentations: BTreeMap<DialoguePresentationId, DialoguePresentation<F>>,
     definitions: BTreeMap<DialogueViewDefinition, DialoguePresentationId>,
     next_presentation_id: u64,
     next_entry_id: u64,
     next_dialogue_instance_id: u64,
+}
+
+impl<F> Default for DialoguePresentationStore<F> {
+    fn default() -> Self {
+        Self {
+            presentations: BTreeMap::new(),
+            definitions: BTreeMap::new(),
+            next_presentation_id: 0,
+            next_entry_id: 0,
+            next_dialogue_instance_id: 0,
+        }
+    }
+}
+
+impl<F> DialoguePresentationStore<F> {
+    pub(crate) fn try_map_frames<T, E>(
+        self,
+        map: &mut impl FnMut(F) -> Result<T, E>,
+    ) -> Result<DialoguePresentationStore<T>, E> {
+        Ok(DialoguePresentationStore {
+            presentations: self
+                .presentations
+                .into_iter()
+                .map(|(id, presentation)| {
+                    Ok((
+                        id,
+                        DialoguePresentation {
+                            id: presentation.id,
+                            view: presentation.view,
+                            revision: presentation.revision,
+                            active: presentation.active,
+                            entries: presentation
+                                .entries
+                                .into_iter()
+                                .map(|entry| {
+                                    Ok(DialogueEntryState {
+                                        activation: entry.activation,
+                                        id: entry.id,
+                                        instance: entry.instance,
+                                        stage: entry.stage,
+                                        waiting_for_advance: entry.waiting_for_advance,
+                                        reveal_elapsed: entry.reveal_elapsed,
+                                        reveal_complete: entry.reveal_complete,
+                                        revealed_content_events: entry.revealed_content_events,
+                                        frame: map(entry.frame)?,
+                                    })
+                                })
+                                .collect::<Result<_, E>>()?,
+                        },
+                    ))
+                })
+                .collect::<Result<_, E>>()?,
+            definitions: self.definitions,
+            next_presentation_id: self.next_presentation_id,
+            next_entry_id: self.next_entry_id,
+            next_dialogue_instance_id: self.next_dialogue_instance_id,
+        })
+    }
+}
+
+impl DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> {
+    /// Captures complete occurrence state with inert frame values.
+    pub fn from_live(
+        store: &DialoguePresentationStore,
+        owner: Option<&arcweft_core::task::RuntimeProgramOwner>,
+        schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    ) -> Result<Self, String> {
+        store.validate().map_err(|error| error.to_string())?;
+        store.clone().try_map_frames(&mut |frame| {
+            arcweft_text_model::LineDisplayFrameSnapshot::from_live(&frame, owner, schema)
+        })
+    }
+
+    /// Restores frames under the original program before publishing a store.
+    pub fn into_live(
+        self,
+        owner: Option<&arcweft_core::task::RuntimeProgramOwner>,
+        schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    ) -> Result<DialoguePresentationStore, String> {
+        let store = self.try_map_frames(&mut |frame| frame.into_live(owner, schema))?;
+        store.validate().map_err(|error| error.to_string())?;
+        Ok(store)
+    }
 }
 
 fn dialogue_reveal_view(

@@ -16,7 +16,6 @@ use arcweft_bundle::resource_codec::{
 use arcweft_character::id::CharacterId;
 use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
 use arcweft_core::{
-    entry::RuntimeValueDigest,
     plan::RuntimeLineId,
     pure::{RuntimePureCallBackend, VmRuntimePureCallBackend},
 };
@@ -63,10 +62,7 @@ use arcweft_view::{
     ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeSet, sync::Arc};
 
 mod support;
 
@@ -164,21 +160,10 @@ fn dialogue_frame(
                 id: CharacterId::try_new("character.test").expect("character identity"),
                 display_name: display_name.to_owned(),
             },
-            CharacterDialoguePresentationConfig {
-                view: view_id(view),
-                style_sheet: None,
-                voice: None,
-                look: None,
-                stage: None,
-                portrait: None,
-                focus: None,
-                cleanup: None,
-                source_locale: None,
-                hooks: Vec::new(),
-                inline_failure: InlineFailurePolicy::FailLine,
-                custom: BTreeMap::new(),
-                config_digest: RuntimeValueDigest::ZERO,
-            },
+            CharacterDialoguePresentationConfig::standalone(
+                view_id(view),
+                InlineFailurePolicy::FailLine,
+            ),
             Vec::new(),
             Vec::new(),
         ),
@@ -1158,7 +1143,10 @@ fn dialogue_selected_style_is_scoped_after_view_defaults_and_clear_removes_it() 
     let mut display = dialogue_frame("say.dialogue.style", "view.Dialogue", "Hero", Vec::new());
     let view = view_id("view.Dialogue");
     let handle = PresentationHandleId::try_new("dialogue.style").unwrap();
-    display.effective.style_sheet = Some(dialogue_selected.clone());
+    display.effective = display
+        .effective
+        .with_standalone_style_sheet(Some(dialogue_selected.clone()))
+        .unwrap();
     let input = DialogueViewInput {
         handle: handle.clone(),
         view: &view,
@@ -1177,7 +1165,7 @@ fn dialogue_selected_style_is_scoped_after_view_defaults_and_clear_removes_it() 
     );
     assert!(applications[0].application_order() < applications[1].application_order());
 
-    display.effective.style_sheet = None;
+    display.effective = display.effective.with_standalone_style_sheet(None).unwrap();
     let input = DialogueViewInput {
         handle,
         view: &view,
@@ -2358,7 +2346,12 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         }],
         display_frames: vec![ViewDisplayFrameResource {
             public_id: "display.opening".to_owned(),
-            frame: display_frame.clone(),
+            frame: arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+                &display_frame,
+                None,
+                None,
+            )
+            .unwrap(),
             stage_index: 0,
         }],
         ..ViewTextResource::default()

@@ -282,14 +282,24 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
                 ),
             )
         })?;
-        entry.frame.validate().map_err(|error| {
-            EvaluationFailure::new(
-                BundleViewDiagnosticCode::InvalidDisplayStage,
-                Some(instruction),
-                format!("display frame `{public_id}` is invalid: {error}"),
-            )
-        })?;
-        if entry.frame.stage(stage_index).is_none() {
+        let owner = match self.program_runtime {
+            super::ViewProgramRuntimeAuthority::CoreProgramFree => None,
+            super::ViewProgramRuntimeAuthority::Awbc(program) => Some(
+                super::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+            ),
+        };
+        let frame = entry
+            .frame
+            .clone()
+            .into_live(owner.as_ref(), self.dialogue_schema)
+            .map_err(|error| {
+                EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InvalidDisplayStage,
+                    Some(instruction),
+                    format!("display frame `{public_id}` is invalid: {error}"),
+                )
+            })?;
+        if frame.stage(stage_index).is_none() {
             return Err(EvaluationFailure::new(
                 BundleViewDiagnosticCode::InvalidDisplayStage,
                 Some(instruction),
@@ -300,7 +310,7 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
             ));
         }
         Ok(BundleViewTextValue::DisplayFrame {
-            frame: Box::new(entry.frame.clone()),
+            frame: Box::new(frame),
             stage_index: entry.stage_index,
         })
     }

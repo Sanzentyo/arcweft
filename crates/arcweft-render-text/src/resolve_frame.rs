@@ -78,7 +78,7 @@ impl RuntimeLineContext {
     /// inherited inline and Content insertion failures.
     #[must_use]
     pub const fn inline_failure_policy(&self) -> &InlineFailurePolicy {
-        &self.effective.inline_failure
+        self.effective.inline_failure()
     }
 
     fn inline_text(&self, slot: RuntimeDialogueValueSlotId) -> Result<Option<String>, String> {

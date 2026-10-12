@@ -163,9 +163,14 @@ pub enum LineDisplayStageEnd {
 /// A stage contains the whole currently visible page, plus the byte offset at
 /// which newly revealed text begins. This distinction lets `[l]` retain its
 /// already-visible prefix while `[p]` starts the next stage from an empty page.
-#[derive(Clone, Copy, Debug)]
-pub struct LineDisplayStage<'a> {
-    frame: &'a LineDisplayFrame,
+#[derive(Debug)]
+pub struct LineDisplayStage<
+    'a,
+    E = CharacterDialoguePresentationConfig,
+    C = RuntimeDialogueContentValue,
+    I = InlineTextFailure,
+> {
+    frame: &'a LineDisplayFrame<E, C, I>,
     index: usize,
     page_index: usize,
     text_range: RichTextRange,
@@ -175,19 +180,30 @@ pub struct LineDisplayStage<'a> {
     end: LineDisplayStageEnd,
 }
 
+impl<E, C, I> Copy for LineDisplayStage<'_, E, C, I> {}
+impl<E, C, I> Clone for LineDisplayStage<'_, E, C, I> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 /// Owned, stage-local projection of a resolved dialogue display map.
 ///
 /// Unlike a full [`LineDisplayFrame`], a stage projection intentionally has no
 /// authored node tree. Its display map is projected in one place, preserving
 /// complete Ruby bases and rebasing their run-index intervals along with the
 /// projected text runs.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct LineDisplayStageProjection {
+pub struct LineDisplayStageProjection<
+    E = CharacterDialoguePresentationConfig,
+    C = RuntimeDialogueContentValue,
+    I = InlineTextFailure,
+> {
     pub line: RuntimeLineId,
     pub character: DialoguePresentationCharacter,
     pub text_key: TextKey,
-    pub effective: CharacterDialoguePresentationConfig,
+    pub effective: E,
     pub text: String,
     pub base_styles: Vec<RichTextStyle>,
     pub style_contributions: Vec<RichTextStyleContribution>,
@@ -197,13 +213,13 @@ pub struct LineDisplayStageProjection {
     pub end: LineDisplayStageEnd,
     pub display_map: RichTextDisplayMap,
     pub host_events: Vec<DialogueHostEvent>,
-    pub inline_failures: Vec<InlineTextFailure>,
+    pub inline_failures: Vec<I>,
     pub unresolved: Vec<String>,
-    pub content: RuntimeDialogueContentValue,
+    pub content: C,
 }
 
-impl From<LineDisplayFrame> for LineDisplayStageProjection {
-    fn from(frame: LineDisplayFrame) -> Self {
+impl<E, C, I> From<LineDisplayFrame<E, C, I>> for LineDisplayStageProjection<E, C, I> {
+    fn from(frame: LineDisplayFrame<E, C, I>) -> Self {
         Self {
             line: frame.line,
             character: frame.character,
@@ -225,7 +241,7 @@ impl From<LineDisplayFrame> for LineDisplayStageProjection {
     }
 }
 
-impl LineDisplayFrame {
+impl<E, C, I> LineDisplayFrame<E, C, I> {
     /// Validates the resolved display map before playback or save restoration.
     ///
     /// The check covers UTF-8 boundaries, authored ordering, typed control and
@@ -276,7 +292,7 @@ impl LineDisplayFrame {
 
     /// Returns one display stage by zero-based authored order.
     #[must_use]
-    pub fn stage(&self, index: usize) -> Option<LineDisplayStage<'_>> {
+    pub fn stage(&self, index: usize) -> Option<LineDisplayStage<'_, E, C, I>> {
         self.stage_descriptors()
             .into_iter()
             .nth(index)
@@ -285,7 +301,7 @@ impl LineDisplayFrame {
 
     /// Returns every display stage in authored order.
     #[must_use]
-    pub fn stages(&self) -> Vec<LineDisplayStage<'_>> {
+    pub fn stages(&self) -> Vec<LineDisplayStage<'_, E, C, I>> {
         self.stage_descriptors()
             .into_iter()
             .enumerate()
@@ -395,10 +411,10 @@ impl LineDisplayFrame {
     }
 }
 
-impl<'a> LineDisplayStage<'a> {
+impl<'a, E, C, I> LineDisplayStage<'a, E, C, I> {
     /// Full resolved line that owns this stage.
     #[must_use]
-    pub const fn frame(self) -> &'a LineDisplayFrame {
+    pub const fn frame(self) -> &'a LineDisplayFrame<E, C, I> {
         self.frame
     }
 
@@ -474,7 +490,12 @@ impl<'a> LineDisplayStage<'a> {
     /// frame remains the sole authored-tree authority; this value deliberately
     /// carries no synthetic or partial `ResolvedRichTextNode` tree.
     #[must_use]
-    pub fn projection(self) -> LineDisplayStageProjection {
+    pub fn projection(self) -> LineDisplayStageProjection<E, C, I>
+    where
+        E: Clone,
+        C: Clone,
+        I: Clone,
+    {
         let mut display_map = self.project_display_map();
         let mut host_event_markers = std::mem::take(&mut display_map.host_events);
         let host_events = host_event_markers
@@ -738,7 +759,7 @@ fn validate_display_map_authored_order(
     Ok(())
 }
 
-impl LineDisplayStageProjection {
+impl<E, C, I> LineDisplayStageProjection<E, C, I> {
     /// Checks the resolved projection without inventing an authored node tree.
     pub fn validate(&self) -> Result<(), LineDisplayFrameValidationError> {
         validate_resolved_display_map(&self.text, &self.display_map, &self.host_events)?;
@@ -814,7 +835,11 @@ struct MappedExtent {
 }
 
 impl StageDescriptor {
-    const fn bind(self, frame: &LineDisplayFrame, index: usize) -> LineDisplayStage<'_> {
+    const fn bind<E, C, I>(
+        self,
+        frame: &LineDisplayFrame<E, C, I>,
+        index: usize,
+    ) -> LineDisplayStage<'_, E, C, I> {
         LineDisplayStage {
             frame,
             index,
@@ -1065,8 +1090,8 @@ struct TreeMapCursor {
     text_offset: usize,
 }
 
-fn validate_resolved_tree(
-    frame: &LineDisplayFrame,
+fn validate_resolved_tree<E, C, I>(
+    frame: &LineDisplayFrame<E, C, I>,
     source_node_count: usize,
 ) -> Result<(), LineDisplayFrameValidationError> {
     let mut cursor = TreeMapCursor {
@@ -1104,9 +1129,9 @@ fn validate_resolved_tree(
     Ok(())
 }
 
-fn validate_resolved_nodes(
+fn validate_resolved_nodes<E, C, I>(
     nodes: &[ResolvedRichTextNode],
-    frame: &LineDisplayFrame,
+    frame: &LineDisplayFrame<E, C, I>,
     in_ruby: bool,
     cursor: &mut TreeMapCursor,
     seen_ruby: &mut [bool],
@@ -1255,8 +1280,8 @@ fn validate_resolved_nodes(
     Ok(())
 }
 
-fn validate_tree_text_run(
-    frame: &LineDisplayFrame,
+fn validate_tree_text_run<E, C, I>(
+    frame: &LineDisplayFrame<E, C, I>,
     cursor: &mut TreeMapCursor,
     node_index: usize,
     text: &str,
@@ -1331,7 +1356,7 @@ mod tests {
         ResolvedRichTextNode, RichTextNode, RichTextNodeCount, RichTextPresentation,
     };
     use arcweft_character::id::CharacterId;
-    use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+    use arcweft_core::plan::RuntimeLineId;
     use arcweft_dialogue::InlineFailurePolicy;
     use arcweft_id::TextKey;
     use arcweft_view::ViewId;
@@ -1381,21 +1406,10 @@ mod tests {
                 display_name: "Alice".to_owned(),
             },
             text_key: TextKey::try_new("text.playback.test").expect("text key"),
-            effective: CharacterDialoguePresentationConfig {
-                view: ViewId::try_new("view.playback.test").expect("View identity"),
-                style_sheet: None,
-                voice: None,
-                look: None,
-                stage: None,
-                portrait: None,
-                focus: None,
-                cleanup: None,
-                source_locale: None,
-                hooks: Vec::new(),
-                inline_failure: InlineFailurePolicy::FailLine,
-                custom: BTreeMap::new(),
-                config_digest: RuntimeValueDigest::ZERO,
-            },
+            effective: CharacterDialoguePresentationConfig::standalone(
+                ViewId::try_new("view.playback.test").expect("View identity"),
+                InlineFailurePolicy::FailLine,
+            ),
             text,
             base_styles: Vec::new(),
             style_contributions: Vec::new(),

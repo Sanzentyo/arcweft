@@ -2934,21 +2934,10 @@ fn resolve_authored_spacing_frame(
             id: admitted.dialogue().character().clone(),
             display_name: "Alice".to_owned(),
         },
-        arcweft_text_model::CharacterDialoguePresentationConfig {
-            view: config.view().clone(),
-            style_sheet: None,
-            voice: config.voice().cloned(),
-            look: config.look().cloned(),
-            stage: config.stage().cloned(),
-            portrait: config.portrait().cloned(),
-            focus: config.focus().cloned(),
-            cleanup: config.cleanup().cloned(),
-            source_locale: config.source_locale().cloned(),
-            hooks: config.hooks().to_vec(),
-            inline_failure: config.inline_failure().clone(),
-            custom: config.custom().clone(),
-            config_digest: schema.effective_config_digest(admitted.dialogue()).unwrap(),
-        },
+        arcweft_text_model::CharacterDialoguePresentationConfig::from_admitted(
+            schema, &admitted, None,
+        )
+        .unwrap(),
         base_styles,
         spec.inline_styles().to_vec(),
     );
@@ -2958,9 +2947,34 @@ fn resolve_authored_spacing_frame(
     assert!(frame.inline_failures.is_empty());
     assert!(frame.unresolved.is_empty());
     frame.validate().unwrap();
-    let encoded = serde_json::to_vec(&frame).unwrap();
-    let decoded: arcweft_text_model::LineDisplayFrame = serde_json::from_slice(&encoded).unwrap();
+    let snapshot = arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+        &frame,
+        Some(schema.program_owner()),
+        Some(schema),
+    )
+    .unwrap();
+    let encoded = serde_json::to_vec(&snapshot).unwrap();
+    let decoded: arcweft_text_model::LineDisplayFrameSnapshot =
+        serde_json::from_slice(&encoded).unwrap();
+    let decoded = decoded
+        .into_live(Some(schema.program_owner()), Some(schema))
+        .unwrap();
     assert_eq!(decoded, frame);
+    // This helper is invoked for both the original Native plan and decoded AWBC.
+    // Rebinding requires their actual generation schema, even when all visible
+    // rendered text and source ranges are unchanged.
+    let mut forged = serde_json::to_value(&snapshot).unwrap();
+    forged["effective"]["generation"] =
+        serde_json::to_value(arcweft_core::entry::RuntimeValueDigest::ZERO).unwrap();
+    let forged: arcweft_text_model::LineDisplayFrameSnapshot =
+        serde_json::from_value(forged).unwrap();
+    assert!(
+        forged
+            .into_live(Some(schema.program_owner()), Some(schema))
+            .is_err()
+    );
+    assert!(snapshot.clone().into_live(None, Some(schema)).is_err());
+    assert_eq!(serde_json::to_vec(&snapshot).unwrap(), encoded);
     frame
 }
 

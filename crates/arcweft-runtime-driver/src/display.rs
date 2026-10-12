@@ -26,7 +26,6 @@ use arcweft_character::presentation_name::{
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::plan::{
     FlowEvent, RuntimeDialogueContentApplicationKey, RuntimeDialogueContentSlot,
     RuntimeDialogueValueBinding,
@@ -55,7 +54,6 @@ use arcweft_text_model::{
 use arcweft_view::{ViewStyleProgram, ViewStyleSheetId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use thiserror::Error;
 
 mod viewport;
@@ -262,42 +260,16 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
             let styles = project_character_dialogue_rich_text_properties(&properties)
                 .map_err(|error| reject(error.to_string()))?;
             (
-                CharacterDialoguePresentationConfig {
-                    view: config.view().clone(),
-                    style_sheet,
-                    voice: config.voice().cloned(),
-                    look: config.look().cloned(),
-                    stage: config.stage().cloned(),
-                    portrait: config.portrait().cloned(),
-                    focus: config.focus().cloned(),
-                    cleanup: config.cleanup().cloned(),
-                    source_locale: config.source_locale().cloned(),
-                    hooks: config.hooks().to_vec(),
-                    inline_failure: config.inline_failure().clone(),
-                    custom: config.custom().clone(),
-                    config_digest: schema
-                        .effective_config_digest(value.dialogue())
-                        .map_err(|error| reject(error.to_string()))?,
-                },
+                CharacterDialoguePresentationConfig::from_admitted(schema, value, style_sheet)
+                    .map_err(|error| reject(error.to_string()))?,
                 styles,
             )
         } else {
             (
-                CharacterDialoguePresentationConfig {
-                    view: presentation.view().clone(),
-                    style_sheet: None,
-                    voice: None,
-                    look: None,
-                    stage: None,
-                    portrait: None,
-                    focus: None,
-                    cleanup: None,
-                    source_locale: None,
-                    hooks: Vec::new(),
-                    inline_failure: presentation.inline_failure().clone(),
-                    custom: BTreeMap::new(),
-                    config_digest: RuntimeValueDigest::ZERO,
-                },
+                CharacterDialoguePresentationConfig::standalone(
+                    presentation.view().clone(),
+                    presentation.inline_failure().clone(),
+                ),
                 Vec::new(),
             )
         };
@@ -372,10 +344,14 @@ impl BundlePresentationUpdateError {
 /// Current portable presentation state consumed by renderer adapters.
 ///
 /// This value is a diagnostic/render input model, not a DOM instruction set.
-#[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
-pub struct BundlePresentationSnapshot {
+#[derive(Clone, Deserialize, PartialEq, Serialize)]
+#[serde(bound(
+    serialize = "F: Serialize + PartialEq",
+    deserialize = "F: Deserialize<'de>"
+))]
+pub struct BundlePresentationSnapshot<F = arcweft_text_model::LineDisplayFrame> {
     pub revision: u64,
-    pub dialogue: DialoguePresentationStore,
+    pub dialogue: DialoguePresentationStore<F>,
     pub choices: Vec<BundleChoice>,
     pub images: Vec<BundleImageObject>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -398,12 +374,61 @@ pub struct BundlePresentationSnapshot {
     pub focus_navigation: Vec<ViewRuntimeFocusNavigation>,
     /// Mount-scoped executable View output for this presentation revision.
     #[serde(default, skip_serializing_if = "is_default")]
-    pub view: BundleViewFrame,
+    pub view: BundleViewFrame<F>,
     /// Activation-relative logical clock and complete live Fx save state.
     pub fx: BundleFxRuntimeSnapshot,
     /// Typed failures consumed unchanged by native, Web, headless, and Agent observers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fx_diagnostics: Vec<FxDiagnostic>,
+}
+
+impl<F> Default for BundlePresentationSnapshot<F> {
+    fn default() -> Self {
+        Self {
+            revision: 0,
+            dialogue: DialoguePresentationStore::default(),
+            choices: Vec::new(),
+            images: Vec::new(),
+            presentation_handle_epoch: 0,
+            presentation_handles: Vec::new(),
+            viewport_fit: None,
+            text_inputs: Vec::new(),
+            action_buttons: Vec::new(),
+            scroll_regions: Vec::new(),
+            surfaces: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            view: BundleViewFrame::default(),
+            fx: BundleFxRuntimeSnapshot::default(),
+            fx_diagnostics: Vec::new(),
+        }
+    }
+}
+
+impl<F> BundlePresentationSnapshot<F> {
+    pub(crate) fn try_map_frames<T, E>(
+        self,
+        mut map: impl FnMut(F) -> Result<T, E>,
+    ) -> Result<BundlePresentationSnapshot<T>, E> {
+        Ok(BundlePresentationSnapshot {
+            revision: self.revision,
+            dialogue: self.dialogue.try_map_frames(&mut map)?,
+            choices: self.choices,
+            images: self.images,
+            presentation_handle_epoch: self.presentation_handle_epoch,
+            presentation_handles: self.presentation_handles,
+            viewport_fit: self.viewport_fit,
+            text_inputs: self.text_inputs,
+            action_buttons: self.action_buttons,
+            scroll_regions: self.scroll_regions,
+            surfaces: self.surfaces,
+            focus_groups: self.focus_groups,
+            focus_navigation: self.focus_navigation,
+            view: self.view.try_map_frames(&mut map)?,
+            fx: self.fx,
+            fx_diagnostics: self.fx_diagnostics,
+        })
+    }
 }
 
 /// Runtime resources that affect portable presentation state.
@@ -492,7 +517,7 @@ pub fn resolve_display_frames(
                 let context = context.with_materialized_bindings(materialized.bindings());
                 match resolve_materialized_frame(spec, &materialized, &content_value, &context) {
                     Ok(frame) => {
-                        let view = frame.effective.view.clone();
+                        let view = frame.effective.view().clone();
                         resolution
                             .dialogue_operations
                             .push(DialoguePresentationOperation::append(
@@ -677,7 +702,9 @@ impl BundlePresentationSnapshot {
         }
         result
     }
+}
 
+impl<F: Clone> BundlePresentationSnapshot<F> {
     #[must_use]
     pub fn redacted_for_observation(&self) -> Self {
         Self {
@@ -701,7 +728,7 @@ fn waiting_dialogue_activation(
     }
 }
 
-impl fmt::Debug for BundlePresentationSnapshot {
+impl<F: fmt::Debug + Clone> fmt::Debug for BundlePresentationSnapshot<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("BundlePresentationSnapshot")

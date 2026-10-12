@@ -64,7 +64,7 @@ pub(crate) struct BundleSessionSavePayload {
     pub root: Option<RootStateSaveSnapshotV1>,
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSavePayload,
-    pub presentation: BundlePresentationSnapshot,
+    pub presentation: BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot>,
     pub view_virtualization: ViewVirtualizationSnapshot,
     pub view_runtime: BundleViewRuntimeSaveSnapshot,
 }
@@ -80,6 +80,7 @@ impl BundleSessionSavePayload {
     pub(crate) fn from_snapshot(
         snapshot: &BundleSessionSnapshot,
         program_owner: &RuntimeProgramOwner,
+        dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
         Ok(Self {
             generation: snapshot.generation.clone(),
@@ -99,7 +100,19 @@ impl BundleSessionSavePayload {
                 generation: snapshot.executor.generation,
                 state: snapshot.executor.state.clone(),
             },
-            presentation: snapshot.presentation.clone(),
+            presentation: snapshot.presentation.clone().try_map_frames(|frame| {
+                if dialogue_schema.is_some() && frame.effective.admitted().is_none() {
+                    return Err(
+                        "session display frame has no generation-admitted CharacterDialogue"
+                            .to_owned(),
+                    );
+                }
+                arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+                    &frame,
+                    Some(program_owner),
+                    dialogue_schema,
+                )
+            })?,
             view_virtualization: snapshot.view_virtualization.clone(),
             view_runtime: BundleViewRuntimeSaveSnapshot::from_live(
                 &snapshot.view_runtime,
@@ -111,6 +124,7 @@ impl BundleSessionSavePayload {
     pub(crate) fn into_snapshot(
         self,
         program_owner: &RuntimeProgramOwner,
+        dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<BundleSessionSnapshot, String> {
         let root = self
             .root
@@ -128,7 +142,16 @@ impl BundleSessionSavePayload {
                 generation: self.executor.generation,
                 state: self.executor.state,
             },
-            presentation: self.presentation,
+            presentation: self.presentation.try_map_frames(|frame| {
+                let frame = frame.into_live(Some(program_owner), dialogue_schema)?;
+                if dialogue_schema.is_some() && frame.effective.admitted().is_none() {
+                    return Err(
+                        "session display frame has no generation-admitted CharacterDialogue"
+                            .to_owned(),
+                    );
+                }
+                Ok(frame)
+            })?,
             view_virtualization: self.view_virtualization,
             view_runtime: self.view_runtime.into_live(program_owner)?,
         })

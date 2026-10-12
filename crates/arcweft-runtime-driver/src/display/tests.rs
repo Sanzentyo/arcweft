@@ -561,9 +561,18 @@ fn presentation_snapshot_serializes_handle_epoch_and_tombstones() {
     assert_eq!(snapshot.presentation_handles[0].created_epoch, 1);
     assert_eq!(snapshot.presentation_handles[0].updated_epoch, 2);
 
-    let encoded = serde_json::to_string(&snapshot).expect("snapshot serializes");
-    let mut restored: BundlePresentationSnapshot =
+    let inert = snapshot
+        .clone()
+        .try_map_frames(|frame| {
+            arcweft_text_model::LineDisplayFrameSnapshot::from_live(&frame, None, None)
+        })
+        .unwrap();
+    let encoded = serde_json::to_string(&inert).expect("snapshot serializes");
+    let restored: BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot> =
         serde_json::from_str(&encoded).expect("snapshot deserializes");
+    let mut restored = restored
+        .try_map_frames(|frame| frame.into_live(None, None))
+        .unwrap();
     assert_eq!(restored, snapshot);
 
     let stale_show = LineEffectRequest::Call(RuntimeCall {
@@ -1692,6 +1701,71 @@ mod dynamic_character_dialogue_context_tests {
     }
 
     #[test]
+    fn inert_display_frame_retains_original_roles_and_rejects_forged_configuration() {
+        let fixture = Fixture::new();
+        let spec = fixture.spec(
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+                generation: fixture.schema.generation_digest(),
+            },
+            "inert_configuration",
+        );
+        let target = fixture.value(&fixture.alice, true);
+        let frame = fixture.frame(&spec, &target);
+        let original = frame.effective.admitted().unwrap();
+        assert_eq!(original.opaque(), &target);
+        let snapshot = arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+            &frame,
+            Some(&fixture.owner),
+            Some(&fixture.schema),
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&snapshot).unwrap();
+        let decoded: arcweft_text_model::LineDisplayFrameSnapshot =
+            serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            decoded
+                .into_live(Some(&fixture.owner), Some(&fixture.schema))
+                .unwrap(),
+            frame
+        );
+
+        for defect in 0..5 {
+            let mut candidate = serde_json::to_value(&snapshot).unwrap();
+            match defect {
+                0 => {
+                    candidate["effective"]["generation"] =
+                        serde_json::to_value(RuntimeValueDigest::ZERO).unwrap();
+                }
+                1 => {
+                    candidate["effective"]["config_digest"] =
+                        serde_json::to_value(RuntimeValueDigest::ZERO).unwrap()
+                }
+                2 => candidate["effective"]["style_sheet"] = serde_json::Value::Null,
+                3 => candidate["effective"]["value"] = serde_json::json!({"Bool": true}),
+                4 => candidate["character"]["id"] = serde_json::to_value(&fixture.bob).unwrap(),
+                _ => unreachable!(),
+            }
+            let candidate: arcweft_text_model::LineDisplayFrameSnapshot =
+                serde_json::from_value(candidate).unwrap();
+            assert!(
+                candidate
+                    .into_live(Some(&fixture.owner), Some(&fixture.schema))
+                    .is_err(),
+                "forged configuration {defect}"
+            );
+            assert_eq!(serde_json::to_vec(&snapshot).unwrap(), bytes);
+            assert_eq!(frame.effective.admitted().unwrap().opaque(), &target);
+        }
+        assert!(
+            snapshot
+                .clone()
+                .into_live(Some(&fixture.owner), None)
+                .is_err()
+        );
+        assert!(snapshot.into_live(None, Some(&fixture.schema)).is_err());
+    }
+
+    #[test]
     fn dynamic_context_uses_admitted_config_and_rejects_generation_or_character_mismatch() {
         let fixture = Fixture::new();
         let dynamic = |generation| CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
@@ -1706,14 +1780,11 @@ mod dynamic_character_dialogue_context_tests {
         assert_eq!(frame.character.id, fixture.alice);
         assert_eq!(frame.character.display_name, "Alice Display Name");
         assert_eq!(
-            frame.effective.view,
+            frame.effective.view().clone(),
             DialoguePresentationProfile::engine_default().view().clone()
         );
-        assert_eq!(
-            frame.effective.style_sheet.as_ref(),
-            Some(&fixture.sheet_id)
-        );
-        assert_ne!(frame.effective.config_digest, RuntimeValueDigest::ZERO);
+        assert_eq!(frame.effective.style_sheet(), Some(&fixture.sheet_id));
+        assert_ne!(frame.effective.config_digest(), RuntimeValueDigest::ZERO);
         assert!(matches!(
             frame.base_styles.as_slice(),
             [RichTextStyle::Color {

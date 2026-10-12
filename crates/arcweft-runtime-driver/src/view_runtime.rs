@@ -184,7 +184,7 @@ impl fmt::Display for BundleViewDiagnostic {
 /// Typed text payload retained until the shared text-preparation boundary.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BundleViewTextValue {
+pub enum BundleViewTextValue<F = LineDisplayFrame> {
     Plain {
         value: String,
     },
@@ -199,15 +199,15 @@ pub enum BundleViewTextValue {
     },
     /// Character display name retaining the same resolved frame provenance as content.
     CharacterDisplayName {
-        frame: Box<LineDisplayFrame>,
+        frame: Box<F>,
     },
     DisplayFrame {
-        frame: Box<LineDisplayFrame>,
+        frame: Box<F>,
         stage_index: u32,
     },
 }
 
-impl BundleViewTextValue {
+impl<F> BundleViewTextValue<F> {
     /// Style target issued from the actual resolved text payload, without reading source labels.
     pub const fn style_target_kind(&self) -> arcweft_view::ViewStyleTargetKind {
         match self {
@@ -239,10 +239,10 @@ pub struct BundleViewTextTarget {
 
 /// One active text source in a concrete mounted occurrence.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct BundleViewTextOutput {
+pub struct BundleViewTextOutput<F = LineDisplayFrame> {
     pub source_id: String,
     pub targets: Vec<BundleViewTextTarget>,
-    pub value: BundleViewTextValue,
+    pub value: BundleViewTextValue<F>,
     #[serde(default)]
     pub classification: ViewObserveClassification,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -278,7 +278,7 @@ pub enum BundleViewPaintItem {
 
 /// Renderer-neutral output of one concrete View definition occurrence.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct BundleViewMountOutput {
+pub struct BundleViewMountOutput<F = LineDisplayFrame> {
     pub handle: PresentationHandleId,
     pub mount: ViewMountId,
     pub view: ViewId,
@@ -291,7 +291,7 @@ pub struct BundleViewMountOutput {
     pub active_images: Vec<String>,
     pub action_buttons: Vec<arcweft_bundle::resource_codec::ViewRuntimeActionButton>,
     pub paint: Vec<BundleViewPaintItem>,
-    pub text: Vec<BundleViewTextOutput>,
+    pub text: Vec<BundleViewTextOutput<F>>,
     pub fx: Vec<BundleViewFxApplication>,
     /// Typed event routes published only after all mount handlers seal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -431,13 +431,95 @@ fn mount_scoped_interaction_target(
 }
 
 /// Complete result of one deterministic View evaluation frame.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct BundleViewFrame {
-    pub mounts: Vec<BundleViewMountOutput>,
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct BundleViewFrame<F = LineDisplayFrame> {
+    pub mounts: Vec<BundleViewMountOutput<F>>,
     pub diagnostics: Vec<BundleViewDiagnostic>,
 }
 
-impl BundleViewFrame {
+impl<F> Default for BundleViewFrame<F> {
+    fn default() -> Self {
+        Self {
+            mounts: Vec::new(),
+            diagnostics: Vec::new(),
+        }
+    }
+}
+
+impl<F> BundleViewFrame<F> {
+    pub(crate) fn try_map_frames<T, E>(
+        self,
+        map: &mut impl FnMut(F) -> Result<T, E>,
+    ) -> Result<BundleViewFrame<T>, E> {
+        Ok(BundleViewFrame {
+            mounts: self
+                .mounts
+                .into_iter()
+                .map(|mount| {
+                    Ok(BundleViewMountOutput {
+                        handle: mount.handle,
+                        mount: mount.mount,
+                        view: mount.view,
+                        path: mount.path,
+                        host_axis_seed: mount.host_axis_seed,
+                        dialogue: mount.dialogue,
+                        active_targets: mount.active_targets,
+                        active_images: mount.active_images,
+                        action_buttons: mount.action_buttons,
+                        paint: mount.paint,
+                        fx: mount.fx,
+                        events: mount.events,
+                        style_nodes: mount.style_nodes,
+                        text: mount
+                            .text
+                            .into_iter()
+                            .map(|text| {
+                                let value = match text.value {
+                                    BundleViewTextValue::Plain { value } => {
+                                        BundleViewTextValue::Plain { value }
+                                    }
+                                    BundleViewTextValue::Localized {
+                                        key,
+                                        locale,
+                                        document,
+                                    } => BundleViewTextValue::Localized {
+                                        key,
+                                        locale,
+                                        document,
+                                    },
+                                    BundleViewTextValue::RichTextDocument { document } => {
+                                        BundleViewTextValue::RichTextDocument { document }
+                                    }
+                                    BundleViewTextValue::CharacterDisplayName { frame } => {
+                                        BundleViewTextValue::CharacterDisplayName {
+                                            frame: Box::new(map(*frame)?),
+                                        }
+                                    }
+                                    BundleViewTextValue::DisplayFrame { frame, stage_index } => {
+                                        BundleViewTextValue::DisplayFrame {
+                                            frame: Box::new(map(*frame)?),
+                                            stage_index,
+                                        }
+                                    }
+                                };
+                                Ok(BundleViewTextOutput {
+                                    source_id: text.source_id,
+                                    targets: text.targets,
+                                    value,
+                                    classification: text.classification,
+                                    replacement: text.replacement,
+                                })
+                            })
+                            .collect::<Result<_, E>>()?,
+                    })
+                })
+                .collect::<Result<_, E>>()?,
+            diagnostics: self.diagnostics,
+        })
+    }
+}
+
+impl<F: Clone> BundleViewFrame<F> {
     /// Removes masked and secret text while preserving structural observation data.
     #[must_use]
     pub fn redacted_for_observation(&self) -> Self {
@@ -567,6 +649,8 @@ pub enum BundleViewRuntimeError {
     InvalidHandlerSealRevision,
     #[error("saved View local state does not match an admitted declaration")]
     InvalidLocalState,
+    #[error("CharacterDialogue schema belongs to another View executable")]
+    ForeignDialogueSchema,
 }
 
 impl BundleViewRuntimeError {
@@ -688,6 +772,7 @@ pub struct BundleViewRuntime {
     axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
     required_dialogue_views: BTreeSet<ViewId>,
     program_runtime: ViewProgramRuntimeAuthority,
+    dialogue_schema: Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
     event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
 
@@ -793,8 +878,32 @@ impl BundleViewRuntime {
                 Self::try_new_with_awbc(product, text, Arc::clone(program))
             }
         }
+        .map(|mut runtime| {
+            runtime.dialogue_schema.clone_from(&self.dialogue_schema);
+            runtime
+        })
         .expect("an admitted View product reconstructs its fresh evaluator")
     }
+    /// Binds display-frame role restoration to the exact executable schema.
+    pub fn with_character_dialogue_schema(
+        mut self,
+        schema: Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        let ViewProgramRuntimeAuthority::Awbc(program) = &self.program_runtime else {
+            return Err(BundleViewRuntimeError::ForeignDialogueSchema);
+        };
+        if !schema
+            .program_owner()
+            .same_program(&arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(
+                program,
+            )))
+        {
+            return Err(BundleViewRuntimeError::ForeignDialogueSchema);
+        }
+        self.dialogue_schema = Some(schema);
+        Ok(self)
+    }
+
     /// Builds an evaluator only from a complete validated View product.
     pub fn try_new(
         product: ValidatedViewProduct,
@@ -916,6 +1025,7 @@ impl BundleViewRuntime {
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
             required_dialogue_views: BTreeSet::new(),
             program_runtime,
+            dialogue_schema: None,
             event_tokens: BTreeMap::new(),
         })
     }

@@ -79,6 +79,36 @@ impl<'a> SessionRestoreValueValidator<'a> {
         let result = runtime.visit_runtime_values(|value| self.validate_value(value));
         self.finish(result)
     }
+
+    fn visit_presentation(
+        &mut self,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let result = (|| {
+            for dialogue in presentation.dialogue.iter() {
+                for entry in dialogue.entries() {
+                    entry
+                        .frame()
+                        .visit_runtime_values(|value| self.validate_value(value))?;
+                }
+            }
+            for mount in &presentation.view.mounts {
+                for text in &mount.text {
+                    match &text.value {
+                        crate::view_runtime::BundleViewTextValue::CharacterDisplayName {
+                            frame,
+                        }
+                        | crate::view_runtime::BundleViewTextValue::DisplayFrame {
+                            frame, ..
+                        } => frame.visit_runtime_values(|value| self.validate_value(value))?,
+                        _ => {}
+                    }
+                }
+            }
+            Ok(())
+        })();
+        self.finish(result)
+    }
 }
 
 impl BundleSession {
@@ -275,9 +305,19 @@ impl BundleSession {
 
     pub fn export_session_save_bytes(&self) -> Result<Vec<u8>, BundleSessionSaveError> {
         let snapshot = self.snapshot_session()?;
-        let payload =
-            BundleSessionSavePayload::from_snapshot(&snapshot, &self.executor.program_owner())
-                .map_err(|message| BundleSessionSaveError::Encode { message })?;
+        let payload = BundleSessionSavePayload::from_snapshot(
+            &snapshot,
+            &self.executor.program_owner(),
+            self.runtime_images
+                .images()
+                .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
+                .find(|schema| {
+                    schema
+                        .program_owner()
+                        .same_program(&self.executor.program_owner())
+                }),
+        )
+        .map_err(|message| BundleSessionSaveError::Encode { message })?;
         arcweft_save::encode_typed_json_save(
             &payload,
             arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
@@ -339,7 +379,13 @@ impl BundleSession {
             });
         }
         let snapshot = payload
-            .into_snapshot(&program_owner)
+            .into_snapshot(
+                &program_owner,
+                self.runtime_images
+                    .images()
+                    .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
+                    .find(|schema| schema.program_owner().same_program(&program_owner)),
+            )
             .map_err(|message| BundleSessionSaveError::Decode { message })?;
         self.restore_session_snapshot_with_optional_value_validator(snapshot, validator)
     }
@@ -595,6 +641,7 @@ impl BundleSession {
             value_validator.visit_root(snapshot.root.as_ref())?;
             value_validator.visit_product(&restored_executor)?;
             value_validator.visit_view_runtime(&restored_view_runtime)?;
+            value_validator.visit_presentation(&snapshot.presentation)?;
 
             Ok((
                 restored_executor,

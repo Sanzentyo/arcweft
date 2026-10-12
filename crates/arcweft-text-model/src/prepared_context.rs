@@ -42,7 +42,7 @@ pub struct PreparedTextDocumentContext {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PreparedDisplayStageContext {
     ranges: ProjectedTextRangeDomain,
-    frame: LineDisplayStageProjection,
+    frame: crate::frame::snapshot::LineDisplayStageSnapshot,
 }
 
 /// The factory-issued context retained by the actual PreparedTextOwner.
@@ -68,6 +68,8 @@ pub enum PreparedTextContextError {
     DocumentExtentMismatch,
     #[error("dialogue content requires its actual display-stage context")]
     MissingDisplayStage,
+    #[error("prepared display runtime values: {0}")]
+    RuntimeValues(String),
 }
 
 impl PreparedTextDocumentContext {
@@ -96,6 +98,8 @@ impl PreparedDisplayStageContext {
     ) -> Result<Self, PreparedTextContextError> {
         frame.validate()?;
         ranges.validate_texts(&frame.text, actual_prepared_text)?;
+        let frame = crate::frame::snapshot::LineDisplayStageSnapshot::from_live(&frame)
+            .map_err(PreparedTextContextError::RuntimeValues)?;
         Ok(Self { ranges, frame })
     }
 
@@ -105,7 +109,7 @@ impl PreparedDisplayStageContext {
     }
 
     #[must_use]
-    pub const fn frame(&self) -> &LineDisplayStageProjection {
+    pub const fn frame(&self) -> &crate::frame::snapshot::LineDisplayStageSnapshot {
         &self.frame
     }
 
@@ -205,7 +209,7 @@ impl<'de> Deserialize<'de> for PreparedDisplayStageContext {
         #[serde(deny_unknown_fields)]
         struct Wire {
             ranges: ProjectedTextRangeDomain,
-            frame: LineDisplayStageProjection,
+            frame: crate::frame::snapshot::LineDisplayStageSnapshot,
         }
         let wire = Wire::deserialize(deserializer)?;
         wire.frame.validate().map_err(serde::de::Error::custom)?;

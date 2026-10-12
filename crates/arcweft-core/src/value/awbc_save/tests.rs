@@ -22,6 +22,44 @@ use crate::{
 };
 
 #[test]
+fn standalone_snapshot_uses_the_shared_decoder_and_rejects_program_and_affine_leaves() {
+    let mut deep = RuntimeValue::Bool(true);
+    for _ in 0..=super::super::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        deep = RuntimeValue::Tuple(vec![deep]);
+    }
+    assert!(matches!(
+        AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&deep),
+        Err(AwbcRuntimeValueSnapshotError::Nesting(_))
+    ));
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::Bool(true),
+        RuntimeValue::String("retained".to_owned()),
+    ]);
+    let snapshot = AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&value).unwrap();
+    let encoded = serde_json::to_vec(&snapshot).unwrap();
+    let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(decoded.into_unrestricted_standalone_value().unwrap(), value);
+
+    let callable = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
+        state: RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        retained: vec![],
+    });
+    assert!(
+        AwbcRuntimeValueSnapshot::Tuple(vec![callable])
+            .into_unrestricted_standalone_value()
+            .is_err()
+    );
+    let affine = AwbcRuntimeValueSnapshot::from_standalone_value(&RuntimeValue::NeedHandle(
+        crate::tests::reusable_need("need.standalone-snapshot"),
+    ))
+    .unwrap();
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::Tuple(vec![affine]).into_unrestricted_standalone_value(),
+        Err(AwbcRuntimeValueSnapshotError::AffineValue)
+    );
+}
+
+#[test]
 fn unrestricted_restore_rejects_nested_affine_values_before_any_live_constructor() {
     let leaf = AwbcRuntimeValueSnapshot::from_standalone_value(&RuntimeValue::NeedHandle(
         crate::tests::reusable_need("need.inert-preflight"),

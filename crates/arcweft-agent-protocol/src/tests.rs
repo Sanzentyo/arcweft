@@ -33,7 +33,7 @@ use crate::view::{
     AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
 };
 use arcweft_character::id::CharacterId;
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_layout::{
@@ -254,21 +254,10 @@ fn test_line_display_frame() -> LineDisplayFrame {
             display_name: "Alice".to_owned(),
         },
         text_key: TextKey::try_new("text.test.001").expect("text key"),
-        effective: CharacterDialoguePresentationConfig {
-            view: ViewId::try_new("view.dialogue.test").expect("View identity"),
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+        effective: CharacterDialoguePresentationConfig::standalone(
+            ViewId::try_new("view.dialogue.test").expect("View identity"),
+            InlineFailurePolicy::FailLine,
+        ),
         text: "Hello".to_owned(),
         base_styles: Vec::new(),
         style_contributions: vec![RichTextStyleContribution {

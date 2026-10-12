@@ -9,7 +9,6 @@ use arcweft_bundle::standard_view::{
 use arcweft_character::id::CharacterId;
 use arcweft_core::{
     awbc::schema::AwbcProgram,
-    entry::RuntimeValueDigest,
     plan::RuntimeLineId,
     runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId, RuntimePersistentFiberId},
 };
@@ -41,7 +40,7 @@ use arcweft_text_model::{
     DialogueRevealPolicy, LineDisplayFrame, RichTextDocument, RichTextInlineDirection,
     RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 fn test_source_ref() -> ProductSourceRef {
     let source = SourceDocument::try_new(
@@ -423,21 +422,10 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
                 id: CharacterId::try_new("character.narrator").expect("character identity"),
                 display_name: "語り手".to_owned(),
             },
-            CharacterDialoguePresentationConfig {
-                view: arcweft_bundle::standard_view::dialogue_view_id(),
-                style_sheet: None,
-                voice: None,
-                look: None,
-                stage: None,
-                portrait: None,
-                focus: None,
-                cleanup: None,
-                source_locale: None,
-                hooks: Vec::new(),
-                inline_failure: InlineFailurePolicy::FailLine,
-                custom: BTreeMap::new(),
-                config_digest: RuntimeValueDigest::ZERO,
-            },
+            CharacterDialoguePresentationConfig::standalone(
+                arcweft_bundle::standard_view::dialogue_view_id(),
+                InlineFailurePolicy::FailLine,
+            ),
             vec![RichTextStyle::Layout {
                 layout: RichTextLayout {
                     writing_mode: RichTextWritingMode::VerticalRl,

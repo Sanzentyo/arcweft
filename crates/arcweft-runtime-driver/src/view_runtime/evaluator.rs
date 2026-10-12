@@ -229,6 +229,7 @@ struct ViewEvaluator<'a, B> {
     visited: BTreeSet<ViewOccurrenceKey>,
     diagnostics: Vec<BundleViewDiagnostic>,
     program_runtime: &'a ViewProgramRuntimeAuthority,
+    dialogue_schema: Option<&'a arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     pure_backend: &'a mut B,
     staged_event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
@@ -530,6 +531,7 @@ impl BundleViewRuntime {
                 axis_diagnostics
             },
             program_runtime: &self.program_runtime,
+            dialogue_schema: self.dialogue_schema.as_deref(),
             pure_backend,
             staged_event_tokens: BTreeMap::new(),
         };
@@ -1328,7 +1330,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     && let Some(sheet) = self
                         .dialogue_inputs
                         .get(&key.handle)
-                        .and_then(|input| input.frame.effective.style_sheet.as_ref())
+                        .and_then(|input| input.frame.effective.style_sheet())
                 {
                     style_scopes.enter_definition(
                         &[ViewStyleApplicationTarget::Named {

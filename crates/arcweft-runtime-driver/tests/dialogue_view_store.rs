@@ -1,6 +1,5 @@
 use arcweft_character::id::CharacterId;
 use arcweft_core::{
-    entry::RuntimeValueDigest,
     plan::RuntimeLineId,
     runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId, RuntimePersistentFiberId},
 };
@@ -15,7 +14,6 @@ use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
     DialoguePresentationCharacter, LineDisplayFrame, RichTextDocument, RichTextNode,
 };
-use std::collections::BTreeMap;
 
 mod support;
 
@@ -57,21 +55,10 @@ fn runtime_context(view: &str) -> RuntimeLineContext {
             id: CharacterId::try_new("character.narrator").expect("character identity"),
             display_name: "Narrator".to_owned(),
         },
-        CharacterDialoguePresentationConfig {
-            view: arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
-            style_sheet: None,
-            voice: None,
-            look: None,
-            stage: None,
-            portrait: None,
-            focus: None,
-            cleanup: None,
-            source_locale: None,
-            hooks: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            custom: BTreeMap::new(),
-            config_digest: RuntimeValueDigest::ZERO,
-        },
+        CharacterDialoguePresentationConfig::standalone(
+            arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
+            InlineFailurePolicy::FailLine,
+        ),
         Vec::new(),
         Vec::new(),
     )
@@ -285,9 +272,15 @@ fn store_round_trip_does_not_reuse_occurrence_identity() {
             resolved_frame("line.before", "view.MainDialogue", "before"),
         )])
         .expect("initial append applies");
-    let bytes = serde_json::to_vec(&store).expect("snapshot encodes");
-    let mut restored: DialoguePresentationStore =
+    let inert =
+        DialoguePresentationStore::<arcweft_text_model::LineDisplayFrameSnapshot>::from_live(
+            &store, None, None,
+        )
+        .unwrap();
+    let bytes = serde_json::to_vec(&inert).expect("snapshot encodes");
+    let restored: DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> =
         serde_json::from_slice(&bytes).expect("snapshot decodes");
+    let mut restored = restored.into_live(None, None).unwrap();
     restored.validate().expect("restored store validates");
 
     restored
@@ -314,14 +307,20 @@ fn snapshot_with_retained_entries_but_no_active_entry_is_rejected() {
             resolved_frame("line.invalid.active", "view.Dialogue", "retained"),
         )])
         .expect("fixture append applies");
-    let mut value = serde_json::to_value(store).expect("store serializes");
+    let mut value = serde_json::to_value(
+        DialoguePresentationStore::<arcweft_text_model::LineDisplayFrameSnapshot>::from_live(
+            &store, None, None,
+        )
+        .unwrap(),
+    )
+    .expect("store serializes");
     let dialogue = value["presentations"]
         .as_object_mut()
         .and_then(|presentations| presentations.values_mut().next())
         .expect("serialized store contains one dialogue presentation");
     dialogue["active"] = serde_json::Value::Null;
-    let tampered: DialoguePresentationStore =
+    let tampered: DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> =
         serde_json::from_value(value).expect("private snapshot shape still decodes");
 
-    assert!(tampered.validate().is_err());
+    assert!(tampered.into_live(None, None).is_err());
 }

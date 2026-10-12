@@ -32,11 +32,13 @@ pub use content::{
     MaterializedDialogueContent, MaterializedDialogueEffect, MaterializedDialogueMark,
 };
 pub use frame::{
-    CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
-    ResolvedRichTextNode, RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker,
-    RichTextNodeCount, RichTextNodeCountOverflow, RichTextNodeIndex, RichTextNodeIndexOverflow,
-    RichTextNodeRange, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
-    RichTextTextRunRange, RichTextTextSource,
+    CharacterDialoguePresentationConfig, CharacterDialoguePresentationConfigSnapshot,
+    DialoguePresentationCharacter, InlineTextFailureSnapshot, LineDisplayFrame,
+    LineDisplayFrameSnapshot, LineDisplayStageSnapshot, ResolvedRichTextNode,
+    RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker, RichTextNodeCount,
+    RichTextNodeCountOverflow, RichTextNodeIndex, RichTextNodeIndexOverflow, RichTextNodeRange,
+    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextRunRange,
+    RichTextTextSource,
 };
 pub use playback::{
     LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd,

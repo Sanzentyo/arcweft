@@ -314,7 +314,48 @@ impl AwbcRuntimeValueSnapshot {
             }
             Ok(())
         })?;
-        self.into_live_with_owner(owner)
+        self.into_live_with_owner(Some(owner))
+    }
+
+    /// Captures copyable standalone data. Program-owned descendants require
+    /// the explicit executable entry point and cannot acquire a guessed owner.
+    pub fn from_unrestricted_standalone_value(
+        value: &RuntimeValue,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
+        if !value.ownership().permits_copy() {
+            return Err(AwbcRuntimeValueSnapshotError::AffineValue);
+        }
+        Self::from_live_with_owner(value, None)
+    }
+
+    /// Restores context-free copyable data through the same exhaustive graph
+    /// decoder, rejecting affine and program-owned descendants before construction.
+    pub fn into_unrestricted_standalone_value(
+        self,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.visit_graph(0, &mut |value| {
+            match value {
+                Self::NeedHandle(_) => return Err(AwbcRuntimeValueSnapshotError::AffineValue),
+                Self::Opaque(value) if !value.value_class.intrinsic_ownership().permits_copy() => {
+                    return Err(AwbcRuntimeValueSnapshotError::AffineValue);
+                }
+                Self::NominalRecord(_)
+                | Self::Callable(_)
+                | Self::Variant {
+                    owner: super::RuntimeVariantIdentity::Nominal { .. },
+                    ..
+                }
+                | Self::Agent(AwbcRuntimeAgentSnapshot::DataShape { .. }) => {
+                    return Err(AwbcRuntimeValueSnapshotError::new(
+                        "program-owned values require a program-bound snapshot",
+                    ));
+                }
+                _ => {}
+            }
+            Ok(())
+        })?;
+        self.into_live_with_owner(None)
     }
 
     pub(crate) fn from_opaque_for_program(
@@ -372,7 +413,7 @@ impl AwbcRuntimeValueSnapshot {
                 "rollback image does not contain an iterator",
             ));
         };
-        Self::iterator_into_live(iterator, owner)
+        Self::iterator_into_live(iterator, Some(owner))
     }
 
     fn from_live_with_owner(
@@ -497,12 +538,12 @@ impl AwbcRuntimeValueSnapshot {
         program_owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         self.visit_graph(0, &mut |_| Ok(()))?;
-        self.into_live_with_owner(program_owner)
+        self.into_live_with_owner(Some(program_owner))
     }
 
     fn into_live_with_owner(
         self,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         Ok(match self {
             Self::Unit => RuntimeValue::Unit,
@@ -515,7 +556,13 @@ impl AwbcRuntimeValueSnapshot {
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
-            Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live(program_owner)?),
+            Self::NeedHandle(value) => {
+                RuntimeValue::NeedHandle(value.into_live(program_owner.ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "Need values require a program-bound snapshot",
+                    )
+                })?)?)
+            }
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
             Self::Progress { ratio, label } => {
@@ -571,7 +618,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn variant_into_live(
         self,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let Self::Variant {
             owner,
@@ -587,7 +634,13 @@ impl AwbcRuntimeValueSnapshot {
             semantic_identity, ..
         } = &owner
         {
-            let authority = program_owner.types();
+            let authority = program_owner
+                .ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "nominal values require a program-bound snapshot",
+                    )
+                })?
+                .types();
             authority
                 .require_variant_snapshot_header(
                     *semantic_identity,
@@ -662,7 +715,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn iterator_into_live(
         value: AwbcRuntimeIteratorSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeIteratorSnapshot::Values { items } => RuntimeIterator::Values {
@@ -726,7 +779,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn sequence_into_live(
         value: AwbcRuntimeSeqSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeSeq, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeSeqSnapshot::Values(values) => RuntimeSeq::Values(
@@ -800,9 +853,15 @@ impl AwbcRuntimeValueSnapshot {
 
     fn nominal_into_live(
         value: AwbcRuntimeNominalRecordSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeNominalRecordValue, AwbcRuntimeValueSnapshotError> {
-        let authority = program_owner.types();
+        let authority = program_owner
+            .ok_or_else(|| {
+                AwbcRuntimeValueSnapshotError::new(
+                    "nominal values require a program-bound snapshot",
+                )
+            })?
+            .types();
         authority
             .require_nominal_record_snapshot_header(
                 value.semantic_identity,
@@ -851,7 +910,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn opaque_into_live(
         value: AwbcRuntimeOpaqueSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let owner = RuntimeOpaqueTypeOwner::exact_with(
             value.producer,
@@ -890,7 +949,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn reduction_into_live(
         value: AwbcRuntimeReductionSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeReductionValue, AwbcRuntimeValueSnapshotError> {
         let commands = value
             .commands
@@ -958,7 +1017,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn agent_into_live(
         value: AwbcRuntimeAgentSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeAgentValue, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeAgentSnapshot::ActionTarget(value) => RuntimeAgentValue::ActionTarget(value),
@@ -984,6 +1043,11 @@ impl AwbcRuntimeValueSnapshot {
                 shape_type,
                 value_type,
             } => {
+                let program_owner = program_owner.ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "DataShape values require a program-bound snapshot",
+                    )
+                })?;
                 let shape = super::RuntimeDataShape::bind(program_owner.clone(), shape_type)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
                 shape
@@ -1043,7 +1107,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn predicate_into_live(
         value: AwbcRuntimeAgentPredicateSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeAgentPredicate, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeAgentPredicateSnapshot::Compare { probe, op, value } => {
@@ -1113,15 +1177,25 @@ impl AwbcRuntimeValueSnapshot {
 
     fn callable_into_live(
         value: AwbcRuntimeCallableSnapshot,
-        program_owner: &RuntimeProgramOwner,
+        program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeCallableValue, AwbcRuntimeValueSnapshotError> {
         let retained = value
             .retained
             .into_iter()
             .map(|value| value.into_live_with_owner(program_owner))
             .collect::<Result<Vec<_>, _>>()?;
-        RuntimeCallableValue::try_new(program_owner.clone(), value.state, retained)
-            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
+        RuntimeCallableValue::try_new(
+            program_owner
+                .ok_or_else(|| {
+                    AwbcRuntimeValueSnapshotError::new(
+                        "callable values require a program-bound snapshot",
+                    )
+                })?
+                .clone(),
+            value.state,
+            retained,
+        )
+        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 }
 
