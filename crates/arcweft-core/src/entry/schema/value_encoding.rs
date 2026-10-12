@@ -11,7 +11,7 @@ use crate::value::{
 
 use super::{
     CanonicalSink, CanonicalWriter, RuntimeSchemaChoiceMismatch, RuntimeSchemaError,
-    value_budget::ValueBudget,
+    value_budget::{ValidationWork, ValueBudget},
 };
 
 pub(crate) enum ValueAdmission<C, A> {
@@ -31,6 +31,11 @@ pub(crate) trait ValueValidation {
         depth: usize,
     ) -> Result<(), RuntimeSchemaError>;
     fn alternative(&mut self, depth: usize) -> Result<(), RuntimeSchemaError>;
+    /// Logical nodes embedded in predicate or dense storage have no expected
+    /// child type, but still consume a snapshot resource allowance.
+    fn embedded_node(&mut self, _depth: usize) -> Result<(), RuntimeSchemaError> {
+        Ok(())
+    }
     fn is_admitted(expected: &Self::Expected) -> bool;
     fn admitted_children() -> Self::Children;
 
@@ -135,6 +140,45 @@ fn validate_view_without_digest<V: ValueValidation>(
     expected: V::Expected,
     encoding: ValueEncoding,
 ) -> Result<(), RuntimeSchemaError> {
+    validate_root_without_digest(
+        Work::Value(value, 0, expected, None),
+        limits,
+        validation,
+        encoding,
+    )
+}
+
+pub(crate) fn validate_snapshot_opaque(
+    value: &crate::value::RuntimeOpaqueValue,
+    limits: super::RuntimeSchemaLimits,
+) -> Result<(), RuntimeSchemaError> {
+    validate_view_without_digest(
+        RuntimeValueView::Opaque(value),
+        limits,
+        &mut NoSchemaValidation::snapshot_resources(limits),
+        (),
+        ValueEncoding::Snapshot,
+    )
+}
+
+pub(crate) fn validate_snapshot_iterator(
+    value: &crate::value::RuntimeIterator,
+    limits: super::RuntimeSchemaLimits,
+) -> Result<(), RuntimeSchemaError> {
+    validate_root_without_digest(
+        Work::Iterator(value, 0, Rc::new(())),
+        limits,
+        &mut NoSchemaValidation::snapshot_resources(limits),
+        ValueEncoding::Snapshot,
+    )
+}
+
+fn validate_root_without_digest<V: ValueValidation>(
+    root: Work<'_, V::Expected, V::Children, V::Alternatives>,
+    limits: super::RuntimeSchemaLimits,
+    validation: &mut V,
+    encoding: ValueEncoding,
+) -> Result<(), RuntimeSchemaError> {
     let mut budget = ValueBudget::new(limits);
     let mut sink = super::CanonicalCountingSink::default();
     let mut writer = CanonicalWriter {
@@ -146,15 +190,7 @@ fn validate_view_without_digest<V: ValueValidation>(
         },
         max_string_bytes: Some(limits.max_string_bytes),
     };
-    visit_with_encoding(
-        value,
-        0,
-        &mut writer,
-        Some(&mut budget),
-        validation,
-        expected,
-        encoding,
-    )
+    visit_work(root, &mut writer, Some(&mut budget), validation, encoding)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -165,18 +201,45 @@ enum ValueEncoding {
     Snapshot,
 }
 
-pub(crate) struct NoSchemaValidation;
+/// Borrowed shape atoms from the original matrix/tensor storage.
+#[derive(Clone, Copy)]
+struct DenseNumericHeader<'a> {
+    ty: crate::math::RuntimeDenseNumericType,
+    dimensions: &'a [usize],
+}
+
+#[derive(Default)]
+pub(crate) struct NoSchemaValidation {
+    resources: Option<ValidationWork>,
+    depth: usize,
+}
+
+impl NoSchemaValidation {
+    pub(crate) fn snapshot_resources(limits: super::RuntimeSchemaLimits) -> Self {
+        Self {
+            resources: Some(ValidationWork::new(limits)),
+            depth: 0,
+        }
+    }
+}
 
 impl ValueValidation for NoSchemaValidation {
     type Expected = ();
     type Children = ();
     type Alternatives = std::iter::Empty<()>;
 
-    fn preflight(&mut self, (): &(), _: usize) -> Result<(), RuntimeSchemaError> {
+    fn preflight(&mut self, (): &(), depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.depth = depth;
+        self.alternative(depth)
+    }
+    fn alternative(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+        if let Some(resources) = &mut self.resources {
+            resources.charge(depth)?;
+        }
         Ok(())
     }
-    fn alternative(&mut self, _: usize) -> Result<(), RuntimeSchemaError> {
-        Ok(())
+    fn embedded_node(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.alternative(depth)
     }
     fn is_admitted((): &()) -> bool {
         true
@@ -186,8 +249,17 @@ impl ValueValidation for NoSchemaValidation {
     fn enter(
         &mut self,
         (): (),
-        _: RuntimeValueView<'_>,
+        value: RuntimeValueView<'_>,
     ) -> Result<ValueAdmission<(), Self::Alternatives>, RuntimeSchemaError> {
+        if let Some(resources) = &mut self.resources {
+            let policy = ValueBudget::new(resources.limits());
+            if let Some((_, binding)) = value.construction_instantiation() {
+                binding.validate_resource_limits(self.depth + 1, &policy, resources)?;
+            }
+            if let RuntimeValueView::Sequence(sequence) = value {
+                sequence.validate_storage_metadata(self.depth, &policy, resources)?;
+            }
+        }
         Ok(ValueAdmission::Admitted)
     }
     fn child(&mut self, (): &(), _: usize) -> Result<(), RuntimeSchemaError> {
@@ -317,6 +389,7 @@ enum Work<'a, E, C, A: Iterator<Item = E>> {
     PopPath,
     Value(RuntimeValueView<'a>, usize, E, Option<PathStep<'a>>),
     AdmittedValue(RuntimeValueView<'a>, usize),
+    Iterator(&'a crate::value::RuntimeIterator, usize, Rc<C>),
     ChoiceNext(ChoiceVisit<'a, A>),
     ChoiceComplete(ChoiceVisit<'a, A>, u32),
     Tuple(RuntimeTupleView<'a>, usize, usize, Rc<C>),
@@ -364,13 +437,29 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
     root: RuntimeValueView<'_>,
     depth: usize,
     writer: &mut CanonicalWriter<'_, S>,
-    mut budget: Option<&mut ValueBudget>,
+    budget: Option<&mut ValueBudget>,
     validation: &mut V,
     expected: V::Expected,
     encoding: ValueEncoding,
 ) -> Result<(), RuntimeSchemaError> {
+    visit_work(
+        Work::Value(root, depth, expected, None),
+        writer,
+        budget,
+        validation,
+        encoding,
+    )
+}
+
+fn visit_work<S: CanonicalSink + ?Sized, V: ValueValidation>(
+    root: Work<'_, V::Expected, V::Children, V::Alternatives>,
+    writer: &mut CanonicalWriter<'_, S>,
+    mut budget: Option<&mut ValueBudget>,
+    validation: &mut V,
+    encoding: ValueEncoding,
+) -> Result<(), RuntimeSchemaError> {
     let mut path = ValuePath::default();
-    let mut work = vec![Work::Value(root, depth, expected, None)];
+    let mut work = vec![root];
     let mut mode = VisitMode::Output;
     let mut active_choices = Vec::new();
     while let Some(next) = work.pop() {
@@ -392,6 +481,21 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
             match next {
                 Work::PopPath => {
                     path.0.pop();
+                }
+                Work::Iterator(iterator, depth, children) => {
+                    if let Some(budget) = budget.as_deref_mut() {
+                        budget.node(depth)?;
+                    }
+                    validation.embedded_node(depth)?;
+                    iterator_prefix(
+                        iterator,
+                        depth,
+                        writer,
+                        budget.as_deref(),
+                        &mut work,
+                        validation,
+                        children,
+                    )?;
                 }
                 Work::ChoiceNext(mut choice) => {
                     if let Some((index, expected)) = choice.alternatives.next() {
@@ -557,6 +661,7 @@ fn visit_with_encoding<S: CanonicalSink + ?Sized, V: ValueValidation>(
                     if let Some(budget) = budget.as_deref_mut() {
                         budget.node(depth)?;
                     }
+                    validation.embedded_node(depth)?;
                     predicate_prefix(
                         predicate,
                         depth,
@@ -710,8 +815,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 ValueEncoding::Canonical | ValueEncoding::Literal => {
                     value.persistence() == RuntimeOpaquePersistence::SnapshotOnly || affine
                 }
-                ValueEncoding::Snapshot => affine,
-                ValueEncoding::Live => false,
+                ValueEncoding::Snapshot | ValueEncoding::Live => false,
             };
             if rejected {
                 return Err(RuntimeSchemaError::Encoding {
@@ -719,10 +823,9 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                         ValueEncoding::Canonical | ValueEncoding::Literal => {
                             "opaque value class/persistence is not constant-admissible"
                         }
-                        ValueEncoding::Snapshot => {
-                            "opaque affine handle is not snapshot-admissible"
+                        ValueEncoding::Snapshot | ValueEncoding::Live => {
+                            "opaque value class/persistence is not admissible"
                         }
-                        ValueEncoding::Live => "opaque value class/persistence is not admissible",
                     }
                     .to_owned(),
                 });
@@ -790,8 +893,12 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF32(matrix)) => {
             writer.dense_numeric(
-                crate::math::RuntimeDenseNumericType::Matrix(crate::math::RuntimeFloatWidth::F32),
-                &[matrix.rows(), matrix.cols()],
+                DenseNumericHeader {
+                    ty: crate::math::RuntimeDenseNumericType::Matrix(
+                        crate::math::RuntimeFloatWidth::F32,
+                    ),
+                    dimensions: &[matrix.rows(), matrix.cols()],
+                },
                 matrix
                     .values()
                     .iter()
@@ -800,12 +907,17 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget,
                 depth,
                 encoding,
+                validation,
             )?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::MatrixF64(matrix)) => {
             writer.dense_numeric(
-                crate::math::RuntimeDenseNumericType::Matrix(crate::math::RuntimeFloatWidth::F64),
-                &[matrix.rows(), matrix.cols()],
+                DenseNumericHeader {
+                    ty: crate::math::RuntimeDenseNumericType::Matrix(
+                        crate::math::RuntimeFloatWidth::F64,
+                    ),
+                    dimensions: &[matrix.rows(), matrix.cols()],
+                },
                 matrix
                     .values()
                     .iter()
@@ -814,12 +926,17 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget,
                 depth,
                 encoding,
+                validation,
             )?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF32(tensor)) => {
             writer.dense_numeric(
-                crate::math::RuntimeDenseNumericType::Tensor(crate::math::RuntimeFloatWidth::F32),
-                tensor.shape().dims(),
+                DenseNumericHeader {
+                    ty: crate::math::RuntimeDenseNumericType::Tensor(
+                        crate::math::RuntimeFloatWidth::F32,
+                    ),
+                    dimensions: tensor.shape().dims(),
+                },
                 tensor
                     .values()
                     .iter()
@@ -828,12 +945,17 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget,
                 depth,
                 encoding,
+                validation,
             )?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::TensorF64(tensor)) => {
             writer.dense_numeric(
-                crate::math::RuntimeDenseNumericType::Tensor(crate::math::RuntimeFloatWidth::F64),
-                tensor.shape().dims(),
+                DenseNumericHeader {
+                    ty: crate::math::RuntimeDenseNumericType::Tensor(
+                        crate::math::RuntimeFloatWidth::F64,
+                    ),
+                    dimensions: tensor.shape().dims(),
+                },
                 tensor
                     .values()
                     .iter()
@@ -842,6 +964,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 budget,
                 depth,
                 encoding,
+                validation,
             )?;
         }
         RuntimeValueView::RuntimeOnly(RuntimeValue::NeedHandle(handle))
@@ -885,32 +1008,18 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         {
             writer.runtime_range(range)?;
         }
-        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
-            crate::value::RuntimeIterator::Range(range),
-        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
-            writer.runtime_range_iterator(range)?;
-        }
-        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
-            crate::value::RuntimeIterator::Values { items },
-        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
-            writer.u8(24)?;
-            writer.len(items.len())?;
-            if let Some(budget) = budget {
-                budget.collection(items.len())?;
-            }
-            work.push(Work::DequeValues(items.iter(), 0, depth + 1, children));
-        }
-        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(
-            crate::value::RuntimeIterator::Witness(witness),
-        )) if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) => {
-            writer.u8(25)?;
-            writer.len(witness.next_method().0)?;
-            work.push(Work::Value(
-                witness.state().view(),
-                depth + 1,
-                validation.child(&children, 0)?,
-                None,
-            ));
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Iterator(iterator))
+            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+        {
+            iterator_prefix(
+                iterator,
+                depth,
+                writer,
+                budget.as_deref(),
+                work,
+                validation,
+                children,
+            )?;
         }
         RuntimeValueView::RuntimeOnly(value)
             if matches!(encoding, ValueEncoding::Literal | ValueEncoding::Live) =>
@@ -928,6 +1037,39 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             return Err(RuntimeSchemaError::Encoding {
                 message: "runtime-only value has no replay/save encoding".to_owned(),
             });
+        }
+    }
+    Ok(())
+}
+
+fn iterator_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
+    iterator: &'a crate::value::RuntimeIterator,
+    depth: usize,
+    writer: &mut CanonicalWriter<'_, S>,
+    budget: Option<&ValueBudget>,
+    work: &mut Vec<Work<'a, V::Expected, V::Children, V::Alternatives>>,
+    validation: &mut V,
+    children: Rc<V::Children>,
+) -> Result<(), RuntimeSchemaError> {
+    match iterator {
+        crate::value::RuntimeIterator::Range(range) => writer.runtime_range_iterator(range)?,
+        crate::value::RuntimeIterator::Values { items } => {
+            writer.u8(24)?;
+            writer.len(items.len())?;
+            if let Some(budget) = budget {
+                budget.collection(items.len())?;
+            }
+            work.push(Work::DequeValues(items.iter(), 0, depth + 1, children));
+        }
+        crate::value::RuntimeIterator::Witness(witness) => {
+            writer.u8(25)?;
+            writer.len(witness.next_method().0)?;
+            work.push(Work::Value(
+                witness.state().view(),
+                depth + 1,
+                validation.child(&children, 0)?,
+                None,
+            ));
         }
     }
     Ok(())
@@ -990,6 +1132,7 @@ fn agent_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         RuntimeAgentValue::Predicate(predicate) => {
             writer.u8(6)?;
             // The root predicate is the Agent value's already charged node.
+            validation.embedded_node(depth)?;
             predicate_prefix(predicate, depth, writer, budget, work, validation, children)?;
         }
         RuntimeAgentValue::ViewportPoint { x, y } => {
@@ -1172,15 +1315,16 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
         }
     }
 
-    fn dense_numeric(
+    fn dense_numeric<V: ValueValidation>(
         &mut self,
-        ty: crate::math::RuntimeDenseNumericType,
-        dimensions: &[usize],
+        header: DenseNumericHeader<'_>,
         values: impl ExactSizeIterator<Item = crate::value::RuntimeScalarView<'static>>,
         mut budget: Option<&mut ValueBudget>,
         depth: usize,
         encoding: ValueEncoding,
+        validation: &mut V,
     ) -> Result<(), RuntimeSchemaError> {
+        let DenseNumericHeader { ty, dimensions } = header;
         if let Some(budget) = budget.as_deref() {
             budget.collection(dimensions.len())?;
             budget.collection(values.len())?;
@@ -1196,6 +1340,7 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
             if let Some(budget) = budget.as_deref_mut() {
                 budget.node(depth + 1)?;
             }
+            validation.embedded_node(depth + 1)?;
             self.scalar_for_encoding(value, encoding)?;
         }
         Ok(())

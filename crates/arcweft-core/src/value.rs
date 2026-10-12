@@ -1261,7 +1261,7 @@ impl RuntimeValue {
         crate::entry::schema::value_encoding::validate_and_hash(
             self,
             limits,
-            &mut crate::entry::schema::value_encoding::NoSchemaValidation,
+            &mut crate::entry::schema::value_encoding::NoSchemaValidation::default(),
             (),
         )
     }

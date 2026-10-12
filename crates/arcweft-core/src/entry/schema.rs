@@ -569,7 +569,7 @@ pub(crate) fn validate_runtime_snapshot_value(
     value: &RuntimeValue,
     limits: RuntimeSchemaLimits,
 ) -> Result<(), RuntimeSchemaError> {
-    let mut validation = value_encoding::NoSchemaValidation;
+    let mut validation = value_encoding::NoSchemaValidation::snapshot_resources(limits);
     value_encoding::validate_snapshot(value, limits, &mut validation, ())
 }
 
@@ -723,7 +723,7 @@ fn visit_runtime_value_view<S: CanonicalSink + ?Sized>(
         0,
         &mut visitor,
         None,
-        &mut value_encoding::NoSchemaValidation,
+        &mut value_encoding::NoSchemaValidation::default(),
         (),
     )
 }

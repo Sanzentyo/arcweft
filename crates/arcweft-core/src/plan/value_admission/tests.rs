@@ -366,16 +366,21 @@ fn program_value_admission_distinguishes_live_snapshot_and_canonical_opaque_rule
                     .is_err()
             );
             assert!(types.accepts_value(semantic(2), &value, limits).is_err());
-            if value_class == RuntimeOpaqueValueClass::Plain {
+            types
+                .validate_snapshot_value(semantic(2), &value, limits)
+                .unwrap();
+            assert!(
                 types
-                    .validate_snapshot_value(semantic(2), &value, limits)
-                    .unwrap();
-            } else {
-                assert!(
-                    types
-                        .validate_snapshot_value(semantic(2), &value, limits)
-                        .is_err()
-                );
+                    .validate_snapshot_value(semantic(2), &invalid, limits)
+                    .is_err()
+            );
+            if matches!(value_class, RuntimeOpaqueValueClass::AffineHandle(_)) {
+                assert!(matches!(
+                    crate::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                        &value
+                    ),
+                    Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+                ));
             }
         }
     }

@@ -99,6 +99,16 @@ immutable instantiation 上で同じ collection・string・depth・validation-wo
 予算を検証する。metadata は logical payload node を増やさず、元の型を照合し
 effect row を複製する前に共有 work allowance を消費する。
 
+Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
+を traversal し、depth・node・collection・string・validation-work と、その
+grammar の encoded-byte 上限を検証する。program-bound capture は選択された
+`RuntimeSchemaLimits` を受け取り、既定入口は engine の既存 policy を使う。
+iterator／opaque を直接保存する入口も同じ grammar を使う。空の columnar
+storage の metadata と宣言 effect 解も共有 work allowance を消費する。
+owned snapshot は affine opaque の custody を保持し、unrestricted capture は
+複製前にその所有権を拒否する。Need descriptor 全体や frame／session の総予算は
+各 owner が接続する検証境界であり、値の grammar の byte 計上とは区別する。
+
 Iterator witness の live receiver は original executable lease を保持する。
 `next` の method identity、唯一の mutable receiver parameter、builtin Option の
 item 型をその program の型・signature・frame layout から読み、receiver state と

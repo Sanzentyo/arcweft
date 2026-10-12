@@ -12,6 +12,39 @@ use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
 use serde::{Deserialize, Deserializer, Serialize, de};
 
+impl RuntimeSeq {
+    /// Validates physical column metadata that also exists without logical rows.
+    /// Payload nodes remain the responsibility of the borrowed value visitor.
+    pub(crate) fn validate_storage_metadata(
+        &self,
+        depth: usize,
+        budget: &crate::entry::schema::value_budget::ValueBudget,
+        work: &mut crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        work.charge(depth)?;
+        budget.collection(self.len())?;
+        match self {
+            Self::TupleColumns(columns) => {
+                budget.collection(columns.columns().len())?;
+                for column in columns.columns() {
+                    column.validate_storage_metadata(depth + 1, budget, work)?;
+                }
+            }
+            Self::RecordColumns(records) => {
+                budget.collection(records.fields().len())?;
+                for field in records.fields() {
+                    budget.string(field.name())?;
+                    field
+                        .values()
+                        .validate_storage_metadata(depth + 1, budget, work)?;
+                }
+            }
+            Self::Values(_) | Self::Dense(_) => {}
+        }
+        Ok(())
+    }
+}
+
 /// Columnar storage for a sequence of homogeneous tuple values.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TupleSeq {

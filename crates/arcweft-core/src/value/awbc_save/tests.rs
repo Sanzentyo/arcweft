@@ -79,6 +79,225 @@ fn dense_string_graph_fixture() -> (AwbcRuntimeValueSnapshot, RuntimeSchemaLimit
 }
 
 #[test]
+fn capture_checks_borrowed_dense_resources_before_projection_for_both_program_owners() {
+    let value =
+        RuntimeValue::MatrixF32(crate::math::DenseMatrixF32::new(1, 2, vec![1.25, 2.5]).unwrap());
+    // Tag, numeric type, rank, two dimensions, length and two tagged f32s.
+    let exact = RuntimeSchemaLimits {
+        max_depth: 1,
+        max_nodes: 3,
+        max_sequence_items: 2,
+        max_validation_work: 3,
+        max_encoded_bytes: 17,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    for owner in owners() {
+        let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+            &value, &owner, exact,
+        )
+        .unwrap();
+        let encoded = serde_json::to_vec(&image).unwrap();
+        let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(
+            decoded.into_runtime_value_for_program(&owner).unwrap(),
+            value
+        );
+        for limits in [
+            RuntimeSchemaLimits {
+                max_depth: 0,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_sequence_items: 1,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_validation_work: 2,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_encoded_bytes: 16,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                    &value, &owner, limits,
+                ),
+                Err(AwbcRuntimeValueSnapshotError::Resource(_))
+            ));
+        }
+    }
+}
+
+#[test]
+fn owned_capture_preserves_affine_opaque_custody_and_copyable_capture_rejects_it() {
+    let issued = crate::tests::program_custody::issued_program_handle();
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&issued.plan));
+    let image =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&issued.value, &owner).unwrap();
+    assert_eq!(
+        image.affine_line_handle_tokens().unwrap(),
+        vec![issued.token.clone()]
+    );
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
+            &issued.value,
+            &owner,
+        ),
+        Err(AwbcRuntimeValueSnapshotError::AffineValue)
+    );
+    let restored = image.into_runtime_value_for_program(&owner).unwrap();
+    assert_eq!(
+        restored.affine_line_handles().unwrap()[0].token(),
+        &issued.token
+    );
+}
+
+#[test]
+fn capture_bounds_empty_columns_and_predicates_without_materializing_rows() {
+    let columns = RuntimeValue::Seq(RuntimeSeq::TupleColumns(
+        TupleSeq::new(
+            0,
+            vec![RuntimeSeq::TupleColumns(
+                TupleSeq::new(0, vec![RuntimeSeq::Values(vec![])]).unwrap(),
+            )],
+        )
+        .unwrap(),
+    ));
+    let predicate = RuntimeValue::Agent(RuntimeAgentValue::Predicate(RuntimeAgentPredicate::Not {
+        predicate: Box::new(RuntimeAgentPredicate::DiagnosticsHasError),
+    }));
+    for owner in owners() {
+        for (value, depth, nodes, work) in [(&columns, 2, 1, 4), (&predicate, 1, 2, 3)] {
+            let limits = RuntimeSchemaLimits {
+                max_depth: depth,
+                max_nodes: nodes,
+                max_validation_work: work,
+                ..RuntimeSchemaLimits::engine_default()
+            };
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                value, &owner, limits,
+            )
+            .unwrap();
+            for limited in [
+                RuntimeSchemaLimits {
+                    max_depth: depth - 1,
+                    ..limits
+                },
+                RuntimeSchemaLimits {
+                    max_validation_work: work - 1,
+                    ..limits
+                },
+            ] {
+                assert!(matches!(
+                    AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                        value, &owner, limited,
+                    ),
+                    Err(AwbcRuntimeValueSnapshotError::Resource(_))
+                ));
+            }
+        }
+    }
+}
+
+#[test]
+fn capture_checks_retained_effect_metadata_before_program_type_matching() {
+    let binding: crate::program_types::RuntimeFunctionEffectInstantiation =
+        serde_json::from_value(serde_json::json!({
+            "context": semantic(250),
+            "effects": [["log.write", "metric.write"]]
+        }))
+        .unwrap();
+    let candidate = RuntimeValue::NominalRecord(
+        RuntimeNominalRecordValue::new(
+            RuntimeNominalTypeId::try_new("n.T").unwrap(),
+            semantic(250),
+            TypeLayoutHash::from_bytes([0; 32]),
+            vec![],
+        )
+        .with_type_instantiation(Some(Arc::new(binding))),
+    );
+    let exact = RuntimeSchemaLimits {
+        max_nodes: 1,
+        max_depth: 3,
+        max_sequence_items: 2,
+        max_string_bytes: 12,
+        max_validation_work: 5,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    crate::entry::schema::validate_runtime_snapshot_value(&candidate, exact).unwrap();
+    for owner in owners() {
+        for limits in [
+            RuntimeSchemaLimits {
+                max_depth: 2,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_sequence_items: 1,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_string_bytes: 11,
+                ..exact
+            },
+            RuntimeSchemaLimits {
+                max_validation_work: 4,
+                ..exact
+            },
+        ] {
+            assert!(matches!(
+                AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                    &candidate, &owner, limits,
+                ),
+                Err(AwbcRuntimeValueSnapshotError::Resource(_))
+            ));
+        }
+        // Resource admission alone cannot publish this unknown nominal header.
+        assert!(
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program_with_limits(
+                &candidate, &owner, exact,
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn direct_iterator_capture_rejects_oversized_descendants_and_preserves_remainder() {
+    let limits = RuntimeSchemaLimits::engine_default();
+    let oversized = RuntimeIterator::Values {
+        items: VecDeque::from([RuntimeValue::String(
+            "x".repeat(usize::try_from(limits.max_string_bytes).unwrap() + 1),
+        )]),
+    };
+    for owner in owners() {
+        assert!(matches!(
+            AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&oversized, &owner),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "string_bytes"
+                }
+            ))
+        ));
+        let mut iterator = RuntimeIterator::Values {
+            items: VecDeque::from([RuntimeValue::Bool(false), RuntimeValue::Bool(true)]),
+        };
+        assert_eq!(iterator.next(), Some(RuntimeValue::Bool(false)));
+        let image =
+            AwbcRuntimeValueSnapshot::from_runtime_iterator_for_program(&iterator, &owner).unwrap();
+        let mut restored = image.into_runtime_iterator_for_program(&owner).unwrap();
+        assert_eq!(restored.next(), Some(RuntimeValue::Bool(true)));
+        assert_eq!(restored.next(), None);
+        assert_eq!(iterator.next(), Some(RuntimeValue::Bool(true)));
+    }
+}
+
+#[test]
 fn inert_graph_limits_cover_dense_columnar_predicate_and_retained_values_before_restore() {
     let defaults = RuntimeSchemaLimits::engine_default();
     let (dense, exact) = dense_string_graph_fixture();

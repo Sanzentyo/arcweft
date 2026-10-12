@@ -347,6 +347,10 @@ impl AwbcRuntimeValueSnapshot {
         if !value.ownership().permits_copy() {
             return Err(AwbcRuntimeValueSnapshotError::AffineValue);
         }
+        crate::entry::schema::validate_runtime_snapshot_value(
+            value,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
         Self::from_live_with_owner(value, None)
     }
 
@@ -383,6 +387,10 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeOpaqueValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        crate::entry::schema::value_encoding::validate_snapshot_opaque(
+            value,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
         Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
     }
 
@@ -392,6 +400,10 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeValue,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
+        crate::entry::schema::validate_runtime_snapshot_value(
+            value,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
         Self::from_live_with_owner(value, None)
     }
 
@@ -402,7 +414,22 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::from_runtime_value_for_program_with_limits(
+            value,
+            owner,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Checks the borrowed snapshot value grammar against the selected resource
+    /// policy before cloning any retained payload into the inert projection.
+    pub fn from_runtime_value_for_program_with_limits(
+        value: &RuntimeValue,
+        owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
+        crate::entry::schema::validate_runtime_snapshot_value(value, limits)?;
         Self::from_live_with_owner(value, Some(owner))
     }
 
@@ -415,13 +442,17 @@ impl AwbcRuntimeValueSnapshot {
         if !value.ownership().permits_copy() {
             return Err(AwbcRuntimeValueSnapshotError::AffineValue);
         }
-        Self::from_live_with_owner(value, Some(owner))
+        Self::from_runtime_value_for_program(value, owner)
     }
 
     pub(crate) fn from_runtime_iterator_for_program(
         value: &RuntimeIterator,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        crate::entry::schema::value_encoding::validate_snapshot_iterator(
+            value,
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )?;
         Self::iterator_from_live(value, Some(owner)).map(Self::Iterator)
     }
 
