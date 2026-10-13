@@ -1,6 +1,6 @@
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_compiler::source::compile_source;
-use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, AwbcFiberTerminalSnapshot};
+use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, FiberTerminalValue};
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcSignedIntKind};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
@@ -520,7 +520,7 @@ fn awfb_session_save_restores_the_generic_prefix_into_its_pinned_program() {
         .expect("completed session snapshot exports");
     assert!(matches!(
         completed.executor.state.fiber.terminal,
-        Some(AwbcFiberTerminalSnapshot::Returned(None))
+        Some(FiberTerminalValue::ReturnedTransferred)
     ));
     assert_eq!(
         completed.executor.state.fiber.return_summary.as_deref(),

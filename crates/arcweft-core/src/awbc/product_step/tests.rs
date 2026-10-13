@@ -448,9 +448,9 @@ fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
 
     let mut forged = saved;
     forged.fiber.status = FiberStatus::Returned;
-    forged.fiber.terminal = Some(crate::awbc::fiber::AwbcFiberTerminalSnapshot::Returned(
-        Some(crate::value::AwbcRuntimeValueSnapshot::Bool(true)),
-    ));
+    forged.fiber.terminal = Some(crate::awbc::fiber::FiberTerminalValue::Returned(Some(
+        crate::value::AwbcRuntimeValueSnapshot::Bool(true),
+    )));
     let (executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
     assert_eq!(
         executor.fiber.root,
@@ -4102,7 +4102,7 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(None))
+        Some(FiberTerminalValue::ReturnedTransferred)
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),
@@ -4161,7 +4161,7 @@ fn ready_result_error_payload_is_resumed_without_trapping() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(None))
+        Some(FiberTerminalValue::ReturnedTransferred)
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),
@@ -4320,7 +4320,7 @@ fn direct_need_uses_the_first_terminal_sequence() {
 
     assert_eq!(
         executor.fiber.terminal,
-        Some(FiberTerminalValue::Returned(None))
+        Some(FiberTerminalValue::ReturnedTransferred)
     );
     assert_eq!(
         executor.fiber.return_summary.as_deref(),

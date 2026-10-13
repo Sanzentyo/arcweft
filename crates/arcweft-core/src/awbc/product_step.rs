@@ -3286,8 +3286,13 @@ impl AwbcProductStepExecutor {
                     message: Some("defer child was cancelled".to_owned()),
                     source_map: None,
                 }),
-                Some(FiberTerminalValue::Returned(_)) => None,
-                Some(FiberTerminalValue::DialogueResultSelected(_)) => Some(FiberTrap {
+                Some(FiberTerminalValue::Returned(_) | FiberTerminalValue::ReturnedTransferred) => {
+                    None
+                }
+                Some(
+                    FiberTerminalValue::DialogueResultSelected(_)
+                    | FiberTerminalValue::DialogueResultTransferred,
+                ) => Some(FiberTrap {
                     code: AwbcTrapCode::InternalInvariant,
                     message: Some("defer child selected a dialogue result".to_owned()),
                     source_map: None,

@@ -204,6 +204,16 @@ immutable binding・資源上限・Copy custody を検証してから、重複 C
 移動する。後続入力や Copy の検証失敗は、先行 register の移動より前に返す。
 これらの value byte count は frame／session wire 全体の byte admission を代替しない。
 
+terminal result は `FiberTerminalValue<V>` の単一 grammar を使い、inert carrier
+だけに codec を与える。保持中の payload、payload の無い completion、caller／line
+owner へ転送済みの状態を別の variant で表す。転送を `Returned(None)` で表さない。
+snapshot projection／restore は status・suspension・terminal・return label の形を
+構築前に検証し、terminal graph と label／trap message は全 frame と同じ allowance
+に入れる。通常の result は元の root frame signature と immutable binding、frame を
+切り離した Program result は元の pure-program binding の signature が型 authority
+となる。dialogue result は verifier と共通の元 program の line-group ownership に
+照合する。payload の無い状態を検証するための synthetic value は構築しない。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

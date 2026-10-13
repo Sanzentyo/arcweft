@@ -347,7 +347,7 @@ impl AwbcProductStepExecutor {
                 Some(FiberTerminalValue::Returned(Some(value))) => {
                     FlowFiberStatus::Done(FlowExit::Return(runtime_value_label(value)))
                 }
-                Some(FiberTerminalValue::Returned(None)) => self
+                Some(FiberTerminalValue::ReturnedTransferred) => self
                     .fiber
                     .return_summary
                     .as_ref()

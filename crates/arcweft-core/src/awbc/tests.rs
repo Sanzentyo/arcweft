@@ -1657,7 +1657,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
         .expect("restored selector terminal validates");
     assert_eq!(
         restored.terminal,
-        Some(super::fiber::FiberTerminalValue::Returned(None)),
+        Some(super::fiber::FiberTerminalValue::DialogueResultTransferred),
         "the selected value already crossed the VM exit boundary"
     );
 }

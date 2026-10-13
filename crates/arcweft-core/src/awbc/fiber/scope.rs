@@ -19,8 +19,6 @@ mod tests;
 // A private codec capability restricts all three owning grammars to the inert
 // Core carrier. Derive traverses these fields directly: no parallel wire record,
 // live reader, or externally implementable serialization capability exists.
-pub(super) trait InertScopeValue: Serialize + serde::de::DeserializeOwned {}
-impl InertScopeValue for AwbcRuntimeValueSnapshot {}
 
 /// One reached lexical scope and its outstanding cleanup custody.
 /// Only the inert projection implements serde.
@@ -37,7 +35,10 @@ impl InertScopeValue for AwbcRuntimeValueSnapshot {}
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "V: InertScopeValue", deserialize = "V: InertScopeValue")
+    bound(
+        serialize = "V: super::InertFiberValue",
+        deserialize = "V: super::InertFiberValue"
+    )
 )]
 pub struct FiberScope<V = RuntimeValue> {
     pub id: AwbcScopeId,
@@ -67,7 +68,10 @@ pub struct FiberScope<V = RuntimeValue> {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "V: InertScopeValue", deserialize = "V: InertScopeValue")
+    bound(
+        serialize = "V: super::InertFiberValue",
+        deserialize = "V: super::InertFiberValue"
+    )
 )]
 pub struct FiberDeferredRegistration<V = RuntimeValue> {
     pub id: RuntimeDeferRegistrationId,
@@ -92,7 +96,10 @@ pub struct FiberDeferredRegistration<V = RuntimeValue> {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "V: InertScopeValue", deserialize = "V: InertScopeValue")
+    bound(
+        serialize = "V: super::InertFiberValue",
+        deserialize = "V: super::InertFiberValue"
+    )
 )]
 pub struct FiberScopeCleanup<V = RuntimeValue> {
     pub source: FiberCursor,

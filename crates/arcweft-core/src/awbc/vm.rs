@@ -4094,13 +4094,24 @@ pub(crate) fn terminal_exit(fiber: &mut FiberState) -> VmExit {
             if let Some(value) = value.as_ref() {
                 fiber.return_summary = Some(runtime_value_label(value));
             }
-            fiber.terminal = Some(FiberTerminalValue::Returned(None));
+            fiber.terminal = Some(if value.is_some() {
+                FiberTerminalValue::ReturnedTransferred
+            } else {
+                FiberTerminalValue::Returned(None)
+            });
             VmExit::Returned(value)
         }
         Some(FiberTerminalValue::DialogueResultSelected(value)) => {
             fiber.return_summary = None;
-            fiber.terminal = Some(FiberTerminalValue::Returned(None));
+            fiber.terminal = Some(FiberTerminalValue::DialogueResultTransferred);
             VmExit::DialogueResultSelected(value)
+        }
+        Some(
+            terminal @ (FiberTerminalValue::ReturnedTransferred
+            | FiberTerminalValue::DialogueResultTransferred),
+        ) => {
+            fiber.terminal = Some(terminal);
+            VmExit::Returned(None)
         }
         Some(FiberTerminalValue::Cancelled) => {
             fiber.terminal = Some(FiberTerminalValue::Cancelled);

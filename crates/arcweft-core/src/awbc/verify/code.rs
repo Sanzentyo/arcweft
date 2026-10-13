@@ -2126,7 +2126,15 @@ fn apply_instruction(
                 "line_operations",
                 &at,
             )?;
-            let group = line_group_for_function(program, function, &at)?;
+            let group = program.line_task_group_for_function(
+                crate::awbc::schema::AwbcFunctionId(u32::try_from(function).map_err(|_| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "line function index exceeds the AWBC identity domain".to_owned(),
+                    }
+                })?),
+                &at,
+            )?;
             let operation = &program.line_operations[operation.index()];
             if program
                 .line_task_groups
@@ -2259,7 +2267,15 @@ fn apply_instruction(
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::CommitDialogueResult { source } => {
-            let group = line_group_for_function(program, function, &at)?;
+            let group = program.line_task_group_for_function(
+                crate::awbc::schema::AwbcFunctionId(u32::try_from(function).map_err(|_| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "line function index exceeds the AWBC identity domain".to_owned(),
+                    }
+                })?),
+                &at,
+            )?;
             if program.functions[function].kind != AwbcFunctionKind::LineActivation
                 || group.activation.index() != function
             {
@@ -3704,7 +3720,15 @@ fn apply_terminator(
                             .to_owned(),
                 });
             }
-            let group = line_group_for_function(program, function, &at)?;
+            let group = program.line_task_group_for_function(
+                crate::awbc::schema::AwbcFunctionId(u32::try_from(function).map_err(|_| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "line function index exceeds the AWBC identity domain".to_owned(),
+                    }
+                })?),
+                &at,
+            )?;
             let actual = read_register(verifier, function, block, *value, state)?;
             require_compatible(program, group.result_type, actual, &at)?;
             if !state.scopes.is_empty() {
@@ -6084,50 +6108,6 @@ fn is_character_dialogue_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
             .is_some_and(|owner| owner.producer() == &RuntimeCharacterDialogueProducerId::get())
 }
 
-fn line_group_for_function<'a>(
-    program: &'a AwbcProgram,
-    function: usize,
-    at: &str,
-) -> Result<&'a crate::awbc::schema::AwbcLineTaskGroup, AwbcVerifyError> {
-    let function = u32::try_from(function).map_err(|_| AwbcVerifyError::InvalidInvariant {
-        at: at.to_owned(),
-        message: "line function index exceeds the AWBC identity domain".to_owned(),
-    })?;
-    let function = crate::awbc::schema::AwbcFunctionId(function);
-    let mut matches = program.line_task_groups.iter().filter(|group| {
-        group.activation == function
-            || group.cleanup_completed == Some(function)
-            || group.cleanup_cancelled == Some(function)
-            || group.cleanup_failed == Some(function)
-            || group
-                .cancel_handlers
-                .iter()
-                .any(|handler| handler.function == function)
-            || group.nodes.checked_end().is_some_and(|end| {
-                (group.nodes.start..end).any(|node| {
-                    matches!(
-                        program.line_task_nodes.get(node as usize),
-                        Some(crate::awbc::schema::AwbcLineTaskNode::Action(owner))
-                            if *owner == function
-                    )
-                })
-            })
-    });
-    let group = matches
-        .next()
-        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: "line instruction function has no owning line-task group".to_owned(),
-        })?;
-    if matches.next().is_some() {
-        return Err(AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: "line instruction function belongs to multiple line-task groups".to_owned(),
-        });
-    }
-    Ok(group)
-}
-
 pub(super) fn runtime_type_permits_copy(
     program: &AwbcProgram,
     ty: AwbcTypeId,
@@ -6362,4 +6342,46 @@ fn is_choice_value(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
                 | AwbcRuntimeTypeShape::Dynamic
         )
     )
+}
+
+impl AwbcProgram {
+    pub(crate) fn line_task_group_for_function(
+        &self,
+        function: crate::awbc::schema::AwbcFunctionId,
+        at: &str,
+    ) -> Result<&crate::awbc::schema::AwbcLineTaskGroup, AwbcVerifyError> {
+        let mut matches = self.line_task_groups.iter().filter(|group| {
+            group.activation == function
+                || group.cleanup_completed == Some(function)
+                || group.cleanup_cancelled == Some(function)
+                || group.cleanup_failed == Some(function)
+                || group
+                    .cancel_handlers
+                    .iter()
+                    .any(|handler| handler.function == function)
+                || group.nodes.checked_end().is_some_and(|end| {
+                    (group.nodes.start..end).any(|node| {
+                        matches!(
+                            self.line_task_nodes.get(node as usize),
+                            Some(crate::awbc::schema::AwbcLineTaskNode::Action(owner))
+                                if *owner == function
+                        )
+                    })
+                })
+        });
+        let group = matches
+            .next()
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.to_owned(),
+                message: "line instruction function has no owning line-task group".to_owned(),
+            })?;
+        if matches.next().is_some() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.to_owned(),
+                message: "line instruction function belongs to multiple line-task groups"
+                    .to_owned(),
+            });
+        }
+        Ok(group)
+    }
 }

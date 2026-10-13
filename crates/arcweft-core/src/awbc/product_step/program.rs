@@ -264,6 +264,10 @@ impl AwbcProductStepExecutor {
         if let Some(value) = value.as_ref() {
             value.validate_detached_custody()?;
         }
-        Ok(value.take().map(|value| (id, value)))
+        let result = value.take();
+        if result.is_some() {
+            self.fiber.terminal = Some(FiberTerminalValue::ReturnedTransferred);
+        }
+        Ok(result.map(|value| (id, value)))
     }
 }

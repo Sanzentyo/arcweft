@@ -719,11 +719,9 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     );
     let saved = executor.inert_rollback_image().unwrap().product;
     let mut forged = saved.clone();
-    forged.fiber.terminal = Some(
-        arcweft_core::awbc::fiber::AwbcFiberTerminalSnapshot::Returned(Some(
-            arcweft_core::value::AwbcRuntimeValueSnapshot::Bool(true),
-        )),
-    );
+    forged.fiber.terminal = Some(arcweft_core::awbc::fiber::FiberTerminalValue::Returned(
+        Some(arcweft_core::value::AwbcRuntimeValueSnapshot::Bool(true)),
+    ));
     forged.fiber.return_summary = Some("true".to_owned());
     let (mut executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
     assert_eq!(
