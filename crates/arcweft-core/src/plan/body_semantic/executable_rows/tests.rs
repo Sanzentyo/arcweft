@@ -352,6 +352,44 @@ fn actual_line_rows_join_the_same_global_prefix_meter() {
 }
 
 #[test]
+fn task_binding_and_executable_line_row_share_one_original_line_walk() {
+    let (plan, owner) = super::super::tests::actual_line_plan(true, true, "cancel", "mark");
+    let limits = RuntimeTaskPlanSealLimits::default();
+    let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
+    let group = crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
+    let mut no_tasks =
+        |_: super::super::flow::RuntimeBodyTaskSource<'_>| panic!("fixture has no task edges");
+    let first = rows
+        .prepare_line(group, &mut meter, &mut no_tasks)
+        .unwrap()
+        .digest();
+    let before = meter.totals();
+    assert_eq!(
+        rows.prepare_line(group, &mut meter, &mut no_tasks)
+            .unwrap()
+            .digest(),
+        first
+    );
+    assert_eq!(meter.totals(), before);
+    let mut expected =
+        TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    let digest = rows.lines[0]
+        .as_ref()
+        .unwrap()
+        .executable_row_digest(&rows.context, &mut expected)
+        .unwrap();
+    expected.charge_work(1).unwrap();
+    assert_eq!(
+        rows.complete(ExecutableTable::Lines, 0, &mut meter, &mut no_tasks)
+            .unwrap(),
+        digest
+    );
+    let after = meter.totals();
+    assert_eq!((after.0 - before.0, after.1 - before.1), expected.totals());
+}
+
+#[test]
 fn empty_executable_tables_require_exact_header_visit_work() {
     let builder = crate::plan::RuntimePlanBuilder::new();
     let owner = builder.task_coordinate_owner(0);

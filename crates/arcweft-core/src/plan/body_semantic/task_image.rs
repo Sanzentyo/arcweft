@@ -2,6 +2,11 @@
 //! There is one executable inventory; expected keys remain untrusted assertions.
 
 mod preflight;
+#[allow(
+    dead_code,
+    reason = "Private complete E14 preparation remains unexposed until the atomic task/View public switch"
+)]
+mod preparation;
 
 use super::request::RuntimeTaskRequestTemplate;
 use crate::plan::{
@@ -48,6 +53,34 @@ impl RuntimeTaskSemanticBinding {
     }
 }
 
+impl NeedProducerFamily {
+    pub(super) const fn accepts_runtime_task_binding(
+        self,
+        binding: &RuntimeTaskSemanticBinding,
+    ) -> bool {
+        matches!(
+            (self, binding),
+            (
+                Self::StructuredTaskPlan
+                    | Self::HostAdapterTask
+                    | Self::MakeNeedHandle
+                    | Self::SelectedCallable,
+                RuntimeTaskSemanticBinding::Ordinary
+            ) | (
+                Self::ViewMatchSubscription,
+                RuntimeTaskSemanticBinding::View
+            ) | (
+                Self::AwaitManyBase,
+                RuntimeTaskSemanticBinding::AwaitManyBase
+            ) | (
+                Self::AwaitManyChild,
+                RuntimeTaskSemanticBinding::AwaitManyChild
+            ) | (Self::Timeout, RuntimeTaskSemanticBinding::Timeout { .. })
+                | (Self::LineTask, RuntimeTaskSemanticBinding::Line { .. })
+        )
+    }
+}
+
 /// Codec-only integrity assertion, with no conversion into a typed digest.
 pub(super) struct ExpectedTaskPlanKey([u8; 32]);
 impl ExpectedTaskPlanKey {
@@ -91,6 +124,12 @@ pub(super) enum RuntimeTaskPlanImageError {
     CoordinateCount { rows: usize, coordinates: u32 },
     #[error("task image expected key count {keys} differs from {rows} task rows")]
     ExpectedKeyCount { rows: usize, keys: usize },
+    #[error("task row {ordinal} family {family:?} cannot use binding tag {binding}")]
+    FamilyBinding {
+        ordinal: usize,
+        family: NeedProducerFamily,
+        binding: u8,
+    },
 }
 
 impl From<crate::task::semantic::TaskSemanticEncodingError> for RuntimeTaskPlanImageError {

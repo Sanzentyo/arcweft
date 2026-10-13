@@ -1004,7 +1004,7 @@ fn producer_host_plan_with_arguments(
     producer_host_plan_with_setup(in_then, |_| (args, Box::new([])))
 }
 
-fn producer_host_plan_with_setup(
+pub(super) fn producer_host_plan_with_setup(
     in_then: bool,
     setup: impl FnOnce(
         &mut RuntimePlanBuilder,

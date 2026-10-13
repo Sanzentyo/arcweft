@@ -106,6 +106,7 @@ pub(super) struct RuntimeExecutableSemanticRows<'plan, 'owner> {
     variants: Vec<&'plan RuntimeVariantDomain>,
     functions: Vec<FunctionState<'plan>>,
     helpers: Vec<Option<PureHelperSemantic<'plan>>>,
+    lines: Vec<Option<super::executable_metadata::LineSemantic<'plan>>>,
 }
 
 impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
@@ -136,6 +137,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             variants: plan.variant_domains().domains().collect(),
             functions: (0..counts[4]).map(|_| FunctionState::Unvisited).collect(),
             helpers: (0..counts[10]).map(|_| None).collect(),
+            lines: (0..counts[12]).map(|_| None).collect(),
         })
     }
 
@@ -351,17 +353,18 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             ExecutableTable::Methods => {
                 plan.trait_methods()[ordinal].executable_semantic_row_digest(&self.context, meter)
             }
-            ExecutableTable::Lines => self
-                .context
-                .line_semantic(
-                    meter,
+            ExecutableTable::Lines => {
+                self.prepare_line(
                     crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(ordinal)
                         .expect("preflighted Line row"),
-                    self.task_owner,
+                    meter,
                     task_reference,
-                    self.limits,
-                )?
-                .executable_row_digest(&self.context, meter),
+                )?;
+                self.lines[ordinal]
+                    .as_ref()
+                    .expect("completed Line proof")
+                    .executable_row_digest(&self.context, meter)
+            }
             ExecutableTable::Streams => self.context.stream_row_digest(meter, ordinal),
         }
     }
@@ -413,6 +416,38 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             }
         }
         Ok(self.functions[ordinal].proof().expect("completed F proof"))
+    }
+
+    /// Line bindings and E12 reuse the same original group proof. Revisiting
+    /// its row still charges the reference atom, but never walks its Flow tree.
+    pub(super) fn prepare_line(
+        &mut self,
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        meter: &mut TaskSemanticMeter,
+        task_reference: &mut impl FnMut(
+            super::flow::RuntimeBodyTaskSource<'_>,
+        ) -> Result<
+            RuntimeTaskPlanBuildCoordinate,
+            RuntimeBodySemanticError,
+        >,
+    ) -> Result<&super::executable_metadata::LineSemantic<'plan>, RuntimeBodySemanticError> {
+        meter.status()?;
+        let ordinal = group.index();
+        if self.lines.get(ordinal).is_none() {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::MissingRow {
+                table: "line task groups",
+                ordinal,
+            });
+        }
+        if self.lines[ordinal].is_none() {
+            let proof = self
+                .context
+                .line_semantic(meter, group, self.task_owner, task_reference, self.limits)
+                .inspect_err(|_| meter.reject_owner())?;
+            self.lines[ordinal] = Some(proof);
+        }
+        Ok(self.lines[ordinal].as_ref().expect("completed Line proof"))
     }
 
     /// Resolves the admitted callable substrate through the common row memo.

@@ -2,7 +2,7 @@ use super::*;
 use crate::plan::RuntimePlanBuilder;
 use crate::task::semantic::TaskSemanticMeter;
 
-fn row(
+pub(super) fn row(
     plan: &RuntimePlanInventory,
     owner: &RuntimeTaskPlanCoordinateOwner,
     function: RuntimeFunctionSiteId,
