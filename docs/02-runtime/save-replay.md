@@ -239,8 +239,26 @@ correlation の規則は共通 owner に置き、inert request の live 構築�
 generation rebind は future launch に適用するため、collector と既存 child の個々の
 receipt は保持し、両者の generation が同じであることは要求しない。VM は source と
 capture の batch 全体を検証してから capture をコピーし、source register を一度移動する。
-Need request 全体の metadata／wire-byte 上限と全14 family の public switch は、これらの
-retained value grammar の検証と別の受入条件である。
+TaskSpec<P> と HostTaskRequest<P> は live payload と inert payload の共通 grammar を
+所有し、HTTP／Wasm の payload-bearing request も同じ型を使う。別の saved spec／
+request enum と reader は持たない。Custom の optional named arguments と manifest
+contract は、この共通 request grammar の default／omission 規則に揃える。
+
+Need の resource traversal は要求値だけでなく correlation／origin、producer の
+retained fields、generation、class、priority、cancel scope、outcome、debug label と
+全14 Host request family の metadata を計上する。path／text／id／operation／header／
+env／argument name と raw byte buffer の長さを、live・inert で同じ owner が検証する。
+standalone outcome の有限型も、collection／depth／node／string と共有 work の制限を
+検証してから semantic identity を計算・複製する。program-owned 型を standalone
+predicate に置き換えない。Need semantic identity の canonical transcript は変えない。
+
+保存 spec の projection／restore は descriptor と全 request value を一つの allowance
+で preflight してから値の変換を開始する。Need carrier 構築と launch journal の admission
+にも同じ規則を接続し、submission の元の handle correlation を live request 構築前に
+照合する。descriptor failure は後続 value admission にも同じ first error として残る。
+この計上は retained storage の logical snapshot grammar であり、frame／session の
+wire 全体の byte count と各 program の request type／expected-key／View capability の
+admission は、それぞれの owning boundary で別に成立させる。
 
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その

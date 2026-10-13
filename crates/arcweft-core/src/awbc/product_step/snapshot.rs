@@ -634,7 +634,7 @@ pub struct AwbcNeedProducerLaunchSaveSnapshot {
     pub plan_digest: TaskPlanSemanticDigest,
     pub arguments: Vec<AwbcNeedProducerArgumentSaveSnapshot>,
     pub correlation: crate::task::TaskCorrelation,
-    pub task_spec: crate::task::TaskSpecSnapshot,
+    pub task_spec: crate::task::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>,
     pub state: AwbcNeedStateSaveSnapshot,
     pub publication: Option<TaskPublicationCursor>,
     pub task_submitted: bool,
@@ -834,11 +834,12 @@ fn save_need_producer_registry(
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation,
-                    task_spec: crate::task::TaskSpecSnapshot::from_live(
-                        &launch.task_spec,
-                        Some(owner),
-                    )
-                    .map_err(|error| error.to_string())?,
+                    task_spec:
+                        crate::task::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_live(
+                            &launch.task_spec,
+                            Some(owner),
+                        )
+                        .map_err(|error| error.to_string())?,
                     state: save_need_state(&launch.state, owner)?,
                     publication: launch.publication,
                     task_submitted: launch.task_submitted,
@@ -911,11 +912,12 @@ fn save_live_need_producer_registry(
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation(),
-                    task_spec: crate::task::TaskSpecSnapshot::from_live(
-                        launch.task_spec(),
-                        Some(owner),
-                    )
-                    .map_err(|error| error.to_string())?,
+                    task_spec:
+                        crate::task::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_live(
+                            launch.task_spec(),
+                            Some(owner),
+                        )
+                        .map_err(|error| error.to_string())?,
                     state: save_need_state(launch.state(), owner)?,
                     publication: launch.publication(),
                     task_submitted: launch.task_submitted(),

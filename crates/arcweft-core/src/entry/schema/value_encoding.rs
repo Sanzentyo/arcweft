@@ -15,6 +15,45 @@ use super::{
     value_budget::{ValidationWork, ValueBudget},
 };
 
+struct DescriptorAdmission<'a, 'b, S: CanonicalSink + ?Sized, V: ValueValidation> {
+    writer: &'a mut CanonicalWriter<'b, S>,
+    budget: Option<&'a mut ValueBudget>,
+    validation: &'a mut V,
+}
+
+impl<S: CanonicalSink + ?Sized, V: ValueValidation> crate::task::descriptor::TaskDescriptorVisitor
+    for DescriptorAdmission<'_, '_, S, V>
+{
+    fn node(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+        if let Some(budget) = &mut self.budget {
+            budget.node(depth)?;
+        }
+        self.validation.embedded_node(depth)
+    }
+    fn fixed(&mut self, bytes: &[u8], depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.node(depth)?;
+        self.writer.extend(bytes)
+    }
+    fn string(&mut self, text: &str, depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.node(depth)?;
+        if let Some(budget) = &self.budget {
+            budget.string(text)?;
+        }
+        self.writer.string(text)
+    }
+    fn collection(&mut self, count: usize, depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.node(depth)?;
+        if let Some(budget) = &self.budget {
+            budget.collection(count)?;
+        }
+        self.writer.len(count)
+    }
+    fn blob(&mut self, bytes: &[u8], depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.collection(bytes.len(), depth)?;
+        self.writer.extend(bytes)
+    }
+}
+
 pub(crate) enum ValueAdmission<C, A> {
     Children(C),
     Choice(A),
@@ -314,6 +353,28 @@ pub(crate) fn preflight_snapshot_view<'a>(
     Ok(admission.work())
 }
 
+pub(crate) fn validate_standalone_task_type(
+    ty: &crate::pattern::RuntimeCheckedType,
+    limits: super::RuntimeSchemaLimits,
+) -> Result<(), RuntimeSchemaError> {
+    let mut sink = super::CanonicalCountingSink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_encoded_bytes: limits.max_encoded_bytes,
+        max_string_bytes: Some(limits.max_string_bytes),
+    };
+    let mut budget = ValueBudget::new(limits);
+    let mut validation = NoSchemaValidation::snapshot_resources(limits);
+    ty.visit_standalone_descriptor(
+        &mut DescriptorAdmission {
+            writer: &mut writer,
+            budget: Some(&mut budget),
+            validation: &mut validation,
+        },
+        0,
+    )
+}
+
 /// Resource ownership for an admission containing several complete values and
 /// partial places. Logical nodes, encoded complete-value bytes and relation
 /// work accumulate across descendants; visiting another value grants no quota.
@@ -357,6 +418,36 @@ impl ValueResourceAdmission {
 
     pub(crate) fn origin(&self) -> ValueAdmissionOrigin {
         self.origin
+    }
+
+    pub(crate) fn validate_task_descriptor<P>(
+        &mut self,
+        spec: &crate::task::TaskSpec<P>,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        let limits = self.work.limits();
+        let mut writer = CanonicalWriter {
+            sink: &mut self.sink,
+            max_encoded_bytes: limits.max_encoded_bytes,
+            max_string_bytes: Some(limits.max_string_bytes),
+        };
+        let mut validation = NoSchemaValidation {
+            resources: Some(self.work.clone()),
+            depth: 0,
+            observer: None,
+        };
+        let result = spec.visit_descriptor(
+            &mut DescriptorAdmission {
+                writer: &mut writer,
+                budget: Some(&mut self.budget),
+                validation: &mut validation,
+            },
+            depth,
+        );
+        if let Err(error) = &result {
+            self.work.retain_failure(error.clone());
+        }
+        result
     }
 
     pub(crate) fn validate_view<'a>(
@@ -985,7 +1076,7 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
     value: RuntimeValueView<'a>,
     depth: usize,
     writer: &mut CanonicalWriter<'_, S>,
-    budget: Option<&mut ValueBudget>,
+    mut budget: Option<&mut ValueBudget>,
     work: &mut Vec<Work<'a, V::Expected, V::Children, V::Alternatives>>,
     validation: &mut V,
     children: Rc<V::Children>,
@@ -1108,8 +1199,15 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
         }
         RuntimeValueView::Need(handle) if !matches!(encoding, ValueEncoding::Literal) => {
             writer.u8(20)?;
-            writer.extend(handle.need_id().as_bytes())?;
             if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) {
+                handle.visit_descriptor(
+                    &mut DescriptorAdmission {
+                        writer,
+                        budget: budget.as_deref_mut(),
+                        validation,
+                    },
+                    depth + 1,
+                )?;
                 if let Some(budget) = budget {
                     budget.collection(handle.request_values().count())?;
                 }
@@ -1122,6 +1220,8 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                     depth + 1,
                     Rc::new(V::admitted_children()),
                 ));
+            } else {
+                writer.extend(handle.need_id().as_bytes())?;
             }
         }
         RuntimeValueView::Callable(callable)

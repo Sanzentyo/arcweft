@@ -10,6 +10,16 @@ pub(crate) enum RuntimeNeedView<'a> {
 }
 
 impl<'a> RuntimeNeedView<'a> {
+    pub(crate) fn visit_descriptor(
+        self,
+        visitor: &mut impl crate::task::descriptor::TaskDescriptorVisitor,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        match self {
+            Self::Live(v) => v.visit_descriptor(visitor, depth),
+            Self::Snapshot(v) => v.visit_descriptor(visitor, depth),
+        }
+    }
     pub(crate) fn producer(self) -> &'a crate::task::NeedProducerInstance {
         match self {
             Self::Live(v) => &v.spec().producer,

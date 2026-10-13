@@ -58,7 +58,7 @@ impl NeedProducerInstance {
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct TaskSpec {
+pub struct TaskSpec<P = crate::value::RuntimePayload> {
     pub generation: GenerationId,
     pub producer: NeedProducerInstance,
     pub class: TaskClass,
@@ -66,17 +66,31 @@ pub struct TaskSpec {
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
     pub outcome: TaskOutcomeContract,
-    pub request: HostTaskRequest,
+    pub request: HostTaskRequest<P>,
     pub debug_label: String,
 }
 
-impl TaskSpec {
+impl<P> TaskSpec<P> {
     pub(crate) fn validate_outcome(&self) -> Result<(), super::TaskEnsureError> {
         self.outcome.validate_producer(&self.producer)
     }
 
+    pub(crate) fn validate_handle(&self, handle: TaskHandle) -> Result<(), super::TaskEnsureError> {
+        self.validate_outcome()?;
+        let expected = self.correlation(handle.correlation.launch_ordinal)?;
+        if expected != handle.correlation {
+            return Err(super::TaskEnsureError::TaskIdSpecificationConflict {
+                task_id: handle.correlation.task_id,
+            });
+        }
+        Ok(())
+    }
+
     /// Full join contract. Diagnostic text never changes accepted work.
-    pub fn same_join_contract(&self, other: &Self) -> bool {
+    pub fn same_join_contract(&self, other: &Self) -> bool
+    where
+        P: PartialEq,
+    {
         self.generation == other.generation
             && self.producer == other.producer
             && self.class == other.class

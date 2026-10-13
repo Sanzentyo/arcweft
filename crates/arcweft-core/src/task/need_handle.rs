@@ -30,19 +30,34 @@ enum RuntimeNeedHandleOrigin {
 #[serde(deny_unknown_fields)]
 pub struct RuntimeNeedHandleSaveSnapshot {
     correlation: TaskCorrelation,
-    spec: Box<super::TaskSpecSnapshot>,
+    spec: Box<super::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>>,
     origin: RuntimeNeedHandleOrigin,
 }
 
 impl RuntimeNeedHandleSaveSnapshot {
+    pub(crate) fn visit_descriptor(
+        &self,
+        visitor: &mut impl super::descriptor::TaskDescriptorVisitor,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        self.origin
+            .visit_descriptor(self.correlation, &self.spec, visitor, depth)
+    }
     pub(crate) fn view(&self) -> crate::value::RuntimeNeedView<'_> {
         crate::value::RuntimeNeedView::Snapshot(self)
     }
-    pub(crate) fn spec(&self) -> &super::TaskSpecSnapshot {
+    pub(crate) fn spec(&self) -> &super::TaskSpec<crate::value::AwbcRuntimeValueSnapshot> {
         &self.spec
     }
 
     pub(crate) fn validate_identity(&self) -> Result<(), RuntimeNeedHandleError> {
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources
+            .validate_task_descriptor(&self.spec, 0)
+            .map_err(|error| RuntimeNeedHandleError::Descriptor(Box::new(error)))?;
         self.origin.validate(
             self.correlation,
             self.spec.generation,
@@ -64,7 +79,12 @@ impl RuntimeNeedHandleSaveSnapshot {
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             correlation: handle.0.correlation,
-            spec: Box::new(super::TaskSpecSnapshot::from_live(&handle.0.spec, owner)?),
+            spec: Box::new(
+                super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_live(
+                    &handle.0.spec,
+                    owner,
+                )?,
+            ),
             origin: handle.0.origin,
         })
     }
@@ -96,12 +116,14 @@ impl RuntimeNeedHandleSaveSnapshot {
     pub(crate) fn request_values(
         &self,
     ) -> impl Iterator<Item = &crate::value::AwbcRuntimeValueSnapshot> {
-        self.spec.request.values()
+        self.spec.request.payloads()
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeNeedHandleError {
+    #[error("Need descriptor violates its resource contract: {0}")]
+    Descriptor(Box<crate::entry::RuntimeSchemaError>),
     #[error("reusable Need handle requires JoinSameKey")]
     ReusableAlwaysStart,
     #[error("handle correlation does not match its task specification")]
@@ -113,6 +135,34 @@ pub enum RuntimeNeedHandleError {
 }
 
 impl RuntimeNeedHandleOrigin {
+    fn visit_descriptor<P>(
+        self,
+        correlation: TaskCorrelation,
+        spec: &super::TaskSpec<P>,
+        visitor: &mut impl super::descriptor::TaskDescriptorVisitor,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        visitor.node(depth)?;
+        let next = depth + 1;
+        for bytes in [
+            correlation.task_id.as_bytes(),
+            correlation.task_key.as_bytes(),
+            correlation.need.as_bytes(),
+            correlation.producer_contract.as_bytes(),
+        ] {
+            visitor.fixed(bytes, next)?;
+        }
+        visitor.fixed(&correlation.generation.get().to_le_bytes(), next)?;
+        visitor.fixed(&correlation.launch_ordinal.get().to_le_bytes(), next)?;
+        visitor.fixed(
+            &[match self {
+                Self::ReusableJoin => 0,
+                Self::AcceptedLaunch => 1,
+            }],
+            next,
+        )?;
+        spec.visit_descriptor(visitor, next)
+    }
     fn validate(
         self,
         correlation: TaskCorrelation,
@@ -152,6 +202,15 @@ impl RuntimeNeedHandleOrigin {
 pub(super) struct RuntimeNeedHandleSnapshot(Box<RuntimeNeedHandleData>);
 
 impl RuntimeNeedHandle {
+    pub(crate) fn visit_descriptor(
+        &self,
+        visitor: &mut impl super::descriptor::TaskDescriptorVisitor,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        self.0
+            .origin
+            .visit_descriptor(self.0.correlation, &self.0.spec, visitor, depth)
+    }
     pub(crate) fn view(&self) -> crate::value::RuntimeNeedView<'_> {
         crate::value::RuntimeNeedView::Live(self)
     }
@@ -161,6 +220,7 @@ impl RuntimeNeedHandle {
         spec: TaskSpec,
         handle: TaskHandle,
     ) -> Result<Self, RuntimeNeedHandleError> {
+        spec.validate_need_descriptor()?;
         RuntimeNeedHandleOrigin::AcceptedLaunch.validate(
             handle.correlation,
             spec.generation,
@@ -217,6 +277,7 @@ impl RuntimeNeedHandle {
     pub(super) fn try_from_snapshot(
         snapshot: RuntimeNeedHandleSnapshot,
     ) -> Result<Self, RuntimeNeedHandleError> {
+        snapshot.0.spec.validate_need_descriptor()?;
         snapshot.0.origin.validate(
             snapshot.0.correlation,
             snapshot.0.spec.generation,
@@ -235,6 +296,7 @@ impl TryFrom<TaskSpec> for RuntimeNeedHandle {
     type Error = RuntimeNeedHandleError;
 
     fn try_from(spec: TaskSpec) -> Result<Self, Self::Error> {
+        spec.validate_need_descriptor()?;
         spec.validate_outcome()
             .map_err(|_| RuntimeNeedHandleError::CorrelationMismatch)?;
         if spec.policy != TaskPolicy::JoinSameKey {

@@ -58,7 +58,7 @@ fn inert_handle_identity_rejects_before_request_callable_construction() {
     let live = accepted(specification(TaskPolicy::JoinSameKey), 0);
     let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&live, None).unwrap();
     image.correlation.need = NeedId::try_from_bytes([9; 32]).unwrap();
-    image.spec.request = super::super::HostTaskRequestSnapshot::Custom {
+    image.spec.request = super::super::HostTaskRequest::Custom {
         capability: HostCapabilityId("fixture".into()),
         operation: "pure".into(),
         args: vec![crate::value::AwbcRuntimeValueSnapshot::Callable(
@@ -237,7 +237,7 @@ fn need_handle_preparation_rejects_every_forged_correlation_field() {
                     correlation: forged
                 }
             ),
-            Err(expected)
+            Err(expected.clone())
         );
         let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
         snapshot.0.correlation = forged;

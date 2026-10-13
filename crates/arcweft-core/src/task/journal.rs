@@ -20,13 +20,8 @@ impl TaskSubmission {
         spec: TaskSpec,
         handle: TaskHandle,
     ) -> Result<Self, TaskEnsureError> {
-        spec.validate_outcome()?;
-        let expected = spec.correlation(handle.correlation.launch_ordinal)?;
-        if expected != handle.correlation {
-            return Err(TaskEnsureError::TaskIdSpecificationConflict {
-                task_id: handle.correlation.task_id,
-            });
-        }
+        spec.validate_task_descriptor()?;
+        spec.validate_handle(handle)?;
         Ok(Self { spec, handle })
     }
 
@@ -122,10 +117,9 @@ impl TaskAdmissionJournal {
         for submission in submissions {
             let spec = submission.spec();
             let correlation = submission.handle().correlation;
-            spec.validate_outcome()?;
-            if spec.correlation(correlation.launch_ordinal)? != correlation
-                || !tasks.insert(correlation.task_id)
-            {
+            spec.validate_task_descriptor()?;
+            spec.validate_handle(submission.handle())?;
+            if !tasks.insert(correlation.task_id) {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {
                     task_id: correlation.task_id,
                 });
@@ -197,6 +191,7 @@ impl TaskAdmissionJournal {
         &self,
         spec: TaskSpec,
     ) -> Result<PreparedTaskAdmission, TaskEnsureError> {
+        spec.validate_task_descriptor()?;
         spec.validate_outcome()?;
         let input = &spec;
         let key = TaskKey::try_for(input.generation, input.producer.key(), input.policy)?;

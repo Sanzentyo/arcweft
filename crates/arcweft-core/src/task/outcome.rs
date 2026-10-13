@@ -6,7 +6,7 @@ use crate::{
     awbc::schema::AwbcProgram,
     entry::RuntimeSchemaLimits,
     pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
-    plan::{RuntimeAgentTypeProjection, RuntimePlan},
+    plan::RuntimePlan,
     program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
     task::{TaskOutcomeContract, TaskSpec, TaskSubmission},
     value::{RuntimePayload, RuntimeValue},
@@ -175,79 +175,12 @@ impl TaskOutcomeContract {
         let Self::Standalone { payload } = self else {
             return false;
         };
-        let limits = RuntimeSchemaLimits::engine_default();
-        let mut work = vec![(payload, 0_usize)];
-        let mut nodes = 0_usize;
-        while let Some((ty, depth)) = work.pop() {
-            nodes += 1;
-            if !limits.permits_nodes(nodes) || !limits.permits_depth(depth) {
-                return false;
-            }
-            let child_depth = depth + 1;
-            match ty {
-                RuntimeCheckedType::ExecutableRef(_)
-                | RuntimeCheckedType::Nominal { .. }
-                | RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::DataShape(_))
-                | RuntimeCheckedType::Variant {
-                    owner: crate::pattern::RuntimeVariantIdentity::Nominal { .. },
-                    ..
-                } => return false,
-                RuntimeCheckedType::Sequence(child)
-                | RuntimeCheckedType::Option(child)
-                | RuntimeCheckedType::Array { item: child, .. } => {
-                    work.push((child, child_depth));
-                }
-                RuntimeCheckedType::Map { key, value, .. } => {
-                    work.push((key, child_depth));
-                    work.push((value, child_depth));
-                }
-                RuntimeCheckedType::Result { ok, error } => {
-                    work.push((ok, child_depth));
-                    work.push((error, child_depth));
-                }
-                RuntimeCheckedType::Tuple(items) | RuntimeCheckedType::Choice(items) => {
-                    work.extend(items.iter().map(|child| (child, child_depth)));
-                }
-                RuntimeCheckedType::Record(fields) => {
-                    work.extend(fields.iter().map(|field| (field.ty(), child_depth)));
-                }
-                RuntimeCheckedType::Variant {
-                    arguments, cases, ..
-                } => {
-                    work.extend(arguments.iter().map(|child| (child, child_depth)));
-                    work.extend(
-                        cases
-                            .iter()
-                            .filter_map(|case| case.payload.as_deref())
-                            .map(|child| (child, child_depth)),
-                    );
-                }
-                RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::Probe(child)) => {
-                    work.push((child, child_depth));
-                }
-                RuntimeCheckedType::Never
-                | RuntimeCheckedType::Unit
-                | RuntimeCheckedType::Bool
-                | RuntimeCheckedType::Signed(_)
-                | RuntimeCheckedType::Unsigned(_)
-                | RuntimeCheckedType::F32
-                | RuntimeCheckedType::F64
-                | RuntimeCheckedType::String
-                | RuntimeCheckedType::Color
-                | RuntimeCheckedType::Char
-                | RuntimeCheckedType::Duration
-                | RuntimeCheckedType::Progress
-                | RuntimeCheckedType::DenseNumeric(_)
-                | RuntimeCheckedType::EntityReference
-                | RuntimeCheckedType::AgentValue
-                | RuntimeCheckedType::Bytes
-                | RuntimeCheckedType::Opaque { .. }
-                | RuntimeCheckedType::Agent(_) => {}
-            }
-        }
-        true
+        crate::entry::schema::value_encoding::validate_standalone_task_type(
+            payload,
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .is_ok()
     }
-
     /// Binds an explicit finite contract that has no executable owner.
     pub fn bind_standalone(&self) -> Result<BoundTaskOutcome, TaskOutcomeBindingError> {
         match self {

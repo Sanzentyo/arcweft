@@ -64,6 +64,23 @@ fn admitted(
     plan.accepts_value(id(plan, tag), value, RuntimeSchemaLimits::engine_default())
 }
 
+fn need_resource_fixture_handle(
+    outcome: crate::task::TaskOutcomeContract,
+) -> crate::task::RuntimeNeedHandle {
+    let original = crate::tests::reusable_need_with_outcome("captured", outcome);
+    let original_spec = original.reusable_spec().unwrap();
+    assert!(
+        original_spec
+            .request
+            .runtime_values()
+            .all(|value| value.ownership().permits_copy())
+    );
+    let mut spec = original_spec.clone();
+    // Keep every string within the same eight-byte fixture boundary.
+    spec.debug_label = "captured".into();
+    crate::task::RuntimeNeedHandle::try_from(spec).unwrap()
+}
+
 fn need_resource_fixture() -> (
     RuntimePlan,
     crate::awbc::schema::AwbcProgram,
@@ -71,7 +88,9 @@ fn need_resource_fixture() -> (
     RuntimeSchemaLimits,
 ) {
     use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
-    let handle = crate::tests::reusable_need("captured");
+    let handle = need_resource_fixture_handle(crate::task::TaskOutcomeContract::new(
+        crate::pattern::RuntimeCheckedType::String,
+    ));
     let outcome = handle.outcome().payload_semantic_identity();
     let native = plan([
         RuntimePlanTypeSeed::new(outcome, Type::String),
@@ -85,20 +104,13 @@ fn need_resource_fixture() -> (
         ..AwbcProgram::default()
     };
     let value = RuntimeValue::NeedHandle(handle);
-    let bytes = value.try_canonical_bytes(1024).unwrap();
     let exact = RuntimeSchemaLimits {
-        max_depth: 1,
-        max_nodes: 2,
+        max_depth: 4,
+        max_nodes: 31,
         max_sequence_items: 1,
         max_string_bytes: 8,
-        max_encoded_bytes: u64::try_from(
-            bytes.len()
-                + RuntimeValue::String("captured".to_owned())
-                    .try_canonical_bytes(1024)
-                    .unwrap()
-                    .len(),
-        )
-        .unwrap(),
+        // Need tag/receipt, complete spec metadata and one retained String.
+        max_encoded_bytes: 365,
         ..RuntimeSchemaLimits::engine_default()
     };
     (native, awbc, value, exact)
@@ -119,8 +131,7 @@ fn need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awb
         .unwrap();
     awbc.validate_snapshot_value(AwbcTypeId(1), &value, exact)
         .unwrap();
-    let wrong_outcome = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
-        "captured",
+    let wrong_outcome = RuntimeValue::NeedHandle(need_resource_fixture_handle(
         crate::task::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Bool),
     ));
     assert!(
@@ -133,6 +144,14 @@ fn need_request_values_share_live_and_snapshot_resource_limits_in_native_and_awb
             .is_err()
     );
     for limits in [
+        RuntimeSchemaLimits {
+            max_depth: exact.max_depth - 1,
+            ..exact
+        },
+        RuntimeSchemaLimits {
+            max_nodes: exact.max_nodes - 1,
+            ..exact
+        },
         RuntimeSchemaLimits {
             max_depth: 0,
             ..exact

@@ -56,8 +56,10 @@ pub use specification::{NeedProducerInstance, TaskHandle, TaskSpec};
 mod journal;
 pub use journal::{TaskAdmissionJournal, TaskSubmission};
 mod snapshot;
-pub use snapshot::{HostTaskRequestSnapshot, TaskSpecSnapshot, TaskSubmissionSaveSnapshot};
+pub use snapshot::TaskSubmissionSaveSnapshot;
+pub(crate) mod descriptor;
 mod failure;
+mod request;
 pub use failure::{
     BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
 };
@@ -643,6 +645,8 @@ pub struct NamedHostArg<T> {
 /// scheduling and outcome contract.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum TaskEnsureError {
+    #[error("task descriptor violates its resource contract: {0}")]
+    Descriptor(Box<crate::entry::RuntimeSchemaError>),
     #[error("task identity derivation failed: {0}")]
     Identity(#[from] TaskIdentityError),
     #[error("task launch ordinal is exhausted")]
@@ -1241,26 +1245,30 @@ fn write_host_string(hasher: &mut blake3::Hasher, value: &str) {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum HostTaskRequest {
+#[serde(
+    deny_unknown_fields,
+    bound(serialize = "P: Serialize", deserialize = "P: Deserialize<'de>")
+)]
+pub enum HostTaskRequest<P = RuntimePayload> {
     FileReadText(FileReadTextRequest),
     FileReadBytes(FileReadBytesRequest),
     FileWriteText(FileWriteTextRequest),
     FileWriteBytes(FileWriteBytesRequest),
-    HttpFetch(HttpFetchRequest),
-    HttpRespond(HttpRespondRequest),
+    HttpFetch(HttpFetchRequest<P>),
+    HttpRespond(HttpRespondRequest<P>),
     ProcessRun(ProcessRunRequest),
     AssetLoad(AssetRequest),
     ShaderCompile(ShaderRequest),
     AudioDecode(AudioDecodeRequest),
     TtsSynthesis(TtsRequest),
-    WasmCall(WasmCallRequest),
+    WasmCall(WasmCallRequest<P>),
     SystemInfo(SystemInfoRequest),
     Custom {
         capability: HostCapabilityId,
         operation: String,
-        args: Vec<RuntimePayload>,
+        args: Vec<P>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        named_args: Vec<NamedHostArg<RuntimePayload>>,
+        named_args: Vec<NamedHostArg<P>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         manifest_contract: Option<crate::step::HostCallContractDigest>,
     },
@@ -1294,20 +1302,20 @@ pub struct FileWriteBytesRequest {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct HttpFetchRequest {
+pub struct HttpFetchRequest<P = RuntimePayload> {
     pub url: String,
     pub method: String,
     pub headers: Vec<(String, String)>,
-    pub body: Option<RuntimePayload>,
+    pub body: Option<P>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct HttpRespondRequest {
+pub struct HttpRespondRequest<P = RuntimePayload> {
     pub request_id: String,
     pub status: u16,
     pub headers: Vec<(String, String)>,
-    pub body: Option<RuntimePayload>,
+    pub body: Option<P>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1347,10 +1355,10 @@ pub struct TtsRequest {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct WasmCallRequest {
+pub struct WasmCallRequest<P = RuntimePayload> {
     pub module: String,
     pub function: String,
-    pub args: Vec<RuntimePayload>,
+    pub args: Vec<P>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1601,32 +1609,7 @@ impl RuntimeHostArgumentTemplate {
 
 impl HostTaskRequest {
     pub(crate) fn runtime_values(&self) -> impl Iterator<Item = &RuntimeValue> {
-        let (body, args, named): (
-            Option<&RuntimePayload>,
-            &[RuntimePayload],
-            &[NamedHostArg<RuntimePayload>],
-        ) = match self {
-            Self::HttpFetch(request) => (request.body.as_ref(), &[], &[]),
-            Self::HttpRespond(request) => (request.body.as_ref(), &[], &[]),
-            Self::WasmCall(request) => (None, &request.args, &[]),
-            Self::Custom {
-                args, named_args, ..
-            } => (None, args, named_args),
-            Self::FileReadText(_)
-            | Self::FileReadBytes(_)
-            | Self::FileWriteText(_)
-            | Self::FileWriteBytes(_)
-            | Self::ProcessRun(_)
-            | Self::AssetLoad(_)
-            | Self::ShaderCompile(_)
-            | Self::AudioDecode(_)
-            | Self::TtsSynthesis(_)
-            | Self::SystemInfo(_) => (None, &[], &[]),
-        };
-        body.into_iter()
-            .chain(args.iter())
-            .chain(named.iter().map(|arg| &arg.value))
-            .map(RuntimePayload::value)
+        self.payloads().map(RuntimePayload::value)
     }
 
     pub fn custom(

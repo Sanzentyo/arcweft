@@ -886,6 +886,8 @@ impl RuntimePatternRest {
 /// The compiler projects this value once from checked semantic type facts.
 /// Native execution and AWBC lowering consume the same typed vocabulary; no
 /// source/display label is reparsed at either boundary.
+mod descriptor;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeCheckedType {
     /// Diagnostic reference to the selected program's complete type row.
