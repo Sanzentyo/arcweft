@@ -88,6 +88,21 @@ pub(crate) trait FunctionTypeAuthority {
     fn by_semantic(&self, ty: RuntimeSemanticTypeId) -> Option<Self::Type>;
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference>;
     fn array(&self, ty: Self::Type) -> Option<(RuntimeArrayLength, Self::Type)>;
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError>;
+    fn invalid_builtin_payload(expected: Self::Type) -> super::super::RuntimeProgramTypeError {
+        Self::value_error(
+            expected,
+            crate::entry::RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "original builtin case payload",
+                actual: "invalid source row or binding",
+            },
+        )
+    }
     fn nominal_arguments(
         &self,
         expected: Self::Type,
@@ -126,6 +141,30 @@ pub(crate) trait FunctionTypeAuthority {
 
 impl FunctionTypeAuthority for AwbcProgram {
     type Type = AwbcTypeId;
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
+        let payload = self.builtin_variant_case_payload(ty, case)?;
+        match payload {
+            Some(tuple) => {
+                let AwbcRuntimeTypeShape::Tuple(fields) = self
+                    .runtime_types
+                    .get(tuple.index())
+                    .ok_or_else(|| Self::invalid_builtin_payload(ty))?
+                    .shape()
+                else {
+                    return Err(Self::invalid_builtin_payload(ty));
+                };
+                let [field] = fields.as_slice() else {
+                    return Err(Self::invalid_builtin_payload(ty));
+                };
+                Ok(Some((tuple, *field)))
+            }
+            None => Ok(None),
+        }
+    }
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
         match self.runtime_types.get(ty.index())?.shape() {
             AwbcRuntimeTypeShape::BoundType(reference) => Some(*reference),
@@ -350,6 +389,13 @@ impl FunctionTypeAuthority for AwbcProgram {
 
 impl FunctionTypeAuthority for RuntimePlan {
     type Type = RuntimePlanTypeId;
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
+        self.inventory.builtin_case_payload(ty, case)
+    }
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
         self.inventory.bound_type(ty)
     }
@@ -419,6 +465,45 @@ impl FunctionTypeAuthority for RuntimePlan {
 
 impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
     type Type = RuntimePlanTypeId;
+    fn builtin_case_payload(
+        &self,
+        ty: Self::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<(Self::Type, Self::Type)>, super::super::RuntimeProgramTypeError> {
+        let invalid = || Self::invalid_builtin_payload(ty);
+        if !matches!(
+            self.type_table().get(ty).ok_or_else(invalid)?.projection(),
+            RuntimePlanTypeProjection::Option { .. }
+                | RuntimePlanTypeProjection::Result { .. }
+                | RuntimePlanTypeProjection::BuiltinVariant { .. }
+        ) {
+            return Err(invalid());
+        }
+        let (ordinal, schema) = case.owner().resolve_case(case).ok_or_else(invalid)?;
+        let selected = self.variant_case(ty, ordinal).map_err(|_| invalid())?;
+        if selected.owner() != &crate::pattern::RuntimeVariantIdentity::Builtin(case.owner())
+            || selected.payload().is_some() != schema.has_payload()
+        {
+            return Err(invalid());
+        }
+        match selected.payload() {
+            Some(tuple) => {
+                let RuntimePlanTypeProjection::Tuple(fields) = self
+                    .type_table()
+                    .get(tuple)
+                    .ok_or_else(invalid)?
+                    .projection()
+                else {
+                    return Err(invalid());
+                };
+                let [field] = fields.as_ref() else {
+                    return Err(invalid());
+                };
+                Ok(Some((tuple, *field)))
+            }
+            None => Ok(None),
+        }
+    }
     fn bound_type(&self, ty: Self::Type) -> Option<RuntimeBoundTypeReference> {
         match self.type_table().get(ty)?.projection() {
             RuntimePlanTypeProjection::BoundType(reference) => Some(*reference),

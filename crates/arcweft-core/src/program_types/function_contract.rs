@@ -34,6 +34,66 @@ impl super::RuntimeProgramValueType<'_> {
         }
     }
 
+    /// Selects a builtin case's original unary field row while checking the
+    /// source and tuple scopes against the caller's immutable binding.
+    pub(crate) fn builtin_case_payload(
+        self,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<Option<Self>, super::RuntimeProgramTypeError> {
+        match self {
+            Self::Plan { program, ty } => {
+                Self::validate_builtin_payload(program, ty, case, binding, resources)
+                    .map(|payload| payload.map(|ty| Self::Plan { program, ty }))
+            }
+            Self::Awbc { program, ty } => {
+                Self::validate_builtin_payload(program, ty, case, binding, resources)
+                    .map(|payload| payload.map(|ty| Self::Awbc { program, ty }))
+            }
+        }
+    }
+
+    fn validate_builtin_payload<A: FunctionTypeAuthority>(
+        program: &A,
+        expected: A::Type,
+        case: crate::pattern::RuntimeBuiltinVariantCaseIdentity,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<Option<A::Type>, super::RuntimeProgramTypeError> {
+        let invalid = || A::invalid_builtin_payload(expected);
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            program,
+            resources.origin(),
+            binding,
+            &resources.work(),
+            |context| {
+                let mut work = resources.work();
+                work.charge(0)?;
+                if program
+                    .scope(expected)
+                    .is_none_or(|scope| !context.permits_scope(scope))
+                {
+                    return Err(invalid());
+                }
+                let payload = program.builtin_case_payload(expected, case)?;
+                if let Some((tuple, field)) = payload {
+                    work.charge(0)?;
+                    if program
+                        .scope(tuple)
+                        .is_none_or(|scope| !context.permits_scope(scope))
+                    {
+                        return Err(invalid());
+                    }
+                    Ok(Some(field))
+                } else {
+                    Ok(None)
+                }
+            },
+        )?
+        .ok_or_else(invalid)
+    }
+
     fn validate_authority_value<A: FunctionTypeAuthority>(
         program: &A,
         expected: A::Type,

@@ -13599,3 +13599,163 @@ from the original signature/type row and caller binding, and connect its complet
 preconstruction admission to the same cumulative allowance. Return-site, scope,
 cleanup/defer/capture, frame/session, Need/task14/View/scheduler and final
 acceptance remain required; no new design request or approval is needed for them.
+
+Normal commit/push for that reviewed twelve-path cut is complete and verified at
+`2e056d18a23c610f377baf76fa3050cf5aed2d6e`, parent
+`4b810fb4353ddb5970dd140118f44fc2564ff558`, tree
+`592e7e7e5ec65ec555e6839263d9c476c760f949`. Fresh fetch and `ls-remote` observe
+that exact main. All twelve prepared/local/published/working blob identities
+match, the index is empty, and all 3,621 source inputs plus held14 remain
+unchanged. The reviewed staged diff SHA256 is
+`2e008e00f4cc2338ba13c188da28f761be4a20b9f32944e1584093561f108e5e`.
+`pending-packet.publication-prepared.json` and
+`pending-packet.publication-verified.json` retain that evidence and the explicit
+full50/full53/Tier2/parity limitations. The only task-owned edit afterward is
+this publication receipt paragraph; the same held14 and historical untracked
+files remain preserved. No validation process is live. The goal remains ACTIVE;
+publication does not close the context/frame/session, task14/View/scheduler or
+final acceptance requirements listed above.
+
+### 2026-10-13 — lazy-context cause admission
+
+Inspected existing main `2e056d18a23c610f377baf76fa3050cf5aed2d6e` matches remote
+main. The previous goal turn is progress, proved by the published pending-owner
+cut and r8 evidence above. Held14 and historical untracked files remain preserved;
+no Cargo/lock/config/feature/job/profile change, new checkout/branch/worktree,
+OS change or build-artifact relocation is made.
+
+`RuntimeArcErrorContextPending<V>` now owns the same cause/absence grammar for
+live and inert storage. Its only serde implementation applies to the Core inert
+value projection; the live reader/writer and separate AWBC context DTO are removed.
+The private codec retains the two original wire cases and has no compatibility
+reader. The original return context selects its exact intrinsic source signature,
+callback type/state, caller binding and default/invoke body before value copies
+or construction. It is a borrowed validation context, not a program owner or a
+second executable/type table. Capture and restore share this rule with live
+return validation and the existing cumulative frame value admission.
+
+The source Result's defining payload tuple row supplies the original error field
+ID directly. The existing builtin-case projection owner is extended for unit
+cases and reused by both exact Plan and AWBC expected rows. Source and payload
+scopes are checked under the original caller's immutable instantiation using the
+same relation work. No semantic-ID round trip, fabricated receiver/tuple/Unit,
+source reconstruction or new schema is needed. Only the actual retained cause
+consumes value nodes and encoded bytes; absence has no value graph, while its
+metadata still consumes work. Original callback metadata and source-type/resource
+errors remain distinct; source errors retain their structured payload at the
+snapshot boundary. The existing runtime `Snapshot` error variant carries that
+structured value admission; its conversion preserves the typed cause instead of
+flattening it into a message. No parallel runtime error wrapper remains.
+
+r1 Core all-target/all-feature check failed only on the test's removed AWBC DTO
+name, then the test was migrated from postconstruction validation to early restore
+rejection. r2 passed all eight existing callback execution tests, run ID
+`d5a7293e-10c5-4703-9ff5-5cc18b075fcc`, 1,220 deliberately unselected tests. r3
+inventory failed before execution because a new fixture attempted to Clone the
+move-only live fiber. It now reconstructs an inspection candidate from an admitted
+inert snapshot and never activates that second fiber. r4 executed thirteen tests,
+PASS twelve / FAIL one: all actual callback stages, type-before-construction,
+original-row duplicate-inventory rejection and inert codec/zero-value absence
+regressions pass. Its new exact byte fixture had mistaken a fixed-width String
+length for the existing minimal varint encoding. r5 isolates that failure to
+`max_encoded_bytes: 13`; production has not changed to satisfy that wrong bound.
+The fixture now checks the actual seven-byte encoding and six-byte rejection,
+while preserving 1/0 nodes, 5/4 strings and 5/4 work. Both failed receipts remain.
+
+The additional authored source integration compiles `.with_context` from the
+ordinary language contract, executes it in Native and saves/restores AWBC while
+its callback is active. Its first Rust insertion was accidentally inside another
+fixture's raw source string; r6 fmt failed before compilation and that insertion
+is corrected without changing the existing Never/let-else source or assertion.
+r7 then compiles but the Native fixture correctly rejects Content construction
+on an artifact-unbound plan. The test now binds the same typed artifact as its
+AWFB product before execution, as existing ordinary Content tests do. No runtime
+artifact admission is weakened. r8 completed Core full library execution with
+PASS 1,232 / FAIL one / zero skipped, run ID
+`2672e53a-51c8-4669-9f71-3ca52f55eca7`. The failure identified a pre-existing
+hand-built context fixture's Dynamic receiver and result rows. It now uses the
+actual Result/Option/ArcError schemas and separate eager/lazy signatures while
+preserving every original laziness, cause and fallback assertion. New verification
+of this functions-only fixture uses `require_entrypoint: false`, because its real
+execution starts through `FiberRoot::Function`; r9 had otherwise rejected its
+absent entrypoint before execution. r10 passes both existing product context tests,
+run ID `2b636758-a779-4b69-8d80-a9b2e03d8199`.
+
+The r10 authored test passes Native, then exposes missing AWBC type reachability
+for the generated plain-text context template's Content slot. Final-flow now
+adds that exact standard owner's seed to the existing atomic type batch whenever
+the template is required, including String-only authored messages/callbacks.
+AWBC continues to consume only the admitted plan graph; no fallback type synthesis
+or duplicate inventory is added. r11 passes actual Native completion and AWFB
+session save/restore while the authored AWBC context callback is active, then
+completes that restored execution, run ID
+`f2759460-40ef-4d01-b0e4-e37834b075f0`. Its original one-op execution budgets,
+callback save-point requirement and exact restored snapshot equality remain.
+
+r12 passes Core 1,233 / RuntimePlan 128 / selected Compiler 11 tests and all six
+gates. Core run ID is `c3d95a3b-2189-476c-ac52-325baf061c22`, RuntimePlan
+`c94607fd-7e32-4ad1-a321-e797d9f543c6`, Compiler
+`8e20f43f-a82e-4cc6-8ee6-ddbb8d23e32a`. Its Clippy review identifies the two
+now-unused serde/context-kind imports, two new test matches better expressed as
+let-else, and nested-Option payload selectors. These are repaired without warning
+suppression or assertion changes. Payload selection now distinguishes normal
+absence from invalid metadata through `Result<Option<_>, _>` and preserves the
+existing typed AWBC projection errors. The trait owns the reused exact-source
+diagnostic; it does not add another program/error authority.
+
+Final r13 repeats the affected execution on those repaired bytes: Core full
+library 1,233 PASS, zero skipped, run ID
+`f23335dd-824f-4de9-88b7-859e6f39dca6`; RuntimePlan library and
+`awbc_product_parity`/`iterator_witness_awbc` 128 PASS, zero skipped, run ID
+`1053e016-4b2a-4fa2-98ad-49e4655d02b5`; Compiler
+`generic_continuation_snapshot`/`iterator_witness_source` plus the exact
+`recursive_generic_closure_in_attached_default_reaches_verified_awbc` test
+11 PASS, run ID `acb521d8-7c88-4671-821a-1b40f72fa9e3`. The other 43
+evaluated-effects tests are deliberately unselected, not claimed as exercised.
+All use all-features and ordinary nextest profiles/concurrency; budgets,
+assertions, source workloads, features and build-job settings are preserved.
+
+Final r13 gates all PASS: workspace all-target/all-feature check and Clippy;
+Core/LSP all-feature doctests (5/0, including both live-context codec negatives);
+the canonical structure gate; Core/Web default-feature wasm32 check; and workspace
+fmt check. Clippy retains pre-existing warnings but introduces no new owned
+warning key relative to the preceding published cut. The larger hand-built
+context fixture still owns one complete verified program and its exact schemas;
+its existing size warning is not suppressed. No new dependency, I/O, unsafe,
+compatibility reader, contract-version change or public API for physical splitting
+is added.
+
+The actual unchanged all-feature Cargo graph has Core's 50-package workspace
+reverse closure including Core. RuntimePlan's closure is a subset. Core direct
+fan-in/out is 34/21 and RuntimePlan 10/15. Full closure inventory remains limited
+by the recorded repeated rustc E0786 mmap OS 1455 condition; these owner passes
+do not become a full50/full53 pass. `context-cause-r12.dependency-review.json`
+retains the metadata identity and closure. `context-cause-r13.structure-review.json`
+records exact current/base physical LOC, byte sizes and embedded-test sections:
+fiber 7,606/7,633 LOC and 286,613 bytes, function contract 1,349/1,289 and
+49,162 bytes, ArcError 1,630/1,616 and 56,750 bytes, final-flow 10,250/10,234
+and 437,565 bytes. Their existing owners retain state and layer direction; the
+new private context modules separate grammar/codec from original-caller admission
+without widening access for a file split. None of the changed files grows by
+more than 300 physical LOC. The final freeze has 3,624 source/config/fixture
+inputs and unchanged held14. An additional narrow Core integration run covers
+the existing builtin-payload, AWBC-variant and direct-suspension consumers before
+publication.
+
+This validates the context cause's model/producer/consumer/codec migration,
+subject to the explicit closure limitation above. It does not claim full return-site,
+ordinary/format continuation, suspension, cleanup/defer/capture, frame/session
+wire bytes or atomic session publication. Need/task14, View/scheduler/C1-C6,
+full50/full53, Tier2 and Native/Web capture/image parity remain in the unchanged
+ACTIVE convergence goal. The repeated full53 OS 1455 condition affects that
+validation only; independent owner work continues without an OS workaround.
+
+The final narrow r14 Core integration inventory and execution both PASS:
+`builtin_payload_admission`, `awbc_variant_types`, `direct_suspension`,
+all-features, all selected tests, ordinary default concurrency. All 13 pass,
+zero skipped, run ID `f2a8cb67-ac70-4439-826e-fa804b9efb06`. Together with
+r13 this is 1,385 executed tests plus the 5 Core doctests; it is not substituted
+for the unresolved complete dependency closure. All 3,624 r13 inputs and held14
+are hash-identical after validation. All validation sessions are finished.
+The reviewed fourteen-path cut is ready for normal main commit/non-forced push;
+publication identity verification follows below. Goal remains ACTIVE.

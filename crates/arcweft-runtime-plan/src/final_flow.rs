@@ -814,6 +814,22 @@ pub fn lower_runtime_plan_with_stats(
     let mut type_seeds = facts
         .runtime_plan_type_seeds()
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    // The generated plain-text template retains a Content slot even when the
+    // authored call and its callback mention only String. Its exact standard
+    // owner must enter the same atomic type batch as every authored dependency.
+    if needs_plain_text_context_template(facts) {
+        let owner = arcweft_core::value::RuntimeDialogueOpaqueRole::Content.exact_owner();
+        type_seeds.push(arcweft_core::plan::RuntimePlanTypeSeed::new(
+            owner.semantic_identity(),
+            arcweft_core::plan::RuntimePlanTypeProjection::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
+                arguments: Box::new([]),
+            },
+        ));
+    }
     for callable in &entry_input.callables {
         if let Some(attached) = callable.callable().attached_content_abi() {
             attached

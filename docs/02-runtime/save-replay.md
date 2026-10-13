@@ -154,6 +154,19 @@ packet の decode は executable lease を発行せず、復元は外側の保�
 選択した元の immutable program を要求する。pending packet の value byte count は
 frame／session wire 全体の byte grammar の検証を代替しない。
 
+lazy context の Result cause／Option absence も、一つの generic carrier で
+live と inert を表す。serde は Core の inert value projection だけを読み書きし、
+live packet の context-free reader／writer と別の AWBC context DTO を残さない。
+capture／restore は元の caller・return cursor・intrinsic signature・callback
+state／body を照合してから、signature の source 型行が保持する builtin case の
+payload tuple と元の field 型IDを選ぶ。source／tuple の scope と cause の型は、
+candidate provenance から独立した caller の immutable binding で検証する。
+この照合は通常の live return 検証と同じ owner を使い、全 frame の register と
+pending 値の累積 resource admission に接続する。保存された実際の cause だけが
+value node と encoded-byte を消費し、absence は値を構築しない。source の metadata
+work は同じ allowance を消費する。型検査のために receiver／Tuple／Unit を
+合成せず、source／cause の資源・型エラーを構造付きで保持する。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

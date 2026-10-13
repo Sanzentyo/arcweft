@@ -20,19 +20,32 @@ use crate::runtime_id::{
 };
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    AwbcRuntimeValueSnapshot, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
-    RuntimeBinding, RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot,
-    RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof, RuntimeFlowParameterBinding,
-    RuntimeFormatContext, RuntimeIterator, RuntimePlaceStorage, RuntimeSeq, RuntimeValue,
+    AwbcRuntimeValueSnapshot, RuntimeArcErrorContextPending, RuntimeBinding,
+    RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot, RuntimeCallableValue,
+    RuntimeCallableZeroArgInvocationProof, RuntimeFlowParameterBinding, RuntimeFormatContext,
+    RuntimeIterator, RuntimePlaceStorage, RuntimeSeq, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
 mod format;
+mod return_context;
 pub use format::{AwbcFiberFormatAttemptStateSnapshot, FiberFormatAttemptState};
+use return_context::FiberReturnContext;
 
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
+
+impl From<FiberStateError> for crate::value::AwbcRuntimeValueSnapshotError {
+    fn from(error: FiberStateError) -> Self {
+        match error {
+            FiberStateError::Snapshot(error) => error,
+            error => Self::Message {
+                message: error.to_string(),
+            },
+        }
+    }
+}
 
 /// Authenticated origin of a fiber, independent of its current callee cursor.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -572,21 +585,14 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     },
     ContextCallbackDefault {
         site: FiberCursor,
-        pending: AwbcFiberContextPendingSnapshot,
+        pending: RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot>,
         callable_pending: RuntimeCallablePendingSnapshot,
     },
     ContextCallbackInvoke {
         site: FiberCursor,
-        pending: AwbcFiberContextPendingSnapshot,
+        pending: RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot>,
         callable_state: crate::runtime_id::RuntimeCallableStateId,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcFiberContextPendingSnapshot {
-    ResultErr(AwbcRuntimeValueSnapshot),
-    OptionNone,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -897,7 +903,18 @@ impl AwbcFiberStateSnapshot {
             if let Some(point) = &frame.return_to {
                 point.continuation.validate_pending_inputs(
                     owner,
-                    frame.function,
+                    &FiberReturnContext {
+                        program,
+                        caller: index
+                            .checked_sub(1)
+                            .map(|index| state.frames[index].function),
+                        binding: index
+                            .checked_sub(1)
+                            .and_then(|index| state.frames[index].type_instantiation.as_deref()),
+                        returning_function: frame.function,
+                        cursor: point.cursor,
+                        destination: point.destination,
+                    },
                     &mut resources,
                 )?;
             }
@@ -982,7 +999,18 @@ impl AwbcFiberStateSnapshot {
             if let Some(point) = &frame.return_to {
                 point.continuation.validate_pending_inputs(
                     owner,
-                    frame.function,
+                    &FiberReturnContext {
+                        program,
+                        caller: index
+                            .checked_sub(1)
+                            .map(|index| self.frames[index].function),
+                        binding: index
+                            .checked_sub(1)
+                            .and_then(|index| self.frames[index].type_instantiation.as_ref()),
+                        returning_function: frame.function,
+                        cursor: point.cursor,
+                        destination: point.destination,
+                    },
                     &mut resources,
                 )?;
             }
@@ -1057,10 +1085,10 @@ fn extend_callable_pending_line_handle_tokens(
 }
 
 fn extend_context_pending_line_handle_tokens(
-    pending: &AwbcFiberContextPendingSnapshot,
+    pending: &RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot>,
     tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
 ) -> Result<(), String> {
-    if let AwbcFiberContextPendingSnapshot::ResultErr(value) = pending {
+    if let RuntimeArcErrorContextPending::ResultErr(value) = pending {
         extend_snapshot_line_handle_tokens(value, tokens)?;
     }
     Ok(())
@@ -1220,24 +1248,53 @@ impl AwbcFiberReturnContinuationSnapshot {
     fn validate_pending_inputs(
         &self,
         owner: &RuntimeProgramOwner,
-        returning_function: AwbcFunctionId,
+        context: &FiberReturnContext<'_>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> AwbcSaveResult<()> {
         let pending = match self {
-            Self::ProjectCallDefault { pending, .. }
-            | Self::ApplyGroupDefault { pending, .. }
-            | Self::ContextCallbackDefault {
-                callable_pending: pending,
-                ..
-            } => pending,
+            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
+                pending
+            }
+            Self::ContextCallbackDefault {
+                site,
+                pending,
+                callable_pending,
+            } => {
+                context
+                    .validate_context_pending(
+                        *site,
+                        pending,
+                        true,
+                        callable_pending.state,
+                        AwbcRuntimeValueSnapshot::view,
+                        resources,
+                    )
+                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
+                callable_pending
+            }
+            Self::ContextCallbackInvoke {
+                site,
+                pending,
+                callable_state,
+            } => {
+                return context
+                    .validate_context_pending(
+                        *site,
+                        pending,
+                        false,
+                        *callable_state,
+                        AwbcRuntimeValueSnapshot::view,
+                        resources,
+                    )
+                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from);
+            }
             Self::Ordinary
             | Self::ProjectCallTarget { .. }
             | Self::FormatOperand { .. }
             | Self::FormatDisplay { .. }
-            | Self::InstructionCall { .. }
-            | Self::ContextCallbackInvoke { .. } => return Ok(()),
+            | Self::InstructionCall { .. } => return Ok(()),
         };
-        crate::value::RuntimeCallableBodyReference::Awbc(returning_function)
+        crate::value::RuntimeCallableBodyReference::Awbc(context.returning_function)
             .validate_default_return(owner.types(), pending.state)?;
         pending.validate_inputs(owner, resources)?;
         Ok(())
@@ -1279,7 +1336,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 callable_pending,
             } => Self::ContextCallbackDefault {
                 site: *site,
-                pending: AwbcFiberContextPendingSnapshot::from_live(pending, owner)?,
+                pending: pending.snapshot_admitted(owner)?,
                 callable_pending: RuntimeCallablePendingSnapshot::from_live_admitted(
                     callable_pending,
                     owner,
@@ -1291,7 +1348,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 callable_state,
             } => Self::ContextCallbackInvoke {
                 site: *site,
-                pending: AwbcFiberContextPendingSnapshot::from_live(pending, owner)?,
+                pending: pending.snapshot_admitted(owner)?,
                 callable_state: *callable_state,
             },
         })
@@ -1325,7 +1382,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 callable_pending,
             } => FiberReturnContinuation::ContextCallbackDefault {
                 site,
-                pending: pending.into_live(owner)?,
+                pending: pending.into_live_admitted(owner)?,
                 callable_pending: callable_pending.into_live_admitted(owner)?,
             },
             Self::ContextCallbackInvoke {
@@ -1334,7 +1391,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 callable_state,
             } => FiberReturnContinuation::ContextCallbackInvoke {
                 site,
-                pending: pending.into_live(owner)?,
+                pending: pending.into_live_admitted(owner)?,
                 callable_state,
             },
         })
@@ -1345,53 +1402,56 @@ impl FiberReturnContinuation {
     fn validate_pending_inputs(
         &self,
         owner: &RuntimeProgramOwner,
-        returning_function: AwbcFunctionId,
+        context: &FiberReturnContext<'_>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> AwbcSaveResult<()> {
         let pending = match self {
-            Self::ProjectCallDefault { pending, .. }
-            | Self::ApplyGroupDefault { pending, .. }
-            | Self::ContextCallbackDefault {
-                callable_pending: pending,
-                ..
-            } => pending,
+            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
+                pending
+            }
+            Self::ContextCallbackDefault {
+                site,
+                pending,
+                callable_pending,
+            } => {
+                context
+                    .validate_context_pending(
+                        *site,
+                        pending,
+                        true,
+                        callable_pending.state(),
+                        RuntimeValue::view,
+                        resources,
+                    )
+                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
+                callable_pending
+            }
+            Self::ContextCallbackInvoke {
+                site,
+                pending,
+                callable_state,
+            } => {
+                return context
+                    .validate_context_pending(
+                        *site,
+                        pending,
+                        false,
+                        *callable_state,
+                        RuntimeValue::view,
+                        resources,
+                    )
+                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from);
+            }
             Self::Ordinary
             | Self::ProjectCallTarget { .. }
             | Self::FormatOperand { .. }
             | Self::FormatDisplay { .. }
-            | Self::InstructionCall { .. }
-            | Self::ContextCallbackInvoke { .. } => return Ok(()),
+            | Self::InstructionCall { .. } => return Ok(()),
         };
-        crate::value::RuntimeCallableBodyReference::Awbc(returning_function)
+        crate::value::RuntimeCallableBodyReference::Awbc(context.returning_function)
             .validate_default_return(owner.types(), pending.state())?;
         pending.validate_snapshot_inputs(owner, resources)?;
         Ok(())
-    }
-}
-
-impl AwbcFiberContextPendingSnapshot {
-    fn from_live(
-        pending: &RuntimeArcErrorContextPending,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<Self> {
-        Ok(match pending {
-            RuntimeArcErrorContextPending::ResultErr(value) => Self::ResultErr(
-                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)?,
-            ),
-            RuntimeArcErrorContextPending::OptionNone => Self::OptionNone,
-        })
-    }
-
-    fn into_live(
-        self,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<RuntimeArcErrorContextPending> {
-        Ok(match self {
-            Self::ResultErr(value) => RuntimeArcErrorContextPending::ResultErr(
-                value.into_runtime_value_for_program(owner)?,
-            ),
-            Self::OptionNone => RuntimeArcErrorContextPending::OptionNone,
-        })
     }
 }
 
@@ -5013,32 +5073,30 @@ fn validate_return_continuation(
             pending,
             callable_pending,
         } => {
-            return validate_context_callback_return(
+            return FiberReturnContext {
                 program,
-                caller,
+                caller: Some(caller.function),
+                binding: caller.type_instantiation.as_deref(),
                 returning_function,
-                return_to,
-                *site,
-                pending,
-                true,
-                callable_pending.state(),
-            );
+                cursor: return_to.cursor,
+                destination: return_to.destination,
+            }
+            .validate_context_return(*site, pending, true, callable_pending.state());
         }
         FiberReturnContinuation::ContextCallbackInvoke {
             site,
             pending,
             callable_state,
         } => {
-            return validate_context_callback_return(
+            return FiberReturnContext {
                 program,
-                caller,
+                caller: Some(caller.function),
+                binding: caller.type_instantiation.as_deref(),
                 returning_function,
-                return_to,
-                *site,
-                pending,
-                false,
-                *callable_state,
-            );
+                cursor: return_to.cursor,
+                destination: return_to.destination,
+            }
+            .validate_context_return(*site, pending, false, *callable_state);
         }
         FiberReturnContinuation::ProjectCallDefault { site, pending } => {
             validate_project_call_stage_values(
@@ -5335,91 +5393,6 @@ fn instruction_call_receiver_update(
         return Err(FiberStateError::ReturnValueMismatch);
     }
     Ok(Some((*destination, value)))
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "snapshot validation keeps the exact callback stage and return site visible"
-)]
-fn validate_context_callback_return(
-    program: &AwbcProgram,
-    caller: &FiberFrame,
-    returning_function: AwbcFunctionId,
-    return_to: &FiberReturnPoint,
-    site: FiberCursor,
-    pending: &RuntimeArcErrorContextPending,
-    default_stage: bool,
-    callable_state: crate::runtime_id::RuntimeCallableStateId,
-) -> Result<(), FiberStateError> {
-    if site.function != caller.function
-        || return_to.cursor != site
-        || return_to.destination.is_some()
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let AwbcInstruction::CallIntrinsic {
-        dst: Some(_),
-        intrinsic,
-        args,
-    } = instruction_at_site(program, site)?
-    else {
-        return Err(FiberStateError::InvalidFrame);
-    };
-    let [_, _] = args.as_slice() else {
-        return Err(FiberStateError::InvalidFrame);
-    };
-    let kind = match program
-        .intrinsics
-        .get(intrinsic.index())
-        .and_then(|record| record.identity.as_intrinsic())
-    {
-        Some(crate::value::RuntimeIntrinsic::StdResultWithContext) => {
-            RuntimeArcErrorContextKind::Result
-        }
-        Some(crate::value::RuntimeIntrinsic::StdOptionWithContext) => {
-            RuntimeArcErrorContextKind::Option
-        }
-        _ => return Err(FiberStateError::InvalidFrame),
-    };
-    if !matches!(
-        (kind, pending),
-        (
-            RuntimeArcErrorContextKind::Result,
-            RuntimeArcErrorContextPending::ResultErr(_)
-        ) | (
-            RuntimeArcErrorContextKind::Option,
-            RuntimeArcErrorContextPending::OptionNone
-        )
-    ) {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let intrinsic = program
-        .intrinsics
-        .get(intrinsic.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let signature = program
-        .signatures
-        .get(intrinsic.signature.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let Some(callback_type) = signature.params.get(1).copied() else {
-        return Err(FiberStateError::InvalidFrame);
-    };
-    let state = program
-        .callable_states
-        .get(callable_state.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if state.function_type != callback_type
-        || (default_stage && !pending_default_matches(program, callable_state, returning_function))
-        || (!default_stage
-            && !matches!(
-                state.transition,
-                crate::plan::RuntimeCallableTransition::Invoke { function, .. }
-                    if function == returning_function
-            ))
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    Ok(())
 }
 
 fn validate_project_call_stage_values(

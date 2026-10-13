@@ -13,7 +13,6 @@ use arcweft_id::{DeclarationIdentityFamily, TextKey};
 use arcweft_source::{
     SourceCoordinate, SourceCoordinateError, SourceDocumentId, SourceRange, SourceRevision,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -448,11 +447,26 @@ pub(crate) enum RuntimeArcErrorContextKind {
 }
 
 /// Typed error or absence retained while a lazy context message is evaluated.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeArcErrorContextPending {
-    ResultErr(RuntimeValue),
+/// Decoding and encoding apply to the inert value projection. A live packet
+/// cannot bypass its owning program admission through a generic serde reader.
+///
+/// ```compile_fail
+/// use arcweft_core::value::RuntimeArcErrorContextPending;
+/// let _: RuntimeArcErrorContextPending = serde_json::from_str("\"OptionNone\"").unwrap();
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::value::{RuntimeArcErrorContextPending, RuntimeValue};
+/// let live = RuntimeArcErrorContextPending::<RuntimeValue>::OptionNone;
+/// let _ = serde_json::to_vec(&live).unwrap();
+/// ```
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeArcErrorContextPending<V = RuntimeValue> {
+    ResultErr(V),
     OptionNone,
 }
+
+mod context_pending;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum RuntimeArcErrorContextStart {

@@ -75,12 +75,10 @@ fn context_program() -> AwbcContextFixture {
     .map(|intrinsic| AwbcIntrinsic {
         identity: RuntimeCallTarget::intrinsic(intrinsic),
         signature: match intrinsic {
-            RuntimeIntrinsic::StdResultContext | RuntimeIntrinsic::StdOptionContext => {
-                AwbcSignatureId(1)
-            }
-            RuntimeIntrinsic::StdResultWithContext | RuntimeIntrinsic::StdOptionWithContext => {
-                AwbcSignatureId(2)
-            }
+            RuntimeIntrinsic::StdResultContext => AwbcSignatureId(1),
+            RuntimeIntrinsic::StdResultWithContext => AwbcSignatureId(2),
+            RuntimeIntrinsic::StdOptionContext => AwbcSignatureId(3),
+            RuntimeIntrinsic::StdOptionWithContext => AwbcSignatureId(4),
             _ => unreachable!("only context intrinsics are listed above"),
         },
         revision: 1,
@@ -123,7 +121,7 @@ fn context_program() -> AwbcContextFixture {
             ),
             AwbcRuntimeType::new(
                 RuntimeSemanticTypeId::from_bytes([0x70; 32]),
-                AwbcRuntimeTypeShape::Dynamic,
+                AwbcRuntimeTypeShape::Choice(vec![STRING, CONTENT]),
             ),
         ],
         signatures: vec![
@@ -308,6 +306,122 @@ fn context_program() -> AwbcContextFixture {
         plain_text_context_template: Some(template_ref),
         ..AwbcProgram::default()
     };
+    // Each real receiver owns its exact source and ArcError result rows; the
+    // message role alone is the declared String-or-Content choice.
+    let error_owner = crate::pattern::runtime_standard_opaque_type(&["ArcError"])
+        .and_then(|spec| spec.monomorphic_owner())
+        .unwrap();
+    let error = AwbcTypeId(5);
+    let result = AwbcTypeId(6);
+    let option = AwbcTypeId(7);
+    let output = AwbcTypeId(8);
+    let string_payload = AwbcTypeId(9);
+    let error_payload = AwbcTypeId(10);
+    program.strings.extend([
+        "Ok".to_owned(),
+        "Err".to_owned(),
+        "Some".to_owned(),
+        "None".to_owned(),
+        error_owner.producer().as_str().to_owned(),
+    ]);
+    program.runtime_types.extend([
+        AwbcRuntimeType::new(
+            error_owner.semantic_identity(),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(6),
+                admission: error_owner.admission(),
+                value_class: error_owner.value_class(),
+                persistence: error_owner.persistence(),
+                arguments: vec![],
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::Result {
+                ok: Box::new(RuntimeCheckedType::String),
+                error: Box::new(RuntimeCheckedType::String),
+            }
+            .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Variant {
+                owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+                ),
+                arguments: vec![],
+                cases: vec![
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: Some(string_payload),
+                    },
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(3),
+                        payload: Some(string_payload),
+                    },
+                ],
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::String))
+                .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Variant {
+                owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+                ),
+                arguments: vec![],
+                cases: vec![
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(4),
+                        payload: Some(string_payload),
+                    },
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(5),
+                        payload: None,
+                    },
+                ],
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x71; 32]),
+            AwbcRuntimeTypeShape::Variant {
+                owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+                ),
+                arguments: vec![],
+                cases: vec![
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: Some(string_payload),
+                    },
+                    crate::awbc::schema::AwbcVariantCase {
+                        name: AwbcStringId(3),
+                        payload: Some(error_payload),
+                    },
+                ],
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String]).semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Tuple(vec![STRING]),
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x72; 32]),
+            AwbcRuntimeTypeShape::Tuple(vec![error]),
+        ),
+    ]);
+    program.signatures[1].params[0] = result;
+    program.signatures[1].result = Some(output);
+    program.signatures[2].params[0] = result;
+    program.signatures[2].result = Some(output);
+    for template in [1usize, 2] {
+        let mut signature = program.signatures[template].clone();
+        signature.params[0] = option;
+        program.signatures.push(signature);
+    }
+    for layout in [1usize, 2] {
+        program.frame_layouts[layout].slots[0].ty = result;
+        program.frame_layouts[layout].slots[2].ty = output;
+        let mut option_layout = program.frame_layouts[layout].clone();
+        option_layout.slots[0].ty = option;
+        program.frame_layouts.push(option_layout);
+    }
     for (declaration, index) in [
         ("result.with-context", 1),
         ("option.context", 2),
@@ -315,11 +429,7 @@ fn context_program() -> AwbcContextFixture {
     ] {
         let function = AwbcFunctionId(index + 1);
         let signature = program.intrinsics[index as usize].signature;
-        let frame_layout = if signature == AwbcSignatureId(2) {
-            AwbcFrameLayoutId(2)
-        } else {
-            AwbcFrameLayoutId(1)
-        };
+        let frame_layout = AwbcFrameLayoutId(signature.0);
         program.instructions.push(AwbcInstruction::CallIntrinsic {
             dst: Some(AwbcRegisterId(2)),
             intrinsic: AwbcIntrinsicId(index),
@@ -356,6 +466,16 @@ fn context_program() -> AwbcContextFixture {
             flags: Default::default(),
         });
     }
+    program.canonicalize_string_table();
+    program
+        .verify(
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..crate::awbc::verify::AwbcVerifyContext::default()
+            },
+        )
+        .expect("typed context fixtures use the same verified signatures as real callers");
     AwbcContextFixture {
         program: Arc::new(program),
         artifact,

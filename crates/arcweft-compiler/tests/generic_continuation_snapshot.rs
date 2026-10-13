@@ -90,6 +90,106 @@ flow main() -> i64 {
 }
 
 #[test]
+fn authored_lazy_context_executes_in_native_and_restores_the_awbc_callback_cause() {
+    let source = r#"
+entry cli @entry.main { goto @flow.main }
+fn context_message() -> String { "context" }
+flow main() -> bool {
+    let input: Result<i64, String> = .Err("cause")
+    let output = input.with_context(context_message)
+    match output {
+        .Err(_) => return true
+        .Ok(_) => return false
+    }
+}
+"#;
+    let compiled = compile_source(source)
+        .expect("authored context retains its checked source Result and callback");
+    let [flow] = compiled.plan.flows() else {
+        panic!("one flow")
+    };
+    let mut plan = compiled.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x39; 32]).unwrap(),
+    )
+    .unwrap();
+    let mut native = Engine::for_flow(plan, &flow.id).unwrap();
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    for _ in 0..2048 {
+        if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        let result = native.step(RuntimeStepInput::default(), options);
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+    }
+    assert_eq!(
+        native.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("true".into()))
+    );
+
+    let bytes = awfb_bytes_from_source(source, [0x39; 32]);
+    let mut session = session_from_bytes(&bytes);
+    let mut restored_at_callback = false;
+    for _ in 0..2048 {
+        let snapshot = session.snapshot_session().unwrap();
+        if snapshot.executor.state.fiber.frames.iter().any(|frame| frame.return_to.as_ref().is_some_and(|point|
+            matches!(point.continuation, arcweft_core::awbc::fiber::AwbcFiberReturnContinuationSnapshot::ContextCallbackInvoke { .. })
+        )) {
+            let save = session.export_session_save_bytes().unwrap();
+            let mut restored = session_from_bytes(&bytes);
+            restored.import_session_save_bytes(&save, &Default::default()).unwrap();
+            assert_eq!(restored.snapshot_session().unwrap(), snapshot);
+            session = restored;
+            restored_at_callback = true;
+            break;
+        }
+        assert!(
+            !session.is_finished(),
+            "callback save point must be reached"
+        );
+        let result = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    }
+    assert!(
+        restored_at_callback,
+        "actual authored context is saved while its message callback is active"
+    );
+    for _ in 0..2048 {
+        if session.is_finished() {
+            break;
+        }
+        let result = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+    }
+    assert!(session.is_finished());
+    assert_eq!(
+        session
+            .snapshot_session()
+            .unwrap()
+            .executor
+            .state
+            .fiber
+            .return_summary
+            .as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
 fn inhabited_empty_statement_match_cannot_publish_a_native_plan() {
     for source in [
         "entry cli @entry.main { goto @flow.main }\nflow main() { match true {}; }",

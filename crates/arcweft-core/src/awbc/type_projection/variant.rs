@@ -15,18 +15,7 @@ impl AwbcProgram {
         ty: AwbcTypeId,
         case: RuntimeBuiltinVariantCaseIdentity,
     ) -> Option<AwbcTypeId> {
-        let AwbcRuntimeTypeShape::Variant {
-            owner: owner @ AwbcVariantIdentity::Builtin(builtin),
-            arguments,
-            cases,
-        } = self.runtime_types.get(ty.index())?.shape()
-        else {
-            return None;
-        };
-        let (ordinal, _) = builtin.resolve_case(case)?;
-        self.validate_variant_fields(ty, owner, arguments, cases)
-            .ok()?;
-        let payload = cases.get(usize::try_from(ordinal).ok()?)?.payload?;
+        let payload = self.builtin_variant_case_payload(ty, case).ok()??;
         let AwbcRuntimeTypeShape::Tuple(fields) = self.runtime_types.get(payload.index())?.shape()
         else {
             return None;
@@ -35,6 +24,34 @@ impl AwbcProgram {
             return None;
         };
         Some(*item)
+    }
+
+    /// Borrows the exact payload row, including unit cases, from the canonical
+    /// original builtin variant inventory. It never copies or unfolds a body.
+    pub(crate) fn builtin_variant_case_payload(
+        &self,
+        ty: AwbcTypeId,
+        case: RuntimeBuiltinVariantCaseIdentity,
+    ) -> Result<Option<AwbcTypeId>, Error> {
+        let AwbcRuntimeTypeShape::Variant {
+            owner: owner @ AwbcVariantIdentity::Builtin(builtin),
+            arguments,
+            cases,
+        } = self
+            .runtime_types
+            .get(ty.index())
+            .ok_or(Error::RuntimeTypeOutOfBounds { index: ty.0 })?
+            .shape()
+        else {
+            return Err(Error::InvalidBuiltinVariant { index: ty.0 });
+        };
+        let invalid = || Error::InvalidBuiltinVariant { index: ty.0 };
+        let (ordinal, _) = builtin.resolve_case(case).ok_or_else(invalid)?;
+        self.validate_variant_fields(ty, owner, arguments, cases)?;
+        Ok(cases
+            .get(usize::try_from(ordinal).map_err(|_| invalid())?)
+            .ok_or_else(invalid)?
+            .payload)
     }
 
     /// Checks the complete row without unfolding any nominal payload body.

@@ -538,6 +538,135 @@ fn round_trip_context_fiber(fixture: &ContextFixture, fiber: &FiberState) -> Fib
 }
 
 #[test]
+fn context_cause_type_is_checked_before_capture_or_construction_in_both_stages() {
+    use crate::awbc::fiber::AwbcFiberReturnContinuationSnapshot as Saved;
+    use crate::value::{
+        AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot as Value,
+        RuntimeArcErrorContextPending as Pending,
+    };
+    let fixture = context_fixture(ContextReceiver::Result, true);
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
+    let mut fiber = context_fiber(
+        &fixture,
+        RuntimeValue::result_err(RuntimeValue::String("cause".to_owned())),
+    );
+    let mut stages = std::collections::BTreeSet::new();
+    for _ in 0..32 {
+        context_step(&fixture, &mut fiber, true);
+        let Some(point) = fiber
+            .frames
+            .last()
+            .and_then(|frame| frame.return_to.as_ref())
+        else {
+            continue;
+        };
+        let default_stage = match point.continuation {
+            FiberReturnContinuation::ContextCallbackDefault { .. } => true,
+            FiberReturnContinuation::ContextCallbackInvoke { .. } => false,
+            _ => continue,
+        };
+        if !stages.insert(default_stage) {
+            continue;
+        }
+        let snapshot = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        for value in [
+            Value::Bool(true),
+            Value::Callable(AwbcRuntimeCallableSnapshot {
+                state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained: vec![],
+            }),
+        ] {
+            let mut forged = snapshot.clone();
+            let (Saved::ContextCallbackDefault { pending, .. }
+            | Saved::ContextCallbackInvoke { pending, .. }) = &mut forged
+                .frames
+                .last_mut()
+                .unwrap()
+                .return_to
+                .as_mut()
+                .unwrap()
+                .continuation
+            else {
+                unreachable!()
+            };
+            *pending = Pending::ResultErr(value);
+            assert!(matches!(
+                forged.into_live_for_program(&owner),
+                Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+            ));
+        }
+        let mut invalid_live = snapshot.clone().into_live_for_program(&owner).unwrap();
+        let (FiberReturnContinuation::ContextCallbackDefault { pending, .. }
+        | FiberReturnContinuation::ContextCallbackInvoke { pending, .. }) = &mut invalid_live
+            .frames
+            .last_mut()
+            .unwrap()
+            .return_to
+            .as_mut()
+            .unwrap()
+            .continuation
+        else {
+            unreachable!()
+        };
+        *pending = Pending::ResultErr(RuntimeValue::Bool(true));
+        assert!(matches!(
+            AwbcFiberStateSnapshot::from_live(&invalid_live, &owner),
+            Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+        ));
+        assert_eq!(
+            AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap(),
+            snapshot
+        );
+        if stages.len() == 2 {
+            break;
+        }
+    }
+    assert_eq!(stages, std::collections::BTreeSet::from([false, true]));
+}
+
+#[test]
+fn context_source_retains_the_original_payload_row_in_an_unsealed_duplicate_inventory() {
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeArcErrorContextPending};
+    let fixture = context_fixture(ContextReceiver::Result, true);
+    let mut fiber = context_fiber(
+        &fixture,
+        RuntimeValue::result_err(RuntimeValue::String("cause".to_owned())),
+    );
+    context_step(&fixture, &mut fiber, true);
+    let original_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
+    let mut saved = AwbcFiberStateSnapshot::from_live(&fiber, &original_owner).unwrap();
+    let mut program = (*fixture.program).clone();
+    let original_string = program.runtime_types[0].semantic_identity();
+    let different = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program.runtime_types.push(AwbcRuntimeType::new(
+        original_string,
+        AwbcRuntimeTypeShape::Bool,
+    ));
+    program.runtime_types[4] = runtime_type(0x32, AwbcRuntimeTypeShape::Tuple(vec![different]));
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+    let crate::awbc::fiber::AwbcFiberReturnContinuationSnapshot::ContextCallbackDefault {
+        pending,
+        ..
+    } = &mut saved.frames[1].return_to.as_mut().unwrap().continuation
+    else {
+        unreachable!()
+    };
+    *pending =
+        RuntimeArcErrorContextPending::ResultErr(AwbcRuntimeValueSnapshot::String("cause".into()));
+    let error = saved.into_live_for_program(&owner).unwrap_err();
+    let crate::value::AwbcRuntimeValueSnapshotError::ProgramType(error) = error else {
+        panic!("original context payload must report a typed error");
+    };
+    let crate::program_types::RuntimeProgramTypeError::AwbcValue(error) = *error else {
+        panic!("the original AWBC row must own the rejection");
+    };
+    assert!(
+        matches!(*error, crate::awbc::value_admission::AwbcValueAdmissionError::Value { ty, .. }
+        if ty == different)
+    );
+}
+
+#[test]
 fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_once() {
     let fixture = context_fixture(ContextReceiver::Result, true);
     let mut fiber = context_fiber(
@@ -575,14 +704,8 @@ fn verified_defaulted_context_callback_restores_both_stages_and_writes_result_on
     else {
         panic!("default stage has a typed continuation")
     };
-    *pending = crate::awbc::fiber::AwbcFiberContextPendingSnapshot::OptionNone;
-    assert!(
-        forged
-            .into_live_for_program(&owner)
-            .unwrap()
-            .validate_for_program(&fixture.program)
-            .is_err()
-    );
+    *pending = crate::value::RuntimeArcErrorContextPending::OptionNone;
+    assert!(forged.into_live_for_program(&owner).is_err());
 
     let mut restored = round_trip_context_fiber(&fixture, &fiber);
     assert!(matches!(
