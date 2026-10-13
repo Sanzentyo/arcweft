@@ -212,22 +212,11 @@ impl RuntimeProgramTypes<'_> {
         value: crate::value::RuntimeValueView<'_>,
         work: &crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), RuntimeProgramTypeError> {
-        match self.value_type(semantic_type)? {
-            RuntimeProgramValueType::Plan { program, ty } => Ok(program
-                .validate_snapshot_value_view(
-                    ty,
-                    value,
-                    work,
-                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-                )?),
-            RuntimeProgramValueType::Awbc { program, ty } => Ok(program
-                .validate_snapshot_value_view(
-                    ty,
-                    value,
-                    work,
-                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-                )?),
-        }
+        self.value_type(semantic_type)?.validate_snapshot_storage(
+            value,
+            work,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        )
     }
 
     /// Resolves the exact source type retained by a `DataShape<T>` row.

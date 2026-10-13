@@ -102,6 +102,12 @@ durable root は選択された state role の型をこの構築前検証に渡�
 inert callable と Iterator Witness の照合は選択中の original program を使い、
 その検証は live lease や Copy capability を発行しない。live 値の admission は
 既存 lease がその executable と一致することを引き続き要求する。
+expected type を持たない program-bound value capture／restore も、資源走査を
+完了してから nominal の元の型行と construction binding、callable の元 state
+と retained 型、Iterator Witness の next-method と state 型、DataShape と
+Need outcome の元の型座標を検証する。この照合を全 descendant に終えてから
+最初の DTO projection／live constructor に進む。program 参照のない graph は
+資源走査で判定し、不要な型照合走査で validation-work を再消費しない。
 unrestricted の保存場所では、同じ traversal が Need と
 affine opaque の全 descendant を拒否する。line-handle token inventory もこの
 traversal を使い、空の columnar storage の再帰 metadata を検証から除外しない。
@@ -253,7 +259,9 @@ standalone outcome の有限型も、collection／depth／node／string と共�
 predicate に置き換えない。Need semantic identity の canonical transcript は変えない。
 
 保存 spec の projection／restore は descriptor と全 request value を一つの allowance
-で preflight してから値の変換を開始する。Need carrier 構築と launch journal の admission
+で preflight し、program outcome の元の型行と全 request value の program storage
+を照合してから値の変換を開始する。最初の payload の変換で上限を再発行しない。
+Need carrier 構築と launch journal の admission
 にも同じ規則を接続し、submission の元の handle correlation を live request 構築前に
 照合する。descriptor failure は後続 value admission にも同じ first error として残る。
 この計上は retained storage の logical snapshot grammar であり、frame／session の

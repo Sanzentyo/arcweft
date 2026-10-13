@@ -60,11 +60,16 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
             .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
                 message: error.to_string(),
             })?;
-        let value = |payload: &RuntimePayload| match owner {
-            Some(owner) => {
-                AwbcRuntimeValueSnapshot::from_runtime_value_for_program(payload.value(), owner)
-            }
-            None => AwbcRuntimeValueSnapshot::from_standalone_value(payload.value()),
+        spec.outcome.validate_storage_owner(owner)?;
+        for payload in spec.request.payloads() {
+            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                payload.value().view(),
+                owner,
+                &resources,
+            )?;
+        }
+        let value = |payload: &RuntimePayload| {
+            AwbcRuntimeValueSnapshot::from_admitted_storage(payload.value(), owner)
         };
         Ok(Self {
             generation: spec.generation,
@@ -91,6 +96,14 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
             .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
                 message: error.to_string(),
             })?;
+        self.outcome.validate_storage_owner(Some(owner))?;
+        for payload in self.request.payloads() {
+            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                payload.view(),
+                Some(owner),
+                &resources,
+            )?;
+        }
         Ok(TaskSpec {
             generation: self.generation,
             producer: self.producer,
@@ -100,9 +113,7 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
             policy: self.policy,
             outcome: self.outcome,
             request: self.request.into_mapped_admitted(|value| {
-                value
-                    .into_runtime_value_for_program(owner)
-                    .map(RuntimePayload)
+                value.into_admitted_runtime_value(owner).map(RuntimePayload)
             })?,
             debug_label: self.debug_label,
         })

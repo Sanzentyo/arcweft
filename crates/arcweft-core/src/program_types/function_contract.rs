@@ -17,6 +17,24 @@ use authority::FunctionTypeAuthority;
 pub(crate) use authority::RuntimeValueTypeContext;
 
 impl super::RuntimeProgramValueType<'_> {
+    /// Admits a stored value under its original row and retained construction
+    /// binding, sharing the enclosing resource traversal's remaining work.
+    pub(crate) fn validate_snapshot_storage(
+        self,
+        value: crate::value::RuntimeValueView<'_>,
+        work: &ValidationWork,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        match self {
+            Self::Plan { program, ty } => {
+                Ok(program.validate_snapshot_value_view(ty, value, work, origin)?)
+            }
+            Self::Awbc { program, ty } => {
+                Ok(program.validate_snapshot_value_view(ty, value, work, origin)?)
+            }
+        }
+    }
+
     pub(crate) fn validate_view(
         self,
         value: crate::value::RuntimeValueView<'_>,

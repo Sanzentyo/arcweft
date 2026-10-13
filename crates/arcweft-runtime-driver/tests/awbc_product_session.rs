@@ -2509,7 +2509,7 @@ fn cold_observation_callable_restore_binds_the_installed_current_program() {
             &error,
             BundleSessionSaveError::Fiber { message }
                 if message.contains("observation 'signal.payload' cannot be restored")
-                    && message.contains("callable state 2 is absent from its program"),
+                    && message.contains("callable state 2 is absent from the selected program"),
         ),
         "{error:?}"
     );

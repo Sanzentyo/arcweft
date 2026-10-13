@@ -539,7 +539,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Self::arity(actual_fields.len(), actual.fields().len())?;
                 for (ordinal, field) in actual_fields.iter().enumerate() {
                     if actual.field_id(ordinal) != Some(field.field) {
-                        return Err(Self::mismatch(value));
+                        return Err(RuntimeSchemaError::RecordField {
+                            path: "$".to_owned(),
+                            ordinal,
+                        });
                     }
                 }
                 if !self

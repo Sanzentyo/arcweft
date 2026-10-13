@@ -37,6 +37,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     Resource(crate::entry::RuntimeSchemaError),
     #[error(transparent)]
     ProgramType(Box<crate::program_types::RuntimeProgramTypeError>),
+    #[error(transparent)]
+    TaskOutcome(#[from] crate::task::TaskOutcomeBindingError),
 }
 
 impl From<crate::entry::RuntimeSchemaError> for AwbcRuntimeValueSnapshotError {
@@ -45,6 +47,12 @@ impl From<crate::entry::RuntimeSchemaError> for AwbcRuntimeValueSnapshotError {
             crate::entry::RuntimeSchemaError::ValueNesting(error) => Self::Nesting(error),
             error => Self::Resource(error),
         }
+    }
+}
+
+impl From<crate::program_types::RuntimeProgramTypeError> for AwbcRuntimeValueSnapshotError {
+    fn from(error: crate::program_types::RuntimeProgramTypeError) -> Self {
+        Self::ProgramType(Box::new(error))
     }
 }
 
@@ -307,13 +315,29 @@ pub struct AwbcRuntimeCallableSnapshot {
     pub retained: Vec<AwbcRuntimeValueSnapshot>,
 }
 
+mod admission;
+
 impl AwbcRuntimeValueSnapshot {
+    pub(crate) fn validate_admitted_storage_view(
+        value: super::RuntimeValueView<'_>,
+        owner: Option<&RuntimeProgramOwner>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        admission::SnapshotStorageAdmission::new(owner, resources).validate(value)
+    }
     /// Captures a borrowed callable through its exact executable lease without
     /// constructing a second live `RuntimeValue::Callable` carrier.
     pub(crate) fn from_callable_for_program(
         value: &RuntimeCallableValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        let view = super::RuntimeValueView::Callable(super::RuntimeCallableView::Live(value));
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.validate_view(view, 0, None)?;
+        Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
         Self::callable_from_live(value, Some(owner)).map(Self::Callable)
     }
 
@@ -391,20 +415,21 @@ impl AwbcRuntimeValueSnapshot {
             affine |= !value.intrinsic_ownership().permits_copy();
             Ok(())
         };
-        let work = crate::entry::schema::value_encoding::preflight_snapshot_view(
-            self.view(),
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             limits,
-            Some(&mut observe),
-        )?;
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources.validate_view(self.view(), 0, Some(&mut observe))?;
         if affine {
             return Err(AwbcRuntimeValueSnapshotError::AffineValue);
         }
         if let Some(expected) = expected {
             owner
                 .types()
-                .validate_inert_snapshot_view(expected, self.view(), &work)
+                .validate_inert_snapshot_view(expected, self.view(), &resources.work())
                 .map_err(|error| AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))?;
         }
+        Self::validate_admitted_storage_view(self.view(), Some(owner), &resources)?;
         self.into_live_with_owner(Some(owner))
     }
 
@@ -413,15 +438,13 @@ impl AwbcRuntimeValueSnapshot {
     pub fn from_unrestricted_standalone_value(
         value: &RuntimeValue,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
-        if !value.ownership().permits_copy() {
-            return Err(AwbcRuntimeValueSnapshotError::AffineValue);
-        }
-        crate::entry::schema::validate_runtime_snapshot_value(
-            value,
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-        )?;
-        Self::from_live_with_owner(value, None)
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        value.view().admit_unrestricted(&mut resources)?;
+        Self::validate_admitted_storage_view(value.view(), None, &resources)?;
+        Self::from_admitted_storage(value, None)
     }
 
     /// Restores context-free copyable data through the same exhaustive graph
@@ -429,30 +452,12 @@ impl AwbcRuntimeValueSnapshot {
     pub fn into_unrestricted_standalone_value(
         self,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        let mut affine = false;
-        let mut program_owned = false;
-        let mut observe = |value: super::RuntimeValueView<'_>| {
-            use super::{RuntimeAgentKind, RuntimeIteratorKind, RuntimeValueView as View};
-            affine |= !value.intrinsic_ownership().permits_copy();
-            program_owned |= matches!(value, View::NominalRecord(_) | View::Callable(_))
-                || matches!(value, View::Variant(variant) if matches!(variant.owner(), super::RuntimeVariantIdentity::Nominal { .. }))
-                || matches!(value, View::Agent(agent) if matches!(agent.kind(), RuntimeAgentKind::DataShape(_)))
-                || matches!(value, View::Iterator(iterator) if matches!(iterator.kind(), RuntimeIteratorKind::Witness(_)));
-            Ok(())
-        };
-        crate::entry::schema::value_encoding::preflight_snapshot_view(
-            self.view(),
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            Some(&mut observe),
-        )?;
-        if affine {
-            return Err(AwbcRuntimeValueSnapshotError::AffineValue);
-        }
-        if program_owned {
-            return Err(AwbcRuntimeValueSnapshotError::new(
-                "program-owned values require a program-bound snapshot",
-            ));
-        }
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        self.view().admit_unrestricted(&mut resources)?;
+        Self::validate_admitted_storage_view(self.view(), None, &resources)?;
         self.into_live_with_owner(None)
     }
 
@@ -460,10 +465,13 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeOpaqueValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        crate::entry::schema::value_encoding::validate_snapshot_opaque(
-            value,
+        let view = super::RuntimeValueView::Opaque(super::RuntimeOpaqueView::Live(value));
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-        )?;
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.validate_view(view, 0, None)?;
+        Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
         Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
     }
 
@@ -479,12 +487,13 @@ impl AwbcRuntimeValueSnapshot {
     pub(crate) fn from_standalone_value(
         value: &RuntimeValue,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
-        crate::entry::schema::validate_runtime_snapshot_value(
-            value,
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-        )?;
-        Self::from_live_with_owner(value, None)
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.validate_view(value.view(), 0, None)?;
+        Self::validate_admitted_storage_view(value.view(), None, &resources)?;
+        Self::from_admitted_storage(value, None)
     }
 
     /// Captures an inert value under its exact immutable executable lease.
@@ -508,9 +517,13 @@ impl AwbcRuntimeValueSnapshot {
         owner: &RuntimeProgramOwner,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
-        crate::entry::schema::validate_runtime_snapshot_value(value, limits)?;
-        Self::from_live_with_owner(value, Some(owner))
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.validate_view(value.view(), 0, None)?;
+        Self::validate_admitted_storage_view(value.view(), Some(owner), &resources)?;
+        Self::from_admitted_storage(value, Some(owner))
     }
 
     /// Captures a retained copyable value without duplicating an affine owner.
@@ -518,21 +531,26 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        value.validate_nesting_depth(super::MAX_RUNTIME_VALUE_NESTING_DEPTH)?;
-        if !value.ownership().permits_copy() {
-            return Err(AwbcRuntimeValueSnapshotError::AffineValue);
-        }
-        Self::from_runtime_value_for_program(value, owner)
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        value.view().admit_unrestricted(&mut resources)?;
+        Self::validate_admitted_storage_view(value.view(), Some(owner), &resources)?;
+        Self::from_admitted_storage(value, Some(owner))
     }
 
     pub(crate) fn from_runtime_iterator_for_program(
         value: &RuntimeIterator,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        crate::entry::schema::value_encoding::validate_snapshot_iterator(
-            value,
+        let view = super::RuntimeValueView::Iterator(super::RuntimeIteratorView::Live(value));
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-        )?;
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.validate_view(view, 0, None)?;
+        Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
         Self::iterator_from_live(value, Some(owner)).map(Self::Iterator)
     }
 
@@ -540,7 +558,12 @@ impl AwbcRuntimeValueSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
-        self.validate_graph_limits(crate::entry::RuntimeSchemaLimits::engine_default())?;
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources.validate_view(self.view(), 0, None)?;
+        Self::validate_admitted_storage_view(self.view(), Some(owner), &resources)?;
         let Self::Iterator(iterator) = self else {
             return Err(AwbcRuntimeValueSnapshotError::new(
                 "rollback image does not contain an iterator",
@@ -555,7 +578,7 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeValue,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Self::from_live_with_owner(value, Some(owner))
+        Self::from_admitted_storage(value, Some(owner))
     }
 
     /// Constructs one previously admitted inert value under its original owner.
@@ -567,7 +590,9 @@ impl AwbcRuntimeValueSnapshot {
         self.into_live_with_owner(Some(owner))
     }
 
-    fn from_live_with_owner(
+    /// Projects only after the enclosing owner admits the complete graph,
+    /// original executable storage and cumulative resource allowance.
+    pub(crate) fn from_admitted_storage(
         value: &RuntimeValue,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
@@ -604,7 +629,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::Tuple(values) => Self::Tuple(
                 values
                     .iter()
-                    .map(|value| Self::from_live_with_owner(value, owner))
+                    .map(|value| Self::from_admitted_storage(value, owner))
                     .collect::<Result<_, _>>()?,
             ),
             RuntimeValue::Seq(value) => Self::Seq(Self::sequence_from_live(value, owner)?),
@@ -615,13 +640,12 @@ impl AwbcRuntimeValueSnapshot {
                         Ok(AwbcRuntimeFieldSnapshot {
                             field: field.field(),
                             name: field.name().to_owned(),
-                            value: Self::from_live_with_owner(field.value(), owner)?,
+                            value: Self::from_admitted_storage(field.value(), owner)?,
                         })
                     })
                     .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
             ),
             RuntimeValue::NominalRecord(record) => {
-                Self::validate_nominal_snapshot(value, record.semantic_identity(), owner)?;
                 Self::NominalRecord(Self::nominal_from_live(record, owner)?)
             }
             RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value, owner)?),
@@ -639,12 +663,9 @@ impl AwbcRuntimeValueSnapshot {
                 payload,
                 type_instantiation,
             }) => {
-                if let super::RuntimeVariantIdentity::Nominal {
-                    semantic_identity, ..
-                } = variant_owner
+                if matches!(variant_owner, super::RuntimeVariantIdentity::Builtin(_))
+                    && value.builtin_variant_case().is_none()
                 {
-                    Self::validate_nominal_snapshot(value, *semantic_identity, owner)?;
-                } else if value.builtin_variant_case().is_none() {
                     return Err(AwbcRuntimeValueSnapshotError::new(
                         "invalid builtin variant snapshot",
                     ));
@@ -655,31 +676,13 @@ impl AwbcRuntimeValueSnapshot {
                     name: name.clone(),
                     payload: payload
                         .as_deref()
-                        .map(|value| Self::from_live_with_owner(value, owner))
+                        .map(|value| Self::from_admitted_storage(value, owner))
                         .transpose()?
                         .map(Box::new),
                     type_instantiation: type_instantiation.as_deref().cloned(),
                 }
             }
         })
-    }
-
-    fn validate_nominal_snapshot(
-        value: &RuntimeValue,
-        semantic_identity: RuntimeSemanticTypeId,
-        owner: Option<&RuntimeProgramOwner>,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let owner = owner.ok_or_else(|| {
-            AwbcRuntimeValueSnapshotError::new("nominal values require a program-bound snapshot")
-        })?;
-        owner
-            .types()
-            .validate_snapshot_value(
-                semantic_identity,
-                value,
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            )
-            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
     /// Restores values, including `DataShape` witnesses, after the enclosing
@@ -700,7 +703,12 @@ impl AwbcRuntimeValueSnapshot {
         program_owner: &RuntimeProgramOwner,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        self.validate_graph_limits(limits)?;
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources.validate_view(self.view(), 0, None)?;
+        Self::validate_admitted_storage_view(self.view(), Some(program_owner), &resources)?;
         self.into_live_with_owner(Some(program_owner))
     }
 
@@ -880,7 +888,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeIterator::Values { items } => AwbcRuntimeIteratorSnapshot::Values {
                 items: items
                     .iter()
-                    .map(|value| Self::from_live_with_owner(value, owner))
+                    .map(|value| Self::from_admitted_storage(value, owner))
                     .collect::<Result<_, _>>()?,
             },
             RuntimeIterator::Range(value) => {
@@ -901,7 +909,7 @@ impl AwbcRuntimeValueSnapshot {
                     .validate_for_owner(owner)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
                 AwbcRuntimeIteratorSnapshot::Witness {
-                    state: Box::new(Self::from_live_with_owner(witness.state(), Some(owner))?),
+                    state: Box::new(Self::from_admitted_storage(witness.state(), Some(owner))?),
                     next: witness.next_method(),
                 }
             }
@@ -953,7 +961,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeSeq::Values(values) => AwbcRuntimeSeqSnapshot::Values(
                 values
                     .iter()
-                    .map(|value| Self::from_live_with_owner(value, owner))
+                    .map(|value| Self::from_admitted_storage(value, owner))
                     .collect::<Result<_, _>>()?,
             ),
             RuntimeSeq::Dense(value) => AwbcRuntimeSeqSnapshot::Dense(value.clone()),
@@ -1057,7 +1065,7 @@ impl AwbcRuntimeValueSnapshot {
                         field: value.field_id(ordinal).ok_or_else(|| {
                             AwbcRuntimeValueSnapshotError::new("nominal field identity overflow")
                         })?,
-                        value: Self::from_live_with_owner(field_value, owner)?,
+                        value: Self::from_admitted_storage(field_value, owner)?,
                     })
                 })
                 .collect::<Result<_, _>>()?,
@@ -1117,7 +1125,7 @@ impl AwbcRuntimeValueSnapshot {
             semantic_identity: value.semantic_identity(),
             value_class: value.value_class(),
             persistence: value.persistence(),
-            payload: Box::new(Self::from_live_with_owner(value.payload(), owner)?),
+            payload: Box::new(Self::from_admitted_storage(value.payload(), owner)?),
         })
     }
 
@@ -1142,7 +1150,7 @@ impl AwbcRuntimeValueSnapshot {
     ) -> Result<AwbcRuntimeReductionSnapshot, AwbcRuntimeValueSnapshotError> {
         Ok(AwbcRuntimeReductionSnapshot {
             owner: value.owner().clone(),
-            state: Box::new(Self::from_live_with_owner(value.state(), owner)?),
+            state: Box::new(Self::from_admitted_storage(value.state(), owner)?),
             commands: value
                 .commands()
                 .iter()
@@ -1150,7 +1158,7 @@ impl AwbcRuntimeValueSnapshot {
                     Ok(AwbcRuntimeCommandSnapshot {
                         constructor: command.constructor().clone(),
                         target: command.target().clone(),
-                        payload: Box::new(Self::from_live_with_owner(
+                        payload: Box::new(Self::from_admitted_storage(
                             command.payload().value(),
                             owner,
                         )?),
@@ -1280,7 +1288,7 @@ impl AwbcRuntimeValueSnapshot {
                 AwbcRuntimeAgentPredicateSnapshot::Compare {
                     probe: probe.clone(),
                     op: *op,
-                    value: Box::new(Self::from_live_with_owner(value, owner)?),
+                    value: Box::new(Self::from_admitted_storage(value, owner)?),
                 }
             }
             RuntimeAgentPredicate::Exists { probe } => AwbcRuntimeAgentPredicateSnapshot::Exists {
@@ -1383,7 +1391,7 @@ impl AwbcRuntimeValueSnapshot {
             retained: value
                 .retained()
                 .iter()
-                .map(|value| Self::from_live_with_owner(value, owner))
+                .map(|value| Self::from_admitted_storage(value, owner))
                 .collect::<Result<_, _>>()?,
         })
     }

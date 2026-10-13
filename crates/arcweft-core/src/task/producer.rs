@@ -3067,11 +3067,32 @@ mod identity_tests {
 
     #[test]
     fn rollback_image_restores_one_affine_ready_without_changing_dispatch_state() {
-        let owner = RuntimeProgramOwner::Plan(Arc::new(
-            crate::plan::RuntimePlanBuilder::new()
-                .finish()
-                .expect("empty owner plan"),
-        ));
+        let mut builder = crate::plan::RuntimePlanBuilder::new();
+        let boolean = crate::pattern::RuntimeCheckedType::Bool.semantic_identity_digest();
+        builder
+            .admit_semantic_batch(
+                [
+                    crate::plan::RuntimePlanTypeSeed::new(
+                        boolean,
+                        crate::plan::RuntimePlanTypeProjection::Bool,
+                    ),
+                    crate::plan::RuntimePlanTypeSeed::new(
+                        RuntimeSemanticTypeId::from_bytes([9; 32]),
+                        crate::plan::RuntimePlanTypeProjection::Need(boolean),
+                    ),
+                ],
+                [],
+                [],
+                [],
+                &crate::entry::RuntimeNominalSchemaGraph::try_new(
+                    vec![],
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .expect("empty nominal authority"),
+            )
+            .expect("original Need<Bool> outcome rows");
+        let owner =
+            RuntimeProgramOwner::Plan(Arc::new(builder.finish().expect("outcome owner plan")));
         let generation = GenerationId::new(3);
         let fiber = RuntimePersistentFiberId::from_allocated(7);
         let mut registry = NeedProducerRegistry::default();

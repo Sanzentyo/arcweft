@@ -565,7 +565,16 @@ fn awbc_callable_snapshot_rejects_a_forged_retained_type() {
     let error = forged
         .into_runtime_value_for_program(&owner)
         .expect_err("restored retained prefix type is checked against the pinned AWBC state");
-    assert!(error.to_string().contains("retained value 0"), "{error}");
+    assert!(
+        matches!(error,
+            arcweft_core::value::AwbcRuntimeValueSnapshotError::ProgramType(ref error)
+            if matches!(error.as_ref(), arcweft_core::program_types::RuntimeProgramTypeError::AwbcValue(error)
+            if matches!(error.as_ref(), arcweft_core::awbc::value_admission::AwbcValueAdmissionError::Value {
+                    source: arcweft_core::entry::RuntimeSchemaError::Type { path, actual: "string", .. }, ..
+                } if path == "$[0]"))
+        ),
+        "{error}"
+    );
 
     let before = session
         .snapshot_session()

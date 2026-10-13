@@ -40,7 +40,7 @@ impl RuntimeProgramOwner {
 }
 
 /// Failure to bind a task outcome contract to the required type authority.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TaskOutcomeBindingError {
     #[error("standalone task outcome contains a program-owned nominal type or exceeds type limits")]
     InvalidStandaloneType,
@@ -157,6 +157,21 @@ impl PartialEq for BoundTaskSpec {
 }
 
 impl TaskOutcomeContract {
+    /// Checks the original executable coordinate before any retained payload
+    /// is projected or restored. Standalone predicates have no program row.
+    pub(crate) fn validate_storage_owner(
+        &self,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<(), TaskOutcomeBindingError> {
+        if let Self::Program { payload } = self {
+            owner
+                .ok_or(TaskOutcomeBindingError::ProgramRequiresExecutable)?
+                .types()
+                .require_type(*payload)?;
+        }
+        Ok(())
+    }
+
     /// Bind the exact retained outcome for value persistence. A standalone
     /// predicate stays standalone; a program coordinate keeps the selected lease.
     pub(crate) fn bind_for_value(
@@ -203,7 +218,7 @@ impl TaskOutcomeContract {
         let Self::Program { payload } = self else {
             return Err(TaskOutcomeBindingError::StandaloneRequiresStandaloneBinding);
         };
-        owner.types().require_type(*payload)?;
+        self.validate_storage_owner(Some(&owner))?;
         Ok(BoundTaskOutcome {
             ty: BoundTaskOutcomeType::Program {
                 payload: *payload,

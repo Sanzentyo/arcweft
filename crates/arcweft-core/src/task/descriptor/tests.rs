@@ -166,6 +166,79 @@ fn later_request_payload_budget_failure_precedes_earlier_callable_construction()
 }
 
 #[test]
+fn later_request_original_state_failure_precedes_earlier_progress_construction() {
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
+    let invalid_progress = AwbcRuntimeValueSnapshot::Progress {
+        ratio: -1.0,
+        label: None,
+    };
+    assert!(
+        invalid_progress
+            .clone()
+            .into_runtime_value_for_program(&owner)
+            .is_err()
+    );
+    let spec = specification(HostTaskRequest::custom("h", "f", []));
+    let mut saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
+    let state = crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap();
+    let HostTaskRequest::Custom { args, .. } = &mut saved.request else {
+        unreachable!()
+    };
+    *args = vec![
+        invalid_progress,
+        AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+            state,
+            retained: vec![],
+        }),
+    ];
+    assert_eq!(
+        saved.into_live(&owner).unwrap_err(),
+        AwbcRuntimeValueSnapshotError::Message {
+            message: format!("callable state {state} is absent from the selected program"),
+        }
+    );
+}
+
+#[test]
+fn original_outcome_row_precedes_request_construction() {
+    let spec = specification(HostTaskRequest::custom("h", "f", []));
+    let mut saved = TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(&spec, None).unwrap();
+    let payload = crate::pattern::RuntimeSemanticTypeId::from_bytes([99; 32]);
+    saved.outcome = TaskOutcomeContract::program(payload);
+    let producer = NeedProducerSpec::new(
+        NeedProducerFamily::HostAdapterTask,
+        saved.producer.contract(),
+        saved.producer.plan(),
+        NeedProducerSiteDigest::from_bytes([3; 32]),
+        RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+        saved.producer.arguments(),
+    );
+    saved.producer = NeedProducerInstance::try_from(&producer).unwrap();
+    let HostTaskRequest::Custom { args, .. } = &mut saved.request else {
+        unreachable!()
+    };
+    args.push(AwbcRuntimeValueSnapshot::Callable(
+        crate::value::AwbcRuntimeCallableSnapshot {
+            state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+            retained: vec![],
+        },
+    ));
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
+    assert_eq!(
+        saved.into_live(&owner).unwrap_err(),
+        AwbcRuntimeValueSnapshotError::TaskOutcome(TaskOutcomeBindingError::ProgramType(
+            crate::program_types::RuntimeProgramTypeError::Missing {
+                semantic_type: payload
+            },
+        ))
+    );
+}
+
+#[test]
 fn descriptor_and_all_payloads_consume_one_encoded_byte_allowance() {
     let spec = specification(HostTaskRequest::custom(
         "h",
@@ -213,7 +286,15 @@ fn descriptor_failure_poison_is_shared_with_following_value_admission() {
     );
     assert_eq!(
         resources.validate_view(RuntimeValue::Unit.view(), 0, None),
-        Err(first)
+        Err(first.clone())
+    );
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+            RuntimeValue::Unit.view(),
+            None,
+            &resources
+        ),
+        Err(AwbcRuntimeValueSnapshotError::Resource(first))
     );
 }
 

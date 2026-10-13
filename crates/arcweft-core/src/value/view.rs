@@ -387,6 +387,25 @@ impl<'a> LiveRuntimeValueView<'a> {
 }
 
 impl<'a> RuntimeValueView<'a> {
+    /// Whether this node refers to original executable storage. Resource
+    /// admission accumulates this fact over the complete borrowed graph.
+    pub(crate) fn requires_program_storage_admission(self) -> bool {
+        match self {
+            Self::NominalRecord(_) | Self::Callable(_) | Self::Need(_) => true,
+            Self::Variant(value) => matches!(value.owner(), RuntimeVariantIdentity::Nominal { .. }),
+            Self::Iterator(value) => matches!(value.kind(), RuntimeIteratorKind::Witness(_)),
+            Self::Agent(value) => matches!(value.kind(), RuntimeAgentKind::DataShape(_)),
+            Self::Scalar(_)
+            | Self::DenseNumeric(_)
+            | Self::Tuple(_)
+            | Self::Record(_)
+            | Self::Sequence(_)
+            | Self::Opaque(_)
+            | Self::Reduction(_)
+            | Self::Range(_) => false,
+        }
+    }
+
     /// Admits a Copy storage role in the shared graph allowance, without
     /// constructing either a live value or another snapshot carrier.
     pub(crate) fn admit_unrestricted(

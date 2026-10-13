@@ -209,31 +209,6 @@ fn validate_view_without_digest<V: ValueValidation>(
     )
 }
 
-pub(crate) fn validate_snapshot_opaque(
-    value: &crate::value::RuntimeOpaqueValue,
-    limits: super::RuntimeSchemaLimits,
-) -> Result<(), RuntimeSchemaError> {
-    validate_view_without_digest(
-        RuntimeValueView::Opaque(crate::value::RuntimeOpaqueView::Live(value)),
-        limits,
-        &mut NoSchemaValidation::snapshot_resources(limits),
-        (),
-        ValueEncoding::Snapshot,
-    )
-}
-
-pub(crate) fn validate_snapshot_iterator(
-    value: &crate::value::RuntimeIterator,
-    limits: super::RuntimeSchemaLimits,
-) -> Result<(), RuntimeSchemaError> {
-    validate_root_without_digest(
-        Work::Iterator(RuntimeIteratorView::Live(value), 0, Rc::new(())),
-        limits,
-        &mut NoSchemaValidation::snapshot_resources(limits),
-        ValueEncoding::Snapshot,
-    )
-}
-
 fn validate_root_without_digest<V: ValueValidation>(
     root: Work<'_, V::Expected, V::Children, V::Alternatives>,
     limits: super::RuntimeSchemaLimits,
@@ -375,6 +350,48 @@ pub(crate) fn validate_standalone_task_type(
     )
 }
 
+/// Visits already resource-admitted storage through the same logical grammar.
+/// Type/owner obligations share its existing work allowance; no value quota is
+/// refreshed and no live value or save DTO is constructed by this pass.
+pub(crate) fn visit_admitted_storage<E: From<RuntimeSchemaError>>(
+    value: RuntimeValueView<'_>,
+    work: &ValidationWork,
+    mut observe: impl for<'value> FnMut(RuntimeValueView<'value>) -> Result<(), E>,
+) -> Result<(), E> {
+    let mut first_error = None;
+    let mut observer = |value: RuntimeValueView<'_>| {
+        if let Err(error) = observe(value) {
+            first_error = Some(error);
+            return Err(RuntimeSchemaError::Encoding {
+                message: "original storage admission rejected a retained node".into(),
+            });
+        }
+        Ok(())
+    };
+    let mut sink = super::CanonicalCountingSink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_encoded_bytes: u64::MAX,
+        max_string_bytes: None,
+    };
+    let mut validation = NoSchemaValidation {
+        resources: Some(work.clone()),
+        depth: 0,
+        observer: Some(&mut observer),
+    };
+    let result = visit_work(
+        Work::Value(value, 0, (), None),
+        &mut writer,
+        None,
+        &mut validation,
+        ValueEncoding::Snapshot,
+    );
+    match first_error {
+        Some(error) => Err(error),
+        None => result.map_err(E::from),
+    }
+}
+
 /// Resource ownership for an admission containing several complete values and
 /// partial places. Logical nodes, encoded complete-value bytes and relation
 /// work accumulate across descendants; visiting another value grants no quota.
@@ -384,6 +401,7 @@ pub(crate) struct ValueResourceAdmission {
     work: ValidationWork,
     origin: ValueAdmissionOrigin,
     encoding: ValueEncoding,
+    program_storage_obligations: bool,
 }
 
 impl ValueResourceAdmission {
@@ -409,6 +427,7 @@ impl ValueResourceAdmission {
             work: ValidationWork::new(limits),
             origin,
             encoding,
+            program_storage_obligations: false,
         }
     }
 
@@ -418,6 +437,10 @@ impl ValueResourceAdmission {
 
     pub(crate) fn origin(&self) -> ValueAdmissionOrigin {
         self.origin
+    }
+
+    pub(crate) fn has_program_storage_obligations(&self) -> bool {
+        self.program_storage_obligations
     }
 
     pub(crate) fn validate_task_descriptor<P>(
@@ -454,7 +477,7 @@ impl ValueResourceAdmission {
         &mut self,
         value: RuntimeValueView<'_>,
         depth: usize,
-        observer: Option<&'a mut ValueObserver<'a>>,
+        mut observer: Option<&'a mut ValueObserver<'a>>,
     ) -> Result<(), RuntimeSchemaError> {
         let limits = self.work.limits();
         let encoding = self.encoding;
@@ -467,10 +490,18 @@ impl ValueResourceAdmission {
             },
             max_string_bytes: Some(limits.max_string_bytes),
         };
+        let mut program_storage = false;
+        let mut inspect = |value: RuntimeValueView<'_>| {
+            program_storage |= value.requires_program_storage_admission();
+            match &mut observer {
+                Some(observer) => observer(value),
+                None => Ok(()),
+            }
+        };
         let mut validation = NoSchemaValidation {
             resources: Some(self.work.clone()),
             depth: 0,
-            observer,
+            observer: Some(&mut inspect),
         };
         let result = visit_work(
             Work::Value(value, depth, (), None),
@@ -479,6 +510,7 @@ impl ValueResourceAdmission {
             &mut validation,
             encoding,
         );
+        self.program_storage_obligations |= program_storage;
         if let Err(error) = &result {
             self.work.retain_failure(error.clone());
         }
@@ -670,7 +702,6 @@ enum Work<'a, E, C, A: Iterator<Item = E>> {
     PopPath,
     Value(RuntimeValueView<'a>, usize, E, Option<PathStep<'a>>),
     AdmittedValue(RuntimeValueView<'a>, usize),
-    Iterator(RuntimeIteratorView<'a>, usize, Rc<C>),
     ChoiceNext(ChoiceVisit<'a, A>),
     ChoiceComplete(ChoiceVisit<'a, A>, u32),
     Tuple(RuntimeTupleView<'a>, usize, usize, Rc<C>),
@@ -756,23 +787,6 @@ fn visit_work<S: CanonicalSink + ?Sized, V: ValueValidation>(
             match next {
                 Work::PopPath => {
                     path.0.pop();
-                }
-                Work::Iterator(iterator, depth, children) => {
-                    if mode == VisitMode::Output
-                        && let Some(budget) = budget.as_deref_mut()
-                    {
-                        budget.node(depth)?;
-                    }
-                    validation.embedded_node(depth)?;
-                    iterator_prefix(
-                        iterator,
-                        depth,
-                        writer,
-                        budget.as_deref(),
-                        &mut work,
-                        validation,
-                        children,
-                    )?;
                 }
                 Work::ChoiceNext(mut choice) => {
                     if let Some((index, expected)) = choice.alternatives.next() {

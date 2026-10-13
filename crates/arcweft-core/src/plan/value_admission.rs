@@ -504,7 +504,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
         Self::arity(actual_domain.fields().len(), record.fields().len())?;
         for (ordinal, field) in actual_domain.fields().iter().enumerate() {
             if record.field_id(ordinal) != Some(field.field()) {
-                return Err(Self::mismatch(value));
+                return Err(RuntimeSchemaError::RecordField {
+                    path: "$".to_owned(),
+                    ordinal,
+                });
             }
         }
         if !self

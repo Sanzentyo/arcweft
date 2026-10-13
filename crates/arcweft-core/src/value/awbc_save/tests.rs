@@ -9,8 +9,8 @@ use crate::{
     entry::{
         RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
         RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField, RuntimeNominalSchemaGraph,
-        RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema,
-        TypeLayoutHash,
+        RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaError,
+        RuntimeSchemaLimits, RuntimeTypeSchema, TypeLayoutHash,
     },
     pattern::RuntimeVariantIdentity,
     plan::{
@@ -908,6 +908,57 @@ fn float_snapshots_preserve_scalar_bits_and_dense_storage_in_nested_values() {
 }
 
 #[test]
+fn original_callable_state_preflight_precedes_nested_live_construction() {
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+    let outer_state = crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap();
+    let image = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
+        state: outer_state,
+        retained: vec![AwbcRuntimeValueSnapshot::Callable(
+            AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(1).unwrap(),
+                retained: vec![],
+            },
+        )],
+    });
+    let error = image.into_runtime_value_for_program(&owner).unwrap_err();
+    assert_eq!(
+        error,
+        AwbcRuntimeValueSnapshotError::Message {
+            message: format!("callable state {outer_state} is absent from the selected program"),
+        }
+    );
+}
+
+#[test]
+fn snapshot_capture_rejects_a_later_foreign_program_before_projection() {
+    let plan = Arc::new(crate::tests::function_application::returning_function_plan(
+        crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+    ));
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let foreign = RuntimeProgramOwner::Plan(Arc::new(
+        crate::tests::function_application::returning_function_plan(
+            crate::plan::RuntimeFunctionSiteBodyKind::Expression,
+        ),
+    ));
+    let callable = RuntimeCallableValue::try_new(
+        foreign,
+        crate::tests::function_application::returning_callable_state(&plan),
+        [],
+    )
+    .unwrap();
+    let value = RuntimeValue::Tuple(vec![
+        RuntimeValue::String("retained".into()),
+        RuntimeValue::Callable(callable),
+    ]);
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap_err(),
+        AwbcRuntimeValueSnapshotError::Message {
+            message: "callable rollback image belongs to another program".into()
+        }
+    );
+}
+
+#[test]
 fn native_rollback_image_round_trips_plan_callable_and_affine_iterator_without_live_clone() {
     let plan = Arc::new(crate::tests::function_application::returning_function_plan(
         crate::plan::RuntimeFunctionSiteBodyKind::Expression,
@@ -1188,6 +1239,29 @@ pub(in crate::value) fn owners() -> [RuntimeProgramOwner; 2] {
     ]
 }
 
+fn original_schema_error(error: AwbcRuntimeValueSnapshotError) -> RuntimeSchemaError {
+    let AwbcRuntimeValueSnapshotError::ProgramType(error) = error else {
+        panic!("expected original value admission error");
+    };
+    match *error {
+        crate::program_types::RuntimeProgramTypeError::PlanValue(error) => {
+            let crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } = *error else {
+                panic!("expected plan value admission error");
+            };
+            source
+        }
+        crate::program_types::RuntimeProgramTypeError::AwbcValue(error) => {
+            let crate::awbc::value_admission::AwbcValueAdmissionError::Value { source, .. } =
+                *error
+            else {
+                panic!("expected AWBC value admission error");
+            };
+            source
+        }
+        _ => panic!("expected original value admission error"),
+    }
+}
+
 #[test]
 fn nominal_snapshot_restore_requires_exact_program_admission() {
     for owner in owners() {
@@ -1277,7 +1351,13 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
                 .into_runtime_value_for_program(&owner)
                 .expect_err("invalid nominal snapshot");
             if defect == 5 {
-                assert!(error.to_string().contains("nominal snapshot field 0"));
+                assert_eq!(
+                    original_schema_error(error),
+                    RuntimeSchemaError::RecordField {
+                        path: "$".into(),
+                        ordinal: 0
+                    }
+                );
             }
         }
         let foreign = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
@@ -1397,9 +1477,14 @@ fn nominal_snapshot_restore_requires_exact_program_admission() {
             let error = candidate
                 .into_runtime_value_for_program(&owner)
                 .expect_err("invalid variant header precedes descendant restoration");
-            if defect != 1 {
-                assert!(error.to_string().contains("different snapshot header"));
-            }
+            let source = original_schema_error(error);
+            assert!(
+                matches!(source,
+                    RuntimeSchemaError::Type { ref path, .. }
+                    | RuntimeSchemaError::UnknownVariant { ref path, .. } if path == "$"
+                ),
+                "original variant header error: {source:?}"
+            );
         }
     }
 }
@@ -1463,9 +1548,20 @@ fn nominal_variant_construction_and_restore_reject_dangling_payload_type_without
         type_instantiation: None,
     };
     let error = saved.into_runtime_value_for_program(&owner).unwrap_err();
+    let AwbcRuntimeValueSnapshotError::ProgramType(error) = error else {
+        panic!("expected original AWBC type admission error");
+    };
+    let crate::program_types::RuntimeProgramTypeError::AwbcValue(error) = *error else {
+        panic!("expected AWBC value admission error");
+    };
+    let crate::awbc::value_admission::AwbcValueAdmissionError::Value { source, .. } = *error else {
+        panic!("expected original payload type error");
+    };
     assert_eq!(
-        error.to_string(),
-        "AWBC runtime type index 999 is out of bounds"
+        source,
+        RuntimeSchemaError::Encoding {
+            message: "AWBC runtime type index 999 is out of bounds".into()
+        }
     );
 }
 
