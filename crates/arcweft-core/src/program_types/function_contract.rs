@@ -24,6 +24,18 @@ impl super::RuntimeProgramValueType<'_> {
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> Result<(), super::RuntimeProgramTypeError> {
         resources.validate_view(value, 0, None)?;
+        self.validate_admitted_view(value, binding, resources)
+    }
+
+    /// Checks another original type obligation for a value whose complete
+    /// graph was already admitted into this enclosing resource allowance.
+    /// This relation does not grant another node or encoded-byte quota.
+    pub(crate) fn validate_admitted_view(
+        self,
+        value: crate::value::RuntimeValueView<'_>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
         match self {
             Self::Plan { program, ty } => {
                 Self::validate_authority_value(program, ty, value, binding, resources)

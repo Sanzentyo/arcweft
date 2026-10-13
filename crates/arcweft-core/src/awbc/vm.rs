@@ -950,13 +950,17 @@ fn execute_instruction(
                 .set_register(*dst, RuntimeValue::Bool(matched))?;
         }
         AwbcInstruction::MakeTuple { dst, items } => {
-            let items = take_register_values(fiber, items)?;
+            let items = fiber
+                .active_frame_mut()?
+                .take_register_values(program, items)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Tuple(items))?;
         }
         AwbcInstruction::MakeSequence { dst, items } => {
-            let items = take_register_values(fiber, items)?;
+            let items = fiber
+                .active_frame_mut()?
+                .take_register_values(program, items)?;
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, runtime_sequence_from_literal_values(items))?;
@@ -1125,7 +1129,9 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, result)?;
         }
         AwbcInstruction::MakeRecord { dst, ty, fields } => {
-            let fields = take_register_values(fiber, fields)?;
+            let fields = fiber
+                .active_frame_mut()?
+                .take_register_values(program, fields)?;
             let value = program.make_record_value(*ty, fields, Some(fiber.active_frame()?))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
@@ -1169,7 +1175,9 @@ fn execute_instruction(
             constructor,
             operands,
         } => {
-            let operands = take_register_values(fiber, operands)?;
+            let operands = fiber
+                .active_frame_mut()?
+                .take_register_values(program, operands)?;
             let value = RuntimeAgentValue::try_construct(*constructor, operands)
                 .map(RuntimeValue::Agent)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
@@ -1355,7 +1363,9 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Binary { dst, op, lhs, rhs } => {
-            let values = take_register_values(fiber, &[*lhs, *rhs])?;
+            let values = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &[*lhs, *rhs])?;
             let [lhs, rhs] =
                 values
                     .try_into()
@@ -1367,7 +1377,9 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::CallPureHelper { dst, helper, args } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             if let Some(value) = host.try_call_pure_helper(program, *helper, &args)? {
                 fiber.active_frame_mut()?.set_register(*dst, value)?;
             } else {
@@ -1459,7 +1471,11 @@ fn execute_instruction(
                 .ok_or(VmError::MissingTraitMethod(*method))?;
             let mut values = Vec::with_capacity(args.len() + 1);
             values.push(fiber.active_frame_mut()?.take_register(*receiver)?);
-            values.extend(take_register_values(fiber, args)?);
+            values.extend(
+                fiber
+                    .active_frame_mut()?
+                    .take_register_values(program, args)?,
+            );
             let return_to = instruction_call_return_point(fiber.cursor, *dst)?;
             fiber.push_call_frame_with_owned_continuation(
                 program,
@@ -1474,7 +1490,9 @@ fn execute_instruction(
             intrinsic,
             args,
         } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             let identity = program
                 .intrinsics
                 .get(intrinsic.index())
@@ -1642,7 +1660,10 @@ fn execute_instruction(
                     ));
                 }
             }
-            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let mut transferred = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &operand_registers)?
+                .into_iter();
             let evaluated = values
                 .iter()
                 .zip(&template.slots)
@@ -1756,7 +1777,9 @@ fn execute_instruction(
             }
             let next = fiber.format_content_state()?.next_operand();
             if let Some(operand) = operands.get(next) {
-                let captures = take_register_values(fiber, &operand.captures)?;
+                let captures = fiber
+                    .active_frame_mut()?
+                    .take_register_values(program, &operand.captures)?;
                 let site = fiber.cursor;
                 fiber.push_call_frame_with_owned_continuation(
                     program,
@@ -2046,7 +2069,10 @@ fn execute_instruction(
                 CharacterDialoguePatchOperation::Set(source) => Some(*source),
                 CharacterDialoguePatchOperation::Clear => None,
             }));
-            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let mut transferred = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &operand_registers)?
+                .into_iter();
             let target = transferred.next().ok_or_else(|| {
                 VmError::Runtime("CharacterDialogue target transfer is missing".to_owned())
             })?;
@@ -2113,15 +2139,27 @@ fn execute_instruction(
                 .set_register(*destination, value)?;
         }
         AwbcInstruction::EmitEffect { effect, args } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             observations.push(VmObservation::Effect {
                 effect: *effect,
                 args,
             });
         }
         AwbcInstruction::RegisterCleanup { key, effect, args } => {
-            let key = string(program, *key)?.to_owned();
-            let args = take_register_values(fiber, args)?;
+            let key = string(program, *key)?;
+            FiberScopeCleanup::validate_registration_inputs(
+                program,
+                fiber.active_frame()?,
+                key,
+                *effect,
+                args,
+            )?;
+            let key = key.to_owned();
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             let cleanup = FiberScopeCleanup {
                 key,
                 effect: *effect,
@@ -2143,7 +2181,11 @@ fn execute_instruction(
             let captured = captures
                 .iter()
                 .copied()
-                .zip(take_register_values(fiber, captures)?)
+                .zip(
+                    fiber
+                        .active_frame_mut()?
+                        .take_register_values(program, captures)?,
+                )
                 .collect::<Vec<_>>();
             if *owner == super::schema::AwbcDeferOwner::LineRoot {
                 observations.push(VmObservation::LineDeferRegistration {
@@ -2189,7 +2231,9 @@ fn execute_instruction(
             let owner = context
                 .ok_or(VmError::MissingExecutionContext)?
                 .program_owner(program)?;
-            let captures = take_register_values(fiber, captures)?;
+            let captures = fiber
+                .active_frame_mut()?
+                .take_register_values(program, captures)?;
             let callable = RuntimeCallableValue::try_new(owner, *state, captures)
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             fiber
@@ -2236,7 +2280,10 @@ fn execute_instruction(
             let mut operands = Vec::with_capacity(args.len() + 1);
             operands.push(*callee);
             operands.extend(args.iter().copied());
-            let mut values = take_register_values(fiber, &operands)?.into_iter();
+            let mut values = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &operands)?
+                .into_iter();
             let RuntimeValue::Callable(callable) = values.next().ok_or_else(|| {
                 VmError::Runtime("callable application lost its callee operand".to_owned())
             })?
@@ -2249,7 +2296,9 @@ fn execute_instruction(
             return apply_runtime_callable(program, fiber, context, callable, args, *dst);
         }
         AwbcInstruction::StartNeed { dst, plan, args } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             observations.push(VmObservation::NeedProducerStarted {
                 cursor: fiber.cursor,
                 fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
@@ -2266,7 +2315,9 @@ fn execute_instruction(
             function,
             args,
         } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             let handle = dst.map(|_| RuntimeValue::String(format!("awbc.fiber.{}", function.0)));
             if let (Some(dst), Some(handle)) = (dst, handle.as_ref()) {
                 fiber
@@ -2326,7 +2377,10 @@ fn execute_instruction(
                         ));
                     }
                     register(fiber, args[0])?;
-                    let mut values = take_register_values(fiber, &args[1..])?.into_iter();
+                    let mut values = fiber
+                        .active_frame_mut()?
+                        .take_register_values(program, &args[1..])?
+                        .into_iter();
                     let look = values
                         .next()
                         .expect("ActorLook's second operand was preflighted");
@@ -2347,7 +2401,9 @@ fn execute_instruction(
                 }
                 AwbcLineOperation::AcquireActor { .. }
                 | AwbcLineOperation::Schedule { .. }
-                | AwbcLineOperation::VoiceHandle { .. } => take_register_values(fiber, args)?
+                | AwbcLineOperation::VoiceHandle { .. } => fiber
+                    .active_frame_mut()?
+                    .take_register_values(program, args)?
                     .into_iter()
                     .zip(args.iter().copied())
                     .map(|(value, register)| VmLineOperationArgument::OwnedValue {
@@ -2792,13 +2848,17 @@ fn execute_terminator(
             dst,
             resume,
         } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             fiber.push_call_frame_with_owned_args(program, *function, *resume, *dst, args)?;
             Ok(VmExit::Running)
         }
         AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, context, call),
         AwbcTerminator::GotoStatic { function, args } => {
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             emit_unwind_cleanup_observations(fiber, observations);
             fiber.replace_root_function_owned(program, *function, args)?;
             observations.push(VmObservation::Goto(*function));
@@ -2829,7 +2889,9 @@ fn execute_terminator(
                     )));
                 }
             };
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             emit_unwind_cleanup_observations(fiber, observations);
             fiber.replace_root_function_owned(program, target, args)?;
             observations.push(VmObservation::Goto(target));
@@ -2870,7 +2932,10 @@ fn execute_terminator(
                 operand_registers.extend(effect.captures.iter().copied());
             }
             operand_registers.extend(line_task_captures.iter().copied());
-            let mut transferred = take_register_values(fiber, &operand_registers)?.into_iter();
+            let mut transferred = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &operand_registers)?
+                .into_iter();
             let target_value = transferred.next().ok_or_else(|| {
                 VmError::Runtime("dialogue target transfer is missing".to_owned())
             })?;
@@ -3054,7 +3119,9 @@ fn execute_terminator(
                 .map(|register| fiber.active_frame()?.register(*register))
                 .collect::<Result<Vec<_>, _>>()?;
             validate_host_call_values(program, *call, &argument_values)?;
-            let args = take_register_values(fiber, args)?;
+            let args = fiber
+                .active_frame_mut()?
+                .take_register_values(program, args)?;
             suspend(
                 fiber,
                 *resume,
@@ -3349,7 +3416,10 @@ fn execute_project_call(
     let mut transfer_registers = Vec::with_capacity(call.operands.len() + 1);
     transfer_registers.push(call.callee);
     transfer_registers.extend(call.operands.iter().map(|operand| operand.value));
-    let mut transferred = take_register_values(fiber, &transfer_registers)?.into_iter();
+    let mut transferred = fiber
+        .active_frame_mut()?
+        .take_register_values(program, &transfer_registers)?
+        .into_iter();
     let RuntimeValue::Callable(callable) = transferred
         .next()
         .ok_or_else(|| VmError::Runtime("project-call lost its callee".to_owned()))?
@@ -3958,27 +4028,6 @@ fn validate_host_call_values(
         }
     }
     Ok(())
-}
-
-fn take_register_values(
-    fiber: &mut FiberState,
-    registers: &[AwbcRegisterId],
-) -> Result<Vec<RuntimeValue>, VmError> {
-    let mut seen = BTreeSet::new();
-    for register_id in registers {
-        if !seen.insert(*register_id) {
-            return Err(VmError::Runtime(format!(
-                "by-value AWBC operand register {} is listed more than once",
-                register_id.0
-            )));
-        }
-        register(fiber, *register_id)?;
-    }
-    let frame = fiber.active_frame_mut()?;
-    registers
-        .iter()
-        .map(|register_id| frame.take_register(*register_id).map_err(VmError::from))
-        .collect()
 }
 
 fn take_sequence_value(sequence: RuntimeSeq, index: usize) -> Result<RuntimeValue, VmError> {

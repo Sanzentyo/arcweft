@@ -180,6 +180,25 @@ capture／restore は元 instruction の operand manifest／function signature �
 completion instruction 検索もこの検証に含める。metadata は value node／byte として
 合成せず、frame wire 全体の byte grammar の検証とは区別する。
 
+lexical scope・cleanup・scoped defer は一つの generic grammar を live／inert に使う。
+private codec capability は Core の inert value carrier だけに実装し、live serde
+reader／writer と別の AWBC scope DTO は持たない。scoped defer は登録した元の
+instruction cursor を保持し、RegisterDefer の site・outcome・CurrentScope・capture
+register inventory と original verifier の lexical scope stack に照合する。
+実際の capture graph は一度だけ資源計上し、元の frame slot 型IDと defer signature
+型IDの両方を immutable frame binding で検証する。Copy 値の重複 capture は許可し、
+affine 値の重複は拒否する。cleanup effect の元 signature、key／failure の文字列、
+collection count、registration identity、in-flight／release の site・token inventory
+も全 frame の register／pending／formatter と同じ allowance で、最初の projection／
+構築より前に検証する。VM の cleanup と scoped defer の producer も同じ owning
+input rule を使って metadata コピーと registration commit より前に検証する。
+LineRoot defer は line owner が管理し、producer の無い frame root_defers は残さない。
+VM の instruction input transfer は frame owner に置き、全入力の元 layout 型行・
+immutable binding・資源上限・Copy custody を検証してから、重複 Copy register の
+必要なコピーをすべて準備する。各 source register は最後の occurrence で一度だけ
+移動する。後続入力や Copy の検証失敗は、先行 register の移動より前に返す。
+これらの value byte count は frame／session wire 全体の byte admission を代替しない。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

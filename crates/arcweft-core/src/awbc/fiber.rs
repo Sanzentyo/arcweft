@@ -32,10 +32,12 @@ use thiserror::Error;
 mod format;
 mod input;
 mod return_context;
+mod scope;
 use format::FormatStaging;
 pub use format::{FiberFormatAttemptState, FiberFormatState};
 use input::FrameValueContext;
 use return_context::FiberReturnContext;
+pub use scope::{FiberDeferredRegistration, FiberScope, FiberScopeCleanup};
 
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
 
@@ -186,7 +188,6 @@ pub struct FiberFrame {
     /// Nested source-ordered Flow formatter transactions owned by this frame.
     pub format_attempts: Vec<FiberFormatAttemptState>,
     pub root_cleanups: Vec<FiberScopeCleanup>,
-    pub root_defers: Vec<FiberDeferredRegistration>,
     pub scopes: Vec<FiberScope>,
 }
 
@@ -266,23 +267,6 @@ impl FiberReturnPoint {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberScope {
-    pub id: AwbcScopeId,
-    pub depth: u32,
-    pub cleanups: Vec<FiberScopeCleanup>,
-    pub defers: Vec<FiberDeferredRegistration>,
-    /// Captures skipped by their fixed outcome filter while host releases are
-    /// outstanding. Only typed token identities remain after the packet drops.
-    pub defer_releasing: Vec<FiberDeferredRelease>,
-    /// The lexical exit is fixed before the first deferred body starts.
-    pub defer_exit: Option<crate::line_task::ScopeExit>,
-    /// Exact defer child currently borrowing this scope's top registration.
-    pub defer_inflight: Option<FiberDeferredInFlight>,
-    /// First cleanup failure; remaining registrations still use `defer_exit`.
-    pub defer_failure: Option<FiberTrap>,
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FiberDeferredInFlight {
     pub registration: crate::runtime_id::RuntimeDeferRegistrationId,
@@ -294,23 +278,6 @@ pub struct FiberDeferredRelease {
     pub registration: crate::runtime_id::RuntimeDeferRegistrationId,
     pub site: crate::runtime_id::RuntimeDeferSiteId,
     pub tokens: Vec<crate::runtime_id::RuntimeLineHandleToken>,
-}
-
-/// Captured values retained at one reached executable defer statement.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberDeferredRegistration {
-    pub id: crate::runtime_id::RuntimeDeferRegistrationId,
-    pub site: crate::runtime_id::RuntimeDeferSiteId,
-    pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
-    pub capture_registers: Vec<AwbcRegisterId>,
-    pub captures: Vec<RuntimeValue>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberScopeCleanup {
-    pub key: String,
-    pub effect: AwbcEffectPlanId,
-    pub args: Vec<RuntimeValue>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -504,9 +471,8 @@ pub struct AwbcFiberFrameSnapshot {
     pub registers: Vec<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>,
     pub format: Option<FiberFormatState<AwbcRuntimeValueSnapshot>>,
     pub format_attempts: Vec<FiberFormatAttemptState<AwbcRuntimeValueSnapshot>>,
-    pub root_cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
-    pub root_defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
-    pub scopes: Vec<AwbcFiberScopeSnapshot>,
+    pub root_cleanups: Vec<FiberScopeCleanup<AwbcRuntimeValueSnapshot>>,
+    pub scopes: Vec<FiberScope<AwbcRuntimeValueSnapshot>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -552,37 +518,6 @@ pub enum AwbcFiberReturnContinuationSnapshot {
         pending: RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot>,
         callable_state: crate::runtime_id::RuntimeCallableStateId,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberScopeSnapshot {
-    pub id: AwbcScopeId,
-    pub depth: u32,
-    pub cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
-    pub defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
-    pub defer_releasing: Vec<FiberDeferredRelease>,
-    pub defer_exit: Option<crate::line_task::ScopeExit>,
-    pub defer_inflight: Option<FiberDeferredInFlight>,
-    pub defer_failure: Option<FiberTrap>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberDeferredRegistrationSnapshot {
-    pub id: crate::runtime_id::RuntimeDeferRegistrationId,
-    pub site: crate::runtime_id::RuntimeDeferSiteId,
-    pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
-    pub capture_registers: Vec<AwbcRegisterId>,
-    pub captures: Vec<AwbcRuntimeValueSnapshot>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberScopeCleanupSnapshot {
-    pub key: String,
-    pub effect: AwbcEffectPlanId,
-    pub args: Vec<AwbcRuntimeValueSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -731,11 +666,6 @@ impl AwbcFiberStateSnapshot {
             }
             for cleanup in &frame.root_cleanups {
                 for value in &cleanup.args {
-                    extend_snapshot_line_handle_tokens(value, &mut tokens)?;
-                }
-            }
-            for registration in &frame.root_defers {
-                for value in &registration.captures {
                     extend_snapshot_line_handle_tokens(value, &mut tokens)?;
                 }
             }
@@ -892,6 +822,21 @@ impl AwbcFiberStateSnapshot {
                 RuntimeValue::view,
             )
             .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
+            FrameValueContext {
+                program,
+                function: frame.function,
+                layout: &program.frame_layouts[frame.layout.index()],
+                binding: frame.type_instantiation.as_deref(),
+                registers: &frame.registers,
+                scope_count: frame.scopes.len(),
+            }
+            .validate_scopes(
+                &frame.root_cleanups,
+                &frame.scopes,
+                &mut resources,
+                RuntimeValue::view,
+            )
+            .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
             validate_frame_registers(
                 program,
                 &program.frame_layouts[frame.layout.index()],
@@ -905,6 +850,18 @@ impl AwbcFiberStateSnapshot {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
         }
+        program
+            .verify_scope_stacks(state.frames.iter().enumerate().map(|(index, frame)| {
+                let cursor = state
+                    .frames
+                    .get(index + 1)
+                    .and_then(|callee| callee.return_to.as_ref())
+                    .map_or(state.cursor, |point| point.cursor);
+                (cursor, frame.scopes.as_slice())
+            }))
+            .map_err(|_| {
+                crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::InvalidFrame)
+            })?;
         Ok(Self {
             instance: state.instance,
             next_frame_instance: state.next_frame_instance,
@@ -1003,6 +960,21 @@ impl AwbcFiberStateSnapshot {
                 AwbcRuntimeValueSnapshot::view,
             )
             .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
+            FrameValueContext {
+                program,
+                function: frame.function,
+                layout: &program.frame_layouts[frame.layout.index()],
+                binding: frame.type_instantiation.as_ref(),
+                registers: &frame.registers,
+                scope_count: frame.scopes.len(),
+            }
+            .validate_scopes(
+                &frame.root_cleanups,
+                &frame.scopes,
+                &mut resources,
+                AwbcRuntimeValueSnapshot::view,
+            )
+            .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
             validate_frame_registers(
                 program,
                 &program.frame_layouts[frame.layout.index()],
@@ -1016,6 +988,18 @@ impl AwbcFiberStateSnapshot {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
         }
+        program
+            .verify_scope_stacks(self.frames.iter().enumerate().map(|(index, frame)| {
+                let cursor = self
+                    .frames
+                    .get(index + 1)
+                    .and_then(|callee| callee.return_to.as_ref())
+                    .map_or(self.cursor, |point| point.cursor);
+                (cursor, frame.scopes.as_slice())
+            }))
+            .map_err(|_| {
+                crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::InvalidFrame)
+            })?;
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
@@ -1113,17 +1097,12 @@ impl AwbcFiberFrameSnapshot {
             root_cleanups: frame
                 .root_cleanups
                 .iter()
-                .map(|value| AwbcFiberScopeCleanupSnapshot::from_live(value, owner))
-                .collect::<Result<_, _>>()?,
-            root_defers: frame
-                .root_defers
-                .iter()
-                .map(|value| AwbcFiberDeferredRegistrationSnapshot::from_live(value, owner))
+                .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
             scopes: frame
                 .scopes
                 .iter()
-                .map(|value| AwbcFiberScopeSnapshot::from_live(value, owner))
+                .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -1155,17 +1134,12 @@ impl AwbcFiberFrameSnapshot {
             root_cleanups: self
                 .root_cleanups
                 .into_iter()
-                .map(|value| value.into_live(owner))
-                .collect::<Result<_, _>>()?,
-            root_defers: self
-                .root_defers
-                .into_iter()
-                .map(|value| value.into_live(owner))
+                .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
             scopes: self
                 .scopes
                 .into_iter()
-                .map(|value| value.into_live(owner))
+                .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -1400,109 +1374,6 @@ impl FiberReturnContinuation {
             .validate_default_return(owner.types(), pending.state())?;
         pending.validate_snapshot_inputs(owner, resources)?;
         Ok(())
-    }
-}
-
-impl AwbcFiberScopeSnapshot {
-    fn from_live(scope: &FiberScope, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            id: scope.id,
-            depth: scope.depth,
-            cleanups: scope
-                .cleanups
-                .iter()
-                .map(|value| AwbcFiberScopeCleanupSnapshot::from_live(value, owner))
-                .collect::<Result<_, _>>()?,
-            defers: scope
-                .defers
-                .iter()
-                .map(|value| AwbcFiberDeferredRegistrationSnapshot::from_live(value, owner))
-                .collect::<Result<_, _>>()?,
-            defer_releasing: scope.defer_releasing.clone(),
-            defer_exit: scope.defer_exit,
-            defer_inflight: scope.defer_inflight,
-            defer_failure: scope.defer_failure.clone(),
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberScope> {
-        Ok(FiberScope {
-            id: self.id,
-            depth: self.depth,
-            cleanups: self
-                .cleanups
-                .into_iter()
-                .map(|value| value.into_live(owner))
-                .collect::<Result<_, _>>()?,
-            defers: self
-                .defers
-                .into_iter()
-                .map(|value| value.into_live(owner))
-                .collect::<Result<_, _>>()?,
-            defer_releasing: self.defer_releasing,
-            defer_exit: self.defer_exit,
-            defer_inflight: self.defer_inflight,
-            defer_failure: self.defer_failure,
-        })
-    }
-}
-
-impl AwbcFiberScopeCleanupSnapshot {
-    fn from_live(cleanup: &FiberScopeCleanup, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            key: cleanup.key.clone(),
-            effect: cleanup.effect,
-            args: cleanup
-                .args
-                .iter()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .collect::<Result<_, _>>()?,
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberScopeCleanup> {
-        Ok(FiberScopeCleanup {
-            key: self.key,
-            effect: self.effect,
-            args: self
-                .args
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .collect::<Result<_, _>>()?,
-        })
-    }
-}
-
-impl AwbcFiberDeferredRegistrationSnapshot {
-    fn from_live(
-        registration: &FiberDeferredRegistration,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            id: registration.id,
-            site: registration.site,
-            outcome: registration.outcome,
-            capture_registers: registration.capture_registers.clone(),
-            captures: registration
-                .captures
-                .iter()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .collect::<Result<_, _>>()?,
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberDeferredRegistration> {
-        Ok(FiberDeferredRegistration {
-            id: self.id,
-            site: self.site,
-            outcome: self.outcome,
-            capture_registers: self.capture_registers,
-            captures: self
-                .captures
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .collect::<Result<_, _>>()?,
-        })
     }
 }
 
@@ -2066,7 +1937,6 @@ impl FiberState {
                     && frame.format.is_none()
                     && frame.format_attempts.is_empty()
                     && frame.root_cleanups.is_empty()
-                    && frame.root_defers.is_empty()
                     && frame
                         .scopes
                         .iter()
@@ -2128,7 +1998,6 @@ impl FiberState {
                 }
             }
             visit_scope_cleanup_values(&frame.root_cleanups, &mut visitor)?;
-            visit_deferred_capture_values(&frame.root_defers, &mut visitor)?;
             for scope in &frame.scopes {
                 visit_scope_cleanup_values(&scope.cleanups, &mut visitor)?;
                 visit_deferred_capture_values(&scope.defers, &mut visitor)?;
@@ -4309,16 +4178,6 @@ fn validate_frame(
         path: path.to_owned(),
         reason: error.to_string(),
     })?;
-    for (index, value) in frame.registers.iter().enumerate() {
-        for (ordinal, child) in value.values().enumerate() {
-            validate_runtime_value_at(
-                program,
-                child,
-                None,
-                format!("{path}.registers[{index}].values[{ordinal}]"),
-            )?;
-        }
-    }
     FrameValueContext {
         program,
         function: frame.function,
@@ -4333,124 +4192,20 @@ fn validate_frame(
         &mut resources,
         RuntimeValue::view,
     )?;
-    for (index, cleanup) in frame.root_cleanups.iter().enumerate() {
-        validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
+    FrameValueContext {
+        program,
+        function: frame.function,
+        layout,
+        binding: frame.type_instantiation.as_deref(),
+        registers: &frame.registers,
+        scope_count: frame.scopes.len(),
     }
-    let mut defer_ids = BTreeSet::new();
-    for (index, deferred) in frame.root_defers.iter().enumerate() {
-        if !defer_ids.insert(deferred.id) {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        validate_deferred(
-            program,
-            deferred,
-            layout.slots.len(),
-            &format!("{path}.root_defers[{index}]"),
-        )?;
-    }
-    for (scope_index, scope) in frame.scopes.iter().enumerate() {
-        let definition = layout
-            .scopes
-            .get(scope.id.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        let expected_parent = scope_index
-            .checked_sub(1)
-            .map(|index| frame.scopes[index].id);
-        if scope.depth as usize != scope_index
-            || scope_index >= layout.max_scope_depth as usize
-            || definition.parent != expected_parent
-            || (scope.defer_inflight.is_some() && scope.defer_exit.is_none())
-            || (scope.defer_failure.is_some() && scope.defer_exit.is_none())
-            || (!scope.defer_releasing.is_empty() && scope.defer_exit.is_none())
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        for (cleanup_index, cleanup) in scope.cleanups.iter().enumerate() {
-            validate_cleanup(
-                program,
-                cleanup,
-                &format!("{path}.scopes[{scope_index}].cleanups[{cleanup_index}]"),
-            )?;
-        }
-        for (defer_index, deferred) in scope.defers.iter().enumerate() {
-            if !defer_ids.insert(deferred.id) {
-                return Err(FiberStateError::InvalidFrame);
-            }
-            validate_deferred(
-                program,
-                deferred,
-                layout.slots.len(),
-                &format!("{path}.scopes[{scope_index}].defers[{defer_index}]"),
-            )?;
-        }
-        if let Some(inflight) = scope.defer_inflight
-            && !defer_ids.insert(inflight.registration)
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        for release in &scope.defer_releasing {
-            if !defer_ids.insert(release.registration)
-                || release.tokens.is_empty()
-                || release.tokens.iter().collect::<BTreeSet<_>>().len() != release.tokens.len()
-            {
-                return Err(FiberStateError::InvalidFrame);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn validate_deferred(
-    program: &AwbcProgram,
-    deferred: &FiberDeferredRegistration,
-    register_count: usize,
-    path: &str,
-) -> Result<(), FiberStateError> {
-    let function_id = program
-        .defer_sites
-        .get(deferred.site.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let function = program
-        .functions
-        .get(function_id.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let signature = program
-        .signatures
-        .get(function.signature.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if deferred.capture_registers.len() != deferred.captures.len()
-        || signature.params.len() != deferred.captures.len()
-        || !signature.result.is_some_and(|result| {
-            matches!(
-                program
-                    .runtime_types
-                    .get(result.index())
-                    .map(AwbcRuntimeType::shape),
-                Some(AwbcRuntimeTypeShape::Unit)
-            )
-        })
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let mut seen_registers = std::collections::BTreeSet::new();
-    for (index, (register, capture)) in deferred
-        .capture_registers
-        .iter()
-        .zip(&deferred.captures)
-        .enumerate()
-    {
-        if register.index() >= register_count
-            || !seen_registers.insert(*register) && !capture.ownership().permits_copy()
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        validate_runtime_value_at(
-            program,
-            capture,
-            Some(signature.params[index]),
-            format!("{path}.captures[{index}]"),
-        )?;
-    }
+    .validate_scopes(
+        &frame.root_cleanups,
+        &frame.scopes,
+        &mut resources,
+        RuntimeValue::view,
+    )?;
     Ok(())
 }
 
@@ -4875,43 +4630,6 @@ pub(crate) fn validate_function_argument_value_refs(
         type_instantiation,
         parameter_registers: parameter_registers.into_boxed_slice(),
     })
-}
-
-fn validate_cleanup(
-    program: &AwbcProgram,
-    cleanup: &FiberScopeCleanup,
-    path: &str,
-) -> Result<(), FiberStateError> {
-    if cleanup.key.is_empty() {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let effect = program
-        .effect_plans
-        .get(cleanup.effect.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let signature = program
-        .signatures
-        .get(effect.signature.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if cleanup.args.len() != signature.params.len() {
-        return Err(FiberStateError::InvalidRuntimeValue {
-            path: format!("{path}.args"),
-            reason: format!(
-                "cleanup effect expects {} arguments, snapshot stores {}",
-                signature.params.len(),
-                cleanup.args.len()
-            ),
-        });
-    }
-    for (index, (value, expected)) in cleanup.args.iter().zip(&signature.params).enumerate() {
-        validate_runtime_value_at(
-            program,
-            value,
-            Some(*expected),
-            format!("{path}.args[{index}]"),
-        )?;
-    }
-    Ok(())
 }
 
 fn validate_return_point(
@@ -5989,14 +5707,12 @@ impl FiberFrame {
             format: None,
             format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
-            root_defers: Vec::new(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }
 
     fn has_pending_cleanup(&self) -> bool {
         !self.root_cleanups.is_empty()
-            || !self.root_defers.is_empty()
             || self.scopes.iter().any(|scope| {
                 !scope.cleanups.is_empty()
                     || !scope.defers.is_empty()
@@ -7337,7 +7053,19 @@ mod tests {
 
     #[test]
     fn format_operand_recovery_preserves_pending_cleanup_for_normal_unwind() {
-        let program = format_entry_program();
+        let mut program = format_entry_program();
+        // This fixture retains a real cleanup under the original Unit-input
+        // signature, so capture admission can validate its declared effect.
+        program
+            .effect_plans
+            .push(super::super::schema::AwbcEffectPlan {
+                kind: super::super::schema::AwbcEffectKind::Log,
+                signature: program.functions[1].signature,
+                capability: None,
+                audio: None,
+                static_args: Vec::new(),
+                resources: Vec::new(),
+            });
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;

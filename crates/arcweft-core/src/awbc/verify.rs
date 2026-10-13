@@ -246,9 +246,9 @@ impl AwbcProgram {
 
     /// Validates saved scope stacks at their exact resume coordinates through
     /// the same control-flow transfer rules used to admit the executable.
-    pub(crate) fn verify_scope_stacks<'a>(
+    pub(crate) fn verify_scope_stacks<'a, V: 'a>(
         &self,
-        stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope])>,
+        stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope<V>])>,
     ) -> Result<(), AwbcVerifyError> {
         let stacks = stacks
             .into_iter()

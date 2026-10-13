@@ -2413,51 +2413,25 @@ impl super::AwbcProductStepExecutor {
         {
             return Err(LineRuntimeError::InvalidActivationOperation.into());
         }
-        let target_id = self
-            .program
-            .defer_sites
-            .get(site.index())
-            .copied()
-            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
-        let target = self
-            .program
-            .functions
-            .get(target_id.index())
-            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
-        let signature = self
-            .program
-            .signatures
-            .get(target.signature.index())
-            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
-        if target.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary
-            || signature.params.len() != captures.len()
-            || !signature.result.is_some_and(|result| {
-                matches!(
-                    self.program
-                        .runtime_types
-                        .get(result.index())
-                        .map(crate::awbc::schema::AwbcRuntimeType::shape),
-                    Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
-                )
-            })
-        {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
-        }
-
         let frame = fiber.active_frame()?;
-        let mut seen_registers = BTreeSet::new();
+        crate::awbc::fiber::FiberDeferredRegistration::validate_registration_inputs(
+            &self.program,
+            frame,
+            cursor,
+            site,
+            outcome,
+            captures,
+        )?;
         let capture_registers = captures
             .iter()
             .map(|(register, _)| *register)
             .collect::<Vec<_>>();
         let mut capture_tokens = BTreeSet::new();
-        for ((register, value), expected) in captures.iter().zip(&signature.params) {
-            if !seen_registers.insert(*register)
-                || !frame
-                    .registers
-                    .get(register.index())
-                    .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
-                || !runtime_value_matches_type(&self.program, value, *expected, 0)
+        for (register, value) in captures.iter() {
+            if !frame
+                .registers
+                .get(register.index())
+                .is_some_and(crate::value::RuntimePlaceStorage::is_vacant)
             {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
             }
@@ -2509,6 +2483,7 @@ impl super::AwbcProductStepExecutor {
             id,
             site,
             outcome,
+            source: cursor,
             capture_registers,
             captures,
         };
@@ -3070,9 +3045,6 @@ impl super::AwbcProductStepExecutor {
             });
         }
 
-        if !fiber.active_frame()?.root_defers.is_empty() {
-            return Err(LineRuntimeError::InvalidDeferredTransition.into());
-        }
         self.start_product_dialogue_after_activation(&activation, frame, line)
     }
 
@@ -3099,9 +3071,6 @@ impl super::AwbcProductStepExecutor {
             }) => return Ok((false, None)),
         };
         let Some(scope) = fiber.active_frame()?.scopes.last() else {
-            if !fiber.active_frame()?.root_defers.is_empty() {
-                return Err(LineRuntimeError::InvalidDeferredTransition.into());
-            }
             return Ok((false, None));
         };
         let scope_id = scope.id;
