@@ -197,7 +197,9 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         .into_live_for_program(&owner)
         .unwrap();
         assert!(matches!(
-            super::super::vm::cancel_fiber(&mut cancelled).exit,
+            super::super::vm::cancel_fiber(&program, &mut cancelled)
+                .unwrap()
+                .exit,
             super::super::vm::VmExit::Cancelled
         ));
         let output = loop {

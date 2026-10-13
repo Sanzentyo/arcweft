@@ -350,7 +350,8 @@ fn compiled_region_rejects_a_cancelled_entry_without_reclassifying_it() {
         behavior: RegionBehavior::Continue,
     };
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
-    let cancellation = cancel_fiber(&mut fiber);
+    let cancellation =
+        cancel_fiber(&program, &mut fiber).expect("cleanup inventory admits before cancellation");
 
     assert!(matches!(
         cancellation.exit,

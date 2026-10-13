@@ -874,16 +874,44 @@ fn awbc_save_load_preserves_cleanup_stacks() {
             arcweft_id::DeclarationName::try_new("rain").unwrap(),
         ),
     }];
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Local,
+        scope_depth: 0,
+    });
+    program
+        .strings
+        .extend(["handle.root".to_owned(), "handle.scope".to_owned()]);
     program.instructions = vec![
         arcweft_core::awbc::schema::AwbcInstruction::EnterScope {
             scope: AwbcScopeId(0),
         },
+        arcweft_core::awbc::schema::AwbcInstruction::LoadConst {
+            dst: arcweft_core::awbc::schema::AwbcRegisterId(0),
+            constant: AwbcConstantId(1),
+        },
+        arcweft_core::awbc::schema::AwbcInstruction::RegisterCleanup {
+            key: AwbcStringId(5),
+            effect: AwbcEffectPlanId(0),
+            args: vec![arcweft_core::awbc::schema::AwbcRegisterId(0)],
+        },
         arcweft_core::awbc::schema::AwbcInstruction::ExitScope {
             scope: AwbcScopeId(0),
         },
+        arcweft_core::awbc::schema::AwbcInstruction::LoadConst {
+            dst: arcweft_core::awbc::schema::AwbcRegisterId(0),
+            constant: AwbcConstantId(1),
+        },
+        arcweft_core::awbc::schema::AwbcInstruction::RegisterCleanup {
+            key: AwbcStringId(4),
+            effect: AwbcEffectPlanId(0),
+            args: vec![arcweft_core::awbc::schema::AwbcRegisterId(0)],
+        },
     ];
-    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
-    program.blocks[1].instructions = AwbcTableRange::new(2, 0);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 6);
+    program.blocks[1].instructions = AwbcTableRange::new(6, 0);
+    program.canonicalize_string_table();
     let bytes = product_bundle_with_program("entry.main", "scoped-cleanup.arcw", program.clone())
         .to_format_bytes(BundleFormat::Awfb)
         .expect("scoped program encodes");
@@ -903,10 +931,10 @@ fn awbc_save_load_preserves_cleanup_stacks() {
     let frame = fiber.active_frame_mut().expect("active frame");
     frame
         .root_cleanups
-        .push(cleanup("handle.root", "root cleanup"));
+        .push(cleanup(&program, "handle.root", "root cleanup"));
     frame.scopes[0]
         .cleanups
-        .push(cleanup("handle.scope", "scope cleanup"));
+        .push(cleanup(&program, "handle.scope", "scope cleanup"));
     save_snapshot_fiber(&mut snapshot, &fiber, &owner);
     drop(fiber);
 
@@ -1063,8 +1091,7 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.callable".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: owner_cleanup_source(&owner, "handle.callable"),
             args: vec![callable],
         });
     save_snapshot_fiber(&mut snapshot, &fiber, &owner);
@@ -1106,7 +1133,10 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
 
 #[test]
 fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomically() {
-    let bytes = product_awfb_bytes("entry.main");
+    let program = with_root_cleanup(minimal_awbc_program("entry.main"), "handle.opaque");
+    let bytes = product_bundle_with_program("entry.main", "awbc-session.arcw", program)
+        .to_format_bytes(BundleFormat::Awfb)
+        .unwrap();
     let session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     let owner = session.program_owner();
@@ -1117,8 +1147,7 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.opaque".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: owner_cleanup_source(&owner, "handle.opaque"),
             args: vec![opaque_runtime_value()],
         });
     save_snapshot_fiber(&mut snapshot, &fiber, &owner);
@@ -1177,7 +1206,10 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
 fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown_state() {
     let bytes = callable_product_awfb_bytes();
     let session = product_session_from_bytes(&bytes);
-    let foreign_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(callable_awbc_program()));
+    let foreign_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(with_root_cleanup(
+        callable_awbc_program(),
+        "handle.callable",
+    )));
     let foreign = captured_awbc_runtime_callable_value(foreign_owner.clone());
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     let owner = session.program_owner();
@@ -1188,8 +1220,7 @@ fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.callable".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: owner_cleanup_source(&owner, "handle.callable"),
             args: vec![foreign],
         });
     save_snapshot_fiber(&mut snapshot, &fiber, &foreign_owner);
@@ -2006,12 +2037,72 @@ fn view_handle(
     .with_epochs(created_epoch, updated_epoch)
 }
 
-fn cleanup(key: &str, value: &str) -> FiberScopeCleanup {
+fn cleanup(program: &AwbcProgram, key: &str, value: &str) -> FiberScopeCleanup {
     FiberScopeCleanup {
-        key: key.to_owned(),
-        effect: AwbcEffectPlanId(0),
+        source: cleanup_source(program, key),
         args: vec![RuntimeValue::String(value.to_owned())],
     }
+}
+
+fn cleanup_source(program: &AwbcProgram, key: &str) -> arcweft_core::awbc::fiber::FiberCursor {
+    for (index, block) in program.blocks.iter().enumerate() {
+        for offset in 0..block.instructions.len {
+            if let arcweft_core::awbc::schema::AwbcInstruction::RegisterCleanup {
+                key: declared,
+                ..
+            } = &program.instructions[(block.instructions.start + offset) as usize]
+                && program.strings[declared.index()] == key
+            {
+                return arcweft_core::awbc::fiber::FiberCursor {
+                    function: block.owner,
+                    block: AwbcBlockId(index.try_into().unwrap()),
+                    instruction_offset: offset,
+                };
+            }
+        }
+    }
+    panic!("missing fixture cleanup declaration {key}");
+}
+
+fn owner_cleanup_source(
+    owner: &RuntimeProgramOwner,
+    key: &str,
+) -> arcweft_core::awbc::fiber::FiberCursor {
+    let RuntimeProgramOwner::Awbc(program) = owner else {
+        panic!("AWBC fixture owner")
+    };
+    cleanup_source(program, key)
+}
+
+fn with_root_cleanup(mut program: AwbcProgram, key: &str) -> AwbcProgram {
+    let register = arcweft_core::awbc::schema::AwbcRegisterId(
+        program.frame_layouts[0].slots.len().try_into().unwrap(),
+    );
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Local,
+        scope_depth: 0,
+    });
+    let key_id = AwbcStringId(program.strings.len().try_into().unwrap());
+    program.strings.push(key.to_owned());
+    assert_eq!(program.blocks[0].instructions.len, 0);
+    assert!(program.instructions.is_empty());
+    program.instructions.extend([
+        arcweft_core::awbc::schema::AwbcInstruction::LoadConst {
+            dst: register,
+            constant: AwbcConstantId(1),
+        },
+        arcweft_core::awbc::schema::AwbcInstruction::RegisterCleanup {
+            key: key_id,
+            effect: AwbcEffectPlanId(0),
+            args: vec![register],
+        },
+    ]);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[1].instructions = AwbcTableRange::new(2, 0);
+    program.canonicalize_string_table();
+    program
 }
 
 fn captured_awbc_runtime_callable_value(owner: RuntimeProgramOwner) -> RuntimeValue {
@@ -2062,9 +2153,13 @@ fn callable_awbc_program() -> AwbcProgram {
 }
 
 fn callable_product_awfb_bytes() -> Vec<u8> {
-    product_bundle_with_program("entry.main", "awbc-session.arcw", callable_awbc_program())
-        .to_format_bytes(BundleFormat::Awfb)
-        .expect("callable AWBC bundle encodes")
+    product_bundle_with_program(
+        "entry.main",
+        "awbc-session.arcw",
+        with_root_cleanup(callable_awbc_program(), "handle.callable"),
+    )
+    .to_format_bytes(BundleFormat::Awfb)
+    .expect("callable AWBC bundle encodes")
 }
 
 fn opaque_runtime_value() -> RuntimeValue {

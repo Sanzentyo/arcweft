@@ -7,6 +7,7 @@ use crate::pattern::RuntimeCheckedType;
 fn program() -> AwbcProgram {
     let site = RuntimeDeferSiteId::from_zero_based(0).unwrap();
     AwbcProgram {
+        strings: vec!["key".to_owned()],
         runtime_types: vec![
             AwbcRuntimeType::new(
                 RuntimeCheckedType::String.semantic_identity_digest(),
@@ -53,17 +54,24 @@ fn program() -> AwbcProgram {
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),
-            instructions: AwbcTableRange { start: 0, len: 1 },
+            instructions: AwbcTableRange { start: 0, len: 2 },
             terminator: AwbcTerminator::Return { value: None },
             safe_point: AwbcSafePointKind::CallableBoundary,
             source_map: None,
         }],
-        instructions: vec![AwbcInstruction::RegisterDefer {
-            site,
-            outcome: crate::line_task::RuntimeDeferOutcomeFilter::Always,
-            owner: AwbcDeferOwner::CurrentScope,
-            captures: vec![AwbcRegisterId(0)],
-        }],
+        instructions: vec![
+            AwbcInstruction::RegisterDefer {
+                site,
+                outcome: crate::line_task::RuntimeDeferOutcomeFilter::Always,
+                owner: AwbcDeferOwner::CurrentScope,
+                captures: vec![AwbcRegisterId(0)],
+            },
+            AwbcInstruction::RegisterCleanup {
+                key: AwbcStringId(0),
+                effect: AwbcEffectPlanId(0),
+                args: vec![AwbcRegisterId(0)],
+            },
+        ],
         defer_sites: vec![AwbcFunctionId(0)],
         effect_plans: vec![AwbcEffectPlan {
             kind: AwbcEffectKind::Log,
@@ -90,8 +98,11 @@ fn context<V>(program: &AwbcProgram) -> FrameValueContext<'_, V> {
 
 fn cleanup<V>(value: V) -> FiberScopeCleanup<V> {
     FiberScopeCleanup {
-        key: "key".into(),
-        effect: AwbcEffectPlanId(0),
+        source: FiberCursor {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(0),
+            instruction_offset: 1,
+        },
         args: vec![value],
     }
 }
@@ -133,7 +144,7 @@ fn cleanup_live_and_inert_use_one_exact_value_budget_and_original_signature() {
         max_nodes: 1,
         max_encoded_bytes: 7,
         max_string_bytes: 5,
-        max_validation_work: 4,
+        max_validation_work: 12,
         ..RuntimeSchemaLimits::engine_default()
     };
     for origin in [
@@ -168,7 +179,7 @@ fn cleanup_live_and_inert_use_one_exact_value_budget_and_original_signature() {
                 ..exact
             },
             RuntimeSchemaLimits {
-                max_validation_work: 3,
+                max_validation_work: 11,
                 ..exact
             },
         ] {
@@ -185,7 +196,7 @@ fn cleanup_live_and_inert_use_one_exact_value_budget_and_original_signature() {
         assert!(
             matches!(inert.validate_inputs(&context(&program), &mut resources, AwbcRuntimeValueSnapshot::view),
             Err(FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::Resource(error)))
-            if matches!(error, RuntimeSchemaError::ValidationWork { limit: 4, consumed: 5, .. }))
+            if matches!(error, RuntimeSchemaError::ValidationWork { limit: 12, consumed: 13, .. }))
         );
     }
     // A forged row with the same semantic identity still uses the original
@@ -194,20 +205,33 @@ fn cleanup_live_and_inert_use_one_exact_value_budget_and_original_signature() {
         program.runtime_types[0].semantic_identity(),
         AwbcRuntimeTypeShape::Bool,
     ));
-    program.signatures[0].params[0] = AwbcTypeId(2);
-    assert!(matches!(
-        inert.validate_inputs(
-            &context(&program),
-            &mut ValueResourceAdmission::snapshot(
-                RuntimeSchemaLimits::engine_default(),
-                ValueAdmissionOrigin::InertSnapshot
+    for slot in [false, true] {
+        program.frame_layouts[0].slots[0].ty = AwbcTypeId(if slot { 2 } else { 0 });
+        program.signatures[0].params[0] = AwbcTypeId(if slot { 0 } else { 2 });
+        assert!(matches!(
+            inert.validate_inputs(
+                &context(&program),
+                &mut ValueResourceAdmission::snapshot(
+                    RuntimeSchemaLimits::engine_default(),
+                    ValueAdmissionOrigin::InertSnapshot
+                ),
+                AwbcRuntimeValueSnapshot::view
             ),
-            AwbcRuntimeValueSnapshot::view
-        ),
-        Err(FiberStateError::Snapshot(
-            crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
-        ))
-    ));
+            Err(FiberStateError::Snapshot(
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
+            ))
+        ));
+        assert!(matches!(
+            live.validate_inputs(
+                &context(&program),
+                &mut ValueResourceAdmission::live(RuntimeSchemaLimits::engine_default()),
+                RuntimeValue::view
+            ),
+            Err(FiberStateError::Snapshot(
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
+            ))
+        ));
+    }
 }
 
 #[test]
@@ -392,9 +416,141 @@ fn inert_scope_codec_has_one_grammar_and_requires_defer_source() {
     let mut json = serde_json::to_value(&packet).unwrap();
     json["defers"][0].as_object_mut().unwrap().remove("source");
     assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+    for field in ["key", "effect"] {
+        let mut json = serde_json::to_value(&packet).unwrap();
+        json["cleanups"][0][field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+    }
+    let mut json = serde_json::to_value(&packet).unwrap();
+    json["cleanups"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("source");
+    assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
     let mut json = serde_json::to_value(&packet).unwrap();
     json["old_live_values"] = serde_json::json!([]);
     assert!(serde_json::from_value::<FiberScope<AwbcRuntimeValueSnapshot>>(json).is_err());
+}
+
+#[test]
+fn cleanup_requires_its_exact_original_instruction_function_and_argument_inventory() {
+    let program = program();
+    let packet = cleanup(AwbcRuntimeValueSnapshot::String("cause".into()));
+    for change in 0..6 {
+        let mut forged = packet.clone();
+        match change {
+            0 => forged.source.function = AwbcFunctionId(1),
+            1 => forged.source.block = AwbcBlockId(1),
+            2 => forged.source.instruction_offset = 0,
+            3 => forged.source.instruction_offset = 2,
+            4 => forged.args.clear(),
+            _ => forged
+                .args
+                .push(AwbcRuntimeValueSnapshot::String("extra".into())),
+        }
+        assert!(
+            forged
+                .validate_inputs(
+                    &context(&program),
+                    &mut ValueResourceAdmission::snapshot(
+                        RuntimeSchemaLimits::engine_default(),
+                        ValueAdmissionOrigin::InertSnapshot
+                    ),
+                    AwbcRuntimeValueSnapshot::view
+                )
+                .is_err(),
+            "forgery {change}"
+        );
+    }
+}
+
+#[test]
+fn cleanup_key_cancellation_and_terminal_unwind_reject_later_packets_before_mutation() {
+    let mut program = program();
+    program.frame_layouts[0].scopes.clear();
+    let mut fiber = super::super::FiberState::for_function(
+        &program,
+        super::super::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
+    let good = cleanup(RuntimeValue::String("first".into()));
+    let mut bad = cleanup(RuntimeValue::String("later".into()));
+    bad.source.instruction_offset = 0;
+    fiber.frames[0].root_cleanups = vec![good.clone(), bad.clone()];
+    let cursor = fiber.cursor;
+    let status = fiber.status;
+    assert!(
+        fiber.frames[0]
+            .cancel_cleanup_by_key(&program, "key")
+            .is_err()
+    );
+    assert_eq!(
+        fiber.frames[0].root_cleanups,
+        vec![good.clone(), bad.clone()]
+    );
+    assert!(crate::awbc::vm::cancel_fiber(&program, &mut fiber).is_err());
+    assert_eq!(fiber.frames[0].root_cleanups, vec![good.clone(), bad]);
+    assert_eq!(fiber.cursor, cursor);
+    assert_eq!(fiber.status, status);
+    assert!(fiber.terminal.is_none());
+    fiber.frames[0].root_cleanups.pop();
+    let cancelled = crate::awbc::vm::cancel_fiber(&program, &mut fiber).unwrap();
+    assert_eq!(cancelled.exit, crate::awbc::vm::VmExit::Cancelled);
+    assert!(
+        matches!(&cancelled.observations[..], [crate::awbc::vm::VmObservation::Effect { effect: AwbcEffectPlanId(0), args }]
+        if args == &good.args)
+    );
+    assert!(fiber.frames[0].root_cleanups.is_empty());
+    assert!(
+        crate::awbc::vm::cancel_fiber(&program, &mut fiber)
+            .unwrap()
+            .observations
+            .is_empty()
+    );
+}
+
+#[test]
+fn invalid_cleanup_precedes_return_value_transfer() {
+    let mut program = program();
+    program.frame_layouts[0].scopes.clear();
+    program.signatures[0].result = Some(AwbcTypeId(0));
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(0)),
+    };
+    let mut fiber = super::super::FiberState::for_function(
+        &program,
+        super::super::AwbcFiberRoot::Function(AwbcFunctionId(0)),
+        AwbcFunctionId(0),
+        1,
+        64,
+    )
+    .unwrap();
+    fiber.cursor.instruction_offset = program.blocks[0].instructions.len;
+    fiber.frames[0]
+        .set_register(AwbcRegisterId(0), RuntimeValue::String("return".into()))
+        .unwrap();
+    let mut forged = cleanup(RuntimeValue::String("cleanup".into()));
+    forged.source.instruction_offset = 0;
+    fiber.frames[0].root_cleanups.push(forged.clone());
+    assert!(
+        crate::awbc::vm::step(
+            &program,
+            &mut fiber,
+            crate::awbc::vm::VmStepOptions {
+                max_instructions: 1
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(
+        fiber.frames[0].register(AwbcRegisterId(0)).unwrap(),
+        &RuntimeValue::String("return".into())
+    );
+    assert_eq!(fiber.frames[0].root_cleanups, vec![forged]);
+    assert!(fiber.terminal.is_none());
 }
 
 #[test]

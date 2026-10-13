@@ -402,8 +402,12 @@ impl AwbcProductStepExecutor {
                 true
             }
             AwaitNeedPublicationKind::Cancelled => {
-                let cancellation = cancel_fiber(&mut self.fiber);
-                self.consume_observations(cancellation.observations, output);
+                match cancel_fiber(&self.program, &mut self.fiber) {
+                    Ok(cancellation) => {
+                        self.consume_observations(cancellation.observations, output);
+                    }
+                    Err(error) => self.fail_with_error(error.into(), output),
+                }
                 true
             }
         }
@@ -917,6 +921,13 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
                 TaskEventKind::Cancelled => {
+                    if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
+                        if let Some(suspension) = self.fiber.suspension.as_mut() {
+                            suspension.reason = FiberSuspensionReason::AwaitMany(state);
+                        }
+                        self.record_error(error.into(), output);
+                        return false;
+                    }
                     if !self.discard_extracted_await_many(
                         state,
                         &before_handles,
@@ -925,8 +936,12 @@ impl AwbcProductStepExecutor {
                     ) {
                         return false;
                     }
-                    let cancellation = cancel_fiber(&mut self.fiber);
-                    self.consume_observations(cancellation.observations, output);
+                    match cancel_fiber(&self.program, &mut self.fiber) {
+                        Ok(cancellation) => {
+                            self.consume_observations(cancellation.observations, output);
+                        }
+                        Err(error) => self.fail_with_error(error.into(), output),
+                    }
                     return true;
                 }
             }
@@ -1862,9 +1877,17 @@ impl AwbcProductStepExecutor {
                 true
             }
             AwaitNeedPublicationKind::Cancelled => {
-                journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
-                let cancellation = cancel_fiber(fiber);
-                journal.record_deferred_observations(cancellation.observations);
+                match cancel_fiber(&self.program, fiber) {
+                    Ok(cancellation) => {
+                        journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                        journal.record_deferred_observations(cancellation.observations);
+                    }
+                    Err(error) => mark_child_trapped(
+                        fiber,
+                        AwbcTrapCode::InternalInvariant,
+                        error.to_string(),
+                    ),
+                }
                 true
             }
         }
@@ -2144,9 +2167,17 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
                 TaskEventKind::Cancelled => {
-                    journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
-                    let cancellation = cancel_fiber(fiber);
-                    journal.record_deferred_observations(cancellation.observations);
+                    match cancel_fiber(&self.program, fiber) {
+                        Ok(cancellation) => {
+                            journal.record_drop_policy(crate::effect::RuntimeDropPolicy::Cancel);
+                            journal.record_deferred_observations(cancellation.observations);
+                        }
+                        Err(error) => mark_child_trapped(
+                            fiber,
+                            AwbcTrapCode::InternalInvariant,
+                            error.to_string(),
+                        ),
+                    }
                     return true;
                 }
             }

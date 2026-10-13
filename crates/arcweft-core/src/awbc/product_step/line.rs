@@ -811,6 +811,14 @@ impl super::AwbcProductStepExecutor {
         let commands = transaction
             .line_mut()
             .inspect_record_commands(&activation, &host_commands)?;
+        // Existing and newly prepared children are admitted while the command
+        // transaction remains reversible, before cancellation detaches one.
+        for child in &self.child_fibers {
+            child.fiber.validate_cleanup_inputs(&self.program)?;
+        }
+        for child in &batch.child_fibers {
+            child.fiber.validate_cleanup_inputs(&self.program)?;
+        }
         Ok(PreparedLineTaskCommands {
             line_task,
             scheduled,
@@ -864,9 +872,11 @@ impl super::AwbcProductStepExecutor {
                     .line_mut()
                     .admit_scheduled_child_bindings_prepared(proof, bindings);
             }
-            batch
-                .observations
-                .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
+            batch.observations.extend(
+                crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                    .expect("prepared line cancellation retains its admitted cleanup inventory")
+                    .observations,
+            );
             match cancellation.location {
                 ExistingChildLocation::Executor => {
                     prepared.executor_actions.remove(&cancellation.instance);
@@ -1025,9 +1035,13 @@ impl super::AwbcProductStepExecutor {
                         .child_fibers
                         .remove(index)
                         .expect("preflighted child action retains its exact instance");
-                    batch
-                        .observations
-                        .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
+                    batch.observations.extend(
+                        crate::awbc::vm::cancel_fiber(&self.program, &mut child.fiber)
+                            .expect(
+                                "prepared line cancellation retains its admitted cleanup inventory",
+                            )
+                            .observations,
+                    );
                 }
                 Some(ProductExistingChildAction::MarkClosing) => {
                     let super::ProductChildFiberOwner::LineTask { phase, .. } =
@@ -3654,11 +3668,12 @@ fn pop_activation_scope(
     scope_id: crate::awbc::schema::AwbcScopeId,
 ) -> Result<
     (
-        Vec<crate::awbc::fiber::FiberScopeCleanup>,
+        Vec<crate::awbc::fiber::FiberCleanupDispatch>,
         Option<crate::awbc::fiber::FiberTrap>,
     ),
     ProductStepError,
 > {
+    fiber.validate_cleanup_inputs(program)?;
     let frame = fiber.active_frame_mut()?;
     let Some(scope) = frame.scopes.last() else {
         return Err(LineRuntimeError::InvalidActivationOperation.into());
@@ -3691,7 +3706,14 @@ fn pop_activation_scope(
             *register = Default::default();
         }
     }
-    Ok((scope.cleanups, scope.defer_failure))
+    Ok((
+        scope
+            .cleanups
+            .into_iter()
+            .map(|cleanup| cleanup.into_dispatch_admitted(program))
+            .collect(),
+        scope.defer_failure,
+    ))
 }
 
 fn restore_observed_operands(

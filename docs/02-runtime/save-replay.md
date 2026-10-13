@@ -187,7 +187,12 @@ instruction cursor を保持し、RegisterDefer の site・outcome・CurrentScop
 register inventory と original verifier の lexical scope stack に照合する。
 実際の capture graph は一度だけ資源計上し、元の frame slot 型IDと defer signature
 型IDの両方を immutable frame binding で検証する。Copy 値の重複 capture は許可し、
-affine 値の重複は拒否する。cleanup effect の元 signature、key／failure の文字列、
+affine 値の重複は拒否する。cleanup は元の RegisterCleanup instruction cursor と
+引数だけを保持し、key／effect plan／argument register inventory は元 instruction
+から借用する。保存済みの複製 key／effect は持たない。元 frame slot と effect
+signature の型IDを immutable binding で照合し、登録地点の lexical scope を検証する。
+key による取消と terminal unwind は全対象 inventory の admission を先に完了し、
+後続 packet の不正で先行 packet を除去・dispatch しない。key／failure の文字列、
 collection count、registration identity、in-flight／release の site・token inventory
 も全 frame の register／pending／formatter と同じ allowance で、最初の projection／
 構築より前に検証する。VM の cleanup と scoped defer の producer も同じ owning

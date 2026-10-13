@@ -158,10 +158,12 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
         .expect("typed direct-return program verifies");
     let mut fiber = direct_suspension_fiber(&program);
     install_frame_cleanups(
+        &program,
         fiber.active_frame_mut().expect("caller frame"),
         "caller",
         AwbcScopeId(0),
     );
+    fiber.cursor.instruction_offset = program.blocks[fiber.cursor.block.index()].instructions.len;
 
     vm::step(
         &program,
@@ -172,10 +174,12 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
     )
     .expect("direct call enters its callee");
     install_frame_cleanups(
+        &program,
         fiber.active_frame_mut().expect("callee frame"),
         "callee",
         AwbcScopeId(0),
     );
+    fiber.cursor.instruction_offset = program.blocks[fiber.cursor.block.index()].instructions.len;
 
     let callee_step = vm::step(
         &program,
@@ -210,7 +214,7 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
         fiber.frames[0]
             .root_cleanups
             .iter()
-            .map(|cleanup| cleanup.key.as_str())
+            .map(|cleanup| cleanup.key(&program).unwrap())
             .collect::<Vec<_>>(),
         vec!["caller.root.1", "caller.root.2"]
     );
@@ -267,14 +271,14 @@ fn suspended_snapshot_rejects_resume_point_owned_by_the_caller() {
 fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
     let program = Arc::new(scoped_nested_suspension_program());
     let mut fiber = suspended_three_frame_fiber(&program);
-    install_nested_cleanups(&mut fiber);
-    // The synthetic stack is positioned just after the innermost EnterScope.
-    fiber.cursor.instruction_offset = 1;
+    install_nested_cleanups(&program, &mut fiber);
+    // The synthetic stack has passed the declared entry instructions.
+    fiber.cursor.instruction_offset = program.blocks[fiber.cursor.block.index()].instructions.len;
     fiber
         .validate_for_program(&program)
         .expect("nested suspended cleanup state validates");
 
-    let cancellation = vm::cancel_fiber(&mut fiber);
+    let cancellation = vm::cancel_fiber(&program, &mut fiber).expect("cleanup admission");
 
     assert_eq!(cancellation.exit, VmExit::Cancelled);
     assert_eq!(fiber.status, FiberStatus::Cancelled);
@@ -307,7 +311,7 @@ fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
         .validate_for_program(&program)
         .expect("restored cancelled stack validates");
 
-    let duplicate = vm::cancel_fiber(&mut fiber);
+    let duplicate = vm::cancel_fiber(&program, &mut fiber).expect("cleanup admission");
     assert_eq!(duplicate.exit, VmExit::Cancelled);
     assert!(duplicate.observations.is_empty());
 
@@ -343,12 +347,13 @@ fn cancelled_cleanup_registration_is_not_executed_during_unwind() {
             .expect("suspended callee")
             .root_cleanups
             .iter()
-            .map(|cleanup| cleanup.key.as_str())
+            .map(|cleanup| cleanup.key(&program).unwrap())
             .collect::<Vec<_>>(),
         vec!["zz.zkeep"]
     );
     assert_eq!(
-        vm::cancel_fiber(&mut fiber)
+        vm::cancel_fiber(&program, &mut fiber)
+            .expect("cleanup admission")
             .observations
             .iter()
             .filter(|observation| matches!(observation, VmObservation::Effect { .. }))
@@ -359,19 +364,18 @@ fn cancelled_cleanup_registration_is_not_executed_during_unwind() {
 
 #[test]
 fn suspended_owned_resource_cleanup_runs_exactly_once_on_cancellation() {
-    let program = direct_suspension_program();
+    let program = cleanup_declaration_program(direct_suspension_program());
     let mut fiber = suspended_three_frame_fiber(&program);
     fiber
         .active_frame_mut()
         .expect("innermost suspended frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "resource.avatar".to_owned(),
-            effect: CLOSE_CLEANUP_EFFECT,
+            source: cleanup_source(&program, CALLEE, "resource.avatar"),
             args: Vec::new(),
         });
 
-    let cancellation = vm::cancel_fiber(&mut fiber);
+    let cancellation = vm::cancel_fiber(&program, &mut fiber).expect("cleanup admission");
     assert_eq!(
         cancellation
             .observations
@@ -386,12 +390,17 @@ fn suspended_owned_resource_cleanup_runs_exactly_once_on_cancellation() {
             .count(),
         1
     );
-    assert!(vm::cancel_fiber(&mut fiber).observations.is_empty());
+    assert!(
+        vm::cancel_fiber(&program, &mut fiber)
+            .expect("cleanup admission")
+            .observations
+            .is_empty()
+    );
 }
 
 #[test]
 fn trap_below_suspended_callers_unwinds_without_becoming_cancellation() {
-    let mut program = direct_suspension_program();
+    let mut program = cleanup_declaration_program(direct_suspension_program());
     program.blocks[3].terminator = AwbcTerminator::Trap {
         code: AwbcTrapCode::ExplicitPanic,
         message: None,
@@ -400,7 +409,7 @@ fn trap_below_suspended_callers_unwinds_without_becoming_cancellation() {
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("typed trapping direct-suspension program verifies");
     let mut fiber = suspended_three_frame_fiber(&program);
-    install_nested_cleanups(&mut fiber);
+    install_nested_cleanups(&program, &mut fiber);
 
     fiber
         .resume_at(&program, AWAIT_RESUME)
@@ -510,6 +519,7 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
             .expect("await consumes the sole Need handle"),
         RuntimeValue::NeedHandle(fixture_need("need.profile"))
     );
+    fiber.cursor.instruction_offset = program.blocks[fiber.cursor.block.index()].instructions.len;
     fiber
         .suspend(FiberSuspension {
             resume: FiberResumeTarget::Declared(AWAIT_RESUME),
@@ -527,28 +537,29 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
     fiber
 }
 
-fn install_nested_cleanups(fiber: &mut FiberState) {
+fn install_nested_cleanups(program: &AwbcProgram, fiber: &mut FiberState) {
     for (frame_index, frame) in fiber.frames.iter_mut().enumerate() {
         let owner = ["caller", "middle", "inner"][frame_index];
-        install_frame_cleanups(frame, owner, AwbcScopeId(0));
+        install_frame_cleanups(program, frame, owner, AwbcScopeId(0));
     }
 }
 
 fn install_frame_cleanups(
+    program: &AwbcProgram,
     frame: &mut arcweft_core::awbc::fiber::FiberFrame,
     owner: &str,
     scope: AwbcScopeId,
 ) {
     frame.root_cleanups = vec![
-        cleanup(format!("{owner}.root.1")),
-        cleanup(format!("{owner}.root.2")),
+        cleanup(program, frame.function, &format!("{owner}.root.1")),
+        cleanup(program, frame.function, &format!("{owner}.root.2")),
     ];
     frame.scopes.push(FiberScope {
         id: scope,
         depth: 0,
         cleanups: vec![
-            cleanup(format!("{owner}.scope.1")),
-            cleanup(format!("{owner}.scope.2")),
+            cleanup(program, frame.function, &format!("{owner}.scope.1")),
+            cleanup(program, frame.function, &format!("{owner}.scope.2")),
         ],
         defers: Vec::new(),
         defer_releasing: Vec::new(),
@@ -558,12 +569,116 @@ fn install_frame_cleanups(
     });
 }
 
-fn cleanup(key: String) -> FiberScopeCleanup {
+fn cleanup(program: &AwbcProgram, function: AwbcFunctionId, key: &str) -> FiberScopeCleanup {
     FiberScopeCleanup {
-        key: key.clone(),
-        effect: CLEANUP_EFFECT,
-        args: vec![RuntimeValue::NeedHandle(fixture_need(&key))],
+        source: cleanup_source(program, function, key),
+        args: vec![RuntimeValue::NeedHandle(fixture_need(key))],
     }
+}
+
+fn cleanup_source(program: &AwbcProgram, function: AwbcFunctionId, key: &str) -> FiberCursor {
+    for (index, block) in program
+        .blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| block.owner == function)
+    {
+        for offset in 0..block.instructions.len {
+            if let AwbcInstruction::RegisterCleanup { key: declared, .. } =
+                &program.instructions[(block.instructions.start + offset) as usize]
+                && program.strings[declared.index()] == key
+            {
+                return FiberCursor {
+                    function,
+                    block: AwbcBlockId(index.try_into().unwrap()),
+                    instruction_offset: offset,
+                };
+            }
+        }
+    }
+    panic!("missing original cleanup declaration {function:?}/{key}");
+}
+
+// These tests deliberately install retained stacks. The original instruction
+// rows still specify every key, effect, argument slot and lexical scope; the
+// dynamic source slot accepts the typed Need packet checked by the effect ABI.
+fn cleanup_declaration_program(mut program: AwbcProgram) -> AwbcProgram {
+    let original = std::mem::take(&mut program.instructions);
+    for (index, block) in program.blocks.iter_mut().enumerate() {
+        let old = block.instructions;
+        let start = program.instructions.len().try_into().unwrap();
+        if index == program.functions[block.owner.index()].entry_block.index() {
+            let layout = &mut program.frame_layouts[block.owner.index()];
+            if layout.scopes.is_empty() {
+                layout.scopes.push(AwbcScopeDefinition {
+                    kind: arcweft_core::scope::RuntimeScopeFrameKind::EmittedLexical,
+                    parent: None,
+                    identity: RuntimeScopeIdentity::Anonymous,
+                });
+            }
+            let register = AwbcRegisterId(layout.slots.len().try_into().unwrap());
+            layout.slots.push(AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            });
+            let owners: &[&str] = if block.owner == CALLER {
+                &["caller"]
+            } else {
+                &["callee", "middle", "inner"]
+            };
+            for lexical in [false, true] {
+                if lexical {
+                    program.instructions.push(AwbcInstruction::EnterScope {
+                        scope: AwbcScopeId(0),
+                    });
+                }
+                for owner in owners {
+                    for ordinal in 1..=2 {
+                        let key = AwbcStringId(program.strings.len().try_into().unwrap());
+                        program.strings.push(format!(
+                            "{owner}.{}.{}",
+                            if lexical { "scope" } else { "root" },
+                            ordinal
+                        ));
+                        program.instructions.extend([
+                            AwbcInstruction::LoadConst {
+                                dst: register,
+                                constant: AwbcConstantId(1),
+                            },
+                            AwbcInstruction::RegisterCleanup {
+                                key,
+                                effect: CLEANUP_EFFECT,
+                                args: vec![register],
+                            },
+                        ]);
+                    }
+                }
+                if lexical {
+                    program.instructions.push(AwbcInstruction::ExitScope {
+                        scope: AwbcScopeId(0),
+                    });
+                }
+            }
+            let key = AwbcStringId(program.strings.len().try_into().unwrap());
+            program.strings.push("resource.avatar".to_owned());
+            program.instructions.push(AwbcInstruction::RegisterCleanup {
+                key,
+                effect: CLOSE_CLEANUP_EFFECT,
+                args: Vec::new(),
+            });
+        }
+        program
+            .instructions
+            .extend_from_slice(&original[old.start as usize..(old.start + old.len) as usize]);
+        block.instructions = AwbcTableRange::new(
+            start,
+            u32::try_from(program.instructions.len()).unwrap() - start,
+        );
+    }
+    program.canonicalize_string_table();
+    program
 }
 
 fn cleanup_observation_keys(
@@ -629,7 +744,7 @@ fn direct_return_program() -> AwbcProgram {
     program.functions[1].flags = AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic);
     program.blocks.truncate(3);
     program.resume_points.truncate(1);
-    program
+    cleanup_declaration_program(program)
 }
 
 fn cleanup_cancellation_program() -> AwbcProgram {
@@ -727,6 +842,7 @@ fn scoped_nested_suspension_program() -> AwbcProgram {
     for (block, start) in program.blocks.iter_mut().zip(0..4) {
         block.instructions = AwbcTableRange::new(start, 1);
     }
+    let program = cleanup_declaration_program(program);
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("nested cleanup fixture has verified lexical scopes");

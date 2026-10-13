@@ -2785,6 +2785,59 @@ fn project_call_default_program() -> AwbcProgram {
     program
 }
 
+fn append_cleanup_declaration(
+    program: &mut AwbcProgram,
+    function: AwbcFunctionId,
+    key: &str,
+    effect: AwbcEffectPlanId,
+    args: Vec<AwbcRegisterId>,
+) -> super::fiber::FiberCursor {
+    let blocks = program.functions[function.index()].blocks;
+    let block = AwbcBlockId(blocks.start + blocks.len - 1);
+    let original = program.blocks[block.index()].instructions;
+    let insertion = original.start + original.len;
+    let key_id = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program.strings.push(key.to_owned());
+    program.instructions.insert(
+        insertion as usize,
+        AwbcInstruction::RegisterCleanup {
+            key: key_id,
+            effect,
+            args,
+        },
+    );
+    for (index, definition) in program.blocks.iter_mut().enumerate() {
+        if index != block.index() && definition.instructions.start >= insertion {
+            definition.instructions.start += 1;
+        }
+    }
+    program.blocks[block.index()].instructions.len += 1;
+    super::fiber::FiberCursor {
+        function,
+        block,
+        instruction_offset: original.len,
+    }
+}
+
+fn add_goto_cleanup_effect(program: &mut AwbcProgram) {
+    assert!(program.effect_plans.is_empty());
+    let signature = AwbcSignatureId(program.signatures.len().try_into().unwrap());
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    let constant = AwbcConstantId(program.constants.len().try_into().unwrap());
+    program.constants.push(AwbcConstant::Unit);
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Wait,
+        signature,
+        capability: None,
+        audio: None,
+        static_args: vec![constant],
+        resources: Vec::new(),
+    });
+}
 fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     let mut program = minimal_program();
     let inner_flags = if dynamic {
@@ -4069,14 +4122,29 @@ fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return()
             effects,
         });
         program.functions[2].signature = signature;
+        // Typed declarations belong to each retained frame, including while
+        // the nonlocal transfer abandons their ordinary return cursors.
+        let _callee_cleanup = append_cleanup_declaration(
+            &mut program,
+            AwbcFunctionId(1),
+            "callee-cleanup",
+            AwbcEffectPlanId(0),
+            Vec::new(),
+        );
+        let caller_cleanup = append_cleanup_declaration(
+            &mut program,
+            AwbcFunctionId(0),
+            "caller-cleanup",
+            AwbcEffectPlanId(0),
+            Vec::new(),
+        );
         program.canonicalize_string_table();
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .expect("goto unwind program verifies");
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
         fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
-            key: "caller-cleanup".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: caller_cleanup,
             args: Vec::new(),
         });
         fiber
@@ -4086,7 +4154,7 @@ fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return()
                 super::fiber::FiberReturnPoint::ordinary(
                     super::fiber::FiberCursor {
                         function: AwbcFunctionId(0),
-                        block: AwbcBlockId(0),
+                        block: program.functions[0].entry_block,
                         instruction_offset: 0,
                     },
                     None,
@@ -4094,11 +4162,7 @@ fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return()
                 &[],
             )
             .expect("push nested goto frame");
-        fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
-            key: "callee-cleanup".to_owned(),
-            effect: AwbcEffectPlanId(0),
-            args: Vec::new(),
-        });
+
         fiber
             .validate_for_program(&program)
             .expect("nested goto frames validate before transfer");
@@ -4263,7 +4327,24 @@ fn verifier_rejects_noncanonical_effect_identities_at_wire_admission() {
 #[test]
 fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames() {
     for dynamic in [false, true] {
-        let program = std::sync::Arc::new(project_call_target_goto_program(dynamic));
+        let mut definition = project_call_target_goto_program(dynamic);
+        add_goto_cleanup_effect(&mut definition);
+        let _target_cleanup = append_cleanup_declaration(
+            &mut definition,
+            AwbcFunctionId(1),
+            "target-cleanup",
+            AwbcEffectPlanId(0),
+            Vec::new(),
+        );
+        let caller_cleanup = append_cleanup_declaration(
+            &mut definition,
+            AwbcFunctionId(0),
+            "caller-cleanup",
+            AwbcEffectPlanId(0),
+            Vec::new(),
+        );
+        definition.canonicalize_string_table();
+        let program = std::sync::Arc::new(definition);
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .expect("ProjectCall target-goto program verifies");
@@ -4286,15 +4367,10 @@ fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames(
             Some(FiberReturnContinuation::ProjectCallTarget { .. })
         ));
         fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
-            key: "caller-cleanup".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: caller_cleanup,
             args: Vec::new(),
         });
-        fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
-            key: "target-cleanup".to_owned(),
-            effect: AwbcEffectPlanId(0),
-            args: Vec::new(),
-        });
+
         let output = step_with_callable_context(
             &program,
             &mut fiber,
@@ -4333,7 +4409,25 @@ fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames(
 
 #[test]
 fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frames() {
-    let program = std::sync::Arc::new(project_call_default_goto_program());
+    let mut definition = project_call_default_goto_program();
+    add_goto_cleanup_effect(&mut definition);
+    let default_function = definition.blocks[2].owner;
+    let _default_cleanup = append_cleanup_declaration(
+        &mut definition,
+        default_function,
+        "default-cleanup",
+        AwbcEffectPlanId(0),
+        Vec::new(),
+    );
+    let caller_cleanup = append_cleanup_declaration(
+        &mut definition,
+        AwbcFunctionId(0),
+        "caller-cleanup",
+        AwbcEffectPlanId(0),
+        Vec::new(),
+    );
+    definition.canonicalize_string_table();
+    let program = std::sync::Arc::new(definition);
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("ProjectCall default-goto program verifies");
@@ -4356,15 +4450,10 @@ fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frame
         Some(FiberReturnContinuation::ProjectCallDefault { .. })
     ));
     fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
-        key: "caller-cleanup".to_owned(),
-        effect: AwbcEffectPlanId(0),
+        source: caller_cleanup,
         args: Vec::new(),
     });
-    fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
-        key: "default-cleanup".to_owned(),
-        effect: AwbcEffectPlanId(0),
-        args: Vec::new(),
-    });
+
     let output = step_with_callable_context(
         &program,
         &mut fiber,
@@ -7159,15 +7248,44 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         identity: crate::scope::RuntimeScopeIdentity::Anonymous,
     }];
     program.frame_layouts[0].max_scope_depth = 1;
+    program
+        .strings
+        .extend(["handle.root".to_owned(), "handle.scope".to_owned()]);
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: cleanup_type,
+        role: AwbcFrameSlotRole::Local,
+        scope_depth: 0,
+    });
+    let cleanup_register =
+        AwbcRegisterId(u32::try_from(program.frame_layouts[0].slots.len() - 1).unwrap());
     program.instructions = vec![
         AwbcInstruction::EnterScope {
             scope: AwbcScopeId(0),
         },
+        AwbcInstruction::LoadConst {
+            dst: cleanup_register,
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::RegisterCleanup {
+            key: AwbcStringId(4),
+            effect: AwbcEffectPlanId(0),
+            args: vec![cleanup_register],
+        },
         AwbcInstruction::ExitScope {
             scope: AwbcScopeId(0),
         },
+        AwbcInstruction::LoadConst {
+            dst: cleanup_register,
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::RegisterCleanup {
+            key: AwbcStringId(3),
+            effect: AwbcEffectPlanId(0),
+            args: vec![cleanup_register],
+        },
     ];
-    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 6);
     program.canonicalize_string_table();
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -7187,15 +7305,21 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.root".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: super::fiber::FiberCursor {
+                function: AwbcFunctionId(0),
+                block: AwbcBlockId(0),
+                instruction_offset: 5,
+            },
             args: vec![RuntimeValue::String("root".to_owned())],
         });
     fiber.active_frame_mut().expect("active frame").scopes[0]
         .cleanups
         .push(FiberScopeCleanup {
-            key: "handle.scope".to_owned(),
-            effect: AwbcEffectPlanId(0),
+            source: super::fiber::FiberCursor {
+                function: AwbcFunctionId(0),
+                block: AwbcBlockId(0),
+                instruction_offset: 2,
+            },
             args: vec![RuntimeValue::String("scope".to_owned())],
         });
 
@@ -7229,8 +7353,11 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("checkpoint restores by replacing the current fiber");
 
     let frame = fiber.active_frame().expect("active frame restored");
-    assert_eq!(frame.root_cleanups[0].key, "handle.root");
-    assert_eq!(frame.scopes[0].cleanups[0].key, "handle.scope");
+    assert_eq!(frame.root_cleanups[0].key(&program).unwrap(), "handle.root");
+    assert_eq!(
+        frame.scopes[0].cleanups[0].key(&program).unwrap(),
+        "handle.scope"
+    );
 }
 
 #[test]

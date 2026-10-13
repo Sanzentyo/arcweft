@@ -37,6 +37,7 @@ use format::FormatStaging;
 pub use format::{FiberFormatAttemptState, FiberFormatState};
 use input::FrameValueContext;
 use return_context::FiberReturnContext;
+pub(super) use scope::FiberCleanupDispatch;
 pub use scope::{FiberDeferredRegistration, FiberScope, FiberScopeCleanup};
 
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
@@ -3836,39 +3837,86 @@ impl FiberState {
         self.terminal = Some(FiberTerminalValue::Trapped(trap));
     }
 
+    /// Admits every cleanup and its original lexical/source inventory before
+    /// any unwind or terminal transition detaches values from the fiber.
+    pub(super) fn validate_cleanup_inputs(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<(), FiberStateError> {
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        resources
+            .work()
+            .collection(self.frames.len())
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        for frame in &self.frames {
+            validate_frame_layout(
+                program,
+                frame.function,
+                frame.layout,
+                frame.type_instantiation.as_deref(),
+                frame.registers.len(),
+                &resources.work(),
+            )?;
+        }
+        for frame in &self.frames {
+            FrameValueContext {
+                program,
+                function: frame.function,
+                layout: &program.frame_layouts[frame.layout.index()],
+                binding: frame.type_instantiation.as_deref(),
+                registers: &frame.registers,
+                scope_count: frame.scopes.len(),
+            }
+            .validate_scopes(
+                &frame.root_cleanups,
+                &frame.scopes,
+                &mut resources,
+                RuntimeValue::view,
+            )?;
+        }
+        Ok(())
+    }
     /// Detaches all registered cleanups in whole-stack unwind order.
     ///
     /// Frames unwind from callee to caller. Each frame first drains lexical
     /// scopes from innermost to outermost and then drains frame-root cleanups.
     /// Entries are removed while collecting them, so a later terminal signal
     /// cannot execute the same cleanup twice.
-    pub(super) fn take_unwind_cleanups(&mut self) -> Vec<FiberScopeCleanup> {
+    pub(super) fn take_unwind_cleanups(
+        &mut self,
+        program: &AwbcProgram,
+    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        self.validate_cleanup_inputs(program)?;
         let mut cleanups = Vec::new();
         for frame in self.frames.iter_mut().rev() {
             for scope in frame.scopes.iter_mut().rev() {
                 while let Some(cleanup) = scope.cleanups.pop() {
-                    cleanups.push(cleanup);
+                    cleanups.push(cleanup.into_dispatch_admitted(program));
                 }
             }
             while let Some(cleanup) = frame.root_cleanups.pop() {
-                cleanups.push(cleanup);
+                cleanups.push(cleanup.into_dispatch_admitted(program));
             }
         }
-        cleanups
+        Ok(cleanups)
     }
 
     pub(super) fn take_active_frame_cleanups(
         &mut self,
-    ) -> Result<Vec<FiberScopeCleanup>, FiberStateError> {
+        program: &AwbcProgram,
+    ) -> Result<Vec<FiberCleanupDispatch>, FiberStateError> {
+        self.validate_cleanup_inputs(program)?;
         let frame = self.active_frame_mut()?;
         let mut cleanups = Vec::new();
         for scope in frame.scopes.iter_mut().rev() {
             while let Some(cleanup) = scope.cleanups.pop() {
-                cleanups.push(cleanup);
+                cleanups.push(cleanup.into_dispatch_admitted(program));
             }
         }
         while let Some(cleanup) = frame.root_cleanups.pop() {
-            cleanups.push(cleanup);
+            cleanups.push(cleanup.into_dispatch_admitted(program));
         }
         Ok(cleanups)
     }
@@ -7066,6 +7114,17 @@ mod tests {
                 static_args: Vec::new(),
                 resources: Vec::new(),
             });
+        let cleanup_key =
+            super::super::schema::AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+        program.strings.push("cleanup".to_owned());
+        let cleanup_offset = u32::try_from(program.instructions.len()).unwrap();
+        program.instructions.push(AwbcInstruction::RegisterCleanup {
+            key: cleanup_key,
+            effect: AwbcEffectPlanId(0),
+            args: vec![AwbcRegisterId(0)],
+        });
+        program.blocks[1].instructions =
+            super::super::schema::AwbcTableRange::new(cleanup_offset, 1);
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = RuntimeValue::Unit.into();
         let site = fiber.cursor;
@@ -7085,8 +7144,11 @@ mod tests {
             .unwrap()
             .root_cleanups
             .push(FiberScopeCleanup {
-                key: "cleanup".to_owned(),
-                effect: AwbcEffectPlanId(0),
+                source: FiberCursor {
+                    function: AwbcFunctionId(1),
+                    block: AwbcBlockId(1),
+                    instruction_offset: 0,
+                },
                 args: vec![RuntimeValue::Unit],
             });
         let before = fiber
@@ -7107,7 +7169,7 @@ mod tests {
                 .unwrap(),
             before
         );
-        let output = crate::awbc::vm::cancel_fiber(&mut fiber);
+        let output = crate::awbc::vm::cancel_fiber(&program, &mut fiber).unwrap();
         assert!(output.observations.iter().any(|observation| matches!(
             observation,
             crate::awbc::vm::VmObservation::Effect {

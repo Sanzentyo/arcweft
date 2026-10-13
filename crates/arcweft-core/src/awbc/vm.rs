@@ -535,17 +535,24 @@ pub fn step(
 ///
 /// Terminal fibers are stable: a later cancellation cannot replace their
 /// result or replay already-detached cleanups.
-pub fn cancel_fiber(fiber: &mut FiberState) -> VmStepOutput {
+///
+/// # Errors
+/// Returns an error before removing cleanup custody if its original declaration,
+/// frame binding, retained arguments or resource allowance fails admission.
+pub fn cancel_fiber(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+) -> Result<VmStepOutput, VmError> {
     let mut observations = Vec::new();
     if matches!(fiber.status, FiberStatus::Running | FiberStatus::Suspended) {
-        emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(), &mut observations);
+        emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(program)?, &mut observations);
         fiber.mark_cancelled();
     }
-    VmStepOutput {
+    Ok(VmStepOutput {
         executed: 0,
         observations,
         exit: terminal_exit(fiber),
-    }
+    })
 }
 
 #[allow(clippy::too_many_lines)]
@@ -636,12 +643,13 @@ fn step_with_host_context_optional(
                     }
                     if let Some(code) = error.runtime_trap_code() {
                         let trap = mark_runtime_error_trap(
+                            program,
                             fiber,
                             code,
                             error.to_string(),
                             source_map,
                             &mut observations,
-                        );
+                        )?;
                         executed = executed.saturating_add(1);
                         return Ok(VmStepOutput {
                             executed,
@@ -723,12 +731,13 @@ fn step_with_host_context_optional(
                 }
                 if let Some(code) = error.runtime_trap_code() {
                     let trap = mark_runtime_error_trap(
+                        program,
                         fiber,
                         code,
                         error.to_string(),
                         source_map,
                         &mut observations,
-                    );
+                    )?;
                     VmExit::Trapped(trap)
                 } else {
                     return Err(error);
@@ -870,9 +879,17 @@ fn execute_instruction(
                 .frame_layouts
                 .get(layout_id.index())
                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
+            fiber.validate_cleanup_inputs(program)?;
             let frame = fiber.active_frame_mut()?;
             let defer_failure = frame.scopes.pop().and_then(|scope| {
-                emit_cleanup_observations(scope.cleanups, observations);
+                emit_cleanup_observations(
+                    scope
+                        .cleanups
+                        .into_iter()
+                        .map(|cleanup| cleanup.into_dispatch_admitted(program))
+                        .collect(),
+                    observations,
+                );
                 scope.defer_failure
             });
             let active_scope_depth = u32::try_from(frame.scopes.len())
@@ -1038,12 +1055,13 @@ fn execute_instruction(
             };
             if index >= sequence.len() {
                 trap(
+                    program,
                     fiber,
                     AwbcTrapCode::InvalidIndex,
                     Some("sequence index out of bounds"),
                     source_map,
                     observations,
-                );
+                )?;
                 return Ok(InstructionControl::Continue);
             }
             let value = take_sequence_value(sequence, index)?;
@@ -2147,22 +2165,17 @@ fn execute_instruction(
                 args,
             });
         }
-        AwbcInstruction::RegisterCleanup { key, effect, args } => {
-            let key = string(program, *key)?;
+        AwbcInstruction::RegisterCleanup { args, .. } => {
             FiberScopeCleanup::validate_registration_inputs(
                 program,
                 fiber.active_frame()?,
-                key,
-                *effect,
-                args,
+                fiber.cursor,
             )?;
-            let key = key.to_owned();
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
             let cleanup = FiberScopeCleanup {
-                key,
-                effect: *effect,
+                source: fiber.cursor,
                 args,
             };
             let frame = fiber.active_frame_mut()?;
@@ -2217,11 +2230,9 @@ fn execute_instruction(
         }
         AwbcInstruction::CancelCleanup { key } => {
             let key = string(program, *key)?;
-            let frame = fiber.active_frame_mut()?;
-            frame.root_cleanups.retain(|cleanup| cleanup.key != key);
-            for scope in &mut frame.scopes {
-                scope.cleanups.retain(|cleanup| cleanup.key != key);
-            }
+            fiber
+                .active_frame_mut()?
+                .cancel_cleanup_by_key(program, key)?;
         }
         AwbcInstruction::MakeCallable {
             dst,
@@ -2433,15 +2444,16 @@ fn execute_instruction(
 }
 
 fn drain_active_frame_cleanups(
+    program: &AwbcProgram,
     fiber: &mut FiberState,
     observations: &mut Vec<VmObservation>,
 ) -> Result<(), VmError> {
-    emit_ordered_cleanup_observations(fiber.take_active_frame_cleanups()?, observations);
+    emit_ordered_cleanup_observations(fiber.take_active_frame_cleanups(program)?, observations);
     Ok(())
 }
 
 fn emit_cleanup_observations(
-    mut cleanups: Vec<FiberScopeCleanup>,
+    mut cleanups: Vec<super::fiber::FiberCleanupDispatch>,
     observations: &mut Vec<VmObservation>,
 ) {
     while let Some(cleanup) = cleanups.pop() {
@@ -2453,7 +2465,7 @@ fn emit_cleanup_observations(
 }
 
 fn emit_ordered_cleanup_observations(
-    cleanups: Vec<FiberScopeCleanup>,
+    cleanups: Vec<super::fiber::FiberCleanupDispatch>,
     observations: &mut Vec<VmObservation>,
 ) {
     for cleanup in cleanups {
@@ -2464,10 +2476,14 @@ fn emit_ordered_cleanup_observations(
     }
 }
 
-fn emit_unwind_cleanup_observations(fiber: &mut FiberState, observations: &mut Vec<VmObservation>) {
-    emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(), observations);
+fn emit_unwind_cleanup_observations(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    observations: &mut Vec<VmObservation>,
+) -> Result<(), VmError> {
+    emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(program)?, observations);
+    Ok(())
 }
-
 fn apply_runtime_callable(
     program: &AwbcProgram,
     fiber: &mut FiberState,
@@ -2759,6 +2775,18 @@ fn execute_terminator(
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
 ) -> Result<VmExit, VmError> {
+    // These exits transfer registers before dropping frame custody. Reject an
+    // invalid later cleanup before the first return value or argument moves.
+    if matches!(
+        terminator,
+        AwbcTerminator::GotoStatic { .. }
+            | AwbcTerminator::GotoDynamic { .. }
+            | AwbcTerminator::Return { .. }
+            | AwbcTerminator::Complete
+            | AwbcTerminator::SelectDialogueResult { .. }
+    ) {
+        fiber.validate_cleanup_inputs(program)?;
+    }
     match terminator {
         AwbcTerminator::Jump { target } => {
             jump(fiber, *target);
@@ -2859,7 +2887,7 @@ fn execute_terminator(
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
-            emit_unwind_cleanup_observations(fiber, observations);
+            emit_unwind_cleanup_observations(program, fiber, observations)?;
             fiber.replace_root_function_owned(program, *function, args)?;
             observations.push(VmObservation::Goto(*function));
             Ok(VmExit::Running)
@@ -2892,7 +2920,7 @@ fn execute_terminator(
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
-            emit_unwind_cleanup_observations(fiber, observations);
+            emit_unwind_cleanup_observations(program, fiber, observations)?;
             fiber.replace_root_function_owned(program, target, args)?;
             observations.push(VmObservation::Goto(target));
             Ok(VmExit::Running)
@@ -3141,7 +3169,7 @@ fn execute_terminator(
             let value = value
                 .map(|value| fiber.active_frame_mut()?.take_register(value))
                 .transpose()?;
-            drain_active_frame_cleanups(fiber, observations)?;
+            drain_active_frame_cleanups(program, fiber, observations)?;
             let returning_function = fiber.active_frame()?.function;
             let (return_to, returned_value) =
                 fiber.finish_return_with_continuation(program, value)?;
@@ -3193,7 +3221,7 @@ fn execute_terminator(
                 ));
             }
             let value = fiber.active_frame_mut()?.take_register(*value)?;
-            drain_active_frame_cleanups(fiber, observations)?;
+            drain_active_frame_cleanups(program, fiber, observations)?;
             fiber.mark_dialogue_result_selected(value)?;
             Ok(terminal_exit(fiber))
         }
@@ -3202,7 +3230,8 @@ fn execute_terminator(
                 .map(|id| string(program, id))
                 .transpose()?
                 .map(str::to_owned);
-            let trap = terminate_with_trap(fiber, *code, message, source_map, observations);
+            let trap =
+                terminate_with_trap(program, fiber, *code, message, source_map, observations)?;
             Ok(VmExit::Trapped(trap))
         }
         AwbcTerminator::BudgetYield { resume } => {
@@ -3210,12 +3239,13 @@ fn execute_terminator(
         }
         AwbcTerminator::Unreachable => {
             let trap = terminate_with_trap(
+                program,
                 fiber,
                 AwbcTrapCode::InternalInvariant,
                 Some("unreachable AWBC block executed".to_owned()),
                 source_map,
                 observations,
-            );
+            )?;
             Ok(VmExit::Trapped(trap))
         }
     }
@@ -5204,39 +5234,51 @@ fn bind_record_pattern_fields(
 }
 
 fn trap(
+    program: &AwbcProgram,
     fiber: &mut FiberState,
     code: AwbcTrapCode,
     message: Option<&str>,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
-) {
+) -> Result<(), VmError> {
     terminate_with_trap(
+        program,
         fiber,
         code,
         message.map(str::to_owned),
         source_map,
         observations,
-    );
+    )?;
+    Ok(())
 }
 
 fn mark_runtime_error_trap(
+    program: &AwbcProgram,
     fiber: &mut FiberState,
     code: AwbcTrapCode,
     message: String,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
-) -> FiberTrap {
-    terminate_with_trap(fiber, code, Some(message), source_map, observations)
+) -> Result<FiberTrap, VmError> {
+    terminate_with_trap(
+        program,
+        fiber,
+        code,
+        Some(message),
+        source_map,
+        observations,
+    )
 }
 
 fn terminate_with_trap(
+    program: &AwbcProgram,
     fiber: &mut FiberState,
     code: AwbcTrapCode,
     message: Option<String>,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
-) -> FiberTrap {
-    emit_unwind_cleanup_observations(fiber, observations);
+) -> Result<FiberTrap, VmError> {
+    emit_unwind_cleanup_observations(program, fiber, observations)?;
     let trap = FiberTrap {
         code,
         message,
@@ -5244,7 +5286,7 @@ fn terminate_with_trap(
     };
     observations.push(VmObservation::Trap(trap.clone()));
     fiber.mark_trapped(trap.clone());
-    trap
+    Ok(trap)
 }
 
 fn source_map_for_location(

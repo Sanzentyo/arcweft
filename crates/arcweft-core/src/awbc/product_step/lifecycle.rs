@@ -125,10 +125,23 @@ impl AwbcProductStepExecutor {
         ) {
             return;
         }
+        if let Err(error) = self.fiber.validate_cleanup_inputs(&self.program) {
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Internal,
+                error.to_string(),
+            ));
+            self.record_trap(&trap, output);
+            self.fiber.mark_trapped(trap);
+            return;
+        }
         if !self.release_installed_await_many_for_trap(output) {
             return;
         }
-        for cleanup in self.fiber.take_unwind_cleanups() {
+        for cleanup in self
+            .fiber
+            .take_unwind_cleanups(&self.program)
+            .expect("cleanup inventory was admitted before trap release")
+        {
             self.emit_effect(cleanup.effect, &cleanup.args, output);
         }
         self.record_trap(&trap, output);

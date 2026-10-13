@@ -95,12 +95,69 @@ pub struct FiberDeferredRegistration<V = RuntimeValue> {
     bound(serialize = "V: InertScopeValue", deserialize = "V: InertScopeValue")
 )]
 pub struct FiberScopeCleanup<V = RuntimeValue> {
-    pub key: String,
-    pub effect: AwbcEffectPlanId,
+    pub source: FiberCursor,
     pub args: Vec<V>,
 }
 
+/// A cleanup already admitted against its original registration instruction,
+/// ready to dispatch after its custody leaves the frame. It has no save codec.
+#[derive(Debug)]
+pub(in crate::awbc) struct FiberCleanupDispatch {
+    pub(in crate::awbc) effect: AwbcEffectPlanId,
+    pub(in crate::awbc) args: Vec<RuntimeValue>,
+}
+
+struct CleanupDeclaration<'a> {
+    key: &'a str,
+    effect: AwbcEffectPlanId,
+    registers: &'a [AwbcRegisterId],
+    signature: &'a crate::awbc::schema::AwbcSignature,
+}
+
 impl<V> FiberScopeCleanup<V> {
+    fn declaration(
+        program: &super::AwbcProgram,
+        source: FiberCursor,
+    ) -> Result<CleanupDeclaration<'_>, FiberStateError> {
+        let AwbcInstruction::RegisterCleanup { key, effect, args } =
+            super::instruction_at_site(program, source)?
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let key = program
+            .strings
+            .get(key.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let plan = program
+            .effect_plans
+            .get(effect.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let signature = program
+            .signatures
+            .get(plan.signature.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if key.is_empty() || signature.params.len() != args.len() {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        Ok(CleanupDeclaration {
+            key,
+            effect: *effect,
+            registers: args,
+            signature,
+        })
+    }
+
+    /// Reads the cancellation key from the sole original instruction authority.
+    ///
+    /// # Errors
+    /// Returns an error if the source does not name a complete cleanup declaration.
+    pub fn key<'program>(
+        &self,
+        program: &'program super::AwbcProgram,
+    ) -> Result<&'program str, FiberStateError> {
+        Self::declaration(program, self.source).map(|declaration| declaration.key)
+    }
+
     pub(super) fn validate_inputs(
         &self,
         frame: &FrameValueContext<'_, V>,
@@ -109,8 +166,7 @@ impl<V> FiberScopeCleanup<V> {
     ) -> Result<(), FiberStateError> {
         Self::validate_argument_sequence(
             frame,
-            &self.key,
-            self.effect,
+            self.source,
             self.args.iter().map(Ok),
             resources,
             view,
@@ -119,8 +175,7 @@ impl<V> FiberScopeCleanup<V> {
 
     fn validate_argument_sequence<'value>(
         frame: &FrameValueContext<'_, V>,
-        key: &str,
-        effect: AwbcEffectPlanId,
+        source: FiberCursor,
         args: impl ExactSizeIterator<Item = Result<&'value V, FiberStateError>>,
         resources: &mut ValueResourceAdmission,
         view: impl Fn(&'value V) -> RuntimeValueView<'value>,
@@ -128,44 +183,48 @@ impl<V> FiberScopeCleanup<V> {
     where
         V: 'value,
     {
-        resources
-            .work()
-            .charge(0)
+        let mut work = resources.work();
+        // Header, function/block/instruction and key/effect/signature lookups.
+        for _ in 0..7 {
+            work.charge(0)
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        }
+        work.collection(args.len())
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        let declaration = Self::declaration(frame.program, source)?;
         resources
-            .metadata_string(key)
+            .metadata_string(declaration.key)
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        resources
-            .work()
-            .collection(args.len())
-            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
-        if key.is_empty() {
+        if source.function != frame.function || args.len() != declaration.registers.len() {
             return Err(FiberStateError::InvalidFrame);
         }
-        let effect = frame
-            .program
-            .effect_plans
-            .get(effect.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        let signature = frame
-            .program
-            .signatures
-            .get(effect.signature.index())
-            .ok_or(FiberStateError::InvalidFrame)?;
-        if args.len() != signature.params.len() {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        for (value, expected) in args.zip(&signature.params) {
-            RuntimeProgramValueType::Awbc {
-                program: frame.program,
-                ty: *expected,
+        for ((value, register), expected) in args
+            .zip(declaration.registers)
+            .zip(&declaration.signature.params)
+        {
+            work.charge(0)
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+            let slot = frame
+                .layout
+                .slots
+                .get(register.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let value = view(value?);
+            resources
+                .validate_view(value, 0, None)
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+            for ty in [slot.ty, *expected] {
+                RuntimeProgramValueType::Awbc {
+                    program: frame.program,
+                    ty,
+                }
+                .validate_admitted_view(value, frame.binding, resources)
+                .map_err(|error| {
+                    FiberStateError::Snapshot(
+                        crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)),
+                    )
+                })?;
             }
-            .validate_view(view(value?), frame.binding, resources)
-            .map_err(|error| {
-                FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
-                    Box::new(error),
-                ))
-            })?;
         }
         Ok(())
     }
@@ -453,14 +512,12 @@ impl FiberDeferredRegistration {
     }
 }
 impl FiberScopeCleanup {
-    /// Checks the original effect signature and borrowed argument registers
-    /// before the VM copies its key or moves any register into cleanup custody.
+    /// Checks the reached declaration and borrowed argument registers before
+    /// any register moves into cleanup custody.
     pub(in crate::awbc) fn validate_registration_inputs(
         program: &super::AwbcProgram,
         frame: &super::FiberFrame,
-        key: &str,
-        effect: AwbcEffectPlanId,
-        args: &[AwbcRegisterId],
+        source: FiberCursor,
     ) -> Result<(), FiberStateError> {
         let context = FrameValueContext {
             program,
@@ -473,22 +530,36 @@ impl FiberScopeCleanup {
             registers: &frame.registers,
             scope_count: frame.scopes.len(),
         };
+        let declaration = Self::declaration(program, source)?;
         Self::validate_argument_sequence(
             &context,
-            key,
-            effect,
-            args.iter().map(|register| frame.register(*register)),
+            source,
+            declaration
+                .registers
+                .iter()
+                .map(|register| frame.register(*register)),
             &mut ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default()),
             RuntimeValue::view,
         )
+    }
+
+    pub(in crate::awbc) fn into_dispatch_admitted(
+        self,
+        program: &super::AwbcProgram,
+    ) -> FiberCleanupDispatch {
+        let declaration = Self::declaration(program, self.source)
+            .expect("admitted cleanup retains its original instruction");
+        FiberCleanupDispatch {
+            effect: declaration.effect,
+            args: self.args,
+        }
     }
     pub(super) fn snapshot_admitted(
         &self,
         owner: &RuntimeProgramOwner,
     ) -> AwbcSaveResult<FiberScopeCleanup<AwbcRuntimeValueSnapshot>> {
         Ok(FiberScopeCleanup {
-            key: self.key.clone(),
-            effect: self.effect,
+            source: self.source,
             args: self
                 .args
                 .iter()
@@ -503,8 +574,7 @@ impl FiberScopeCleanup<AwbcRuntimeValueSnapshot> {
         owner: &RuntimeProgramOwner,
     ) -> AwbcSaveResult<FiberScopeCleanup> {
         Ok(FiberScopeCleanup {
-            key: self.key,
-            effect: self.effect,
+            source: self.source,
             args: self
                 .args
                 .into_iter()

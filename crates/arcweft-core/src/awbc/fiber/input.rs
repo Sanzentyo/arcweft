@@ -48,12 +48,23 @@ impl<V> FrameValueContext<'_, V> {
         // A retained packet must belong to the lexical scope at its original
         // reached instruction, including after later scopes have been entered.
         self.program
-            .verify_scope_stacks(scopes.iter().enumerate().flat_map(|(ordinal, scope)| {
-                scope
-                    .defers
+            .verify_scope_stacks(
+                root_cleanups
                     .iter()
-                    .map(move |deferred| (deferred.source, &scopes[..=ordinal]))
-            }))
+                    .map(|cleanup| (cleanup.source, &scopes[..0]))
+                    .chain(scopes.iter().enumerate().flat_map(|(ordinal, scope)| {
+                        scope
+                            .defers
+                            .iter()
+                            .map(move |deferred| (deferred.source, &scopes[..=ordinal]))
+                            .chain(
+                                scope
+                                    .cleanups
+                                    .iter()
+                                    .map(move |cleanup| (cleanup.source, &scopes[..=ordinal])),
+                            )
+                    })),
+            )
             .map_err(|_| FiberStateError::InvalidFrame)?;
         Ok(())
     }
@@ -80,6 +91,63 @@ impl<V> FrameValueContext<'_, V> {
 }
 
 impl super::FiberFrame {
+    pub(in crate::awbc) fn cancel_cleanup_by_key(
+        &mut self,
+        program: &AwbcProgram,
+        key: &str,
+    ) -> Result<(), FiberStateError> {
+        let mut resources =
+            ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+        let context = FrameValueContext {
+            program,
+            function: self.function,
+            layout: super::validate_frame_layout(
+                program,
+                self.function,
+                self.layout,
+                self.type_instantiation.as_deref(),
+                self.registers.len(),
+                &resources.work(),
+            )?,
+            binding: self.type_instantiation.as_deref(),
+            registers: &self.registers,
+            scope_count: self.scopes.len(),
+        };
+        context.validate_scopes(
+            &self.root_cleanups,
+            &self.scopes,
+            &mut resources,
+            RuntimeValue::view,
+        )?;
+        // Every key is resolved before mutation, so the following retains
+        // cannot fail after removing an earlier registration.
+        let root = self
+            .root_cleanups
+            .iter()
+            .map(|cleanup| cleanup.key(program).map(|candidate| candidate != key))
+            .collect::<Result<Vec<_>, _>>()?;
+        let scopes = self
+            .scopes
+            .iter()
+            .map(|scope| {
+                scope
+                    .cleanups
+                    .iter()
+                    .map(|cleanup| cleanup.key(program).map(|candidate| candidate != key))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut root = root.into_iter();
+        self.root_cleanups
+            .retain(|_| root.next().expect("admitted root cleanup inventory"));
+        for (scope, keep) in self.scopes.iter_mut().zip(scopes) {
+            let mut keep = keep.into_iter();
+            scope
+                .cleanups
+                .retain(|_| keep.next().expect("admitted lexical cleanup inventory"));
+        }
+        Ok(())
+    }
     /// Transfers one instruction's input sequence after the complete original
     /// layout/value/Copy admission. Repeated Copy registers supply prepared
     /// copies and one final move; an affine register can occur only once.
