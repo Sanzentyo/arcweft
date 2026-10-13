@@ -910,6 +910,7 @@ fn lower_view_parameter_defaults(
             return Err(invalid());
         }
         let binding = ViewExpressionLowerer {
+            module: view.module,
             project,
             analysis,
             world,
@@ -1011,6 +1012,7 @@ fn lower_authored_view(
 /// Projects ordinary checked expression programs into one retained View's input ABI.
 struct ViewExpressionLowerer<'a> {
     project: arcweft_lang_hir::project::HirAnalysisProjectView<'a>,
+    module: &'a HirModule,
     analysis: &'a FinalSemanticAnalysis,
     world: &'a RegisteredSemanticWorld,
     owner: ItemId,
@@ -1040,6 +1042,27 @@ impl ViewExpressionLowerer<'_> {
         let context = self
             .analysis
             .checked_execution_context(self.project, self.world.symbols(), source.clone(), None)
+            .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
+                owner: self.owner,
+                source: Box::new(source),
+            })?;
+        let declaration = self
+            .world
+            .symbols()
+            .callable_at_source(
+                self.module.snapshot_id(),
+                self.owner,
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
+            )
+            .ok_or_else(invalid)?;
+        let callable = self
+            .analysis
+            .checked_callables()
+            .project_callable(declaration.declaration())
+            .map_err(|_| invalid())?;
+        context
+            .environment()
+            .validate_callable_owner(callable.id(), self.analysis.hir_topology())
             .map_err(|source| ViewProjectLowerError::InvalidProgramContext {
                 owner: self.owner,
                 source: Box::new(source),
@@ -1226,6 +1249,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let owner = self.owner;
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner };
         let condition = ViewExpressionLowerer {
+            module: self.module,
             project: self.project,
             analysis: self.analysis,
             world: self.registered_world,
@@ -1275,6 +1299,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let view_owner = self.owner;
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
         let execution = ViewExpressionLowerer {
+            module: self.module,
             project: self.project,
             analysis: self.analysis,
             world: self.registered_world,
@@ -1374,6 +1399,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let invalid = || ViewProjectLowerError::MissingCheckedViewProjection { owner: view_owner };
         let key = iteration.key().ok_or_else(invalid)?;
         let execution = ViewExpressionLowerer {
+            module: self.module,
             project: self.project,
             analysis: self.analysis,
             world: self.registered_world,
@@ -1416,6 +1442,7 @@ impl AuthoredViewBodyLowerer<'_> {
             outputs.push(output);
         }
         let key = ViewExpressionLowerer {
+            module: self.module,
             project: self.project,
             analysis: self.analysis,
             world: self.registered_world,
@@ -1509,6 +1536,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     return self.lower_value(input);
                 }
                 let execution = ViewExpressionLowerer {
+                    module: self.module,
                     project: self.project,
                     analysis: self.analysis,
                     world: self.registered_world,
@@ -1696,6 +1724,7 @@ impl AuthoredViewBodyLowerer<'_> {
                         )
                     }) {
                         let program = ViewExpressionLowerer {
+                            module: self.module,
                             project: self.project,
                             analysis: self.analysis,
                             world: self.registered_world,
@@ -1845,6 +1874,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 None
             };
             let value = ViewExpressionLowerer {
+                module: self.module,
                 project: self.project,
                 analysis: self.analysis,
                 world: self.registered_world,
@@ -2601,6 +2631,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner });
                 }
                 let program = ViewExpressionLowerer {
+                    module: self.module,
                     project: self.project,
                     analysis: self.analysis,
                     world: self.registered_world,

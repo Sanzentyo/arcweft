@@ -30,6 +30,102 @@ fn declaration_body(report: &FinalSemanticAnalysis, name: &str) -> CheckedExecut
 }
 
 #[test]
+fn retained_view_execution_environment_rejects_another_view_and_an_ordinary_callable() {
+    use arcweft_lang_hir::item::HirItemKind;
+    use arcweft_lang_hir::source_index::HirCallableSourceOwner;
+    let world = fixture(
+        "view First(value: bool = true) {}\nview Second(value: bool = false) {}\nfn ordinary() -> bool { match true { true => true, false => false } }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let project = world.project.analysis_view().unwrap();
+    let module = project.modules().next().unwrap().1;
+    let callables = module
+        .items()
+        .filter_map(|(owner, item)| {
+            let (family, default) = match item.kind() {
+                HirItemKind::View(view) => (
+                    HirCallableSourceOwner::ViewItem,
+                    view.parameters()[0].default(),
+                ),
+                HirItemKind::Function(_) => (HirCallableSourceOwner::Item, None),
+                _ => return None,
+            };
+            let declaration = world
+                .symbols
+                .callable_at_source(module.snapshot_id(), owner, family)
+                .unwrap();
+            Some((
+                declaration.declaration().name().to_owned(),
+                report
+                    .checked_callables()
+                    .project_callable(declaration.declaration())
+                    .unwrap()
+                    .id()
+                    .clone(),
+                default,
+            ))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(callables.len(), 3);
+    let expression = callables
+        .iter()
+        .find(|(name, _, _)| name == "First")
+        .unwrap()
+        .2
+        .unwrap();
+    let context = report
+        .checked_execution_context(
+            project,
+            &world.symbols,
+            CheckedExecutionSource::EvaluateValue(expression),
+            None,
+        )
+        .unwrap();
+    let matches = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(
+                expression.kind(),
+                arcweft_lang_hir::expr::HirExprKind::Match(_)
+            )
+            .then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    let [ordinary_match] = matches.as_slice() else {
+        panic!("one Match belongs to the ordinary function");
+    };
+    let ordinary = report
+        .checked_execution_context(
+            project,
+            &world.symbols,
+            CheckedExecutionSource::SelectMatch(
+                arcweft_lang_hir::project::HirMatchOwner::Expression(*ordinary_match),
+            ),
+            None,
+        )
+        .unwrap();
+    for (expected, execution) in [("First", context), ("ordinary", ordinary)] {
+        for (name, callable, _) in &callables {
+            let result = execution
+                .environment()
+                .validate_callable_owner(callable, report.hir_topology());
+            if name == expected {
+                result.unwrap();
+            } else {
+                assert!(
+                    matches!(
+                        result,
+                        Err(CheckedExecutionContextError::ForeignCallableOwner { .. })
+                    ),
+                    "{expected} execution cannot acquire {name}: {result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn empty_statement_match_admits_only_uninhabited_domains_and_keeps_never_continuation() {
     use crate::final_analysis::CheckedMatchLimits;
 

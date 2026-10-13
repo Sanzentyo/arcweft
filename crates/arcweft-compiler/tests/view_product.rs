@@ -1025,17 +1025,21 @@ view Main(first: Slot<i64 -> i64> = .Full(|input: i64| input + 1), value: Slot<i
             restored.restore(checkpoint, &owner).unwrap();
             let mut missing = image.clone();
             missing.frames[0].type_instantiation = None;
-            assert!(missing.into_live_for_program(&owner).unwrap().validate_for_program(&awbc).is_err());
+            assert!(missing.into_live_for_program(&owner).is_err(), "an absent generic binding is rejected before live frame construction");
             let mut malformed = serde_json::to_value(&image).unwrap();
             malformed["frames"][0]["type_instantiation"]["effects"] = serde_json::json!([]);
             let malformed: AwbcFiberStateSnapshot = serde_json::from_value(malformed).unwrap();
-            assert!(malformed.into_live_for_program(&owner).unwrap().validate_for_program(&awbc).is_err());
+            assert!(malformed.into_live_for_program(&owner).is_err(), "a malformed effect binding is rejected before live frame construction");
             let returned = restored.frames[0].registers.iter().find_map(|storage| storage.as_ref()).unwrap().clone();
             restored.mark_returned(Some(returned)).unwrap();
             restored.validate_for_program(&awbc).unwrap();
             let mut frameless = AwbcFiberStateSnapshot::from_live(&restored, &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&awbc))).unwrap();
             frameless.frames.clear();
-            assert!(matches!(frameless.into_live_for_program(&owner).unwrap().validate_for_program(&awbc), Err(arcweft_core::awbc::fiber::FiberStateError::ReturnValueMismatch)));
+            let rejected = frameless.into_live_for_program(&owner);
+            assert!(matches!(&rejected, Err(arcweft_core::value::AwbcRuntimeValueSnapshotError::ProgramType(error))
+                if matches!(error.as_ref(), arcweft_core::program_types::RuntimeProgramTypeError::AwbcValue(error)
+                    if matches!(error.as_ref(), arcweft_core::awbc::value_admission::AwbcValueAdmissionError::Value { source: arcweft_core::entry::RuntimeSchemaError::Type { path, .. }, .. } if path == "$"))),
+                "case {case}: removing the original generic frame must reject the retained generic result before construction: {rejected:?}");
             }
         }
         assert_eq!(snapshot.mounts.len(), 2);
@@ -3915,6 +3919,48 @@ fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
                 cold.evaluate(std::slice::from_ref(&handle), &inputs, false)
             );
         }
+    }
+}
+
+#[test]
+fn repeated_retained_operations_keep_their_own_lexical_definitions() {
+    for body in [
+        "match value { true => Text(\"yes\"), false => Text(\"no\") }; match value { true => Text(\"yes\"), false => Text(\"no\") };",
+        "if value { Text(\"yes\") } else { Text(\"no\") }; if value { Text(\"yes\") } else { Text(\"no\") };",
+    ] {
+        let source = format!(
+            "entry cli @entry.main {{ goto @flow.main }}\nflow main() -> String {{ return \"done\" }}\nview Main(value: bool) {{ {body} }}"
+        );
+        let compiled = project_view_fixture_with_entry(
+            &source,
+            "arcweft-test://view-identical-operation-definitions",
+        )
+        .compile()
+        .expect("each retained operation owns a distinct accepted execution definition");
+        let resource = compiled
+            .view_product()
+            .product()
+            .program()
+            .unwrap()
+            .resource();
+        let selectors = resource
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                ViewProgramInstruction::Match { program, .. } => Some(program.execution.program),
+                ViewProgramInstruction::Branch { condition, .. } => Some(condition.program),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(selectors.len(), 2);
+        assert_ne!(selectors[0], selectors[1]);
+        assert_eq!(
+            ViewProgramResource::decode_canonical_section(
+                &resource.encode_canonical_section().unwrap()
+            )
+            .unwrap(),
+            *resource
+        );
     }
 }
 
