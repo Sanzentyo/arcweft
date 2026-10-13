@@ -4699,6 +4699,20 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         if state.base.as_ref().map(|handle| handle.correlation()) == Some(base)
             && state.next_index == 3 && state.in_flight.len() == 2)
     );
+    // Rebinding affects future launches. Retained children and the collector
+    // keep their exact receipts even when their generations differ.
+    restored
+        .fiber
+        .validate_for_program(&restored.program)
+        .unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&restored.program));
+    let before =
+        crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(&restored.fiber, &owner).unwrap();
+    let rehydrated = before.clone().into_live_for_program(&owner).unwrap();
+    assert_eq!(
+        crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(&rehydrated, &owner).unwrap(),
+        before
+    );
 }
 
 #[test]
@@ -4815,6 +4829,62 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
                 && state.next_index == 3
                 && state.in_flight.len() == 2
     ));
+}
+
+#[test]
+fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber() {
+    use crate::awbc::fiber::{
+        AwbcFiberStateSnapshot, AwbcFiberSuspensionReasonSnapshot, FiberResumeTarget,
+    };
+    use crate::value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
+    let program = await_many_product_program();
+    let mut executor = await_many_executor(&program, await_many_items(), GenerationId::new(7));
+    executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let before = AwbcFiberStateSnapshot::from_live(&executor.fiber, &owner).unwrap();
+    for case in 0..4 {
+        let mut forged = before.clone();
+        let suspension = forged.suspension.as_mut().unwrap();
+        let AwbcFiberSuspensionReasonSnapshot::AwaitMany(state) = &mut suspension.reason else {
+            panic!("AwaitMany suspension");
+        };
+        match case {
+            0 => {
+                state.items[0] =
+                    AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                        state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0)
+                            .unwrap(),
+                        retained: vec![],
+                    });
+            }
+            1 => state.next_index = 0,
+            2 => state.plan = crate::awbc::schema::AwbcTaskPlanId(1),
+            _ => suspension.resume = FiberResumeTarget::Exact(forged.cursor),
+        }
+        let error = forged.clone().into_live_for_program(&owner).unwrap_err();
+        if case == 0 {
+            assert!(matches!(
+                error,
+                AwbcRuntimeValueSnapshotError::ProgramType(_)
+            ));
+        }
+        assert!(
+            executor
+                .fiber
+                .replace_from_snapshot(forged, &owner)
+                .is_err()
+        );
+        assert_eq!(
+            AwbcFiberStateSnapshot::from_live(&executor.fiber, &owner).unwrap(),
+            before
+        );
+    }
 }
 
 #[test]

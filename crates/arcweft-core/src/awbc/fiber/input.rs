@@ -91,6 +91,109 @@ impl<V> FrameValueContext<'_, V> {
 }
 
 impl super::FiberFrame {
+    /// Admits the complete `AwaitMany` source and capture batch before preparing
+    /// any capture copy or consuming the original sequence register.
+    pub(in crate::awbc) fn take_await_many_inputs(
+        &mut self,
+        program: &AwbcProgram,
+        plan: super::AwbcTaskPlanId,
+        source: super::AwbcRegisterId,
+    ) -> Result<(Vec<RuntimeValue>, crate::value::RuntimeSeq), FiberStateError> {
+        let mut resources =
+            ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+        let layout = super::validate_frame_layout(
+            program,
+            self.function,
+            self.layout,
+            self.type_instantiation.as_deref(),
+            self.registers.len(),
+            &resources.work(),
+        )?;
+        let plan = program
+            .task_plans
+            .get(plan.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let crate::awbc::schema::AwbcTaskPlanKind::AwaitMany {
+            captures,
+            request_function,
+            ..
+        } = &plan.kind
+        else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        resources
+            .work()
+            .collection(captures.len())
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        let signature = program
+            .functions
+            .get(request_function.index())
+            .and_then(|f| program.signatures.get(f.signature.index()))
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if captures.len() != signature.params.len() {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        for (register, expected) in captures.iter().zip(&signature.params) {
+            let value = self.register(*register)?.view();
+            value.admit_unrestricted(&mut resources)?;
+            for ty in [
+                layout
+                    .slots
+                    .get(register.index())
+                    .ok_or(FiberStateError::InvalidFrame)?
+                    .ty,
+                *expected,
+            ] {
+                crate::program_types::RuntimeProgramValueType::Awbc { program, ty }
+                    .validate_admitted_view(value, self.type_instantiation.as_deref(), &resources)
+                    .map_err(|error| {
+                        FiberStateError::Snapshot(
+                            crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(
+                                error,
+                            )),
+                        )
+                    })?;
+            }
+        }
+        let value = self.register(source)?;
+        value.view().admit_unrestricted(&mut resources)?;
+        crate::program_types::RuntimeProgramValueType::Awbc {
+            program,
+            ty: layout
+                .slots
+                .get(source.index())
+                .ok_or(FiberStateError::InvalidFrame)?
+                .ty,
+        }
+        .validate_admitted_view(value.view(), self.type_instantiation.as_deref(), &resources)
+        .map_err(|error| {
+            FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
+                Box::new(error),
+            ))
+        })?;
+        let RuntimeValue::Seq(sequence) = value else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        u32::try_from(sequence.len()).map_err(|_| FiberStateError::InvalidFrame)?;
+        let captured = captures
+            .iter()
+            .map(|register| {
+                self.register(*register)
+                    .expect("admitted capture register")
+                    .live_view()
+                    .copy_unrestricted()
+                    .expect("admitted recursive Copy capture")
+            })
+            .collect();
+        let RuntimeValue::Seq(sequence) = self
+            .take_register(source)
+            .expect("admitted source register")
+        else {
+            unreachable!("admitted sequence source");
+        };
+        Ok((captured, sequence))
+    }
+
     pub(in crate::awbc) fn cancel_cleanup_by_key(
         &mut self,
         program: &AwbcProgram,

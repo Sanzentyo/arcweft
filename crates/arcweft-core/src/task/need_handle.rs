@@ -35,6 +35,23 @@ pub struct RuntimeNeedHandleSaveSnapshot {
 }
 
 impl RuntimeNeedHandleSaveSnapshot {
+    pub(crate) fn view(&self) -> crate::value::RuntimeNeedView<'_> {
+        crate::value::RuntimeNeedView::Snapshot(self)
+    }
+    pub(crate) fn spec(&self) -> &super::TaskSpecSnapshot {
+        &self.spec
+    }
+
+    pub(crate) fn validate_identity(&self) -> Result<(), RuntimeNeedHandleError> {
+        self.origin.validate(
+            self.correlation,
+            self.spec.generation,
+            &self.spec.producer,
+            self.spec.policy,
+            &self.spec.outcome,
+        )
+    }
+
     pub(crate) fn outcome(&self) -> &TaskOutcomeContract {
         &self.spec.outcome
     }
@@ -56,6 +73,11 @@ impl RuntimeNeedHandleSaveSnapshot {
         self,
         owner: &super::RuntimeProgramOwner,
     ) -> Result<RuntimeNeedHandle, crate::value::AwbcRuntimeValueSnapshotError> {
+        self.validate_identity().map_err(|error| {
+            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            }
+        })?;
         let spec = self.spec.into_live(owner)?;
         RuntimeNeedHandle::try_from_snapshot(RuntimeNeedHandleSnapshot(Box::new(
             RuntimeNeedHandleData {
@@ -90,6 +112,38 @@ pub enum RuntimeNeedHandleError {
     Identity(#[from] TaskIdentityError),
 }
 
+impl RuntimeNeedHandleOrigin {
+    fn validate(
+        self,
+        correlation: TaskCorrelation,
+        generation: super::GenerationId,
+        producer: &super::NeedProducerInstance,
+        policy: TaskPolicy,
+        outcome: &TaskOutcomeContract,
+    ) -> Result<(), RuntimeNeedHandleError> {
+        if self == Self::ReusableJoin {
+            if policy != TaskPolicy::JoinSameKey {
+                return Err(RuntimeNeedHandleError::ReusableAlwaysStart);
+            }
+            if correlation.launch_ordinal != TaskLaunchOrdinal::JOIN {
+                return Err(RuntimeNeedHandleError::CorrelationMismatch);
+            }
+        }
+        outcome
+            .validate_producer(producer)
+            .map_err(|_| RuntimeNeedHandleError::CorrelationMismatch)?;
+        if correlation.producer_contract != producer.contract() {
+            return Err(RuntimeNeedHandleError::ProducerContractMismatch);
+        }
+        if TaskCorrelation::try_for(generation, producer, policy, correlation.launch_ordinal)?
+            != correlation
+        {
+            return Err(RuntimeNeedHandleError::CorrelationMismatch);
+        }
+        Ok(())
+    }
+}
+
 /// Owned, inert in-memory snapshot. Persistence encoding and program-bound
 /// RuntimeValue admission join the public carrier cut; this is not a second
 /// wire reader. Moving into/out of it does not clone request argument values.
@@ -98,34 +152,27 @@ pub enum RuntimeNeedHandleError {
 pub(super) struct RuntimeNeedHandleSnapshot(Box<RuntimeNeedHandleData>);
 
 impl RuntimeNeedHandle {
+    pub(crate) fn view(&self) -> crate::value::RuntimeNeedView<'_> {
+        crate::value::RuntimeNeedView::Live(self)
+    }
     /// Called with the actual TaskHost admission receipt, never an unlaunched
     /// producer descriptor. Exact derivation is checked before owning the row.
     pub(crate) fn try_from_accepted_launch(
         spec: TaskSpec,
         handle: TaskHandle,
     ) -> Result<Self, RuntimeNeedHandleError> {
-        Self::validate(&spec, handle.correlation)?;
+        RuntimeNeedHandleOrigin::AcceptedLaunch.validate(
+            handle.correlation,
+            spec.generation,
+            &spec.producer,
+            spec.policy,
+            &spec.outcome,
+        )?;
         Ok(Self(Box::new(RuntimeNeedHandleData {
             correlation: handle.correlation,
             spec,
             origin: RuntimeNeedHandleOrigin::AcceptedLaunch,
         })))
-    }
-
-    fn validate(
-        spec: &TaskSpec,
-        correlation: TaskCorrelation,
-    ) -> Result<(), RuntimeNeedHandleError> {
-        spec.validate_outcome()
-            .map_err(|_| RuntimeNeedHandleError::CorrelationMismatch)?;
-        if correlation.producer_contract != spec.producer.contract() {
-            return Err(RuntimeNeedHandleError::ProducerContractMismatch);
-        }
-        let expected = spec.correlation(correlation.launch_ordinal)?;
-        if expected != correlation {
-            return Err(RuntimeNeedHandleError::CorrelationMismatch);
-        }
-        Ok(())
     }
 
     pub const fn correlation(&self) -> TaskCorrelation {
@@ -170,18 +217,13 @@ impl RuntimeNeedHandle {
     pub(super) fn try_from_snapshot(
         snapshot: RuntimeNeedHandleSnapshot,
     ) -> Result<Self, RuntimeNeedHandleError> {
-        match snapshot.0.origin {
-            RuntimeNeedHandleOrigin::ReusableJoin => {
-                if snapshot.0.spec.policy != TaskPolicy::JoinSameKey {
-                    return Err(RuntimeNeedHandleError::ReusableAlwaysStart);
-                }
-                if snapshot.0.correlation.launch_ordinal != TaskLaunchOrdinal::JOIN {
-                    return Err(RuntimeNeedHandleError::CorrelationMismatch);
-                }
-            }
-            RuntimeNeedHandleOrigin::AcceptedLaunch => {}
-        }
-        Self::validate(&snapshot.0.spec, snapshot.0.correlation)?;
+        snapshot.0.origin.validate(
+            snapshot.0.correlation,
+            snapshot.0.spec.generation,
+            &snapshot.0.spec.producer,
+            snapshot.0.spec.policy,
+            &snapshot.0.spec.outcome,
+        )?;
         Ok(Self(snapshot.0))
     }
 }

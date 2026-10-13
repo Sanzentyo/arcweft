@@ -387,6 +387,24 @@ impl<'a> LiveRuntimeValueView<'a> {
 }
 
 impl<'a> RuntimeValueView<'a> {
+    /// Admits a Copy storage role in the shared graph allowance, without
+    /// constructing either a live value or another snapshot carrier.
+    pub(crate) fn admit_unrestricted(
+        self,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
+        let mut affine = false;
+        let mut observe = |value: RuntimeValueView<'_>| {
+            affine |= !value.intrinsic_ownership().permits_copy();
+            Ok(())
+        };
+        resources.validate_view(self, 0, Some(&mut observe))?;
+        if affine {
+            return Err(super::AwbcRuntimeValueSnapshotError::AffineValue);
+        }
+        Ok(())
+    }
+
     /// Intrinsic custody of this logical node, independent of its descendants.
     /// The graph visitor joins descendants for both live and inert values.
     pub(crate) fn intrinsic_ownership(self) -> RuntimeValueOwnership {

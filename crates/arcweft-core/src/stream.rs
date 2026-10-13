@@ -159,17 +159,7 @@ impl<'a> RuntimeStreamYieldCopyProof<'a> {
         value: crate::value::RuntimeValueView<'_>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        use crate::value::RuntimeValueView;
-        let mut affine = false;
-        let mut observe = |value: RuntimeValueView<'_>| {
-            affine |= !value.intrinsic_ownership().permits_copy();
-            Ok(())
-        };
-        resources.validate_view(value, 0, Some(&mut observe))?;
-        if affine {
-            return Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue);
-        }
-        Ok(())
+        value.admit_unrestricted(resources)
     }
 
     pub(crate) fn inspect(value: &'a RuntimeValue) -> Result<Self, RuntimeStreamYieldError> {

@@ -54,6 +54,34 @@ fn accepted(spec: TaskSpec, ordinal: u64) -> RuntimeNeedHandle {
 }
 
 #[test]
+fn inert_handle_identity_rejects_before_request_callable_construction() {
+    let live = accepted(specification(TaskPolicy::JoinSameKey), 0);
+    let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&live, None).unwrap();
+    image.correlation.need = NeedId::try_from_bytes([9; 32]).unwrap();
+    image.spec.request = super::super::HostTaskRequestSnapshot::Custom {
+        capability: HostCapabilityId("fixture".into()),
+        operation: "pure".into(),
+        args: vec![crate::value::AwbcRuntimeValueSnapshot::Callable(
+            crate::value::AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained: vec![],
+            },
+        )],
+        named_args: vec![],
+        manifest_contract: None,
+    };
+    let owner = super::super::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
+    assert_eq!(
+        image.into_live(&owner).unwrap_err(),
+        crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: RuntimeNeedHandleError::CorrelationMismatch.to_string(),
+        }
+    );
+}
+
+#[test]
 fn need_handle_preparation_distinguishes_reusable_and_accepted_origins() {
     assert_eq!(
         RuntimeNeedHandle::try_from(specification(TaskPolicy::AlwaysStart)),

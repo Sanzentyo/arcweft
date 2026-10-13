@@ -449,6 +449,16 @@ pub enum TaskOutcomeContract {
 }
 
 impl TaskOutcomeContract {
+    pub(crate) fn validate_producer(
+        &self,
+        producer: &NeedProducerInstance,
+    ) -> Result<(), TaskEnsureError> {
+        if self.payload_semantic_identity().as_bytes() != producer.payload_type().as_bytes() {
+            return Err(TaskEnsureError::OutcomeContractMismatch);
+        }
+        Ok(())
+    }
+
     pub fn payload_semantic_identity(&self) -> RuntimeSemanticTypeId {
         match self {
             Self::Standalone { payload } => payload.semantic_identity_digest(),

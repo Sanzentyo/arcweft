@@ -72,12 +72,7 @@ pub struct TaskSpec {
 
 impl TaskSpec {
     pub(crate) fn validate_outcome(&self) -> Result<(), super::TaskEnsureError> {
-        if self.outcome.payload_semantic_identity().as_bytes()
-            != self.producer.payload_type().as_bytes()
-        {
-            return Err(super::TaskEnsureError::OutcomeContractMismatch);
-        }
-        Ok(())
+        self.outcome.validate_producer(&self.producer)
     }
 
     /// Full join contract. Diagnostic text never changes accepted work.

@@ -29,12 +29,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+mod await_many;
 mod format;
 mod input;
 mod return_context;
 mod scope;
 mod stream;
 mod terminal;
+pub use await_many::{FiberAwaitManyInFlight, FiberAwaitManyState};
 pub use stream::FiberStreamState;
 pub use terminal::FiberTerminalValue;
 // Only the closed inert carrier can encode any retained fiber grammar.
@@ -297,7 +299,7 @@ pub enum FiberStatus {
     Trapped,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FiberSuspension {
     pub resume: FiberResumeTarget,
     pub reason: FiberSuspensionReason,
@@ -323,7 +325,7 @@ impl FiberSuspension {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FiberSuspensionReason {
     Dialogue {
         /// Before Product admission this carries the terminator target. The
@@ -376,24 +378,6 @@ pub enum FiberAwaitTarget {
         item_type: AwbcTypeId,
         handle: AwbcRegisterId,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberAwaitManyState {
-    pub plan: AwbcTaskPlanId,
-    pub binding: Option<AwbcPatternId>,
-    pub base: Option<crate::task::RuntimeNeedHandle>,
-    pub captured: Vec<RuntimeValue>,
-    pub items: Vec<RuntimeValue>,
-    pub next_index: u32,
-    pub in_flight: Vec<FiberAwaitManyInFlight>,
-    pub results: Vec<Option<RuntimeValue>>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberAwaitManyInFlight {
-    pub index: u32,
-    pub handle: crate::task::RuntimeNeedHandle,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -540,7 +524,9 @@ pub enum AwbcFiberSuspensionReasonSnapshot {
         binding: Option<AwbcPatternId>,
         observer: Option<crate::awbc::schema::AwbcAwaitObserverResume>,
     },
-    AwaitMany(AwbcFiberAwaitManySnapshot),
+    AwaitMany(
+        FiberAwaitManyState<AwbcRuntimeValueSnapshot, crate::task::RuntimeNeedHandleSaveSnapshot>,
+    ),
     HostCall {
         call: AwbcHostCallId,
         args: Vec<AwbcRuntimeValueSnapshot>,
@@ -573,26 +559,6 @@ pub enum AwbcFiberAwaitTargetSnapshot {
         item_type: AwbcTypeId,
         handle: AwbcRegisterId,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberAwaitManySnapshot {
-    pub plan: AwbcTaskPlanId,
-    pub binding: Option<AwbcPatternId>,
-    pub base: Option<crate::task::RuntimeNeedHandleSaveSnapshot>,
-    pub captured: Vec<AwbcRuntimeValueSnapshot>,
-    pub items: Vec<AwbcRuntimeValueSnapshot>,
-    pub next_index: u32,
-    pub in_flight: Vec<AwbcFiberAwaitManyChildSnapshot>,
-    pub results: Vec<Option<AwbcRuntimeValueSnapshot>>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberAwaitManyChildSnapshot {
-    pub index: u32,
-    pub handle: crate::task::RuntimeNeedHandleSaveSnapshot,
 }
 
 impl AwbcFiberStateSnapshot {
@@ -835,6 +801,32 @@ impl AwbcFiberStateSnapshot {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
         }
+        if let Some(FiberSuspension {
+            reason: FiberSuspensionReason::AwaitMany(await_many),
+            resume,
+        }) = &state.suspension
+        {
+            let frame = state.frames.last().ok_or_else(|| {
+                crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::MissingFrame)
+            })?;
+            await_many
+                .validate_inputs(
+                    &FrameValueContext {
+                        program,
+                        function: frame.function,
+                        layout: &program.frame_layouts[frame.layout.index()],
+                        binding: frame.type_instantiation.as_deref(),
+                        registers: &frame.registers,
+                        scope_count: frame.scopes.len(),
+                    },
+                    state.cursor,
+                    *resume,
+                    &mut resources,
+                    RuntimeValue::view,
+                    crate::task::RuntimeNeedHandle::view,
+                )
+                .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
+        }
         FiberStreamState::validate_inventory(
             program,
             state.root,
@@ -1013,6 +1005,32 @@ impl AwbcFiberStateSnapshot {
             .map_err(|error| {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
+        }
+        if let Some(AwbcFiberSuspensionSnapshot {
+            reason: AwbcFiberSuspensionReasonSnapshot::AwaitMany(await_many),
+            resume,
+        }) = &self.suspension
+        {
+            let frame = self.frames.last().ok_or_else(|| {
+                crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::MissingFrame)
+            })?;
+            await_many
+                .validate_inputs(
+                    &FrameValueContext {
+                        program,
+                        function: frame.function,
+                        layout: &program.frame_layouts[frame.layout.index()],
+                        binding: frame.type_instantiation.as_ref(),
+                        registers: &frame.registers,
+                        scope_count: frame.scopes.len(),
+                    },
+                    self.cursor,
+                    *resume,
+                    &mut resources,
+                    AwbcRuntimeValueSnapshot::view,
+                    crate::task::RuntimeNeedHandleSaveSnapshot::view,
+                )
+                .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
         }
         FiberStreamState::validate_inventory(
             program,
@@ -1534,7 +1552,7 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 observer: *observer,
             },
             FiberSuspensionReason::AwaitMany(state) => {
-                Self::AwaitMany(AwbcFiberAwaitManySnapshot::from_live(state, owner)?)
+                Self::AwaitMany(state.snapshot_admitted(owner)?)
             }
             FiberSuspensionReason::HostCall {
                 call,
@@ -1633,7 +1651,9 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 binding,
                 observer,
             },
-            Self::AwaitMany(state) => FiberSuspensionReason::AwaitMany(state.into_live(owner)?),
+            Self::AwaitMany(state) => {
+                FiberSuspensionReason::AwaitMany(state.into_live_admitted(owner)?)
+            }
             Self::HostCall {
                 call,
                 args,
@@ -1677,97 +1697,6 @@ impl AwbcFiberAwaitTargetSnapshot {
                 item_type,
                 handle,
             },
-        })
-    }
-}
-
-impl AwbcFiberAwaitManySnapshot {
-    fn from_live(state: &FiberAwaitManyState, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            plan: state.plan,
-            binding: state.binding,
-            base: state
-                .base
-                .as_ref()
-                .map(|handle| crate::task::RuntimeNeedHandleSaveSnapshot::from_live(handle, None))
-                .transpose()?,
-            captured: state
-                .captured
-                .iter()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .collect::<Result<_, _>>()?,
-            items: state
-                .items
-                .iter()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .collect::<Result<_, _>>()?,
-            next_index: state.next_index,
-            in_flight: state
-                .in_flight
-                .iter()
-                .map(|child| {
-                    Ok(AwbcFiberAwaitManyChildSnapshot {
-                        index: child.index,
-                        handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(
-                            &child.handle,
-                            None,
-                        )?,
-                    })
-                })
-                .collect::<AwbcSaveResult<_>>()?,
-            results: state
-                .results
-                .iter()
-                .map(|value| {
-                    value
-                        .as_ref()
-                        .map(|value| {
-                            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                        })
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberAwaitManyState> {
-        Ok(FiberAwaitManyState {
-            plan: self.plan,
-            binding: self.binding,
-            base: self
-                .base
-                .map(|handle| handle.into_live(owner))
-                .transpose()?,
-            captured: self
-                .captured
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .collect::<Result<_, _>>()?,
-            items: self
-                .items
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .collect::<Result<_, _>>()?,
-            next_index: self.next_index,
-            in_flight: self
-                .in_flight
-                .into_iter()
-                .map(|child| {
-                    Ok(FiberAwaitManyInFlight {
-                        index: child.index,
-                        handle: child.handle.into_live(owner)?,
-                    })
-                })
-                .collect::<AwbcSaveResult<_>>()?,
-            results: self
-                .results
-                .into_iter()
-                .map(|value| {
-                    value
-                        .map(|value| value.into_runtime_value_for_program(owner))
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
         })
     }
 }
@@ -5247,7 +5176,24 @@ fn validate_suspension(
             }
         }
         FiberSuspensionReason::AwaitMany(await_many) => {
-            validate_await_many_suspension(program, state, await_many)?;
+            let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            );
+            await_many.validate_inputs(
+                &FrameValueContext {
+                    program,
+                    function: frame.function,
+                    layout: &program.frame_layouts[frame.layout.index()],
+                    binding: frame.type_instantiation.as_deref(),
+                    registers: &frame.registers,
+                    scope_count: frame.scopes.len(),
+                },
+                state.cursor,
+                suspension.resume,
+                &mut resources,
+                RuntimeValue::view,
+                crate::task::RuntimeNeedHandle::view,
+            )?;
         }
         FiberSuspensionReason::HostCall {
             call,
@@ -5359,174 +5305,6 @@ fn validate_await_suspension(
     Ok(())
 }
 
-fn validate_await_many_suspension(
-    program: &AwbcProgram,
-    _fiber: &FiberState,
-    state: &FiberAwaitManyState,
-) -> Result<(), FiberStateError> {
-    use crate::awbc::schema::AwbcTaskPlanKind;
-    use crate::value::{RuntimeTupleView, RuntimeValueView};
-    let plan = program
-        .task_plans
-        .get(state.plan.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let AwbcTaskPlanKind::AwaitMany {
-        child,
-        limit,
-        captures,
-        request_function,
-        ..
-    } = &plan.kind
-    else {
-        return Err(FiberStateError::InvalidFrame);
-    };
-    let child_plan = program
-        .task_plans
-        .get(child.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let request = program
-        .functions
-        .get(request_function.index())
-        .and_then(|function| program.signatures.get(function.signature.index()))
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if *limit == 0
-        || u32::try_from(state.items.len()).is_err()
-        || state.captured.len() != captures.len()
-        || request.params.len() != state.captured.len()
-        || state.results.len() != state.items.len()
-        || state.next_index as usize > state.items.len()
-        || state.in_flight.len() > *limit as usize
-        || state
-            .binding
-            .is_some_and(|binding| program.patterns.get(binding.index()).is_none())
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    for (index, (value, ty)) in state.captured.iter().zip(&request.params).enumerate() {
-        validate_runtime_value_at(
-            program,
-            value,
-            Some(*ty),
-            format!("suspension.await_many.captured[{index}]"),
-        )?;
-        if !value.ownership().permits_copy() {
-            return Err(FiberStateError::InvalidFrame);
-        }
-    }
-    let mut pending = BTreeSet::new();
-    for child in &state.in_flight {
-        if child.index >= state.next_index || !pending.insert(child.index as usize) {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        let item = state
-            .items
-            .get(child.index as usize)
-            .ok_or(FiberStateError::InvalidFrame)?;
-        let index = RuntimeValue::u32(child.index);
-        let fields = [
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
-            index.view(),
-            item.view(),
-        ];
-        let expected = child_plan
-            .instantiate_template(
-                program,
-                child.handle.correlation().generation,
-                RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                child.handle.spec().request.clone(),
-                16 * 1024 * 1024,
-            )
-            .map_err(|_| FiberStateError::InvalidFrame)?;
-        if !expected.same_join_contract(child.handle.spec())
-            || expected
-                .correlation(child.handle.correlation().launch_ordinal)
-                .map_err(|_| FiberStateError::InvalidFrame)?
-                != child.handle.correlation()
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-    }
-    if let Some(base) = &state.base {
-        let fields = [
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.captured)),
-            RuntimeValueView::Tuple(RuntimeTupleView::Values(&state.items)),
-        ];
-        let expected = plan
-            .instantiate_template(
-                program,
-                base.correlation().generation,
-                RuntimeValueView::Tuple(RuntimeTupleView::Views(&fields)),
-                base.spec().request.clone(),
-                16 * 1024 * 1024,
-            )
-            .map_err(|_| FiberStateError::InvalidFrame)?;
-        if !expected.same_join_contract(base.spec())
-            || expected
-                .correlation(base.correlation().launch_ordinal)
-                .map_err(|_| FiberStateError::InvalidFrame)?
-                != base.correlation()
-            || state
-                .in_flight
-                .iter()
-                .any(|child| child.handle.correlation().generation != base.correlation().generation)
-            || !(0..state.items.len()).all(|index| {
-                if index < state.next_index as usize {
-                    state.results[index].is_some() != pending.contains(&index)
-                } else {
-                    state.results[index].is_none() && !pending.contains(&index)
-                }
-            })
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-    } else if state.next_index != 0
-        || !state.in_flight.is_empty()
-        || state.results.iter().any(Option::is_some)
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let AwbcTaskPlanKind::Template {
-        request_function, ..
-    } = child_plan.kind
-    else {
-        return Err(FiberStateError::InvalidFrame);
-    };
-    let child_inputs = program
-        .functions
-        .get(request_function.index())
-        .and_then(|function| program.signatures.get(function.signature.index()))
-        .ok_or(FiberStateError::InvalidFrame)?;
-    let item_type = child_inputs
-        .params
-        .last()
-        .copied()
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if child_inputs.params.len() != state.captured.len() + 1 {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    for (index, item) in state.items.iter().enumerate() {
-        validate_runtime_value_at(
-            program,
-            item,
-            Some(item_type),
-            format!("suspension.await_many.items[{index}]"),
-        )?;
-        if !item.ownership().permits_copy() {
-            return Err(FiberStateError::InvalidFrame);
-        }
-    }
-    for (index, result) in state.results.iter().enumerate() {
-        if let Some(result) = result {
-            validate_runtime_value_at(
-                program,
-                result,
-                Some(child_plan.payload_type),
-                format!("suspension.await_many.results[{index}]"),
-            )?;
-        }
-    }
-    Ok(())
-}
 fn validate_host_call_suspension(
     program: &AwbcProgram,
     frame: &FiberFrame,

@@ -225,6 +225,23 @@ VM の yield は同じ indexed inventory、closed 状態、checked emission coun
 queue の欠落時に item を捨てたり、counter を飽和させたりしない。close は同じ indexed
 owner を使う。これらの value byte count は fiber／session wire 全体の検証と区別する。
 
+AwaitMany の進捗は `FiberAwaitManyState<V, N>` と `FiberAwaitManyInFlight<N>` の
+単一 grammar に保持し、Core の inert value／Need carrier だけに codec を与える。
+元の到達済み AwaitMany terminator・resume point・plan・binding を構築前に照合し、
+launch index、in-flight index の一意性と上限、index に対応した pending／result の
+partition を検証する。capture は元 frame slot、base request signature、child request
+signature の型行を immutable frame binding で照合する。item／result の元の型行を
+検証し、capture／item の再帰的 Copy 条件、collection count、空 result slot の work
+も共通 allowance に入る。result はその所有権を保持する。
+producer key は元 AWBC task-plan の借用 argument view から導出し、保存 request の
+clone や検証用の TaskSpec／RuntimeValue を構築しない。Need の origin・policy・outcome・
+correlation の規則は共通 owner に置き、inert request の live 構築より前に適用する。
+generation rebind は future launch に適用するため、collector と既存 child の個々の
+receipt は保持し、両者の generation が同じであることは要求しない。VM は source と
+capture の batch 全体を検証してから capture をコピーし、source register を一度移動する。
+Need request 全体の metadata／wire-byte 上限と全14 family の public switch は、これらの
+retained value grammar の検証と別の受入条件である。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

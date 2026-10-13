@@ -23,8 +23,8 @@ use super::schema::{
     AwbcProjectCall, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
     AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTaskPlanId, AwbcTaskPlanKind, AwbcTerminator, AwbcTraitMethodId,
-    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId,
+    AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
@@ -3086,42 +3086,9 @@ fn execute_terminator(
             binding,
             resume,
         } => {
-            let plan_record = program
-                .task_plans
-                .get(plan.index())
-                .ok_or_else(|| VmError::Runtime("AwaitMany plan is absent".to_owned()))?;
-            let AwbcTaskPlanKind::AwaitMany { captures, .. } = &plan_record.kind else {
-                return Err(VmError::Runtime(
-                    "AwaitMany references a different producer family".into(),
-                ));
-            };
-            let mut captured = Vec::with_capacity(captures.len());
-            for capture in captures {
-                let value = fiber.active_frame()?.register(*capture)?;
-                if !value.ownership().permits_copy() {
-                    return Err(VmError::Runtime(
-                        "AwaitMany host capture requires checked Copy input".into(),
-                    ));
-                }
-                captured.push(value.clone());
-            }
-            let source_value = fiber.active_frame()?.register(*source)?;
-            if !source_value.ownership().permits_copy() {
-                return Err(VmError::Runtime(
-                    "AwaitMany host payload items require deep Copy values".to_owned(),
-                ));
-            }
-            let RuntimeValue::Seq(sequence) = source_value else {
-                return Err(VmError::Runtime(
-                    "AwaitMany source must be a sequence".into(),
-                ));
-            };
-            u32::try_from(sequence.len())
-                .map_err(|_| VmError::Runtime("AwaitMany source exceeds u32".into()))?;
-            let source = fiber.active_frame_mut()?.take_register(*source)?;
-            let RuntimeValue::Seq(sequence) = source else {
-                unreachable!("validated AwaitMany source remains a sequence");
-            };
+            let (captured, sequence) = fiber
+                .active_frame_mut()?
+                .take_await_many_inputs(program, *plan, *source)?;
             let items = sequence.into_values();
             let results = vec![None; items.len()];
             suspend(

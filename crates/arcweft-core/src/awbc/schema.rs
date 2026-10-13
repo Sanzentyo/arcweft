@@ -2839,18 +2839,15 @@ pub enum AwbcTaskPlanKind {
 }
 
 impl AwbcTaskPlan {
-    pub(crate) fn instantiate_template(
+    /// Derives the producer from borrowed arguments without constructing a task
+    /// specification or copying the stored request during admission.
+    pub(crate) fn template_producer_input(
         &self,
         program: &AwbcProgram,
-        generation: crate::task::GenerationId,
         arguments: crate::value::RuntimeValueView<'_>,
-        request: crate::task::HostTaskRequest,
         max_encoded_bytes: usize,
-    ) -> Result<crate::task::TaskSpec, String> {
-        use crate::task::{
-            NeedProducerFamily, NeedProducerInstance, NeedProducerSpec, TaskOutcomeContract,
-            TaskPolicy, TaskSpec,
-        };
+    ) -> Result<crate::task::NeedProducerSpec, String> {
+        use crate::task::{NeedProducerFamily, NeedProducerSpec, RuntimeTypeSemanticDigest};
         let (family, contract, site, plan) = match self.kind {
             AwbcTaskPlanKind::AwaitMany {
                 contract,
@@ -2872,19 +2869,72 @@ impl AwbcTaskPlan {
         let digest =
             crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
                 .map_err(|error| error.to_string())?;
+        let payload = program
+            .runtime_types
+            .get(self.payload_type.index())
+            .ok_or("task payload type is absent")?
+            .semantic_identity();
+        Ok(NeedProducerSpec::new(
+            family,
+            contract,
+            plan,
+            site,
+            RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
+            digest,
+        ))
+    }
+
+    pub(crate) fn validate_template_handle(
+        &self,
+        program: &AwbcProgram,
+        arguments: crate::value::RuntimeValueView<'_>,
+        handle: crate::value::RuntimeNeedView<'_>,
+        max_encoded_bytes: usize,
+    ) -> Result<(), String> {
+        handle
+            .validate_identity()
+            .map_err(|error| error.to_string())?;
+        let input = self.template_producer_input(program, arguments, max_encoded_bytes)?;
+        let expected = crate::task::NeedProducerInstance::try_from(&input)
+            .map_err(|error| error.to_string())?;
+        let policy = match self.policy {
+            AwbcTaskPolicy::JoinSameKey => crate::task::TaskPolicy::JoinSameKey,
+            AwbcTaskPolicy::AlwaysStart => crate::task::TaskPolicy::AlwaysStart,
+        };
+        if handle.producer() != &expected
+            || handle.class() != &awbc_task_class(self.class)
+            || handle.priority() != crate::task::TaskPriority(self.priority)
+            || program
+                .strings
+                .get(self.cancel_scope.index())
+                .map(String::as_str)
+                != Some(handle.cancel_scope().0.as_str())
+            || handle.policy() != policy
+            || handle.outcome()
+                != &crate::task::TaskOutcomeContract::program(
+                    program.runtime_types[self.payload_type.index()].semantic_identity(),
+                )
+        {
+            return Err("retained Need disagrees with its original task template".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn instantiate_template(
+        &self,
+        program: &AwbcProgram,
+        generation: crate::task::GenerationId,
+        arguments: crate::value::RuntimeValueView<'_>,
+        request: crate::task::HostTaskRequest,
+        max_encoded_bytes: usize,
+    ) -> Result<crate::task::TaskSpec, String> {
+        use crate::task::{NeedProducerInstance, TaskOutcomeContract, TaskPolicy, TaskSpec};
+        let input = self.template_producer_input(program, arguments, max_encoded_bytes)?;
         let payload_type = program
             .runtime_types
             .get(self.payload_type.index())
             .ok_or("task payload type is absent")?
             .semantic_identity();
-        let input = NeedProducerSpec::new(
-            family,
-            contract,
-            plan,
-            site,
-            crate::task::RuntimeTypeSemanticDigest::from_bytes(*payload_type.as_bytes()),
-            digest,
-        );
         let spec = TaskSpec {
             generation,
             producer: NeedProducerInstance::try_from(&input).map_err(|error| error.to_string())?,
@@ -2903,7 +2953,7 @@ impl AwbcTaskPlan {
             },
             outcome: TaskOutcomeContract::program(payload_type),
             request,
-            debug_label: format!("awbc.template.{family:?}"),
+            debug_label: format!("awbc.template.{:?}", input.family()),
         };
         spec.validate_outcome().map_err(|error| error.to_string())?;
         Ok(spec)

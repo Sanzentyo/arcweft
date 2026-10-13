@@ -10,6 +10,48 @@ pub(crate) enum RuntimeNeedView<'a> {
 }
 
 impl<'a> RuntimeNeedView<'a> {
+    pub(crate) fn producer(self) -> &'a crate::task::NeedProducerInstance {
+        match self {
+            Self::Live(v) => &v.spec().producer,
+            Self::Snapshot(v) => &v.spec().producer,
+        }
+    }
+
+    pub(crate) fn class(self) -> &'a crate::task::TaskClass {
+        match self {
+            Self::Live(v) => &v.spec().class,
+            Self::Snapshot(v) => &v.spec().class,
+        }
+    }
+
+    pub(crate) fn priority(self) -> crate::task::TaskPriority {
+        match self {
+            Self::Live(v) => v.spec().priority,
+            Self::Snapshot(v) => v.spec().priority,
+        }
+    }
+
+    pub(crate) fn cancel_scope(self) -> &'a crate::task::CancelScopeId {
+        match self {
+            Self::Live(v) => &v.spec().cancel_scope,
+            Self::Snapshot(v) => &v.spec().cancel_scope,
+        }
+    }
+
+    pub(crate) fn policy(self) -> crate::task::TaskPolicy {
+        match self {
+            Self::Live(v) => v.spec().policy,
+            Self::Snapshot(v) => v.spec().policy,
+        }
+    }
+
+    pub(crate) fn validate_identity(self) -> Result<(), crate::task::RuntimeNeedHandleError> {
+        match self {
+            Self::Live(_) => Ok(()),
+            Self::Snapshot(v) => v.validate_identity(),
+        }
+    }
+
     pub(crate) fn need_id(self) -> NeedId {
         match self {
             Self::Live(v) => v.need_id(),
