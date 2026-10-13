@@ -467,6 +467,13 @@ impl AwbcRuntimeValueSnapshot {
         Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
     }
 
+    pub(crate) fn from_admitted_opaque(
+        value: &RuntimeOpaqueValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::opaque_from_live(value, Some(owner)).map(Self::Opaque)
+    }
+
     /// Internal standalone task/data capture. Program-owned descendants are
     /// rejected; executable snapshots use the selected program entry point.
     pub(crate) fn from_standalone_value(

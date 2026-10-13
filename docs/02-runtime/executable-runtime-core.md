@@ -928,10 +928,24 @@ contain complete values. Parameter-storage extraction validates the full typed
 inventory before moving any register, without cloning the frame.
 
 Suspension reasons are dialogue, choice, await, await-many, host call, and
-budget yield. Await-many state contains plan, optional bind pattern, input
-items, next launch index, in-flight `(index, task_id, need_id)` rows, and
-index-aligned optional results. This is enough to resume deterministically after
-host events, snapshot/replay, or hand-off between VM and compiled code.
+budget yield. `FiberSuspension<V, O, N>` owns one exhaustive grammar for live
+values, opaque targets, and Need handles and their inert save representations.
+Only the private inert capabilities implement its codec. Retained records,
+including dialogue value bindings, reject unknown fields. Before projecting or
+constructing a frame, admission checks the reached original terminator, resume
+point, function, immutable layout and type binding. It then checks retained
+arguments, dialogue slots, effect captures and line-task captures against their
+original source and consumer type obligations using the shared resource budget.
+Await requires its consumed handle register to remain vacant and validates the
+retained Need identity and selected item type. Exact budget stops retain the
+current cursor; declared stops must agree with the original terminator.
+
+Await-many state retains its original plan, optional bind pattern, input items,
+captures, base Need, next launch index, in-flight indexed child Needs and
+index-aligned optional results. The same grammar validates the complete progress
+partition and each original template before construction. This is enough to
+resume deterministically after host events, snapshot/replay, or hand-off between
+VM and compiled code.
 
 Invariants:
 

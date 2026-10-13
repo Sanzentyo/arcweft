@@ -1,7 +1,7 @@
 //! One `AwaitMany` progress grammar with borrowed original plan admission.
 
 use super::input::FrameValueContext;
-use super::{AwbcPatternId, AwbcTaskPlanId, FiberStateError, InertFiberValue};
+use super::{AwbcPatternId, AwbcTaskPlanId, FiberStateError, InertFiberNeed, InertFiberValue};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeProgramValueType;
 use crate::task::{RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot, RuntimeProgramOwner};
@@ -10,9 +10,6 @@ use crate::value::{
     RuntimeValueView,
 };
 use serde::{Deserialize, Serialize};
-
-trait InertFiberNeed: Serialize + serde::de::DeserializeOwned {}
-impl InertFiberNeed for RuntimeNeedHandleSaveSnapshot {}
 
 /// All launched, pending and completed item ownership for one occurrence.
 /// Only inert carriers have a save codec.

@@ -2821,7 +2821,7 @@ impl AwbcProductStepExecutor {
             fiber.suspension.as_ref().is_some_and(|suspension| {
                 matches!(
                     &suspension.reason,
-                    crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::AwaitMany(state)
+                    crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)
                         if state.base.as_ref().is_some_and(|base| {
                             base.correlation().generation > snapshot.runtime_generation
                         })
@@ -2901,10 +2901,9 @@ impl AwbcProductStepExecutor {
                     .suspension
                     .as_ref()
                     .and_then(|suspension| match &suspension.reason {
-                        crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::HostCall {
-                            call,
-                            ..
-                        } => Some(*call),
+                        crate::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } => {
+                            Some(*call)
+                        }
                         _ => None,
                     });
             match (&child.owner, &child.pending_host_call, host_call) {

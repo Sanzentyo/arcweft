@@ -1451,10 +1451,11 @@ pub enum FlowEvent {
 
 /// One evaluated value supplied to a document-local dialogue slot.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeDialogueValueBinding {
+#[serde(deny_unknown_fields)]
+pub struct RuntimeDialogueValueBinding<V = crate::value::RuntimeValue> {
     pub slot: RuntimeDialogueValueSlotId,
     pub role: RuntimeDialogueValueRole,
-    pub value: crate::value::RuntimeValue,
+    pub value: V,
 }
 
 impl RuntimePlan {

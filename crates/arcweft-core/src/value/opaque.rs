@@ -3018,6 +3018,10 @@ pub struct RuntimeOpaqueValue {
 }
 
 impl RuntimeOpaqueValue {
+    pub(crate) fn view(&self) -> super::RuntimeValueView<'_> {
+        super::RuntimeValueView::Opaque(super::RuntimeOpaqueView::Live(self))
+    }
+
     pub(crate) fn new_exact(owner: &RuntimeOpaqueTypeOwner, payload: RuntimeValue) -> Self {
         Self {
             producer: owner.producer().clone(),

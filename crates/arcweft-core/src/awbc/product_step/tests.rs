@@ -4061,6 +4061,106 @@ fn host_call_request_and_result_resume_at_runtime_step_boundary() {
 }
 
 #[test]
+fn host_suspension_admits_original_site_and_arguments_before_restore() {
+    use crate::awbc::fiber::{FiberResumeTarget, FiberStateError, FiberSuspensionReason};
+    use crate::value::AwbcRuntimeValueSnapshot;
+
+    let mut program = host_call_program();
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(1)],
+        ..program.signatures[0].clone()
+    });
+    program.host_calls[0].signature = AwbcSignatureId(1);
+    program.host_calls[0].arguments.push(AwbcHostArgument {
+        name: None,
+        spread: false,
+    });
+    let argument_slot = AwbcFrameSlot {
+        role: AwbcFrameSlotRole::Temporary,
+        ..program.frame_layouts[0].slots[0].clone()
+    };
+    program.frame_layouts[0].slots.push(argument_slot);
+    program
+        .constants
+        .push(AwbcConstant::String(AwbcStringId(1)));
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(1),
+        constant: AwbcConstantId(0),
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    let AwbcTerminator::HostCall { args, .. } = &mut program.blocks[0].terminator else {
+        panic!("host-call fixture terminator");
+    };
+    args.push(AwbcRegisterId(1));
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
+        .expect("typed host-call executor starts");
+    let initialized = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert_eq!(initialized.stop_reason, RuntimeStepStopReason::OneOp);
+    assert_eq!(initialized.stats.executed_ops, 1);
+    let output = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert_eq!(output.output.requests.host_calls.len(), 1, "{output:?}");
+    assert_eq!(
+        output.output.requests.host_calls[0].args(),
+        vec![RuntimePayload(RuntimeValue::String("host.probe".into()))]
+    );
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let before = product_snapshot(&executor);
+    let encoded = serde_json::to_vec(&before.fiber).expect("private inert grammar serializes");
+    let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&encoded).expect("inert codec");
+    assert!(decoded.into_live_for_program(&owner).is_ok());
+
+    for corruption in 0..4 {
+        let mut snapshot = product_snapshot(&executor);
+        let suspension = snapshot
+            .fiber
+            .suspension
+            .as_mut()
+            .expect("host is suspended");
+        match corruption {
+            0 => {
+                let FiberSuspensionReason::HostCall { args, .. } = &mut suspension.reason else {
+                    panic!("original host-call reason");
+                };
+                args[0] = AwbcRuntimeValueSnapshot::Bool(true);
+            }
+            1 => suspension.reason = FiberSuspensionReason::BudgetYield,
+            2 => suspension.resume = FiberResumeTarget::Exact(snapshot.fiber.cursor),
+            3 => {
+                let FiberSuspensionReason::HostCall { destination, .. } = &mut suspension.reason
+                else {
+                    panic!("original host-call reason");
+                };
+                *destination = Some(AwbcRegisterId(1));
+            }
+            _ => unreachable!(),
+        }
+        let encoded = serde_json::to_vec(&snapshot.fiber).expect("forged inert payload encodes");
+        let decoded: AwbcFiberStateSnapshot =
+            serde_json::from_slice(&encoded).expect("inert codec");
+        let error = decoded
+            .into_live_for_program(&owner)
+            .expect_err("original admission rejects forgery");
+        if corruption == 0 {
+            assert!(matches!(
+                error,
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
+            ));
+        } else {
+            assert_eq!(
+                error,
+                crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::InvalidFrame)
+            );
+        }
+        assert!(executor.restore_snapshot(snapshot).is_err());
+        assert_eq!(
+            product_snapshot(&executor),
+            before,
+            "restore preserves the complete executor"
+        );
+    }
+}
+
+#[test]
 fn raw_host_result_must_match_pending_signature_even_when_discarded() {
     let mut program = host_call_program();
     let AwbcTerminator::HostCall { dst, .. } = &mut program.blocks[0].terminator else {
@@ -4212,21 +4312,19 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
             .suspension
             .as_ref()
             .map(|suspension| &suspension.reason),
-        Some(
-            crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::Await {
-                target: crate::awbc::fiber::AwbcFiberAwaitTargetSnapshot::Need {
-                    item_type: AwbcTypeId(2),
-                    ..
-                },
+        Some(crate::awbc::fiber::FiberSuspensionReason::Await {
+            target: crate::awbc::fiber::FiberAwaitTarget::Need {
+                item_type: AwbcTypeId(2),
                 ..
-            }
-        )
+            },
+            ..
+        })
     ));
 
-    let Some(crate::awbc::fiber::AwbcFiberSuspensionSnapshot {
+    let Some(crate::awbc::fiber::FiberSuspension {
         reason:
-            crate::awbc::fiber::AwbcFiberSuspensionReasonSnapshot::Await {
-                target: crate::awbc::fiber::AwbcFiberAwaitTargetSnapshot::Need { item_type, .. },
+            crate::awbc::fiber::FiberSuspensionReason::Await {
+                target: crate::awbc::fiber::FiberAwaitTarget::Need { item_type, .. },
                 ..
             },
         ..
@@ -4833,9 +4931,7 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
 
 #[test]
 fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fiber() {
-    use crate::awbc::fiber::{
-        AwbcFiberStateSnapshot, AwbcFiberSuspensionReasonSnapshot, FiberResumeTarget,
-    };
+    use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberResumeTarget, FiberSuspensionReason};
     use crate::value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
     let program = await_many_product_program();
     let mut executor = await_many_executor(&program, await_many_items(), GenerationId::new(7));
@@ -4851,7 +4947,7 @@ fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fi
     for case in 0..4 {
         let mut forged = before.clone();
         let suspension = forged.suspension.as_mut().unwrap();
-        let AwbcFiberSuspensionReasonSnapshot::AwaitMany(state) = &mut suspension.reason else {
+        let FiberSuspensionReason::AwaitMany(state) = &mut suspension.reason else {
             panic!("AwaitMany suspension");
         };
         match case {
