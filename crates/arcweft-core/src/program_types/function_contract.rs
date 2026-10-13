@@ -207,8 +207,19 @@ impl RuntimeFunctionEffectInstantiation {
     fn matcher_with_work<'program, A: FunctionTypeAuthority>(
         &self,
         program: &'program A,
-        work: ValidationWork,
+        mut work: ValidationWork,
     ) -> Option<ParameterMatcher<'program, A>> {
+        // Bound retained metadata before copying effect rows into formulas or
+        // resolving the selected program's declaration scope. Source matchers
+        // use the same allowance as their destination, including this pass.
+        if let Err(error) = self.validate_resource_limits(
+            0,
+            &crate::entry::schema::value_budget::ValueBudget::new(work.limits()),
+            &mut work,
+        ) {
+            work.retain_failure(error);
+            return None;
+        }
         let context = program.by_semantic(self.context)?;
         let (_, mut matcher) =
             ParameterMatcher::for_function_with_work(program, context, None, work)?;

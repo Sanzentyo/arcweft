@@ -872,6 +872,27 @@ impl AwbcFiberStateSnapshot {
     }
 
     pub fn from_live(state: &FiberState, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
+        let RuntimeProgramOwner::Awbc(program) = owner else {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "AWBC fiber snapshot requires its original AWBC program".to_owned(),
+            });
+        };
+        // Validate every original frame header and retained binding before
+        // any frame copies its effect solution or value descendants.
+        for frame in &state.frames {
+            validate_frame_layout(
+                program,
+                frame.function,
+                frame.layout,
+                frame.type_instantiation.as_deref(),
+                frame.registers.len(),
+            )
+            .map_err(
+                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                },
+            )?;
+        }
         Ok(Self {
             instance: state.instance,
             next_frame_instance: state.next_frame_instance,
@@ -906,6 +927,27 @@ impl AwbcFiberStateSnapshot {
     }
 
     pub fn into_live_for_program(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberState> {
+        let RuntimeProgramOwner::Awbc(program) = owner else {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "AWBC fiber restore requires its original AWBC program".to_owned(),
+            });
+        };
+        // The complete header inventory is checked while inert; a later bad
+        // frame cannot be discovered after an earlier frame constructs values.
+        for frame in &self.frames {
+            validate_frame_layout(
+                program,
+                frame.function,
+                frame.layout,
+                frame.type_instantiation.as_ref(),
+                frame.registers.len(),
+            )
+            .map_err(
+                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                },
+            )?;
+        }
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
@@ -4207,19 +4249,23 @@ fn scope_has_pending_cleanup(scope: &FiberScope) -> bool {
         || scope.defer_failure.is_some()
 }
 
-fn validate_frame(
-    program: &AwbcProgram,
-    frame: &FiberFrame,
-    path: &str,
-) -> Result<(), FiberStateError> {
+/// Resolves the original frame inventory and declaration binding for live
+/// validation, snapshot capture and inert restore before metadata is copied.
+fn validate_frame_layout<'program>(
+    program: &'program AwbcProgram,
+    function: AwbcFunctionId,
+    layout: AwbcFrameLayoutId,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    register_count: usize,
+) -> Result<&'program super::schema::AwbcFrameLayout, FiberStateError> {
     let function = program
         .functions
-        .get(frame.function.index())
-        .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
-    if function.frame_layout != frame.layout {
+        .get(function.index())
+        .ok_or(FiberStateError::UnknownFunction(function.0))?;
+    if function.frame_layout != layout {
         return Err(FiberStateError::InvalidFrame);
     }
-    match (function.type_context, frame.type_instantiation.as_deref()) {
+    match (function.type_context, instantiation) {
         (None, None) => {}
         (Some(context), Some(binding))
             if program
@@ -4231,11 +4277,26 @@ fn validate_frame(
     }
     let layout = program
         .frame_layouts
-        .get(frame.layout.index())
-        .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
-    if frame.registers.len() != layout.slots.len() {
+        .get(layout.index())
+        .ok_or(FiberStateError::UnknownFrameLayout(layout.0))?;
+    if register_count != layout.slots.len() {
         return Err(FiberStateError::InvalidFrame);
     }
+    Ok(layout)
+}
+
+fn validate_frame(
+    program: &AwbcProgram,
+    frame: &FiberFrame,
+    path: &str,
+) -> Result<(), FiberStateError> {
+    let layout = validate_frame_layout(
+        program,
+        frame.function,
+        frame.layout,
+        frame.type_instantiation.as_deref(),
+        frame.registers.len(),
+    )?;
     for (index, value) in frame.registers.iter().enumerate() {
         let slot = layout
             .slots
@@ -6461,6 +6522,65 @@ mod tests {
             scope_depth: 0,
         });
         program
+    }
+
+    #[test]
+    fn snapshot_frame_headers_are_admitted_before_any_value_construction() {
+        use crate::value::AwbcRuntimeValueSnapshotError;
+        let program = one_unit_parameter_entry_program();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
+            .unwrap();
+        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        image
+            .clone()
+            .into_live_for_program(&owner)
+            .unwrap()
+            .validate_for_program(&program)
+            .unwrap();
+        let before = fiber.checkpoint(&owner).unwrap();
+        for failure in [
+            FiberStateError::UnknownFunction(99),
+            FiberStateError::InvalidFrame,
+        ] {
+            let mut candidate = image.clone();
+            let mut later = candidate.frames[0].clone();
+            match failure {
+                FiberStateError::UnknownFunction(_) => later.function = AwbcFunctionId(99),
+                FiberStateError::InvalidFrame => later.layout = AwbcFrameLayoutId(99),
+                _ => unreachable!(),
+            }
+            candidate.frames.push(later);
+            candidate.frames[0].registers[0] =
+                AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                    state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                    retained: vec![],
+                })
+                .into();
+            let expected = AwbcRuntimeValueSnapshotError::Message {
+                message: failure.to_string(),
+            };
+            assert_eq!(
+                candidate.clone().into_live_for_program(&owner).unwrap_err(),
+                expected
+            );
+            assert!(fiber.replace_from_snapshot(candidate, &owner).is_err());
+            assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        }
+        let mut malformed_live = fiber;
+        malformed_live.frames[0].function = AwbcFunctionId(99);
+        assert_eq!(
+            AwbcFiberStateSnapshot::from_live(&malformed_live, &owner).unwrap_err(),
+            AwbcRuntimeValueSnapshotError::Message {
+                message: FiberStateError::UnknownFunction(99).to_string(),
+            }
+        );
+        let foreign = RuntimeProgramOwner::Plan(std::sync::Arc::new(
+            crate::plan::RuntimePlanBuilder::default().finish().unwrap(),
+        ));
+        assert!(image.into_live_for_program(&foreign).is_err());
     }
 
     fn format_entry_program() -> AwbcProgram {

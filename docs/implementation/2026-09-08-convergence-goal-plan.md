@@ -13196,3 +13196,84 @@ private candidate before `validate_frame`; failure-atomic publication alone
 does not establish that preconstruction contract. The existing original program
 and scoped relation authority must be reused, rather than manufacturing a
 closed row or treating candidate provenance as the destination context.
+
+Normal commit/push completed for that reviewed cut:
+`d5f10026e4f266ec1fa2dcb2f743e57d211dc8b8`, parent
+`7f61fd9c45e684ff9551e1b14c9317a1a366a227`, prepared/published tree
+`3af12379d276c290467ad203e5c3acc02209effe`. Fresh fetch and `ls-remote` observe
+that exact main. All 20 local/published/working blobs match, the index is empty,
+and all 3,620 frozen inputs plus held14 still match. The complete diff receipt
+is `shared-work.publication-prepared.json`, SHA256
+`5dfbccb11239a4212f585fe6fbda0bda3cf3d97333107e9bc7933235e4c20006`;
+`shared-work.publication-verified.json` records publication and the unchanged
+validation limitations. This coherent cut does not close the ACTIVE goal or
+authorize the pending global OS configuration.
+
+### 2026-10-13 — retained effect metadata and original frame headers
+
+Inspected main is `d5f10026e4f266ec1fa2dcb2f743e57d211dc8b8`, index empty,
+held14 and historical untracked files preserved. Further independent C5 work
+uses the existing instantiation owner and the original AWBC frame authority.
+`matcher_with_work` now checks retained effect rows/labels under that same
+selected work/collection/string/depth policy before semantic lookup or copying
+rows into matching formulas. Internal admissibility conversion retains the
+first hard metadata error in `ValidationWork`; it cannot turn a collection or
+string limit into a normal type mismatch. No second matcher, type table or
+quota is introduced.
+
+The owning `validate_frame_layout` resolves function, layout, register inventory
+and declaration context/binding once for live frame validation and both fiber
+capture/restore. Capture and restore preflight every frame header before any
+frame clones its instantiation or constructs values. A foreign Native program
+cannot supply an AWBC fiber's type authority. Meaningful regressions require
+metadata rejection before relation entry and a later malformed frame's header
+rejection before an earlier malformed callable constructor; the live fiber
+remains unchanged after rejection. Existing low-work and zero-depth assertions
+are retained, with additional source-matcher quota and nested type-depth checks
+to preserve the original relation-bound coverage after the earlier metadata pass.
+
+`frame-binding-r1` froze 3,620 inputs with held14 unchanged. Core library PASS
+1,216, run ID `54cacae6-b3ea-4b7f-8e16-6227da349868`; actual compiler continuation/
+Witness tests PASS 9. The subsequent test strengthening and maintained chapter
+update require their final-source checks; no r1 pass is relabeled as that later
+test execution. Cargo/lock/config remain unchanged, so the recorded actual
+reverse49 and full53 feature selection remain applicable. Default jobs/profiles/
+features, workloads, budgets, assertions, captures and build artifacts are
+unchanged. Global OS approval is still pending, no OS change was applied, and
+full53 will not be blindly retried under the repeated OS 1455 condition.
+
+These changes establish metadata/header admission, not all slot/suspension/
+continuation expected-type/key/capture/layout preconstruction checks, frame or
+session aggregate resources, or whole-session atomic publication. Native env
+rollback still constructs places before checking the original declaration and
+immutable destination binding. Both Native and AWBC must use the existing value
+relation for complete/partial storage, with a legitimate destination context
+distinct from the candidate's retained provenance. That consumer migration,
+Need/task14/View/scheduler/C1-C6, Native/Web parity and final workspace/Tier2
+acceptance remain open under the ACTIVE goal.
+
+`frame-binding-r1` actual compiler run is
+`56f36767-15ea-4015-8c4b-2250c9ed9d10`, PASS 9. Production bytes stayed unchanged
+for r2; its strengthened nominal-origin assertion PASS 1 / deliberately
+unselected 1,215, run ID `52e58f25-3953-4ee5-8b41-c05658b5ebc9`. This additional
+receipt does not replace the preceding full Core owner run or full53. The
+`frame-binding-r2` six final-source gates are all terminal PASS: workspace
+all-target/all-feature check/Clippy, Core/LSP doctests 3/0, structure gate,
+default Core/player-web wasm and fmt. Source/held drift arrays are empty.
+
+Owner measurements on dirty `d5f10026e4f266ec1fa2dcb2f743e57d211dc8b8`:
+fiber.rs 281,200 bytes / 7,519 LOC (base 7,399, growth 120), embedded tests
+1,064 LOC; value_budget.rs 8,614 / 228 (base 222, growth 6), no embedded tests;
+function_contract.rs 40,323 / 1,124 (base 1,113, growth 11), no embedded tests;
+its separate tests.rs 37,946 / 1,009 (base 875, growth 134). Fiber retains its
+existing function/layout/binding lifecycle owner and reuses one header check;
+the instantiation owner retains its original-table/effect relation. No separate
+frame authority, field graph, public trait, I/O, unsafe, Cargo edge, wire shape
+or version marker is introduced. Existing large-fiber cohesion applies.
+Changed-path warnings are 66 before/after; the sole changed warning is the
+cohesive nominal provenance/selected-quota/depth test, 169 Clippy-counted lines. The
+fixture deliberately exercises one actual scope/solution matrix, so splitting
+or suppressing it would not improve ownership. Canonical structure reports no
+blocking violation. `frame-binding-r2.owner-warning-review.json` retains exact
+metrics, warning review and hash checks. The six-path cut is ready for explicit
+staging/diff review and normal publication with full53 still unavailable.

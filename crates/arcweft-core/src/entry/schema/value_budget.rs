@@ -42,6 +42,12 @@ impl ValidationWork {
         self.0.borrow().failure.clone()
     }
 
+    /// Keeps resource errors from metadata admission when an internal matcher
+    /// can report only admissibility. A prior hard failure remains final.
+    pub(crate) fn retain_failure(&self, error: RuntimeSchemaError) {
+        self.0.borrow_mut().failure.get_or_insert(error);
+    }
+
     pub(crate) fn charge(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
         let mut state = self.0.borrow_mut();
         if let Some(error) = &state.failure {

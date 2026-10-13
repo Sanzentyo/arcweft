@@ -117,6 +117,16 @@ inert nominal／variant に保持された宣言 effect 解の row と label も
 immutable instantiation 上で同じ collection・string・depth・validation-work
 予算を検証する。metadata は logical payload node を増やさず、元の型を照合し
 effect row を複製する前に共有 work allowance を消費する。
+宣言 effect 解の matcher は、destination と元 provenance のどちらでも、
+元の immutable row・label をこの予算で検証してから formula の作業領域へ
+複製する。資源エラーを内部の admissibility 判定へ落とす際も、最初の
+hard failure を共有 allowance に保持し、型の不一致へ置き換えない。
+
+AWBC fiber の capture／restore は、全 frame の function・frame layout・
+register 数・宣言 effect 解の context を original AWBC program に照合してから
+metadata を複製し、live value を構築する。live frame の検証も同じ owning
+frame-layout 検証を使う。スロット値や継続状態の検証は、それぞれの owner が
+保持する型と継続契約を引き続き要求する。
 
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その

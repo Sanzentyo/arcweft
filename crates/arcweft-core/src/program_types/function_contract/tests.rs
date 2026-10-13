@@ -7,6 +7,100 @@ use crate::{
 };
 
 #[test]
+fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    let semantic = RuntimeSemanticTypeId::from_bytes([0xa7; 32]);
+    let mut program = AwbcProgram::default();
+    program.runtime_types = vec![
+        AwbcRuntimeType::unit(),
+        AwbcRuntimeType::new(
+            semantic,
+            AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::new(
+                    RuntimeTypeBinder::new(0, 0, 1),
+                    EffectPredicate::unconstrained(),
+                    EffectFormula::empty(),
+                ),
+                parameters: vec![],
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
+    let binding = RuntimeFunctionEffectInstantiation {
+        context: semantic,
+        effects: Box::new([crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()]),
+    };
+    let limits = RuntimeSchemaLimits::engine_default();
+    assert_eq!(
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            &program,
+            Some(&binding),
+            &ValidationWork::new(limits),
+            |_| Ok(()),
+        ),
+        Ok(Some(()))
+    );
+    for (limits, expected) in [
+        (
+            RuntimeSchemaLimits {
+                max_sequence_items: 0,
+                ..limits
+            },
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "sequence_items",
+            },
+        ),
+        (
+            RuntimeSchemaLimits {
+                max_string_bytes: 6,
+                ..limits
+            },
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "string_bytes",
+            },
+        ),
+        (
+            RuntimeSchemaLimits {
+                max_depth: 0,
+                ..limits
+            },
+            RuntimeSchemaError::ValidationDepth {
+                path: "$".to_owned(),
+                limit: 0,
+            },
+        ),
+        (
+            RuntimeSchemaLimits {
+                max_validation_work: 1,
+                ..limits
+            },
+            RuntimeSchemaError::ValidationWork {
+                path: "$".to_owned(),
+                limit: 1,
+                consumed: 2,
+            },
+        ),
+    ] {
+        for context in [semantic, RuntimeSemanticTypeId::from_bytes([0xff; 32])] {
+            let mut candidate = binding.clone();
+            candidate.context = context;
+            let mut entered = false;
+            let result = RuntimeFunctionEffectInstantiation::with_value_relation(
+                &program,
+                Some(&candidate),
+                &ValidationWork::new(limits),
+                |_| {
+                    entered = true;
+                    Ok(())
+                },
+            );
+            assert_eq!(result, Err(expected.clone()));
+            assert!(!entered, "resource rejection precedes relation entry");
+        }
+    }
+}
+
+#[test]
 fn nominal_arguments_preserve_declaration_identity_and_invariant_effects() {
     let row = |marker, shape| {
         AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
@@ -157,8 +251,8 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     assert!(matches(Some(&destination), Some(&destination)));
     assert!(!matches(None, Some(&source)));
     assert!(matches(None, Some(&destination)));
-    // Resolving the destination consumes one substitution step. The original
-    // nominal's source instantiation must use that same remaining allowance.
+    // Retained metadata and the original nominal's source matcher use the
+    // destination's same allowance before any effect-row scratch copy.
     let limits = crate::entry::RuntimeSchemaLimits {
         max_validation_work: 1,
         ..crate::entry::RuntimeSchemaLimits::engine_default()
@@ -176,6 +270,32 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
             ..
         })
     ));
+    let mut destination_admitted = false;
+    let result = RuntimeFunctionEffectInstantiation::with_value_relation(
+        &program,
+        Some(&destination),
+        &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
+            max_validation_work: 5,
+            ..limits
+        }),
+        |relation| {
+            destination_admitted = true;
+            assert!(
+                relation.matcher.origin_environment(&destination).is_none(),
+                "the source solution cannot get a fresh metadata/matching quota"
+            );
+            Ok(())
+        },
+    );
+    assert!(destination_admitted);
+    assert!(matches!(
+        result,
+        Err(crate::entry::RuntimeSchemaError::ValidationWork {
+            limit: 5,
+            consumed: 6,
+            ..
+        })
+    ));
     assert!(matches!(
         RuntimeFunctionEffectInstantiation::with_value_relation(
             &program,
@@ -187,6 +307,20 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
             |relation| Ok(relation.nominal(AwbcTypeId(4), AwbcTypeId(4), Some(&destination))),
         ),
         Err(crate::entry::RuntimeSchemaError::ValidationDepth { limit: 0, .. })
+    ));
+    // Depth one admits the empty retained rows. The nested nominal argument
+    // relation must still respect that selected depth, before the hard 64 cap.
+    assert!(matches!(
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            &program,
+            Some(&destination),
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
+                max_depth: 1,
+                ..crate::entry::RuntimeSchemaLimits::engine_default()
+            }),
+            |relation| Ok(relation.nominal(AwbcTypeId(4), AwbcTypeId(4), Some(&destination))),
+        ),
+        Err(crate::entry::RuntimeSchemaError::ValidationDepth { limit: 1, .. })
     ));
     let malformed = RuntimeFunctionEffectInstantiation {
         context: id(6),
