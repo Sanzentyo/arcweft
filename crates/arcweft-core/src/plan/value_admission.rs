@@ -91,14 +91,28 @@ impl super::RuntimePlanInventory {
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
         let work = context.validation_work();
         let limits = work.limits();
+        let origin = context.admission_origin();
         let mut validation = PlanValueValidation {
             authority: PlanValueAuthority::Inventory(self),
             work,
-            origin: ValueAdmissionOrigin::Live,
+            origin,
             context,
         };
-        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
+        match origin {
+            ValueAdmissionOrigin::Live => value_encoding::validate_live_view(
+                value,
+                limits,
+                &mut validation,
+                Expected::Type(ty),
+            ),
+            ValueAdmissionOrigin::InertSnapshot => value_encoding::validate_snapshot_view(
+                value,
+                limits,
+                &mut validation,
+                Expected::Type(ty),
+            ),
+        }
+        .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
     }
     /// Validates a live value against this plan's exact type/domain tables,
     /// including recursive nominal descendants, without persistence encoding.
@@ -127,6 +141,7 @@ impl super::RuntimePlanInventory {
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
+            ValueAdmissionOrigin::Live,
             binding,
             &ValidationWork::new(limits),
             |context| {
@@ -188,6 +203,7 @@ impl super::RuntimePlanInventory {
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
+            origin,
             binding,
             work,
             |context| {

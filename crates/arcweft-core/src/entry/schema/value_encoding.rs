@@ -308,12 +308,132 @@ pub(crate) fn preflight_snapshot_view<'a>(
     limits: super::RuntimeSchemaLimits,
     observer: Option<&'a mut ValueObserver<'a>>,
 ) -> Result<ValidationWork, RuntimeSchemaError> {
-    let mut validation = NoSchemaValidation::snapshot_resources(limits);
-    validation.observer = observer;
-    validate_view_without_digest(value, limits, &mut validation, (), ValueEncoding::Snapshot)?;
-    Ok(validation
-        .resources
-        .expect("snapshot resource validation owns its allowance"))
+    let mut admission =
+        ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::InertSnapshot);
+    admission.validate_view(value, 0, observer)?;
+    Ok(admission.work())
+}
+
+/// Resource ownership for an admission containing several complete values and
+/// partial places. Logical nodes, encoded complete-value bytes and relation
+/// work accumulate across descendants; visiting another value grants no quota.
+pub(crate) struct ValueResourceAdmission {
+    budget: ValueBudget,
+    sink: super::CanonicalCountingSink,
+    work: ValidationWork,
+    origin: ValueAdmissionOrigin,
+    encoding: ValueEncoding,
+}
+
+impl ValueResourceAdmission {
+    pub(crate) fn live(limits: super::RuntimeSchemaLimits) -> Self {
+        Self::new(limits, ValueAdmissionOrigin::Live, ValueEncoding::Live)
+    }
+
+    pub(crate) fn snapshot(
+        limits: super::RuntimeSchemaLimits,
+        origin: ValueAdmissionOrigin,
+    ) -> Self {
+        Self::new(limits, origin, ValueEncoding::Snapshot)
+    }
+
+    fn new(
+        limits: super::RuntimeSchemaLimits,
+        origin: ValueAdmissionOrigin,
+        encoding: ValueEncoding,
+    ) -> Self {
+        Self {
+            budget: ValueBudget::new(limits),
+            sink: super::CanonicalCountingSink::default(),
+            work: ValidationWork::new(limits),
+            origin,
+            encoding,
+        }
+    }
+
+    pub(crate) fn work(&self) -> ValidationWork {
+        self.work.clone()
+    }
+
+    pub(crate) fn origin(&self) -> ValueAdmissionOrigin {
+        self.origin
+    }
+
+    pub(crate) fn validate_view<'a>(
+        &mut self,
+        value: RuntimeValueView<'_>,
+        depth: usize,
+        observer: Option<&'a mut ValueObserver<'a>>,
+    ) -> Result<(), RuntimeSchemaError> {
+        let limits = self.work.limits();
+        let encoding = self.encoding;
+        let mut writer = CanonicalWriter {
+            sink: &mut self.sink,
+            max_encoded_bytes: if matches!(encoding, ValueEncoding::Snapshot) {
+                limits.max_encoded_bytes
+            } else {
+                u64::MAX
+            },
+            max_string_bytes: Some(limits.max_string_bytes),
+        };
+        let mut validation = NoSchemaValidation {
+            resources: Some(self.work.clone()),
+            depth: 0,
+            observer,
+        };
+        let result = visit_work(
+            Work::Value(value, depth, (), None),
+            &mut writer,
+            Some(&mut self.budget),
+            &mut validation,
+            encoding,
+        );
+        if let Err(error) = &result {
+            self.work.retain_failure(error.clone());
+        }
+        result
+    }
+
+    pub(crate) fn vacant(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+        if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            return Err(crate::value::RuntimeValueNestingError::Exceeded {
+                maximum: crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH,
+            }
+            .into());
+        }
+        self.work.charge(depth)
+    }
+
+    pub(crate) fn partial_record(
+        &mut self,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        count: usize,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.vacant(depth)?;
+        self.budget.node(depth)?;
+        self.budget.collection(count)?;
+        match header {
+            crate::value::RuntimePlaceRecordHeader::Nominal {
+                nominal,
+                type_instantiation,
+                ..
+            } => {
+                self.budget.string(nominal.as_str())?;
+                if let Some(binding) = type_instantiation {
+                    binding.validate_resource_limits(depth + 1, &self.budget, &mut self.work)?;
+                }
+            }
+            crate::value::RuntimePlaceRecordHeader::Structural { names } => {
+                self.budget.collection(names.len())?;
+                for name in names {
+                    self.work.charge(depth + 1)?;
+                    self.budget.string(name)?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -340,7 +460,21 @@ impl fmt::Display for ValuePath<'_> {
 
 impl RuntimeSchemaError {
     fn at_value_path(mut self, current: &ValuePath<'_>) -> Self {
-        let path = match &mut self {
+        if let Some(path) = self.value_path_mut() {
+            *path = current.to_string();
+        }
+        self
+    }
+
+    pub(crate) fn within_value_path(mut self, parent: &str) -> Self {
+        if let Some(path) = self.value_path_mut() {
+            *path = format!("{parent}{}", path.strip_prefix('$').unwrap_or(path));
+        }
+        self
+    }
+
+    fn value_path_mut(&mut self) -> Option<&mut String> {
+        match self {
             Self::Arity { path, .. }
             | Self::ArrayLength { path, .. }
             | Self::RecordField { path, .. }
@@ -367,11 +501,7 @@ impl RuntimeSchemaError {
             | Self::NominalGraph { .. }
             | Self::NominalGraphRequired { .. }
             | Self::UnresolvedNominal { .. } => None,
-        };
-        if let Some(path) = path {
-            *path = current.to_string();
         }
-        self
     }
 
     pub(crate) fn is_choice_mismatch(&self) -> bool {

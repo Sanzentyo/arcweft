@@ -634,6 +634,263 @@ mod tests {
     }
 
     #[test]
+    fn borrowed_place_keeps_original_local_type_id_and_rejects_ambiguous_roles() {
+        use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
+        use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+        use crate::program_types::{
+            RuntimeProgramTypeError, RuntimeProgramTypes, RuntimeProgramValueType,
+        };
+        let semantic = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+        // A malformed inventory cannot redirect a known local ID through its
+        // first semantic match. Semantic-role lookup must report ambiguity.
+        let program = AwbcProgram {
+            runtime_types: vec![
+                AwbcRuntimeType::new(semantic, AwbcRuntimeTypeShape::Bool),
+                AwbcRuntimeType::new(semantic, AwbcRuntimeTypeShape::Unit),
+            ],
+            ..AwbcProgram::default()
+        };
+        assert!(matches!(
+            RuntimeProgramTypes::Awbc(&program).value_type(semantic),
+            Err(RuntimeProgramTypeError::Ambiguous { semantic_type }) if semantic_type == semantic
+        ));
+        let saved = RuntimePlaceStorage::from(AwbcRuntimeValueSnapshot::Bool(true));
+        let admit = |ty| {
+            saved.validate_program_type(
+                RuntimeProgramValueType::Awbc {
+                    program: &program,
+                    ty,
+                },
+                None,
+                &mut ValueResourceAdmission::snapshot(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                    ValueAdmissionOrigin::InertSnapshot,
+                ),
+                AwbcRuntimeValueSnapshot::view,
+            )
+        };
+        admit(AwbcTypeId(0)).unwrap();
+        assert!(matches!(
+            admit(AwbcTypeId(1)),
+            Err(RuntimeProgramTypeError::AwbcValue(source))
+                if matches!(&*source, crate::awbc::value_admission::AwbcValueAdmissionError::Value {
+                    ty: AwbcTypeId(1), source: crate::entry::RuntimeSchemaError::Type { .. }
+                })
+        ));
+        assert!(admit(AwbcTypeId(999)).is_err());
+        let live = RuntimePlaceStorage::from(RuntimeValue::Bool(true));
+        assert!(live.matches_program_type(
+            RuntimeProgramValueType::Awbc {
+                program: &program,
+                ty: AwbcTypeId(0)
+            },
+            None
+        ));
+        assert!(!live.matches_program_type(
+            RuntimeProgramValueType::Awbc {
+                program: &program,
+                ty: AwbcTypeId(1)
+            },
+            None
+        ));
+        assert_eq!(saved.as_ref(), Some(&AwbcRuntimeValueSnapshot::Bool(true)));
+    }
+
+    #[test]
+    fn borrowed_place_admission_accumulates_complete_value_resources() {
+        use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+        use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+        use crate::program_types::RuntimeProgramTypeError;
+        let saved = RuntimePlaceStorage::from(AwbcRuntimeValueSnapshot::Bool(true));
+        let exact = RuntimeSchemaLimits {
+            max_nodes: 2,
+            max_encoded_bytes: 4,
+            max_validation_work: 6,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        for owner in super::super::awbc_save::tests::owners() {
+            let mut admission =
+                ValueResourceAdmission::snapshot(exact, ValueAdmissionOrigin::InertSnapshot);
+            for _ in 0..2 {
+                saved
+                    .validate_program_type(
+                        owner
+                            .types()
+                            .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
+                            .unwrap(),
+                        None,
+                        &mut admission,
+                        AwbcRuntimeValueSnapshot::view,
+                    )
+                    .unwrap();
+            }
+            for (limits, expected) in [
+                (
+                    RuntimeSchemaLimits {
+                        max_nodes: 1,
+                        ..exact
+                    },
+                    RuntimeSchemaError::BudgetExceeded { budget: "nodes" },
+                ),
+                (
+                    RuntimeSchemaLimits {
+                        max_encoded_bytes: 3,
+                        ..exact
+                    },
+                    RuntimeSchemaError::BudgetExceeded {
+                        budget: "encoded_bytes",
+                    },
+                ),
+                (
+                    RuntimeSchemaLimits {
+                        max_validation_work: 5,
+                        ..exact
+                    },
+                    RuntimeSchemaError::ValidationWork {
+                        path: "$".to_owned(),
+                        limit: 5,
+                        consumed: 6,
+                    },
+                ),
+            ] {
+                let mut admission =
+                    ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::InertSnapshot);
+                saved
+                    .validate_program_type(
+                        owner
+                            .types()
+                            .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
+                            .unwrap(),
+                        None,
+                        &mut admission,
+                        AwbcRuntimeValueSnapshot::view,
+                    )
+                    .unwrap();
+                let error = saved
+                    .validate_program_type(
+                        owner
+                            .types()
+                            .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
+                            .unwrap(),
+                        None,
+                        &mut admission,
+                        AwbcRuntimeValueSnapshot::view,
+                    )
+                    .unwrap_err();
+                assert_eq!(admission.work().failure(), Some(expected.clone()));
+                let source = match error {
+                    RuntimeProgramTypeError::Resource(source) => *source,
+                    RuntimeProgramTypeError::PlanValue(source) => match *source {
+                        crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } => source,
+                        error => panic!("unexpected plan error: {error}"),
+                    },
+                    RuntimeProgramTypeError::AwbcValue(source) => match *source {
+                        crate::awbc::value_admission::AwbcValueAdmissionError::Value {
+                            source,
+                            ..
+                        } => source,
+                        error @ crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { .. } => panic!("unexpected AWBC error: {error}"),
+                    },
+                    error => panic!("unexpected admission error: {error}"),
+                };
+                assert_eq!(source, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn partial_place_admission_checks_header_provenance_with_no_complete_value() {
+        use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+        let semantic = RuntimeSemanticTypeId::from_bytes([1; 32]);
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        for owner in super::super::awbc_save::tests::owners() {
+            let mut live = RuntimePlaceStorage::from(
+                owner
+                    .types()
+                    .try_record_value(semantic, vec![RuntimeValue::Bool(true)], limits)
+                    .unwrap(),
+            );
+            live.take_field(&[field(0)]).unwrap();
+            let saved = live.snapshot_for_owner(Some(&owner)).unwrap();
+            saved
+                .validate_program_type(
+                    owner.types().value_type(semantic).unwrap(),
+                    None,
+                    &mut ValueResourceAdmission::snapshot(
+                        limits,
+                        ValueAdmissionOrigin::InertSnapshot,
+                    ),
+                    AwbcRuntimeValueSnapshot::view,
+                )
+                .unwrap();
+            let exact_work = crate::entry::RuntimeSchemaLimits {
+                max_validation_work: 5,
+                ..limits
+            };
+            saved
+                .validate_program_type(
+                    owner.types().value_type(semantic).unwrap(),
+                    None,
+                    &mut ValueResourceAdmission::snapshot(
+                        exact_work,
+                        ValueAdmissionOrigin::InertSnapshot,
+                    ),
+                    AwbcRuntimeValueSnapshot::view,
+                )
+                .unwrap();
+            let error = saved
+                .validate_program_type(
+                    owner.types().value_type(semantic).unwrap(),
+                    None,
+                    &mut ValueResourceAdmission::snapshot(
+                        crate::entry::RuntimeSchemaLimits {
+                            max_validation_work: 4,
+                            ..exact_work
+                        },
+                        ValueAdmissionOrigin::InertSnapshot,
+                    ),
+                    AwbcRuntimeValueSnapshot::view,
+                )
+                .unwrap_err();
+            assert!(
+                matches!(error, crate::program_types::RuntimeProgramTypeError::Resource(source)
+                if matches!(&*source, crate::entry::RuntimeSchemaError::ValidationWork { path, limit: 4, consumed: 5 } if path == "$[0]"))
+            );
+            let mut forged = saved.clone();
+            let PlaceState::Record {
+                header:
+                    RecordHeader::Nominal {
+                        type_instantiation, ..
+                    },
+                ..
+            } = &mut forged.state
+            else {
+                panic!("original partial nominal")
+            };
+            *type_instantiation = Some(std::sync::Arc::new(
+                serde_json::from_value(serde_json::json!({
+                    "context": semantic, "effects": []
+                }))
+                .unwrap(),
+            ));
+            assert!(
+                forged
+                    .validate_program_type(
+                        owner.types().value_type(semantic).unwrap(),
+                        None,
+                        &mut ValueResourceAdmission::snapshot(
+                            limits,
+                            ValueAdmissionOrigin::InertSnapshot
+                        ),
+                        AwbcRuntimeValueSnapshot::view
+                    )
+                    .is_err()
+            );
+            assert_eq!(live.snapshot_for_owner(Some(&owner)).unwrap(), saved);
+        }
+    }
+
+    #[test]
     fn partial_move_restore_and_snapshot_mapping_preserve_siblings() {
         let original = RuntimeValue::try_record(vec![
             ("a".into(), RuntimeValue::String("first".into())),

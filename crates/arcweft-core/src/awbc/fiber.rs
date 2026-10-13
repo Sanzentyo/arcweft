@@ -879,6 +879,11 @@ impl AwbcFiberStateSnapshot {
         };
         // Validate every original frame header and retained binding before
         // any frame copies its effect solution or value descendants.
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        resources.work().collection(state.frames.len())?;
         for frame in &state.frames {
             validate_frame_layout(
                 program,
@@ -886,12 +891,30 @@ impl AwbcFiberStateSnapshot {
                 frame.layout,
                 frame.type_instantiation.as_deref(),
                 frame.registers.len(),
+                &resources.work(),
             )
-            .map_err(
-                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                },
-            )?;
+            .map_err(|error| {
+                resources.work().failure().map_or_else(
+                    || crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    },
+                    crate::value::AwbcRuntimeValueSnapshotError::from,
+                )
+            })?;
+        }
+        for (index, frame) in state.frames.iter().enumerate() {
+            validate_frame_registers(
+                program,
+                &program.frame_layouts[frame.layout.index()],
+                frame.type_instantiation.as_deref(),
+                &frame.registers,
+                &mut resources,
+                RuntimeValue::view,
+                &format!("frames[{index}]"),
+            )
+            .map_err(|error| {
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
+            })?;
         }
         Ok(Self {
             instance: state.instance,
@@ -934,6 +957,11 @@ impl AwbcFiberStateSnapshot {
         };
         // The complete header inventory is checked while inert; a later bad
         // frame cannot be discovered after an earlier frame constructs values.
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources.work().collection(self.frames.len())?;
         for frame in &self.frames {
             validate_frame_layout(
                 program,
@@ -941,12 +969,30 @@ impl AwbcFiberStateSnapshot {
                 frame.layout,
                 frame.type_instantiation.as_ref(),
                 frame.registers.len(),
+                &resources.work(),
             )
-            .map_err(
-                |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                },
-            )?;
+            .map_err(|error| {
+                resources.work().failure().map_or_else(
+                    || crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    },
+                    crate::value::AwbcRuntimeValueSnapshotError::from,
+                )
+            })?;
+        }
+        for (index, frame) in self.frames.iter().enumerate() {
+            validate_frame_registers(
+                program,
+                &program.frame_layouts[frame.layout.index()],
+                frame.type_instantiation.as_ref(),
+                &frame.registers,
+                &mut resources,
+                AwbcRuntimeValueSnapshot::view,
+                &format!("frames[{index}]"),
+            )
+            .map_err(|error| {
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
+            })?;
         }
         Ok(FiberState {
             instance: self.instance,
@@ -4257,7 +4303,14 @@ fn validate_frame_layout<'program>(
     layout: AwbcFrameLayoutId,
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     register_count: usize,
+    work: &crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<&'program super::schema::AwbcFrameLayout, FiberStateError> {
+    work.clone()
+        .charge(0)
+        .map_err(|error| FiberStateError::InvalidRuntimeValue {
+            path: "frame".to_owned(),
+            reason: error.to_string(),
+        })?;
     let function = program
         .functions
         .get(function.index())
@@ -4272,7 +4325,7 @@ fn validate_frame_layout<'program>(
                 .runtime_types
                 .get(context.index())
                 .is_some_and(|row| row.semantic_identity() == binding.context())
-                && binding.is_valid(program) => {}
+                && binding.is_valid_with_work(program, work) => {}
         _ => return Err(FiberStateError::InvalidFrame),
     }
     let layout = program
@@ -4290,26 +4343,39 @@ fn validate_frame(
     frame: &FiberFrame,
     path: &str,
 ) -> Result<(), FiberStateError> {
+    let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+    );
     let layout = validate_frame_layout(
         program,
         frame.function,
         frame.layout,
         frame.type_instantiation.as_deref(),
         frame.registers.len(),
+        &resources.work(),
     )?;
+    validate_frame_registers(
+        program,
+        layout,
+        frame.type_instantiation.as_deref(),
+        &frame.registers,
+        &mut resources,
+        RuntimeValue::view,
+        path,
+    )
+    .map_err(|error| FiberStateError::InvalidRuntimeValue {
+        path: path.to_owned(),
+        reason: error.to_string(),
+    })?;
     for (index, value) in frame.registers.iter().enumerate() {
-        let slot = layout
-            .slots
-            .get(index)
-            .ok_or(FiberStateError::InvalidFrame)?;
-        validate_place_storage_at(
-            program,
-            frame.type_instantiation.as_deref(),
-            value,
-            slot.ty,
-            format!("{path}.registers[{index}]"),
-            0,
-        )?;
+        for (ordinal, child) in value.values().enumerate() {
+            validate_runtime_value_at(
+                program,
+                child,
+                None,
+                format!("{path}.registers[{index}].values[{ordinal}]"),
+            )?;
+        }
     }
     if let Some(format) = &frame.format {
         validate_format_state(program, frame, format)?;
@@ -4438,6 +4504,35 @@ fn validate_deferred(
     Ok(())
 }
 
+fn validate_frame_registers<'value, T>(
+    program: &AwbcProgram,
+    layout: &super::schema::AwbcFrameLayout,
+    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    registers: &'value [RuntimePlaceStorage<T>],
+    resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    view: impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
+    path: &str,
+) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
+    resources.work().collection(registers.len())?;
+    for (index, (slot, storage)) in layout.slots.iter().zip(registers).enumerate() {
+        program.runtime_types.get(slot.ty.index()).ok_or(
+            crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { ty: slot.ty },
+        )?;
+        storage
+            .validate_program_type(
+                crate::program_types::RuntimeProgramValueType::Awbc {
+                    program,
+                    ty: slot.ty,
+                },
+                instantiation,
+                resources,
+                &view,
+            )
+            .map_err(|error| error.within_value_path(&format!("{path}.registers[{index}]")))?;
+    }
+    Ok(())
+}
+
 fn validate_place_storage_at(
     program: &AwbcProgram,
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
@@ -4446,14 +4541,12 @@ fn validate_place_storage_at(
     path: String,
     depth: usize,
 ) -> Result<(), FiberStateError> {
-    let row = program
-        .runtime_types
-        .get(expected.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
     if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
         || !storage.matches_program_type(
-            crate::program_types::RuntimeProgramTypes::Awbc(program),
-            row.semantic_identity(),
+            crate::program_types::RuntimeProgramValueType::Awbc {
+                program,
+                ty: expected,
+            },
             instantiation,
         )
     {
@@ -6583,6 +6676,40 @@ mod tests {
         assert!(image.into_live_for_program(&foreign).is_err());
     }
 
+    #[test]
+    fn snapshot_register_types_precede_callable_construction_and_live_capture() {
+        let program = one_unit_parameter_entry_program();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
+            .unwrap();
+        let before = fiber.checkpoint(&owner).unwrap();
+        let mut candidate = before.state.as_ref().clone();
+        candidate.frames[0].registers[0] =
+            AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained: vec![],
+            })
+            .into();
+        let crate::value::AwbcRuntimeValueSnapshotError::ProgramType(error) =
+            candidate.clone().into_live_for_program(&owner).unwrap_err()
+        else {
+            panic!("original type admission precedes constructor lookup")
+        };
+        assert!(
+            matches!(*error, crate::program_types::RuntimeProgramTypeError::AwbcValue(error)
+            if matches!(&*error, crate::awbc::value_admission::AwbcValueAdmissionError::Value { source: crate::entry::RuntimeSchemaError::Type { path, .. }, .. } if path == "frames[0].registers[0]"))
+        );
+        assert!(fiber.replace_from_snapshot(candidate, &owner).is_err());
+        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        fiber.frames[0].registers[0] = RuntimeValue::Bool(true).into();
+        assert!(matches!(
+            AwbcFiberStateSnapshot::from_live(&fiber, &owner),
+            Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+        ));
+    }
+
     fn format_entry_program() -> AwbcProgram {
         let mut program = zero_parameter_entry_program();
         program.runtime_types.push(AwbcRuntimeType::unit());
@@ -7068,7 +7195,12 @@ mod tests {
             .unwrap()
             .set_register(
                 AwbcRegisterId(0),
-                RuntimeValue::NeedHandle(crate::tests::reusable_need("need.occupied")),
+                RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+                    "need.occupied",
+                    crate::task::TaskOutcomeContract::program(
+                        program.runtime_types[1].semantic_identity(),
+                    ),
+                )),
             )
             .unwrap();
         fiber

@@ -90,7 +90,7 @@ depth・node・collection・string・validation-work・encoded-byte を検証す
 scalar atom の深さは選択された resource policy に従い、値 carrier の nesting
 上限はそのまま維持する。durable root は選択された role、root rollback は
 元の root policy の上限を構築前に適用する。型付き保存場所では、その owner が
-保持する expected semantic type を original program の型行に照合し、同じ
+保持する expected type を original program の型行に照合し、同じ
 borrowed view の descendant を inert のまま検証する。resource preflight の
 残りの validation-work allowance を型検証へ渡し、phase ごとに上限を再発行しない。
 関数の型関係と effect predicate、nominal の元 instantiation の照合、および
@@ -125,8 +125,22 @@ hard failure を共有 allowance に保持し、型の不一致へ置き換え�
 AWBC fiber の capture／restore は、全 frame の function・frame layout・
 register 数・宣言 effect 解の context を original AWBC program に照合してから
 metadata を複製し、live value を構築する。live frame の検証も同じ owning
-frame-layout 検証を使う。スロット値や継続状態の検証は、それぞれの owner が
-保持する型と継続契約を引き続き要求する。
+frame-layout 検証を使う。続いて全 frame の register place を、その layout の
+元の型行と frame の immutable destination binding に照合してから、最初の
+値を複製・構築する。Native lexical environment も全 function scope と
+元の local declaration を同じ順序で検証し、live／inert の scope carrier と
+place relation を共有する。layout と local declaration の既知の型IDは元の
+inventory と一緒に直接渡し、semantic IDを経由して選び直さない。semantic role
+からの照合は同じ original inventory の一意な型行を選び、曖昧な行を拒否する。
+どちらも保存対象のスロット inventory 内で
+logical-node・完全値の encoded-byte・relation work を累積する。
+空き place は値を構築せず、部分レコードは元の nominal identity・layout・
+field inventory と independent provenance を検証する。destination の型行と
+元 provenance の型行が異なる場合も、既存の nominal argument／effect 関係を
+満たすことを要求し、残る子は destination の field 型で検証する。
+部分ヘッダの名前・instantiation・深さ・子数も複製前に制限する。完全値の
+canonical byte 計上は、部分 place や frame wire 全体の byte 計上を代替しない。
+継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
 
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その

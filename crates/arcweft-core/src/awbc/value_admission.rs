@@ -47,14 +47,28 @@ impl AwbcProgram {
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
         let work = context.validation_work();
         let limits = work.limits();
+        let origin = context.admission_origin();
         let mut validation = AwbcValueValidation {
             program: self,
             work,
-            origin: ValueAdmissionOrigin::Live,
+            origin,
             context,
         };
-        value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
-            .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
+        match origin {
+            ValueAdmissionOrigin::Live => value_encoding::validate_live_view(
+                value,
+                limits,
+                &mut validation,
+                Expected::Type(ty),
+            ),
+            ValueAdmissionOrigin::InertSnapshot => value_encoding::validate_snapshot_view(
+                value,
+                limits,
+                &mut validation,
+                Expected::Type(ty),
+            ),
+        }
+        .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
     }
     /// Validates a live value through this program's exact type table.
     pub fn validate_live_value(
@@ -82,6 +96,7 @@ impl AwbcProgram {
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
+            ValueAdmissionOrigin::Live,
             binding,
             &ValidationWork::new(limits),
             |context| {
@@ -143,6 +158,7 @@ impl AwbcProgram {
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
+            origin,
             binding,
             work,
             |context| {

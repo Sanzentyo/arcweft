@@ -21,54 +21,159 @@ impl crate::value::RuntimePlaceStorage<RuntimeValue> {
     /// same selected executable and immutable frame binding as complete values.
     pub(crate) fn matches_program_type(
         &self,
-        program: super::RuntimeProgramTypes<'_>,
-        expected: RuntimeSemanticTypeId,
+        expected: super::RuntimeProgramValueType<'_>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
     ) -> bool {
-        match program {
-            super::RuntimeProgramTypes::Plan(plan) => plan
-                .by_semantic(expected)
-                .is_some_and(|ty| self.matches_authority_type(plan, ty, binding, 0)),
-            super::RuntimeProgramTypes::Awbc(program) => program
-                .by_semantic(expected)
-                .is_some_and(|ty| self.matches_authority_type(program, ty, binding, 0)),
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.validate_program_type(expected, binding, &mut resources, RuntimeValue::view)
+            .is_ok()
+    }
+}
+
+impl<T> crate::value::RuntimePlaceStorage<T> {
+    /// Admits complete and partial storage while it is still borrowed. The
+    /// destination binding comes from the original frame or declaration, never
+    /// from the candidate's retained nominal provenance.
+    pub(crate) fn validate_program_type<'value>(
+        &'value self,
+        expected: super::RuntimeProgramValueType<'_>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+        view: impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        self.preflight_resources(resources, &view, 0)?;
+        match expected {
+            super::RuntimeProgramValueType::Plan { program, ty } => {
+                self.validate_authority_type(program, ty, binding, resources, &view)
+            }
+            super::RuntimeProgramValueType::Awbc { program, ty } => {
+                self.validate_authority_type(program, ty, binding, resources, &view)
+            }
         }
     }
 
-    fn matches_authority_type<A: FunctionTypeAuthority>(
-        &self,
+    fn preflight_resources<'value>(
+        &'value self,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+        view: &impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
+        depth: usize,
+    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        let result = if let Some(value) = self.as_ref() {
+            resources.validate_view(view(value), depth, None)
+        } else if let Some((header, children)) = self.record_parts() {
+            resources
+                .partial_record(header, children.len(), depth)
+                .and_then(|()| {
+                    children
+                        .iter()
+                        .enumerate()
+                        .try_for_each(|(ordinal, child)| {
+                            child
+                                .preflight_resources(resources, view, depth + 1)
+                                .map_err(|error| error.within_value_path(&format!("$[{ordinal}]")))
+                        })
+                })
+        } else {
+            resources.vacant(depth)
+        };
+        if let Err(error) = &result {
+            resources.work().retain_failure(error.clone());
+        }
+        result
+    }
+
+    fn validate_authority_type<'value, A: FunctionTypeAuthority>(
+        &'value self,
         program: &A,
         expected: A::Type,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+        view: &impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            program,
+            resources.origin(),
+            binding,
+            &resources.work(),
+            |context| self.validate_place_type(program, expected, context, view, 0),
+        )?
+        .ok_or_else(|| {
+            A::value_error(
+                expected,
+                crate::entry::RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "original place type binding",
+                    actual: "invalid binding",
+                },
+            )
+        })
+    }
+
+    fn validate_place_type<'value, A: FunctionTypeAuthority>(
+        &'value self,
+        program: &A,
+        expected: A::Type,
+        context: &mut CallableValueRelation<'_, '_, A>,
+        view: &impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
         depth: usize,
-    ) -> bool {
-        if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
-            || program.scope(expected).is_none()
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        context.validation_work().charge(depth)?;
+        let mismatch = || {
+            A::value_error(
+                expected,
+                crate::entry::RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "original typed place",
+                    actual: "partial or vacant place",
+                },
+            )
+        };
+        if !program
+            .scope(expected)
+            .is_some_and(|scope| context.permits_scope(scope))
         {
-            return false;
+            return Err(mismatch());
         }
         if let Some(value) = self.as_ref() {
-            return match binding {
-                Some(binding) => binding.value_matches(program, expected, value),
-                None => {
-                    program
-                        .scope(expected)
-                        .is_some_and(RuntimeTypeScope::is_root)
-                        && program.value_matches(expected, value.view(), depth)
-                }
-            };
+            return program.value_relation(expected, view(value), context);
         }
         if self.is_vacant() {
-            return true;
+            return Ok(());
         }
         let Some((header, children)) = self.record_parts() else {
-            return false;
+            return Err(mismatch());
         };
-        !children.is_empty()
-            && children.iter().enumerate().all(|(ordinal, child)| {
-                program
+        if let crate::value::RuntimePlaceRecordHeader::Nominal {
+            semantic_identity,
+            type_instantiation,
+            ..
+        } = header
+        {
+            let actual = program
+                .by_semantic(*semantic_identity)
+                .ok_or_else(mismatch)?;
+            if !context.nominal(expected, actual, type_instantiation.as_deref()) {
+                return Err(context
+                    .validation_work()
+                    .failure()
+                    .map_or_else(mismatch, Into::into));
+            }
+        }
+        if children.is_empty() {
+            return Err(mismatch());
+        }
+        children
+            .iter()
+            .enumerate()
+            .try_for_each(|(ordinal, child)| {
+                let ty = program
                     .record_field(expected, header, children.len(), ordinal)
-                    .is_some_and(|ty| child.matches_authority_type(program, ty, binding, depth + 1))
+                    .ok_or_else(mismatch)?;
+                child
+                    .validate_place_type(program, ty, context, view, depth + 1)
+                    .map_err(|error| error.within_value_path(&format!("$[{ordinal}]")))
             })
     }
 }
@@ -168,30 +273,33 @@ impl RuntimeFunctionEffectInstantiation {
                 .is_some_and(|matcher| &matcher.parameters.scope == scope)
         }
     }
-    pub(crate) fn with_value_relation<A: FunctionTypeAuthority, R>(
+    pub(crate) fn with_value_relation<A: FunctionTypeAuthority, R, E>(
         program: &A,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
         binding: Option<&Self>,
         work: &ValidationWork,
-        operation: impl FnOnce(
-            &mut CallableValueRelation<'_, '_, A>,
-        ) -> Result<R, crate::entry::RuntimeSchemaError>,
-    ) -> Result<Option<R>, crate::entry::RuntimeSchemaError> {
+        operation: impl FnOnce(&mut CallableValueRelation<'_, '_, A>) -> Result<R, E>,
+    ) -> Result<Option<R>, E>
+    where
+        E: From<crate::entry::RuntimeSchemaError>,
+    {
         let matcher = match binding {
             Some(binding) => binding.matcher_with_work(program, work.clone()),
             None => Some(ParameterMatcher::root(program, work.clone())),
         };
         let Some(mut matcher) = matcher else {
-            return work.failure().map_or(Ok(None), Err);
+            return work.failure().map_or(Ok(None), |error| Err(error.into()));
         };
         let environment = matcher.parameters.clone();
         let result = operation(&mut CallableValueRelation {
             matcher: &mut matcher,
             environment,
             choices: Vec::new(),
+            origin,
         })?;
         let accepted = matcher.accepted();
         if let Some(error) = work.failure() {
-            return Err(error);
+            return Err(error.into());
         }
         Ok(accepted.then_some(result))
     }
@@ -255,8 +363,12 @@ impl RuntimeFunctionEffectInstantiation {
     pub(crate) fn context(&self) -> RuntimeSemanticTypeId {
         self.context
     }
-    pub(crate) fn is_valid<A: FunctionTypeAuthority>(&self, program: &A) -> bool {
-        self.matcher(program).is_some()
+    pub(crate) fn is_valid_with_work<A: FunctionTypeAuthority>(
+        &self,
+        program: &A,
+        work: &ValidationWork,
+    ) -> bool {
+        self.matcher_with_work(program, work.clone()).is_some()
     }
     pub(crate) fn value_matches<A: FunctionTypeAuthority>(
         &self,
@@ -399,12 +511,16 @@ pub(crate) struct CallableValueRelation<'m, 'p, A: FunctionTypeAuthority> {
     matcher: &'m mut ParameterMatcher<'p, A>,
     environment: ContractEnvironment,
     choices: Vec<ValueChoiceRelation>,
+    origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
 }
 impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
     for CallableValueRelation<'_, '_, A>
 {
     fn validation_work(&self) -> ValidationWork {
         self.matcher.work.clone()
+    }
+    fn admission_origin(&self) -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
+        self.origin
     }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
         self.environment.at_scope(scope).is_ok()
@@ -1078,8 +1194,12 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             matcher: self,
             environment,
             choices: Vec::new(),
+            origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
         };
-        if program.value_relation(expected, value, &mut relation) {
+        if program
+            .value_relation(expected, value, &mut relation)
+            .is_ok()
+        {
             Ok(())
         } else {
             Err(())

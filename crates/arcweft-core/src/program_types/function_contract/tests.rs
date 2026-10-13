@@ -32,8 +32,13 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
     };
     let limits = RuntimeSchemaLimits::engine_default();
     assert_eq!(
-        RuntimeFunctionEffectInstantiation::with_value_relation(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<
+            _,
+            _,
+            crate::entry::RuntimeSchemaError,
+        >(
             &program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             Some(&binding),
             &ValidationWork::new(limits),
             |_| Ok(()),
@@ -85,8 +90,13 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
             let mut candidate = binding.clone();
             candidate.context = context;
             let mut entered = false;
-            let result = RuntimeFunctionEffectInstantiation::with_value_relation(
+            let result = RuntimeFunctionEffectInstantiation::with_value_relation::<
+                _,
+                _,
+                crate::entry::RuntimeSchemaError,
+            >(
                 &program,
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
                 Some(&candidate),
                 &ValidationWork::new(limits),
                 |_| {
@@ -229,8 +239,13 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     let source = binding(io);
     let matches = |destination: Option<&RuntimeFunctionEffectInstantiation>,
                    origin: Option<&RuntimeFunctionEffectInstantiation>| {
-        RuntimeFunctionEffectInstantiation::with_value_relation(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<
+            _,
+            _,
+            crate::entry::RuntimeSchemaError,
+        >(
             &program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             destination,
             &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
             |relation| {
@@ -258,8 +273,13 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
         ..crate::entry::RuntimeSchemaLimits::engine_default()
     };
     assert!(matches!(
-        RuntimeFunctionEffectInstantiation::with_value_relation(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<
+            _,
+            _,
+            crate::entry::RuntimeSchemaError,
+        >(
             &program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             Some(&destination),
             &ValidationWork::new(limits),
             |relation| Ok(relation.nominal(AwbcTypeId(4), AwbcTypeId(4), Some(&destination))),
@@ -271,8 +291,13 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
         })
     ));
     let mut destination_admitted = false;
-    let result = RuntimeFunctionEffectInstantiation::with_value_relation(
+    let result = RuntimeFunctionEffectInstantiation::with_value_relation::<
+        _,
+        _,
+        crate::entry::RuntimeSchemaError,
+    >(
         &program,
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
         Some(&destination),
         &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
             max_validation_work: 5,
@@ -297,8 +322,13 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
         })
     ));
     assert!(matches!(
-        RuntimeFunctionEffectInstantiation::with_value_relation(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<
+            _,
+            _,
+            crate::entry::RuntimeSchemaError,
+        >(
             &program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             Some(&destination),
             &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
                 max_depth: 0,
@@ -311,8 +341,13 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     // Depth one admits the empty retained rows. The nested nominal argument
     // relation must still respect that selected depth, before the hard 64 cap.
     assert!(matches!(
-        RuntimeFunctionEffectInstantiation::with_value_relation(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<
+            _,
+            _,
+            crate::entry::RuntimeSchemaError,
+        >(
             &program,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             Some(&destination),
             &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
                 max_depth: 1,
@@ -344,6 +379,134 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
         );
         assert_eq!(transformed.type_instantiation(), Some(origin));
     }
+}
+
+#[test]
+fn partial_nominal_places_correlate_original_rows_and_independent_effect_origins() {
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    use crate::value::{
+        AwbcRuntimeValueSnapshot, RuntimePlaceRecordHeader, RuntimePlaceStorage,
+        RuntimeRecordFieldId,
+    };
+    let id = |marker| RuntimeSemanticTypeId::from_bytes([marker; 32]);
+    let binder = RuntimeTypeBinder::new(0, 0, 1);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let callback = |effects| AwbcRuntimeTypeShape::Function {
+        contract: RuntimeFunctionTypeContract::new(
+            RuntimeTypeBinder::EMPTY,
+            EffectPredicate::unconstrained(),
+            effects,
+        ),
+        parameters: vec![],
+        result: AwbcTypeId(0),
+    };
+    let record = |argument, layout| AwbcRuntimeTypeShape::NominalRecord {
+        public_id: crate::awbc::schema::AwbcStringId(0),
+        layout,
+        arguments: vec![argument],
+        shape: crate::entry::RuntimeNominalRecordShape::Record,
+        fields: vec![
+            crate::awbc::schema::AwbcRecordField {
+                field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                name: Some(crate::awbc::schema::AwbcStringId(1)),
+                ty: argument,
+            },
+            crate::awbc::schema::AwbcRecordField {
+                field: RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap(),
+                name: Some(crate::awbc::schema::AwbcStringId(2)),
+                ty: AwbcTypeId(6),
+            },
+        ],
+    };
+    let declaration = crate::entry::RuntimeNominalDeclarationId::from_bytes([0x81; 32]);
+    let program = AwbcProgram {
+        strings: vec![
+            "partial.Generic".to_owned(),
+            "callback".to_owned(),
+            "flag".to_owned(),
+        ],
+        runtime_types: vec![
+            AwbcRuntimeType::new(id(1), AwbcRuntimeTypeShape::Unit),
+            AwbcRuntimeType::new(id(2), callback(EffectFormula::empty())),
+            AwbcRuntimeType::new(
+                id(3),
+                callback(EffectFormula::literal(
+                    crate::effect_row::EffectSet::default(),
+                    Some(scope.bound_effect(0, 0).unwrap()),
+                )),
+            )
+            .with_scope(scope.clone()),
+            AwbcRuntimeType::new(id(4), record(AwbcTypeId(1), [0x82; 32]))
+                .with_nominal_declaration(declaration),
+            AwbcRuntimeType::new(id(5), record(AwbcTypeId(2), [0x83; 32]))
+                .with_scope(scope)
+                .with_nominal_declaration(declaration),
+            AwbcRuntimeType::new(
+                id(6),
+                AwbcRuntimeTypeShape::Function {
+                    contract: RuntimeFunctionTypeContract::new(
+                        binder,
+                        EffectPredicate::unconstrained(),
+                        EffectFormula::empty(),
+                    ),
+                    parameters: vec![AwbcTypeId(2)],
+                    result: AwbcTypeId(0),
+                },
+            ),
+            AwbcRuntimeType::new(id(7), AwbcRuntimeTypeShape::Bool),
+        ],
+        ..AwbcProgram::default()
+    };
+    let empty = RuntimeFunctionEffectInstantiation {
+        context: id(6),
+        effects: Box::new([crate::effect_row::EffectSet::new()]),
+    };
+    let io = RuntimeFunctionEffectInstantiation {
+        context: id(6),
+        effects: Box::new([crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()]),
+    };
+    let storage = |semantic, layout, origin: Option<&RuntimeFunctionEffectInstantiation>| {
+        serde_json::from_value::<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>(serde_json::json!({
+            "Record": {
+                "header": RuntimePlaceRecordHeader::Nominal {
+                    nominal: crate::entry::RuntimeNominalTypeId::try_new("partial.Generic").unwrap(),
+                    semantic_identity: semantic, layout: crate::entry::TypeLayoutHash::from_bytes(layout),
+                    type_instantiation: origin.cloned().map(std::sync::Arc::new),
+                },
+                "fields": ["Vacant", {"Initialized": {"Bool": true}}]
+            }
+        })).unwrap()
+    };
+    let admit =
+        |candidate: &RuntimePlaceStorage<AwbcRuntimeValueSnapshot>, expected, destination| {
+            candidate.validate_program_type(
+                super::super::RuntimeProgramTypes::Awbc(&program)
+                    .value_type(expected)
+                    .unwrap(),
+                destination,
+                &mut ValueResourceAdmission::snapshot(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                    ValueAdmissionOrigin::InertSnapshot,
+                ),
+                AwbcRuntimeValueSnapshot::view,
+            )
+        };
+    let root = storage(id(4), [0x82; 32], None);
+    let scoped = storage(id(5), [0x83; 32], Some(&empty));
+    assert!(admit(&root, id(4), None).is_ok());
+    assert!(admit(&scoped, id(4), None).is_ok());
+    assert!(admit(&root, id(5), Some(&empty)).is_ok());
+    assert!(admit(&scoped, id(5), Some(&empty)).is_ok());
+    assert!(admit(&storage(id(5), [0x83; 32], Some(&io)), id(4), None).is_err());
+    assert!(admit(&storage(id(5), [0x83; 32], None), id(5), Some(&empty)).is_err());
+    assert!(admit(&storage(id(4), [0x83; 32], None), id(5), Some(&empty)).is_err());
+    let mut encoded = serde_json::to_value(scoped).unwrap();
+    encoded["Record"]["fields"][1] = serde_json::json!({"Initialized": {"Unit": null}});
+    let wrong_child = serde_json::from_value(encoded).unwrap();
+    assert!(
+        matches!(admit(&wrong_child, id(5), Some(&empty)), Err(super::super::RuntimeProgramTypeError::AwbcValue(error))
+        if matches!(&*error, crate::awbc::value_admission::AwbcValueAdmissionError::Value { source: crate::entry::RuntimeSchemaError::Type { path, .. }, .. } if path == "$[1]"))
+    );
 }
 
 #[test]
@@ -759,8 +922,9 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
             ),
         ),
     ]);
-    RuntimeFunctionEffectInstantiation::with_value_relation(
+    RuntimeFunctionEffectInstantiation::with_value_relation::<_, _, crate::entry::RuntimeSchemaError>(
         plan.as_ref(),
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
         Some(&binding),
         &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
         |context| {
@@ -1004,6 +1168,9 @@ fn shared_effect_bindings_reject_jointly_incompatible_callback_variance() {
             context: program.runtime_types[6].semantic_identity(),
             effects: Box::new([]),
         }
-        .is_valid(&program)
+        .is_valid_with_work(
+            &program,
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default())
+        )
     );
 }

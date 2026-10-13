@@ -2097,6 +2097,12 @@ fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
         RuntimeFunctionSiteDeclarationSeed,
     };
     let boolean = RuntimeSemanticTypeId::from_bytes([0xf8; 32]);
+    let fixture_need = |argument: &str| {
+        crate::tests::reusable_need_with_outcome(
+            argument,
+            crate::task::TaskOutcomeContract::program(boolean),
+        )
+    };
     let need = RuntimeSemanticTypeId::from_bytes([0xf9; 32]);
     let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([0xfa; 32]);
     let mut builder = RuntimePlanBuilder::new();
@@ -2168,11 +2174,11 @@ fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
         Some(RuntimeFunctionParameterPassing::Affine)
     );
     assert!(!function.scalar_eval_supported);
-    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.affine"));
+    let value = RuntimeValue::NeedHandle(fixture_need("need.executable.affine"));
     assert!(!value.ownership().permits_copy());
     let mut backend = VmRuntimePureCallBackend::default();
     assert!(
-        matches!(backend.call_values(function, vec![RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.sync-decline"))]), Err(RuntimeEvalError::UnsupportedPure { reason, .. }) if reason.contains("requires function-call control transfer"))
+        matches!(backend.call_values(function, vec![RuntimeValue::NeedHandle(fixture_need("need.executable.sync-decline"))]), Err(RuntimeEvalError::UnsupportedPure { reason, .. }) if reason.contains("requires function-call control transfer"))
     );
     let mut engine = crate::engine::Engine::for_function_invocation(function, vec![value]).unwrap();
     assert_eq!(
@@ -2203,7 +2209,7 @@ fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
     assert!(engine.take_function_result(site).unwrap().is_none());
     assert_eq!(
         result,
-        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.executable.affine"))
+        RuntimeValue::NeedHandle(fixture_need("need.executable.affine"))
     );
     assert!(!result.ownership().permits_copy());
     let mut scratch = VmPureFunctionScratch::default();

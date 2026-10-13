@@ -1666,9 +1666,7 @@ fn inert_expected_type_checks_field_ids_and_reuses_preflight_work() {
                 },
             )
             .unwrap_err();
-        assert!(
-            matches!(error, RuntimeProgramTypeError::SnapshotResource(error)
-            if matches!(*error, RuntimeSchemaError::BudgetExceeded { budget: "encoded_bytes" }))
-        );
+        assert!(matches!(error, RuntimeProgramTypeError::Resource(error)
+            if matches!(*error, RuntimeSchemaError::BudgetExceeded { budget: "encoded_bytes" })));
     }
 }

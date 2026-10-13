@@ -495,6 +495,12 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         RuntimePureProgramBindingSeed,
     };
     let boolean = RuntimeSemanticTypeId::from_bytes([84; 32]);
+    let fixture_need = |argument: &str| {
+        crate::tests::reusable_need_with_outcome(
+            argument,
+            crate::task::TaskOutcomeContract::program(boolean),
+        )
+    };
     let need = RuntimeSemanticTypeId::from_bytes([85; 32]);
     let program = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([86; 32]);
     let mut builder = RuntimePlanBuilder::new();
@@ -546,7 +552,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
         .unwrap();
     let plan = Arc::new(builder.finish().unwrap());
-    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"));
+    let value = RuntimeValue::NeedHandle(fixture_need("need.owned-program"));
     assert!(!value.ownership().permits_copy());
     let mut engine = Engine::for_program_invocation(plan, program, vec![value]).unwrap();
     let output = engine.step(
@@ -559,7 +565,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         engine.take_program_result().unwrap(),
         Some((
             program,
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"))
+            RuntimeValue::NeedHandle(fixture_need("need.owned-program"))
         ))
     );
     assert_eq!(engine.take_program_result().unwrap(), None);
@@ -568,7 +574,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         restored.take_program_result().unwrap(),
         Some((
             program,
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.owned-program"))
+            RuntimeValue::NeedHandle(fixture_need("need.owned-program"))
         ))
     );
     assert_eq!(restored.take_program_result().unwrap(), None);

@@ -13277,3 +13277,173 @@ or suppressing it would not improve ownership. Canonical structure reports no
 blocking violation. `frame-binding-r2.owner-warning-review.json` retains exact
 metrics, warning review and hash checks. The six-path cut is ready for explicit
 staging/diff review and normal publication with full53 still unavailable.
+
+That six-path cut is now published and verified at
+`e2ef03df65ebc838d8ade012df026de647c87ef6`, parent
+`d5f10026e4f266ec1fa2dcb2f743e57d211dc8b8`, tree
+`82a3e691e4ba4b44ff87348ceb554d0bf1b3ed52`. Normal push succeeded; fresh fetch
+and `ls-remote` observe that exact main. Every local/published/working blob
+matches, the index is empty, all 3,620 frozen inputs and held14 still match.
+The exact reviewed staged diff SHA256 is
+`4110b0f5c8b1bd344f4c1c8148d94258562aac29aee4d54782ac7e82be35ffce`;
+`frame-binding.publication-prepared.json` and
+`frame-binding.publication-verified.json` retain those identities and the mixed-
+tree/reused-test/full53 limitations. This publication line is the only new
+unstaged task-owned change afterward; held14 and historical untracked files
+remain preserved. All focused/gate sessions are terminal. The goal remains
+ACTIVE, with the unchanged global OS proposal awaiting actual user approval.
+
+Next implementation remains complete/partial place admission before Native
+env and AWBC slot construction. Reuse the existing original-table value
+relation and one shared work allowance. Its destination scope must be supplied
+from the original frame/function/declaration, independently of retained nominal
+provenance. The current complete-value relation still hardcodes live lease
+admission; the place walk supports only live values. Generalize those existing
+owners to borrowed inert views, retain structured resource/type failures and
+nominal header/field correlation, and migrate both consumers before publishing
+that next change. Do not fabricate Unit for vacant children, close a type row
+from source text, create a separate field graph, or treat header admission alone
+as full frame/session resource or expected-role acceptance. Command finite
+payload schemas and program-owned expected types are legitimate distinct roles;
+the full owner model must cover their consumers without a fake semantic ID.
+
+### 2026-10-13 — borrowed place admission (in progress)
+
+Inspected main `e2ef03df65ebc838d8ade012df026de647c87ef6`; held14 and historical
+untracked paths remain present and preserved. The index is empty. The current
+cut generalizes the existing place relation to borrowed live/inert views, using
+the original Plan/AWBC type authority and the destination frame/declaration
+binding. Its initialized leaves use the same existing value grammar; vacant
+places remain vacant. Partial nominal headers correlate the actual original
+row/layout/field inventory and independent source effect solution before using
+the destination's original field types for descendants. The old live-only
+place walk and unused authority value-matches projection are removed. Native
+scope carriers share their existing generic owner instead of a duplicate
+rollback-scope structure.
+
+One resource admission owns accumulated logical nodes, encoded complete-value
+bytes and the existing shared relation work across each saved environment or
+AWBC register inventory. Snapshot resource encoding applies to live capture as
+well as inert restore; ordinary live place checks select their existing live
+encoding policy. Partial names, counts, depth and binding metadata are bounded
+before copies. This does not establish the full partial/frame wire byte grammar,
+all continuation/suspension/capture expected roles, session-wide resources,
+Need/task14, View/scheduler/C1-C6, parity or final acceptance. Those remain open.
+
+Initial compile diagnostics (generic Default bound, immutable work handle and
+three ambiguous test error types) were corrected; the subsequent Core all-
+target/all-feature check passed in 34.99s for that intermediate source. New
+regressions cover cumulative exact/one-over quotas, partial header provenance,
+different original nominal rows and source effects, and type-before-callable
+construction for both Native env and AWBC slots. Their final-source execution
+is pending. No Cargo/lock/config/jobs/profiles/feature/workload/assertion/capture
+or build-artifact change was made. Global OS approval remains pending and no
+OS setting or restart was applied; full53 remains unexecuted under OS 1455.
+
+`place-admission-r1` froze 3,620 inputs and held14 with no drift. Its Core
+inventory build failed on four new-test compile errors: a checkpoint was used
+instead of its inert state, and a nested match guard attempted to move an error
+path. No test executed. Those fixture/type errors are corrected without
+changing assertions. Header-bound resource failures now retain the structured
+snapshot resource error instead of becoming an invalid-frame message. r1
+receipts are preserved and r2 must validate these final bytes.
+
+The r2 inventory build also stopped before execution: the checkpoint's inert
+state is boxed, so the replacement test needed an owned state rather than the
+Box. This remaining test error is corrected; no assertion or production
+behavior changed. Retain r2 as failed build evidence and use r3 for execution.
+
+`place-admission-r3` executes all 1,220 Core library tests: PASS 1,216 / FAIL 4.
+All four new regressions pass. The failures are caused by activating stricter
+admission at capture: the await observer fixture's occupied Need uses a
+standalone String outcome in a Need<Unit> register; two affine formal/result
+fixtures similarly use String outcomes in original Need<Bool> declarations;
+the moved-local rollback fixture supplies an empty AWBC owner for a native
+environment. These were successful tests before this cut and are not labeled
+pre-existing failures. Repair their actual original contracts through the
+existing program-outcome constructor and admitted Plan declarations; preserve
+all ownership, progress, scope, rollback and once-only assertions. Resource
+error paths for partial descendants are also prefixed through the existing
+structured schema error owner. The actual Compiler owner run has not executed
+because the preceding Core suite failed. r3 logs and inventory remain retained.
+
+The r4 inventory build stopped on a new partial-work assertion's nested match
+guard moving its path. Borrow that path and keep the exact 5/4 quota and `$[0]`
+assertion. The four fixture repairs have not yet executed; r5 will establish
+their result. r4's failed build receipt remains distinct from r3's executed run.
+
+`place-admission-r5` now passes all 1,220 Core library tests (run ID
+`0cded63d-00d7-4181-a870-6ab16e096608`, 0 skipped) and all nine actual Compiler
+continuation/Witness tests (`58f7a7f0-0066-4947-b8c4-ef2433d3ec19`, 0 skipped).
+All six gates also pass: workspace all-target/all-feature check and Clippy,
+Core/LSP doctests, canonical structural gate, default Core/player-web Wasm and
+fmt. These results cover the r5 frozen bytes; they do not establish full53 or
+final goal acceptance. Failed r1-r4 evidence is retained without relabeling it.
+
+Final review removes a semantic round trip from known frame/local expected
+types. One borrowed `RuntimeProgramValueType` carries the original Plan/AWBC
+inventory and its original local type ID. Both live and inert place consumers
+use this owner; semantic-role producers resolve once through the existing exact
+inventory lookup. The AWBC verifier already rejects duplicate semantic rows;
+the new regression also establishes that a malformed unsealed inventory cannot
+redirect a known local ID through its first semantic match. No type graph,
+owner token, finite schema, source reconstruction or fallback is fabricated.
+The r6 source freeze and validation must cover this final change before staging
+and publication. The index remains empty and held14 remains preserved.
+
+The r6 frozen implementation passes Core 1,221 tests
+(`e93d3d62-e468-4b54-b0db-5ae6850d2c41`) and Compiler nine tests
+(`3f235e39-4c14-4bfb-acfb-75480efa323d`), each with zero skips, plus all six
+gates. Changed-owner warning review finds the old default-quota `is_valid`
+method is now used only by one test after every production header consumer
+migrated to shared work. Delete that obsolete method and move its existing test
+to the actual shared-work API. Also make the new AWBC error matches exhaustive
+and initialize the new nominal test's original inventory directly. Assertions,
+fixtures' types and budgets are unchanged. r7 must cover these final bytes;
+r6 evidence remains valid for its original source rather than being relabeled.
+
+Final r7 frozen bytes pass all 1,221 Core library tests
+(`342e5b46-6ac3-4b05-ad8e-51a69af0979a`) and all nine actual Compiler tests
+(`096fd3dd-8c35-40e5-8856-1763f3211b88`), with zero skips. All six gates pass.
+`place-admission-r7.source-freeze.json` retains 3,620 inputs and held14;
+the source/held hash review has no drift. The only subsequent source edit is
+this implementation evidence paragraph. Normal Cargo cache reuse was used;
+no jobs, profile, feature, test selection, budget or assertion was reduced.
+Full53 remains unavailable and unexecuted for this source, and the earlier
+87-failure full run remains historical FAIL evidence. No OS setting was applied.
+
+Owner measurements on dirty `e2ef03df65ebc838d8ade012df026de647c87ef6`:
+fiber.rs 287,199 bytes / 7,651 LOC (base 7,519, growth 132; embedded tests
+1,121); function_contract.rs 45,019 / 1,244 (base 1,124, growth 120; no embedded
+tests); value_encoding.rs 54,681 / 1,475 (base 1,345, growth 130; none);
+env.rs 64,268 / 1,670 (base 1,564, growth 106; embedded 860). The new place
+relation stays with its existing private original type/effect authority and
+single value visitor; splitting it would widen private APIs without separating
+state or dependencies. The resource owner retains the same canonical grammar,
+budget and sink. Fiber retains its original function/layout/frame lifecycle,
+and env owns one generic lexical scope instead of a duplicate rollback carrier.
+Existing value.rs (167,683 / 4,605, growth 10) and engine.rs (188,025 / 4,725,
+growth six) cohesion dispositions apply to their carrier/work-argument changes.
+The exact remaining test/production measurements and six owner dispositions
+are retained in r7/r6 receipts. Cargo edges, layer direction, I/O, unsafe,
+facade, feature, wire shape and contract markers are unchanged. The new private
+borrowed expected-row enum owns no second table, schema or lease.
+
+Changed-owner Clippy review observes 267 baseline warnings and 269 current
+warnings after deduplicating primary source locations. The new unused path and
+simple new style warnings are repaired; remaining changed line-count warnings
+follow the same frame/nominal/capture/rollback/affine fixture responsibility and
+are not suppressed or split arbitrarily. Canonical structure reports no blocking
+violation. `place-admission-r7.owner-warning-review.json` retains the complete
+comparison, measured owners, dispositions and hash checks.
+
+The 18-path place-admission cut is ready for explicit staged-diff review and
+normal publication. The goal remains ACTIVE: continuation/suspension/cleanup/
+defer/capture expected roles and whole-frame/session resources, Need/task14,
+View/scheduler/C1-C6, full53/Tier2 and Native/Web parity are still incomplete.
+Next use the callable pending group's actual state/input projection as the
+owner for both Native rollback and AWBC inert continuations. Its current two
+inert carriers and postconstruction default-packet check must converge on one
+owning snapshot validation before any input construction; reuse the borrowed
+exact expected row and aggregate value admission rather than fabricating a
+callable, Unit holes, a source schema or an executable owner.

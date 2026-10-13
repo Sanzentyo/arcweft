@@ -40,6 +40,41 @@ pub enum RuntimeProgramTypes<'a> {
     Awbc(&'a AwbcProgram),
 }
 
+/// An expected value row borrowed from its original executable inventory.
+/// Frame and local owners retain their exact IDs; semantic roles resolve once.
+#[derive(Clone, Copy)]
+pub(crate) enum RuntimeProgramValueType<'a> {
+    Plan {
+        program: &'a RuntimePlanInventory,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+    },
+    Awbc {
+        program: &'a AwbcProgram,
+        ty: AwbcTypeId,
+    },
+}
+
+impl<'a> RuntimeProgramTypes<'a> {
+    pub(crate) fn value_type(
+        self,
+        semantic_type: RuntimeSemanticTypeId,
+    ) -> Result<RuntimeProgramValueType<'a>, RuntimeProgramTypeError> {
+        Ok(match self {
+            Self::Plan(program) => RuntimeProgramValueType::Plan {
+                program,
+                ty: program
+                    .type_table()
+                    .id_for_semantic(semantic_type)
+                    .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?,
+            },
+            Self::Awbc(program) => RuntimeProgramValueType::Awbc {
+                program,
+                ty: self.awbc_type(semantic_type)?,
+            },
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeProgramTypeError {
     #[error("active program has no semantic type {semantic_type:?}")]
@@ -88,8 +123,35 @@ pub enum RuntimeProgramTypeError {
     PlanValue(Box<RuntimePlanValueAdmissionError>),
     #[error(transparent)]
     AwbcValue(Box<AwbcValueAdmissionError>),
-    #[error("inert snapshot resource admission failed: {0}")]
-    SnapshotResource(Box<crate::entry::RuntimeSchemaError>),
+    #[error("program value resource admission failed: {0}")]
+    Resource(Box<crate::entry::RuntimeSchemaError>),
+}
+
+impl From<crate::entry::RuntimeSchemaError> for RuntimeProgramTypeError {
+    fn from(error: crate::entry::RuntimeSchemaError) -> Self {
+        Self::Resource(Box::new(error))
+    }
+}
+
+impl RuntimeProgramTypeError {
+    pub(crate) fn within_value_path(mut self, parent: &str) -> Self {
+        let source = match &mut self {
+            Self::Resource(source) => Some(source.as_mut()),
+            Self::PlanValue(error) => match error.as_mut() {
+                RuntimePlanValueAdmissionError::Value { source, .. } => Some(source),
+                _ => None,
+            },
+            Self::AwbcValue(error) => match error.as_mut() {
+                AwbcValueAdmissionError::Value { source, .. } => Some(source),
+                AwbcValueAdmissionError::UnknownType { .. } => None,
+            },
+            _ => None,
+        };
+        if let Some(source) = source {
+            *source = source.clone().within_value_path(parent);
+        }
+        self
+    }
 }
 
 impl From<RuntimePlanTypeResolutionError> for RuntimeProgramTypeError {
@@ -140,7 +202,7 @@ impl RuntimeProgramTypes<'_> {
             limits,
             None,
         )
-        .map_err(|source| RuntimeProgramTypeError::SnapshotResource(Box::new(source)))?;
+        .map_err(RuntimeProgramTypeError::from)?;
         self.validate_inert_snapshot_view(semantic_type, value.view(), &work)
     }
 
@@ -150,25 +212,21 @@ impl RuntimeProgramTypes<'_> {
         value: crate::value::RuntimeValueView<'_>,
         work: &crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), RuntimeProgramTypeError> {
-        match self {
-            Self::Plan(plan) => {
-                let ty = plan
-                    .type_table()
-                    .id_for_semantic(semantic_type)
-                    .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?;
-                Ok(plan.validate_snapshot_value_view(
+        match self.value_type(semantic_type)? {
+            RuntimeProgramValueType::Plan { program, ty } => Ok(program
+                .validate_snapshot_value_view(
                     ty,
                     value,
                     work,
                     crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-                )?)
-            }
-            Self::Awbc(program) => Ok(program.validate_snapshot_value_view(
-                self.awbc_type(semantic_type)?,
-                value,
-                work,
-                crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-            )?),
+                )?),
+            RuntimeProgramValueType::Awbc { program, ty } => Ok(program
+                .validate_snapshot_value_view(
+                    ty,
+                    value,
+                    work,
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+                )?),
         }
     }
 

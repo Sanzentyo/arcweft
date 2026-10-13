@@ -13,7 +13,7 @@ use crate::task::RuntimeProgramOwner;
 /// are omitted because they contain no bindings and carry no semantics.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RuntimeEnvRollbackImage {
-    scopes: Vec<RuntimeScopeRollbackImage>,
+    scopes: Vec<RuntimeScope<super::AwbcRuntimeValueSnapshot>>,
     assignment_discards: crate::line_task::RuntimeHandleDropAuthorization,
 }
 
@@ -27,13 +27,6 @@ impl RuntimePlaceWriteError {
     pub(crate) fn into_parts(self) -> (RuntimeEvalError, RuntimeValue) {
         (self.cause, *self.value)
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct RuntimeScopeRollbackImage {
-    identity: RuntimeScopeIdentity,
-    function_context: super::RuntimeScopeTypeContext,
-    slots: Vec<RuntimeLocalSlot<super::AwbcRuntimeValueSnapshot>>,
 }
 
 impl Default for RuntimeEnv {
@@ -67,13 +60,19 @@ impl RuntimeEnv {
         &self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeEnvRollbackImage, String> {
+        Self::validate_scope_places(
+            &self.scopes,
+            owner,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            RuntimeValue::view,
+        )?;
         Ok(RuntimeEnvRollbackImage {
             assignment_discards: self.assignment_discards.clone(),
             scopes: self
                 .scopes
                 .iter()
                 .map(|scope| {
-                    Ok(RuntimeScopeRollbackImage {
+                    Ok(RuntimeScope {
                         identity: scope.identity.clone(),
                         function_context: scope.function_context.clone(),
                         slots: scope
@@ -95,24 +94,17 @@ impl RuntimeEnv {
         image: RuntimeEnvRollbackImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        Self::validate_scope_places(
+            &image.scopes,
+            owner,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+            super::AwbcRuntimeValueSnapshot::view,
+        )?;
         let env = Self {
             scopes: image
                 .scopes
                 .into_iter()
                 .map(|scope| {
-                    if let super::RuntimeScopeTypeContext::Function {
-                        site,
-                        instantiation,
-                    } = &scope.function_context
-                    {
-                        let RuntimeProgramOwner::Plan(plan) = owner else {
-                            return Err(
-                                "native function scope has a foreign program kind".to_owned()
-                            );
-                        };
-                        plan.validate_function_instantiation(*site, instantiation.as_deref())
-                            .map_err(|error| error.to_string())?;
-                    }
                     Ok(RuntimeScope {
                         identity: scope.identity,
                         function_context: scope.function_context,
@@ -131,58 +123,109 @@ impl RuntimeEnv {
             spare_scopes: Vec::new(),
             assignment_discards: image.assignment_discards,
         };
-        if let RuntimeProgramOwner::Plan(plan) = owner {
-            let mut instantiation = None;
-            for scope in &env.scopes {
-                if let super::RuntimeScopeTypeContext::Function {
-                    instantiation: binding,
-                    ..
-                } = &scope.function_context
-                {
-                    instantiation = binding.as_deref();
+        Ok(env)
+    }
+
+    fn validate_scope_places<'value, T>(
+        scopes: &'value [RuntimeScope<T>],
+        owner: &RuntimeProgramOwner,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+        view: impl Fn(&'value T) -> super::RuntimeValueView<'value>,
+    ) -> Result<(), String> {
+        let RuntimeProgramOwner::Plan(plan) = owner else {
+            return Err("native environment requires its original plan".to_owned());
+        };
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            origin,
+        );
+        resources
+            .work()
+            .collection(scopes.len())
+            .map_err(|error| error.to_string())?;
+        // All function headers precede the complete declaration/place inventory.
+        for scope in scopes {
+            if let super::RuntimeScopeTypeContext::Function {
+                site,
+                instantiation,
+            } = &scope.function_context
+            {
+                plan.validate_function_instantiation(
+                    *site,
+                    instantiation.as_deref(),
+                    &resources.work(),
+                )
+                .map_err(|error| {
+                    resources
+                        .work()
+                        .failure()
+                        .map_or_else(|| error.to_string(), |error| error.to_string())
+                })?;
+            }
+        }
+        let mut instantiation = None;
+        for scope in scopes {
+            resources
+                .work()
+                .charge(0)
+                .map_err(|error| error.to_string())?;
+            resources
+                .work()
+                .collection(scope.slots.len())
+                .map_err(|error| error.to_string())?;
+            if let super::RuntimeScopeTypeContext::Function {
+                instantiation: binding,
+                ..
+            } = &scope.function_context
+            {
+                instantiation = binding.as_deref();
+            }
+            let mut declarations = std::collections::BTreeSet::new();
+            for slot in &scope.slots {
+                if !declarations.insert(slot.local()) {
+                    return Err(format!("rollback scope repeats local {}", slot.local()));
                 }
-                let mut declarations = std::collections::BTreeSet::new();
-                for slot in &scope.slots {
-                    if !declarations.insert(slot.local()) {
-                        return Err(format!("rollback scope repeats local {}", slot.local()));
-                    }
-                    let declaration = plan
-                        .local_declarations()
-                        .get(slot.local())
-                        .ok_or_else(|| format!("rollback has unknown local {}", slot.local()))?;
-                    if let Some(context) = declaration.context() {
-                        let expected = plan
-                            .type_table()
-                            .get(context)
-                            .ok_or_else(|| {
-                                format!("rollback local {} has unknown context", slot.local())
-                            })?
-                            .semantic_identity();
-                        if instantiation.is_none_or(|binding| binding.context() != expected) {
-                            return Err(format!(
-                                "rollback local {} has a foreign function context",
-                                slot.local()
-                            ));
-                        }
-                    }
+                let declaration = plan
+                    .local_declarations()
+                    .get(slot.local())
+                    .ok_or_else(|| format!("rollback has unknown local {}", slot.local()))?;
+                if let Some(context) = declaration.context() {
                     let expected = plan
                         .type_table()
-                        .get(declaration.ty())
-                        .ok_or_else(|| format!("rollback local {} has unknown type", slot.local()))?
+                        .get(context)
+                        .ok_or_else(|| {
+                            format!("rollback local {} has unknown context", slot.local())
+                        })?
                         .semantic_identity();
-                    if !slot
-                        .storage()
-                        .matches_program_type(owner.types(), expected, instantiation)
-                    {
+                    if instantiation.is_none_or(|binding| binding.context() != expected) {
                         return Err(format!(
-                            "rollback local {} has invalid typed place storage",
+                            "rollback local {} has a foreign function context",
                             slot.local()
                         ));
                     }
                 }
+                plan.type_table()
+                    .get(declaration.ty())
+                    .ok_or_else(|| format!("rollback local {} has unknown type", slot.local()))?;
+                slot.storage()
+                    .validate_program_type(
+                        crate::program_types::RuntimeProgramValueType::Plan {
+                            program: plan,
+                            ty: declaration.ty(),
+                        },
+                        instantiation,
+                        &mut resources,
+                        &view,
+                    )
+                    .map_err(|error| {
+                        format!(
+                            "rollback local {} has invalid typed place storage: {error}",
+                            slot.local()
+                        )
+                    })?;
             }
         }
-        Ok(env)
+        Ok(())
     }
 
     pub(crate) fn try_capture_unrestricted(
@@ -917,6 +960,25 @@ mod tests {
         let restored = RuntimeEnv::from_rollback_image(image.clone(), &owner).unwrap();
         assert_eq!(restored.function_instantiation(), Some(binding.as_ref()));
         assert_eq!(restored.get(declaration), Some(&value));
+        let mut invalid_callable = image.clone();
+        invalid_callable.scopes[2].slots[0].value =
+            super::super::AwbcRuntimeValueSnapshot::Tuple(vec![
+                super::super::AwbcRuntimeValueSnapshot::Callable(
+                    super::super::AwbcRuntimeCallableSnapshot {
+                        state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(999)
+                            .unwrap(),
+                        retained: vec![],
+                    },
+                ),
+            ])
+            .into();
+        let error = RuntimeEnv::from_rollback_image(invalid_callable, &owner).unwrap_err();
+        assert!(error.contains("invalid typed place storage"), "{error}");
+        assert!(error.contains("$[0]"), "{error}");
+        assert_eq!(env.inert_rollback_image(&owner).unwrap(), image);
+        let mut invalid_capture = env.clone();
+        invalid_capture.set(declaration, RuntimeValue::Bool(true));
+        assert!(invalid_capture.inert_rollback_image(&owner).is_err());
         let mut wrong_value = image.clone();
         wrong_value.scopes[2].slots[0].value =
             super::super::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
@@ -1274,14 +1336,58 @@ mod tests {
 
     #[test]
     fn moved_declaration_reinitializes_in_its_original_scope_after_rollback() {
-        let outer = local(1);
-        let inner = local(2);
+        use crate::plan::{
+            RuntimeLocalDeclarationSeed, RuntimePlanBuilder, RuntimePlanTypeProjection,
+            RuntimePlanTypeSeed,
+        };
+        let boolean = crate::pattern::RuntimeSemanticTypeId::from_bytes([0x77; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [
+                    RuntimeLocalDeclarationSeed::new(
+                        manual_local_source("arcweft-core.fixture.value.env.moved.outer"),
+                        boolean,
+                    ),
+                    RuntimeLocalDeclarationSeed::new(
+                        manual_local_source("arcweft-core.fixture.value.env.moved.inner"),
+                        boolean,
+                    ),
+                ],
+            )
+            .unwrap();
+        let locals = admitted
+            .local_ids()
+            .iter()
+            .map(|local| {
+                builder
+                    .lower_pattern_seed_for_test(crate::plan::RuntimePatternSeed::new(
+                        boolean,
+                        crate::plan::RuntimePatternSeedKind::Bind {
+                            mutable: true,
+                            local: local.clone(),
+                        },
+                    ))
+                    .unwrap()
+                    .binding_declarations()
+                    .next()
+                    .unwrap()
+                    .local()
+            })
+            .collect::<Vec<_>>();
+        let outer = locals[0];
+        let inner = locals[1];
+        builder
+            .declare_test_input_locals(admitted.local_ids())
+            .unwrap();
+        let owner = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
         let mut env = RuntimeEnv::default();
         env.set(outer, RuntimeValue::Bool(false));
         assert_eq!(env.take(outer), Some(RuntimeValue::Bool(false)));
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(
-            crate::awbc::schema::AwbcProgram::default(),
-        ));
         let image = env.inert_rollback_image(&owner).unwrap();
         assert_eq!(
             image.scopes[0].slots,

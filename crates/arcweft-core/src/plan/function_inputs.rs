@@ -26,6 +26,7 @@ impl RuntimePlan {
         &self,
         site: RuntimeFunctionSiteId,
         binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        work: &crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), RuntimeFunctionApplyError> {
         let declaration = self
             .function_sites()
@@ -38,7 +39,7 @@ impl RuntimePlan {
         match (expected, binding) {
             (None, None) => Ok(()),
             (Some(expected), Some(binding))
-                if expected == binding.context() && binding.is_valid(self) =>
+                if expected == binding.context() && binding.is_valid_with_work(self, work) =>
             {
                 Ok(())
             }

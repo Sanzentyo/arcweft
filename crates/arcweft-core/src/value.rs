@@ -2553,11 +2553,21 @@ pub struct RuntimeEnv {
     assignment_discards: crate::line_task::RuntimeHandleDropAuthorization,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-struct RuntimeScope {
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeScope<T = RuntimeValue> {
     identity: RuntimeScopeIdentity,
     function_context: RuntimeScopeTypeContext,
-    slots: Vec<RuntimeLocalSlot>,
+    slots: Vec<RuntimeLocalSlot<T>>,
+}
+
+impl<T> Default for RuntimeScope<T> {
+    fn default() -> Self {
+        Self {
+            identity: RuntimeScopeIdentity::default(),
+            function_context: RuntimeScopeTypeContext::default(),
+            slots: Vec::new(),
+        }
+    }
 }
 
 /// Lexical inheritance or the authenticated type environment of a function.

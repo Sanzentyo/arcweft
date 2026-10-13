@@ -899,8 +899,14 @@ impl FlowControlStackEntry {
                 let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
                     return Err("native function frame has a foreign program kind".to_owned());
                 };
-                plan.validate_function_instantiation(site, type_instantiation.as_deref())
-                    .map_err(|error| error.to_string())?;
+                plan.validate_function_instantiation(
+                    site,
+                    type_instantiation.as_deref(),
+                    &crate::entry::schema::value_budget::ValidationWork::new(
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    ),
+                )
+                .map_err(|error| error.to_string())?;
                 FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
                     site,
                     type_instantiation,

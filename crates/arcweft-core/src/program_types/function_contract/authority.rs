@@ -15,6 +15,9 @@ use crate::{
 /// Typed relation context for the existing value visitor. It does not own rows.
 pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
     fn validation_work(&self) -> ValidationWork;
+    fn admission_origin(&self) -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live
+    }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool;
     fn callable(&mut self, expected: T, actual: T) -> bool;
     fn nominal(
@@ -46,6 +49,9 @@ impl<T: Copy + Eq> RuntimeValueTypeContext<T> for () {
 impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for &mut C {
     fn validation_work(&self) -> ValidationWork {
         (**self).validation_work()
+    }
+    fn admission_origin(&self) -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
+        (**self).admission_origin()
     }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
         (**self).permits_scope(scope)
@@ -106,18 +112,16 @@ pub(crate) trait FunctionTypeAuthority {
     ) -> Option<Self::Type>;
     fn is_unit(&self, ty: Self::Type) -> bool;
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool;
-    fn value_matches(
-        &self,
+    fn value_error(
         expected: Self::Type,
-        value: RuntimeValueView<'_>,
-        depth: usize,
-    ) -> bool;
+        source: crate::entry::RuntimeSchemaError,
+    ) -> super::super::RuntimeProgramTypeError;
     fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
         &self,
         expected: Self::Type,
         value: RuntimeValueView<'_>,
         context: &mut C,
-    ) -> bool;
+    ) -> Result<(), super::super::RuntimeProgramTypeError>;
 }
 
 impl FunctionTypeAuthority for AwbcProgram {
@@ -288,16 +292,25 @@ impl FunctionTypeAuthority for AwbcProgram {
                     layout,
                     ..
                 },
-                AwbcRuntimeTypeShape::NominalRecord {
+                AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+            ) => {
+                let actual = self.semantic_type_id(*semantic_identity)?;
+                let AwbcRuntimeTypeShape::NominalRecord {
                     public_id,
-                    layout: expected_layout,
-                    fields,
+                    layout: actual_layout,
+                    fields: actual_fields,
                     ..
-                },
-            ) if self.strings.get(public_id.index())?.as_str() == nominal.as_str()
-                && *semantic_identity == row.semantic_identity()
-                && *layout == crate::entry::TypeLayoutHash::from_bytes(*expected_layout) =>
-            {
+                } = self.runtime_types.get(actual.index())?.shape()
+                else {
+                    return None;
+                };
+                if self.strings.get(public_id.index())?.as_str() != nominal.as_str()
+                    || layout.as_bytes() != actual_layout
+                    || actual_fields.len() != count
+                    || actual_fields.get(ordinal)?.field.zero_based() as usize != ordinal
+                {
+                    return None;
+                }
                 fields
             }
             (Header::Structural { names }, AwbcRuntimeTypeShape::Record { fields, .. })
@@ -318,22 +331,20 @@ impl FunctionTypeAuthority for AwbcProgram {
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
         self.types_compatible(expected, actual)
     }
-    fn value_matches(
-        &self,
-        expected: Self::Type,
-        value: RuntimeValueView<'_>,
-        depth: usize,
-    ) -> bool {
-        crate::awbc::vm::runtime_value_view_matches_type(self, value, expected, depth)
+    fn value_error(
+        ty: Self::Type,
+        source: crate::entry::RuntimeSchemaError,
+    ) -> super::super::RuntimeProgramTypeError {
+        crate::awbc::value_admission::AwbcValueAdmissionError::Value { ty, source }.into()
     }
     fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
         &self,
         expected: Self::Type,
         value: RuntimeValueView<'_>,
         context: &mut C,
-    ) -> bool {
+    ) -> Result<(), super::super::RuntimeProgramTypeError> {
         self.validate_value_relation(expected, value, context)
-            .is_ok()
+            .map_err(Into::into)
     }
 }
 
@@ -390,20 +401,18 @@ impl FunctionTypeAuthority for RuntimePlan {
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
         self.inventory.compatible(expected, actual)
     }
-    fn value_matches(
-        &self,
+    fn value_error(
         expected: Self::Type,
-        value: RuntimeValueView<'_>,
-        depth: usize,
-    ) -> bool {
-        self.inventory.value_matches(expected, value, depth)
+        source: crate::entry::RuntimeSchemaError,
+    ) -> super::super::RuntimeProgramTypeError {
+        <crate::plan::RuntimePlanInventory as FunctionTypeAuthority>::value_error(expected, source)
     }
     fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
         &self,
         expected: Self::Type,
         value: RuntimeValueView<'_>,
         context: &mut C,
-    ) -> bool {
+    ) -> Result<(), super::super::RuntimeProgramTypeError> {
         self.inventory.value_relation(expected, value, context)
     }
 }
@@ -584,15 +593,25 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
                     layout,
                     ..
                 },
-                RuntimePlanTypeProjection::Nominal {
-                    nominal: expected_nominal,
-                    layout: expected_layout,
+                RuntimePlanTypeProjection::Nominal { .. },
+            ) => {
+                let actual = self.type_table().id_for_semantic(*semantic_identity)?;
+                let RuntimePlanTypeProjection::Nominal {
+                    nominal: actual_nominal,
+                    layout: actual_layout,
                     ..
-                },
-            ) if nominal == expected_nominal
-                && *semantic_identity == row.semantic_identity()
-                && layout == expected_layout =>
-            {
+                } = self.type_table().get(actual)?.projection()
+                else {
+                    return None;
+                };
+                let actual_fields = self.nominal_record_domains().get(actual)?.fields();
+                if nominal != actual_nominal
+                    || layout != actual_layout
+                    || actual_fields.len() != count
+                    || actual_fields.get(ordinal)?.field().zero_based() as usize != ordinal
+                {
+                    return None;
+                }
                 let fields = self.nominal_record_domains().get(ty)?.fields();
                 let field = fields.get(ordinal)?;
                 (fields.len() == count && field.field().zero_based() as usize == ordinal)
@@ -611,22 +630,20 @@ impl FunctionTypeAuthority for crate::plan::RuntimePlanInventory {
     fn compatible(&self, expected: Self::Type, actual: Self::Type) -> bool {
         expected == actual
     }
-    fn value_matches(&self, expected: Self::Type, value: RuntimeValueView<'_>, _: usize) -> bool {
-        self.validate_live_value_view(
-            expected,
-            value,
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        )
-        .is_ok()
+    fn value_error(
+        ty: Self::Type,
+        source: crate::entry::RuntimeSchemaError,
+    ) -> super::super::RuntimeProgramTypeError {
+        crate::plan::RuntimePlanValueAdmissionError::Value { ty, source }.into()
     }
     fn value_relation<C: RuntimeValueTypeContext<Self::Type>>(
         &self,
         expected: Self::Type,
         value: RuntimeValueView<'_>,
         context: &mut C,
-    ) -> bool {
+    ) -> Result<(), super::super::RuntimeProgramTypeError> {
         self.validate_value_relation(expected, value, context)
-            .is_ok()
+            .map_err(Into::into)
     }
 }
 
