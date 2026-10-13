@@ -1,160 +1,17 @@
 //! Flow-evaluated formatter attempt state and continuation handling.
 
+mod state;
+pub use state::{FiberFormatAttemptState, FiberFormatState};
+pub(super) use state::{FormatAttempt, FormatOperandProgress, FormatStaging};
+
 use super::{
-    AwbcBlockId, AwbcFunctionId, AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcSaveResult,
-    FiberCursor, FiberFormatState, FiberFrame, FiberState, FiberStateError, FiberStatus,
-    RuntimeFormatContext, RuntimeProgramOwner, RuntimeValue, instruction_at_site,
-    validate_format_state, validate_return_point, validate_runtime_value_at,
+    AwbcBlockId, AwbcFunctionId, AwbcInstruction, AwbcProgram, AwbcRegisterId, FiberCursor,
+    FiberFrame, FiberState, FiberStateError, FiberStatus, RuntimeFormatContext, RuntimeValue,
+    instruction_at_site, validate_format_state, validate_return_point,
 };
 use crate::awbc::schema::AwbcFormatAttemptOperand;
 use crate::runtime_id::RuntimeFormatAttemptId;
-use crate::value::AwbcRuntimeValueSnapshot;
 use crate::value::RuntimeFmtParameterId;
-use serde::{Deserialize, Serialize};
-
-mod optional_runtime_fmt_parameter_id {
-    use crate::value::RuntimeFmtParameterId;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(
-        value: &Option<RuntimeFmtParameterId>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let encoded = value
-            .map(|parameter| u8::try_from(parameter.index()).map_err(serde::ser::Error::custom))
-            .transpose()?;
-        encoded.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<RuntimeFmtParameterId>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<u8>::deserialize(deserializer)?
-            .map(|encoded| {
-                RuntimeFmtParameterId::from_index(usize::from(encoded)).ok_or_else(|| {
-                    serde::de::Error::custom(format_args!("unknown fmt parameter {encoded}"))
-                })
-            })
-            .transpose()
-    }
-}
-
-/// Typed in-progress transaction for Flow-evaluated formatter operands.
-///
-/// This stays on the owning frame while nested ProjectCall frames execute.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberFormatAttemptState {
-    attempt: RuntimeFormatAttemptId,
-    site: FiberCursor,
-    format_context: RuntimeFormatContext,
-    next_operand: usize,
-    values: Vec<Option<RuntimeValue>>,
-    first_recoverable: Option<String>,
-    #[serde(with = "optional_runtime_fmt_parameter_id")]
-    active_parameter: Option<RuntimeFmtParameterId>,
-    active_failure: Option<String>,
-    scope_depth: usize,
-}
-
-impl FiberFormatAttemptState {
-    #[must_use]
-    pub const fn attempt(&self) -> RuntimeFormatAttemptId {
-        self.attempt
-    }
-
-    #[must_use]
-    pub const fn site(&self) -> FiberCursor {
-        self.site
-    }
-
-    #[must_use]
-    pub const fn next_operand(&self) -> usize {
-        self.next_operand
-    }
-
-    #[must_use]
-    pub const fn active_parameter(&self) -> Option<RuntimeFmtParameterId> {
-        self.active_parameter
-    }
-
-    pub fn values(&self) -> &[Option<RuntimeValue>] {
-        &self.values
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberFormatAttemptStateSnapshot {
-    pub attempt: RuntimeFormatAttemptId,
-    pub site: FiberCursor,
-    pub format_context: RuntimeFormatContext,
-    pub next_operand: usize,
-    pub values: Vec<Option<AwbcRuntimeValueSnapshot>>,
-    pub first_recoverable: Option<String>,
-    #[serde(with = "optional_runtime_fmt_parameter_id")]
-    pub active_parameter: Option<RuntimeFmtParameterId>,
-    pub active_failure: Option<String>,
-    pub scope_depth: usize,
-}
-
-impl AwbcFiberFormatAttemptStateSnapshot {
-    pub(super) fn from_live(
-        state: &FiberFormatAttemptState,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            attempt: state.attempt,
-            site: state.site,
-            format_context: state.format_context.clone(),
-            next_operand: state.next_operand,
-            values: state
-                .values
-                .iter()
-                .map(|value| {
-                    value
-                        .as_ref()
-                        .map(|value| {
-                            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                        })
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            first_recoverable: state.first_recoverable.clone(),
-            active_parameter: state.active_parameter,
-            active_failure: state.active_failure.clone(),
-            scope_depth: state.scope_depth,
-        })
-    }
-
-    pub(super) fn into_live(
-        self,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<FiberFormatAttemptState> {
-        Ok(FiberFormatAttemptState {
-            attempt: self.attempt,
-            site: self.site,
-            format_context: self.format_context,
-            next_operand: self.next_operand,
-            values: self
-                .values
-                .into_iter()
-                .map(|value| {
-                    value
-                        .map(|value| value.into_runtime_value_for_program(owner))
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            first_recoverable: self.first_recoverable,
-            active_parameter: self.active_parameter,
-            active_failure: self.active_failure,
-            scope_depth: self.scope_depth,
-        })
-    }
-}
 
 impl FiberState {
     pub(crate) fn begin_format_operand_attempt(
@@ -178,7 +35,7 @@ impl FiberState {
         let matching_index = frame
             .format_attempts
             .iter()
-            .rposition(|state| state.attempt == attempt);
+            .rposition(|state| state.storage.attempt == attempt);
         let state = match matching_index {
             Some(index) if index + 1 == frame.format_attempts.len() => {
                 &mut frame.format_attempts[index]
@@ -188,35 +45,36 @@ impl FiberState {
                 if manifest.first().map(|operand| operand.parameter) != Some(parameter) {
                     return Err(FiberStateError::InvalidFrame);
                 }
-                let mut state = FiberFormatAttemptState {
-                    attempt,
-                    site,
-                    format_context: context.clone(),
-                    next_operand: 0,
-                    values: vec![None; manifest.len()],
-                    first_recoverable: None,
-                    active_parameter: None,
-                    active_failure: None,
-                    scope_depth,
+                let state = FiberFormatAttemptState {
+                    storage: FormatAttempt {
+                        attempt,
+                        staging: FormatStaging::new(site, context, manifest.len())?,
+                        progress: FormatOperandProgress::Evaluating {
+                            parameter,
+                            scope_depth,
+                            failure: None,
+                        },
+                    },
                 };
-                state.active_parameter = Some(parameter);
                 frame.format_attempts.push(state);
                 return Ok(());
             }
         };
-        if state.site != site
-            || state.active_parameter.is_some()
-            || state.next_operand >= manifest.len()
+        if state.storage.staging.site != site
+            || !matches!(state.storage.progress, FormatOperandProgress::Idle)
+            || state.storage.staging.next_operand >= manifest.len()
             || manifest
-                .get(state.next_operand)
+                .get(state.storage.staging.next_operand)
                 .map(|operand| operand.parameter)
                 != Some(parameter)
         {
             return Err(FiberStateError::InvalidFrame);
         }
-        state.active_parameter = Some(parameter);
-        state.active_failure = None;
-        state.scope_depth = scope_depth;
+        state.storage.progress = FormatOperandProgress::Evaluating {
+            parameter,
+            scope_depth,
+            failure: None,
+        };
         Ok(())
     }
 
@@ -232,20 +90,31 @@ impl FiberState {
         let state = frame
             .format_attempts
             .last()
-            .filter(|state| state.attempt == attempt)
+            .filter(|state| state.storage.attempt == attempt)
             .ok_or(FiberStateError::InvalidFrame)?;
-        let manifest = format_attempt_operands_at_site(program, state.site)?
+        let manifest = format_attempt_operands_at_site(program, state.storage.staging.site)?
             .filter(|(candidate, _)| *candidate == attempt)
             .map(|(_, manifest)| manifest)
             .ok_or(FiberStateError::InvalidFrame)?;
-        let ordinal = state.next_operand;
-        if state.active_parameter != Some(parameter)
+        let ordinal = state.storage.staging.next_operand;
+        if state.active_parameter() != Some(parameter)
             || manifest.get(ordinal).map(|operand| operand.parameter) != Some(parameter)
-            || state.values.get(ordinal).is_none_or(Option::is_some)
+            || state
+                .storage
+                .staging
+                .values
+                .get(ordinal)
+                .is_none_or(Option::is_some)
         {
             return Err(FiberStateError::InvalidFrame);
         }
-        let failed = state.active_failure.is_some();
+        let failed = matches!(
+            state.storage.progress,
+            FormatOperandProgress::Evaluating {
+                failure: Some(_),
+                ..
+            }
+        );
         let expected_type = manifest[ordinal].ty;
         if !failed {
             let value = frame
@@ -256,12 +125,25 @@ impl FiberState {
                     register: value_register.0,
                     layout: frame.layout.0,
                 })?;
-            validate_runtime_value_at(
+            crate::program_types::RuntimeProgramValueType::Awbc {
                 program,
-                value,
-                Some(expected_type),
-                format!("format_attempt[{}].values[{ordinal}]", attempt.index()),
-            )?;
+                ty: expected_type,
+            }
+            .validate_view(
+                value.view(),
+                frame.type_instantiation.as_deref(),
+                &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| {
+                FiberStateError::Snapshot(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(
+                    Box::new(error.within_value_path(&format!(
+                        "format_attempt[{}].values[{ordinal}]",
+                        attempt.index()
+                    ))),
+                ))
+            })?;
         }
         let frame = self.active_frame_mut()?;
         let value = if failed {
@@ -273,18 +155,23 @@ impl FiberState {
         let state = frame
             .format_attempts
             .last_mut()
-            .filter(|state| state.attempt == attempt)
+            .filter(|state| state.storage.attempt == attempt)
             .ok_or(FiberStateError::InvalidFrame)?;
-        state.values[ordinal] = value;
-        if failed && state.first_recoverable.is_none() {
-            state.first_recoverable = state.active_failure.clone();
+        state.storage.staging.values[ordinal] = value;
+        let FormatOperandProgress::Evaluating { failure, .. } =
+            std::mem::replace(&mut state.storage.progress, FormatOperandProgress::Idle)
+        else {
+            unreachable!("the exact active parameter was checked before taking its value");
+        };
+        if failed && state.storage.staging.first_recoverable.is_none() {
+            state.storage.staging.first_recoverable = failure;
         }
-        state.next_operand = state
+        state.storage.staging.next_operand = state
+            .storage
+            .staging
             .next_operand
             .checked_add(1)
             .ok_or(FiberStateError::InvalidFrame)?;
-        state.active_parameter = None;
-        state.active_failure = None;
         Ok(())
     }
 
@@ -294,7 +181,12 @@ impl FiberState {
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let frame = self.active_frame_mut()?;
-        if frame.format_attempts.last().map(|state| state.attempt) != Some(attempt) {
+        if frame
+            .format_attempts
+            .last()
+            .map(|state| state.storage.attempt)
+            != Some(attempt)
+        {
             return Err(FiberStateError::InvalidFrame);
         }
         frame.format_attempts.pop();
@@ -316,7 +208,7 @@ impl FiberState {
             return Err(FiberStateError::InvalidFrame);
         }
         if let Some(format) = &frame.format {
-            if !frame.format_attempts.is_empty() || format.site != site {
+            if !frame.format_attempts.is_empty() || format.site() != site {
                 return Err(FiberStateError::InvalidFrame);
             }
             return validate_format_state(program, frame, format);
@@ -324,13 +216,12 @@ impl FiberState {
         let state = frame
             .format_attempts
             .last()
-            .filter(|state| state.attempt == attempt)
+            .filter(|state| state.storage.attempt == attempt)
             .ok_or(FiberStateError::InvalidFrame)?;
         validate_format_attempt_state(program, frame, state)?;
-        if state.site != site
-            || state.next_operand != manifest.len()
-            || state.active_parameter.is_some()
-            || state.active_failure.is_some()
+        if state.storage.staging.site != site
+            || state.storage.staging.next_operand != manifest.len()
+            || !matches!(state.storage.progress, FormatOperandProgress::Idle)
         {
             return Err(FiberStateError::InvalidFrame);
         }
@@ -341,11 +232,7 @@ impl FiberState {
             .ok_or(FiberStateError::InvalidFrame)?;
         let frame = self.active_frame_mut()?;
         frame.format = Some(FiberFormatState {
-            site,
-            format_context: state.format_context,
-            next_operand: state.next_operand,
-            values: state.values,
-            first_recoverable: state.first_recoverable,
+            storage: state.storage.staging,
         });
         let format = frame.format.as_ref().ok_or(FiberStateError::InvalidFrame)?;
         validate_format_state(program, frame, format)
@@ -365,8 +252,8 @@ impl FiberState {
                 frame.format_attempts.iter().enumerate().rev().find_map(
                     |(attempt_index, attempt)| {
                         attempt
-                            .active_parameter
-                            .map(|parameter| (index, attempt_index, attempt.site, parameter))
+                            .active_parameter()
+                            .map(|parameter| (index, attempt_index, attempt.site(), parameter))
                     },
                 )
             })
@@ -382,11 +269,20 @@ impl FiberState {
             .get(attempt_index)
             .ok_or(FiberStateError::InvalidFrame)?;
         validate_format_attempt_state(program, owner, state)?;
-        let attempt = state.attempt;
-        let ordinal = state.next_operand;
-        let scope_depth = state.scope_depth;
-        let completion =
-            format_attempt_completion_cursor(program, owner.function, attempt, parameter)?;
+        let attempt = state.storage.attempt;
+        let ordinal = state.storage.staging.next_operand;
+        let FormatOperandProgress::Evaluating { scope_depth, .. } = state.storage.progress else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        let completion = format_attempt_completion_cursor(
+            program,
+            owner.function,
+            attempt,
+            parameter,
+            crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )?;
         for child_index in owner_index + 1..self.frames.len() {
             let caller = self
                 .frames
@@ -406,7 +302,7 @@ impl FiberState {
                     .ok_or(FiberStateError::InvalidFrame)?,
             )?;
         }
-        if site != state.site
+        if site != state.storage.staging.site
             || self.frames[owner_index + 1..]
                 .iter()
                 .any(FiberFrame::has_pending_cleanup)
@@ -414,10 +310,16 @@ impl FiberState {
                 .iter()
                 .any(super::scope_has_pending_cleanup)
             || scope_depth > owner.scopes.len()
-            || state.values.get(ordinal).is_none_or(Option::is_some)
+            || state
+                .storage
+                .staging
+                .values
+                .get(ordinal)
+                .is_none_or(Option::is_some)
         {
             return Ok(false);
         }
+        FormatStaging::<RuntimeValue>::validate_failure_message(&reason)?;
         self.frames.truncate(owner_index + 1);
         let owner = self
             .frames
@@ -428,10 +330,13 @@ impl FiberState {
             .format_attempts
             .get_mut(attempt_index)
             .ok_or(FiberStateError::InvalidFrame)?;
-        if state.first_recoverable.is_none() {
-            state.first_recoverable = Some(reason.clone());
+        if state.storage.staging.first_recoverable.is_none() {
+            state.storage.staging.first_recoverable = Some(reason.clone());
         }
-        state.active_failure = Some(reason);
+        let FormatOperandProgress::Evaluating { failure, .. } = &mut state.storage.progress else {
+            return Err(FiberStateError::InvalidFrame);
+        };
+        *failure = Some(reason);
         self.cursor = completion;
         Ok(true)
     }
@@ -507,7 +412,10 @@ fn format_attempt_completion_cursor(
     function_id: AwbcFunctionId,
     attempt: RuntimeFormatAttemptId,
     parameter: RuntimeFmtParameterId,
+    mut work: crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<FiberCursor, FiberStateError> {
+    work.charge(0)
+        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
     let function = program
         .functions
         .get(function_id.index())
@@ -516,7 +424,11 @@ fn format_attempt_completion_cursor(
         return Err(FiberStateError::InvalidFrame);
     };
     let mut found = None;
+    work.collection(function.blocks.len as usize)
+        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
     for block_index in function.blocks.start..end {
+        work.charge(0)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         let block_id = AwbcBlockId(block_index);
         let block = program
             .blocks
@@ -525,7 +437,11 @@ fn format_attempt_completion_cursor(
         let Some(instruction_end) = block.instructions.checked_end() else {
             return Err(FiberStateError::InvalidFrame);
         };
+        work.collection(block.instructions.len as usize)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         for instruction_index in block.instructions.start..instruction_end {
+            work.charge(0)
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
             if matches!(
                 program.instructions.get(instruction_index as usize),
                 Some(AwbcInstruction::CompleteFormatOperand {
@@ -553,54 +469,22 @@ pub(super) fn validate_format_attempt_state(
     frame: &FiberFrame,
     state: &FiberFormatAttemptState,
 ) -> Result<(), FiberStateError> {
-    if !state.format_context.has_current_data() || state.site.function != frame.function {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let Some((attempt, manifest)) = format_attempt_operands_at_site(program, state.site)? else {
-        return Err(FiberStateError::InvalidFrame);
+    let context = super::FrameValueContext {
+        program,
+        function: frame.function,
+        layout: program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::InvalidFrame)?,
+        binding: frame.type_instantiation.as_deref(),
+        registers: &frame.registers,
+        scope_count: frame.scopes.len(),
     };
-    if attempt != state.attempt
-        || manifest.is_empty()
-        || state.values.len() != manifest.len()
-        || state.next_operand > manifest.len()
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    let mut had_failure = false;
-    for (ordinal, (operand, value)) in manifest.iter().zip(&state.values).enumerate() {
-        if ordinal < state.next_operand {
-            if let Some(value) = value {
-                validate_runtime_value_at(
-                    program,
-                    value,
-                    Some(operand.ty),
-                    format!(
-                        "format_attempt[{}].values[{ordinal}]",
-                        state.attempt.index()
-                    ),
-                )?;
-            } else {
-                had_failure = true;
-            }
-        } else if value.is_some() {
-            return Err(FiberStateError::InvalidFrame);
-        }
-    }
-    if (had_failure || state.active_failure.is_some()) != state.first_recoverable.is_some()
-        || (state.active_failure.is_some() && state.active_parameter.is_none())
-        || (state.active_failure.is_some() && state.first_recoverable.is_none())
-    {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    if let Some(parameter) = state.active_parameter {
-        if state.next_operand >= manifest.len()
-            || manifest[state.next_operand].parameter != parameter
-            || state.scope_depth > frame.scopes.len()
-        {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        let _ =
-            format_attempt_completion_cursor(program, frame.function, state.attempt, parameter)?;
-    }
-    Ok(())
+    state.validate_inputs(
+        &context,
+        &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        ),
+        RuntimeValue::view,
+    )
 }

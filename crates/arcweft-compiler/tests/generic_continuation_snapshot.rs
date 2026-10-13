@@ -203,6 +203,108 @@ fn inhabited_empty_statement_match_cannot_publish_a_native_plan() {
 }
 
 #[test]
+fn authored_formatter_transaction_restores_its_original_staging_and_completes() {
+    let source = r"
+entry cli @entry.main { goto @flow.main }
+fn format_value() -> i64 { 12345i64 }
+flow main() -> bool {
+    let rendered = fmt(format_value())
+    return true
+}
+";
+    let compiled = compile_source(source).expect("authored formatter compiles");
+    let [flow] = compiled.plan.flows() else {
+        panic!("one flow")
+    };
+    let mut plan = compiled.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x38; 32]).unwrap(),
+    )
+    .unwrap();
+    let mut native = Engine::for_flow(plan, &flow.id).unwrap();
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    for _ in 0..2048 {
+        if matches!(native.fiber().frame.status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        let output = native.step(RuntimeStepInput::default(), options);
+        assert!(
+            output.output.diagnostics.is_empty(),
+            "{:?}",
+            output.output.diagnostics
+        );
+    }
+    assert_eq!(
+        native.fiber().frame.status,
+        FlowFiberStatus::Done(FlowExit::Return("true".into()))
+    );
+
+    let bytes = awfb_bytes_from_source(source, [0x38; 32]);
+    let mut session = session_from_bytes(&bytes);
+    let mut restored_active = false;
+    for _ in 0..2048 {
+        let snapshot = session.snapshot_session().unwrap();
+        if snapshot
+            .executor
+            .state
+            .fiber
+            .frames
+            .iter()
+            .any(|frame| !frame.format_attempts.is_empty() || frame.format.is_some())
+        {
+            let save = session.export_session_save_bytes().unwrap();
+            let mut restored = session_from_bytes(&bytes);
+            restored
+                .import_session_save_bytes(&save, &Default::default())
+                .unwrap();
+            assert_eq!(restored.snapshot_session().unwrap(), snapshot);
+            session = restored;
+            restored_active = true;
+            break;
+        }
+        assert!(
+            !session.is_finished(),
+            "active formatter save point must be reached"
+        );
+        let output = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    }
+    assert!(
+        restored_active,
+        "the real authored formatter must be saved while active"
+    );
+    for _ in 0..2048 {
+        if session.is_finished() {
+            break;
+        }
+        let output = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, 16).unwrap(),
+            BundleStepInput::default(),
+        );
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+    }
+    assert!(session.is_finished());
+    assert_eq!(
+        session
+            .snapshot_session()
+            .unwrap()
+            .executor
+            .state
+            .fiber
+            .return_summary
+            .as_deref(),
+        Some("true")
+    );
+}
+
+#[test]
 fn awfb_session_save_preserves_a_live_local_before_nested_replacement() {
     use arcweft_core::awbc::schema::{AwbcInstruction, AwbcMutablePlace};
 

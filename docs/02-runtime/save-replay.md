@@ -167,6 +167,19 @@ value node と encoded-byte を消費し、absence は値を構築しない。so
 work は同じ allowance を消費する。型検査のために receiver／Tuple／Unit を
 合成せず、source／cause の資源・型エラーを構造付きで保持する。
 
+formatter の instruction state と nested Flow attempt は、共通の source-order
+staging grammar を live／inert に使う。inert projection だけが private codec を
+持ち、live state の直接 serde reader／writer と別 snapshot DTO を残さない。
+Flow attempt の進行は `Idle`／`Evaluating(parameter, scope-depth, failure)` で
+表し、parameter の無い active failure／scope-depth は構築できない。owned 契約は
+version `1` のままこの shape に揃え、旧 reader を並行して残さない。
+capture／restore は元 instruction の operand manifest／function signature が保持
+する元の型IDと frame の immutable binding を使い、全 frame の register／pending
+値と同じ allowance で staged 値を検証してから projection／構築を始める。
+未到達 slot と metadata の work、locale／failure の string 上限、active attempt の
+completion instruction 検索もこの検証に含める。metadata は value node／byte として
+合成せず、frame wire 全体の byte grammar の検証とは区別する。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

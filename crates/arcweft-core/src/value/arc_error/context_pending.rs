@@ -58,7 +58,7 @@ impl RuntimeArcErrorContextPending {
     > {
         Ok(match self {
             Self::ResultErr(value) => RuntimeArcErrorContextPending::ResultErr(
-                AwbcRuntimeValueSnapshot::from_live_with_owner(value, Some(owner))?,
+                AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)?,
             ),
             Self::OptionNone => RuntimeArcErrorContextPending::OptionNone,
         })
@@ -72,7 +72,7 @@ impl RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot> {
     ) -> Result<RuntimeArcErrorContextPending, AwbcRuntimeValueSnapshotError> {
         Ok(match self {
             Self::ResultErr(value) => {
-                RuntimeArcErrorContextPending::ResultErr(value.into_live_with_owner(Some(owner))?)
+                RuntimeArcErrorContextPending::ResultErr(value.into_admitted_runtime_value(owner)?)
             }
             Self::OptionNone => RuntimeArcErrorContextPending::OptionNone,
         })

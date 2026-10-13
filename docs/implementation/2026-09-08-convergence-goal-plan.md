@@ -13759,3 +13759,143 @@ for the unresolved complete dependency closure. All 3,624 r13 inputs and held14
 are hash-identical after validation. All validation sessions are finished.
 The reviewed fourteen-path cut is ready for normal main commit/non-forced push;
 publication identity verification follows below. Goal remains ACTIVE.
+
+Normal commit/non-forced push and publication verification are complete for this
+fourteen-path cut at `dc66a663e602045a2dd7327e137eaf3afdee757a`, parent
+`2e056d18a23c610f377baf76fa3050cf5aed2d6e`, tree
+`bfeb35727c6d673bc61119e8671d3a934fd4d71a`. Fresh fetch and ls-remote observe
+that exact main. All fourteen prepared/local/published/working blob identities
+match, the index is empty, and all 3,624 source inputs and held14 are unchanged.
+The reviewed full staged diff SHA256 is
+`44df6aca3bbb365d5ac45ed6f4bd2ad820a5eddbe2e25734ce84e5e8c70f6588`.
+`context-cause.publication-prepared.json` and
+`context-cause.publication-verified.json` retain the complete path/blob, input,
+validation and limitation evidence. A post-commit display command had an unquoted
+Git tree expression interpreted by PowerShell; the already successful commit's
+quoted tree/parent were then checked against the prepared identities before push.
+No commit, push, source or artifact repair was needed for that display error.
+
+This goal turn is progress, not blocked: the cause/absence model and inert codec
+are unified, original source/callback/binding admission precedes projection and
+construction, real authored Native/AWBC callback save/restore passes, the generated
+Content type dependency is repaired at atomic plan admission, and the tested cut
+is published. Remaining frame work follows the actual retained owners: formatter
+transactions/continuations, suspension values, cleanup/defer captures, terminal
+and stream storage must share cumulative preconstruction admission and their final
+typed grammar rather than resetting per-field allowances or maintaining live serde
+readers alongside inert DTOs. Complete return-site/frame/session publication,
+Need/task14, View/scheduler/C1-C6, full50/full53, Tier2 and Native/Web capture/image
+parity remain required by the unchanged ACTIVE goal. The only task-owned dirty
+path afterward is this durable publication receipt; held14 and the historical
+untracked files are preserved. The existing checkout remains on main.
+
+### 2026-10-13 — formatter retained-input grammar and admission (in progress)
+
+Current main and tracked origin/main are both
+`dc66a663e602045a2dd7327e137eaf3afdee757a`. The preceding turn is progress:
+its cause/absence owner migration and generated Content root are published and
+blob-verified. The same held14 hashes and historical untracked paths are intact.
+No branch/worktree/checkout, OS change, build-artifact relocation, Cargo/lock,
+feature/profile/concurrency/job change is made.
+
+Formatter state now uses generic live/inert owners with one private source-order
+staging grammar. The public owner wrapper restricts serde to the concrete inert
+projection; it carries no second copy of the fields and adds no live codec.
+Both obsolete format snapshot DTOs and the live serde reader/writer are removed.
+Nested Flow attempts carry the same staging grammar plus an `Idle`/`Evaluating`
+progress algebra. Parameter, scope depth and active failure belong to the active
+case; orphaned active metadata is no longer constructible. The unreleased wire
+shape evolves in place at version 1, with no alias or compatibility reader.
+
+A borrowed original frame context supplies function, layout, immutable caller
+binding, registers and scope count. Owning format admission resolves the exact
+original instruction manifest or operand-function result row, checks source-order
+presence and recovery state, validates project DisplayText destination metadata,
+and admits each retained value under the original expected type/binding. Capture
+and inert restore perform this for all frames under the existing shared register/
+pending value allowance before any frame projection or live construction. Regular
+frame validation also shares its register/format allowance. Locale/failure strings
+are bounded before copying without inventing value nodes or bytes; frame/session
+wire bytes remain a distinct outstanding grammar. Completion-site scans consume
+the same work allowance. Runtime staging construction bounds metadata and hole
+count before allocating its vector, and recovery checks failure-string length
+before changing the frame stack. The value snapshot owner exposes a named private
+admitted mapping boundary, reused by context/pending packets, and keeps its raw
+recursive constructors private. No live value graph is cloned as a staging shim.
+
+r1 Core all-target/all-feature check compiled the library and exposed one old
+fixture field access. r2 inventory failed on mutability of a shared work handle;
+that helper now receives a cloned owned handle to the same shared counter. r3/r4
+failed before execution on the new minimal fixture's outdated schema fields/error
+name and a move from a pattern guard; the fixture is corrected to current typed
+fields and borrowed matching. These failed receipts are retained. Existing tests
+now mutate the actual progress parameter field and specifically require rejection
+of parameter 255, rather than accidentally relying on an unknown old field name.
+
+r5 passes 53 focused Core format/context tests, run ID
+`ed0cb2e1-ad4d-4b2b-8008-5e924bd08aae`; r6 adds the active completion-work/scope
+regression and passes all 54 selected tests, run ID
+`68c5fcfd-bc18-449d-a6d4-5f958bbf31b4`, 1,183 deliberately unselected.
+Coverage includes live/inert 1/0 value nodes, 7/6 value bytes, 5/4 string bytes,
+5/4 work, zero-value unreached slots at work 3/2, failure metadata string/work
+bounds, original-row rejection in a duplicate semantic inventory, inert codec
+round trips, malformed progress and active completion walk work 9/8. No synthetic
+receiver/Tuple/Unit value is counted. Existing actual callback ordering, recovery,
+private parameter codec and resume assertions retain their workloads and budgets.
+
+r7 executes actual authored `fmt(format_value())` in Native and saves/restores an
+AWFB session while its formatter state is active, checks exact snapshot equality,
+and finishes the restored execution. PASS, run ID
+`ed1ca254-1f28-4961-aa79-3a855b01cfee`; all one-op budgets and save-point
+requirements are preserved. Final r8 has frozen 3,627 source/config/fixture inputs
+and held14 and is running Core full library/integration, RuntimePlan library and
+AWBC parity/witness, selected compiler source tests, then the six shared-contract
+gates. Final results, changed-warning/ownership review and publication are pending.
+
+The goal stays ACTIVE. Scope cleanup/defer, suspension, terminal/stream storage,
+complete return-site/frame/session byte grammar and atomic publication, Need/task14,
+View/scheduler/C1-C6, full50/full53, Tier2 and Native/Web capture/image parity remain
+required. Repeated E0786 mmap OS 1455 limits complete nextest inventory only; owner
+implementation and independent evidence continue without weakening acceptance.
+
+Final r8 passed all 1,390 execution tests and all six gates. Clippy identified
+only new wildcard-import and trivially-copy-by-reference warnings on the private
+numeric parameter codec. The import is explicit in the final source. A narrowly
+scoped `trivially_copy_pass_by_ref` allowance documents serde derive's required
+borrowed-field adapter signature; it does not suppress an ownership/resource check
+or introduce a generic wrapper just to avoid that signature. Final r9 repeats the
+affected slice on those final bytes and all fourteen commands pass:
+Core library 1,237/zero skipped, run ID
+`ab32b167-fe55-451d-8a10-024731ed1a07`; Core builtin-payload/AWBC-variant/
+direct-suspension integration 13/zero skipped, run ID
+`1aba23af-6a59-4895-b9ad-4eca2b5e85e0`; RuntimePlan library plus AWBC parity
+and iterator witnesses 128/zero skipped, run ID
+`c88cb0ed-e6e3-4b12-83f1-ebc926ac7a72`; Compiler generic continuation and
+iterator source suites plus the recursive attached-default source test 12 PASS,
+run ID `e1da638a-4369-4abc-ba97-c32b556ab42b`. The remaining 43 evaluated-
+effects tests are deliberately unselected. These are ordinary nextest defaults,
+all-features, with the original budgets, assertions, workload and concurrency.
+
+Workspace all-target/all-feature check and Clippy, Core/LSP all-feature doctests
+9/0 (including four formatter live-codec compile negatives), the canonical
+structure gate, default Core/Web wasm32 check, and workspace fmt check all PASS.
+Final changed-warning review has zero new owned warning keys, with inherited
+workspace warnings distinguished. All 3,627 frozen inputs and held14 remain hash-
+identical afterward. Actual unchanged all-feature Core reverse workspace closure
+is still 50 including Core; these owner passes are not a full50/full53 pass.
+Repeated rustc E0786 mmap OS 1455 is the retained complete-inventory limitation.
+Tier2 and Native/Web rendering capture/image parity are not claimed by a Wasm check.
+
+`format-storage-r9.structure-review.json` records the exact current/base physical
+LOC and bytes and the new owner disposition. The new 497-LOC production
+format/state.rs and 384-LOC child tests trigger growth review: the private grammar,
+state transition, original-source admission, inert codec and admitted mapping are
+one formatter responsibility, with no unrelated state/I/O or widened public access
+for a physical split. Existing fiber 7,513/7,606 LOC (283,717 bytes), value encoding
+1,485/1,475 (55,141 bytes), value snapshot 1,443/1,425 (60,090 bytes) and callable
+application 1,316/1,315 (53,233 bytes) retain their owners. The Core direct
+fan-in/out34/21 and layer direction are unchanged. `FrameValueContext` is a borrowed
+validation context, not a replacement owner, executable lease or parallel type
+catalog. The final cut is validated and ready for normal main publication; complete
+scope/suspension/terminal/stream/frame/session and unchanged convergence acceptance
+remain in the ACTIVE goal.

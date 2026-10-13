@@ -701,7 +701,7 @@ impl RuntimeCallablePendingSnapshot {
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         let image = |value: &RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_live_with_owner(value, Some(owner))
+            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
         };
         Ok(Self {
             state: pending.state,
@@ -753,8 +753,9 @@ impl RuntimeCallablePendingSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeCallablePendingGroup, crate::value::AwbcRuntimeValueSnapshotError> {
-        let value =
-            |saved: crate::value::AwbcRuntimeValueSnapshot| saved.into_live_with_owner(Some(owner));
+        let value = |saved: crate::value::AwbcRuntimeValueSnapshot| {
+            saved.into_admitted_runtime_value(owner)
+        };
         Ok(RuntimeCallablePendingGroup {
             owner: owner.clone(),
             state: self.state,

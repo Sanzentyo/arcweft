@@ -544,7 +544,25 @@ impl AwbcRuntimeValueSnapshot {
         Self::iterator_into_live(iterator, Some(owner))
     }
 
-    pub(in crate::value) fn from_live_with_owner(
+    /// Projects a borrowed value only after its enclosing retained owner has
+    /// admitted the complete input graph, original types and cumulative limits.
+    pub(crate) fn from_admitted_runtime_value(
+        value: &RuntimeValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::from_live_with_owner(value, Some(owner))
+    }
+
+    /// Constructs one previously admitted inert value under its original owner.
+    /// The enclosing packet must finish admission before mapping any of its rows.
+    pub(crate) fn into_admitted_runtime_value(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.into_live_with_owner(Some(owner))
+    }
+
+    fn from_live_with_owner(
         value: &RuntimeValue,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
@@ -696,7 +714,7 @@ impl AwbcRuntimeValueSnapshot {
         self.into_live_with_owner(Some(owner))
     }
 
-    pub(in crate::value) fn into_live_with_owner(
+    fn into_live_with_owner(
         self,
         program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {

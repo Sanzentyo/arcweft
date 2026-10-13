@@ -404,6 +404,16 @@ impl ValueResourceAdmission {
         self.work.charge(depth)
     }
 
+    /// Bounds retained metadata before it is cloned without inventing a value
+    /// node or value-grammar byte. The enclosing frame codec owns its wire bytes.
+    pub(crate) fn metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
+        let result = self.work.charge(0).and_then(|()| self.budget.string(text));
+        if let Err(error) = &result {
+            self.work.retain_failure(error.clone());
+        }
+        result
+    }
+
     pub(crate) fn partial_record(
         &mut self,
         header: &crate::value::RuntimePlaceRecordHeader,

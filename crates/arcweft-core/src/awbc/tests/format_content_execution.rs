@@ -1365,8 +1365,14 @@ fn flow_format_attempt_catches_nested_recoverable_call_restores_and_runs_later_o
     let bytes = serde_json::to_vec(&snapshot).expect("attempt snapshot serializes");
     let mut forged: serde_json::Value =
         serde_json::from_slice(&bytes).expect("attempt snapshot JSON parses");
-    forged["frames"][0]["format_attempts"][0]["active_parameter"] = serde_json::Value::from(255_u8);
-    assert!(serde_json::from_value::<AwbcFiberStateSnapshot>(forged).is_err());
+    forged["frames"][0]["format_attempts"][0]["progress"]["Evaluating"]["parameter"] =
+        serde_json::Value::from(255_u8);
+    assert!(
+        serde_json::from_value::<AwbcFiberStateSnapshot>(forged)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown fmt parameter 255")
+    );
     let decoded: AwbcFiberStateSnapshot =
         serde_json::from_slice(&bytes).expect("attempt snapshot deserializes");
     let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
