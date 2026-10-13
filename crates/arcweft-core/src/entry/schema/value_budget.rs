@@ -1,5 +1,7 @@
 //! One logical-value work allowance, including opaque internal payloads.
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::value::{RuntimeEntityReference, RuntimeScalarView, RuntimeValueView};
 
 use super::{RuntimeSchemaError, RuntimeSchemaLimits};
@@ -9,56 +11,84 @@ pub(crate) struct ValueBudget {
     nodes: usize,
 }
 
-/// One expected-type allowance, shared by every attempted Choice branch.
-pub(crate) struct ValidationWork {
+/// One admission allowance shared by resource, value, type and effect checks.
+/// Cloning this private handle grants access to the same counter, never a fresh
+/// quota. It exists only during validation and carries no runtime capability.
+#[derive(Clone)]
+pub(crate) struct ValidationWork(Rc<RefCell<ValidationWorkState>>);
+
+struct ValidationWorkState {
     limits: RuntimeSchemaLimits,
     consumed: u64,
+    failure: Option<RuntimeSchemaError>,
 }
 
 impl ValidationWork {
-    pub(crate) const fn new(limits: RuntimeSchemaLimits) -> Self {
-        Self {
+    pub(crate) fn new(limits: RuntimeSchemaLimits) -> Self {
+        Self(Rc::new(RefCell::new(ValidationWorkState {
             limits,
             consumed: 0,
-        }
+            failure: None,
+        })))
     }
 
-    pub(crate) const fn limits(&self) -> RuntimeSchemaLimits {
-        self.limits
+    pub(crate) fn limits(&self) -> RuntimeSchemaLimits {
+        self.0.borrow().limits
+    }
+
+    /// Retains the first hard resource failure across failed Choice branches
+    /// and relation APIs whose internal result carries only admissibility.
+    pub(crate) fn failure(&self) -> Option<RuntimeSchemaError> {
+        self.0.borrow().failure.clone()
     }
 
     pub(crate) fn charge(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
-        if !self.limits.permits_depth(depth) {
-            return Err(RuntimeSchemaError::ValidationDepth {
-                path: "$".to_owned(),
-                limit: self.limits.max_depth,
-            });
+        let mut state = self.0.borrow_mut();
+        if let Some(error) = &state.failure {
+            return Err(error.clone());
         }
-        self.consumed = self
-            .consumed
-            .checked_add(1)
-            .ok_or(RuntimeSchemaError::ValidationWork {
+        let result = if !state.limits.permits_depth(depth) {
+            Err(RuntimeSchemaError::ValidationDepth {
                 path: "$".to_owned(),
-                limit: self.limits.max_validation_work,
-                consumed: self.consumed,
-            })?;
-        if self.consumed > self.limits.max_validation_work {
-            return Err(RuntimeSchemaError::ValidationWork {
+                limit: state.limits.max_depth,
+            })
+        } else if let Some(consumed) = state.consumed.checked_add(1) {
+            state.consumed = consumed;
+            if consumed > state.limits.max_validation_work {
+                Err(RuntimeSchemaError::ValidationWork {
+                    path: "$".to_owned(),
+                    limit: state.limits.max_validation_work,
+                    consumed,
+                })
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(RuntimeSchemaError::ValidationWork {
                 path: "$".to_owned(),
-                limit: self.limits.max_validation_work,
-                consumed: self.consumed,
-            });
+                limit: state.limits.max_validation_work,
+                consumed: state.consumed,
+            })
+        };
+        if let Err(error) = &result {
+            state.failure = Some(error.clone());
         }
-        Ok(())
+        result
     }
 
     pub(crate) fn collection(&self, count: usize) -> Result<(), RuntimeSchemaError> {
-        if self.limits.permits_sequence_items(count) {
+        let mut state = self.0.borrow_mut();
+        if let Some(error) = &state.failure {
+            return Err(error.clone());
+        }
+        if state.limits.permits_sequence_items(count) {
             Ok(())
         } else {
-            Err(RuntimeSchemaError::BudgetExceeded {
+            let error = RuntimeSchemaError::BudgetExceeded {
                 budget: "sequence_items",
-            })
+            };
+            state.failure = Some(error.clone());
+            Err(error)
         }
     }
 }

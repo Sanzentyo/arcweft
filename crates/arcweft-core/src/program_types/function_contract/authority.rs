@@ -2,6 +2,7 @@
 
 use crate::{
     awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId},
+    entry::schema::value_budget::ValidationWork,
     pattern::RuntimeSemanticTypeId,
     plan::{
         RuntimeArrayLength, RuntimeBoundTypeReference, RuntimeFunctionTypeContract, RuntimePlan,
@@ -13,6 +14,7 @@ use crate::{
 
 /// Typed relation context for the existing value visitor. It does not own rows.
 pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
+    fn validation_work(&self) -> ValidationWork;
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool;
     fn callable(&mut self, expected: T, actual: T) -> bool;
     fn nominal(
@@ -30,6 +32,9 @@ pub(crate) trait RuntimeValueTypeContext<T: Copy + Eq> {
 }
 
 impl<T: Copy + Eq> RuntimeValueTypeContext<T> for () {
+    fn validation_work(&self) -> ValidationWork {
+        ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default())
+    }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
         scope.is_root()
     }
@@ -39,6 +44,9 @@ impl<T: Copy + Eq> RuntimeValueTypeContext<T> for () {
 }
 
 impl<T: Copy + Eq, C: RuntimeValueTypeContext<T>> RuntimeValueTypeContext<T> for &mut C {
+    fn validation_work(&self) -> ValidationWork {
+        (**self).validation_work()
+    }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
         (**self).permits_scope(scope)
     }

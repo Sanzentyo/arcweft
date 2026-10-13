@@ -85,10 +85,15 @@ impl RootStateSaveSnapshotV1 {
             self.event_layout,
             roles,
         )?;
+        roles
+            .state
+            .validate_for_program(owner.types())
+            .map_err(RootRuntimeError::InvalidSnapshotValue)?;
         let value = RuntimePayload(
             self.value
-                .into_unrestricted_runtime_value_for_program_with_limits(
+                .into_unrestricted_typed_runtime_value_for_program_with_limits(
                     owner,
+                    roles.state.semantic_identity,
                     roles.command_policy.root_limits.schema,
                 )?,
         );

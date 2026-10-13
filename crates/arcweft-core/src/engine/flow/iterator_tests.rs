@@ -303,7 +303,32 @@ fn witness_snapshot_admission_checks_expected_item_and_complete_header_budget() 
     let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
     let decoded: AwbcRuntimeValueSnapshot =
         serde_json::from_slice(&serde_json::to_vec(&image).unwrap()).unwrap();
-    let restored = decoded.into_runtime_value_for_program(&owner).unwrap();
+    owner
+        .types()
+        .validate_inert_snapshot_value(semantic(6), &decoded, exact)
+        .unwrap();
+    assert!(
+        owner
+            .types()
+            .validate_inert_snapshot_value(semantic(8), &decoded, exact)
+            .is_err()
+    );
+    let mut forged = serde_json::to_value(&decoded).unwrap();
+    forged["Iterator"]["Witness"]["state"] = serde_json::json!({"Bool":true});
+    let forged: AwbcRuntimeValueSnapshot = serde_json::from_value(forged).unwrap();
+    assert!(
+        owner
+            .types()
+            .validate_inert_snapshot_value(
+                semantic(6),
+                &forged,
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+            .is_err()
+    );
+    let restored = decoded
+        .into_typed_runtime_value_for_program_with_limits(&owner, semantic(6), exact)
+        .unwrap();
     owner
         .types()
         .validate_snapshot_value(semantic(6), &restored, exact)

@@ -1468,3 +1468,207 @@ fn nominal_variant_construction_and_restore_reject_dangling_payload_type_without
         "AWBC runtime type index 999 is out of bounds"
     );
 }
+
+#[test]
+fn inert_expected_type_rejects_a_nominal_child_before_callable_construction() {
+    let limits = RuntimeSchemaLimits::engine_default();
+    for owner in owners() {
+        let record = owner
+            .types()
+            .try_record_value(semantic(1), vec![RuntimeValue::Bool(true)], limits)
+            .unwrap();
+        let image =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&record, &owner).unwrap();
+        for unrestricted in [false, true] {
+            let restored = if unrestricted {
+                image
+                    .clone()
+                    .into_unrestricted_typed_runtime_value_for_program_with_limits(
+                        &owner,
+                        semantic(1),
+                        limits,
+                    )
+            } else {
+                image
+                    .clone()
+                    .into_typed_runtime_value_for_program_with_limits(&owner, semantic(1), limits)
+            }
+            .unwrap();
+            assert_eq!(restored, record);
+
+            let mut candidate = image.clone();
+            let AwbcRuntimeValueSnapshot::NominalRecord(record) = &mut candidate else {
+                unreachable!();
+            };
+            record.fields[0].value =
+                AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
+                    state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                    retained: vec![],
+                });
+            let error = if unrestricted {
+                candidate.into_unrestricted_typed_runtime_value_for_program_with_limits(
+                    &owner,
+                    semantic(1),
+                    limits,
+                )
+            } else {
+                candidate.into_typed_runtime_value_for_program_with_limits(
+                    &owner,
+                    semantic(1),
+                    limits,
+                )
+            }
+            .unwrap_err();
+            let AwbcRuntimeValueSnapshotError::ProgramType(error) = error else {
+                panic!("expected type rejection precedes missing callable construction: {error}");
+            };
+            let source = match *error {
+                crate::program_types::RuntimeProgramTypeError::PlanValue(error) => match *error {
+                    crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } => source,
+                    error => panic!("expected original plan value rejection: {error}"),
+                },
+                crate::program_types::RuntimeProgramTypeError::AwbcValue(error) => match *error {
+                    crate::awbc::value_admission::AwbcValueAdmissionError::Value {
+                        source, ..
+                    } => source,
+                    error
+                    @ crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType {
+                        ..
+                    } => panic!("expected original AWBC value rejection: {error}"),
+                },
+                error => panic!("expected original program value admission: {error}"),
+            };
+            assert!(matches!(
+                source,
+                crate::entry::RuntimeSchemaError::Type { .. }
+            ));
+        }
+    }
+}
+
+#[test]
+fn inert_expected_type_checks_field_ids_and_reuses_preflight_work() {
+    use crate::{entry::RuntimeSchemaError, program_types::RuntimeProgramTypeError};
+    for owner in owners() {
+        let limits = RuntimeSchemaLimits::engine_default();
+        let image = AwbcRuntimeValueSnapshot::Bool(true);
+        owner
+            .types()
+            .validate_inert_snapshot_value(
+                semantic(2),
+                &image,
+                RuntimeSchemaLimits {
+                    max_validation_work: 2,
+                    ..limits
+                },
+            )
+            .unwrap();
+        let error = owner
+            .types()
+            .validate_inert_snapshot_value(
+                semantic(2),
+                &image,
+                RuntimeSchemaLimits {
+                    max_validation_work: 1,
+                    ..limits
+                },
+            )
+            .unwrap_err();
+        let source = match error {
+            RuntimeProgramTypeError::PlanValue(error) => match *error {
+                crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } => source,
+                error => panic!("expected original plan work rejection: {error}"),
+            },
+            RuntimeProgramTypeError::AwbcValue(error) => match *error {
+                crate::awbc::value_admission::AwbcValueAdmissionError::Value { source, .. } => {
+                    source
+                }
+                error @ crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType {
+                    ..
+                } => panic!("expected original AWBC work rejection: {error}"),
+            },
+            error => panic!("expected type phase to retain the resource work: {error}"),
+        };
+        assert!(matches!(
+            source,
+            RuntimeSchemaError::ValidationWork { consumed: 2, .. }
+        ));
+
+        let record = owner
+            .types()
+            .try_record_value(semantic(1), vec![RuntimeValue::Bool(true)], limits)
+            .unwrap();
+        let mut image =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&record, &owner).unwrap();
+        // Two resource nodes, two expected-value nodes, and the original
+        // nominal type relation share one counter for either executable kind.
+        let exact = RuntimeSchemaLimits {
+            max_validation_work: 5,
+            ..limits
+        };
+        owner
+            .types()
+            .validate_inert_snapshot_value(semantic(1), &image, exact)
+            .unwrap();
+        let error = owner
+            .types()
+            .validate_inert_snapshot_value(
+                semantic(1),
+                &image,
+                RuntimeSchemaLimits {
+                    max_validation_work: 4,
+                    ..exact
+                },
+            )
+            .unwrap_err();
+        let source = match error {
+            RuntimeProgramTypeError::PlanValue(error) => match *error {
+                crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } => source,
+                error => panic!("expected original plan work rejection: {error}"),
+            },
+            RuntimeProgramTypeError::AwbcValue(error) => match *error {
+                crate::awbc::value_admission::AwbcValueAdmissionError::Value { source, .. } => {
+                    source
+                }
+                error @ crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType {
+                    ..
+                } => panic!("expected original AWBC work rejection: {error}"),
+            },
+            error => panic!("expected nominal type relation to reuse resource work: {error}"),
+        };
+        assert!(matches!(
+            source,
+            RuntimeSchemaError::ValidationWork {
+                limit: 4,
+                consumed: 5,
+                ..
+            }
+        ));
+        let AwbcRuntimeValueSnapshot::NominalRecord(record) = &mut image else {
+            unreachable!();
+        };
+        record.fields[0].field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
+        assert!(
+            owner
+                .types()
+                .validate_inert_snapshot_value(semantic(1), &image, limits)
+                .is_err()
+        );
+
+        let error = owner
+            .types()
+            .validate_inert_snapshot_value(
+                semantic(250),
+                &image,
+                RuntimeSchemaLimits {
+                    max_encoded_bytes: 0,
+                    ..limits
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, RuntimeProgramTypeError::SnapshotResource(error)
+            if matches!(*error, RuntimeSchemaError::BudgetExceeded { budget: "encoded_bytes" }))
+        );
+    }
+}

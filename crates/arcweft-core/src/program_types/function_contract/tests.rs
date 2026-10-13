@@ -135,23 +135,59 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     let source = binding(io);
     let matches = |destination: Option<&RuntimeFunctionEffectInstantiation>,
                    origin: Option<&RuntimeFunctionEffectInstantiation>| {
-        RuntimeFunctionEffectInstantiation::with_value_relation(&program, destination, |relation| {
-            relation.nominal(
-                if destination.is_some() {
-                    AwbcTypeId(4)
-                } else {
-                    AwbcTypeId(3)
-                },
-                AwbcTypeId(4),
-                origin,
-            )
-        }) == Some(true)
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            &program,
+            destination,
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+            |relation| {
+                Ok(relation.nominal(
+                    if destination.is_some() {
+                        AwbcTypeId(4)
+                    } else {
+                        AwbcTypeId(3)
+                    },
+                    AwbcTypeId(4),
+                    origin,
+                ))
+            },
+        ) == Ok(Some(true))
     };
     assert!(!matches(Some(&destination), None));
     assert!(!matches(Some(&destination), Some(&source)));
     assert!(matches(Some(&destination), Some(&destination)));
     assert!(!matches(None, Some(&source)));
     assert!(matches(None, Some(&destination)));
+    // Resolving the destination consumes one substitution step. The original
+    // nominal's source instantiation must use that same remaining allowance.
+    let limits = crate::entry::RuntimeSchemaLimits {
+        max_validation_work: 1,
+        ..crate::entry::RuntimeSchemaLimits::engine_default()
+    };
+    assert!(matches!(
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            &program,
+            Some(&destination),
+            &ValidationWork::new(limits),
+            |relation| Ok(relation.nominal(AwbcTypeId(4), AwbcTypeId(4), Some(&destination))),
+        ),
+        Err(crate::entry::RuntimeSchemaError::ValidationWork {
+            limit: 1,
+            consumed: 2,
+            ..
+        })
+    ));
+    assert!(matches!(
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            &program,
+            Some(&destination),
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits {
+                max_depth: 0,
+                ..crate::entry::RuntimeSchemaLimits::engine_default()
+            }),
+            |relation| Ok(relation.nominal(AwbcTypeId(4), AwbcTypeId(4), Some(&destination))),
+        ),
+        Err(crate::entry::RuntimeSchemaError::ValidationDepth { limit: 0, .. })
+    ));
     let malformed = RuntimeFunctionEffectInstantiation {
         context: id(6),
         effects: Box::new([]),
@@ -592,6 +628,7 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
     RuntimeFunctionEffectInstantiation::with_value_relation(
         plan.as_ref(),
         Some(&binding),
+        &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
         |context| {
             let before = context.matcher.predicate.clone();
             assert!(matches!(
@@ -612,8 +649,10 @@ fn failed_value_choice_does_not_leak_callback_effect_constraints() {
                 context.matcher.predicate, before,
                 "failed admission preserves effect obligations"
             );
+            Ok(())
         },
     )
+    .unwrap()
     .unwrap();
 }
 

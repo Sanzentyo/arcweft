@@ -186,6 +186,74 @@ fn snapshot_byte_budget_counts_callable_state_header_and_retained_value() {
 }
 
 #[test]
+fn inert_callable_admission_uses_original_retained_types_and_preserves_live_lease_checks() {
+    use crate::{entry::RuntimeSchemaLimits, value::AwbcRuntimeValueSnapshot};
+    let plan = captured_identity_plan();
+    let owner = RuntimeProgramOwner::Plan(Arc::new(plan.clone()));
+    let function = RuntimeSemanticTypeId::from_bytes([0x8b; 32]);
+    let state = RuntimeCallableStateId::from_zero_based(0).unwrap();
+    let limits = RuntimeSchemaLimits::engine_default();
+    let value = RuntimeValue::Callable(
+        RuntimeCallableValue::try_new(owner.clone(), state, [RuntimeValue::i64(42)]).unwrap(),
+    );
+    let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+    owner
+        .types()
+        .validate_inert_snapshot_value(function, &image, limits)
+        .unwrap();
+    // Resource traversal and typed traversal each visit the callable and its
+    // retained scalar. Relating the original function type costs one more step.
+    let exact = RuntimeSchemaLimits {
+        max_validation_work: 5,
+        ..limits
+    };
+    owner
+        .types()
+        .validate_inert_snapshot_value(function, &image, exact)
+        .unwrap();
+    assert!(matches!(
+        owner.types().validate_inert_snapshot_value(
+            function,
+            &image,
+            RuntimeSchemaLimits { max_validation_work: 4, ..exact },
+        ),
+        Err(crate::program_types::RuntimeProgramTypeError::PlanValue(error))
+        if matches!(*error, crate::plan::RuntimePlanValueAdmissionError::Value {
+            source: crate::entry::RuntimeSchemaError::ValidationWork {
+                ref path, limit: 4, consumed: 5,
+            }, ..
+        } if path == "$[0]")
+    ));
+    assert_eq!(
+        image
+            .clone()
+            .into_typed_runtime_value_for_program_with_limits(&owner, function, limits)
+            .unwrap(),
+        value
+    );
+    let foreign = RuntimeProgramOwner::Plan(Arc::new(plan));
+    assert!(
+        foreign
+            .types()
+            .validate_snapshot_value(function, &value, limits)
+            .is_err()
+    );
+    for retained in [vec![], vec![AwbcRuntimeValueSnapshot::Bool(true)]] {
+        let candidate =
+            AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                state,
+                retained,
+            });
+        assert!(
+            owner
+                .types()
+                .validate_inert_snapshot_value(function, &candidate, limits)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn callable_admission_requires_the_complete_retained_layout_and_exact_owner() {
     let owner = RuntimeProgramOwner::Plan(Arc::new(captured_identity_plan()));
     let state = RuntimeCallableStateId::from_zero_based(0).unwrap();

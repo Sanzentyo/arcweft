@@ -3,6 +3,7 @@ use crate::awbc::schema::AwbcVariantCase;
 use crate::awbc::schema::{AwbcSignedIntKind, AwbcUnsignedIntKind};
 use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::RuntimeSemanticTypeId;
+use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeColor, RuntimeInt, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue,
     RuntimeSeq, RuntimeUInt,

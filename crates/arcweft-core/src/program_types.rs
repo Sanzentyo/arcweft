@@ -88,6 +88,8 @@ pub enum RuntimeProgramTypeError {
     PlanValue(Box<RuntimePlanValueAdmissionError>),
     #[error(transparent)]
     AwbcValue(Box<AwbcValueAdmissionError>),
+    #[error("inert snapshot resource admission failed: {0}")]
+    SnapshotResource(Box<crate::entry::RuntimeSchemaError>),
 }
 
 impl From<RuntimePlanTypeResolutionError> for RuntimeProgramTypeError {
@@ -112,6 +114,64 @@ impl From<AwbcValueAdmissionError> for RuntimeProgramTypeError {
 }
 
 impl RuntimeProgramTypes<'_> {
+    /// Tests an existing live lease without reconstructing an executable owner.
+    pub(crate) fn owns_lease(self, lease: &crate::task::RuntimeProgramOwner) -> bool {
+        match (self, lease) {
+            (Self::Plan(plan), crate::task::RuntimeProgramOwner::Plan(owner)) => {
+                std::ptr::eq(plan, &raw const owner.inventory)
+            }
+            (Self::Awbc(program), crate::task::RuntimeProgramOwner::Awbc(owner)) => {
+                std::ptr::eq(program, owner.as_ref())
+            }
+            _ => false,
+        }
+    }
+
+    /// Checks the original expected type while the complete candidate is inert.
+    /// Resource preflight precedes binding matching and live construction.
+    pub fn validate_inert_snapshot_value(
+        self,
+        semantic_type: RuntimeSemanticTypeId,
+        value: &crate::value::AwbcRuntimeValueSnapshot,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimeProgramTypeError> {
+        let work = crate::entry::schema::value_encoding::preflight_snapshot_view(
+            value.view(),
+            limits,
+            None,
+        )
+        .map_err(|source| RuntimeProgramTypeError::SnapshotResource(Box::new(source)))?;
+        self.validate_inert_snapshot_view(semantic_type, value.view(), &work)
+    }
+
+    pub(crate) fn validate_inert_snapshot_view(
+        self,
+        semantic_type: RuntimeSemanticTypeId,
+        value: crate::value::RuntimeValueView<'_>,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<(), RuntimeProgramTypeError> {
+        match self {
+            Self::Plan(plan) => {
+                let ty = plan
+                    .type_table()
+                    .id_for_semantic(semantic_type)
+                    .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?;
+                Ok(plan.validate_snapshot_value_view(
+                    ty,
+                    value,
+                    work,
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+                )?)
+            }
+            Self::Awbc(program) => Ok(program.validate_snapshot_value_view(
+                self.awbc_type(semantic_type)?,
+                value,
+                work,
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+            )?),
+        }
+    }
+
     /// Resolves the exact source type retained by a `DataShape<T>` row.
     /// The child is read from the selected executable; it is never inferred
     /// from a value or reconstructed from a diagnostic checked projection.

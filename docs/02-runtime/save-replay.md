@@ -89,8 +89,19 @@ depth・node・collection・string・validation-work・encoded-byte を検証す
 論理行、predicate と callable の retained 値を計上する。dense numeric の
 scalar atom の深さは選択された resource policy に従い、値 carrier の nesting
 上限はそのまま維持する。durable root は選択された role、root rollback は
-元の root policy の上限を構築前に適用する。original program の型照合は
-各 owning admission で検証する。
+元の root policy の上限を構築前に適用する。型付き保存場所では、その owner が
+保持する expected semantic type を original program の型行に照合し、同じ
+borrowed view の descendant を inert のまま検証する。resource preflight の
+残りの validation-work allowance を型検証へ渡し、phase ごとに上限を再発行しない。
+関数の型関係と effect predicate、nominal の元 instantiation の照合、および
+そこから呼ぶ value relation も、この同じ allowance を使用する。Choice の
+不成立 branch は effect obligation を巻き戻すが、消費 work と hard resource
+failure は巻き戻さない。validation-work・validation-depth の上限超過は
+値の位置を保持した資源エラーとして返す。
+durable root は選択された state role の型をこの構築前検証に渡す。
+inert callable と Iterator Witness の照合は選択中の original program を使い、
+その検証は live lease や Copy capability を発行しない。live 値の admission は
+既存 lease がその executable と一致することを引き続き要求する。
 unrestricted の保存場所では、同じ traversal が Need と
 affine opaque の全 descendant を拒否する。line-handle token inventory もこの
 traversal を使い、空の columnar storage の再帰 metadata を検証から除外しない。

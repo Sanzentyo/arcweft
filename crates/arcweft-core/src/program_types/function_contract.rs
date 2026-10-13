@@ -3,6 +3,7 @@
 use crate::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId};
 use crate::{
     effect_row::{DecisionControl, DecisionWork, EffectPredicate},
+    entry::schema::value_budget::ValidationWork,
     plan::{
         RuntimeArrayLength, RuntimeBoundConstReference, RuntimeBoundEffectReference,
         RuntimeBoundTypeReference, RuntimeTypeBinder, RuntimeTypeScope,
@@ -170,26 +171,47 @@ impl RuntimeFunctionEffectInstantiation {
     pub(crate) fn with_value_relation<A: FunctionTypeAuthority, R>(
         program: &A,
         binding: Option<&Self>,
-        operation: impl FnOnce(&mut CallableValueRelation<'_, '_, A>) -> R,
-    ) -> Option<R> {
-        let mut matcher = match binding {
-            Some(binding) => binding.matcher(program)?,
-            None => ParameterMatcher::root(program),
+        work: &ValidationWork,
+        operation: impl FnOnce(
+            &mut CallableValueRelation<'_, '_, A>,
+        ) -> Result<R, crate::entry::RuntimeSchemaError>,
+    ) -> Result<Option<R>, crate::entry::RuntimeSchemaError> {
+        let matcher = match binding {
+            Some(binding) => binding.matcher_with_work(program, work.clone()),
+            None => Some(ParameterMatcher::root(program, work.clone())),
+        };
+        let Some(mut matcher) = matcher else {
+            return work.failure().map_or(Ok(None), Err);
         };
         let environment = matcher.parameters.clone();
         let result = operation(&mut CallableValueRelation {
             matcher: &mut matcher,
             environment,
             choices: Vec::new(),
-        });
-        matcher.accepted().then_some(result)
+        })?;
+        let accepted = matcher.accepted();
+        if let Some(error) = work.failure() {
+            return Err(error);
+        }
+        Ok(accepted.then_some(result))
     }
     fn matcher<'program, A: FunctionTypeAuthority>(
         &self,
         program: &'program A,
     ) -> Option<ParameterMatcher<'program, A>> {
+        self.matcher_with_work(
+            program,
+            ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+        )
+    }
+    fn matcher_with_work<'program, A: FunctionTypeAuthority>(
+        &self,
+        program: &'program A,
+        work: ValidationWork,
+    ) -> Option<ParameterMatcher<'program, A>> {
         let context = program.by_semantic(self.context)?;
-        let (_, mut matcher) = ParameterMatcher::for_function(program, context, None)?;
+        let (_, mut matcher) =
+            ParameterMatcher::for_function_with_work(program, context, None, work)?;
         let count = matcher
             .parameters
             .scope
@@ -339,12 +361,10 @@ impl ContractEnvironment {
         Ok((self.owner(reference.depth())?, reference.slot()))
     }
 }
-struct ContractWork(u64);
-impl DecisionControl for ContractWork {
+impl DecisionControl for ValidationWork {
     type Error = ();
     fn charge(&mut self, _: DecisionWork) -> Result<(), ()> {
-        self.0 = self.0.checked_sub(1).ok_or(())?;
-        Ok(())
+        self.charge(0).map_err(|_| ())
     }
 }
 struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
@@ -356,7 +376,7 @@ struct ParameterMatcher<'a, A: FunctionTypeAuthority> {
     locals: BTreeSet<ContractVariable>,
     sources: BTreeSet<ContractVariable>,
     next_binder: u32,
-    work: ContractWork,
+    work: ValidationWork,
     replacements: BTreeMap<ContractVariable, crate::effect_row::EffectFormula<ContractVariable>>,
 }
 
@@ -372,6 +392,9 @@ pub(crate) struct CallableValueRelation<'m, 'p, A: FunctionTypeAuthority> {
 impl<A: FunctionTypeAuthority> RuntimeValueTypeContext<A::Type>
     for CallableValueRelation<'_, '_, A>
 {
+    fn validation_work(&self) -> ValidationWork {
+        self.matcher.work.clone()
+    }
     fn permits_scope(&self, scope: &RuntimeTypeScope) -> bool {
         self.environment.at_scope(scope).is_ok()
     }
@@ -620,8 +643,7 @@ impl AwbcProgram {
         else {
             return false;
         };
-        let mut work =
-            ContractWork(crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work);
+        let mut work = ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default());
         let Ok(mut bindable) = collect_parameter_effects(self, *expected, &environment, &mut work)
         else {
             return false;
@@ -633,15 +655,11 @@ impl AwbcProgram {
             };
             bindable.retain(|slot| !shared.contains(slot));
         }
-        let Some((_, mut matcher)) = ParameterMatcher::new(self, contract, Some(bindable)) else {
+        let Some((_, mut matcher)) =
+            ParameterMatcher::new_with_work(self, contract, Some(bindable), work)
+        else {
             return false;
         };
-        let spent =
-            crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work - work.0;
-        let Some(remaining) = matcher.work.0.checked_sub(spent) else {
-            return false;
-        };
-        matcher.work.0 = remaining;
         let source = match source_contract {
             None => ContractEnvironment::root(),
             Some(source) => {
@@ -689,7 +707,7 @@ impl AwbcProgram {
     }
 }
 impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
-    fn root(program: &'a A) -> Self {
+    fn root(program: &'a A, work: ValidationWork) -> Self {
         Self {
             program,
             predicate: EffectPredicate::unconstrained(),
@@ -699,9 +717,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
             locals: BTreeSet::new(),
             sources: BTreeSet::new(),
             next_binder: 0,
-            work: ContractWork(
-                crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work,
-            ),
+            work,
             replacements: BTreeMap::new(),
         }
     }
@@ -709,11 +725,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         &mut self,
         origin: &RuntimeFunctionEffectInstantiation,
     ) -> Option<ContractEnvironment> {
-        let source = origin.matcher(self.program)?;
-        let spent = crate::entry::RuntimeSchemaLimits::engine_default()
-            .max_validation_work
-            .checked_sub(source.work.0)?;
-        self.work.0 = self.work.0.checked_sub(spent)?;
+        let source = origin.matcher_with_work(self.program, self.work.clone())?;
         let binder = self.next_binder;
         self.next_binder = binder.checked_add(1)?;
         let environment = ContractEnvironment {
@@ -741,6 +753,19 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
     ) -> Option<(&'a [A::Type], Self)> {
+        Self::new_with_work(
+            program,
+            contract,
+            bindable,
+            ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+        )
+    }
+    fn new_with_work(
+        program: &'a A,
+        contract: A::Type,
+        bindable: Option<BTreeSet<u32>>,
+        work: ValidationWork,
+    ) -> Option<(&'a [A::Type], Self)> {
         let (header, _, result) = program.function(contract)?;
         if header.binder().effects() == 0
             || header.invocation() != &crate::effect_row::EffectFormula::empty()
@@ -748,12 +773,25 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         {
             return None;
         }
-        Self::for_function(program, contract, bindable)
+        Self::for_function_with_work(program, contract, bindable, work)
     }
     fn for_function(
         program: &'a A,
         contract: A::Type,
         bindable: Option<BTreeSet<u32>>,
+    ) -> Option<(&'a [A::Type], Self)> {
+        Self::for_function_with_work(
+            program,
+            contract,
+            bindable,
+            ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+        )
+    }
+    fn for_function_with_work(
+        program: &'a A,
+        contract: A::Type,
+        bindable: Option<BTreeSet<u32>>,
+        mut work: ValidationWork,
     ) -> Option<(&'a [A::Type], Self)> {
         let scope = program.scope(contract)?;
         let (contract, parameters, _) = program.function(contract)?;
@@ -767,8 +805,6 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         let parameters_environment = ContractEnvironment::root()
             .enter(contract.binder(), BinderOwner::Parameters)
             .ok()?;
-        let mut work =
-            ContractWork(crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work);
         let predicate = contract
             .predicate()
             .map_references(&mut work, &mut |reference, _| {
@@ -829,7 +865,7 @@ impl<'a, A: FunctionTypeAuthority> ParameterMatcher<'a, A> {
         if depth > 64 {
             return Err(());
         }
-        self.work.charge(DecisionWork::Visit)
+        self.work.charge(depth).map_err(|_| ())
     }
     fn types(
         &mut self,
@@ -1043,7 +1079,7 @@ fn collect_parameter_effects(
     program: &AwbcProgram,
     ty: AwbcTypeId,
     environment: &ContractEnvironment,
-    work: &mut ContractWork,
+    work: &mut ValidationWork,
 ) -> Result<BTreeSet<u32>, ()> {
     let mut result = BTreeSet::new();
     let mut pending = vec![(ty, environment.clone(), 0usize)];
@@ -1051,7 +1087,7 @@ fn collect_parameter_effects(
         if depth > 64 {
             return Err(());
         }
-        work.charge(DecisionWork::Visit)?;
+        work.charge(depth).map_err(|_| ())?;
         let row = program.runtime_types.get(ty.index()).ok_or(())?;
         let mut environment = environment.at_scope(row.scope())?;
         if let AwbcRuntimeTypeShape::Function { contract, .. } = row.shape() {

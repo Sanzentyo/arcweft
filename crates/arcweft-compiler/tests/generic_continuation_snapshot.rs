@@ -333,10 +333,33 @@ fn awbc_callable_snapshot_rejects_a_forged_retained_type() {
     let (snapshot, prefix) = advance_to_awbc_prefix(&mut session);
     let owner = session.program_owner();
 
+    let RuntimeProgramOwner::Awbc(program) = &owner else {
+        unreachable!();
+    };
+    let function_type = program.runtime_types[program.callable_states[prefix.state.index()]
+        .function_type
+        .index()]
+    .semantic_identity();
+    let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+    let original = AwbcRuntimeValueSnapshot::Callable(prefix.clone());
+    owner
+        .types()
+        .validate_inert_snapshot_value(function_type, &original, limits)
+        .unwrap();
+    original
+        .into_typed_runtime_value_for_program_with_limits(&owner, function_type, limits)
+        .expect("the original compiled generic continuation is admitted while inert");
+
     let forged = AwbcRuntimeValueSnapshot::Callable(AwbcRuntimeCallableSnapshot {
         state: prefix.state,
         retained: vec![AwbcRuntimeValueSnapshot::String("wrong type".to_owned())],
     });
+    assert!(
+        owner
+            .types()
+            .validate_inert_snapshot_value(function_type, &forged, limits)
+            .is_err()
+    );
     let error = forged
         .into_runtime_value_for_program(&owner)
         .expect_err("restored retained prefix type is checked against the pinned AWBC state");

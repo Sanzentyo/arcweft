@@ -372,6 +372,25 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
         assert!(decoded.into_live(&active, &owner).is_err());
         assert_eq!(serde_json::to_vec(&wire).unwrap(), bytes);
     }
+    let mut wrong_callable = original;
+    wrong_callable["value"] =
+        serde_json::to_value(crate::value::AwbcRuntimeValueSnapshot::Callable(
+            crate::value::AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained: vec![],
+            },
+        ))
+        .unwrap();
+    let decoded: RootStateSaveSnapshotV1 = serde_json::from_value(wrong_callable).unwrap();
+    let error = decoded.into_live(&active, &owner).unwrap_err();
+    assert!(
+        matches!(error, crate::root::RootStateSaveSnapshotError::Value(
+        crate::value::AwbcRuntimeValueSnapshotError::ProgramType(error))
+        if matches!(error.as_ref(), crate::program_types::RuntimeProgramTypeError::PlanValue(error)
+            if matches!(error.as_ref(), RuntimePlanValueAdmissionError::Value {
+                source: RuntimeSchemaError::Type { .. }, .. })))
+    );
+    assert_eq!(serde_json::to_vec(&wire).unwrap(), bytes);
     let mut wrong_entry = active.clone();
     wrong_entry.binding = EntryBindingIdentity::from_bytes([0; 32]);
     assert!(wire.clone().into_live(&wrong_entry, &owner).is_err());

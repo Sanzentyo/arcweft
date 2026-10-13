@@ -21,6 +21,27 @@ pub(crate) enum ValueAdmission<C, A> {
     Admitted,
 }
 
+/// An inert candidate is correlated with the selected original type authority;
+/// a live candidate must already lease that exact immutable executable.
+#[derive(Clone, Copy)]
+pub(crate) enum ValueAdmissionOrigin {
+    Live,
+    InertSnapshot,
+}
+
+impl ValueAdmissionOrigin {
+    pub(crate) fn accepts_program(
+        self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        lease: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> bool {
+        match lease {
+            Some(lease) => program.owns_lease(lease),
+            None => matches!(self, Self::InertSnapshot),
+        }
+    }
+}
+
 pub(crate) trait ValueValidation {
     type Expected;
     type Children;
@@ -115,13 +136,13 @@ pub(crate) fn validate_live_view<V: ValueValidation>(
 }
 
 /// Validates a decoded snapshot candidate before it becomes live.
-pub(crate) fn validate_snapshot<V: ValueValidation>(
-    value: &RuntimeValue,
+pub(crate) fn validate_snapshot_view<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
     limits: super::RuntimeSchemaLimits,
     validation: &mut V,
     expected: V::Expected,
 ) -> Result<(), RuntimeSchemaError> {
-    validate_without_digest(value, limits, validation, expected, ValueEncoding::Snapshot)
+    validate_view_without_digest(value, limits, validation, expected, ValueEncoding::Snapshot)
 }
 
 fn validate_without_digest<V: ValueValidation>(

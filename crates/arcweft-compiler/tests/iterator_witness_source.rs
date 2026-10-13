@@ -172,11 +172,33 @@ fn round_trip_source_witness(
             RuntimeSchemaLimits::engine_default(),
         )
         .unwrap();
+    let state_image =
+        AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&state, owner).unwrap();
+    let limits = RuntimeSchemaLimits::engine_default();
+    owner
+        .types()
+        .validate_inert_snapshot_value(state_type, &state_image, limits)
+        .unwrap();
+    assert!(
+        owner
+            .types()
+            .validate_inert_snapshot_value(
+                state_type,
+                &AwbcRuntimeValueSnapshot::Bool(true),
+                limits
+            )
+            .is_err()
+    );
+    let state = state_image
+        .into_typed_runtime_value_for_program_with_limits(owner, state_type, limits)
+        .unwrap();
     let value =
         RuntimeValue::Iterator(RuntimeIterator::try_witness(owner.clone(), state, next).unwrap());
     let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, owner).unwrap();
     let bytes = serde_json::to_vec(&image).unwrap();
     let decoded: AwbcRuntimeValueSnapshot = serde_json::from_slice(&bytes).unwrap();
+    // This for-loop keeps the nominal receiver and method signature rather
+    // than a first-class Iterator row; do not invent a type for its wire.
     let restored = decoded.into_runtime_value_for_program(owner).unwrap();
     assert_eq!(
         restored, value,

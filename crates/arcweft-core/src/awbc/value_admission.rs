@@ -8,14 +8,14 @@ use super::schema::{
 };
 use crate::entry::schema::{
     value_budget::ValidationWork,
-    value_encoding::{self, ValueAdmission, ValueValidation},
+    value_encoding::{self, ValueAdmission, ValueAdmissionOrigin, ValueValidation},
 };
 use crate::entry::{
     RuntimeNominalRecordShape, RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest,
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeVariantIdentity};
 use crate::plan::RuntimeAgentTypeProjection;
-use crate::task::RuntimeProgramOwner;
+use crate::program_types::RuntimeValueTypeContext;
 use crate::value::{
     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
     RuntimeScalarView as Scalar, RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView as View,
@@ -45,10 +45,12 @@ impl AwbcProgram {
         self.runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
-        let limits = RuntimeSchemaLimits::engine_default();
+        let work = context.validation_work();
+        let limits = work.limits();
         let mut validation = AwbcValueValidation {
             program: self,
-            work: ValidationWork::new(limits),
+            work,
+            origin: ValueAdmissionOrigin::Live,
             context,
         };
         value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
@@ -81,10 +83,12 @@ impl AwbcProgram {
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
+            &ValidationWork::new(limits),
             |context| {
                 let mut validation = AwbcValueValidation {
                     program: self,
-                    work: ValidationWork::new(limits),
+                    work: context.validation_work(),
+                    origin: ValueAdmissionOrigin::Live,
                     context,
                 };
                 value_encoding::validate_live_view(
@@ -93,18 +97,16 @@ impl AwbcProgram {
                     &mut validation,
                     Expected::Type(ty),
                 )
-                .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
             },
         )
-        .unwrap_or_else(|| {
-            Err(AwbcValueAdmissionError::Value {
-                ty,
-                source: RuntimeSchemaError::Type {
-                    path: "$".to_owned(),
-                    expected: "admitted AWBC type binding",
-                    actual: value.type_name(),
-                },
-            })
+        .map_err(|source| AwbcValueAdmissionError::Value { ty, source })?
+        .ok_or_else(|| AwbcValueAdmissionError::Value {
+            ty,
+            source: RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "admitted AWBC type binding",
+                actual: value.type_name(),
+            },
         })
     }
 
@@ -115,42 +117,57 @@ impl AwbcProgram {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), AwbcValueAdmissionError> {
+        self.validate_snapshot_value_view(
+            ty,
+            value.view(),
+            &ValidationWork::new(limits),
+            ValueAdmissionOrigin::Live,
+        )
+    }
+
+    pub(crate) fn validate_snapshot_value_view(
+        &self,
+        ty: AwbcTypeId,
+        value: View<'_>,
+        work: &ValidationWork,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<(), AwbcValueAdmissionError> {
+        let limits = work.limits();
         let row = self
             .runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
         let binding = value
-            .view()
             .construction_instantiation()
             .filter(|(identity, _)| !row.scope().is_root() && *identity == row.semantic_identity())
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
+            work,
             |context| {
                 let mut validation = AwbcValueValidation {
                     program: self,
-                    work: ValidationWork::new(limits),
+                    work: context.validation_work(),
+                    origin,
                     context,
                 };
-                value_encoding::validate_snapshot(
+                value_encoding::validate_snapshot_view(
                     value,
                     limits,
                     &mut validation,
                     Expected::Type(ty),
                 )
-                .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
             },
         )
-        .unwrap_or_else(|| {
-            Err(AwbcValueAdmissionError::Value {
-                ty,
-                source: RuntimeSchemaError::Type {
-                    path: "$".to_owned(),
-                    expected: "admitted AWBC type binding",
-                    actual: value.view().type_name(),
-                },
-            })
+        .map_err(|source| AwbcValueAdmissionError::Value { ty, source })?
+        .ok_or_else(|| AwbcValueAdmissionError::Value {
+            ty,
+            source: RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "admitted AWBC type binding",
+                actual: value.type_name(),
+            },
         })
     }
 
@@ -169,6 +186,7 @@ impl AwbcProgram {
         let mut validation = AwbcValueValidation {
             program: self,
             work: ValidationWork::new(limits),
+            origin: ValueAdmissionOrigin::Live,
             context: (),
         };
         value_encoding::validate_and_hash(value, limits, &mut validation, Expected::Type(ty))
@@ -213,6 +231,7 @@ impl ExactSizeIterator for Alternatives<'_> {}
 struct AwbcValueValidation<'a, C = ()> {
     program: &'a AwbcProgram,
     work: ValidationWork,
+    origin: ValueAdmissionOrigin,
     context: C,
 }
 
@@ -502,6 +521,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     });
                 }
                 Self::arity(actual_fields.len(), actual.fields().len())?;
+                for (ordinal, field) in actual_fields.iter().enumerate() {
+                    if actual.field_id(ordinal) != Some(field.field) {
+                        return Err(Self::mismatch(value));
+                    }
+                }
                 if !self
                     .context
                     .nominal(ty, actual_ty, actual.type_instantiation())
@@ -512,10 +536,9 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                 Ok(Children::Record(fields))
             }
             (Type::Function { .. }, View::Callable(callable)) => {
-                if !matches!(
+                if !self.origin.accepts_program(
+                    crate::program_types::RuntimeProgramTypes::Awbc(self.program),
                     callable.owner(),
-                    Some(RuntimeProgramOwner::Awbc(owner))
-                        if std::ptr::eq(owner.as_ref(), self.program)
                 ) {
                     return Err(Self::mismatch(value));
                 }
@@ -554,8 +577,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> AwbcValue
                     }
                 }
                 crate::value::RuntimeIteratorKind::Witness(witness) => {
-                    if !matches!(witness.owner(), Some(RuntimeProgramOwner::Awbc(owner)) if std::ptr::eq(owner.as_ref(), self.program))
-                    {
+                    if !self.origin.accepts_program(
+                        crate::program_types::RuntimeProgramTypes::Awbc(self.program),
+                        witness.owner(),
+                    ) {
                         return Err(Self::mismatch(value));
                     }
                     let (state, actual_item) =
@@ -685,7 +710,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> ValueVali
                     self.work.collection(alternatives.len())?;
                     Ok(ValueAdmission::Choice(Alternatives(alternatives.iter())))
                 } else {
-                    self.check(ty, value).map(ValueAdmission::Children)
+                    let admission = self.check(ty, value);
+                    match self.work.failure() {
+                        Some(error) => Err(error),
+                        None => admission.map(ValueAdmission::Children),
+                    }
                 }
             }
         }

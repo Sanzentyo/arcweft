@@ -12888,3 +12888,311 @@ unification が異なる slice の結果はその入力として記録し、work
 全受入の完了ではなく、expected-type/Need/frame/session と全体の残実装も
 残る。source と全検証証拠は保持し、動作中の Cargo/tool session はない。
 容量を確保した同一条件の環境で検証と未完の実装・公開を再開する。
+
+### 2026-10-13 JST — Windows main で shared borrowed view の検証を再開
+
+Supersedes the preceding current BLOCKED state only. User resumed the complete
+convergence goal and identified prior thread `01a1307f-5a2d-761e-ae9e-e48a19cbb080`.
+Its final user instruction was publication of the then-current state; its final
+receipt identifies `7f61fd9c45e684ff9551e1b14c9317a1a366a227`, with required
+validation still incomplete. Fresh fetch observed that exact commit on
+origin/main. The existing Windows main at `6d118b011190518c868f212488f746f484719724`
+fast-forwarded to it without overlapping the held 14 Rust/test/sample paths.
+The index remains empty and historical untracked files remain preserved.
+The prior Linux clean-tree claim is not a claim about this mixed Windows tree.
+
+Previous goal work is classified PROGRESS: the published live/inert borrowed
+grammar removes the parallel inert visitor and retains Core owning type tables.
+This continuation first completes its missing validation before further changes
+to those frozen source inputs. Actual all-feature Cargo metadata filtered for
+`x86_64-pc-windows-msvc` gives 49 Core/LSP reverse packages. The prior complete
+53-package feature-unification selection is retained, including render-web and
+the codec/serde test dependencies; no target or workload is removed. Fresh
+metadata, both invert trees, 3,620 input hashes and exact held14 hashes are in
+`C:/Users/sanze/AppData/Local/Temp/arcweft-1011-convergence-resume-cb798c1d/`
+under `shared-view-win-r1`. Features, host, default profiles and Cargo job policy
+are unchanged. Workspace check/Clippy, Core/LSP doctests, structure gate,
+default Core/player-web wasm check and fmt are running sequentially; nextest
+list and the complete reverse-graph run are not yet run. Running is not PASS.
+No generated artifact was deleted, moved, copied or relocated in this turn.
+
+Current inspection confirms the next implementation boundary: durable root
+and generic program restore apply grammar resources while inert but defer the
+expected program type to live construction or post-construction admission.
+The shared borrowed views now make that preconstruction relation possible.
+Callable and Iterator Witness views intentionally have no executable lease
+when inert; typed admission must explicitly select the original program,
+retain live foreign-lease rejection, and validate retained/state descendants
+before construction. Root's state role supplies its actual semantic identity.
+Remaining shared work/type-instantiation/Need descriptor/frame/session budgets,
+per-site expected-key/capture/layout, whole-session failure atomicity, C1-C6,
+retained View, task14 atomic switch, scheduler A-F, Native/AWBC stop-restore,
+Native/Web parity and final workspace/Tier2 acceptance remain required.
+The goal is ACTIVE and not complete; no smaller validation slice substitutes
+for the original objective.
+
+### 2026-10-13 JST — inert expected-type admission と検証入力の固定
+
+Inspected main remains `7f61fd9c45e684ff9551e1b14c9317a1a366a227`, with the
+held14 paths and historical untracked files preserved. The preceding
+`shared-view-win-r1` six sequential gates are now terminal PASS: workspace
+all-target/all-feature check and Clippy, Core/LSP doctests (Core 3 compile-fail
+examples, LSP 0), structure gate, default Core/player-web wasm check, and fmt.
+These receipts cover the pre-edit source; they are not current-source nextest
+or a complete final-workspace acceptance result.
+
+Core's existing Native/AWBC value relation now accepts a borrowed inert
+candidate under the selected original semantic type. Resource preflight runs
+first and passes its remaining `ValidationWork` to expected descendant
+admission. The explicit private admission origin permits original-program
+correlation for inert callable/Witness views but retains exact lease identity
+for live values. Nominal field IDs are checked before descendant construction.
+The owning snapshot codec exposes typed owned/unrestricted restore entrypoints;
+durable root passes its actual selected state role into that preconstruction
+boundary. Its existing persistent-payload digest admission remains afterward.
+The untyped program-bound codec is still used where the storing owner has not
+yet supplied its expected type; this cut does not claim that migration complete.
+
+`inert-types-r2` focused list failed to compile new test error matching; the
+enum destructuring was repaired. `inert-types-r3` Core focused run is terminal
+PASS 3, checking Native/AWBC rejection order, original retained layout/live
+lease, field IDs, resource-first rejection, and the remaining work allowance.
+The compiler's initial two-target run was PASS 7 / FAIL 2: the added test
+incorrectly required a first-class Iterator row from a for-loop that retains
+only its nominal receiver and original method signature. No production type
+row was fabricated. The source fixture now admits that actual receiver while
+inert; `inert-types-r4` both Iterator source tests PASS, retaining real Native/
+AWBC execution and an actual AWBC next-method stop/restore. The existing Core
+fixture with an admitted Iterator row now checks inert Witness item/state
+admission, and the existing durable root wire test checks type rejection ahead
+of an invalid callable constructor. Their final-source run remains pending.
+
+`inert-types-win-r1` freezes 3,620 current inputs and exact held14 hashes. Cargo
+metadata/invert trees are reused with every Cargo/lock input verified unchanged:
+49 actual Core/LSP reverse packages, including Compiler, and the unchanged
+53-package feature-unification graph. The six gates and an unfiltered full53
+nextest list/run are executing sequentially with default jobs/profiles/features.
+Source is fixed for this run. No build artifact is deleted, moved or copied.
+
+Ownership review: `value_encoding.rs` is 1,354 physical LOC (base 1,324), the
+snapshot codec is 1,400 (base 1,357), and its responsibility-local tests are
+1,625 (base 1,470). The existing shared visitor/codec cohesion disposition
+continues to apply. No Cargo, layer, I/O, wire grammar or contract version
+changes were introduced; version markers remain 1. Evidence and exact metrics
+are in `inert-types-win-r1.owner-review.json`. The private origin only selects
+the existing program authority and issues no live lease, Copy or custody.
+
+Remaining work is still the full goal. In particular, the function/effect
+`ParameterMatcher` retains an independent engine-default `ContractWork`, so
+sharing the value visitor allowance does not yet establish the complete
+selected-policy type-instantiation bound. Need descriptors, per-site expected
+type/key/capture/layout, frame/session totals and their construction ordering,
+whole-session failure atomicity, accepted C1-C6/View/task14/scheduler A-F,
+Native/Web parity, and final workspace/Tier2 checks remain mandatory. The
+goal stays ACTIVE; no final acceptance or publication is claimed here.
+
+The six `inert-types-win-r1` gates are now terminal PASS. Its full53 list is
+terminal FAIL 101 before any test inventory/run: the first diagnostic is
+E0786 loading bundle metadata with `failed to mmap ... os error 1455` (paging
+file capacity), followed by delayed import/method-resolution compiler ICEs.
+This is not a test failure count or a complete full53 result. All Cargo children
+were observed terminal before retry. `inert-types-win-r1-retry1` repeats the
+same complete package/features/profile/jobs selection; all 3,620 source hashes
+and held14 hashes were verified unchanged. It is currently building. The
+failed receipt is retained; no cache/artifact deletion, movement, copying,
+relocation, job cap, profile or feature change was used.
+
+Next implementation decision, not yet applied while these inputs are fixed:
+own one ephemeral validation allowance at the admission boundary and share
+that same counter with the function/effect matcher and nested value relation.
+Those nested relations currently issue an additional default value allowance.
+Remove `ContractWork` and spent-counter subtraction, preserve structured quota
+failures, and issue the named engine policy only once for default public
+boundaries. A shared handle represents access to the same counter, not another
+quota or a value/custody capability. Exact nominal and scoped effect/capture
+limits must exercise that boundary. Also delete the now-unreferenced live
+`validate_snapshot` wrapper in `value_encoding` after the frozen run; both
+program validators use the final borrowed entry. The unused AWBC owner import
+belongs in its tests. These are in-scope repairs, not an external design gate.
+
+### 2026-10-13 — Windows full53 receipt and shared admission work
+
+Inspected main remains `7f61fd9c45e684ff9551e1b14c9317a1a366a227`.
+The Windows tree contains the previously held14 paths plus the current expected-
+type admission changes; the index is empty and no new publication is claimed.
+The old full53 list failure and the inventory review error remain retained.
+The corrected inventory review distinguishes 39 existing ignored filter
+mismatches from exclusion of a normal test; normal exclusions are zero.
+
+`inert-types-win-r1-retry1` is now terminal: list exit 0, run exit 100,
+run ID `f185f6c0-50ae-4845-a853-93e0fea73774`, inventory 6,129 in 205 binaries,
+normal 6,090, ignored 39. Result: PASS 6,003 / FAIL 87 / SKIP 39. All 87 failure
+IDs match `capture-resource-r8`; its old affine opaque admission failure now
+passes. The intermittent subprocess teardown test failed again here, despite
+its separate focused pass; the earlier full FAIL 88 receipt stays historical.
+There are no missing prior IDs, ignore-flag changes, unexecuted normal tests,
+new failure IDs, source drift in the 3,620 frozen inputs, or held14 hash drift.
+Core library PASS 1,214 and all nine added inventory tests PASS. Existing Core
+root-wire/Witness tests and compiler actual continuation/Witness tests also
+passed. This is a mixed-tree Windows receipt, not a clean published-tree result,
+Linux result, ignored-test acceptance, or a successful full goal gate.
+
+Evidence is `inert-types-win-r1-retry1.full-audit.json` in the preserved Windows
+evidence directory. List SHA256
+`85578b81a081f35f84e1ddebd126d85fc64585a67dd0946d340902ed9d7bc6be`;
+log SHA256
+`f335c23913fae6c9193a262ec4a6ee18cc34ae978990242d45a124a2faaf7b22`.
+The six previously recorded gates apply to those frozen pre-shared-counter
+bytes; they are not claimed as checks of the subsequent implementation.
+
+Supersedes the planned separate allowance-wrapper shape above: the existing
+private `ValidationWork` itself now grants handles to one ephemeral counter.
+Its `Rc<RefCell<_>>` owns the selected limits, consumed work and first hard
+resource failure once. No mutable state borrow survives a charge/collection
+operation, no payload/program owns it, and no live lease or Copy/custody
+capability is issued. This permits synchronous nested value relations to share
+the same allowance without borrowing their owning matcher twice. Runtime
+values/programs retain their existing Send/Sync contracts; no unsafe or I/O
+boundary is added.
+
+`ContractWork`, source/default spent-counter subtraction, and nested fresh
+value quotas have been removed. Default public contract boundaries issue one
+named engine policy; `with_value_relation`, nested original source matching,
+type/effect decision operations and the value visitor share its counter. The
+private relation operation returns structured resource errors; visitor failures
+retain their logical path instead of being replaced by a root-level bool/type
+error. Choice rolls back effect obligations but never work or a hard failure.
+The original hard type-relation depth limit of 64 remains in addition to the
+selected policy depth. The unused snapshot wrapper was deleted and the unused
+AWBC program-owner import moved to tests.
+
+Existing nominal/callable tests now require an exact shared five-step positive
+and four-step rejection, rather than accepting separate per-phase budgets;
+the scalar two/one boundary remains. The scoped nominal origin fixture checks
+that its source matcher cannot replenish the destination's one-step quota.
+`shared-work-r1` list failed to compile four concrete relation uses because the
+new context trait was not imported; imports were corrected. `shared-work-r2`
+Core library then actual Native/AWBC continuation/Witness validation is running.
+Its result and new final-source broad checks are pending. No jobs, profiles,
+features, test workload, assertions, capture conditions, or build artifacts
+were reduced, moved, copied or deleted to address the failed checks.
+
+The full convergence goal stays ACTIVE. This counter repair does not claim
+per-frame/session totals, every expected role/key/capture/layout consumer,
+Need/task14 atomic public switch, all C1-C6/View/scheduler acceptance, Native/Web
+parity, final workspace/Tier2 success, or publication complete. Remaining
+CLI/runtime failures still need owning-boundary repairs; all currently feasible
+implementation and validation remain authorized.
+
+`shared-work-r2` is terminal PASS: Core library 1,214, run ID
+`c6349f5a-03d0-4cd6-a3ae-b5ed46ed0585`; compiler actual Native/AWBC continuation
+and Witness tests 9, run ID `5356353f-98ae-40a5-abb5-d28e6f9f9755`. After
+strengthening the existing tests with retained-value error path `$[0]` and the
+selected zero-depth type-relation bound, `shared-work-r3` is terminal PASS 2
+with 1,212 deliberately unselected library tests, run ID
+`b376adbe-974b-4f32-b5b0-9d9af9cac916`. That narrow receipt verifies the changed
+assertions, not full workspace or public compile acceptance.
+
+All six `shared-work-win-r1` gates are terminal PASS on its frozen inputs.
+The changed-warning review identified a needless owned allowance argument and
+one remaining new single-variant wildcard; both were repaired after those gates
+terminated. The relation now borrows the existing allowance and grants matching
+handles to that same counter. Every call site was migrated. The maintained
+chapter now explicitly limits the logical-path claim to validation-work/depth
+errors, whose structured variants actually own a path.
+
+`shared-work-win-r2` records the new final inputs and held14 hashes and is
+executing its six gates before the unfiltered full53 run. Cargo graph inputs
+remain unchanged, so the original metadata/invert trees, actual 49-package
+reverse closure and retained 53-package feature-unification selection are
+reused. No source mutation is planned during that fixed-source run. Size review:
+the shared visitor is 1,345 LOC (+21 from base); the one snapshot codec is
+1,400 (+43); its responsibility-local tests are 1,674 (+204). The existing
+cohesion dispositions remain applicable. Function-contract provenance, scoped
+limits and failed-Choice tests retain one fixture/authority per invariant;
+their line warnings and the Native/AWBC typed grammar check-arm line warnings
+are reviewed cohesive responsibilities, not grounds to split or suppress them.
+The final gates/full receipt and publication are still pending.
+
+Both `shared-work-win-r2` and the subsequent final `shared-work-win-r3` six
+gates are terminal PASS. The r2 review revealed the same allowance forwarding
+issue at the two snapshot-view boundaries; all forwarding boundaries, including
+the private program-type and unrestricted codec entry, now borrow the one
+resource-preflight allowance. The r3 review has no new actionable warning:
+its five changed line warnings are the cohesive grammar/tests disposed above.
+No allowance argument was suppressed with a lint attribute, and the unused
+wrapper/import and single-variant wildcard warnings were repaired directly.
+
+Fresh fetch on main observes local HEAD and origin/main both at the full
+`7f61fd9c45e684ff9551e1b14c9317a1a366a227`; the index remains empty.
+`shared-work-win-r3` freezes 3,620 final inputs and unchanged held14 hashes.
+Its complete unfiltered full53 list/run is now executing, unified session
+68222. The six passes do not relabel the preceding full FAIL 87 or establish
+ignored-test/whole-goal acceptance. Final-source full53 result, explicit staged
+diff review and coherent publication are still pending.
+
+The r3 full53 list is terminal FAIL 101 before test inventory or execution.
+Unlike the earlier inert-types paging-file receipt, this log has no E0786,
+`mmap`, or OS 1455 diagnostic. It reports delayed Rust compiler ICEs resolving
+existing bundle imports in `standard_dialogue_view`, then an unavailable bundle
+rlib for the REPL test. The cause is not confirmed as memory capacity or a
+source defect. All Cargo/nextest/rustc processes were observed terminal; frozen
+source and held14 drift arrays are empty. The failed list/empty inventory/exit
+receipt is retained, not counted as test failures or coverage.
+
+`shared-work-win-r3-retry1` repeats exactly the same full53 list/run selection
+and uses the original r3 source freeze and plan. Its build/run is pending.
+Normal Cargo cache reuse is permitted; no build artifact has been deleted,
+moved, copied, relocated, or patched, and no concurrency/profile/features,
+workload/budget/assertions/capture conditions were reduced. The failure limits
+the full53 claim; independent in-scope work and the active goal remain open.
+
+Retry1 is terminal list FAIL 101, also before inventory/execution. This receipt
+does explicitly report E0786 loading the bundle rlib with `failed to mmap ...
+os error 1455` in `release_trust_e2e`, followed by secondary unavailable-rlib
+errors. It does not retroactively prove the first ICE-only receipt's cause.
+The bundle rlib was observed present at 1,156,893,890 bytes; it was inspected
+read-only and not altered. All Cargo/nextest/rustc processes were again terminal.
+`shared-work-win-r3-retry2` now repeats the exact selection and source freeze;
+all 3,620 inputs and held14 hashes still match, drift is empty, unified session
+94257. No test result/full acceptance/publication is inferred from these list
+failures, and no environment/process or build-output workaround was applied.
+
+2026-10-13 final shared-work delivery cut, inspected main
+`7f61fd9c45e684ff9551e1b14c9317a1a366a227`: retry2 is terminal list FAIL 101,
+with E0786 / `failed to mmap ... os error 1455` while compiling the native
+player binary test, then secondary unavailable-rlib errors. No full53 inventory
+or tests executed on the final source; the pre-counter full FAIL 87 remains
+historical. The fixed-source six r3 gates remain PASS. All Cargo/nextest/rustc
+processes terminated; source and held14 hash drift remain empty.
+
+The final borrowed-allowance source was then checked independently without
+changing jobs, profiles, features, workloads, budgets, assertions or captures:
+Core library PASS 1,214, run ID `119a7f40-d4ef-4806-bdbd-d5315570d2d2`, and
+actual Native/AWBC continuation/Witness tests PASS 9, run ID
+`3999c869-88f8-456d-b17d-bfbcc7e43707`. The receipts are
+`shared-work-final-focused.core-run.log` and
+`shared-work-final-focused.compiler-run.log` in the preserved Windows evidence
+directory. These are mixed-tree owner checks, not substitutes for full53,
+ignored tests, final workspace/Tier2 or Native/Web parity acceptance.
+
+Read-only Windows inspection observed automatic page-file management, a
+6,187 MiB allocated page file and 68,464,795,648 bytes of physical memory.
+The repeated explicit OS 1455 receipts justify an external capacity decision;
+they do not authorize changing Windows settings. A review-only script proposes
+initial 32 GiB / maximum 64 GiB for the existing C: page file and never restarts.
+Separate user approval and administrator operation are pending. No OS setting,
+unrelated process or build artifact was changed. Further blind full53 retries
+are deferred until that capacity condition changes; independent implementation
+and coherent delivery remain active.
+
+The 20-path typed inert admission/shared-work cut is being reviewed for normal
+commit/push with these explicit validation limits. Held14 and historical
+untracked files remain outside it. The full convergence goal remains ACTIVE.
+Subsequent owner work must still move frame/session original slot type,
+immutable destination binding, partial record header, expected key, capture and
+layout checks before construction/copy. Current frame restore constructs a
+private candidate before `validate_frame`; failure-atomic publication alone
+does not establish that preconstruction contract. The existing original program
+and scoped relation authority must be reused, rather than manufacturing a
+closed row or treating candidate provenance as the destination context.

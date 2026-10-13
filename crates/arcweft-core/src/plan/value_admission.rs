@@ -7,12 +7,13 @@ use thiserror::Error;
 
 use crate::entry::schema::{
     value_budget::ValidationWork,
-    value_encoding::{self, ValueAdmission, ValueValidation},
+    value_encoding::{self, ValueAdmission, ValueAdmissionOrigin, ValueValidation},
 };
 use crate::entry::{
     RuntimeNominalSchemaIdentity, RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest,
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
+use crate::program_types::RuntimeValueTypeContext;
 use crate::runtime_id::RuntimePlanTypeId;
 use crate::value::{
     RuntimeIterator, RuntimeRange, RuntimeRangeIterator, RuntimeReductionProducer,
@@ -88,10 +89,12 @@ impl super::RuntimePlanInventory {
         self.type_table()
             .get(ty)
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
-        let limits = RuntimeSchemaLimits::engine_default();
+        let work = context.validation_work();
+        let limits = work.limits();
         let mut validation = PlanValueValidation {
             authority: PlanValueAuthority::Inventory(self),
-            work: ValidationWork::new(limits),
+            work,
+            origin: ValueAdmissionOrigin::Live,
             context,
         };
         value_encoding::validate_live_view(value, limits, &mut validation, Expected::Type(ty))
@@ -125,10 +128,12 @@ impl super::RuntimePlanInventory {
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
+            &ValidationWork::new(limits),
             |context| {
                 let mut validation = PlanValueValidation {
                     authority: PlanValueAuthority::Inventory(self),
-                    work: ValidationWork::new(limits),
+                    work: context.validation_work(),
+                    origin: ValueAdmissionOrigin::Live,
                     context,
                 };
                 value_encoding::validate_live_view(
@@ -137,18 +142,16 @@ impl super::RuntimePlanInventory {
                     &mut validation,
                     Expected::Type(ty),
                 )
-                .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
             },
         )
-        .unwrap_or_else(|| {
-            Err(RuntimePlanValueAdmissionError::Value {
-                ty,
-                source: RuntimeSchemaError::Type {
-                    path: "$".to_owned(),
-                    expected: "admitted plan type binding",
-                    actual: value.type_name(),
-                },
-            })
+        .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })?
+        .ok_or_else(|| RuntimePlanValueAdmissionError::Value {
+            ty,
+            source: RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "admitted plan type binding",
+                actual: value.type_name(),
+            },
         })
     }
 
@@ -159,42 +162,57 @@ impl super::RuntimePlanInventory {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.validate_snapshot_value_view(
+            ty,
+            value.view(),
+            &ValidationWork::new(limits),
+            ValueAdmissionOrigin::Live,
+        )
+    }
+
+    pub(crate) fn validate_snapshot_value_view(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        work: &ValidationWork,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        let limits = work.limits();
         let row = self
             .type_table()
             .get(ty)
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
         let binding = value
-            .view()
             .construction_instantiation()
             .filter(|(identity, _)| !row.scope().is_root() && *identity == row.semantic_identity())
             .map(|(_, binding)| binding);
         crate::program_types::RuntimeFunctionEffectInstantiation::with_value_relation(
             self,
             binding,
+            work,
             |context| {
                 let mut validation = PlanValueValidation {
                     authority: PlanValueAuthority::Inventory(self),
-                    work: ValidationWork::new(limits),
+                    work: context.validation_work(),
+                    origin,
                     context,
                 };
-                value_encoding::validate_snapshot(
+                value_encoding::validate_snapshot_view(
                     value,
                     limits,
                     &mut validation,
                     Expected::Type(ty),
                 )
-                .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
             },
         )
-        .unwrap_or_else(|| {
-            Err(RuntimePlanValueAdmissionError::Value {
-                ty,
-                source: RuntimeSchemaError::Type {
-                    path: "$".to_owned(),
-                    expected: "admitted plan type binding",
-                    actual: value.view().type_name(),
-                },
-            })
+        .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })?
+        .ok_or_else(|| RuntimePlanValueAdmissionError::Value {
+            ty,
+            source: RuntimeSchemaError::Type {
+                path: "$".to_owned(),
+                expected: "admitted plan type binding",
+                actual: value.type_name(),
+            },
         })
     }
 
@@ -316,6 +334,7 @@ impl ExactSizeIterator for Alternatives<'_> {}
 struct PlanValueValidation<'a, C = ()> {
     authority: PlanValueAuthority<'a>,
     work: ValidationWork,
+    origin: ValueAdmissionOrigin,
     context: C,
 }
 
@@ -334,6 +353,7 @@ impl<'a> PlanValueValidation<'a> {
         Ok(Self {
             authority,
             work: ValidationWork::new(limits),
+            origin: ValueAdmissionOrigin::Live,
             context: (),
         })
     }
@@ -466,6 +486,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
             .record(actual_ty)
             .ok_or_else(|| Self::mismatch(value))?;
         Self::arity(actual_domain.fields().len(), record.fields().len())?;
+        for (ordinal, field) in actual_domain.fields().iter().enumerate() {
+            if record.field_id(ordinal) != Some(field.field()) {
+                return Err(Self::mismatch(value));
+            }
+        }
         if !self
             .context
             .nominal(ty, actual_ty, record.type_instantiation())
@@ -540,8 +565,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 let PlanValueAuthority::Inventory(plan) = &self.authority else {
                     return None;
                 };
-                if !matches!(witness.owner(), Some(crate::task::RuntimeProgramOwner::Plan(owner)) if std::ptr::eq(&raw const owner.inventory, *plan))
-                {
+                if !self.origin.accepts_program(
+                    crate::program_types::RuntimeProgramTypes::Plan(plan),
+                    witness.owner(),
+                ) {
                     return None;
                 }
                 let (state, actual_item) = crate::program_types::RuntimeProgramTypes::Plan(plan)
@@ -668,8 +695,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>>
                 let PlanValueAuthority::Inventory(plan) = &self.authority else {
                     return Err(Self::mismatch(value));
                 };
-                if !matches!(callable.owner(), Some(crate::task::RuntimeProgramOwner::Plan(owner)) if std::ptr::eq(&owner.inventory, *plan))
-                {
+                if !self.origin.accepts_program(
+                    crate::program_types::RuntimeProgramTypes::Plan(plan),
+                    callable.owner(),
+                ) {
                     return Err(Self::mismatch(value));
                 }
                 let state = plan
@@ -776,7 +805,11 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
                     self.work.collection(alternatives.len())?;
                     Ok(ValueAdmission::Choice(Alternatives(alternatives.iter())))
                 } else {
-                    self.check(ty, value).map(ValueAdmission::Children)
+                    let admission = self.check(ty, value);
+                    match self.work.failure() {
+                        Some(error) => Err(error),
+                        None => admission.map(ValueAdmission::Children),
+                    }
                 }
             }
         }

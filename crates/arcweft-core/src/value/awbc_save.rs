@@ -35,6 +35,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     Nesting(#[from] super::RuntimeValueNestingError),
     #[error(transparent)]
     Resource(crate::entry::RuntimeSchemaError),
+    #[error(transparent)]
+    ProgramType(Box<crate::program_types::RuntimeProgramTypeError>),
 }
 
 impl From<crate::entry::RuntimeSchemaError> for AwbcRuntimeValueSnapshotError {
@@ -339,19 +341,45 @@ impl AwbcRuntimeValueSnapshot {
         owner: &RuntimeProgramOwner,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.into_unrestricted_value_for_program(owner, None, limits)
+    }
+
+    /// Admits the selected original expected type before constructing any live
+    /// descendant, while rejecting affine values in this copyable storage role.
+    pub fn into_unrestricted_typed_runtime_value_for_program_with_limits(
+        self,
+        owner: &RuntimeProgramOwner,
+        expected: RuntimeSemanticTypeId,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.into_unrestricted_value_for_program(owner, Some(expected), limits)
+    }
+
+    fn into_unrestricted_value_for_program(
+        self,
+        owner: &RuntimeProgramOwner,
+        expected: Option<RuntimeSemanticTypeId>,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let mut affine = false;
         let mut observe = |value: super::RuntimeValueView<'_>| {
             affine |= matches!(value, super::RuntimeValueView::Need(_))
                 || matches!(value, super::RuntimeValueView::Opaque(opaque) if !opaque.value_class().intrinsic_ownership().permits_copy());
             Ok(())
         };
-        crate::entry::schema::value_encoding::preflight_snapshot_view(
+        let work = crate::entry::schema::value_encoding::preflight_snapshot_view(
             self.view(),
             limits,
             Some(&mut observe),
         )?;
         if affine {
             return Err(AwbcRuntimeValueSnapshotError::AffineValue);
+        }
+        if let Some(expected) = expected {
+            owner
+                .types()
+                .validate_inert_snapshot_view(expected, self.view(), &work)
+                .map_err(|error| AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))?;
         }
         self.into_live_with_owner(Some(owner))
     }
@@ -626,6 +654,21 @@ impl AwbcRuntimeValueSnapshot {
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         self.validate_graph_limits(limits)?;
         self.into_live_with_owner(Some(program_owner))
+    }
+
+    /// Restores an owned candidate only after its complete borrowed graph has
+    /// been admitted against the selected original executable type.
+    pub fn into_typed_runtime_value_for_program_with_limits(
+        self,
+        owner: &RuntimeProgramOwner,
+        expected: RuntimeSemanticTypeId,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        owner
+            .types()
+            .validate_inert_snapshot_value(expected, &self, limits)
+            .map_err(|error| AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))?;
+        self.into_live_with_owner(Some(owner))
     }
 
     fn into_live_with_owner(

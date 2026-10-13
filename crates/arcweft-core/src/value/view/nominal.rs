@@ -48,6 +48,12 @@ impl<'a> RuntimeNominalRecordView<'a> {
             Self::Snapshot(value) => RuntimeTupleView::NominalFields(&value.fields),
         }
     }
+    pub(crate) fn field_id(self, ordinal: usize) -> Option<super::super::RuntimeRecordFieldId> {
+        match self {
+            Self::Live(value) => value.field_id(ordinal),
+            Self::Snapshot(value) => value.fields.get(ordinal).map(|field| field.field),
+        }
+    }
     pub(super) const fn live_value(self) -> Option<&'a RuntimeNominalRecordValue> {
         match self {
             Self::Live(value) => Some(value),
