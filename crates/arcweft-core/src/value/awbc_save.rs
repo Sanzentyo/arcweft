@@ -1,8 +1,8 @@
-//! Explicit recursive AWBC session-save projection for live runtime values.
+//! Explicit recursive program-bound save projection for live runtime values.
 //!
 //! `RuntimeValue` deliberately rejects generic serde for function values.  A
-//! quiescent AWBC session is the sole exception, and it uses the typed DTOs in
-//! this module rather than serializing or deserializing the live value graph.
+//! quiescent save or rollback uses the typed DTOs in this module rather than
+//! serializing or deserializing the live value graph.
 
 use super::{
     AgentPredicateOperands, DenseSeq, RecordSeq, RuntimeAgentActionTarget,
@@ -44,6 +44,31 @@ impl From<crate::entry::RuntimeSchemaError> for AwbcRuntimeValueSnapshotError {
         match error {
             crate::entry::RuntimeSchemaError::ValueNesting(error) => Self::Nesting(error),
             error => Self::Resource(error),
+        }
+    }
+}
+
+impl From<super::RuntimeCallableValueError> for AwbcRuntimeValueSnapshotError {
+    fn from(error: super::RuntimeCallableValueError) -> Self {
+        match error {
+            super::RuntimeCallableValueError::PendingResource { source, .. } => Self::from(*source),
+            super::RuntimeCallableValueError::RetainedType {
+                state,
+                position,
+                error,
+            } => Self::ProgramType(Box::new(
+                error.within_value_path(&format!("callable[{state}].retained[{position}]")),
+            )),
+            super::RuntimeCallableValueError::ArgumentType {
+                state,
+                position,
+                error,
+            } => Self::ProgramType(Box::new(
+                error.within_value_path(&format!("callable[{state}].arguments[{position}]")),
+            )),
+            error => Self::Message {
+                message: error.to_string(),
+            },
         }
     }
 }
@@ -519,7 +544,7 @@ impl AwbcRuntimeValueSnapshot {
         Self::iterator_into_live(iterator, Some(owner))
     }
 
-    fn from_live_with_owner(
+    pub(in crate::value) fn from_live_with_owner(
         value: &RuntimeValue,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
@@ -671,7 +696,7 @@ impl AwbcRuntimeValueSnapshot {
         self.into_live_with_owner(Some(owner))
     }
 
-    fn into_live_with_owner(
+    pub(in crate::value) fn into_live_with_owner(
         self,
         program_owner: Option<&RuntimeProgramOwner>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {

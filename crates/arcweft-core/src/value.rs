@@ -127,10 +127,11 @@ pub use awbc_save::{
 pub(crate) use callable::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
     RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
-    RuntimeCallablePendingGroupParts, RuntimeCallablePendingRollbackImage,
     RuntimeCallableZeroArgInvocationProof,
 };
-pub use callable::{RuntimeCallableValue, RuntimeCallableValueError};
+pub use callable::{
+    RuntimeCallablePendingSnapshot, RuntimeCallableValue, RuntimeCallableValueError,
+};
 pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};

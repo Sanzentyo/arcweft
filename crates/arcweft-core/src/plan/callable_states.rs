@@ -118,6 +118,24 @@ pub enum RuntimeCallableTransition<F, S = RuntimeCallableStateId> {
     },
 }
 
+impl<F, S> RuntimeCallableTransition<F, S> {
+    /// Borrows the complete input projection in its declared order, without
+    /// manufacturing another packet or allocating a source inventory.
+    pub(crate) fn input_sources(&self) -> impl Iterator<Item = RuntimeCallableInputSource> + '_ {
+        let (first, second): (&[RuntimeCallableInputSource], &[RuntimeCallableInputSource]) =
+            match self {
+                Self::RequiresSpecialization => (&[], &[]),
+                Self::Retain { values, .. } => (values, &[]),
+                Self::Invoke {
+                    captures,
+                    arguments,
+                    ..
+                } => (captures, arguments),
+            };
+        first.iter().chain(second).copied()
+    }
+}
+
 /// An admitted application of a proper subset of the current group's formals.
 /// Formal coordinates, rather than an argument count, identify the prefix.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

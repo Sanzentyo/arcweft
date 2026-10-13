@@ -20,10 +20,10 @@ mod application;
 mod specialization;
 #[cfg(test)]
 mod tests;
+pub use application::RuntimeCallablePendingSnapshot;
 pub(crate) use application::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
     RuntimeCallableInvocation, RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
-    RuntimeCallablePendingGroupParts, RuntimeCallablePendingRollbackImage,
     RuntimeCallableZeroArgInvocationProof,
 };
 
@@ -65,6 +65,11 @@ pub struct RuntimeCallableValue {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeCallableValueError {
+    #[error("pending callable {state} resource admission failed: {source}")]
+    PendingResource {
+        state: RuntimeCallableStateId,
+        source: Box<crate::entry::RuntimeSchemaError>,
+    },
     #[error("callable state {state} requires a checked type specialization before application")]
     RequiresSpecialization { state: RuntimeCallableStateId },
     #[error("callable state {state} is absent from its program")]

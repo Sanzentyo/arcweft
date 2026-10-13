@@ -13447,3 +13447,155 @@ inert carriers and postconstruction default-packet check must converge on one
 owning snapshot validation before any input construction; reuse the borrowed
 exact expected row and aggregate value admission rather than fabricating a
 callable, Unit holes, a source schema or an executable owner.
+
+### 2026-10-13 — one pending callable snapshot owner
+
+Inspected main `4b810fb4353ddb5970dd140118f44fc2564ff558`, parent
+`e2ef03df65ebc838d8ade012df026de647c87ef6`, tree
+`88321271ea63eb73b8797445f00a6220c1ec4675`, matches remote main. The preceding
+place-admission cut is published. This continuation preserves held14 and the
+historical untracked files; the initial pending-packet scaffolding is completed
+in place. No branch, worktree, checkout, OS setting or build artifact was moved,
+copied or removed. The previous goal turn is progress, established by that
+published implementation and its retained r7 evidence.
+
+Supersedes the two current pending-packet inert representations and their
+postconstruction `try_from_parts` validation. `RuntimeCallablePendingSnapshot`
+is the single inert projection used by Native rollback and AWBC ProjectCall,
+ApplyGroup and context-callback default continuations. The owning pending group
+validates its complete presence mask against the original state/default capture
+and subsequent transition before entering any value relation. Moved inputs stay
+vacant. Remaining values use the original inventory plus local type ID directly;
+they are not reselected through a semantic identity. The existing resource/value
+visitor and scoped relation share logical-node, complete-value byte and work
+allowances across the packet. All AWBC frame registers and these pending packets
+use one cumulative admission before the first frame copies or constructs values.
+Capture also requires the exact original live lease. Default-return body
+correlation is shared by the Native and AWBC consumers on the existing typed
+code reference; it is checked before packet construction. The original
+transition owns a borrowed ordered input iterator, so presence validation does
+not allocate a copied source inventory.
+
+The replacement removes the Native pending rollback image, AWBC pending DTO,
+move-only parts constructor and copied transition-source helper. Private value
+projection/construction is shared within `value` after owning admission; no new
+public constructor grants a live packet. Inert decoding remains data and the
+enclosing snapshot supplies the original executable. No type table, field graph,
+finite schema, fallback, source reconstruction, I/O, unsafe, Cargo edge or
+contract-version change is introduced. The maintained save/restore chapter is
+synchronized. This is pending-input admission, not complete continuation/site/
+expected-key/capture/layout, frame/session wire-byte or session publication
+acceptance.
+
+Initial r2 inventory failed before tests on a fixture-name shadowing error;
+r3 then passed six targeted tests, run ID
+`7743994b-0b53-4a73-aebd-11079930be21`, with 1,220 deliberately unselected tests.
+The later r4 inventory failed before execution on moving a boxed type error in
+a match guard. The assertion now destructures that structured error directly;
+its expected original row 2 is unchanged. These failed receipts remain retained.
+
+Final r5 freezes 3,621 source/config/fixture inputs and held14, with empty source
+and held drift. All 1,227 Core library tests pass, zero skips, run ID
+`8cc3d630-06ec-4a18-a7fe-f0007e9bd148`. All ten selected actual Compiler tests
+pass, run ID `b10321fe-f1ac-4f32-b6d9-52b7e2174988`: every generic-continuation
+and Iterator Witness test plus the recursive generic attached-default
+Native/AWBC execution test. Its 43 other evaluated-effects tests are deliberately
+unselected, not claimed as passed. New regressions cover moved-slot round trips,
+once-only default continuation, Native's same packet, shape/type rejection before
+callable construction, exact/one-over accumulated node/byte/work limits, original
+live lease rejection and original type-ID preservation in an unsealed duplicate-
+semantic inventory. Assertions, workload, budgets, captures, jobs, features and
+profiles are not weakened. Workspace check/Clippy, owning doctests, structure,
+default Wasm and fmt are currently executing under verified live session 90376;
+their final receipts must be inspected before staging/publication.
+
+Fresh resolved all-feature Cargo metadata and `cargo tree --workspace
+--all-features --invert arcweft-core` retain 50 workspace packages in the Core
+reverse closure, including Core itself. The previous full53 list failures under
+explicit OS 1455 remain unexecuted full-suite evidence, not a pass or an
+implementation blocker. Read-only inspection still observes the same 6,187 MiB
+page file; no global OS operation is authorized or applied here. This targeted
+execution does not substitute for reverse-closure/full53, Tier2, final workspace
+acceptance or Native/Web capture/image parity.
+
+Owner measurements are retained in `pending-packet-r5.owner-measurements.json`:
+fiber.rs 286,732 bytes / 7,633 LOC (base 7,651); engine.rs 188,621 / 4,735
+(base 4,725); callable_states.rs 32,262 / 828 (base 810); function_contract.rs
+46,687 / 1,289 (base 1,244); value.rs 167,647 / 4,606 (base 4,605);
+awbc_save.rs 59,388 / 1,425 (base 1,400); callable.rs 19,890 / 516 (base 511);
+application.rs 52,354 / 1,300 (base 1,206); its existing tests.rs 38,644 / 937
+(base 889); new snapshot_tests.rs 10,034 / 265. Existing large fiber/engine/value
+cohesion dispositions apply: this cut changes their existing continuation
+lifecycle, not unrelated state or dependencies. The callable application owner
+retains one input grammar/projection/state transition; the borrowed packet view
+owns no values or schema and its tests follow that boundary. Original type/effect
+relation and value snapshot codecs retain their existing responsibilities.
+The private sibling construction access serves these owning validated consumers,
+not physical file splitting. No file grows by more than 300 LOC. Canonical
+structure and changed-warning review remain pending final gate receipts.
+
+The full convergence goal remains ACTIVE. Next complete the return-site and
+context-result/error expected roles before any frame construction, then
+suspension/cleanup/defer/capture admission and whole-frame/session resources.
+Reuse the original instruction/signature/layout rows and the same borrowed
+value relation; candidate provenance cannot stand in for the caller's destination
+binding. Need/task14, retained View/scheduler/C1-C6, removed-path acceptance and
+all final validation/publication requirements remain in the original goal.
+
+The r5 six gates are terminal PASS, but final review found uncharged presence
+slots and projection edges in its packet work accounting. Supersedes that
+constant-header-only accounting: the same pending owner now bounds projection
+collections before deriving an admission-local exclusive-default mask, and
+charges each original edge and slot, including holes, to the existing shared
+allowance. The temporary mask contains only coordinates from the original
+projection, owns no schema/type/value/lease, and dies with this admission. It is
+not another retained catalog. Node/byte/default policy limits stay unchanged.
+The exact work regression now includes header + five edges + three slots + four
+value visits (13/12); an all-moved packet independently requires 8/7 work while
+allowing exactly zero value nodes and bytes. This makes the fixed policy stricter;
+no Unit is manufactured to satisfy a hole. r6 failed fmt/inventory before any
+execution on an extra closing delimiter in that new test; the corrected test
+keeps the structured 7/8 rejection by direct error destructuring.
+
+The strengthened r7 passes Core 1,228 and actual Compiler ten, plus all six gates.
+Its warning review identifies one new borrowed-view by-value argument; that
+argument now borrows the view instead of copying its coordinates. Final r8
+reexecutes the same selection and all gates on those final bytes: Core PASS
+1,228 / zero skips, run ID `7c82b909-9d9e-47d6-a79b-fd30d79548cf`; Compiler PASS
+ten / 43 deliberately unselected evaluated-effects tests, run ID
+`1e830b72-73af-4266-9f04-c27289ed5914`. Workspace all-target/all-feature check and
+Clippy, Core/LSP doctests 3/0, canonical structure, default Core/player-web Wasm,
+and fmt all PASS. These final-source results supersede the r5 execution claim;
+earlier failed and passed receipts remain evidence for their original bytes.
+The 3,621 frozen inputs and held14 have no drift. All validation processes are
+terminal and no OS setting or build-artifact workaround was used.
+
+Final application.rs is 53,219 bytes / 1,315 physical LOC, base 1,206; the new
+snapshot_tests.rs is 12,666 / 340, base zero. The latter's >300-LOC growth receives
+the owning packet review: one exact original-state fixture exercises both live
+and inert grammar, moved-slot/source-edge resource accounting, type-before-
+construction rejection, native packet convergence and the once-only transition.
+It owns no unrelated state and depends only on the existing Core typed owners.
+Splitting these fixtures would not separate a real dependency or state boundary.
+The private production application/state/type-relation/snapshot owner
+responsibilities remain as reviewed above. Final changed-owner warning screening
+retains 191 deduplicated primary locations; the new style warnings are repaired,
+new snapshot tests have no primary warning, and the remaining warnings belong to
+the existing owning algorithms/fixtures. They are not suppressed or promoted to
+new blocking structural findings. The canonical gate reports no blocking
+violation. `pending-packet-r8.validation-review.json`, source freeze, measured
+owners, warning rows, list JSON and logs retain the actual evidence.
+
+The complete twelve-path pending-owner cut is ready for explicit staging/diff
+review and normal publication. Full50 reverse-closure nextest/full53, ignored
+Tier2, final workspace and Native/Web image parity remain unexecuted for these
+bytes; this owner/consumer/gate success does not discharge them. The goal remains
+ACTIVE. The next original context owner is concretely observed at
+`value/arc_error.rs`: its live `RuntimeArcErrorContextPending` still derives serde,
+while `awbc/fiber.rs` has a second context DTO and constructs the Result cause
+before checking its original intrinsic signature/caller role. Migrate that owning
+cause/absence grammar and its codecs together, resolve the source Result error
+from the original signature/type row and caller binding, and connect its complete
+preconstruction admission to the same cumulative allowance. Return-site, scope,
+cleanup/defer/capture, frame/session, Need/task14/View/scheduler and final
+acceptance remain required; no new design request or approval is needed for them.

@@ -870,7 +870,7 @@ impl FlowControlStackEntry {
                         .iter()
                         .map(|op| FlowOpRollbackImage::from_live(op, owner))
                         .collect::<Result<_, String>>()?,
-                    continuation: frame.continuation.inert_rollback_image(owner)?,
+                    continuation: frame.continuation.inert_rollback_image(owner, frame.site)?,
                 }
             }
             _ => FlowControlStackEntryRollbackImage::Static(self.kind.clone()),
@@ -973,7 +973,7 @@ enum FunctionReturnContinuationRollbackImage {
         site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     CallableDefault {
-        pending: crate::value::RuntimeCallablePendingRollbackImage,
+        pending: crate::value::RuntimeCallablePendingSnapshot,
         result: RuntimePattern,
     },
     Bind {
@@ -985,6 +985,7 @@ impl FunctionReturnContinuation {
     fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
     ) -> Result<FunctionReturnContinuationRollbackImage, String> {
         Ok(match self {
             Self::Program { program } => {
@@ -994,8 +995,14 @@ impl FunctionReturnContinuation {
                 FunctionReturnContinuationRollbackImage::Function { site: *site }
             }
             Self::CallableDefault { pending, result } => {
+                crate::value::RuntimeCallableBodyReference::Plan(site)
+                    .validate_default_return(owner.types(), pending.state())
+                    .map_err(|error| error.to_string())?;
                 FunctionReturnContinuationRollbackImage::CallableDefault {
-                    pending: pending.inert_rollback_image(owner)?,
+                    pending: crate::value::RuntimeCallablePendingSnapshot::from_live(
+                        pending, owner,
+                    )
+                    .map_err(|error| error.to_string())?,
                     result: result.clone(),
                 }
             }
@@ -1035,10 +1042,13 @@ impl FunctionReturnContinuation {
                 Self::Function { site: target }
             }
             FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
+                crate::value::RuntimeCallableBodyReference::Plan(site)
+                    .validate_default_return(owner.types(), pending.state)
+                    .map_err(|error| error.to_string())?;
                 Self::CallableDefault {
-                    pending: crate::value::RuntimeCallablePendingGroup::from_rollback_image(
-                        pending, owner,
-                    )?,
+                    pending: pending
+                        .into_live(owner)
+                        .map_err(|error| error.to_string())?,
                     result,
                 }
             }

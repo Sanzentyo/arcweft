@@ -21,7 +21,7 @@ use crate::runtime_id::{
 use crate::task::RuntimeProgramOwner;
 use crate::value::{
     AwbcRuntimeValueSnapshot, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
-    RuntimeBinding, RuntimeCallablePendingGroup, RuntimeCallablePendingGroupParts,
+    RuntimeBinding, RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot,
     RuntimeCallableValue, RuntimeCallableZeroArgInvocationProof, RuntimeFlowParameterBinding,
     RuntimeFormatContext, RuntimeIterator, RuntimePlaceStorage, RuntimeSeq, RuntimeValue,
 };
@@ -551,13 +551,13 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     Ordinary,
     ProjectCallDefault {
         site: AwbcProjectCallSite,
-        pending: AwbcFiberCallablePendingSnapshot,
+        pending: RuntimeCallablePendingSnapshot,
     },
     ProjectCallTarget {
         site: AwbcProjectCallSite,
     },
     ApplyGroupDefault {
-        pending: AwbcFiberCallablePendingSnapshot,
+        pending: RuntimeCallablePendingSnapshot,
         destination: AwbcRegisterId,
     },
     FormatOperand {
@@ -573,22 +573,13 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     ContextCallbackDefault {
         site: FiberCursor,
         pending: AwbcFiberContextPendingSnapshot,
-        callable_pending: AwbcFiberCallablePendingSnapshot,
+        callable_pending: RuntimeCallablePendingSnapshot,
     },
     ContextCallbackInvoke {
         site: FiberCursor,
         pending: AwbcFiberContextPendingSnapshot,
         callable_state: crate::runtime_id::RuntimeCallableStateId,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberCallablePendingSnapshot {
-    pub state: crate::runtime_id::RuntimeCallableStateId,
-    pub retained: Vec<Option<AwbcRuntimeValueSnapshot>>,
-    pub arguments: Vec<Option<AwbcRuntimeValueSnapshot>>,
-    pub attached: Option<AwbcRuntimeValueSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -903,6 +894,13 @@ impl AwbcFiberStateSnapshot {
             })?;
         }
         for (index, frame) in state.frames.iter().enumerate() {
+            if let Some(point) = &frame.return_to {
+                point.continuation.validate_pending_inputs(
+                    owner,
+                    frame.function,
+                    &mut resources,
+                )?;
+            }
             validate_frame_registers(
                 program,
                 &program.frame_layouts[frame.layout.index()],
@@ -981,6 +979,13 @@ impl AwbcFiberStateSnapshot {
             })?;
         }
         for (index, frame) in self.frames.iter().enumerate() {
+            if let Some(point) = &frame.return_to {
+                point.continuation.validate_pending_inputs(
+                    owner,
+                    frame.function,
+                    &mut resources,
+                )?;
+            }
             validate_frame_registers(
                 program,
                 &program.frame_layouts[frame.layout.index()],
@@ -1039,7 +1044,7 @@ fn extend_snapshot_line_handle_tokens(
 }
 
 fn extend_callable_pending_line_handle_tokens(
-    pending: &AwbcFiberCallablePendingSnapshot,
+    pending: &RuntimeCallablePendingSnapshot,
     tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
 ) -> Result<(), String> {
     for value in pending.retained.iter().chain(&pending.arguments).flatten() {
@@ -1212,6 +1217,32 @@ impl AwbcFiberReturnPointSnapshot {
 }
 
 impl AwbcFiberReturnContinuationSnapshot {
+    fn validate_pending_inputs(
+        &self,
+        owner: &RuntimeProgramOwner,
+        returning_function: AwbcFunctionId,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> AwbcSaveResult<()> {
+        let pending = match self {
+            Self::ProjectCallDefault { pending, .. }
+            | Self::ApplyGroupDefault { pending, .. }
+            | Self::ContextCallbackDefault {
+                callable_pending: pending,
+                ..
+            } => pending,
+            Self::Ordinary
+            | Self::ProjectCallTarget { .. }
+            | Self::FormatOperand { .. }
+            | Self::FormatDisplay { .. }
+            | Self::InstructionCall { .. }
+            | Self::ContextCallbackInvoke { .. } => return Ok(()),
+        };
+        crate::value::RuntimeCallableBodyReference::Awbc(returning_function)
+            .validate_default_return(owner.types(), pending.state)?;
+        pending.validate_inputs(owner, resources)?;
+        Ok(())
+    }
+
     fn from_live(
         continuation: &FiberReturnContinuation,
         owner: &RuntimeProgramOwner,
@@ -1221,7 +1252,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             FiberReturnContinuation::ProjectCallDefault { site, pending } => {
                 Self::ProjectCallDefault {
                     site: *site,
-                    pending: AwbcFiberCallablePendingSnapshot::from_live(pending, owner)?,
+                    pending: RuntimeCallablePendingSnapshot::from_live_admitted(pending, owner)?,
                 }
             }
             FiberReturnContinuation::ProjectCallTarget { site } => {
@@ -1231,7 +1262,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 pending,
                 destination,
             } => Self::ApplyGroupDefault {
-                pending: AwbcFiberCallablePendingSnapshot::from_live(pending, owner)?,
+                pending: RuntimeCallablePendingSnapshot::from_live_admitted(pending, owner)?,
                 destination: *destination,
             },
             FiberReturnContinuation::FormatOperand { site, ordinal } => Self::FormatOperand {
@@ -1249,7 +1280,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             } => Self::ContextCallbackDefault {
                 site: *site,
                 pending: AwbcFiberContextPendingSnapshot::from_live(pending, owner)?,
-                callable_pending: AwbcFiberCallablePendingSnapshot::from_live(
+                callable_pending: RuntimeCallablePendingSnapshot::from_live_admitted(
                     callable_pending,
                     owner,
                 )?,
@@ -1272,7 +1303,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             Self::ProjectCallDefault { site, pending } => {
                 FiberReturnContinuation::ProjectCallDefault {
                     site,
-                    pending: pending.into_live(owner)?,
+                    pending: pending.into_live_admitted(owner)?,
                 }
             }
             Self::ProjectCallTarget { site } => FiberReturnContinuation::ProjectCallTarget { site },
@@ -1280,7 +1311,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 pending,
                 destination,
             } => FiberReturnContinuation::ApplyGroupDefault {
-                pending: pending.into_live(owner)?,
+                pending: pending.into_live_admitted(owner)?,
                 destination,
             },
             Self::FormatOperand { site, ordinal } => {
@@ -1295,7 +1326,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             } => FiberReturnContinuation::ContextCallbackDefault {
                 site,
                 pending: pending.into_live(owner)?,
-                callable_pending: callable_pending.into_live(owner)?,
+                callable_pending: callable_pending.into_live_admitted(owner)?,
             },
             Self::ContextCallbackInvoke {
                 site,
@@ -1307,6 +1338,34 @@ impl AwbcFiberReturnContinuationSnapshot {
                 callable_state,
             },
         })
+    }
+}
+
+impl FiberReturnContinuation {
+    fn validate_pending_inputs(
+        &self,
+        owner: &RuntimeProgramOwner,
+        returning_function: AwbcFunctionId,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> AwbcSaveResult<()> {
+        let pending = match self {
+            Self::ProjectCallDefault { pending, .. }
+            | Self::ApplyGroupDefault { pending, .. }
+            | Self::ContextCallbackDefault {
+                callable_pending: pending,
+                ..
+            } => pending,
+            Self::Ordinary
+            | Self::ProjectCallTarget { .. }
+            | Self::FormatOperand { .. }
+            | Self::FormatDisplay { .. }
+            | Self::InstructionCall { .. }
+            | Self::ContextCallbackInvoke { .. } => return Ok(()),
+        };
+        crate::value::RuntimeCallableBodyReference::Awbc(returning_function)
+            .validate_default_return(owner.types(), pending.state())?;
+        pending.validate_snapshot_inputs(owner, resources)?;
+        Ok(())
     }
 }
 
@@ -1332,79 +1391,6 @@ impl AwbcFiberContextPendingSnapshot {
                 value.into_runtime_value_for_program(owner)?,
             ),
             Self::OptionNone => RuntimeArcErrorContextPending::OptionNone,
-        })
-    }
-}
-
-impl AwbcFiberCallablePendingSnapshot {
-    fn from_live(
-        pending: &RuntimeCallablePendingGroup,
-        owner: &RuntimeProgramOwner,
-    ) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            state: pending.state(),
-            retained: pending
-                .retained()
-                .iter()
-                .map(|value| {
-                    value
-                        .as_ref()
-                        .map(|value| {
-                            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                        })
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            arguments: pending
-                .arguments()
-                .iter()
-                .map(|value| {
-                    value
-                        .as_ref()
-                        .map(|value| {
-                            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                        })
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            attached: pending
-                .attached()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .transpose()?,
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<RuntimeCallablePendingGroup> {
-        let parts = RuntimeCallablePendingGroupParts {
-            owner: owner.clone(),
-            state: self.state,
-            retained: self
-                .retained
-                .into_iter()
-                .map(|value| {
-                    value
-                        .map(|value| value.into_runtime_value_for_program(owner))
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            arguments: self
-                .arguments
-                .into_iter()
-                .map(|value| {
-                    value
-                        .map(|value| value.into_runtime_value_for_program(owner))
-                        .transpose()
-                })
-                .collect::<Result<_, _>>()?,
-            attached: self
-                .attached
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .transpose()?,
-        };
-        RuntimeCallablePendingGroup::try_from_parts(parts).map_err(|error| {
-            crate::value::AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            }
         })
     }
 }
@@ -5502,16 +5488,12 @@ fn pending_default_matches(
     state_id: crate::runtime_id::RuntimeCallableStateId,
     returning_function: AwbcFunctionId,
 ) -> bool {
-    let Some(state) = program.callable_states.get(state_id.index()) else {
-        return false;
-    };
-    matches!(
-        &state.attached,
-        crate::plan::RuntimeCallableAttachedContract::Defaulted {
-            default: crate::plan::RuntimeCallableDefault::Body { function, .. },
-            ..
-        } if *function == returning_function
-    )
+    crate::value::RuntimeCallableBodyReference::Awbc(returning_function)
+        .validate_default_return(
+            crate::program_types::RuntimeProgramTypes::Awbc(program),
+            state_id,
+        )
+        .is_ok()
 }
 
 fn validate_resume_point<'a>(

@@ -861,6 +861,54 @@ fn ordinary_arrow_omission_selects_the_default_and_supplied_attached_bypasses_it
 }
 
 #[test]
+fn native_pending_default_uses_the_same_inert_packet_and_original_owner() {
+    let owner = RuntimeProgramOwner::Plan(Arc::new(
+        defaulted_attached_plan_builder(false).finish().unwrap(),
+    ));
+    let callable = RuntimeCallableValue::try_new(
+        owner.clone(),
+        RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        [],
+    )
+    .unwrap();
+    let RuntimeCallableApplication::AttachedDefault { pending, .. } =
+        callable.prepare_group(vec![], None).unwrap()
+    else {
+        panic!("native omission suspends its owning packet");
+    };
+    let snapshot =
+        crate::value::RuntimeCallablePendingSnapshot::from_live(&pending, &owner).unwrap();
+    let decoded = serde_json::from_slice::<crate::value::RuntimeCallablePendingSnapshot>(
+        &serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .unwrap();
+    let restored = decoded.into_live(&owner).unwrap();
+    assert_eq!(restored, pending);
+    let RuntimeCallableApplication::Invoke(invocation) =
+        restored.complete_default(RuntimeValue::Bool(true)).unwrap()
+    else {
+        panic!("native restored packet resumes its original function");
+    };
+    assert!(matches!(
+        invocation.body,
+        super::RuntimeCallableBodyReference::Plan(_)
+    ));
+    assert_eq!(invocation.arguments, [RuntimeValue::Bool(true)]);
+    let mut malformed = snapshot;
+    malformed
+        .arguments
+        .push(Some(crate::value::AwbcRuntimeValueSnapshot::Callable(
+            crate::value::AwbcRuntimeCallableSnapshot {
+                state: RuntimeCallableStateId::from_zero_based(999).unwrap(),
+                retained: vec![],
+            },
+        )));
+    assert!(matches!(malformed.into_live(&owner),
+        Err(crate::value::AwbcRuntimeValueSnapshotError::Message { message })
+        if message.contains("input projection")));
+}
+
+#[test]
 fn callable_state_rejects_attached_content_flattened_into_the_function_arrow() {
     assert!(matches!(
         defaulted_attached_plan_builder(true).finish(),

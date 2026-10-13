@@ -1,14 +1,17 @@
 //! Checked group activation from the immutable program-owned state grammar.
 
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::RuntimeSchemaLimits;
+use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableInputSource, RuntimeCallableParameterKind,
     RuntimeCallableStateDefinition, RuntimeCallableTransition,
 };
+use crate::program_types::RuntimeProgramValueType;
 use crate::runtime_id::{RuntimeCallableStateId, RuntimeFunctionSiteId};
 use crate::task::RuntimeProgramOwner;
 
@@ -16,11 +19,49 @@ use super::{
     RuntimeCallableOwnedInputError, RuntimeCallableValue, RuntimeCallableValueError, RuntimeValue,
 };
 
+#[cfg(test)]
+mod snapshot_tests;
+
 /// A code reference already selected by an admitted state.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeCallableBodyReference {
     Plan(RuntimeFunctionSiteId),
     Awbc(AwbcFunctionId),
+}
+
+impl RuntimeCallableBodyReference {
+    /// Correlates the active default frame with the original callable state.
+    pub(crate) fn validate_default_return(
+        self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        state: RuntimeCallableStateId,
+    ) -> Result<(), RuntimeCallableValueError> {
+        let matches = match (self, program) {
+            (Self::Plan(function), crate::program_types::RuntimeProgramTypes::Plan(program)) => {
+                let definition = program
+                    .callable_states()
+                    .get(state)
+                    .ok_or(RuntimeCallableValueError::MissingState { state })?;
+                matches!(&definition.attached, RuntimeCallableAttachedContract::Defaulted {
+                    default: crate::plan::RuntimeCallableDefault::Body { function: expected, .. }, ..
+                } if *expected == function)
+            }
+            (Self::Awbc(function), crate::program_types::RuntimeProgramTypes::Awbc(program)) => {
+                let definition = program
+                    .callable_states
+                    .get(state.index())
+                    .ok_or(RuntimeCallableValueError::MissingState { state })?;
+                matches!(&definition.attached, RuntimeCallableAttachedContract::Defaulted {
+                    default: crate::plan::RuntimeCallableDefault::Body { function: expected, .. }, ..
+                } if *expected == function)
+            }
+            _ => return Err(RuntimeCallableValueError::ForeignProgram),
+        };
+        if !matches {
+            return Err(RuntimeCallableValueError::InputProjection { state });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -52,23 +93,25 @@ pub(crate) struct RuntimeCallablePendingGroup {
     attached: Option<RuntimeValue>,
 }
 
-/// Move-only image of a suspended default group. Snapshot code may transform
-/// the values into inert images and reconstruct them only through validation.
-#[derive(Debug)]
-pub(crate) struct RuntimeCallablePendingGroupParts {
-    pub owner: RuntimeProgramOwner,
+/// Inert projection of the owner packet suspended by an attached default.
+/// The enclosing snapshot supplies its original executable; decoding this
+/// packet alone never grants a live callable or input capability.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeCallablePendingSnapshot {
     pub state: RuntimeCallableStateId,
-    pub retained: Vec<Option<RuntimeValue>>,
-    pub arguments: Vec<Option<RuntimeValue>>,
-    pub attached: Option<RuntimeValue>,
+    pub retained: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
+    pub arguments: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
+    pub attached: Option<crate::value::AwbcRuntimeValueSnapshot>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RuntimeCallablePendingRollbackImage {
+/// Borrowed coordinates of the same packet in live or inert storage. It
+/// owns no input, program, type table, or publication capability.
+struct RuntimeCallablePendingInputs<'a, V> {
     state: RuntimeCallableStateId,
-    retained: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
-    arguments: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
-    attached: Option<crate::value::AwbcRuntimeValueSnapshot>,
+    retained: &'a [Option<V>],
+    arguments: &'a [Option<V>],
+    attached: Option<&'a V>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -123,58 +166,23 @@ impl PartialEq for RuntimeCallablePendingGroup {
 }
 
 impl RuntimeCallablePendingGroup {
-    pub(crate) fn inert_rollback_image(
+    pub(crate) fn validate_snapshot_inputs(
         &self,
         owner: &RuntimeProgramOwner,
-    ) -> Result<RuntimeCallablePendingRollbackImage, String> {
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), RuntimeCallableValueError> {
         if !self.owner.same_program(owner) {
-            return Err("pending callable belongs to a different rollback program".to_owned());
+            return Err(RuntimeCallableValueError::ForeignProgram);
         }
-        let image = |value: &RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                .map_err(|error| error.to_string())
-        };
-        Ok(RuntimeCallablePendingRollbackImage {
-            state: self.state,
-            retained: self
-                .retained
-                .iter()
-                .map(|value| value.as_ref().map(image).transpose())
-                .collect::<Result<_, String>>()?,
-            arguments: self
-                .arguments
-                .iter()
-                .map(|value| value.as_ref().map(image).transpose())
-                .collect::<Result<_, String>>()?,
-            attached: self.attached.as_ref().map(image).transpose()?,
-        })
-    }
-
-    pub(crate) fn from_rollback_image(
-        image: RuntimeCallablePendingRollbackImage,
-        owner: &RuntimeProgramOwner,
-    ) -> Result<Self, String> {
-        let value = |saved: crate::value::AwbcRuntimeValueSnapshot| {
-            saved
-                .into_runtime_value_for_program(owner)
-                .map_err(|error| error.to_string())
-        };
-        let parts = RuntimeCallablePendingGroupParts {
-            owner: owner.clone(),
-            state: image.state,
-            retained: image
-                .retained
-                .into_iter()
-                .map(|saved| saved.map(value).transpose())
-                .collect::<Result<_, String>>()?,
-            arguments: image
-                .arguments
-                .into_iter()
-                .map(|saved| saved.map(value).transpose())
-                .collect::<Result<_, String>>()?,
-            attached: image.attached.map(value).transpose()?,
-        };
-        Self::try_from_parts(parts).map_err(|error| error.to_string())
+        Self::validate_packet(
+            owner,
+            self.state,
+            &self.retained,
+            &self.arguments,
+            self.attached.as_ref(),
+            RuntimeValue::view,
+            resources,
+        )
     }
 
     fn new(
@@ -207,16 +215,6 @@ impl RuntimeCallablePendingGroup {
         self.attached.as_ref()
     }
 
-    pub(crate) fn into_parts(self) -> RuntimeCallablePendingGroupParts {
-        RuntimeCallablePendingGroupParts {
-            owner: self.owner,
-            state: self.state,
-            retained: self.retained,
-            arguments: self.arguments,
-            attached: self.attached,
-        }
-    }
-
     /// Reclaims the original callable and group inputs only if no projection
     /// has moved an indexed owner out of this packet. A partially projected
     /// failure remains an owned pending packet for the caller to preserve.
@@ -244,57 +242,76 @@ impl RuntimeCallablePendingGroup {
         ))
     }
 
-    pub(crate) fn try_from_parts(
-        parts: RuntimeCallablePendingGroupParts,
-    ) -> Result<Self, RuntimeCallableOwnedInputError<Self>> {
-        let pending = Self {
-            owner: parts.owner,
-            state: parts.state,
-            retained: parts.retained,
-            arguments: parts.arguments,
-            attached: parts.attached,
+    fn validate_packet<V>(
+        owner: &RuntimeProgramOwner,
+        state_id: RuntimeCallableStateId,
+        retained: &[Option<V>],
+        arguments: &[Option<V>],
+        attached: Option<&V>,
+        view: impl Fn(&V) -> crate::value::RuntimeValueView<'_>,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), RuntimeCallableValueError> {
+        let resource_error = |source| RuntimeCallableValueError::PendingResource {
+            state: state_id,
+            source: Box::new(source),
         };
-        let owner = pending.owner.clone();
-        let state_id = pending.state;
-        let validation = match owner {
+        resources.work().charge(0).map_err(resource_error)?;
+        resources
+            .work()
+            .collection(retained.len())
+            .map_err(resource_error)?;
+        resources
+            .work()
+            .collection(arguments.len())
+            .map_err(resource_error)?;
+        let inputs = RuntimeCallablePendingInputs {
+            state: state_id,
+            retained,
+            arguments,
+            attached,
+        };
+        match owner {
             RuntimeProgramOwner::Plan(plan) => plan
                 .callable_states()
                 .get(state_id)
                 .ok_or(RuntimeCallableValueError::MissingState { state: state_id })
                 .and_then(|state| {
-                    pending.validate_default_packet(state, |ty| {
-                        plan.type_table()
-                            .get(ty)
-                            .map(crate::plan::RuntimePlanTypeDeclaration::semantic_identity)
-                            .ok_or(RuntimeCallableValueError::MissingType { state: state_id })
-                    })
+                    Self::validate_default_packet(
+                        &inputs,
+                        state,
+                        |ty| RuntimeProgramValueType::Plan { program: plan, ty },
+                        view,
+                        resources,
+                    )
                 }),
             RuntimeProgramOwner::Awbc(program) => program
                 .callable_states
                 .get(state_id.index())
                 .ok_or(RuntimeCallableValueError::MissingState { state: state_id })
                 .and_then(|state| {
-                    pending.validate_default_packet(state, |ty| {
-                        program
-                            .runtime_types
-                            .get(ty.index())
-                            .map(crate::awbc::schema::AwbcRuntimeType::semantic_identity)
-                            .ok_or(RuntimeCallableValueError::MissingType { state: state_id })
-                    })
+                    Self::validate_default_packet(
+                        &inputs,
+                        state,
+                        |ty| RuntimeProgramValueType::Awbc { program, ty },
+                        view,
+                        resources,
+                    )
                 }),
-        };
-        match validation {
-            Ok(()) => Ok(pending),
-            Err(reason) => Err(RuntimeCallableOwnedInputError::new(reason, pending)),
         }
     }
 
-    fn validate_default_packet<T: Copy, F>(
-        &self,
+    fn validate_default_packet<'a, T: Copy, F, V>(
+        inputs: &RuntimeCallablePendingInputs<'_, V>,
         state: &RuntimeCallableStateDefinition<T, F>,
-        semantic: impl Fn(T) -> Result<RuntimeSemanticTypeId, RuntimeCallableValueError>,
+        expected: impl Fn(T) -> RuntimeProgramValueType<'a>,
+        view: impl Fn(&V) -> crate::value::RuntimeValueView<'_>,
+        resources: &mut ValueResourceAdmission,
     ) -> Result<(), RuntimeCallableValueError> {
-        let invalid = || RuntimeCallableValueError::InputProjection { state: self.state };
+        let state_id = inputs.state;
+        let retained = inputs.retained;
+        let arguments = inputs.arguments;
+        let attached = inputs.attached;
+        let invalid = || RuntimeCallableValueError::InputProjection { state: state_id };
         let RuntimeCallableAttachedContract::Defaulted {
             default: crate::plan::RuntimeCallableDefault::Body { captures, .. },
             ..
@@ -302,55 +319,66 @@ impl RuntimeCallablePendingGroup {
         else {
             return Err(invalid());
         };
-        if self.attached.is_some()
-            || self.retained.len() != state.retained.len()
-            || self.arguments.len() != state.parameters.len()
+        if attached.is_some()
+            || retained.len() != state.retained.len()
+            || arguments.len() != state.parameters.len()
         {
             return Err(invalid());
         }
-        let future = transition_sources(&state.transition);
-        for (position, (source, input)) in self.retained.iter().zip(&state.retained).enumerate() {
-            let coordinate = RuntimeCallableInputSource::Retained {
-                position: position as u32,
-            };
-            let should_be_present = !captures.contains(&coordinate) || future.contains(&coordinate);
-            if source.is_some() != should_be_present {
-                return Err(invalid());
+        let resource_error = |source| RuntimeCallableValueError::PendingResource {
+            state: state_id,
+            source: Box::new(source),
+        };
+        let mut work = resources.work();
+        work.collection(captures.len()).map_err(resource_error)?;
+        work.collection(state.transition.input_sources().count())
+            .map_err(resource_error)?;
+        // Derive only this admission's exclusive-default mask from the owning
+        // projection. Edges and slots, including holes, consume the same work
+        // allowance as values; no lookup or allocation grants fresh quota.
+        let mut default_only = BTreeSet::new();
+        for source in captures {
+            work.charge(0).map_err(resource_error)?;
+            default_only.insert(*source);
+        }
+        for source in state.transition.input_sources() {
+            work.charge(0).map_err(resource_error)?;
+            default_only.remove(&source);
+        }
+        // Check the complete presence mask before entering any value relation.
+        // A missing slot is a moved owner, never a synthetic Unit value.
+        for (sources, retained_group) in [(retained, true), (arguments, false)] {
+            for (position, source) in sources.iter().enumerate() {
+                work.charge(0).map_err(resource_error)?;
+                let position = u32::try_from(position).map_err(|_| invalid())?;
+                let coordinate = if retained_group {
+                    RuntimeCallableInputSource::Retained { position }
+                } else {
+                    RuntimeCallableInputSource::Argument { position }
+                };
+                let should_be_present = !default_only.contains(&coordinate);
+                if source.is_some() != should_be_present {
+                    return Err(invalid());
+                }
             }
+        }
+        for (position, (source, input)) in retained.iter().zip(&state.retained).enumerate() {
             if let Some(value) = source {
-                self.owner
-                    .types()
-                    .validate_live_value(
-                        semantic(input.ty)?,
-                        value,
-                        RuntimeSchemaLimits::engine_default(),
-                    )
+                expected(input.ty)
+                    .validate_view(view(value), None, resources)
                     .map_err(|error| RuntimeCallableValueError::RetainedType {
-                        state: self.state,
+                        state: state_id,
                         position,
                         error: Box::new(error),
                     })?;
             }
         }
-        for (position, (source, input)) in self.arguments.iter().zip(&state.parameters).enumerate()
-        {
-            let coordinate = RuntimeCallableInputSource::Argument {
-                position: position as u32,
-            };
-            let should_be_present = !captures.contains(&coordinate) || future.contains(&coordinate);
-            if source.is_some() != should_be_present {
-                return Err(invalid());
-            }
+        for (position, (source, input)) in arguments.iter().zip(&state.parameters).enumerate() {
             if let Some(value) = source {
-                self.owner
-                    .types()
-                    .validate_live_value(
-                        semantic(input.binding_ty)?,
-                        value,
-                        RuntimeSchemaLimits::engine_default(),
-                    )
+                expected(input.binding_ty)
+                    .validate_view(view(value), None, resources)
                     .map_err(|error| RuntimeCallableValueError::ArgumentType {
-                        state: self.state,
+                        state: state_id,
                         position,
                         error: Box::new(error),
                     })?;
@@ -590,7 +618,7 @@ impl RuntimeCallablePendingGroup {
                     self,
                 ));
             };
-            let future = transition_sources(&state.transition);
+            let future = state.transition.input_sources().collect::<Vec<_>>();
             let projected = match self.project(captures, &future) {
                 Ok(values) => values,
                 Err(error) => return Err(RuntimeCallableOwnedInputError::new(error, self)),
@@ -653,17 +681,95 @@ impl RuntimeCallablePendingGroup {
     }
 }
 
-fn transition_sources<F, S>(
-    transition: &RuntimeCallableTransition<F, S>,
-) -> Vec<RuntimeCallableInputSource> {
-    match transition {
-        RuntimeCallableTransition::RequiresSpecialization => Vec::new(),
-        RuntimeCallableTransition::Retain { values, .. } => values.to_vec(),
-        RuntimeCallableTransition::Invoke {
-            captures,
-            arguments,
-            ..
-        } => captures.iter().chain(arguments).copied().collect(),
+impl RuntimeCallablePendingSnapshot {
+    pub(crate) fn from_live(
+        pending: &RuntimeCallablePendingGroup,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        let mut resources = ValueResourceAdmission::snapshot(
+            RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        pending.validate_snapshot_inputs(owner, &mut resources)?;
+        Self::from_live_admitted(pending, owner)
+    }
+
+    /// The enclosing fiber has already admitted all packets and registers
+    /// against one original program and cumulative resource allowance.
+    pub(crate) fn from_live_admitted(
+        pending: &RuntimeCallablePendingGroup,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        let image = |value: &RuntimeValue| {
+            crate::value::AwbcRuntimeValueSnapshot::from_live_with_owner(value, Some(owner))
+        };
+        Ok(Self {
+            state: pending.state,
+            retained: pending
+                .retained
+                .iter()
+                .map(|value| value.as_ref().map(image).transpose())
+                .collect::<Result<_, _>>()?,
+            arguments: pending
+                .arguments
+                .iter()
+                .map(|value| value.as_ref().map(image).transpose())
+                .collect::<Result<_, _>>()?,
+            attached: pending.attached.as_ref().map(image).transpose()?,
+        })
+    }
+
+    pub(crate) fn validate_inputs(
+        &self,
+        owner: &RuntimeProgramOwner,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), RuntimeCallableValueError> {
+        RuntimeCallablePendingGroup::validate_packet(
+            owner,
+            self.state,
+            &self.retained,
+            &self.arguments,
+            self.attached.as_ref(),
+            crate::value::AwbcRuntimeValueSnapshot::view,
+            resources,
+        )
+    }
+
+    pub(crate) fn into_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeCallablePendingGroup, crate::value::AwbcRuntimeValueSnapshotError> {
+        let mut resources = ValueResourceAdmission::snapshot(
+            RuntimeSchemaLimits::engine_default(),
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        self.validate_inputs(owner, &mut resources)?;
+        self.into_live_admitted(owner)
+    }
+
+    /// Constructs inputs only after the enclosing owner has checked every
+    /// packet's presence mask, original expected row and cumulative resources.
+    pub(crate) fn into_live_admitted(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeCallablePendingGroup, crate::value::AwbcRuntimeValueSnapshotError> {
+        let value =
+            |saved: crate::value::AwbcRuntimeValueSnapshot| saved.into_live_with_owner(Some(owner));
+        Ok(RuntimeCallablePendingGroup {
+            owner: owner.clone(),
+            state: self.state,
+            retained: self
+                .retained
+                .into_iter()
+                .map(|saved| saved.map(value).transpose())
+                .collect::<Result<_, _>>()?,
+            arguments: self
+                .arguments
+                .into_iter()
+                .map(|saved| saved.map(value).transpose())
+                .collect::<Result<_, _>>()?,
+            attached: self.attached.map(value).transpose()?,
+        })
     }
 }
 
@@ -815,13 +921,13 @@ impl RuntimeCallableValue {
                 default: crate::plan::RuntimeCallableDefault::Body { captures, .. },
                 ..
             } => captures.to_vec(),
-            _ => transition_sources(&state.transition),
+            _ => state.transition.input_sources().collect(),
         };
         let future = if matches!(
             state.attached,
             RuntimeCallableAttachedContract::Defaulted { .. }
         ) {
-            transition_sources(&state.transition)
+            state.transition.input_sources().collect()
         } else {
             Vec::new()
         };
@@ -1049,7 +1155,10 @@ impl RuntimeCallableValue {
         } = &state.attached
             && attached.is_none()
         {
-            validate_projection(captures, &transition_sources(&state.transition))?;
+            validate_projection(
+                captures,
+                &state.transition.input_sources().collect::<Vec<_>>(),
+            )?;
             return Ok(RuntimeCallableGroupInspection::AttachedDefault(body(
                 *function,
             )));

@@ -142,6 +142,18 @@ field inventory と independent provenance を検証する。destination の型�
 canonical byte 計上は、部分 place や frame wire 全体の byte 計上を代替しない。
 継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
 
+attached default の実行中に停止した callable の pending packet は、Native
+rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の
+default capture と後続 transition が、各 retained／argument slot の値の有無を
+決める。全 slot の presence mask を確認してから、残る値を state が保持する
+original 型IDで検証し、最初の値を複製・構築する。移動済み slot は空のまま
+保持する。default の復帰先はその state の original body と照合する。
+AWBC は全 frame の register と pending packet に同じ累積 value resource
+allowance を渡す。Native の packet も同じ入力 grammar と value relation を使う。
+packet の decode は executable lease を発行せず、復元は外側の保存 owner が
+選択した元の immutable program を要求する。pending packet の value byte count は
+frame／session wire 全体の byte grammar の検証を代替しない。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

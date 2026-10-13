@@ -16,6 +16,51 @@ use crate::pattern::RuntimeSemanticTypeId;
 use authority::FunctionTypeAuthority;
 pub(crate) use authority::RuntimeValueTypeContext;
 
+impl super::RuntimeProgramValueType<'_> {
+    pub(crate) fn validate_view(
+        self,
+        value: crate::value::RuntimeValueView<'_>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        resources.validate_view(value, 0, None)?;
+        match self {
+            Self::Plan { program, ty } => {
+                Self::validate_authority_value(program, ty, value, binding, resources)
+            }
+            Self::Awbc { program, ty } => {
+                Self::validate_authority_value(program, ty, value, binding, resources)
+            }
+        }
+    }
+
+    fn validate_authority_value<A: FunctionTypeAuthority>(
+        program: &A,
+        expected: A::Type,
+        value: crate::value::RuntimeValueView<'_>,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            program,
+            resources.origin(),
+            binding,
+            &resources.work(),
+            |context| program.value_relation(expected, value, context),
+        )?
+        .ok_or_else(|| {
+            A::value_error(
+                expected,
+                crate::entry::RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "original value type binding",
+                    actual: "invalid binding",
+                },
+            )
+        })
+    }
+}
+
 impl crate::value::RuntimePlaceStorage<RuntimeValue> {
     /// Checks initialized descendants and partial record headers against the
     /// same selected executable and immutable frame binding as complete values.
