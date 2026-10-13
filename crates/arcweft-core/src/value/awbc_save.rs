@@ -388,8 +388,7 @@ impl AwbcRuntimeValueSnapshot {
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let mut affine = false;
         let mut observe = |value: super::RuntimeValueView<'_>| {
-            affine |= matches!(value, super::RuntimeValueView::Need(_))
-                || matches!(value, super::RuntimeValueView::Opaque(opaque) if !opaque.value_class().intrinsic_ownership().permits_copy());
+            affine |= !value.intrinsic_ownership().permits_copy();
             Ok(())
         };
         let work = crate::entry::schema::value_encoding::preflight_snapshot_view(
@@ -434,8 +433,7 @@ impl AwbcRuntimeValueSnapshot {
         let mut program_owned = false;
         let mut observe = |value: super::RuntimeValueView<'_>| {
             use super::{RuntimeAgentKind, RuntimeIteratorKind, RuntimeValueView as View};
-            affine |= matches!(value, View::Need(_))
-                || matches!(value, View::Opaque(opaque) if !opaque.value_class().intrinsic_ownership().permits_copy());
+            affine |= !value.intrinsic_ownership().permits_copy();
             program_owned |= matches!(value, View::NominalRecord(_) | View::Callable(_))
                 || matches!(value, View::Variant(variant) if matches!(variant.owner(), super::RuntimeVariantIdentity::Nominal { .. }))
                 || matches!(value, View::Agent(agent) if matches!(agent.kind(), RuntimeAgentKind::DataShape(_)))

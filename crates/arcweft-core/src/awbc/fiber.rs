@@ -33,7 +33,9 @@ mod format;
 mod input;
 mod return_context;
 mod scope;
+mod stream;
 mod terminal;
+pub use stream::FiberStreamState;
 pub use terminal::FiberTerminalValue;
 // Only the closed inert carrier can encode any retained fiber grammar.
 trait InertFiberValue: Serialize + serde::de::DeserializeOwned {}
@@ -400,14 +402,6 @@ pub struct FiberBudget {
     pub quantum: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct FiberStreamState {
-    pub plan: AwbcStreamPlanId,
-    pub queue: Vec<RuntimeValue>,
-    pub closed: bool,
-    pub emitted_count: u64,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FiberTrap {
@@ -455,7 +449,7 @@ pub struct AwbcFiberStateSnapshot {
     pub return_summary: Option<String>,
     pub budget: FiberBudget,
     pub line_cursor: u64,
-    pub streams: Vec<AwbcFiberStreamSnapshot>,
+    pub streams: Vec<FiberStreamState<AwbcRuntimeValueSnapshot>>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -599,15 +593,6 @@ pub struct AwbcFiberAwaitManySnapshot {
 pub struct AwbcFiberAwaitManyChildSnapshot {
     pub index: u32,
     pub handle: crate::task::RuntimeNeedHandleSaveSnapshot,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcFiberStreamSnapshot {
-    pub plan: AwbcStreamPlanId,
-    pub queue: Vec<AwbcRuntimeValueSnapshot>,
-    pub closed: bool,
-    pub emitted_count: u64,
 }
 
 impl AwbcFiberStateSnapshot {
@@ -850,6 +835,14 @@ impl AwbcFiberStateSnapshot {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
         }
+        FiberStreamState::validate_inventory(
+            program,
+            state.root,
+            &state.streams,
+            &mut resources,
+            RuntimeValue::view,
+        )
+        .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
         if let Some(summary) = &state.return_summary {
             resources.metadata_string(summary)?;
         }
@@ -916,7 +909,7 @@ impl AwbcFiberStateSnapshot {
             streams: state
                 .streams
                 .iter()
-                .map(|value| AwbcFiberStreamSnapshot::from_live(value, owner))
+                .map(|value| value.snapshot_admitted(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -1021,6 +1014,14 @@ impl AwbcFiberStateSnapshot {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })?;
         }
+        FiberStreamState::validate_inventory(
+            program,
+            self.root,
+            &self.streams,
+            &mut resources,
+            AwbcRuntimeValueSnapshot::view,
+        )
+        .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
         if let Some(summary) = &self.return_summary {
             resources.metadata_string(summary)?;
         }
@@ -1082,7 +1083,7 @@ impl AwbcFiberStateSnapshot {
             streams: self
                 .streams
                 .into_iter()
-                .map(|value| value.into_live(owner))
+                .map(|value| value.into_live_admitted(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -1767,34 +1768,6 @@ impl AwbcFiberAwaitManySnapshot {
                         .transpose()
                 })
                 .collect::<Result<_, _>>()?,
-        })
-    }
-}
-
-impl AwbcFiberStreamSnapshot {
-    fn from_live(stream: &FiberStreamState, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
-        Ok(Self {
-            plan: stream.plan,
-            queue: stream
-                .queue
-                .iter()
-                .map(|value| AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner))
-                .collect::<Result<_, _>>()?,
-            closed: stream.closed,
-            emitted_count: stream.emitted_count,
-        })
-    }
-
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberStreamState> {
-        Ok(FiberStreamState {
-            plan: self.plan,
-            queue: self
-                .queue
-                .into_iter()
-                .map(|value| value.into_runtime_value_for_program(owner))
-                .collect::<Result<_, _>>()?,
-            closed: self.closed,
-            emitted_count: self.emitted_count,
         })
     }
 }
@@ -2811,9 +2784,15 @@ impl FiberState {
                 RuntimeValue::view,
             )?;
         }
-        for (index, stream) in self.streams.iter().enumerate() {
-            validate_stream(program, stream, &format!("streams[{index}]"))?;
-        }
+        FiberStreamState::validate_inventory(
+            program,
+            self.root,
+            &self.streams,
+            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            RuntimeValue::view,
+        )?;
         Ok(())
     }
 
@@ -5594,32 +5573,6 @@ fn validate_host_call_suspension(
     }
 }
 
-fn validate_stream(
-    program: &AwbcProgram,
-    stream: &FiberStreamState,
-    path: &str,
-) -> Result<(), FiberStateError> {
-    let plan = program
-        .stream_plans
-        .get(stream.plan.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    for (index, value) in stream.queue.iter().enumerate() {
-        validate_runtime_value_at(
-            program,
-            value,
-            Some(plan.item_type),
-            format!("{path}.queue[{index}]"),
-        )?;
-        crate::stream::RuntimeStreamYieldCopyProof::inspect(value).map_err(|error| {
-            FiberStateError::InvalidRuntimeValue {
-                path: format!("{path}.queue[{index}]"),
-                reason: error.to_string(),
-            }
-        })?;
-    }
-    Ok(())
-}
-
 fn function_owns_block(function: &super::schema::AwbcFunction, block: AwbcBlockId) -> bool {
     let Some(end) = function.blocks.checked_end() else {
         return false;
@@ -6245,6 +6198,167 @@ mod tests {
                 .to_string(),
             }
         );
+    }
+
+    fn stream_entry_program() -> AwbcProgram {
+        let mut program = zero_parameter_entry_program();
+        let item_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+        program.runtime_types.push(AwbcRuntimeType::new(
+            crate::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::String,
+        ));
+        program
+            .stream_plans
+            .push(super::super::schema::AwbcStreamPlan {
+                public_id: AwbcStringId(0),
+                item_type,
+                error_type: item_type,
+                transform: AwbcFunctionId(0),
+            });
+        program.frame_layouts[0].slots.push(AwbcFrameSlot {
+            name: None,
+            ty: item_type,
+            role: AwbcFrameSlotRole::Local,
+            scope_depth: 0,
+        });
+        program
+    }
+
+    #[test]
+    fn snapshot_stream_inputs_precede_callable_construction_and_preserve_replacement() {
+        let program = stream_entry_program();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber.streams[0]
+            .queue
+            .push(RuntimeValue::String("cause".into()));
+        fiber.streams[0].emitted_count = 1;
+        let before = fiber.checkpoint(&owner).unwrap();
+        let restored = (*before.state)
+            .clone()
+            .into_live_for_program(&owner)
+            .unwrap();
+        assert_eq!(
+            AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+            *before.state
+        );
+        let mut forged = (*before.state).clone();
+        forged.streams[0].queue[0] =
+            AwbcRuntimeValueSnapshot::Callable(crate::value::AwbcRuntimeCallableSnapshot {
+                state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
+                retained: vec![],
+            });
+        assert!(matches!(
+            forged.clone().into_live_for_program(&owner),
+            Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+        ));
+        assert!(fiber.replace_from_snapshot(forged, &owner).is_err());
+        assert_eq!(fiber.checkpoint(&owner).unwrap(), before);
+        fiber.streams[0].queue[0] = RuntimeValue::Bool(true);
+        assert!(matches!(
+            AwbcFiberStateSnapshot::from_live(&fiber, &owner),
+            Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+        ));
+    }
+
+    #[test]
+    fn vm_stream_yield_and_close_use_indexed_custody_without_saturation_or_discard() {
+        use super::super::vm::{VmExit, VmObservation, VmStepOptions, step};
+        let mut program = stream_entry_program();
+        program.instructions = vec![
+            AwbcInstruction::StreamYield {
+                stream: AwbcStreamPlanId(0),
+                value: AwbcRegisterId(0),
+            },
+            AwbcInstruction::StreamClose {
+                stream: AwbcStreamPlanId(0),
+            },
+        ];
+        program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .active_frame_mut()
+            .unwrap()
+            .set_register(AwbcRegisterId(0), RuntimeValue::String("cause".into()))
+            .unwrap();
+        let output = step(
+            &program,
+            &mut fiber,
+            VmStepOptions {
+                max_instructions: 8,
+            },
+        )
+        .unwrap();
+        assert!(matches!(output.exit, VmExit::Returned(None)));
+        assert!(output.observations.iter().any(|observation| matches!(observation,
+            VmObservation::StreamYield { stream: AwbcStreamPlanId(0), value: RuntimeValue::String(value) } if value == "cause")));
+        assert_eq!(
+            output
+                .observations
+                .iter()
+                .filter(|observation| matches!(observation, VmObservation::StreamClose(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            fiber.streams[0].queue,
+            vec![RuntimeValue::String("cause".into())]
+        );
+        assert_eq!(fiber.streams[0].emitted_count, 1);
+        assert!(fiber.streams[0].closed);
+        for case in 0..4 {
+            let mut program = program.clone();
+            let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+            fiber
+                .active_frame_mut()
+                .unwrap()
+                .set_register(AwbcRegisterId(0), RuntimeValue::String("retained".into()))
+                .unwrap();
+            match case {
+                0 => fiber.streams[0].emitted_count = u64::MAX,
+                1 => fiber.streams[0].closed = true,
+                2 => fiber.streams.clear(),
+                _ => program.frame_layouts[0].slots[0].ty = AwbcTypeId(0),
+            }
+            let output = step(
+                &program,
+                &mut fiber,
+                VmStepOptions {
+                    max_instructions: 8,
+                },
+            )
+            .unwrap();
+            let VmExit::Trapped(trap) = output.exit else {
+                panic!("rejected yield must trap before custody commit");
+            };
+            if case < 3 {
+                assert_eq!(trap.code, AwbcTrapCode::InternalInvariant);
+                assert_eq!(
+                    trap.message,
+                    Some(
+                        super::super::vm::VmError::Fiber(FiberStateError::InvalidFrame).to_string()
+                    )
+                );
+            } else {
+                assert!(trap.message.unwrap().contains("admitted AWBC type"));
+            }
+            assert!(!output.observations.iter().any(|observation| matches!(
+                observation,
+                VmObservation::StreamYield { .. } | VmObservation::StreamClose(_)
+            )));
+            assert_eq!(
+                fiber
+                    .active_frame()
+                    .unwrap()
+                    .register(AwbcRegisterId(0))
+                    .unwrap(),
+                &RuntimeValue::String("retained".into())
+            );
+            assert!(fiber.streams.iter().all(|stream| stream.queue.is_empty()));
+            if case == 0 {
+                assert_eq!(fiber.streams[0].emitted_count, u64::MAX);
+            }
+        }
     }
 
     #[test]

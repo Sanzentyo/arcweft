@@ -153,6 +153,25 @@ pub enum RuntimeStreamYieldError {
 }
 
 impl<'a> RuntimeStreamYieldCopyProof<'a> {
+    /// Inspects Copy custody during the shared live/inert graph traversal.
+    /// Descendants consume the resource bank once, before any queue projection.
+    pub(crate) fn validate_inputs(
+        value: crate::value::RuntimeValueView<'_>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        use crate::value::RuntimeValueView;
+        let mut affine = false;
+        let mut observe = |value: RuntimeValueView<'_>| {
+            affine |= !value.intrinsic_ownership().permits_copy();
+            Ok(())
+        };
+        resources.validate_view(value, 0, Some(&mut observe))?;
+        if affine {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue);
+        }
+        Ok(())
+    }
+
     pub(crate) fn inspect(value: &'a RuntimeValue) -> Result<Self, RuntimeStreamYieldError> {
         value
             .ownership()

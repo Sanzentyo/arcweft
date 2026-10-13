@@ -2342,25 +2342,28 @@ fn execute_instruction(
             });
         }
         AwbcInstruction::StreamYield { stream, value } => {
-            let observed_value = {
-                let proof = RuntimeStreamYieldCopyProof::inspect(register(fiber, *value)?)
-                    .map_err(|error| VmError::Runtime(error.to_string()))?;
-                proof.copy()
-            };
-            let value = fiber.active_frame_mut()?.take_register(*value)?;
+            let next_count = fiber
+                .stream_state(program, *stream)?
+                .prepare_yield(program, register(fiber, *value)?)?;
+            let value = fiber
+                .active_frame_mut()?
+                .take_register_values(program, &[*value])?
+                .pop()
+                .expect("one admitted stream operand");
+            let observed_value = RuntimeStreamYieldCopyProof::inspect(&value)
+                .expect("stream queue preflight admitted recursive Copy custody")
+                .copy();
             observations.push(VmObservation::StreamYield {
                 stream: *stream,
                 value: observed_value,
             });
-            if let Some(state) = fiber.streams.iter_mut().find(|state| state.plan == *stream) {
-                state.queue.push(value);
-                state.emitted_count = state.emitted_count.saturating_add(1);
-            }
+            let state = &mut fiber.streams[stream.index()];
+            state.queue.push(value);
+            state.emitted_count = next_count;
         }
         AwbcInstruction::StreamClose { stream } => {
-            if let Some(state) = fiber.streams.iter_mut().find(|state| state.plan == *stream)
-                && !state.closed
-            {
+            if !fiber.stream_state(program, *stream)?.closed {
+                let state = &mut fiber.streams[stream.index()];
                 state.closed = true;
                 observations.push(VmObservation::StreamClose(*stream));
             }

@@ -153,8 +153,8 @@ impl RuntimeValue {
             | Self::Duration(_)
             | Self::Progress(_)
             | Self::Range(_)
-            | Self::EntityRef(_) => RuntimeValueOwnership::Unrestricted,
-            Self::NeedHandle(_) => RuntimeValueOwnership::Affine,
+            | Self::EntityRef(_)
+            | Self::NeedHandle(_) => self.view().intrinsic_ownership(),
             Self::Iterator(iterator) => iterator.ownership(),
             Self::Tuple(values) => values_ownership(values),
             Self::Seq(sequence) => sequence.ownership(),
@@ -164,8 +164,8 @@ impl RuntimeValue {
                     ownership.join(field.value().ownership())
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
-            Self::Opaque(value) => value
-                .value_class()
+            Self::Opaque(value) => self
+                .view()
                 .intrinsic_ownership()
                 .join(value.payload().ownership()),
             Self::Reduction(value) => value

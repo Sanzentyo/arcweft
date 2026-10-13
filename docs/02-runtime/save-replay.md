@@ -214,6 +214,17 @@ snapshot projection／restore は status・suspension・terminal・return label 
 となる。dialogue result は verifier と共通の元 program の line-group ownership に
 照合する。payload の無い状態を検証するための synthetic value は構築しない。
 
+stream queue は `FiberStreamState<V>` の単一 grammar を使い、inert carrier だけに
+codec を与える。非 Empty fiber の stream inventory は元 program の stream table と
+同じ長さで、各 ordinal の plan ID がその ordinal に一致する。欠落・重複・並び替え・
+未知 ID と、emitted count より長い queue を、queue descendant の検証前に拒否する。
+queue item の実 graph は全 frame と共通の allowance に一度だけ計上し、再帰的 Copy
+custody と元 stream plan の item 型IDを、projection／live 構築前に検証する。
+VM の yield は同じ indexed inventory、closed 状態、checked emission counter、queue
+資源上限、item 型と元 register layout を検証してから Copy と transfer を行う。
+queue の欠落時に item を捨てたり、counter を飽和させたりしない。close は同じ indexed
+owner を使う。これらの value byte count は fiber／session wire 全体の検証と区別する。
+
 Core の live value capture は、DTO を組み立てる前に借用値の snapshot grammar
 を traversal し、depth・node・collection・string・validation-work と、その
 grammar の encoded-byte 上限を検証する。program-bound capture は選択された

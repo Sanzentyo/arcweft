@@ -332,9 +332,10 @@ impl<'a> LiveRuntimeValueView<'a> {
             current.join(self.child(value).ownership())
         };
         match self.0 {
-            RuntimeValueView::Scalar(_) | RuntimeValueView::DenseNumeric(_) => {
-                RuntimeValueOwnership::Unrestricted
-            }
+            RuntimeValueView::Scalar(_)
+            | RuntimeValueView::DenseNumeric(_)
+            | RuntimeValueView::Range(_)
+            | RuntimeValueView::Need(_) => self.0.intrinsic_ownership(),
             RuntimeValueView::Tuple(items) => (0..items.len())
                 .filter_map(|index| items.get(index))
                 .fold(RuntimeValueOwnership::Unrestricted, join),
@@ -354,12 +355,10 @@ impl<'a> LiveRuntimeValueView<'a> {
                 .fold(RuntimeValueOwnership::Unrestricted, |current, value| {
                     current.join(self.child(value).ownership())
                 }),
-            RuntimeValueView::Opaque(value) => match value.value_class() {
-                super::RuntimeOpaqueValueClass::Plain => self.child(value.payload()).ownership(),
-                super::RuntimeOpaqueValueClass::AffineHandle(_) => {
-                    RuntimeValueOwnership::Affine.join(self.child(value.payload()).ownership())
-                }
-            },
+            RuntimeValueView::Opaque(value) => self
+                .0
+                .intrinsic_ownership()
+                .join(self.child(value.payload()).ownership()),
             RuntimeValueView::Reduction(value) => value
                 .commands()
                 .iter()
@@ -375,8 +374,6 @@ impl<'a> LiveRuntimeValueView<'a> {
                 .map_or(RuntimeValueOwnership::Unrestricted, |value| {
                     self.child(value).ownership()
                 }),
-            RuntimeValueView::Range(_) => RuntimeValueOwnership::Unrestricted,
-            RuntimeValueView::Need(_) => RuntimeValueOwnership::Affine,
             RuntimeValueView::Iterator(value) => value
                 .live_value()
                 .expect("live iterator retains live storage")
@@ -390,6 +387,27 @@ impl<'a> LiveRuntimeValueView<'a> {
 }
 
 impl<'a> RuntimeValueView<'a> {
+    /// Intrinsic custody of this logical node, independent of its descendants.
+    /// The graph visitor joins descendants for both live and inert values.
+    pub(crate) fn intrinsic_ownership(self) -> RuntimeValueOwnership {
+        match self {
+            Self::Need(_) => RuntimeValueOwnership::Affine,
+            Self::Opaque(value) => value.value_class().intrinsic_ownership(),
+            Self::Scalar(_)
+            | Self::DenseNumeric(_)
+            | Self::Tuple(_)
+            | Self::Record(_)
+            | Self::Sequence(_)
+            | Self::NominalRecord(_)
+            | Self::Reduction(_)
+            | Self::Agent(_)
+            | Self::Variant(_)
+            | Self::Range(_)
+            | Self::Iterator(_)
+            | Self::Callable(_) => RuntimeValueOwnership::Unrestricted,
+        }
+    }
+
     pub(crate) fn builtin_variant_case(
         self,
     ) -> Option<(
