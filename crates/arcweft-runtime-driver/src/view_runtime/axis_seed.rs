@@ -143,6 +143,28 @@ pub(super) struct PendingRootAxisSeed {
 }
 
 impl BundleViewAxisSeedRegistry {
+    pub(super) fn admit_resources(
+        &self,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), arcweft_core::value::AwbcRuntimeValueSnapshotError> {
+        for count in [
+            self.pending.len(),
+            self.mounted.len(),
+            self.mounted_by_handle.len(),
+        ] {
+            admission.validate_metadata_collection(count)?;
+        }
+        for handle in self
+            .pending
+            .keys()
+            .chain(self.mounted.values().map(|seed| &seed.handle))
+            .chain(self.mounted_by_handle.keys())
+        {
+            admission.validate_metadata_string(handle.as_str())?;
+        }
+        Ok(())
+    }
+
     pub(super) fn configure_next(
         &mut self,
         handle: PresentationHandleId,

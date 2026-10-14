@@ -126,6 +126,15 @@ impl BundleSession {
     }
 
     pub fn snapshot_session(&self) -> Result<BundleSessionSnapshot, BundleSessionSaveError> {
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            self.executor.program_owner(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        admission
+            .validate_metadata_string(&self.source_label)
+            .map_err(|error| BundleSessionSaveError::Encode {
+                message: error.to_string(),
+            })?;
         self.validate_live_session_save_generations()?;
         let needs = self.executor.quiescence_blocking_needs();
         if !needs.is_empty() {
@@ -412,6 +421,22 @@ impl BundleSession {
         snapshot: BundleSessionSnapshot,
         validator: Option<&mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
     ) -> Result<(), BundleSessionSaveError> {
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            self.executor.program_owner(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        snapshot
+            .runtime
+            .admit_metadata(&mut admission)
+            .map_err(|error| BundleSessionSaveError::TaskDispatch {
+                message: error.to_string(),
+            })?;
+        snapshot
+            .view_runtime
+            .admit_resources(&mut admission)
+            .map_err(|error| BundleSessionSaveError::ViewRuntime {
+                message: error.to_string(),
+            })?;
         let restored_locale = snapshot.active_locale.clone();
         self.validate_session_save_generation(&snapshot.generation)?;
         let expected_character_presentation = self.character_presentation_identity()?;

@@ -38,6 +38,41 @@ fn mixed_retained_roots_share_nodes_bytes_and_sticky_resource_failures() {
 }
 
 #[test]
+fn enclosing_metadata_uses_the_retained_groups_work_and_remains_sticky() {
+    let limits = RuntimeSchemaLimits {
+        max_validation_work: 5,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+    admission.validate_metadata_string("name").unwrap();
+    admission.validate_metadata_collection(3).unwrap();
+    let error = admission
+        .validate_snapshot(&AwbcRuntimeValueSnapshot::Unit)
+        .unwrap_err();
+    assert_eq!(
+        error,
+        AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::ValidationWork {
+            path: "$".into(),
+            limit: 5,
+            consumed: 6
+        })
+    );
+    assert_eq!(admission.validate_metadata_collection(0), Err(error));
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_sequence_items: 2,
+        ..limits
+    });
+    assert_eq!(
+        admission.validate_metadata_collection(3),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "sequence_items"
+            }
+        ))
+    );
+}
+
+#[test]
 fn retained_group_preserves_first_affine_failure_across_live_inert_switches() {
     let mut admission =
         RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits::engine_default());

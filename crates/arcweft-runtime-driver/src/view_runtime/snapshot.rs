@@ -5,9 +5,101 @@ use super::{
 };
 use arcweft_core::{
     task::RuntimeProgramOwner,
-    value::{AwbcRuntimeValueSnapshot, RuntimeBinding},
+    value::{
+        AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeBinding,
+        RuntimeRetainedValueAdmission,
+    },
 };
 use serde::{Deserialize, Serialize};
+
+#[cfg(test)]
+mod tests;
+
+// Both representations retain the same View-owned metadata. This one borrowed
+// traversal precedes live projection and inert activation; only the Core value
+// admission method differs. No View rows or schema are reconstructed here.
+macro_rules! admit_view_snapshot_resources {
+    ($snapshot:ty, $value:ident, $typed_value:ident) => {
+        impl $snapshot {
+            pub(crate) fn admit_resources(
+                &self,
+                admission: &mut RuntimeRetainedValueAdmission,
+            ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+                if let Some(program) = &self.program_id {
+                    admission.validate_metadata_string(program.as_str())?;
+                }
+                admission.validate_metadata_collection(self.view_root_bindings.len())?;
+                admission.validate_metadata_collection(self.mounts.len())?;
+                for binding in &self.view_root_bindings {
+                    admission.validate_metadata_string(&binding.name)?;
+                }
+                for mount in &self.mounts {
+                    admission.validate_metadata_string(mount.handle.as_str())?;
+                    admission.validate_metadata_collection(mount.path.segments().len())?;
+                    match &mount.owner {
+                        super::SavedViewOwner::Rust { view, .. } => {
+                            admission.validate_metadata_string(view.as_str())?;
+                        }
+                        super::SavedViewOwner::Arcweft { view, program, .. } => {
+                            admission.validate_metadata_string(view.as_str())?;
+                            admission.validate_metadata_string(program.as_str())?;
+                        }
+                    }
+                    admission.validate_metadata_string(mount.state.program.as_str())?;
+                    for count in [
+                        mount.state.parameters.len(),
+                        mount.state.state.len(),
+                        mount.initialized_parameters.len(),
+                        mount.initialized_state.len(),
+                        mount.runtime_parameters.len(),
+                        mount.local_state.len(),
+                    ] {
+                        admission.validate_metadata_collection(count)?;
+                    }
+                    for binding in &mount.runtime_parameters {
+                        admission.validate_metadata_string(&binding.name)?;
+                    }
+                    for field in &mount.local_state {
+                        admission.validate_metadata_collection(field.path.segments().len())?;
+                    }
+                }
+                admission.validate_metadata_collection(self.axis_seeds.pending.len())?;
+                admission.validate_metadata_collection(self.axis_seeds.mounted.len())?;
+                for handle in self
+                    .axis_seeds
+                    .pending
+                    .iter()
+                    .map(|seed| &seed.handle)
+                    .chain(self.axis_seeds.mounted.iter().map(|seed| &seed.handle))
+                {
+                    admission.validate_metadata_string(handle.as_str())?;
+                }
+                // Complete metadata preflight precedes payload/type admission,
+                // so a late table/name limit cannot be masked by an earlier
+                // malformed payload or trigger a prefix copy/activation.
+                for binding in &self.view_root_bindings {
+                    admission.$value(&binding.value)?;
+                }
+                for mount in &self.mounts {
+                    for binding in &mount.runtime_parameters {
+                        admission.$value(&binding.value)?;
+                    }
+                    for field in &mount.local_state {
+                        admission.$typed_value(&field.value, field.value_type)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+admit_view_snapshot_resources!(BundleViewRuntimeSnapshot, validate, validate_typed);
+admit_view_snapshot_resources!(
+    BundleViewRuntimeSaveSnapshot,
+    validate_snapshot,
+    validate_typed_snapshot
+);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +171,13 @@ impl BundleViewRuntimeSaveSnapshot {
         value: &BundleViewRuntimeSnapshot,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        value
+            .admit_resources(&mut admission)
+            .map_err(|error| error.to_string())?;
         Ok(Self {
             program_id: value.program_id.clone(),
             logical_time: value.logical_time,
@@ -132,6 +231,12 @@ impl BundleViewRuntimeSaveSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<BundleViewRuntimeSnapshot, String> {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_resources(&mut admission)
+            .map_err(|error| error.to_string())?;
         Ok(BundleViewRuntimeSnapshot {
             program_id: self.program_id,
             logical_time: self.logical_time,

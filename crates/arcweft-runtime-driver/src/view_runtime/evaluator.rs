@@ -442,10 +442,22 @@ impl BundleViewRuntime {
         reduce_motion: bool,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
-        if let Err(error) = self.validate_retained_runtime_values(
-            self.retained_runtime_values()
-                .chain(bindings.iter().map(|binding| &binding.value)),
-        ) {
+        let ingress = (|| {
+            let mut admission = self.retained_value_admission();
+            self.admit_retained_metadata(&mut admission)?;
+            admission.validate_metadata_collection(bindings.len())?;
+            for binding in bindings {
+                admission.validate_metadata_string(&binding.name)?;
+            }
+            for value in self
+                .retained_runtime_values()
+                .chain(bindings.iter().map(|binding| &binding.value))
+            {
+                admission.validate(value)?;
+            }
+            Ok::<(), arcweft_core::value::AwbcRuntimeValueSnapshotError>(())
+        })();
+        if let Err(error) = ingress {
             return BundleViewFrame {
                 mounts: Vec::new(),
                 diagnostics: vec![BundleViewDiagnostic {

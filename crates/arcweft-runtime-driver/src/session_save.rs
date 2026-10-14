@@ -82,6 +82,18 @@ impl BundleSessionSavePayload {
         program_owner: &RuntimeProgramOwner,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            program_owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        snapshot
+            .runtime
+            .admit_metadata(&mut admission)
+            .map_err(|error| error.to_string())?;
+        snapshot
+            .view_runtime
+            .admit_resources(&mut admission)
+            .map_err(|error| error.to_string())?;
         snapshot
             .presentation
             .validate_runtime_context(program_owner, dialogue_schema)?;
@@ -129,6 +141,16 @@ impl BundleSessionSavePayload {
         program_owner: &RuntimeProgramOwner,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<BundleSessionSnapshot, String> {
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            program_owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.runtime
+            .admit_metadata(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.view_runtime
+            .admit_resources(&mut admission)
+            .map_err(|error| error.to_string())?;
         let root = self
             .root
             .map(|root| root.into_live(&self.active_entry, program_owner))
@@ -187,6 +209,16 @@ pub struct BundleSessionRuntimeSnapshot {
     pub runtime_generation_pin: Option<GenerationId>,
     /// Driver-owned dispatch tuple for each active, Product-verified Restartable Need.
     pub restartable_tasks: Vec<BundleSessionTaskDispatchSnapshot>,
+}
+
+impl BundleSessionRuntimeSnapshot {
+    pub(crate) fn admit_metadata(
+        &self,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), arcweft_core::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_string(&self.source_label)?;
+        admission.validate_metadata_collection(self.restartable_tasks.len())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

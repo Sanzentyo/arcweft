@@ -120,6 +120,21 @@ impl SavedViewOwner {
 }
 
 impl ResolvedMountedViewOwner {
+    pub(super) fn admit_metadata(
+        &self,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), arcweft_core::value::AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::AnonymousRust { .. } => {}
+            Self::PublicRust { view, .. } => admission.validate_metadata_string(view.as_str())?,
+            Self::Arcweft { view, program, .. } => {
+                admission.validate_metadata_string(view.as_str())?;
+                admission.validate_metadata_string(program.as_str())?;
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn resolve_registry(
         slot: ViewRegistryId,
         registry: &ViewRegistry,

@@ -90,6 +90,50 @@ impl RuntimeRetainedValueAdmission {
         self.validate_view(value.view(), ValueAdmissionOrigin::InertSnapshot, None)
     }
 
+    /// Bounds an enclosing frame's retained name before cloning it. Metadata
+    /// shares relation work; the enclosing codec owns its encoded wire bytes.
+    pub fn validate_metadata_string(
+        &mut self,
+        value: &str,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        let result = self
+            .resources
+            .metadata_string(value)
+            .map_err(AwbcRuntimeValueSnapshotError::from);
+        if let Err(failure) = &result {
+            self.failure = Some(failure.clone());
+        }
+        result
+    }
+
+    /// Bounds a retained table and its complete metadata work before allocating
+    /// or copying members. Empty payloads do not grant an unmetered table.
+    pub fn validate_metadata_collection(
+        &mut self,
+        count: usize,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        let mut work = self.resources.work();
+        let result = (|| {
+            work.collection(count)?;
+            work.charge(0)?;
+            for _ in 0..count {
+                work.charge(0)?;
+            }
+            Ok::<(), crate::entry::RuntimeSchemaError>(())
+        })()
+        .map_err(AwbcRuntimeValueSnapshotError::from);
+        if let Err(failure) = &result {
+            self.failure = Some(failure.clone());
+        }
+        result
+    }
+
     /// Checks an inert root's original expected type before DTO copying or live
     /// construction, preserving the stricter inert binding requirements.
     pub fn validate_typed_snapshot(

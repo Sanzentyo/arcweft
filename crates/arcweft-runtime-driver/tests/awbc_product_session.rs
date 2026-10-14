@@ -1038,6 +1038,46 @@ fn session_view_wire_requires_strict_axis_seed_registry_atomically() {
 }
 
 #[test]
+fn session_view_metadata_limits_precede_live_restore_and_preserve_executor() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session.snapshot_session().unwrap();
+    let original = exported_session_json(&session);
+    let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+    let oversized_name = "x".repeat(usize::try_from(limits.max_string_bytes).unwrap() + 1);
+    let mut invalid = before.clone();
+    invalid
+        .view_runtime
+        .view_root_bindings
+        .push(arcweft_core::value::RuntimeBinding {
+            name: oversized_name,
+            value: RuntimeValue::Unit,
+        });
+    let error = session.restore_session_snapshot(invalid).unwrap_err();
+    assert!(
+        matches!(error, BundleSessionSaveError::ViewRuntime { message }
+        if message.contains("string_bytes"))
+    );
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original);
+
+    let mut invalid = before.clone();
+    invalid.view_runtime.view_root_bindings = (0..=limits.max_sequence_items)
+        .map(|_| arcweft_core::value::RuntimeBinding {
+            name: String::new(),
+            value: RuntimeValue::Unit,
+        })
+        .collect();
+    let error = session.restore_session_snapshot(invalid).unwrap_err();
+    assert!(
+        matches!(error, BundleSessionSaveError::ViewRuntime { message }
+        if message.contains("sequence_items"))
+    );
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original);
+}
+
+#[test]
 fn session_view_wire_rebinds_callable_capture_and_rejects_unknown_state_atomically() {
     let bytes = callable_product_awfb_bytes();
     let session = product_session_from_bytes(&bytes);

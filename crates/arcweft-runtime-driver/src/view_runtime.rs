@@ -1401,6 +1401,8 @@ impl BundleViewRuntime {
 
     fn ensure_unrestricted_runtime_bindings(&self) -> Result<(), ViewSaveError> {
         let mut admission = self.retained_value_admission();
+        self.admit_retained_metadata(&mut admission)
+            .map_err(ViewSaveError::from)?;
         for value in self.retained_runtime_values() {
             admission.validate(value).map_err(ViewSaveError::from)?;
         }
@@ -1444,6 +1446,53 @@ impl BundleViewRuntime {
         Ok(())
     }
 
+    fn admit_retained_metadata(
+        &self,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), arcweft_core::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(self.view_root_bindings.len())?;
+        admission.validate_metadata_collection(self.mounts.len())?;
+        for name in self.view_root_bindings.keys() {
+            admission.validate_metadata_string(name)?;
+        }
+        for (key, mount) in &self.mounts {
+            admission.validate_metadata_string(key.handle.as_str())?;
+            admission.validate_metadata_collection(key.path.segments().len())?;
+            mount.owner.admit_metadata(admission)?;
+            admission.validate_metadata_string(mount.state.program().as_str())?;
+            for count in [
+                mount.state.parameters().len(),
+                mount.state.state().len(),
+                mount.initialized_parameters.len(),
+                mount.initialized_state.len(),
+                mount.runtime_parameters.len(),
+                mount.local_state.len(),
+                mount.execution_locals.len(),
+                mount.expression_evaluations.len(),
+                mount.handler_seals.len(),
+            ] {
+                admission.validate_metadata_collection(count)?;
+            }
+            for name in mount.runtime_parameters.keys() {
+                admission.validate_metadata_string(name)?;
+            }
+            for (path, _) in mount.local_state.keys() {
+                admission.validate_metadata_collection(path.segments().len())?;
+            }
+            for scope in &mount.execution_locals {
+                admission.validate_metadata_collection(scope.len())?;
+            }
+            for cached in mount.expression_evaluations.values() {
+                admission.validate_metadata_collection(cached.inputs.len())?;
+            }
+            for (key, seal) in &mount.handler_seals {
+                admission.validate_metadata_collection(key.path.segments().len())?;
+                admission.validate_metadata_collection(seal.captures.len())?;
+            }
+        }
+        self.axis_seeds.admit_resources(admission)
+    }
+
     fn retained_runtime_values(&self) -> impl Iterator<Item = &RuntimeValue> {
         self.view_root_bindings
             .values()
@@ -1452,6 +1501,12 @@ impl BundleViewRuntime {
                     .runtime_parameters
                     .values()
                     .chain(mount.local_state.values().map(|field| &field.value))
+                    .chain(
+                        mount
+                            .execution_locals
+                            .iter()
+                            .flat_map(|scope| scope.values().map(|local| &local.value)),
+                    )
             }))
     }
 
@@ -1470,17 +1525,6 @@ impl BundleViewRuntime {
         }
     }
 
-    fn validate_retained_runtime_values<'value>(
-        &self,
-        values: impl IntoIterator<Item = &'value RuntimeValue>,
-    ) -> Result<(), ViewSaveError> {
-        let mut admission = self.retained_value_admission();
-        for value in values {
-            admission.validate(value).map_err(ViewSaveError::from)?;
-        }
-        Ok(())
-    }
-
     /// Restores an exact mount table atomically after validating every identity and slot.
     #[expect(
         clippy::too_many_lines,
@@ -1491,19 +1535,9 @@ impl BundleViewRuntime {
         snapshot: &BundleViewRuntimeSnapshot,
         reconciled_root_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
-        self.validate_retained_runtime_values(
-            snapshot
-                .view_root_bindings
-                .iter()
-                .map(|binding| &binding.value)
-                .chain(snapshot.mounts.iter().flat_map(|mount| {
-                    mount
-                        .runtime_parameters
-                        .iter()
-                        .map(|binding| &binding.value)
-                        .chain(mount.local_state.iter().map(|field| &field.value))
-                })),
-        )?;
+        snapshot
+            .admit_resources(&mut self.retained_value_admission())
+            .map_err(ViewSaveError::from)?;
         let expected_program = self
             .catalog
             .as_ref()
