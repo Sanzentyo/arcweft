@@ -1,4 +1,6 @@
 use super::RuntimeFlowFact;
+#[path = "tests/call_operand_sources.rs"]
+mod call_operand_sources;
 #[path = "tests/character_dialogue.rs"]
 mod character_dialogue;
 #[path = "tests/dialogue_target.rs"]

@@ -10,10 +10,7 @@ use arcweft_lang_hir::{
 use thiserror::Error;
 
 use crate::{
-    callable::{
-        CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
-        CheckedCallRuntimeOperand,
-    },
+    callable::{CheckedCallCalleeExecution, CheckedCallRuntimeOperand},
     env::RegisteredSemanticWorld,
     final_analysis::{
         CheckedTranscriptByteBudget, FinalSemanticAnalysis, TranscriptHasher, TranscriptWriteError,
@@ -196,12 +193,8 @@ pub enum CheckedNeedProducerAdmissionError {
     Ownership(#[from] CheckedOwnershipError),
     #[error("producer admission requires one exact selected call")]
     NotSelectedCall,
-    #[error(
-        "producer call retains a receiver, function value, or capture not admitted by this cut"
-    )]
+    #[error("producer receiver, function value, or attached content has no retention certificate")]
     UnsupportedCapture,
-    #[error("producer call argument inventory is not one exact source expression per argument")]
-    UnsupportedArgumentInventory,
     #[error("producer admission work limit exceeded")]
     WorkLimit,
     #[error("selected Need producer call site has no canonical checked coordinate")]
@@ -319,11 +312,11 @@ impl FinalSemanticAnalysis {
     }
 
     /// Derives the exact source-ordered semantic retention certificate for a
-    /// direct selected producer call.
+    /// direct selected producer call, including its expanded physical slots.
     ///
-    /// Calls with a receiver/function-value capture, spreads, compact numeric
-    /// slots, recovery, or a value requiring a live Need/Function certificate
-    /// fail closed in this cut.
+    /// Calls with a receiver/function-value capture, recovery, or a value
+    /// requiring a live Need/Function certificate
+    /// fail closed without their retention evidence.
     pub fn checked_need_producer_admission_for_call(
         &self,
         project: HirAnalysisProjectView<'_>,
@@ -398,7 +391,6 @@ impl FinalSemanticAnalysis {
         if !matches!(core.callee(), CheckedCallCalleeExecution::Direct) {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
         }
-        let execution = core.execution();
         let operands = core.runtime_operands();
         if u64::try_from(operands.len()).unwrap_or(u64::MAX) > limits.max_producer_arguments {
             return Err(CheckedNeedProducerAdmissionError::WorkLimit);
@@ -409,27 +401,10 @@ impl FinalSemanticAnalysis {
         {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
         }
-        if operands.len() != execution.arguments().len() {
-            return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
-        }
         let mut values = Vec::with_capacity(operands.len());
-        for (ordinal, operand) in operands.iter().copied().enumerate() {
-            let CheckedCallRuntimeOperand::Argument {
-                argument,
-                passing,
-                slot,
-            } = operand
-            else {
+        for operand in operands.iter().copied() {
+            let CheckedCallRuntimeOperand::Argument { slot, .. } = operand else {
                 return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
-            };
-            if passing == CheckedCallArgumentPassing::Spread
-                || usize::from(argument.get()) != ordinal
-                || slot.slot().get() != 0
-            {
-                return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
-            }
-            let CheckedCallArgumentSlotSource::Expression(_) = slot.source().raw() else {
-                return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
             };
             // The C sealer already proved the raw expression type against the
             // checked-base effect projection and frozen solution. Retention

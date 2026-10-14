@@ -136,8 +136,8 @@ use arcweft_lang_sema::{
         AgentIntrinsicSignatureId, BuiltinCallableId, CallTargetFacts, CallableCandidateId,
         CallableFamily, CallableLogLevel, CallableParameterPresence, CallableValidator,
         CheckedAttachedContentAdmission, CheckedCallApplication, CheckedCallArgumentPassing,
-        CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallOperandDestination,
-        CheckedCallReceiverProjection, CheckedCallRuntimeOperand, CheckedCallableExecution,
+        CheckedCallCalleeExecution, CheckedCallOperandDestination, CheckedCallReceiverProjection,
+        CheckedCallRuntimeOperand, CheckedCallableExecution,
         CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeInput,
         CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
         CollectionMethodId, DomainMethodId, LineContextMethodId, LineScheduleCallableId,
@@ -7055,35 +7055,15 @@ fn runtime_call(
                 reason: "selected Need producer admission does not cover its source row".to_owned(),
             });
         }
-        for (ordinal, (admitted, checked)) in admission
-            .arguments()
-            .iter()
-            .zip(checked_operands.iter())
-            .enumerate()
-        {
-            let CheckedCallRuntimeOperand::Argument {
-                argument,
-                passing,
-                slot,
-            } = checked
-            else {
+        for (admitted, checked) in admission.arguments().iter().zip(checked_operands.iter()) {
+            let CheckedCallRuntimeOperand::Argument { slot, .. } = checked else {
                 return Err(RuntimeSemanticProjectionError::Call {
                     owner,
                     reason: "selected Need producer has a receiver outside its argument admission"
                         .to_owned(),
                 });
             };
-            let CheckedCallArgumentSlotSource::Expression(_) = slot.source().raw() else {
-                return Err(RuntimeSemanticProjectionError::Call {
-                    owner,
-                    reason: "selected Need producer argument is not one expression source"
-                        .to_owned(),
-                });
-            };
-            if *passing == CheckedCallArgumentPassing::Spread
-                || usize::from(argument.get()) != ordinal
-                || slot.slot().get() != 0
-                || admitted.coordinate() != slot.source().coordinate()
+            if admitted.coordinate() != slot.source().coordinate()
                 || admitted.ty() != slot.inferred().semantic_identity_digest()?
             {
                 return Err(RuntimeSemanticProjectionError::Call {

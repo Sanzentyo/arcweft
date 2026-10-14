@@ -1536,7 +1536,18 @@ impl CheckedCallExecutionSource {
         if raw.owner() != evidence.owner() {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
-        let coordinate = StableCheckedValueCoordinate::Expression(evidence.into_coordinate());
+        let path = evidence.into_coordinate();
+        let coordinate = match raw {
+            CheckedCallArgumentSlotSource::Expression(_) => {
+                StableCheckedValueCoordinate::Expression(path)
+            }
+            CheckedCallArgumentSlotSource::CompactNumericElement { ordinal, .. } => {
+                StableCheckedValueCoordinate::CompactNumericElement {
+                    sequence: path,
+                    ordinal,
+                }
+            }
+        };
         Ok(Self { raw, coordinate })
     }
     pub const fn raw(&self) -> CheckedCallArgumentSlotSource {

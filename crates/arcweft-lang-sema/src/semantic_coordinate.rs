@@ -1748,11 +1748,15 @@ impl StablePatternCoordinate {
     }
 }
 
-/// Stable coordinate for a checked value retained by Match semantics.
+/// Stable coordinate for a checked expression, binding or ID-less numeric element.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum StableCheckedValueCoordinate {
     Expression(CheckedSemanticPath),
     Binding(StableCheckedBindingCoordinate),
+    CompactNumericElement {
+        sequence: CheckedSemanticPath,
+        ordinal: u32,
+    },
 }
 
 impl StableCheckedValueCoordinate {
@@ -1771,6 +1775,11 @@ impl StableCheckedValueCoordinate {
             Self::Binding(binding) => {
                 output.push(1);
                 output.extend_from_slice(&binding.canonical_bytes()?);
+            }
+            Self::CompactNumericElement { sequence, ordinal } => {
+                output.push(2);
+                output.extend_from_slice(&sequence.canonical_bytes()?);
+                output.extend_from_slice(&ordinal.to_le_bytes());
             }
         }
         Ok(())
@@ -2733,6 +2742,45 @@ mod tests {
         assert_ne!(
             expression.semantic_digest().expect("expression digest"),
             binding.semantic_digest().expect("binding digest")
+        );
+    }
+
+    #[test]
+    fn compact_numeric_value_coordinates_commit_parent_role_and_element_ordinal() {
+        let root = AcceptedSemanticRoot::Item(AcceptedItemSemanticId::from_bytes([0x34; 32]));
+        let path = CheckedSemanticPath::new(root, []);
+        let expression = StableCheckedValueCoordinate::Expression(path.clone());
+        let first = StableCheckedValueCoordinate::CompactNumericElement {
+            sequence: path.clone(),
+            ordinal: 0,
+        };
+        let second = StableCheckedValueCoordinate::CompactNumericElement {
+            sequence: path.clone(),
+            ordinal: 1,
+        };
+        assert_ne!(
+            first.canonical_bytes().unwrap(),
+            expression.canonical_bytes().unwrap()
+        );
+        assert_ne!(
+            first.canonical_bytes().unwrap(),
+            second.canonical_bytes().unwrap()
+        );
+        let other = StableCheckedValueCoordinate::CompactNumericElement {
+            sequence: CheckedSemanticPath::new(
+                AcceptedSemanticRoot::Item(AcceptedItemSemanticId::from_bytes([0x35; 32])),
+                [],
+            ),
+            ordinal: 0,
+        };
+        assert_ne!(
+            first.canonical_bytes().unwrap(),
+            other.canonical_bytes().unwrap()
+        );
+        assert_eq!(first.canonical_bytes().unwrap()[0], 2);
+        assert_eq!(
+            &first.canonical_bytes().unwrap()[first.canonical_bytes().unwrap().len() - 4..],
+            &0u32.to_le_bytes()
         );
     }
 }

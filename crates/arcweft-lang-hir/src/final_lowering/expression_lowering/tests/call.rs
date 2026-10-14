@@ -1034,7 +1034,6 @@ fn attached_e12_call_recovery_order_is_derived_from_the_final_argument_inventory
         "call-ordered-recovery",
         &[
             "callee(name = first, second)".into(),
-            "callee(rest..., second)".into(),
             "callee(name = first, name = second)".into(),
             "callee(first".into(),
         ],
@@ -1044,9 +1043,6 @@ fn attached_e12_call_recovery_order_is_derived_from_the_final_argument_inventory
     let expected = [
         HirCallIssue::PositionalAfterNamed {
             argument: HirCallArgumentOrdinal::try_new(1).expect("argument ordinal"),
-        },
-        HirCallIssue::SpreadNotLast {
-            argument: HirCallArgumentOrdinal::try_new(0).expect("argument ordinal"),
         },
         HirCallIssue::DuplicateNamedArgument {
             first: HirCallArgumentOrdinal::try_new(0).expect("argument ordinal"),
@@ -1059,6 +1055,32 @@ fn attached_e12_call_recovery_order_is_derived_from_the_final_argument_inventory
             expression(&module, owner).state(),
             &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(expected))
         );
+    }
+}
+
+#[test]
+fn spread_order_is_preserved_for_signature_owned_semantic_admission() {
+    let parsed = parsed_source(
+        "call-spread-source-order",
+        &[
+            "callee([first]..., second)".into(),
+            "callee(rest..., second)".into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    for owner in owners {
+        let value = expression(&module, owner);
+        assert_eq!(value.state(), &HirPoisonState::Clean);
+        let HirExprKind::Call(call) = value.kind() else {
+            panic!("source-owned call")
+        };
+        assert!(matches!(
+            call.arguments(),
+            [
+                HirCallArgument::Spread { .. },
+                HirCallArgument::Positional { .. }
+            ]
+        ));
     }
 }
 

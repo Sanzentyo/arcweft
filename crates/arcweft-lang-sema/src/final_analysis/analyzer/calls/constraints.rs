@@ -3701,15 +3701,15 @@ impl AnalyzerPreparedCallPrefix {
         ))
     }
 
-    pub(crate) fn has_compact_numeric_literal_argument(
+    pub(crate) fn expanded_argument_expression_sources(
         &self,
         ordinal: u32,
         source: ExprId,
-    ) -> bool {
+    ) -> Option<Box<[ExprId]>> {
         self.record
             .inputs()
             .mapping()
-            .has_compact_numeric_literal_source(ordinal, source)
+            .expanded_argument_expression_sources(ordinal, source)
     }
 
     pub(crate) fn into_parts(

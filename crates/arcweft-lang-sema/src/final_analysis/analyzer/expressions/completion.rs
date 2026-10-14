@@ -280,35 +280,7 @@ impl Analyzer<'_, '_, '_> {
                     _ => FinalSemanticAnalysisError::WrongPayloadFamily,
                 })
             })?;
-        if !matches!(kind, HirExprKind::Call(_)) {
-            return Ok(edges);
-        }
-        let calls = self
-            .facts
-            .prepared_calls()
-            .map_err(AnalyzerExpressionError::fact)?;
-        let mut edges = edges.into_vec();
-        // The sealed mapper owns compact numeric data, with logical literal
-        // slots rather than child expression continuations. Source ownership
-        // remains in the selected HIR inventory.
-        edges.retain(|edge| {
-            let HirExpressionEvaluationEdge::Expression {
-                child,
-                role: HirExpressionChildRole::Argument { ordinal },
-                ..
-            } = edge
-            else {
-                return true;
-            };
-            !calls
-                .project_site_payload(
-                    crate::callable::CheckedCallSite::HirCall(owner),
-                    |prefix| prefix.has_compact_numeric_literal_argument(*ordinal, *child),
-                    |_| false,
-                )
-                .unwrap_or(false)
-        });
-        Ok(edges.into_boxed_slice())
+        Ok(edges)
     }
 
     fn completion_transfer_target(
@@ -492,9 +464,33 @@ impl Analyzer<'_, '_, '_> {
                     if let HirExpressionEvaluationEdge::Expression {
                         ownership: HirExpressionChildOwnership::Owning,
                         child,
-                        ..
+                        role,
                     } = edge
                     {
+                        if let HirExpressionChildRole::Argument { ordinal } = role
+                            && matches!(expression.kind(), HirExprKind::Call(_))
+                        {
+                            let sources = self
+                                .facts
+                                .prepared_calls()
+                                .map_err(AnalyzerExpressionError::fact)?
+                                .project_site_payload(
+                                    crate::callable::CheckedCallSite::HirCall(owner),
+                                    |prefix| {
+                                        prefix.expanded_argument_expression_sources(ordinal, child)
+                                    },
+                                    |_| None,
+                                )
+                                .flatten();
+                            if let Some(sources) = sources {
+                                for source in sources {
+                                    result.evidence(
+                                        self.expression_body_completion_in(module, source, query)?,
+                                    );
+                                }
+                                continue;
+                            }
+                        }
                         result.evidence(self.expression_body_completion_in(module, child, query)?);
                     }
                 }

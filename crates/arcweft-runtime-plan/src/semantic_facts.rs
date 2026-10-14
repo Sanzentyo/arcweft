@@ -4042,20 +4042,13 @@ impl RuntimeResolvedCall {
         {
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| RuntimeResolvedCallError::NeedProducerAdmissionCount)?;
-            let RuntimeResolvedCallOperandOrigin::Argument { argument, slot } = operand.origin()
-            else {
-                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
-            };
-            let RuntimeResolvedCallOperandSource::Expression(_) = operand.source() else {
-                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
-            };
-            if *argument != ordinal
-                || *slot != 0
-                || !matches!(
-                    operand.projection(),
-                    RuntimeResolvedCallOperandProjection::Scalar
-                )
-            {
+            if !matches!(
+                operand.origin(),
+                RuntimeResolvedCallOperandOrigin::Argument { .. }
+            ) || !matches!(
+                operand.projection(),
+                RuntimeResolvedCallOperandProjection::Scalar
+            ) {
                 return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
             }
             if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
@@ -11895,7 +11888,7 @@ fn validate_call(
                     });
                 }
             }
-            RuntimeResolvedCallOperandOrigin::Argument { argument, .. } => {
+            RuntimeResolvedCallOperandOrigin::Argument { argument, slot } => {
                 let ordinal = usize::try_from(*argument).map_err(|_| {
                     RuntimeSemanticFactsError::InvalidCallArgumentOrdinal {
                         ordinal: *argument,
@@ -11910,7 +11903,28 @@ fn validate_call(
                 )?;
                 match operand.source() {
                     RuntimeResolvedCallOperandSource::Expression(source) => {
-                        if source != authored.value()
+                        let expected_source = match (
+                            authored,
+                            operand.projection(),
+                            module
+                                .resolve_expr(authored.value())
+                                .map(|value| value.kind()),
+                        ) {
+                            (
+                                HirCallArgument::Spread { .. },
+                                RuntimeResolvedCallOperandProjection::Scalar,
+                                Ok(HirExprKind::BracketSequence(sequence)),
+                            ) => usize::try_from(*slot)
+                                .ok()
+                                .and_then(|ordinal| sequence.elements().get(ordinal).copied()),
+                            (
+                                HirCallArgument::Spread { .. },
+                                RuntimeResolvedCallOperandProjection::Scalar,
+                                _,
+                            ) => None,
+                            _ => (*slot == 0).then_some(authored.value()),
+                        };
+                        if Some(source) != expected_source
                             || expression_types.get(&source) != Some(operand.ty())
                         {
                             return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -11922,7 +11936,14 @@ fn validate_call(
                         sequence,
                         ordinal,
                     } => {
-                        if sequence != authored.value() || !expression_types.contains_key(&sequence)
+                        if sequence != authored.value()
+                            || ordinal != *slot
+                            || !matches!(authored, HirCallArgument::Spread { .. })
+                            || !matches!(
+                                operand.projection(),
+                                RuntimeResolvedCallOperandProjection::Scalar
+                            )
+                            || !expression_types.contains_key(&sequence)
                         {
                             return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
                                 expression,

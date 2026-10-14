@@ -3590,26 +3590,60 @@ fn producer_admission_rejects_an_explicit_extension_receiver_capture() {
 }
 
 #[test]
-fn producer_admission_rejects_compact_spread_slots() {
-    let fixture = fixture(
-        concat!(
-            "fn add(left: i64, right: i64) -> i64 { left + right }\n",
-            "fn root() -> i64 { add([1i64, 2i64]...) }\n",
-        ),
-        None,
-    );
-    let report = analyze(&fixture).expect("compact spread final analysis");
-    let project = fixture.project.analysis_view().expect("executable HIR");
-    assert_eq!(
+fn producer_admission_retains_compact_spread_slots_in_source_order() {
+    let build = |source: &str, limit| {
+        let fixture = fixture(source, None);
+        let report = analyze(&fixture).expect("compact spread final analysis");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         report.checked_need_producer_admission_for_call(
             project,
             &fixture.symbols,
             &fixture.registered,
             selected_call_owner(&report),
-            CheckedOwnershipLimits::PRODUCTION,
-        ),
-        Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory)
+            CheckedOwnershipLimits {
+                max_producer_arguments: limit,
+                ..CheckedOwnershipLimits::PRODUCTION
+            },
+        )
+    };
+    let source = concat!(
+        "fn add(left: i64, right: i64) -> i64 { left + right }\n",
+        "fn root() -> i64 { add([1i64, 2i64]...) }\n",
     );
+    let admitted = build(source, 2).expect("exact physical argument allowance");
+    assert_eq!(admitted, build(source, 2).unwrap());
+    assert_eq!(
+        build(source, 1),
+        Err(CheckedNeedProducerAdmissionError::WorkLimit)
+    );
+    assert_eq!(admitted.arguments().len(), 2);
+    assert_ne!(
+        admitted.arguments()[0].coordinate(),
+        admitted.arguments()[1].coordinate()
+    );
+    assert!(
+        admitted
+            .arguments()
+            .iter()
+            .all(|argument| argument.disposition() == RetainedValueDisposition::Copy)
+    );
+    for (ordinal, argument) in admitted.arguments().iter().enumerate() {
+        assert!(matches!(
+            argument.coordinate(),
+            crate::semantic_coordinate::StableCheckedValueCoordinate::CompactNumericElement {
+                ordinal: actual, ..
+            } if usize::try_from(*actual).unwrap() == ordinal
+        ));
+    }
+    let changed_type = build(
+        concat!(
+            "fn add(left: i32, right: i32) -> i32 { left + right }\n",
+            "fn root() -> i32 { add([1i32, 2i32]...) }\n",
+        ),
+        2,
+    )
+    .unwrap();
+    assert_ne!(admitted.digest(), changed_type.digest());
 }
 
 #[test]
@@ -8713,6 +8747,71 @@ fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
     );
     assert_eq!(physical[4].pass(), CandidateEvaluationPass::SelectedReplay);
     assert_eq!(physical[5].pass(), CandidateEvaluationPass::SelectedReplay);
+}
+
+#[test]
+fn finite_spreads_accept_following_arguments_while_open_spreads_fail_semantically() {
+    for (arguments, selected) in [
+        ("[1i64]..., 2i64", true),
+        ("[first]..., 2i64", true),
+        ("values..., 2i64", false),
+    ] {
+        let source =
+            format!("fn caller(first: i64, values: Vec<i64>) {{ choose({arguments}); }}\n");
+        let fixture = typed_overload_fixture(
+            &source,
+            "choose",
+            vec![TestCallableOverload::typed_rest(
+                TypeKind::I64,
+                TypeKind::Unit,
+            )],
+        );
+        let report = analyze(&fixture).unwrap_or_else(|error| {
+            let owner_kind = match &error {
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } => fixture
+                    .project
+                    .analysis_view()
+                    .unwrap()
+                    .module(&CanonicalModulePath::crate_root())
+                    .unwrap()
+                    .resolve_expr(*owner)
+                    .map(|expression| format!("{:?}", expression.kind()))
+                    .unwrap(),
+                _ => String::new(),
+            };
+            panic!("{arguments}: {error:?} {owner_kind}")
+        });
+        let calls = report.calls().map(|(_, facts)| facts).collect::<Vec<_>>();
+        let [call] = calls.as_slice() else {
+            panic!("one source-owned call")
+        };
+        assert_eq!(
+            call.selected_application().is_some(),
+            selected,
+            "{arguments}"
+        );
+        assert_eq!(call.diagnostics().is_empty(), selected, "{arguments}");
+    }
+}
+
+#[test]
+fn finite_spread_expression_slots_preserve_enclosing_function_return_transfers() {
+    let fixture = typed_overload_fixture(
+        "fn caller() -> i64 { choose([{ return 9i64; }]..., 2i64); 0i64 }\n",
+        "choose",
+        vec![TestCallableOverload::typed_rest(
+            TypeKind::I64,
+            TypeKind::Unit,
+        )],
+    );
+    let report = analyze(&fixture).expect("expanded child retains its enclosing Return boundary");
+    let call = report.calls().map(|(_, facts)| facts).next().unwrap();
+    assert!(call.selected_application().is_some());
+    assert!(call.diagnostics().is_empty());
+    assert_eq!(
+        selected_execution_arguments(call)[0].slots()[0].inferred(),
+        &TypeKind::Never
+    );
 }
 
 #[test]

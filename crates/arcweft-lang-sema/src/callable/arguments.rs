@@ -146,15 +146,24 @@ impl MappedCallArgument {
         &self.slots
     }
 
-    /// A compact numeric spread is mapper-owned literal data. Its logical
-    /// elements have no expression IDs or executable control transfers.
-    pub(crate) fn is_compact_numeric_literal_source(&self, source: ExprId) -> bool {
-        self.source == source
+    /// Physical expression continuations of one accepted finite spread.
+    /// Compact numeric elements have no expression IDs or control transfers.
+    pub(crate) fn expanded_expression_sources(&self, source: ExprId) -> Option<Box<[ExprId]>> {
+        (self.source == source
             && self.passing == MappedCallArgumentPassing::Spread
-            && !self.slots.is_empty()
-            && self.slots.iter().all(|slot| {
-                matches!(slot.source(), CheckedCallArgumentSlotSource::CompactNumericElement { sequence, .. } if sequence == source)
-            })
+            && self
+                .slots
+                .iter()
+                .all(|slot| slot.source_projection == PreparedArgumentSourceProjection::Scalar))
+        .then(|| {
+            self.slots
+                .iter()
+                .filter_map(|slot| match slot.source() {
+                    CheckedCallArgumentSlotSource::Expression(source) => Some(source),
+                    CheckedCallArgumentSlotSource::CompactNumericElement { .. } => None,
+                })
+                .collect()
+        })
     }
 }
 
@@ -247,11 +256,15 @@ impl PreparedCallArgumentMapping {
             .into_boxed_slice()
     }
 
-    pub(crate) fn has_compact_numeric_literal_source(&self, ordinal: u32, source: ExprId) -> bool {
+    pub(crate) fn expanded_argument_expression_sources(
+        &self,
+        ordinal: u32,
+        source: ExprId,
+    ) -> Option<Box<[ExprId]>> {
         usize::try_from(ordinal)
             .ok()
             .and_then(|ordinal| self.arguments.get(ordinal))
-            .is_some_and(|argument| argument.is_compact_numeric_literal_source(source))
+            .and_then(|argument| argument.expanded_expression_sources(source))
     }
 
     /// Classifies every authored argument for selected-HIR traversal. The
@@ -505,7 +518,7 @@ pub(crate) fn map_call_arguments(
     let mut unchecked_or_open_slots = 0usize;
     let mut mapped_arguments = Vec::with_capacity(arguments.len());
 
-    for argument in arguments {
+    for (argument_ordinal, argument) in arguments.iter().enumerate() {
         let passing = match argument {
             HirCallArgument::Positional { .. } => MappedCallArgumentPassing::Positional,
             HirCallArgument::Named { .. } => MappedCallArgumentPassing::Named,
@@ -568,6 +581,9 @@ pub(crate) fn map_call_arguments(
             HirCallArgument::Spread { .. } => match schema.argument_policy().spread() {
                 SpreadArgumentPolicy::Reject => return None,
                 SpreadArgumentPolicy::Unchecked => {
+                    if argument_ordinal + 1 != arguments.len() {
+                        return None;
+                    }
                     unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
                     let rest = parameters.iter().find(|parameter| {
                         parameter.passing() == CallableParameterPassing::RestPositional
@@ -616,6 +632,9 @@ pub(crate) fn map_call_arguments(
                             )?;
                         }
                     } else {
+                        if argument_ordinal + 1 != arguments.len() {
+                            return None;
+                        }
                         let parameter = typed_rest_parameter(parameters)?;
                         unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
                         slots.push(MappedCallArgumentSlot {

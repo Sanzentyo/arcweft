@@ -371,24 +371,17 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
         HirCallChildStates::new(HirCallChildPoison::Clean, &clean_states, &[]),
         false,
     )
-    .expect("spread ordering recovery is retained");
-    let spread_issue = HirCallIssue::SpreadNotLast {
-        argument: HirCallArgumentOrdinal::try_new(0).expect("first argument"),
-    };
-    assert_eq!(
+    .expect("spread ordering belongs to the selected semantic signature");
+    assert!(
         spread
             .issues(HirCallChildStates::new(
                 HirCallChildPoison::Clean,
                 &clean_states,
                 &[],
             ))
-            .as_ref(),
-        std::slice::from_ref(&spread_issue)
+            .is_empty()
     );
-    assert_eq!(
-        spread_state,
-        HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(spread_issue))
-    );
+    assert_eq!(spread_state, HirPoisonState::Clean);
     let (foreign_call, foreign_state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),

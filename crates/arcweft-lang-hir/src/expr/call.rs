@@ -337,7 +337,6 @@ impl HirCallInvocation {
                     HirCallArgument::Spread { value, ellipsis } => {
                         *ellipsis != HirRequiredTokenState::Present
                             || matches!(value, HirCallValue::Missing { .. })
-                            || position + 1 != self.arguments.len()
                     }
                 };
                 structural_recovery
@@ -410,20 +409,15 @@ fn append_argument_issues(
                     }
                 }
             }
-            HirCallArgument::Spread { ellipsis, .. } => {
-                match ellipsis {
-                    HirRequiredTokenState::Present => {}
-                    HirRequiredTokenState::Missing => {
-                        issues.push(HirCallIssue::MissingSpreadEllipsis { argument: ordinal });
-                    }
-                    HirRequiredTokenState::InvalidPresent => {
-                        issues.push(HirCallIssue::InvalidSpreadEllipsis { argument: ordinal });
-                    }
+            HirCallArgument::Spread { ellipsis, .. } => match ellipsis {
+                HirRequiredTokenState::Present => {}
+                HirRequiredTokenState::Missing => {
+                    issues.push(HirCallIssue::MissingSpreadEllipsis { argument: ordinal });
                 }
-                if position + 1 != arguments.len() {
-                    issues.push(HirCallIssue::SpreadNotLast { argument: ordinal });
+                HirRequiredTokenState::InvalidPresent => {
+                    issues.push(HirCallIssue::InvalidSpreadEllipsis { argument: ordinal });
                 }
-            }
+            },
         }
         match argument.value_state() {
             HirCallValue::Missing { .. } => {
@@ -979,9 +973,6 @@ pub enum HirCallIssue {
     PositionalAfterNamed {
         argument: HirCallArgumentOrdinal,
     },
-    SpreadNotLast {
-        argument: HirCallArgumentOrdinal,
-    },
 }
 
 impl HirCallIssue {
@@ -1025,7 +1016,6 @@ impl HirCallIssue {
             Self::PositionalAfterNamed { argument } => {
                 HirCallIssueKey::new(4, argument.get(), 1, 0)
             }
-            Self::SpreadNotLast { argument } => HirCallIssueKey::new(4, argument.get(), 2, 0),
         }
     }
 }

@@ -774,7 +774,6 @@ fn nominal_attribute_recovery_matrix_omits_invalid_payloads_without_fabricated_c
     let cases = [
         ("missing-value", "#[broken(name =)]", 0),
         ("positional-after-named", "#[broken(name = one, two)]", 2),
-        ("spread-not-last", "#[broken(rest..., tail)]", 2),
         ("duplicate-name", "#[broken(name = one, name = two)]", 2),
         ("poisoned-child", "#[broken(@)]", 1),
     ];
@@ -819,6 +818,32 @@ fn nominal_attribute_recovery_matrix_omits_invalid_payloads_without_fabricated_c
         }
         assert_item_slot_whole(&module, &parsed, owner);
         assert_item_owner_whole_recovery(&module, owner);
+    }
+}
+
+#[test]
+fn nominal_attribute_spread_order_preserves_original_values_for_semantic_admission() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-attribute-spread-order",
+        "#[annotation(rest..., tail)]\nstruct Record {}\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let item = resolve_item(&module, 0);
+    assert_eq!(item.state(), &HirItemPoisonState::Clean);
+    let [attribute] = item.prefix().attributes() else {
+        panic!("source-owned attribute")
+    };
+    assert!(matches!(
+        attribute.arguments(),
+        [
+            HirCallArgument::Spread { .. },
+            HirCallArgument::Positional { .. }
+        ]
+    ));
+    for argument in attribute.arguments() {
+        assert_source_backed_child(&module, argument.value());
     }
 }
 
