@@ -48,6 +48,14 @@ pub(crate) enum RuntimeBodySemanticError {
     RequestRoles { actual: usize, maximum: u32 },
     #[error("request template endpoint {actual} does not match completed F endpoint {expected}")]
     InvalidRequestEndpoint { expected: u32, actual: u32 },
+    #[error(
+        "request template endpoint {endpoint} differs from its original {component} at {ordinal}"
+    )]
+    RequestTemplateMismatch {
+        endpoint: u32,
+        component: &'static str,
+        ordinal: usize,
+    },
 
     #[error("Line row {ordinal} children {actual} exceed limit {maximum}")]
     LineChildren {

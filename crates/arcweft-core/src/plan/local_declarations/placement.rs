@@ -64,6 +64,8 @@ pub enum RuntimeLocalInitialization {
     ProjectCallResult,
     ScheduledCapture,
     MatchCandidate,
+    /// The enclosing invocation temporarily installs each joined request item.
+    AwaitManyItem,
 }
 
 /// Complete immutable execution placement of one final declaration.
@@ -101,7 +103,8 @@ impl RuntimeLocalPlacement {
             | RuntimeLocalInitialization::ExpressionLet
             | RuntimeLocalInitialization::ProjectCallResult
             | RuntimeLocalInitialization::ScheduledCapture
-            | RuntimeLocalInitialization::MatchCandidate => None,
+            | RuntimeLocalInitialization::MatchCandidate
+            | RuntimeLocalInitialization::AwaitManyItem => None,
         }
     }
     #[must_use]
@@ -306,6 +309,16 @@ impl RuntimeLocalDeclarationTableBuilder {
                         },
                     )?;
                 }
+            }
+            if let FlowOp::AwaitMany { target, .. } = op {
+                self.claim(
+                    target.item_binding,
+                    RuntimeLocalPlacement {
+                        owner,
+                        initialization: RuntimeLocalInitialization::AwaitManyItem,
+                        mutable: false,
+                    },
+                )?;
             }
             if let FlowOp::Match { arms, .. } = op {
                 for arm in arms {
@@ -612,6 +625,7 @@ impl RuntimeLocalInitialization {
             RuntimeLocalInitialization::ProjectCallResult => encoder.tag(5),
             RuntimeLocalInitialization::ScheduledCapture => encoder.tag(6),
             RuntimeLocalInitialization::MatchCandidate => encoder.tag(7),
+            RuntimeLocalInitialization::AwaitManyItem => encoder.tag(8),
         }
     }
 }

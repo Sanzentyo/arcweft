@@ -56,6 +56,12 @@ impl<'a> ProducerEndpoint<'a> {
         match self.operation {
             plan::FlowOp::HostCall { target, .. } => Some(&target.args),
             plan::FlowOp::StartNeedProducer { target, .. } => Some(target.arguments()),
+            plan::FlowOp::Thread { producer, .. } => Some(&producer.request.args),
+            plan::FlowOp::AwaitMany { target, .. } => match self.kind {
+                EndpointKind::AwaitManyBase => Some(&target.base.request.args),
+                EndpointKind::AwaitManyChild => Some(&target.child.request.args),
+                _ => None,
+            },
             _ => None,
         }
     }

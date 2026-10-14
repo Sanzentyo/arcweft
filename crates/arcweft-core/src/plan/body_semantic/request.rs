@@ -4,6 +4,7 @@ use super::function::ProducerEndpoint;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
+mod admission;
 pub(crate) mod codec;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,6 +17,7 @@ impl TaskRequestTemplateDigest {
 
 pub(crate) use crate::task::RuntimeRequestRoleIdentity;
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeRequestArgumentRole {
     Positional,
     Named,
@@ -41,6 +43,7 @@ impl RuntimeRequestArgumentRole {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeRequestValueSource {
     Literal,
     Local,
@@ -64,6 +67,7 @@ impl RuntimeRequestValueSource {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeRequestPathStep {
     Operand(u32),
     Tuple(u32),
@@ -112,6 +116,7 @@ impl RuntimeRequestPathStep {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct RuntimeRequestArgument {
     pub(crate) role: RuntimeRequestArgumentRole,
     pub(crate) identity: Option<RuntimeRequestRoleIdentity>,
@@ -120,6 +125,7 @@ pub(crate) struct RuntimeRequestArgument {
     pub(crate) path: Box<[RuntimeRequestPathStep]>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeRequestFieldRole {
     Required,
     Optional,
@@ -139,6 +145,7 @@ impl RuntimeRequestFieldRole {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct RuntimeRequestField {
     pub(crate) identity: RuntimeRequestRoleIdentity,
     pub(crate) role: RuntimeRequestFieldRole,
@@ -149,6 +156,7 @@ pub(crate) struct RuntimeRequestField {
 /// The static request definition owned by a private task image. Runtime
 /// argument values stay on their execution owner; this row owns only checked
 /// endpoint/role/type/path meaning. Codec data does not mint a Q proof.
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct RuntimeTaskRequestTemplate {
     endpoint: u32,
     arguments: Box<[RuntimeRequestArgument]>,
@@ -248,7 +256,8 @@ impl RuntimeBodySemanticContext<'_> {
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<TaskRequestTemplateDigest, RuntimeBodySemanticError> {
         let template = self.host_request_template(meter, endpoint, limits)?;
-        self.request_template_digest(meter, endpoint, &template, limits)
+        self.encode_request_template(meter, endpoint, &template, limits)
+            .map(|hash| TaskRequestTemplateDigest(*hash.as_bytes()))
     }
 
     /// Extracts the static definition for storage/codec from the same actual
@@ -401,13 +410,15 @@ impl RuntimeBodySemanticContext<'_> {
         }
     }
 
-    pub(crate) fn request_template_digest(
+    /// Encodes the definition grammar without issuing admission evidence.
+    /// The source-derived and strict decoded-definition paths own Q issuance.
+    pub(super) fn encode_request_template(
         &self,
         meter: &mut TaskSemanticMeter,
         endpoint: ProducerEndpoint<'_>,
         template: &RuntimeTaskRequestTemplate,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
-    ) -> Result<TaskRequestTemplateDigest, RuntimeBodySemanticError> {
+    ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
         meter.status()?;
         let arguments = &template.arguments;
         let fields = &template.fields;
@@ -468,10 +479,7 @@ impl RuntimeBodySemanticContext<'_> {
                 step.encode(&mut encoder);
             }
         }
-        encoder
-            .finish()
-            .map(|hash| TaskRequestTemplateDigest(*hash.as_bytes()))
-            .map_err(Into::into)
+        encoder.finish().map_err(Into::into)
     }
 }
 

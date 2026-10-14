@@ -3,6 +3,7 @@ mod content_rows;
 mod function_rows;
 mod line_rows;
 mod request_capture_rows;
+mod request_endpoints;
 mod request_template_codec;
 mod stream_rows;
 use crate::pattern::RuntimeSemanticTypeId;
@@ -1168,7 +1169,7 @@ fn producer_endpoint_branch_path_and_role_quota_enter_the_same_transcript() {
 }
 
 #[test]
-fn request_template_commits_static_role_order_and_paths_under_actual_producer_endpoint() {
+fn request_definition_encoding_commits_static_role_order_and_paths() {
     use super::request::*;
     let (plan, owner, function) = producer_host_plan(true);
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
@@ -1198,7 +1199,7 @@ fn request_template_commits_static_role_order_and_paths_under_actual_producer_en
             [argument(path), argument(1)]
         };
         RuntimeBodySemanticContext::new(&plan)
-            .request_template_digest(
+            .encode_request_template(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
                 &RuntimeTaskRequestTemplate::new(0, Box::new(arguments), Box::new([])),
@@ -1256,7 +1257,7 @@ fn request_role_quota_poison_precedes_type_resolution() {
 }
 
 #[test]
-fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
+fn request_definition_encoding_commits_fields_and_obeys_the_shared_budget() {
     use super::request::*;
     let (plan, owner, function) = producer_host_plan(true);
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
@@ -1279,7 +1280,7 @@ fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
     let digest = |identity, role| {
         let mut meter = TaskSemanticMeter::new(10_000, 100_000);
         RuntimeBodySemanticContext::new(&plan)
-            .request_template_digest(
+            .encode_request_template(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
                 &RuntimeTaskRequestTemplate::new(
@@ -1301,7 +1302,7 @@ fn request_template_field_identity_roles_and_shared_budget_affect_acceptance() {
     );
     let mut meter = TaskSemanticMeter::new(1, 100_000);
     assert!(matches!(
-        RuntimeBodySemanticContext::new(&plan).request_template_digest(
+        RuntimeBodySemanticContext::new(&plan).encode_request_template(
             &mut meter,
             producer.endpoint(0).unwrap(),
             &RuntimeTaskRequestTemplate::new(
@@ -1520,20 +1521,25 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
             Default::default(),
         )
         .unwrap();
-    let wrong = context
-        .request_template_digest(
-            &mut meter,
-            endpoint,
-            &RuntimeTaskRequestTemplate::new(
-                0,
-                Box::new([argument(RuntimeRequestValueSource::Local)]),
-                Box::new([]),
-            ),
-            Default::default(),
-        )
-        .unwrap();
+    let wrong = context.request_template_digest(
+        &mut meter,
+        endpoint,
+        &RuntimeTaskRequestTemplate::new(
+            0,
+            Box::new([argument(RuntimeRequestValueSource::Local)]),
+            Box::new([]),
+        ),
+        Default::default(),
+    );
     assert_eq!(actual, expected);
-    assert_ne!(actual, wrong);
+    assert!(matches!(
+        wrong,
+        Err(RuntimeBodySemanticError::RequestTemplateMismatch {
+            endpoint: 0,
+            component: "argument definition",
+            ordinal: 0,
+        })
+    ));
 }
 
 /// Private image fixture probes graph termination independently of structural
