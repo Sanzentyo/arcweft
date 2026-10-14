@@ -99,23 +99,42 @@ impl<T> RuntimePlaceStorage<T> {
         &self,
         owner: Option<&crate::task::RuntimeProgramOwner>,
     ) -> Result<(), String> {
-        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
-        let mut pending = vec![(self, 0usize)];
-        let mut nodes = 0usize;
-        while let Some((storage, depth)) = pending.pop() {
-            nodes += 1;
-            if !limits.permits_depth(depth) || !limits.permits_nodes(nodes) {
-                return Err("partial record header traversal exceeds its work limits".to_owned());
-            }
+        let mut admission = match owner {
+            Some(owner) => super::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => super::RuntimeRetainedValueAdmission::standalone(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        self.admit_record_headers(&mut admission)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Partial-place headers borrow the enclosing metadata/work allowance.
+    /// Their initialized values are admitted separately through the value bank.
+    pub(crate) fn admit_record_headers(
+        &self,
+        admission: &mut super::RuntimeRetainedValueAdmission,
+    ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
+        admission.status()?;
+        let result = self.admit_record_headers_inner(admission);
+        result.inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
+    fn admit_record_headers_inner(
+        &self,
+        admission: &mut super::RuntimeRetainedValueAdmission,
+    ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
+        for (depth, storage) in self.places_with_depth() {
+            admission
+                .work()
+                .charge(depth)
+                .map_err(super::AwbcRuntimeValueSnapshotError::from)
+                .inspect_err(|error| admission.retain_failure(error.clone()))?;
             if let Some((header, fields)) = storage.record_parts() {
-                let scheduled_nodes = nodes
-                    .checked_add(pending.len())
-                    .and_then(|count| count.checked_add(fields.len()));
-                if !scheduled_nodes.is_some_and(|count| limits.permits_nodes(count)) {
-                    return Err(
-                        "partial record header traversal exceeds its work limits".to_owned()
-                    );
-                }
+                admission.admit_partial_record_header(header, depth)?;
                 if let RecordHeader::Nominal {
                     nominal,
                     semantic_identity,
@@ -123,9 +142,11 @@ impl<T> RuntimePlaceStorage<T> {
                     type_instantiation,
                 } = header
                 {
-                    owner
-                        .ok_or_else(|| {
-                            "nominal place storage requires a program-bound snapshot".to_owned()
+                    admission
+                        .program_owner()
+                        .ok_or_else(|| super::AwbcRuntimeValueSnapshotError::Message {
+                            message: "nominal place storage requires a program-bound snapshot"
+                                .to_owned(),
                         })?
                         .types()
                         .require_nominal_record_snapshot_header(
@@ -135,9 +156,12 @@ impl<T> RuntimePlaceStorage<T> {
                             fields.len(),
                             type_instantiation.as_deref(),
                         )
-                        .map_err(|error| error.to_string())?;
+                        .map_err(|error| match error {
+                            crate::program_types::RuntimeProgramValueConstructionError::ProgramType(error) => error.into(),
+                            error => super::AwbcRuntimeValueSnapshotError::Message { message: error.to_string() },
+                        })
+                        .inspect_err(|error| admission.retain_failure(error.clone()))?;
                 }
-                pending.extend(fields.iter().rev().map(|field| (field, depth + 1)));
             }
         }
         Ok(())
@@ -180,17 +204,33 @@ impl<T> RuntimePlaceStorage<T> {
     /// Visits every remaining complete child, including owners in partial
     /// records. Ownership/cleanup must use this inventory, not `as_ref`.
     pub fn values(&self) -> impl Iterator<Item = &T> {
-        let mut current = Some(self);
-        let mut stack = Vec::new();
+        self.values_with_depth().map(|(_, value)| value)
+    }
+
+    pub(crate) fn values_with_depth(&self) -> impl Iterator<Item = (usize, &T)> {
+        self.places_with_depth()
+            .filter_map(|(depth, storage)| storage.as_ref().map(|value| (depth, value)))
+    }
+
+    /// Keep one borrowed child iterator per ancestor; record width never
+    /// allocates a pending queue before the enclosing allowance can reject it.
+    fn places_with_depth(&self) -> impl Iterator<Item = (usize, &Self)> {
+        let mut current = Some((0usize, self));
+        let mut stack: Vec<(usize, std::slice::Iter<'_, Self>)> = Vec::new();
         std::iter::from_fn(move || {
-            while let Some(storage) = current.take().or_else(|| stack.pop()) {
-                match &storage.state {
-                    PlaceState::Initialized(value) => return Some(value),
-                    PlaceState::Record { fields, .. } => stack.extend(fields.iter().rev()),
-                    PlaceState::Vacant => {}
+            let (depth, storage) = current.take().or_else(|| {
+                while let Some((depth, children)) = stack.last_mut() {
+                    if let Some(child) = children.next() {
+                        return Some((*depth, child));
+                    }
+                    stack.pop();
                 }
+                None
+            })?;
+            if let PlaceState::Record { fields, .. } = &storage.state {
+                stack.push((depth + 1, fields.iter()));
             }
-            None
+            Some((depth, storage))
         })
     }
 
@@ -631,6 +671,60 @@ mod tests {
 
     fn field(ordinal: usize) -> RuntimeRecordFieldId {
         RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap()
+    }
+
+    #[test]
+    fn partial_header_and_remaining_values_share_nodes_and_relative_depth() {
+        use crate::entry::schema::value_encoding::ValueAdmissionOrigin;
+        use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+        use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+        let mut storage = RuntimePlaceStorage::from(
+            RuntimeValue::try_record(vec![
+                ("a".into(), RuntimeValue::Unit),
+                (
+                    "b".into(),
+                    RuntimeValue::Tuple(vec![RuntimeValue::String("kept".into())]),
+                ),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(storage.take_field(&[field(0)]), Some(RuntimeValue::Unit));
+        let admit_values = |admission: &mut RuntimeRetainedValueAdmission| {
+            admission.admit_composite(ValueAdmissionOrigin::Live, |_, resources| {
+                for (depth, value) in storage.values_with_depth() {
+                    resources.validate_view(value.view(), depth, None)?;
+                }
+                Ok(())
+            })
+        };
+        let mut nodes = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+            max_nodes: 2,
+            ..RuntimeSchemaLimits::engine_default()
+        });
+        storage.admit_record_headers(&mut nodes).unwrap();
+        let failure = admit_values(&mut nodes).unwrap_err();
+        assert!(matches!(
+            failure,
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "nodes"
+            })
+        ));
+        assert_eq!(
+            storage.admit_record_headers(&mut nodes).unwrap_err(),
+            failure
+        );
+        let mut depth = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+            max_depth: 1,
+            ..RuntimeSchemaLimits::engine_default()
+        });
+        storage.admit_record_headers(&mut depth).unwrap();
+        assert!(matches!(
+            admit_values(&mut depth),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                RuntimeSchemaError::BudgetExceeded { budget: "depth" }
+            ))
+        ));
+        assert_eq!(storage.values_with_depth().next().unwrap().0, 1);
     }
 
     #[test]

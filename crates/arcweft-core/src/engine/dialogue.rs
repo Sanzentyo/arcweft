@@ -3105,9 +3105,9 @@ mod tests {
         let failed = line
             .allocate_deferred_registration(site, RuntimeDeferOutcomeFilter::Failed, vec![])
             .expect("failed-only defer");
-        frame.scopes[0]
-            .deferred
-            .extend([first.clone(), second.clone(), failed]);
+        let first_id = first.id();
+        let second_id = second.id();
+        frame.scopes[0].deferred.extend([first, second, failed]);
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
         line.commit_result(ty, RuntimeValue::Unit)
             .expect("result staged before scope exit");
@@ -3118,9 +3118,9 @@ mod tests {
         else {
             panic!("the last matching registration must run first");
         };
-        assert_eq!(frame.scopes[0].inflight, Some((second.id(), site)));
+        assert_eq!(frame.scopes[0].inflight, Some((second_id, site)));
         assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
-        line.complete_scoped_deferred_child(&id, second.id(), &Default::default())
+        line.complete_scoped_deferred_child(&id, second_id, &Default::default())
             .expect("second child closes");
         frame.scopes[0].inflight = None;
 
@@ -3130,9 +3130,9 @@ mod tests {
         else {
             panic!("earlier completion registration must run next");
         };
-        assert_eq!(frame.scopes[0].inflight, Some((first.id(), site)));
+        assert_eq!(frame.scopes[0].inflight, Some((first_id, site)));
         assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
-        line.complete_scoped_deferred_child(&id, first.id(), &Default::default())
+        line.complete_scoped_deferred_child(&id, first_id, &Default::default())
             .expect("first child closes");
         frame.scopes[0].inflight = None;
 

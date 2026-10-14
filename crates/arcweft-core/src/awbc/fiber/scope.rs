@@ -36,8 +36,8 @@ mod tests;
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: super::InertFiberValue",
-        deserialize = "V: super::InertFiberValue"
+        serialize = "V: super::InertRuntimeValueStorage",
+        deserialize = "V: super::InertRuntimeValueStorage"
     )
 )]
 pub struct FiberScope<V = RuntimeValue> {
@@ -69,8 +69,8 @@ pub struct FiberScope<V = RuntimeValue> {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: super::InertFiberValue",
-        deserialize = "V: super::InertFiberValue"
+        serialize = "V: super::InertRuntimeValueStorage",
+        deserialize = "V: super::InertRuntimeValueStorage"
     )
 )]
 pub struct FiberDeferredRegistration<V = RuntimeValue> {
@@ -97,8 +97,8 @@ pub struct FiberDeferredRegistration<V = RuntimeValue> {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: super::InertFiberValue",
-        deserialize = "V: super::InertFiberValue"
+        serialize = "V: super::InertRuntimeValueStorage",
+        deserialize = "V: super::InertRuntimeValueStorage"
     )
 )]
 pub struct FiberScopeCleanup<V = RuntimeValue> {

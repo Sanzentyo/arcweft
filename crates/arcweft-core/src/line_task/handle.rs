@@ -32,6 +32,87 @@ pub const MAX_LINE_LIVE_HANDLES: usize = 256;
 pub const MAX_LINE_SCHEDULED_CALLBACKS: usize = 128;
 pub const MAX_LINE_COMMAND_HISTORY: usize = 1_024;
 
+/// Actual backend coordinates admit fixed metadata without adding a wire
+/// codec to a construction-only plan identity.
+pub(crate) trait RuntimeDialogueTypeCoordinate {
+    fn admit_type_metadata(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
+
+    fn original_value_type<'a>(
+        &self,
+        owner: &'a RuntimeProgramOwner,
+    ) -> Result<
+        crate::program_types::RuntimeProgramValueType<'a>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    >;
+}
+
+impl RuntimeDialogueTypeCoordinate for crate::runtime_id::RuntimePlanTypeId {
+    fn admit_type_metadata(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata(&self.get().get())
+    }
+
+    fn original_value_type<'a>(
+        &self,
+        owner: &'a RuntimeProgramOwner,
+    ) -> Result<
+        crate::program_types::RuntimeProgramValueType<'a>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        let RuntimeProgramOwner::Plan(plan) = owner else {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "Native dialogue type requires its original plan owner".to_owned(),
+            });
+        };
+        plan.type_table()
+            .get(*self)
+            .ok_or(crate::plan::RuntimePlanTypeResolutionError::UnknownType { ty: *self })
+            .map_err(crate::program_types::RuntimeProgramTypeError::from)?;
+        Ok(crate::program_types::RuntimeProgramValueType::Plan {
+            program: &plan.inventory,
+            ty: *self,
+        })
+    }
+}
+
+impl RuntimeDialogueTypeCoordinate for crate::awbc::schema::AwbcTypeId {
+    fn admit_type_metadata(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata(&self.0)
+    }
+
+    fn original_value_type<'a>(
+        &self,
+        owner: &'a RuntimeProgramOwner,
+    ) -> Result<
+        crate::program_types::RuntimeProgramValueType<'a>,
+        crate::value::AwbcRuntimeValueSnapshotError,
+    > {
+        let RuntimeProgramOwner::Awbc(program) = owner else {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "AWBC dialogue type requires its original program owner".to_owned(),
+            });
+        };
+        program
+            .runtime_types
+            .get(self.index())
+            .ok_or(
+                crate::awbc::type_projection::AwbcTypeProjectionError::RuntimeTypeOutOfBounds {
+                    index: self.0,
+                },
+            )
+            .map_err(crate::program_types::RuntimeProgramTypeError::from)?;
+        Ok(crate::program_types::RuntimeProgramValueType::Awbc { program, ty: *self })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeLineHandleScope {
@@ -323,8 +404,21 @@ pub struct RuntimeLineHandleLedger {
     leases: BTreeMap<RuntimeLineHandleToken, RuntimeHandleLease>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct RuntimeDialogueActivationState<T> {
+/// One activation owner; decoding can construct only its inert value storage.
+///
+/// ```compile_fail
+/// use arcweft_core::line_task::RuntimeDialogueActivationState;
+/// let _: RuntimeDialogueActivationState<u32> = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "T: Serialize, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Serialize",
+        deserialize = "T: Deserialize<'de>, V: crate::value::InertRuntimeValueStorage, RuntimeScheduledLineTask<V>: Deserialize<'de>"
+    )
+)]
+pub struct RuntimeDialogueActivationState<T, V = RuntimeValue> {
     ledger: RuntimeLineHandleLedger,
     command_sequence: u64,
     issued_commands: BTreeMap<
@@ -336,12 +430,13 @@ pub struct RuntimeDialogueActivationState<T> {
         crate::presentation::RuntimeLineHostCommand,
     >,
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
-    scheduled: Vec<RuntimeScheduledLineTask>,
-    deferred: Vec<RuntimeLineDeferredRegistration>,
+    scheduled: Vec<RuntimeScheduledLineTask<V>>,
+    deferred: Vec<RuntimeLineDeferredRegistration<V>>,
     next_defer_registration: u64,
     defer_unwind: Option<RuntimeDeferUnwindState>,
-    result: RuntimeDialogueResultState<T>,
+    result: RuntimeDialogueResultState<T, V>,
     frame_released: bool,
+    #[serde(skip)]
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
 }
 
@@ -532,34 +627,17 @@ impl<T> RuntimeDialogueActivationState<T> {
         &self,
         mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
     ) -> Result<(), E> {
-        match &self.result {
-            RuntimeDialogueResultState::Committed { value, .. }
-            | RuntimeDialogueResultState::Selected { value, .. }
-            | RuntimeDialogueResultState::Publishing { value, .. } => {
-                crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
-            }
-            RuntimeDialogueResultState::Uncommitted
-            | RuntimeDialogueResultState::Published
-            | RuntimeDialogueResultState::Abandoned => {}
-        }
-        for deferred in &self.deferred {
-            for capture in deferred.captures() {
-                crate::value::visit_runtime_value_graph(capture, |nested| visitor(nested))?;
-            }
-        }
-        for scheduled in &self.scheduled {
-            for value in scheduled.custody.values() {
-                crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
-            }
-        }
-        Ok(())
+        self.visit_retained_value_roots(|value| {
+            crate::value::visit_runtime_value_graph(value, &mut visitor)
+        })
     }
 }
 
 /// Post-publication affine authority retained only while parent-owned handles
 /// remain live. Executable dialogue frame, reducer, schedule, and result state
 /// are deliberately absent.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RuntimePublishedDialogueHandles {
     ledger: RuntimeLineHandleLedger,
     command_sequence: u64,
@@ -570,86 +648,38 @@ pub(crate) struct RuntimePublishedDialogueHandles {
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AwbcRuntimeDialogueActivationSnapshot<T> {
-    ledger: RuntimeLineHandleLedger,
-    command_sequence: u64,
-    issued_commands: BTreeMap<
-        crate::presentation::RuntimeLineCommandId,
-        crate::presentation::RuntimeLineHostCommand,
-    >,
-    superseded_commands: BTreeMap<
-        crate::presentation::RuntimeLineCommandId,
-        crate::presentation::RuntimeLineHostCommand,
-    >,
-    resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
-    scheduled: Vec<AwbcRuntimeScheduledLineTaskSnapshot>,
-    deferred: Vec<AwbcRuntimeDeferredRegistrationSnapshot>,
-    next_defer_registration: u64,
-    defer_unwind: Option<RuntimeDeferUnwindState>,
-    result: AwbcRuntimeDialogueResultSnapshot<T>,
-    frame_released: bool,
+pub(crate) type AwbcRuntimeDialogueActivationSnapshot<T> =
+    RuntimeDialogueActivationState<T, crate::value::AwbcRuntimeValueSnapshot>;
+
+impl<T: Clone> Clone for AwbcRuntimeDialogueActivationSnapshot<T> {
+    fn clone(&self) -> Self {
+        Self {
+            ledger: self.ledger.clone(),
+            command_sequence: self.command_sequence,
+            issued_commands: self.issued_commands.clone(),
+            superseded_commands: self.superseded_commands.clone(),
+            resolved_commands: self.resolved_commands.clone(),
+            scheduled: self.scheduled.clone(),
+            deferred: self.deferred.clone(),
+            next_defer_registration: self.next_defer_registration,
+            defer_unwind: self.defer_unwind.clone(),
+            result: self.result.clone(),
+            frame_released: self.frame_released,
+            prepared_commands: self.prepared_commands.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AwbcRuntimePublishedDialogueHandlesSnapshot {
-    ledger: RuntimeLineHandleLedger,
-    command_sequence: u64,
-    issued_commands: BTreeMap<
-        crate::presentation::RuntimeLineCommandId,
-        crate::presentation::RuntimeLineHostCommand,
-    >,
-    resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
-}
+pub(crate) type AwbcRuntimePublishedDialogueHandlesSnapshot = RuntimePublishedDialogueHandles;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-struct AwbcRuntimeScheduledLineTaskSnapshot {
-    token: RuntimeLineHandleToken,
-    child: RuntimeLineTaskNodeId,
-    work: LineTaskWorkTag,
-    deadline: LogicalDuration,
-    custody: AwbcRuntimeScheduledCaptureCustodySnapshot,
-    state: RuntimeScheduledState,
-}
+type AwbcRuntimeScheduledLineTaskSnapshot =
+    RuntimeScheduledLineTask<crate::value::AwbcRuntimeValueSnapshot>;
+type AwbcRuntimeLocalBindingSnapshot = RuntimeLocalBinding<crate::value::AwbcRuntimeValueSnapshot>;
+type AwbcRuntimeScheduledCaptureCustodySnapshot =
+    RuntimeScheduledCaptureCustody<crate::value::AwbcRuntimeValueSnapshot>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-struct AwbcRuntimeLocalBindingSnapshot {
-    local: crate::runtime_id::RuntimeLocalDeclarationId,
-    value: crate::value::AwbcRuntimeValueSnapshot,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-enum AwbcRuntimeScheduledCaptureCustodySnapshot {
-    Packet(Vec<AwbcRuntimeLocalBindingSnapshot>),
-    ChildFiber(Vec<RuntimeLocalDeclarationId>),
-    LineScope(Vec<RuntimeLocalSlot<crate::value::AwbcRuntimeValueSnapshot>>),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-enum AwbcRuntimeDialogueResultSnapshot<T> {
-    Uncommitted,
-    Committed {
-        ty: T,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-    },
-    Selected {
-        ty: T,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-        source: LineTaskWorkTag,
-    },
-    Publishing {
-        ty: T,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-    },
-    Published,
-    Abandoned,
-}
+type AwbcRuntimeDialogueResultSnapshot<T> =
+    RuntimeDialogueResultState<T, crate::value::AwbcRuntimeValueSnapshot>;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct RuntimeHandleDropReceipt {
@@ -679,24 +709,54 @@ impl RuntimeDialogueCommitReceipt {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeDialogueResultState<T> {
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "T: Serialize, V: crate::value::InertRuntimeValueStorage",
+        deserialize = "T: Deserialize<'de>, V: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub enum RuntimeDialogueResultState<T, V = RuntimeValue> {
     Uncommitted,
     Committed {
         ty: T,
-        value: RuntimeValue,
+        value: V,
     },
     Selected {
         ty: T,
-        value: RuntimeValue,
+        value: V,
         source: LineTaskWorkTag,
     },
     Publishing {
         ty: T,
-        value: RuntimeValue,
+        value: V,
     },
     Published,
     Abandoned,
+}
+
+impl<T: Clone> Clone for AwbcRuntimeDialogueResultSnapshot<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Uncommitted => Self::Uncommitted,
+            Self::Committed { ty, value } => Self::Committed {
+                ty: ty.clone(),
+                value: value.clone(),
+            },
+            Self::Selected { ty, value, source } => Self::Selected {
+                ty: ty.clone(),
+                value: value.clone(),
+                source: source.clone(),
+            },
+            Self::Publishing { ty, value } => Self::Publishing {
+                ty: ty.clone(),
+                value: value.clone(),
+            },
+            Self::Published => Self::Published,
+            Self::Abandoned => Self::Abandoned,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1131,30 +1191,11 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self.deferred
     }
 
-    /// The exact child whose capture packet has left the registration stack.
-    #[must_use]
-    pub(crate) fn deferred_inflight(
-        &self,
-    ) -> Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)> {
-        self.defer_unwind
-            .as_ref()
-            .and_then(|unwind| unwind.inflight)
-            .map(|inflight| (inflight.id, inflight.site))
-    }
-
     /// Once the exit is frozen, a deferred-body failure cannot change which
     /// outcome-filtered registrations run.
     #[must_use]
     pub(crate) fn deferred_exit(&self) -> Option<ScopeExit> {
         self.defer_unwind.as_ref().map(|unwind| unwind.exit)
-    }
-
-    fn has_pending_deferred_work(&self) -> bool {
-        !self.deferred.is_empty()
-            || self
-                .defer_unwind
-                .as_ref()
-                .is_some_and(|unwind| unwind.inflight.is_some())
     }
 
     /// Validates saved defer sites against the executable table that owns them.
@@ -1182,294 +1223,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             return Err(LineRuntimeError::UnknownDeferredSite {
                 site: inflight.site,
             });
-        }
-        Ok(())
-    }
-
-    #[cfg(test)]
-    pub(crate) fn restore_admit(
-        &self,
-        activation: &DialogueActivationId,
-    ) -> Result<(), LineRuntimeError> {
-        self.restore_admit_with_deferred_child(activation, None)
-    }
-
-    pub(crate) fn restore_admit_with_deferred_child(
-        &self,
-        activation: &DialogueActivationId,
-        expected_child: Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)>,
-    ) -> Result<(), LineRuntimeError> {
-        if self.frame_released && self.has_pending_deferred_work() {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState);
-        }
-        if self.next_defer_registration == 0
-            || self
-                .deferred
-                .windows(2)
-                .any(|rows| rows[0].id() >= rows[1].id())
-            || self.deferred.last().is_some_and(|registration| {
-                registration.id().get().get() >= self.next_defer_registration
-            })
-            || self.ledger.leases().values().any(|lease| {
-                matches!(
-                    lease.owner(),
-                    RuntimeHandleOwnerSlot::ScopedDefer(id)
-                        if id.get().get() >= self.next_defer_registration
-                )
-            })
-        {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState);
-        }
-        if let Some(inflight) = self
-            .defer_unwind
-            .as_ref()
-            .and_then(|unwind| unwind.inflight)
-            && (inflight.id.get().get() >= self.next_defer_registration
-                || self
-                    .deferred
-                    .last()
-                    .is_some_and(|pending| pending.id() >= inflight.id))
-        {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState);
-        }
-        // An activation-only snapshot supplies None. Product restore supplies
-        // the exact child owner it authenticated from its fiber snapshot.
-        if self.deferred_inflight() != expected_child {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState);
-        }
-        validate_restored_ledger(activation, &self.ledger)?;
-        validate_restored_command_journal(
-            activation,
-            self.command_sequence,
-            &self.issued_commands,
-            &self.superseded_commands,
-            &self.resolved_commands,
-            &self.ledger,
-        )?;
-        let mut scheduled_tokens = std::collections::BTreeSet::new();
-        let mut scheduled_capture_tokens = std::collections::BTreeSet::new();
-        for scheduled in &self.scheduled {
-            scheduled.validate_custody()?;
-            if scheduled.token().activation() != activation
-                || scheduled.work().activation_id() != activation
-                || scheduled.work().scheduled_token() != Some(scheduled.token())
-                || !scheduled_tokens.insert(scheduled.token().clone())
-            {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-            let lease = self
-                .ledger
-                .lease(scheduled.token())
-                .ok_or(LineRuntimeError::InvalidRestoredScheduledState)?;
-            let RuntimeHandleResource::Cue(cue) = lease.resource() else {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            };
-            if !matches!(
-                cue.origin(),
-                RuntimeCueOrigin::Scheduled { child, deadline }
-                    if *child == scheduled.child() && *deadline == scheduled.deadline()
-            ) {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-            let lease_state_matches = match scheduled.state() {
-                RuntimeScheduledState::Armed => lease.state() == RuntimeHandleLeaseState::Pending,
-                RuntimeScheduledState::Running => lease.state() == RuntimeHandleLeaseState::Running,
-                RuntimeScheduledState::Cancelling => matches!(
-                    lease.state(),
-                    RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Cancelled
-                ),
-                RuntimeScheduledState::Completed => matches!(
-                    lease.state(),
-                    RuntimeHandleLeaseState::Completed | RuntimeHandleLeaseState::Released
-                ),
-                RuntimeScheduledState::Cancelled => matches!(
-                    lease.state(),
-                    RuntimeHandleLeaseState::Cancelled | RuntimeHandleLeaseState::Released
-                ),
-                RuntimeScheduledState::Failed => matches!(
-                    lease.state(),
-                    RuntimeHandleLeaseState::Failed | RuntimeHandleLeaseState::Released
-                ),
-            };
-            if !lease_state_matches {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-            let expected_capture_owner = match &scheduled.custody {
-                RuntimeScheduledCaptureCustody::Packet(_) => {
-                    Some(RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone()))
-                }
-                RuntimeScheduledCaptureCustody::LineScope(_) => {
-                    Some(RuntimeHandleOwnerSlot::LineScope)
-                }
-                RuntimeScheduledCaptureCustody::ChildFiber(_) => None,
-            };
-            if let Some(expected_owner) = expected_capture_owner {
-                let mut expected_tokens = std::collections::BTreeSet::new();
-                for capture in scheduled.custody.values() {
-                    for handle in capture
-                        .affine_line_handles()
-                        .map_err(|_| LineRuntimeError::InvalidRestoredScheduledState)?
-                    {
-                        if handle.token().activation() != activation
-                            || !expected_tokens.insert(handle.token().clone())
-                            || !scheduled_capture_tokens.insert(handle.token().clone())
-                        {
-                            return Err(LineRuntimeError::InvalidRestoredScheduledState);
-                        }
-                        let capture_lease = self
-                            .ledger
-                            .lease(handle.token())
-                            .ok_or(LineRuntimeError::InvalidRestoredScheduledState)?;
-                        if capture_lease.owner() != &expected_owner
-                            || capture_lease.state() == RuntimeHandleLeaseState::Released
-                        {
-                            return Err(LineRuntimeError::InvalidRestoredScheduledState);
-                        }
-                    }
-                }
-                let child_owned = self
-                    .ledger
-                    .leases()
-                    .values()
-                    .filter(|lease| {
-                        lease.owner()
-                            == &RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone())
-                    })
-                    .map(|lease| lease.token().clone())
-                    .collect::<std::collections::BTreeSet<_>>();
-                if matches!(
-                    &scheduled.custody,
-                    RuntimeScheduledCaptureCustody::Packet(_)
-                ) && child_owned != expected_tokens
-                    || matches!(
-                        &scheduled.custody,
-                        RuntimeScheduledCaptureCustody::LineScope(_)
-                    ) && !child_owned.is_empty()
-                {
-                    return Err(LineRuntimeError::InvalidRestoredScheduledState);
-                }
-            }
-        }
-        for lease in self.ledger.leases().values() {
-            if matches!(
-                lease.resource(),
-                RuntimeHandleResource::Cue(RuntimeCueLease {
-                    origin: RuntimeCueOrigin::Scheduled { .. },
-                })
-            ) && !scheduled_tokens.contains(lease.token())
-            {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-            if let RuntimeHandleOwnerSlot::ChildScope(work) = lease.owner()
-                && let Some(token) = work.scheduled_token()
-                && !self
-                    .scheduled
-                    .iter()
-                    .any(|scheduled| scheduled.token() == token && scheduled.work() == work)
-            {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-        }
-        for registration in &self.deferred {
-            for capture in registration.captures() {
-                for handle in capture
-                    .affine_line_handles()
-                    .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
-                {
-                    if handle.token().activation() != activation
-                        || !scheduled_capture_tokens.insert(handle.token().clone())
-                    {
-                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
-                    }
-                    let capture_lease = self
-                        .ledger
-                        .lease(handle.token())
-                        .ok_or(LineRuntimeError::InvalidRestoredDeferredState)?;
-                    if capture_lease.resource().kind() != handle.kind()
-                        || capture_lease.owner() != &RuntimeHandleOwnerSlot::LineScope
-                        || capture_lease.state() == RuntimeHandleLeaseState::Released
-                    {
-                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
-                    }
-                }
-            }
-        }
-        let mut result_tokens = std::collections::BTreeSet::new();
-        match &self.result {
-            RuntimeDialogueResultState::Uncommitted => {
-                if self.ledger.leases().values().any(|lease| {
-                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
-                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                            && !result_lease_was_retired(lease.state()))
-                }) {
-                    return Err(LineRuntimeError::InvalidRestoredResultState);
-                }
-            }
-            RuntimeDialogueResultState::Committed { value, .. }
-            | RuntimeDialogueResultState::Selected { value, .. }
-            | RuntimeDialogueResultState::Publishing { value, .. } => {
-                for handle in value
-                    .affine_line_handles()
-                    .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
-                {
-                    if handle.token().activation() != activation {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
-                    }
-                    if !result_tokens.insert(handle.token().clone()) {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
-                    }
-                    let lease = self
-                        .ledger
-                        .lease(handle.token())
-                        .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
-                    if lease.resource().kind() != handle.kind()
-                        || lease.owner()
-                            != &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone())
-                    {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
-                    }
-                }
-                if matches!(
-                    &self.result,
-                    RuntimeDialogueResultState::Committed { .. }
-                        | RuntimeDialogueResultState::Selected { .. }
-                ) && self
-                    .ledger
-                    .leases()
-                    .values()
-                    .any(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_)))
-                {
-                    return Err(LineRuntimeError::InvalidRestoredResultState);
-                }
-            }
-            RuntimeDialogueResultState::Abandoned => {
-                if self.ledger.leases().values().any(|lease| {
-                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
-                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                            && !result_lease_was_retired(lease.state()))
-                }) {
-                    return Err(LineRuntimeError::InvalidRestoredResultState);
-                }
-            }
-            RuntimeDialogueResultState::Published => {
-                return Err(LineRuntimeError::InvalidRestoredResultState);
-            }
-        }
-        let ledger_result_tokens = self
-            .ledger
-            .leases()
-            .values()
-            .filter(|lease| {
-                matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                    && !result_lease_was_retired(lease.state())
-            })
-            .map(|lease| lease.token().clone())
-            .collect::<std::collections::BTreeSet<_>>();
-        if ledger_result_tokens != result_tokens {
-            return Err(LineRuntimeError::InvalidRestoredResultState);
-        }
-        if self.frame_released || !self.prepared_commands.is_empty() {
-            return Err(LineRuntimeError::InvalidRestoredResultState);
         }
         Ok(())
     }
@@ -3072,54 +2825,52 @@ impl<T> AwbcRuntimeDialogueActivationSnapshot<T> {
         &self,
         visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
     ) -> Result<(), E> {
-        for scheduled in &self.scheduled {
-            match &scheduled.custody {
-                AwbcRuntimeScheduledCaptureCustodySnapshot::Packet(bindings) => {
-                    for binding in bindings {
-                        visit(&binding.value)?;
-                    }
-                }
-                AwbcRuntimeScheduledCaptureCustodySnapshot::LineScope(slots) => {
-                    for value in slots.iter().flat_map(|slot| slot.storage().values()) {
-                        visit(value)?;
-                    }
-                }
-                AwbcRuntimeScheduledCaptureCustodySnapshot::ChildFiber(_) => {}
-            }
-        }
-        for deferred in &self.deferred {
-            deferred.visit_saved_value_roots(visit)?;
-        }
-        match &self.result {
-            AwbcRuntimeDialogueResultSnapshot::Committed { value, .. }
-            | AwbcRuntimeDialogueResultSnapshot::Selected { value, .. }
-            | AwbcRuntimeDialogueResultSnapshot::Publishing { value, .. } => visit(value)?,
-            AwbcRuntimeDialogueResultSnapshot::Uncommitted
-            | AwbcRuntimeDialogueResultSnapshot::Published
-            | AwbcRuntimeDialogueResultSnapshot::Abandoned => {}
-        }
-        Ok(())
+        self.visit_retained_value_roots(visit)
     }
 }
 
 impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     pub(crate) fn from_live(
         state: &RuntimeDialogueActivationState<T>,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
+    {
         Self::from_live_with_owner(state, None)
     }
 
     pub(crate) fn from_live_for_program(
         state: &RuntimeDialogueActivationState<T>,
         owner: &RuntimeProgramOwner,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
+    {
         Self::from_live_with_owner(state, Some(owner))
     }
 
     fn from_live_with_owner(
         state: &RuntimeDialogueActivationState<T>,
         owner: Option<&RuntimeProgramOwner>,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
+    {
+        if !state.prepared_commands.is_empty() {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "cannot snapshot an in-flight line command preparation".to_owned(),
+            });
+        }
+        let mut admission = match owner {
+            Some(owner) => crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => crate::value::RuntimeRetainedValueAdmission::standalone(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        state.admit_retained_resources(&mut admission)?;
         Ok(Self {
             ledger: state.ledger.clone(),
             command_sequence: state.command_sequence,
@@ -3145,6 +2896,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             defer_unwind: state.defer_unwind.clone(),
             result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result, owner)?,
             frame_released: state.frame_released,
+            prepared_commands: Vec::new(),
         })
     }
 
@@ -3152,7 +2904,15 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeDialogueActivationState<T>, crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
     {
+        self.admit_retained_resources(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )?;
         Ok(RuntimeDialogueActivationState {
             ledger: self.ledger,
             command_sequence: self.command_sequence,
@@ -3175,26 +2935,6 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             frame_released: self.frame_released,
             prepared_commands: Vec::new(),
         })
-    }
-}
-
-impl AwbcRuntimePublishedDialogueHandlesSnapshot {
-    pub(crate) fn from_live(state: &RuntimePublishedDialogueHandles) -> Self {
-        Self {
-            ledger: state.ledger.clone(),
-            command_sequence: state.command_sequence,
-            issued_commands: state.issued_commands.clone(),
-            resolved_commands: state.resolved_commands.clone(),
-        }
-    }
-
-    pub(crate) fn into_live(self) -> RuntimePublishedDialogueHandles {
-        RuntimePublishedDialogueHandles {
-            ledger: self.ledger,
-            command_sequence: self.command_sequence,
-            issued_commands: self.issued_commands,
-            resolved_commands: self.resolved_commands,
-        }
     }
 }
 
@@ -3242,7 +2982,7 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             RuntimeScheduledCaptureCustody::Packet(bindings) => {
                 Self::Packet(snapshot_local_bindings(bindings, owner)?)
             }
-            RuntimeScheduledCaptureCustody::ChildFiber(locals) => Self::ChildFiber(locals.to_vec()),
+            RuntimeScheduledCaptureCustody::ChildFiber(locals) => Self::ChildFiber(locals.clone()),
             RuntimeScheduledCaptureCustody::LineScope(bindings) => Self::LineScope(
                 bindings
                     .iter()
@@ -3260,11 +3000,10 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             Self::Packet(bindings) => {
                 RuntimeScheduledCaptureCustody::Packet(live_local_bindings(bindings, owner)?)
             }
-            Self::ChildFiber(locals) => {
-                RuntimeScheduledCaptureCustody::ChildFiber(locals.into_boxed_slice())
-            }
+            Self::ChildFiber(locals) => RuntimeScheduledCaptureCustody::ChildFiber(locals),
             Self::LineScope(bindings) => RuntimeScheduledCaptureCustody::LineScope(
                 bindings
+                    .into_vec()
                     .into_iter()
                     .map(|binding| binding.into_live_for_program(owner))
                     .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()?
@@ -3289,7 +3028,7 @@ fn snapshot_runtime_value_for_owner(
 fn snapshot_local_bindings(
     bindings: &[RuntimeLocalBinding],
     owner: Option<&RuntimeProgramOwner>,
-) -> Result<Vec<AwbcRuntimeLocalBindingSnapshot>, crate::value::AwbcRuntimeValueSnapshotError> {
+) -> Result<Box<[AwbcRuntimeLocalBindingSnapshot]>, crate::value::AwbcRuntimeValueSnapshotError> {
     bindings
         .iter()
         .map(|capture| {
@@ -3302,10 +3041,11 @@ fn snapshot_local_bindings(
 }
 
 fn live_local_bindings(
-    bindings: Vec<AwbcRuntimeLocalBindingSnapshot>,
+    bindings: Box<[AwbcRuntimeLocalBindingSnapshot]>,
     owner: &RuntimeProgramOwner,
 ) -> Result<Box<[RuntimeLocalBinding]>, crate::value::AwbcRuntimeValueSnapshotError> {
     bindings
+        .into_vec()
         .into_iter()
         .map(|capture| {
             Ok(RuntimeLocalBinding {
@@ -4241,41 +3981,77 @@ pub enum RuntimeScheduledState {
     Failed,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum RuntimeScheduledCaptureCustody {
-    Packet(Box<[RuntimeLocalBinding]>),
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    rename_all = "snake_case",
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, RuntimeLocalSlot<V>: Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, RuntimeLocalSlot<V>: Deserialize<'de>"
+    )
+)]
+enum RuntimeScheduledCaptureCustody<V = RuntimeValue> {
+    Packet(Box<[RuntimeLocalBinding<V>]>),
     ChildFiber(Box<[RuntimeLocalDeclarationId]>),
-    LineScope(Box<[RuntimeLocalSlot]>),
+    LineScope(Box<[RuntimeLocalSlot<V>]>),
 }
 
-impl RuntimeScheduledCaptureCustody {
-    fn values(&self) -> impl Iterator<Item = &RuntimeValue> {
-        let (packet, slots) = match self {
-            Self::Packet(bindings) => (Some(bindings.as_ref()), None),
-            Self::LineScope(slots) => (None, Some(slots.as_ref())),
-            Self::ChildFiber(_) => (None, None),
-        };
-        packet
-            .into_iter()
-            .flatten()
-            .map(|binding| &binding.value)
-            .chain(
+impl<V> RuntimeScheduledCaptureCustody<V> {
+    fn values(&self) -> impl Iterator<Item = &V> {
+        self.values_with_depth().map(|(_, value)| value)
+    }
+
+    fn values_with_depth(&self) -> Box<dyn Iterator<Item = (usize, &V)> + '_> {
+        match self {
+            Self::Packet(bindings) => Box::new(bindings.iter().map(|binding| (0, &binding.value))),
+            Self::LineScope(slots) => Box::new(
                 slots
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|slot| slot.storage().values()),
-            )
+                    .iter()
+                    .flat_map(|slot| slot.storage().values_with_depth()),
+            ),
+            Self::ChildFiber(_) => Box::new(std::iter::empty()),
+        }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeScheduledLineTask {
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, RuntimeScheduledCaptureCustody<V>: Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, RuntimeScheduledCaptureCustody<V>: Deserialize<'de>"
+    )
+)]
+pub struct RuntimeScheduledLineTask<V = RuntimeValue> {
     token: RuntimeLineHandleToken,
     child: RuntimeLineTaskNodeId,
     work: LineTaskWorkTag,
     deadline: LogicalDuration,
-    custody: RuntimeScheduledCaptureCustody,
+    custody: RuntimeScheduledCaptureCustody<V>,
     state: RuntimeScheduledState,
+}
+
+impl Clone for AwbcRuntimeScheduledCaptureCustodySnapshot {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Packet(bindings) => Self::Packet(bindings.clone()),
+            Self::ChildFiber(locals) => Self::ChildFiber(locals.clone()),
+            Self::LineScope(slots) => Self::LineScope(slots.clone()),
+        }
+    }
+}
+
+impl Clone for AwbcRuntimeScheduledLineTaskSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            token: self.token.clone(),
+            child: self.child,
+            work: self.work.clone(),
+            deadline: self.deadline,
+            custody: self.custody.clone(),
+            state: self.state,
+        }
+    }
 }
 
 fn scheduled_work_terminal(
@@ -4436,31 +4212,6 @@ impl RuntimeScheduledLineTask {
             RuntimeScheduledCaptureCustody::Packet(captures),
             RuntimeScheduledState::Armed,
         )
-    }
-
-    #[must_use]
-    pub const fn token(&self) -> &RuntimeLineHandleToken {
-        &self.token
-    }
-
-    #[must_use]
-    pub const fn child(&self) -> RuntimeLineTaskNodeId {
-        self.child
-    }
-
-    #[must_use]
-    pub const fn work(&self) -> &LineTaskWorkTag {
-        &self.work
-    }
-
-    #[must_use]
-    pub const fn deadline(&self) -> LogicalDuration {
-        self.deadline
-    }
-
-    #[must_use]
-    pub const fn state(&self) -> RuntimeScheduledState {
-        self.state
     }
 
     fn packet_for_child_fiber(&self) -> Result<&[RuntimeLocalBinding], LineRuntimeError> {
@@ -4653,37 +4404,6 @@ impl RuntimeScheduledLineTask {
         }
     }
 
-    fn validate_custody(&self) -> Result<(), LineRuntimeError> {
-        scheduled_custody_is_admissible(self.state, &self.custody)
-            .then_some(())
-            .ok_or(LineRuntimeError::InvalidScheduledCaptureTransition)
-    }
-
-    fn try_from_parts(
-        token: RuntimeLineHandleToken,
-        child: RuntimeLineTaskNodeId,
-        work: LineTaskWorkTag,
-        deadline: LogicalDuration,
-        custody: RuntimeScheduledCaptureCustody,
-        state: RuntimeScheduledState,
-    ) -> Result<Self, LineRuntimeError> {
-        if work.scheduled_token() != Some(&token)
-            || !matches!(work.work(), super::LineTaskWork::Node(_))
-        {
-            return Err(LineRuntimeError::InvalidScheduledCaptureOwner);
-        }
-        let scheduled = Self {
-            token,
-            child,
-            work,
-            deadline,
-            custody,
-            state,
-        };
-        scheduled.validate_custody()?;
-        Ok(scheduled)
-    }
-
     pub(crate) fn transition(
         &mut self,
         expected: RuntimeScheduledState,
@@ -4705,9 +4425,9 @@ impl RuntimeScheduledLineTask {
     }
 }
 
-fn scheduled_custody_is_admissible(
+fn scheduled_custody_is_admissible<V>(
     state: RuntimeScheduledState,
-    custody: &RuntimeScheduledCaptureCustody,
+    custody: &RuntimeScheduledCaptureCustody<V>,
 ) -> bool {
     if !matches!(
         (state, custody),
@@ -4739,7 +4459,7 @@ const fn is_terminal_scheduled_state(state: RuntimeScheduledState) -> bool {
     )
 }
 
-fn custody_values_are_well_formed(custody: &RuntimeScheduledCaptureCustody) -> bool {
+fn custody_values_are_well_formed<V>(custody: &RuntimeScheduledCaptureCustody<V>) -> bool {
     match custody {
         RuntimeScheduledCaptureCustody::Packet(bindings) => local_bindings_are_unique(bindings),
         RuntimeScheduledCaptureCustody::LineScope(slots) => {
@@ -4751,7 +4471,7 @@ fn custody_values_are_well_formed(custody: &RuntimeScheduledCaptureCustody) -> b
     }
 }
 
-fn local_bindings_are_unique(bindings: &[RuntimeLocalBinding]) -> bool {
+fn local_bindings_are_unique<V>(bindings: &[RuntimeLocalBinding<V>]) -> bool {
     local_ids_are_unique(bindings.iter().map(|binding| binding.local))
 }
 
@@ -5019,6 +4739,543 @@ pub enum LineRuntimeError {
     StageCommandRejected { code: RuntimeStageRejectCode },
 }
 
+impl<T, V> RuntimeDialogueActivationState<T, V> {
+    pub(crate) fn visit_retained_value_roots<E>(
+        &self,
+        mut visit: impl FnMut(&V) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.visit_retained_values_with_depth(|_, value| visit(value))
+    }
+
+    fn visit_retained_values_with_depth<E>(
+        &self,
+        mut visit: impl FnMut(usize, &V) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for scheduled in &self.scheduled {
+            for (depth, value) in scheduled.custody.values_with_depth() {
+                visit(depth, value)?;
+            }
+        }
+        for deferred in &self.deferred {
+            for value in deferred.captures() {
+                visit(0, value)?;
+            }
+        }
+        match &self.result {
+            RuntimeDialogueResultState::Committed { value, .. }
+            | RuntimeDialogueResultState::Selected { value, .. }
+            | RuntimeDialogueResultState::Publishing { value, .. } => visit(0, value)?,
+            RuntimeDialogueResultState::Uncommitted
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => {}
+        }
+        Ok(())
+    }
+
+    /// Joins the original program's resource bank while retaining value custody.
+    /// Activation/ledger and backend type obligations remain on their owners.
+    pub(crate) fn admit_retained_resources(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
+        V: crate::value::RuntimeStoredValue,
+    {
+        admission.status()?;
+        admission.validate_metadata(&(
+            &self.ledger,
+            self.command_sequence,
+            &self.issued_commands,
+            &self.superseded_commands,
+            &self.resolved_commands,
+            self.next_defer_registration,
+            &self.defer_unwind,
+            self.frame_released,
+            &self.prepared_commands,
+        ))?;
+        admission.validate_metadata_collection(self.scheduled.len())?;
+        admission.validate_metadata_collection(self.deferred.len())?;
+        for scheduled in &self.scheduled {
+            admission.validate_metadata(&(
+                &scheduled.token,
+                scheduled.child,
+                &scheduled.work,
+                scheduled.deadline,
+                scheduled.state,
+            ))?;
+            match &scheduled.custody {
+                RuntimeScheduledCaptureCustody::Packet(bindings) => {
+                    admission.validate_metadata_collection(bindings.len())?;
+                    for binding in bindings {
+                        admission.validate_metadata(&binding.local)?;
+                    }
+                }
+                RuntimeScheduledCaptureCustody::ChildFiber(locals) => {
+                    admission.validate_metadata(locals)?;
+                }
+                RuntimeScheduledCaptureCustody::LineScope(slots) => {
+                    admission.validate_metadata_collection(slots.len())?;
+                    for slot in slots {
+                        admission.validate_metadata(&slot.local())?;
+                        slot.storage().admit_record_headers(admission)?;
+                    }
+                }
+            }
+        }
+        for deferred in &self.deferred {
+            admission.validate_metadata(&(
+                deferred.id(),
+                deferred.site(),
+                deferred.outcome_filter(),
+            ))?;
+            admission.validate_metadata_collection(deferred.captures().len())?;
+        }
+        match &self.result {
+            RuntimeDialogueResultState::Committed { ty, .. }
+            | RuntimeDialogueResultState::Publishing { ty, .. } => {
+                ty.admit_type_metadata(admission)?;
+            }
+            RuntimeDialogueResultState::Selected { ty, source, .. } => {
+                ty.admit_type_metadata(admission)?;
+                admission.validate_metadata(source)?;
+            }
+            RuntimeDialogueResultState::Uncommitted
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => {}
+        }
+        admission.admit_composite(V::admission_origin(), |owner, resources| {
+            self.visit_retained_values_with_depth(|depth, value| {
+                let view = value.borrowed_view();
+                resources.validate_view(view, depth, None)?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    view, owner, resources,
+                )
+            })?;
+            if let Some(owner) = owner {
+                self.admit_original_types(owner, resources)?;
+            }
+            Ok(())
+        })
+    }
+
+    fn admit_original_types(
+        &self,
+        owner: &RuntimeProgramOwner,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        T: RuntimeDialogueTypeCoordinate,
+        V: crate::value::RuntimeStoredValue,
+    {
+        for deferred in &self.deferred {
+            deferred.admit_original_capture_types(owner, resources)?;
+        }
+        if let Some((_, site)) = self.deferred_inflight() {
+            let exists = match owner {
+                RuntimeProgramOwner::Plan(plan) => plan.defer_function_site(site).is_some(),
+                RuntimeProgramOwner::Awbc(program) => {
+                    program.defer_sites.get(site.index()).is_some()
+                }
+            };
+            if !exists {
+                return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: LineRuntimeError::UnknownDeferredSite { site }.to_string(),
+                });
+            }
+        }
+        match &self.result {
+            RuntimeDialogueResultState::Committed { value, ty }
+            | RuntimeDialogueResultState::Selected { value, ty, .. }
+            | RuntimeDialogueResultState::Publishing { value, ty } => {
+                ty.original_value_type(owner)?.validate_snapshot_storage(
+                    value.borrowed_view(),
+                    &resources.work(),
+                    V::admission_origin(),
+                )?;
+            }
+            RuntimeDialogueResultState::Uncommitted
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => {}
+        }
+        Ok(())
+    }
+
+    /// The exact child whose capture packet has left the registration stack.
+    #[must_use]
+    pub(crate) fn deferred_inflight(
+        &self,
+    ) -> Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)> {
+        self.defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            .map(|inflight| (inflight.id, inflight.site))
+    }
+
+    fn has_pending_deferred_work(&self) -> bool {
+        !self.deferred.is_empty()
+            || self
+                .defer_unwind
+                .as_ref()
+                .is_some_and(|unwind| unwind.inflight.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn restore_admit(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Result<(), LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        self.restore_admit_with_deferred_child(activation, None)
+    }
+
+    pub(crate) fn restore_admit_with_deferred_child(
+        &self,
+        activation: &DialogueActivationId,
+        expected_child: Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)>,
+    ) -> Result<(), LineRuntimeError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        if self.frame_released && self.has_pending_deferred_work() {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        if self.next_defer_registration == 0
+            || self
+                .deferred
+                .windows(2)
+                .any(|rows| rows[0].id() >= rows[1].id())
+            || self.deferred.last().is_some_and(|registration| {
+                registration.id().get().get() >= self.next_defer_registration
+            })
+            || self.ledger.leases().values().any(|lease| {
+                matches!(
+                    lease.owner(),
+                    RuntimeHandleOwnerSlot::ScopedDefer(id)
+                        if id.get().get() >= self.next_defer_registration
+                )
+            })
+        {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        if let Some(inflight) = self
+            .defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            && (inflight.id.get().get() >= self.next_defer_registration
+                || self
+                    .deferred
+                    .last()
+                    .is_some_and(|pending| pending.id() >= inflight.id))
+        {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        // An activation-only snapshot supplies None. Product restore supplies
+        // the exact child owner it authenticated from its fiber snapshot.
+        if self.deferred_inflight() != expected_child {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        validate_restored_ledger(activation, &self.ledger)?;
+        validate_restored_command_journal(
+            activation,
+            self.command_sequence,
+            &self.issued_commands,
+            &self.superseded_commands,
+            &self.resolved_commands,
+            &self.ledger,
+        )?;
+        let mut scheduled_tokens = std::collections::BTreeSet::new();
+        let mut scheduled_capture_tokens = std::collections::BTreeSet::new();
+        for scheduled in &self.scheduled {
+            scheduled.validate_custody()?;
+            if scheduled.token().activation() != activation
+                || scheduled.work().activation_id() != activation
+                || scheduled.work().scheduled_token() != Some(scheduled.token())
+                || !scheduled_tokens.insert(scheduled.token().clone())
+            {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+            let lease = self
+                .ledger
+                .lease(scheduled.token())
+                .ok_or(LineRuntimeError::InvalidRestoredScheduledState)?;
+            let RuntimeHandleResource::Cue(cue) = lease.resource() else {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            };
+            if !matches!(
+                cue.origin(),
+                RuntimeCueOrigin::Scheduled { child, deadline }
+                    if *child == scheduled.child() && *deadline == scheduled.deadline()
+            ) {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+            let lease_state_matches = match scheduled.state() {
+                RuntimeScheduledState::Armed => lease.state() == RuntimeHandleLeaseState::Pending,
+                RuntimeScheduledState::Running => lease.state() == RuntimeHandleLeaseState::Running,
+                RuntimeScheduledState::Cancelling => matches!(
+                    lease.state(),
+                    RuntimeHandleLeaseState::Cancelling | RuntimeHandleLeaseState::Cancelled
+                ),
+                RuntimeScheduledState::Completed => matches!(
+                    lease.state(),
+                    RuntimeHandleLeaseState::Completed | RuntimeHandleLeaseState::Released
+                ),
+                RuntimeScheduledState::Cancelled => matches!(
+                    lease.state(),
+                    RuntimeHandleLeaseState::Cancelled | RuntimeHandleLeaseState::Released
+                ),
+                RuntimeScheduledState::Failed => matches!(
+                    lease.state(),
+                    RuntimeHandleLeaseState::Failed | RuntimeHandleLeaseState::Released
+                ),
+            };
+            if !lease_state_matches {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+            let expected_capture_owner = match &scheduled.custody {
+                RuntimeScheduledCaptureCustody::Packet(_) => {
+                    Some(RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone()))
+                }
+                RuntimeScheduledCaptureCustody::LineScope(_) => {
+                    Some(RuntimeHandleOwnerSlot::LineScope)
+                }
+                RuntimeScheduledCaptureCustody::ChildFiber(_) => None,
+            };
+            if let Some(expected_owner) = expected_capture_owner {
+                let mut expected_tokens = std::collections::BTreeSet::new();
+                for capture in scheduled.custody.values() {
+                    for handle in capture
+                        .borrowed_view()
+                        .affine_line_handles()
+                        .map_err(|_| LineRuntimeError::InvalidRestoredScheduledState)?
+                    {
+                        if handle.token().activation() != activation
+                            || !expected_tokens.insert(handle.token().clone())
+                            || !scheduled_capture_tokens.insert(handle.token().clone())
+                        {
+                            return Err(LineRuntimeError::InvalidRestoredScheduledState);
+                        }
+                        let capture_lease = self
+                            .ledger
+                            .lease(handle.token())
+                            .ok_or(LineRuntimeError::InvalidRestoredScheduledState)?;
+                        if capture_lease.owner() != &expected_owner
+                            || capture_lease.state() == RuntimeHandleLeaseState::Released
+                        {
+                            return Err(LineRuntimeError::InvalidRestoredScheduledState);
+                        }
+                    }
+                }
+                let child_owned = self
+                    .ledger
+                    .leases()
+                    .values()
+                    .filter(|lease| {
+                        lease.owner()
+                            == &RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone())
+                    })
+                    .map(|lease| lease.token().clone())
+                    .collect::<std::collections::BTreeSet<_>>();
+                if matches!(
+                    &scheduled.custody,
+                    RuntimeScheduledCaptureCustody::Packet(_)
+                ) && child_owned != expected_tokens
+                    || matches!(
+                        &scheduled.custody,
+                        RuntimeScheduledCaptureCustody::LineScope(_)
+                    ) && !child_owned.is_empty()
+                {
+                    return Err(LineRuntimeError::InvalidRestoredScheduledState);
+                }
+            }
+        }
+        for lease in self.ledger.leases().values() {
+            if matches!(
+                lease.resource(),
+                RuntimeHandleResource::Cue(RuntimeCueLease {
+                    origin: RuntimeCueOrigin::Scheduled { .. },
+                })
+            ) && !scheduled_tokens.contains(lease.token())
+            {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+            if let RuntimeHandleOwnerSlot::ChildScope(work) = lease.owner()
+                && let Some(token) = work.scheduled_token()
+                && !self
+                    .scheduled
+                    .iter()
+                    .any(|scheduled| scheduled.token() == token && scheduled.work() == work)
+            {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+        }
+        for registration in &self.deferred {
+            for capture in registration.captures() {
+                for handle in capture
+                    .borrowed_view()
+                    .affine_line_handles()
+                    .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
+                {
+                    if handle.token().activation() != activation
+                        || !scheduled_capture_tokens.insert(handle.token().clone())
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                    }
+                    let capture_lease = self
+                        .ledger
+                        .lease(handle.token())
+                        .ok_or(LineRuntimeError::InvalidRestoredDeferredState)?;
+                    if capture_lease.resource().kind() != handle.kind()
+                        || capture_lease.owner() != &RuntimeHandleOwnerSlot::LineScope
+                        || capture_lease.state() == RuntimeHandleLeaseState::Released
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                    }
+                }
+            }
+        }
+        let mut result_tokens = std::collections::BTreeSet::new();
+        match &self.result {
+            RuntimeDialogueResultState::Uncommitted => {
+                if self.ledger.leases().values().any(|lease| {
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                            && !result_lease_was_retired(lease.state()))
+                }) {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                }
+            }
+            RuntimeDialogueResultState::Committed { value, .. }
+            | RuntimeDialogueResultState::Selected { value, .. }
+            | RuntimeDialogueResultState::Publishing { value, .. } => {
+                for handle in value
+                    .borrowed_view()
+                    .affine_line_handles()
+                    .map_err(|_| LineRuntimeError::InvalidRestoredResultState)?
+                {
+                    if handle.token().activation() != activation {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                    if !result_tokens.insert(handle.token().clone()) {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                    let lease = self
+                        .ledger
+                        .lease(handle.token())
+                        .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
+                    if lease.resource().kind() != handle.kind()
+                        || lease.owner()
+                            != &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone())
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                }
+                if matches!(
+                    &self.result,
+                    RuntimeDialogueResultState::Committed { .. }
+                        | RuntimeDialogueResultState::Selected { .. }
+                ) && self
+                    .ledger
+                    .leases()
+                    .values()
+                    .any(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_)))
+                {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                }
+            }
+            RuntimeDialogueResultState::Abandoned => {
+                if self.ledger.leases().values().any(|lease| {
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                            && !result_lease_was_retired(lease.state()))
+                }) {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                }
+            }
+            RuntimeDialogueResultState::Published => {
+                return Err(LineRuntimeError::InvalidRestoredResultState);
+            }
+        }
+        let ledger_result_tokens = self
+            .ledger
+            .leases()
+            .values()
+            .filter(|lease| {
+                matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                    && !result_lease_was_retired(lease.state())
+            })
+            .map(|lease| lease.token().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if ledger_result_tokens != result_tokens {
+            return Err(LineRuntimeError::InvalidRestoredResultState);
+        }
+        if self.frame_released || !self.prepared_commands.is_empty() {
+            return Err(LineRuntimeError::InvalidRestoredResultState);
+        }
+        Ok(())
+    }
+}
+
+impl<V> RuntimeScheduledLineTask<V> {
+    #[must_use]
+    pub const fn token(&self) -> &RuntimeLineHandleToken {
+        &self.token
+    }
+
+    #[must_use]
+    pub const fn child(&self) -> RuntimeLineTaskNodeId {
+        self.child
+    }
+
+    #[must_use]
+    pub const fn work(&self) -> &LineTaskWorkTag {
+        &self.work
+    }
+
+    #[must_use]
+    pub const fn deadline(&self) -> LogicalDuration {
+        self.deadline
+    }
+
+    #[must_use]
+    pub const fn state(&self) -> RuntimeScheduledState {
+        self.state
+    }
+
+    fn validate_custody(&self) -> Result<(), LineRuntimeError> {
+        scheduled_custody_is_admissible(self.state, &self.custody)
+            .then_some(())
+            .ok_or(LineRuntimeError::InvalidScheduledCaptureTransition)
+    }
+
+    fn try_from_parts(
+        token: RuntimeLineHandleToken,
+        child: RuntimeLineTaskNodeId,
+        work: LineTaskWorkTag,
+        deadline: LogicalDuration,
+        custody: RuntimeScheduledCaptureCustody<V>,
+        state: RuntimeScheduledState,
+    ) -> Result<Self, LineRuntimeError> {
+        if work.scheduled_token() != Some(&token)
+            || !matches!(work.work(), super::LineTaskWork::Node(_))
+        {
+            return Err(LineRuntimeError::InvalidScheduledCaptureOwner);
+        }
+        let scheduled = Self {
+            token,
+            child,
+            work,
+            deadline,
+            custody,
+            state,
+        };
+        scheduled.validate_custody()?;
+        Ok(scheduled)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -5132,6 +5389,62 @@ mod tests {
         vec![RuntimeValue::String(capture.to_owned())]
     }
 
+    fn deferred_program_owner() -> RuntimeProgramOwner {
+        use crate::awbc::schema::{
+            AwbcBlockId, AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+            AwbcFunctionId, AwbcFunctionKind, AwbcSignature, AwbcSignatureId, AwbcTableRange,
+        };
+        let mut program = AwbcProgram {
+            runtime_types: vec![
+                AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([0xd0; 32]),
+                    AwbcRuntimeTypeShape::Unit,
+                ),
+                AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([0xd1; 32]),
+                    AwbcRuntimeTypeShape::String,
+                ),
+                AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([0xd2; 32]),
+                    AwbcRuntimeTypeShape::Bool,
+                ),
+                AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([0xd3; 32]),
+                    AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(2), AwbcTypeId(1)]),
+                ),
+                AwbcRuntimeType::new(
+                    RuntimeSemanticTypeId::from_bytes([0xd4; 32]),
+                    AwbcRuntimeTypeShape::Choice(vec![AwbcTypeId(1), AwbcTypeId(3)]),
+                ),
+            ],
+            signatures: vec![AwbcSignature {
+                params: vec![AwbcTypeId(4)],
+                result: Some(AwbcTypeId(0)),
+                effects: AwbcEffectSetId(0),
+            }],
+            ..AwbcProgram::default()
+        };
+        for ordinal in 0..2u8 {
+            program.functions.push(AwbcFunction {
+                definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                    [0xe0 + ordinal; 32],
+                ),
+                semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                public_id: None,
+                kind: AwbcFunctionKind::Ordinary,
+                signature: AwbcSignatureId(0),
+                type_context: None,
+                input_ownership: Vec::new(),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 0),
+                entry_block: AwbcBlockId(0),
+                flags: AwbcFunctionFlags::empty(),
+            });
+            program.defer_sites.push(AwbcFunctionId(u32::from(ordinal)));
+        }
+        RuntimeProgramOwner::Awbc(std::sync::Arc::new(program))
+    }
+
     #[test]
     fn line_root_defers_are_dynamic_lifo_entries_filtered_by_exit() {
         let activation = scheduled_activation();
@@ -5203,7 +5516,7 @@ mod tests {
         );
         let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
             .expect("snapshot in-flight defer identity");
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let owner = deferred_program_owner();
         let unpaired = snapshot
             .into_live(&owner)
             .expect("restore activation values");
@@ -5349,8 +5662,9 @@ mod tests {
         let encoded = serde_json::to_vec(&snapshot).expect("encode snapshot");
         let decoded: AwbcRuntimeDialogueActivationSnapshot<AwbcTypeId> =
             serde_json::from_slice(&encoded).expect("decode snapshot");
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
-        let mut restored = decoded.into_live(&owner).expect("restore values");
+        let mut restored = decoded
+            .into_live(&deferred_program_owner())
+            .expect("restore values");
         restored
             .restore_admit(&activation)
             .expect("admit fixed-exit state");
@@ -5403,9 +5717,8 @@ mod tests {
         let encoded = serde_json::to_vec(&snapshot).expect("serialize activation snapshot");
         let decoded: AwbcRuntimeDialogueActivationSnapshot<AwbcTypeId> =
             serde_json::from_slice(&encoded).expect("deserialize activation snapshot");
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
         let mut restored = decoded
-            .into_live(&owner)
+            .into_live(&deferred_program_owner())
             .expect("restore captured runtime values for selected program");
         restored
             .restore_admit(&activation)
@@ -5455,6 +5768,41 @@ mod tests {
     }
 
     #[test]
+    fn original_defer_capture_type_is_checked_before_copy_and_projection() {
+        let owner = deferred_program_owner();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        state
+            .register_deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Always,
+                vec![RuntimeValue::Bool(true)],
+            )
+            .unwrap();
+        assert!(matches!(
+            AwbcRuntimeDialogueActivationSnapshot::from_live_for_program(&state, &owner),
+            Err(crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_))
+        ));
+        let saved = AwbcRuntimeDialogueActivationSnapshot::from_live(&state).unwrap();
+        let before = serde_json::to_vec(&saved).unwrap();
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let first = saved.admit_retained_resources(&mut admission).unwrap_err();
+        assert!(matches!(
+            first,
+            crate::value::AwbcRuntimeValueSnapshotError::ProgramType(_)
+        ));
+        assert_eq!(
+            saved.admit_retained_resources(&mut admission).unwrap_err(),
+            first
+        );
+        assert_eq!(serde_json::to_vec(&saved).unwrap(), before);
+        assert!(saved.into_live(&owner).is_err());
+        assert_eq!(state.deferred[0].captures(), &[RuntimeValue::Bool(true)]);
+    }
+
+    #[test]
     fn restored_defer_stack_rejects_released_frames_and_unknown_sites() {
         let activation = scheduled_activation();
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
@@ -5475,16 +5823,20 @@ mod tests {
         let mut snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
             .expect("snapshot pending callback");
         snapshot.frame_released = true;
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let owner = deferred_program_owner();
         let restored = snapshot.into_live(&owner).expect("restore snapshot values");
         assert_eq!(
             restored.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
 
-        let mut bad_sequence = state;
+        let mut bad_sequence = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("negative fixture retains only inert captures");
         let first = bad_sequence.deferred[0].clone();
         bad_sequence.deferred.push(first);
+        let bad_sequence = bad_sequence
+            .into_live(&owner)
+            .expect("restore inert values");
         assert_eq!(
             bad_sequence.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
@@ -5647,7 +5999,7 @@ mod tests {
             .expect("selected AWBC contains the DataShape row");
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
         state.result = RuntimeDialogueResultState::Committed {
-            ty: AwbcTypeId(0),
+            ty: AwbcTypeId(1),
             value: RuntimeValue::Agent(RuntimeAgentValue::DataShape(witness.clone())),
         };
         let activation = scheduled_activation();
@@ -5704,8 +6056,12 @@ mod tests {
 
     #[test]
     fn restore_rejects_duplicate_scheduled_packet_token() {
-        let (activation, mut state) = scheduled_state();
+        let (activation, state) = scheduled_state();
+        let mut state = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("negative fixture retains only inert packets");
         state.scheduled.push(state.scheduled[0].clone());
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let state = state.into_live(&owner).expect("restore inert values");
         assert_eq!(
             state.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredScheduledState)

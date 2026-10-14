@@ -3,7 +3,7 @@
 use super::{
     AwbcBlockId, AwbcFiberRoot, AwbcFunctionId, AwbcProgram, FiberCallablePendingStorage,
     FiberCursor, FiberReturnContext, FiberReturnContinuation, FiberReturnPoint, FiberState,
-    FiberStateError, FiberStatus, FiberStoredValue, FiberStreamState, FiberTerminalValue,
+    FiberStateError, FiberStatus, FiberStreamState, FiberTerminalValue, RuntimeStoredValue,
     format_operand_count_at_site, validate_cursor, validate_frame_layout,
     validate_return_point_metadata,
 };
@@ -18,7 +18,7 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
         resources: &mut ValueResourceAdmission,
     ) -> Result<(), FiberStateError>
     where
-        V: FiberStoredValue,
+        V: RuntimeStoredValue,
         B: Borrow<RuntimeFunctionEffectInstantiation>,
         P: FiberCallablePendingStorage,
     {
@@ -152,7 +152,7 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
         need: impl Fn(&N) -> crate::value::RuntimeNeedView<'_> + Copy,
     ) -> super::AwbcSaveResult<()>
     where
-        V: FiberStoredValue,
+        V: RuntimeStoredValue,
         B: Borrow<RuntimeFunctionEffectInstantiation>,
         P: FiberCallablePendingStorage,
     {
@@ -262,7 +262,7 @@ impl<V, B, P> super::FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P
         work: &mut crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), FiberStateError>
     where
-        V: FiberStoredValue,
+        V: RuntimeStoredValue,
         B: Borrow<RuntimeFunctionEffectInstantiation>,
         P: FiberCallablePendingStorage,
     {

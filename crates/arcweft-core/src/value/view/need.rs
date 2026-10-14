@@ -10,6 +10,20 @@ pub(crate) enum RuntimeNeedView<'a> {
 }
 
 impl<'a> RuntimeNeedView<'a> {
+    pub(crate) fn correlation(self) -> crate::task::TaskCorrelation {
+        match self {
+            Self::Live(value) => value.correlation(),
+            Self::Snapshot(value) => value.correlation(),
+        }
+    }
+
+    pub(crate) fn requires_producer_custody(self) -> bool {
+        match self {
+            Self::Live(value) => value.requires_producer_custody(),
+            Self::Snapshot(value) => value.requires_producer_custody(),
+        }
+    }
+
     pub(crate) fn visit_descriptor(
         self,
         visitor: &mut impl crate::task::descriptor::TaskDescriptorVisitor,

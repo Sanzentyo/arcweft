@@ -38,49 +38,12 @@ mod stream;
 mod suspension;
 mod terminal;
 mod validation;
+use crate::value::{InertRuntimeValueStorage, RuntimeStoredValue};
 pub use await_many::{FiberAwaitManyInFlight, FiberAwaitManyState};
 pub use stream::FiberStreamState;
 pub use terminal::FiberTerminalValue;
-// Only the closed inert carrier can encode any retained fiber grammar.
-trait InertFiberValue: Serialize + serde::de::DeserializeOwned {}
-impl InertFiberValue for AwbcRuntimeValueSnapshot {}
 trait InertFiberNeed: Serialize + serde::de::DeserializeOwned {}
 impl InertFiberNeed for crate::task::RuntimeNeedHandleSaveSnapshot {}
-
-/// The two actual value stores borrow the same codec and retain its provenance.
-trait FiberStoredValue {
-    fn borrowed_view(&self) -> crate::value::RuntimeValueView<'_>;
-    fn admission_origin() -> crate::entry::schema::value_encoding::ValueAdmissionOrigin;
-    fn resource_admission(
-        limits: crate::entry::RuntimeSchemaLimits,
-    ) -> crate::entry::schema::value_encoding::ValueResourceAdmission {
-        use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
-        match Self::admission_origin() {
-            ValueAdmissionOrigin::Live => ValueResourceAdmission::live(limits),
-            origin @ ValueAdmissionOrigin::InertSnapshot => {
-                ValueResourceAdmission::snapshot(limits, origin)
-            }
-        }
-    }
-}
-
-impl FiberStoredValue for RuntimeValue {
-    fn borrowed_view(&self) -> crate::value::RuntimeValueView<'_> {
-        self.view()
-    }
-    fn admission_origin() -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
-        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live
-    }
-}
-
-impl FiberStoredValue for AwbcRuntimeValueSnapshot {
-    fn borrowed_view(&self) -> crate::value::RuntimeValueView<'_> {
-        self.view()
-    }
-    fn admission_origin() -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
-        crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
-    }
-}
 use format::FormatStaging;
 pub use format::{FiberFormatAttemptState, FiberFormatState};
 use input::FrameValueContext;
@@ -145,8 +108,8 @@ impl AwbcFiberRoot {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed, FiberFrame<V, B, R>: Serialize",
-        deserialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed, FiberFrame<V, B, R>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed, FiberFrame<V, B, R>: Deserialize<'de>"
     )
 )]
 pub struct FiberState<
@@ -174,8 +137,8 @@ pub struct FiberState<
 }
 
 impl<
-    V: InertFiberValue + Clone,
-    O: InertFiberValue + Clone,
+    V: InertRuntimeValueStorage + Clone,
+    O: InertRuntimeValueStorage + Clone,
     N: InertFiberNeed + Clone,
     B: Clone,
     R: Clone,
@@ -280,8 +243,8 @@ pub struct FiberCursor {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, B: Serialize, R: Serialize, RuntimePlaceStorage<V>: Serialize, FiberFormatState<V>: Serialize, FiberFormatAttemptState<V>: Serialize",
-        deserialize = "V: InertFiberValue, B: Deserialize<'de>, R: Deserialize<'de>, RuntimePlaceStorage<V>: Deserialize<'de>, FiberFormatState<V>: Deserialize<'de>, FiberFormatAttemptState<V>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, B: Serialize, R: Serialize, RuntimePlaceStorage<V>: Serialize, FiberFormatState<V>: Serialize, FiberFormatAttemptState<V>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, B: Deserialize<'de>, R: Deserialize<'de>, RuntimePlaceStorage<V>: Deserialize<'de>, FiberFormatState<V>: Deserialize<'de>, FiberFormatAttemptState<V>: Deserialize<'de>"
     )
 )]
 pub struct FiberFrame<
@@ -303,7 +266,7 @@ pub struct FiberFrame<
     pub scopes: Vec<FiberScope<V>>,
 }
 
-impl<V: InertFiberValue + Clone, B: Clone, R: Clone> Clone for FiberFrame<V, B, R> {
+impl<V: InertRuntimeValueStorage + Clone, B: Clone, R: Clone> Clone for FiberFrame<V, B, R> {
     fn clone(&self) -> Self {
         Self {
             instance: self.instance,
@@ -399,8 +362,8 @@ pub struct AwbcProjectCallSite {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, P: Serialize, RuntimeArcErrorContextPending<V>: Serialize",
-        deserialize = "V: InertFiberValue, P: Deserialize<'de>, RuntimeArcErrorContextPending<V>: Deserialize<'de>"
+        serialize = "V: InertRuntimeValueStorage, P: Serialize, RuntimeArcErrorContextPending<V>: Serialize",
+        deserialize = "V: InertRuntimeValueStorage, P: Deserialize<'de>, RuntimeArcErrorContextPending<V>: Deserialize<'de>"
     )
 )]
 pub enum FiberReturnContinuation<P = RuntimeCallablePendingGroup, V = RuntimeValue> {
@@ -491,8 +454,8 @@ pub enum FiberStatus {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed",
-        deserialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed"
+        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed",
+        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed"
     )
 )]
 pub struct FiberSuspension<
@@ -528,8 +491,8 @@ impl<V, O, N> FiberSuspension<V, O, N> {
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed",
-        deserialize = "V: InertFiberValue, O: InertFiberValue, N: InertFiberNeed"
+        serialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed",
+        deserialize = "V: InertRuntimeValueStorage, O: InertRuntimeValueStorage, N: InertFiberNeed"
     )
 )]
 pub enum FiberSuspensionReason<
@@ -571,7 +534,10 @@ pub enum FiberSuspensionReason<
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "V: InertFiberValue", deserialize = "V: InertFiberValue")
+    bound(
+        serialize = "V: InertRuntimeValueStorage",
+        deserialize = "V: InertRuntimeValueStorage"
+    )
 )]
 pub struct FiberDialogueContentEffectBinding<V = RuntimeValue> {
     pub site: crate::runtime_id::RuntimeDialogueEffectSiteId,
@@ -3532,7 +3498,7 @@ fn format_project_method_at_site(
     }
 }
 
-fn validate_format_state<V: FiberStoredValue, B, R>(
+fn validate_format_state<V: RuntimeStoredValue, B, R>(
     program: &AwbcProgram,
     frame: &FiberFrame<V, B, R>,
     state: &FiberFormatState<V>,
@@ -4106,7 +4072,7 @@ fn validate_return_point(
         RuntimeValue::view,
     )
 }
-fn validate_return_point_metadata<V: FiberStoredValue, B, P: FiberCallablePendingStorage>(
+fn validate_return_point_metadata<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage>(
     program: &AwbcProgram,
     caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
     returning_function: AwbcFunctionId,
@@ -4134,7 +4100,7 @@ where
     Ok(())
 }
 
-fn validate_return_continuation<V: FiberStoredValue, B, P: FiberCallablePendingStorage>(
+fn validate_return_continuation<V: RuntimeStoredValue, B, P: FiberCallablePendingStorage>(
     program: &AwbcProgram,
     caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
     returning_function: AwbcFunctionId,
@@ -4286,7 +4252,7 @@ where
     Ok(())
 }
 
-fn validate_format_operand_return<V: FiberStoredValue, B, R, C>(
+fn validate_format_operand_return<V: RuntimeStoredValue, B, R, C>(
     program: &AwbcProgram,
     caller: &FiberFrame<V, B, R>,
     returning_function: AwbcFunctionId,
@@ -4342,7 +4308,7 @@ where
     Ok(())
 }
 
-fn validate_format_display_return<V: FiberStoredValue, B, R, C>(
+fn validate_format_display_return<V: RuntimeStoredValue, B, R, C>(
     program: &AwbcProgram,
     caller: &FiberFrame<V, B, R>,
     returning_function: AwbcFunctionId,

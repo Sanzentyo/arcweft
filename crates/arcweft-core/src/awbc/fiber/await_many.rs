@@ -1,7 +1,9 @@
 //! One `AwaitMany` progress grammar with borrowed original plan admission.
 
 use super::input::FrameValueContext;
-use super::{AwbcPatternId, AwbcTaskPlanId, FiberStateError, InertFiberNeed, InertFiberValue};
+use super::{
+    AwbcPatternId, AwbcTaskPlanId, FiberStateError, InertFiberNeed, InertRuntimeValueStorage,
+};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeProgramValueType;
 use crate::task::{RuntimeNeedHandle, RuntimeNeedHandleSaveSnapshot, RuntimeProgramOwner};
@@ -27,8 +29,8 @@ use serde::{Deserialize, Serialize};
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: InertFiberValue, N: InertFiberNeed",
-        deserialize = "V: InertFiberValue, N: InertFiberNeed"
+        serialize = "V: InertRuntimeValueStorage, N: InertFiberNeed",
+        deserialize = "V: InertRuntimeValueStorage, N: InertFiberNeed"
     )
 )]
 pub struct FiberAwaitManyState<V = RuntimeValue, N = RuntimeNeedHandle> {

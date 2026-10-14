@@ -482,7 +482,7 @@ impl ProductDialogueStore {
             crate::line_task::RuntimeDialogueRegistrySnapshotError,
         >,
     ) -> Result<Self, crate::line_task::RuntimeDialogueRegistrySnapshotError> {
-        let RuntimeProgramOwner::Awbc(program) = owner else {
+        let RuntimeProgramOwner::Awbc(_) = owner else {
             return Err(
                 crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                     message: "AWBC dialogue restore requires its AWBC program owner".to_owned(),
@@ -496,51 +496,6 @@ impl ProductDialogueStore {
                 expected_deferred_children,
                 restore_frame,
             )?;
-        for activation in registry.active_ids() {
-            let Some(line) = registry.active_line(&activation) else {
-                continue;
-            };
-            line.validate_deferred_sites(|site| program.defer_sites.get(site.index()).is_some())?;
-            for registration in line.deferred_registrations() {
-                let Some(function_id) = program.defer_sites.get(registration.site().index()) else {
-                    return Err(
-                        crate::line_task::LineRuntimeError::InvalidRestoredDeferredState.into(),
-                    );
-                };
-                let Some(function) = program.functions.get(function_id.index()) else {
-                    return Err(
-                        crate::line_task::LineRuntimeError::InvalidRestoredDeferredState.into(),
-                    );
-                };
-                let Some(signature) = program.signatures.get(function.signature.index()) else {
-                    return Err(
-                        crate::line_task::LineRuntimeError::InvalidRestoredDeferredState.into(),
-                    );
-                };
-                if registration.captures().len() != signature.params.len()
-                    || !signature.result.is_some_and(|result| {
-                        matches!(
-                            program
-                                .runtime_types
-                                .get(result.index())
-                                .map(crate::awbc::schema::AwbcRuntimeType::shape),
-                            Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
-                        )
-                    })
-                    || registration.captures().iter().zip(&signature.params).any(
-                        |(capture, expected)| {
-                            !crate::awbc::fiber::runtime_value_matches_type(
-                                program, capture, *expected, 0,
-                            )
-                        },
-                    )
-                {
-                    return Err(
-                        crate::line_task::LineRuntimeError::InvalidRestoredDeferredState.into(),
-                    );
-                }
-            }
-        }
         Ok(Self { registry })
     }
 }

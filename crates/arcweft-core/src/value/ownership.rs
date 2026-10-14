@@ -5,16 +5,14 @@
 //! and affine leaf classes must extend the exhaustive traversals below rather
 //! than introduce a side table.
 
-use super::{
-    RuntimeCallableValue, RuntimeHandleKind, RuntimeIterator, RuntimeOpaqueValueClass, RuntimeSeq,
-    RuntimeValue,
-};
+use super::{RuntimeCallableValue, RuntimeHandleKind, RuntimeIterator, RuntimeSeq, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
 mod binary;
 mod path;
+mod resources;
 mod slot;
 
 pub use path::{
@@ -59,6 +57,8 @@ impl RuntimeAffineLineHandle {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeAffineLineHandleError {
     #[error(transparent)]
+    Schema(Box<crate::entry::RuntimeSchemaError>),
+    #[error(transparent)]
     Path(#[from] RuntimeValuePathError),
     #[error(transparent)]
     Token(#[from] crate::runtime_id::RuntimeLineHandleTokenDecodeError),
@@ -66,6 +66,12 @@ pub enum RuntimeAffineLineHandleError {
     RecordField(#[from] super::RuntimeRecordFieldIdError),
     #[error("runtime value structural ordinal exceeds the canonical u32 path coordinate")]
     StructuralOrdinalOverflow,
+}
+
+impl From<crate::entry::RuntimeSchemaError> for RuntimeAffineLineHandleError {
+    fn from(error: crate::entry::RuntimeSchemaError) -> Self {
+        Self::Schema(Box::new(error))
+    }
 }
 
 /// A bare value cannot transfer the ledger obligations of a live line handle.
@@ -193,199 +199,11 @@ impl RuntimeValue {
     fn collect_resources(
         &self,
         path: &RuntimeValuePath,
-        handles: &mut RuntimeValueResourceGraph,
+        graph: &mut RuntimeValueResourceGraph,
     ) -> Result<(), RuntimeAffineLineHandleError> {
-        match self {
-            Self::Unit
-            | Self::Bool(_)
-            | Self::Int(_)
-            | Self::UInt(_)
-            | Self::F32(_)
-            | Self::F64(_)
-            | Self::MatrixF32(_)
-            | Self::MatrixF64(_)
-            | Self::TensorF32(_)
-            | Self::TensorF64(_)
-            | Self::String(_)
-            | Self::Color(_)
-            | Self::Char(_)
-            | Self::Duration(_)
-            | Self::Progress(_)
-            | Self::Range(_)
-            | Self::EntityRef(_)
-            | Self::Seq(RuntimeSeq::Dense(_))
-            | Self::Iterator(RuntimeIterator::Range(_)) => Ok(()),
-            Self::NeedHandle(need) => {
-                if handles.owned_need.is_none() && need.requires_producer_custody() {
-                    handles.owned_need = Some((need.correlation(), path.clone()));
-                }
-                for (index, value) in need.request_values().enumerate() {
-                    let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    value.collect_resources(
-                        &path.child(RuntimeValuePathSegment::NeedRequestArgument(index))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Tuple(values) => collect_indexed_resources(
-                values,
-                path,
-                RuntimeValuePathSegment::TupleElement,
-                handles,
-            ),
-            Self::Seq(RuntimeSeq::Values(values)) => collect_indexed_resources_u64(
-                values,
-                path,
-                RuntimeValuePathSegment::SequenceElement,
-                handles,
-            ),
-            Self::Seq(RuntimeSeq::TupleColumns(columns)) => {
-                for (index, column) in columns.columns().iter().enumerate() {
-                    let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    column.collect_resources(
-                        &path.child(RuntimeValuePathSegment::TupleColumn(index))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Seq(RuntimeSeq::RecordColumns(records)) => {
-                for field in records.fields() {
-                    field.values().collect_resources(
-                        &path.child(RuntimeValuePathSegment::RecordColumn(field.field()))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Record(fields) => {
-                for field in fields {
-                    field.value().collect_resources(
-                        &path.child(RuntimeValuePathSegment::RecordField(field.field()))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::NominalRecord(record) => {
-                for (index, value) in record.fields().iter().enumerate() {
-                    let field = super::RuntimeRecordFieldId::try_from_zero_based_ordinal(index)?;
-                    value.collect_resources(
-                        &path.child(RuntimeValuePathSegment::NominalRecordField(field))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Opaque(value) => match value.value_class() {
-                RuntimeOpaqueValueClass::AffineHandle(kind) => {
-                    handles.line_handles.push(RuntimeAffineLineHandle {
-                        kind,
-                        token: crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(
-                            value.payload(),
-                        )?,
-                        path: path.clone(),
-                    });
-                    Ok(())
-                }
-                RuntimeOpaqueValueClass::Plain => value.payload().collect_resources(
-                    &path.child(RuntimeValuePathSegment::OpaquePayload)?,
-                    handles,
-                ),
-            },
-            Self::Iterator(RuntimeIterator::Values { items }) => {
-                for (offset, value) in items.iter().enumerate() {
-                    let offset = u64::try_from(offset)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    value.collect_resources(
-                        &path.child(RuntimeValuePathSegment::IteratorRemainder(offset))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Iterator(RuntimeIterator::Witness(witness)) => witness.state().collect_resources(
-                &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
-                handles,
-            ),
-            Self::Variant(crate::value::RuntimeVariantValue { payload, .. }) => match payload {
-                Some(payload) => payload.collect_resources(
-                    &path.child(RuntimeValuePathSegment::VariantPayload)?,
-                    handles,
-                ),
-                None => Ok(()),
-            },
-            Self::Reduction(reduction) => {
-                reduction.state().collect_resources(
-                    &path.child(RuntimeValuePathSegment::ReductionState)?,
-                    handles,
-                )?;
-                for (index, command) in reduction.commands().iter().enumerate() {
-                    let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    command.payload().0.collect_resources(
-                        &path.child(RuntimeValuePathSegment::ReductionCommandPayload(index))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Agent(agent) => {
-                for (index, (_, value)) in agent
-                    .nested_runtime_values_with_depth()
-                    .into_iter()
-                    .enumerate()
-                {
-                    let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    value.collect_resources(
-                        &path.child(RuntimeValuePathSegment::AgentEmbeddedValue(index))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::Callable(callable) => collect_indexed_resources(
-                callable.retained(),
-                path,
-                RuntimeValuePathSegment::CallableRetained,
-                handles,
-            ),
-        }
+        self.view().collect_resources(path, graph)
     }
 }
-
-fn collect_indexed_resources(
-    values: &[RuntimeValue],
-    path: &RuntimeValuePath,
-    segment: impl Fn(u32) -> RuntimeValuePathSegment,
-    handles: &mut RuntimeValueResourceGraph,
-) -> Result<(), RuntimeAffineLineHandleError> {
-    for (index, value) in values.iter().enumerate() {
-        let index = u32::try_from(index)
-            .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-        value.collect_resources(&path.child(segment(index))?, handles)?;
-    }
-    Ok(())
-}
-
-fn collect_indexed_resources_u64(
-    values: &[RuntimeValue],
-    path: &RuntimeValuePath,
-    segment: impl Fn(u64) -> RuntimeValuePathSegment,
-    handles: &mut RuntimeValueResourceGraph,
-) -> Result<(), RuntimeAffineLineHandleError> {
-    for (index, value) in values.iter().enumerate() {
-        let index = u64::try_from(index)
-            .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-        value.collect_resources(&path.child(segment(index))?, handles)?;
-    }
-    Ok(())
-}
-
 impl RuntimeCallableValue {
     /// Computes ownership from the exact retained value set.
     #[must_use]
@@ -413,42 +231,6 @@ impl RuntimeSeq {
                 .fold(RuntimeValueOwnership::Unrestricted, |ownership, field| {
                     ownership.join(field.values().ownership())
                 }),
-        }
-    }
-
-    fn collect_resources(
-        &self,
-        path: &RuntimeValuePath,
-        handles: &mut RuntimeValueResourceGraph,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
-        match self {
-            Self::Values(values) => collect_indexed_resources_u64(
-                values,
-                path,
-                RuntimeValuePathSegment::SequenceElement,
-                handles,
-            ),
-            Self::Dense(_) => Ok(()),
-            Self::TupleColumns(columns) => {
-                for (index, column) in columns.columns().iter().enumerate() {
-                    let index = u32::try_from(index)
-                        .map_err(|_| RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-                    column.collect_resources(
-                        &path.child(RuntimeValuePathSegment::TupleColumn(index))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
-            Self::RecordColumns(records) => {
-                for field in records.fields() {
-                    field.values().collect_resources(
-                        &path.child(RuntimeValuePathSegment::RecordColumn(field.field()))?,
-                        handles,
-                    )?;
-                }
-                Ok(())
-            }
         }
     }
 }
@@ -550,6 +332,42 @@ mod tests {
         let record = RuntimeSeq::record_columns(1, vec![("field".to_owned(), tuple)]).unwrap();
 
         assert_eq!(record.ownership(), RuntimeValueOwnership::Unrestricted);
+    }
+
+    #[test]
+    fn live_and_inert_custody_preserve_the_same_physical_column_path() {
+        let issued = crate::tests::program_custody::issued_program_handle();
+        let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&issued.plan));
+        let column = RuntimeSeq::TupleColumns(
+            TupleSeq::new(1, vec![RuntimeSeq::values(vec![issued.value])]).unwrap(),
+        );
+        let value = RuntimeValue::Tuple(vec![RuntimeValue::Seq(
+            RuntimeSeq::record_columns(1, vec![("handle".into(), column)]).unwrap(),
+        )]);
+        let image =
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
+                .unwrap();
+        let live = value.affine_line_handles().unwrap();
+        let inert = image.view().affine_line_handles().unwrap();
+        assert_eq!(live, inert);
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].token(), &issued.token);
+        let expected = RuntimeValuePath::root()
+            .child(RuntimeValuePathSegment::TupleElement(0))
+            .unwrap()
+            .child(RuntimeValuePathSegment::RecordColumn(
+                crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+            ))
+            .unwrap()
+            .child(RuntimeValuePathSegment::TupleColumn(0))
+            .unwrap()
+            .child(RuntimeValuePathSegment::SequenceElement(0))
+            .unwrap();
+        assert_eq!(live[0].path(), &expected);
+        assert_eq!(
+            image.affine_line_handle_tokens().unwrap(),
+            vec![issued.token]
+        );
     }
 
     #[test]

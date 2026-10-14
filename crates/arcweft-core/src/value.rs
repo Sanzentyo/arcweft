@@ -73,6 +73,8 @@ mod runtime_value_visit;
 mod sequence_constructors;
 mod sequence_impls;
 mod shape;
+mod storage;
+pub(crate) use storage::{InertRuntimeValueStorage, RuntimeStoredValue};
 mod view;
 pub use borrowed::{
     RuntimeBorrowedOpaque, RuntimeBorrowedSequence, RuntimeBorrowedTuple, RuntimeBorrowedValue,
@@ -222,10 +224,17 @@ pub struct RuntimeFlowParameterBinding {
 }
 
 /// One binding in the plan-local structured execution domain.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeLocalBinding {
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: InertRuntimeValueStorage",
+        deserialize = "V: InertRuntimeValueStorage"
+    )
+)]
+pub struct RuntimeLocalBinding<V = RuntimeValue> {
     pub local: RuntimeLocalDeclarationId,
-    pub value: RuntimeValue,
+    pub value: V,
 }
 
 /// Validation failures at a native FunctionSite input boundary.

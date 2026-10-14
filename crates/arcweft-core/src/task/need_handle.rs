@@ -73,6 +73,9 @@ impl RuntimeNeedHandleSaveSnapshot {
     pub(crate) const fn correlation(&self) -> TaskCorrelation {
         self.correlation
     }
+    pub(crate) const fn requires_producer_custody(&self) -> bool {
+        matches!(self.origin, RuntimeNeedHandleOrigin::AcceptedLaunch)
+    }
     pub(crate) fn from_live(
         handle: &RuntimeNeedHandle,
         owner: Option<&super::RuntimeProgramOwner>,

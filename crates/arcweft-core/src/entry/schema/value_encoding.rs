@@ -589,6 +589,32 @@ impl ValueResourceAdmission {
         self.vacant(depth)?;
         self.budget.node(depth)?;
         self.budget.collection(count)?;
+        if let crate::value::RuntimePlaceRecordHeader::Structural { names } = header {
+            self.budget.collection(names.len())?;
+            for _ in names {
+                self.work.charge(depth + 1)?;
+            }
+        }
+        self.partial_record_header_fields(header, depth)
+    }
+
+    /// Place headers are metadata, so their traversal uses the enclosing
+    /// schema depth and work limits rather than complete-value nesting or
+    /// sequence limits. Retained record nodes still share the value allowance.
+    pub(crate) fn partial_record_header(
+        &mut self,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.budget.node(depth)?;
+        self.partial_record_header_fields(header, depth)
+    }
+
+    fn partial_record_header_fields(
+        &mut self,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
         match header {
             crate::value::RuntimePlaceRecordHeader::Nominal {
                 nominal,
@@ -601,9 +627,7 @@ impl ValueResourceAdmission {
                 }
             }
             crate::value::RuntimePlaceRecordHeader::Structural { names } => {
-                self.budget.collection(names.len())?;
                 for name in names {
-                    self.work.charge(depth + 1)?;
                     self.budget.string(name)?;
                 }
             }

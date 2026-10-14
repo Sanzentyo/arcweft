@@ -251,6 +251,18 @@ VM の yield は同じ indexed inventory、closed 状態、checked emission coun
 queue の欠落時に item を捨てたり、counter を飽和させたりしない。close は同じ indexed
 owner を使う。これらの value byte count は fiber／session wire 全体の検証と区別する。
 
+対話の activation・result・scheduled custody・defer registration は、live と inert が
+同じ所有型の grammar を使う。inert specialization にだけ serde reader と Clone を
+与え、live の capture packet や activation owner を複製しない。registry は全 entry の
+identity・command journal・custody と retained 値を借用して検証してから、最初の
+frame copy／live line 構築へ進む。戻り値は元 Native／AWBC の型ID、defer capture は
+元 site が指す function の入力順・arity・型と Unit 戻り値に照合する。値・部分場所の
+header・型関係は同じ resource bank を使い、途中の failure を後続 phase で消さない。
+部分場所の header traversal は schema の metadata depth／work を使い、完全値の
+nesting／sequence 上限を代用しない。残る initialized 値は部分場所の元の深さで計上する。
+affine handle の kind・token・物理 storage path は共通の borrowed value view から
+検査し、inert の token 検査のために live handle を構築しない。
+
 AwaitMany の進捗は `FiberAwaitManyState<V, N>` と `FiberAwaitManyInFlight<N>` の
 単一 grammar に保持し、Core の inert value／Need carrier だけに codec を与える。
 元の到達済み AwaitMany terminator・resume point・plan・binding を構築前に照合し、

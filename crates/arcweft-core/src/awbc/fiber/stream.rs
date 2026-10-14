@@ -28,8 +28,8 @@ mod tests;
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "V: super::InertFiberValue",
-        deserialize = "V: super::InertFiberValue"
+        serialize = "V: super::InertRuntimeValueStorage",
+        deserialize = "V: super::InertRuntimeValueStorage"
     )
 )]
 pub struct FiberStreamState<V = RuntimeValue> {

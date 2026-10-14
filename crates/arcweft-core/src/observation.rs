@@ -82,7 +82,10 @@ impl<P> RuntimeObservationState<P> {
 /// let _: RuntimeObservationState = serde_json::from_str("{}").unwrap();
 /// ```
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "P: InertObservationValue"))]
+#[serde(
+    deny_unknown_fields,
+    bound(deserialize = "P: crate::value::InertRuntimeValueStorage")
+)]
 pub struct RuntimeObservationState<P = RuntimePayload> {
     signals: BTreeMap<String, P>,
     metrics: BTreeMap<String, P>,
@@ -90,9 +93,6 @@ pub struct RuntimeObservationState<P = RuntimePayload> {
     pub events: Vec<RuntimeEvent>,
     pub calls: Vec<RuntimeCall>,
 }
-
-trait InertObservationValue: serde::de::DeserializeOwned {}
-impl InertObservationValue for AwbcRuntimeValueSnapshot {}
 
 impl<P> Default for RuntimeObservationState<P> {
     fn default() -> Self {

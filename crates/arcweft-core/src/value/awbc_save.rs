@@ -428,29 +428,26 @@ impl AwbcRuntimeValueSnapshot {
     pub(crate) fn affine_line_handle_tokens(
         &self,
     ) -> Result<Vec<crate::runtime_id::RuntimeLineHandleToken>, AwbcRuntimeValueSnapshotError> {
-        let mut tokens = Vec::new();
-        let mut observe = |value: super::RuntimeValueView<'_>| {
-            if let super::RuntimeValueView::Opaque(opaque) = value
-                && matches!(
-                    opaque.value_class(),
-                    super::RuntimeOpaqueValueClass::AffineHandle(_)
-                )
-            {
-                tokens.push(
-                    crate::runtime_id::RuntimeLineHandleToken::try_decode_view(opaque.payload())
-                        .map_err(|error| crate::entry::RuntimeSchemaError::Encoding {
-                            message: error.to_string(),
-                        })?,
-                );
-            }
-            Ok(())
-        };
         crate::entry::schema::value_encoding::preflight_snapshot_view(
             self.view(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            Some(&mut observe),
+            None,
         )?;
-        Ok(tokens)
+        self.view()
+            .affine_line_handles()
+            .map(|handles| {
+                handles
+                    .into_iter()
+                    .map(|handle| handle.token().clone())
+                    .collect()
+            })
+            .map_err(|error| match error {
+                super::ownership::RuntimeAffineLineHandleError::Schema(error) => (*error).into(),
+                error => crate::entry::RuntimeSchemaError::Encoding {
+                    message: error.to_string(),
+                }
+                .into(),
+            })
     }
 
     /// Rejects affine descendants and excessive nesting while this graph is

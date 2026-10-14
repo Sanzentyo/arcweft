@@ -30,21 +30,116 @@ impl RuntimeDeferOutcomeFilter {
 ///
 /// The site identifies the executable body, while repeated registrations of
 /// the same site remain distinct stack entries with their own captured values.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeLineDeferredRegistration {
+/// Live capture custody cannot be cloned.
+///
+/// ```compile_fail
+/// use arcweft_core::line_task::RuntimeLineDeferredRegistration;
+/// fn duplicate(value: &RuntimeLineDeferredRegistration) {
+///     let _: RuntimeLineDeferredRegistration = value.clone();
+/// }
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage",
+        deserialize = "V: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub struct RuntimeLineDeferredRegistration<V = RuntimeValue> {
     id: RuntimeDeferRegistrationId,
     site: RuntimeDeferSiteId,
     outcome_filter: RuntimeDeferOutcomeFilter,
-    captures: Vec<RuntimeValue>,
+    captures: Vec<V>,
 }
 
-impl RuntimeLineDeferredRegistration {
+impl<V> RuntimeLineDeferredRegistration<V> {
+    /// Checks the retained packet against the original deferred body's ABI
+    /// while all values are still borrowed and share their enclosing bank.
+    pub(crate) fn admit_original_capture_types(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        let invalid = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: super::LineRuntimeError::InvalidRestoredDeferredState.to_string(),
+        };
+        let missing = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: super::LineRuntimeError::UnknownDeferredSite { site: self.site }.to_string(),
+        };
+        match owner {
+            crate::task::RuntimeProgramOwner::Plan(plan) => {
+                let site = plan.defer_function_site(self.site).ok_or_else(missing)?;
+                let function = plan.function_sites().get(site).ok_or_else(invalid)?;
+                if function.inputs().len() != self.captures.len()
+                    || !plan.type_table().get(function.result()).is_some_and(|ty| {
+                        matches!(
+                            ty.projection(),
+                            crate::plan::RuntimePlanTypeProjection::Unit
+                        )
+                    })
+                {
+                    return Err(invalid());
+                }
+                for (value, input) in self.captures.iter().zip(function.inputs()) {
+                    crate::program_types::RuntimeProgramValueType::Plan {
+                        program: &plan.inventory,
+                        ty: input.pattern().ty(),
+                    }
+                    .validate_snapshot_storage(
+                        value.borrowed_view(),
+                        &resources.work(),
+                        V::admission_origin(),
+                    )?;
+                }
+            }
+            crate::task::RuntimeProgramOwner::Awbc(program) => {
+                let function_id = program
+                    .defer_sites
+                    .get(self.site.index())
+                    .ok_or_else(missing)?;
+                let function = program
+                    .functions
+                    .get(function_id.index())
+                    .ok_or_else(invalid)?;
+                let signature = program
+                    .signatures
+                    .get(function.signature.index())
+                    .ok_or_else(invalid)?;
+                if signature.params.len() != self.captures.len()
+                    || !signature.result.is_some_and(|result| {
+                        program.runtime_types.get(result.index()).is_some_and(|ty| {
+                            matches!(ty.shape(), crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
+                        })
+                    })
+                {
+                    return Err(invalid());
+                }
+                for (value, expected) in self.captures.iter().zip(&signature.params) {
+                    crate::program_types::RuntimeProgramValueType::Awbc {
+                        program,
+                        ty: *expected,
+                    }
+                    .validate_snapshot_storage(
+                        value.borrowed_view(),
+                        &resources.work(),
+                        V::admission_origin(),
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub(crate) fn new(
         id: RuntimeDeferRegistrationId,
         site: RuntimeDeferSiteId,
         outcome_filter: RuntimeDeferOutcomeFilter,
-        captures: Vec<RuntimeValue>,
+        captures: Vec<V>,
     ) -> Self {
         Self {
             id,
@@ -70,7 +165,7 @@ impl RuntimeLineDeferredRegistration {
     }
 
     #[must_use]
-    pub fn captures(&self) -> &[RuntimeValue] {
+    pub fn captures(&self) -> &[V] {
         &self.captures
     }
 
@@ -81,7 +176,7 @@ impl RuntimeLineDeferredRegistration {
         RuntimeDeferRegistrationId,
         RuntimeDeferSiteId,
         RuntimeDeferOutcomeFilter,
-        Vec<RuntimeValue>,
+        Vec<V>,
     ) {
         (self.id, self.site, self.outcome_filter, self.captures)
     }
@@ -117,26 +212,21 @@ pub(crate) enum RuntimeScopedDeferDecision {
     Skipped,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AwbcRuntimeDeferredRegistrationSnapshot {
-    id: RuntimeDeferRegistrationId,
-    site: RuntimeDeferSiteId,
-    outcome_filter: RuntimeDeferOutcomeFilter,
-    captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
+pub(crate) type AwbcRuntimeDeferredRegistrationSnapshot =
+    RuntimeLineDeferredRegistration<crate::value::AwbcRuntimeValueSnapshot>;
+
+impl Clone for AwbcRuntimeDeferredRegistrationSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            site: self.site,
+            outcome_filter: self.outcome_filter,
+            captures: self.captures.clone(),
+        }
+    }
 }
 
 impl AwbcRuntimeDeferredRegistrationSnapshot {
-    pub(crate) fn visit_saved_value_roots<E>(
-        &self,
-        visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
-    ) -> Result<(), E> {
-        for value in &self.captures {
-            visit(value)?;
-        }
-        Ok(())
-    }
-
     pub(crate) fn from_live(
         registration: &RuntimeLineDeferredRegistration,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {

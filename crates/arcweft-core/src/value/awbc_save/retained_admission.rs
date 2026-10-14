@@ -242,6 +242,25 @@ impl RuntimeRetainedValueAdmission {
         self.resources.work()
     }
 
+    pub(crate) fn status(&self) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.failure
+            .as_ref()
+            .map_or(Ok(()), |failure| Err(failure.clone()))
+    }
+
+    pub(crate) fn admit_partial_record_header(
+        &mut self,
+        header: &crate::value::RuntimePlaceRecordHeader,
+        depth: usize,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        let result = self
+            .resources
+            .partial_record_header(header, depth)
+            .map_err(AwbcRuntimeValueSnapshotError::from);
+        result.inspect_err(|error| self.retain_failure(error.clone()))
+    }
+
     /// Returns the immutable original executable lease for domain-owned
     /// generation/role checks. The context cannot be rebound to another owner.
     #[must_use]
