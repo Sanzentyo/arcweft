@@ -1130,6 +1130,53 @@ pub struct AwbcProductDialogueEffectSaveSnapshot {
     pub callback: crate::value::AwbcRuntimeValueSnapshot,
 }
 
+impl AwbcProductActiveDialogueSaveSnapshot {
+    fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visit(&self.target)?;
+        for value in self.captures.iter().chain(&self.task_inputs) {
+            visit(value)?;
+        }
+        for value in &self.values {
+            visit(&value.value)?;
+        }
+        for effect in &self.effects {
+            visit(&effect.callback)?;
+        }
+        let activation = match &self.phase {
+            AwbcProductDialoguePhaseSaveSnapshot::Activating { fiber, pending }
+            | AwbcProductDialoguePhaseSaveSnapshot::Closing(
+                AwbcProductDialogueClosingSaveSnapshot {
+                    state:
+                        AwbcProductDialogueClosingStateSaveSnapshot::Activation { fiber, pending },
+                    ..
+                },
+            ) => Some((fiber, pending)),
+            AwbcProductDialoguePhaseSaveSnapshot::Reducing { .. }
+            | AwbcProductDialoguePhaseSaveSnapshot::Publishing { .. }
+            | AwbcProductDialoguePhaseSaveSnapshot::Closing(
+                AwbcProductDialogueClosingSaveSnapshot {
+                    state: AwbcProductDialogueClosingStateSaveSnapshot::LineTask { .. },
+                    ..
+                },
+            ) => None,
+        };
+        if let Some((fiber, pending)) = activation {
+            fiber.visit_saved_value_roots(&mut *visit)?;
+            match pending {
+                Some(
+                    AwbcProductPendingLineOperationSaveSnapshot::AcquireActor { value, .. }
+                    | AwbcProductPendingLineOperationSaveSnapshot::ActorLook { value, .. },
+                ) => visit(value)?,
+                Some(AwbcProductPendingLineOperationSaveSnapshot::StartVoice { .. }) | None => {}
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductDialogueValueSaveSnapshot {
@@ -1528,6 +1575,56 @@ fn snapshot_active_dialogue(
 }
 
 impl AwbcProductExecutorSaveSnapshot {
+    /// Inspects every retained inert value before a caller constructs the
+    /// executor, using the owning fiber/line/task/observation grammars.
+    pub fn visit_borrowed_runtime_values<E>(
+        &self,
+        mut visit: impl for<'value> FnMut(crate::value::RuntimeBorrowedValue<'value>) -> Result<(), E>,
+    ) -> Result<(), crate::value::RuntimeBorrowedValueVisitError<E>> {
+        self.visit_saved_value_roots(&mut |value| {
+            crate::value::RuntimeBorrowedValue::from(value).try_visit(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+                &mut visit,
+            )
+        })
+    }
+
+    fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.fiber.visit_saved_value_roots(&mut *visit)?;
+        for child in &self.child_fibers {
+            child.fiber.visit_saved_value_roots(&mut *visit)?;
+        }
+        self.dialogues.try_visit_active(|frame, line| {
+            frame.visit_saved_value_roots(&mut *visit)?;
+            line.visit_saved_value_roots(&mut *visit)
+        })?;
+        for task in &self.need_producers.task_admissions {
+            for value in task.request_values() {
+                visit(value)?;
+            }
+        }
+        for launch in &self.need_producers.launches {
+            for argument in &launch.arguments {
+                visit(&argument.value)?;
+            }
+            for value in launch.task_spec.request.payloads() {
+                visit(value)?;
+            }
+            if let AwbcNeedStateSaveSnapshot::Ready { value } = &launch.state {
+                visit(value)?;
+            }
+        }
+        for event in &self.queued_task_events {
+            if let AwbcProductTaskEventKindSaveSnapshot::Ready(value) = &event.kind {
+                visit(value)?;
+            }
+        }
+        self.observations.visit_saved_value_roots(visit)
+    }
+
     pub fn from_live(
         snapshot: &AwbcProductExecutorSnapshot,
         owner: &crate::task::RuntimeProgramOwner,

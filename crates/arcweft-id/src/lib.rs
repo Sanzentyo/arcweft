@@ -138,7 +138,9 @@ pub enum AssetIdError {
 
 impl EntityId {
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        validate_id_text(&value.into(), false, false).map(Self)
+        let value = value.into();
+        validate_id_text(&value, false, false)?;
+        Ok(Self(value))
     }
 
     pub fn as_str(&self) -> &str {
@@ -148,7 +150,15 @@ impl EntityId {
 
 impl PublicId {
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        validate_id_text(&value.into(), true, true).map(Self)
+        let value = value.into();
+        Self::validate_text(&value)?;
+        Ok(Self(value))
+    }
+
+    /// Checks authored public identity text before a caller copies it into a
+    /// domain value. Constructors and borrowed codecs share this exact grammar.
+    pub fn validate_text(value: &str) -> Result<(), IdError> {
+        validate_id_text(value, true, true)
     }
 
     /// Constructs an engine-owned public identity whose reserved prefix is
@@ -157,7 +167,9 @@ impl PublicId {
     /// This remains checked for reference markers, whitespace, and control
     /// characters; only the reserved-prefix rule differs from [`Self::try_new`].
     pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
-        validate_id_text(&value.into(), true, false).map(Self)
+        let value = value.into();
+        validate_id_text(&value, true, false)?;
+        Ok(Self(value))
     }
 
     pub fn as_str(&self) -> &str {
@@ -397,7 +409,9 @@ impl DeclarationName {
 
 impl TextKey {
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        validate_id_text(&value.into(), true, false).map(Self)
+        let value = value.into();
+        validate_id_text(&value, true, false)?;
+        Ok(Self(value))
     }
 
     pub fn as_str(&self) -> &str {
@@ -539,11 +553,7 @@ fn validate_declaration_identifier(value: String) -> Result<String, DeclarationN
     Ok(value)
 }
 
-fn validate_id_text(
-    value: &str,
-    reject_hash: bool,
-    reject_reserved: bool,
-) -> Result<String, IdError> {
+fn validate_id_text(value: &str, reject_hash: bool, reject_reserved: bool) -> Result<(), IdError> {
     if value.is_empty() {
         return Err(IdError::new(IdErrorKind::Empty));
     }
@@ -564,7 +574,7 @@ fn validate_id_text(
         return Err(IdError::new(IdErrorKind::ReservedPrefix));
     }
 
-    Ok(value.to_owned())
+    Ok(())
 }
 
 fn is_reserved_prefix(value: &str) -> bool {

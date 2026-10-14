@@ -1,7 +1,7 @@
 //! Foreground runtime activation and atomic session snapshot persistence.
 
 use arcweft_core::plan::RuntimeDialogueContentApplicationKey;
-use arcweft_core::value::{RuntimeBundleAssetOpaqueRole, RuntimeFormatContext, RuntimeValue};
+use arcweft_core::value::{RuntimeBundleAssetOpaqueRole, RuntimeFormatContext};
 
 use super::{
     Arc, ArcweftRuntimeExecutorSnapshot, BUNDLE_SESSION_SAVE_SCHEMA_ID,
@@ -17,19 +17,32 @@ use super::{
 };
 
 struct SessionRestoreValueValidator<'a> {
-    callback: Option<&'a mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
+    callback: Option<
+        &'a mut dyn for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
+    >,
     missing_catalog_role: Option<RuntimeBundleAssetOpaqueRole>,
 }
 
 impl<'a> SessionRestoreValueValidator<'a> {
-    fn new(callback: Option<&'a mut dyn FnMut(&RuntimeValue) -> Result<(), String>>) -> Self {
+    fn new(
+        callback: Option<
+            &'a mut dyn for<'value> FnMut(
+                arcweft_core::value::RuntimeBorrowedValue<'value>,
+            ) -> Result<(), String>,
+        >,
+    ) -> Self {
         Self {
             callback,
             missing_catalog_role: None,
         }
     }
 
-    fn validate_value(&mut self, value: &RuntimeValue) -> Result<(), String> {
+    fn validate_value(
+        &mut self,
+        value: arcweft_core::value::RuntimeBorrowedValue<'_>,
+    ) -> Result<(), String> {
         if self.callback.is_none()
             && let Some(role) = arcweft_core::value::runtime_bundle_asset_opaque_role(value)
         {
@@ -58,7 +71,7 @@ impl<'a> SessionRestoreValueValidator<'a> {
     ) -> Result<(), BundleSessionSaveError> {
         let result = root.map_or(Ok(()), |root| {
             arcweft_core::value::visit_runtime_value_graph(&root.value.0, |value| {
-                self.validate_value(value)
+                self.validate_value(value.into())
             })
         });
         self.finish(result)
@@ -68,7 +81,8 @@ impl<'a> SessionRestoreValueValidator<'a> {
         &mut self,
         executor: &arcweft_core::executor::ArcweftRuntimeExecutor,
     ) -> Result<(), BundleSessionSaveError> {
-        let result = executor.visit_product_live_runtime_values(|value| self.validate_value(value));
+        let result =
+            executor.visit_product_live_runtime_values(|value| self.validate_value(value.into()));
         self.finish(result)
     }
 
@@ -76,7 +90,7 @@ impl<'a> SessionRestoreValueValidator<'a> {
         &mut self,
         runtime: &BundleViewRuntime,
     ) -> Result<(), BundleSessionSaveError> {
-        let result = runtime.visit_runtime_values(|value| self.validate_value(value));
+        let result = runtime.visit_runtime_values(|value| self.validate_value(value.into()));
         self.finish(result)
     }
 
@@ -349,7 +363,9 @@ impl BundleSession {
         &mut self,
         bytes: &[u8],
         options: &arcweft_save::SaveDecodeOptions,
-        mut validator: impl FnMut(&RuntimeValue) -> Result<(), String>,
+        mut validator: impl for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
     ) -> Result<(), BundleSessionSaveError> {
         self.import_session_save_bytes_with_optional_value_validator(
             bytes,
@@ -362,7 +378,11 @@ impl BundleSession {
         &mut self,
         bytes: &[u8],
         options: &arcweft_save::SaveDecodeOptions,
-        validator: Option<&mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
+        validator: Option<
+            &mut dyn for<'value> FnMut(
+                arcweft_core::value::RuntimeBorrowedValue<'value>,
+            ) -> Result<(), String>,
+        >,
     ) -> Result<(), BundleSessionSaveError> {
         let payload = arcweft_save::decode_strict_typed_json_save::<BundleSessionSavePayload>(
             bytes,
@@ -407,7 +427,9 @@ impl BundleSession {
     pub fn restore_session_snapshot_with_value_validator(
         &mut self,
         snapshot: BundleSessionSnapshot,
-        mut validator: impl FnMut(&RuntimeValue) -> Result<(), String>,
+        mut validator: impl for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
     ) -> Result<(), BundleSessionSaveError> {
         self.restore_session_snapshot_with_optional_value_validator(snapshot, Some(&mut validator))
     }
@@ -419,7 +441,11 @@ impl BundleSession {
     fn restore_session_snapshot_with_optional_value_validator(
         &mut self,
         snapshot: BundleSessionSnapshot,
-        validator: Option<&mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
+        validator: Option<
+            &mut dyn for<'value> FnMut(
+                arcweft_core::value::RuntimeBorrowedValue<'value>,
+            ) -> Result<(), String>,
+        >,
     ) -> Result<(), BundleSessionSaveError> {
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
             self.executor.program_owner(),

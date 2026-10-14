@@ -62,7 +62,7 @@ pub(crate) enum ValueAdmission<C, A> {
 
 /// An inert candidate is correlated with the selected original type authority;
 /// a live candidate must already lease that exact immutable executable.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ValueAdmissionOrigin {
     Live,
     InertSnapshot,

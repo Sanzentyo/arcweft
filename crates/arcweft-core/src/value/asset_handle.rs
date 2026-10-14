@@ -1,8 +1,8 @@
 //! Typed Core carriers for bundle-owned image and voice resource handles.
 
 use super::{
-    RuntimeOpaqueValueError, RuntimeScalarView as Scalar, RuntimeValue, RuntimeValueView as View,
-    runtime_sequence_dense_bytes,
+    RuntimeBorrowedValue, RuntimeOpaqueValueError, RuntimeScalarView as Scalar, RuntimeValue,
+    RuntimeValueView as View, runtime_sequence_dense_bytes,
 };
 use crate::pattern::{RuntimeOpaqueTypeOwner, runtime_standard_opaque_type};
 use crate::task::GenerationId;
@@ -316,11 +316,11 @@ impl RuntimeImageHandleValue {
         wrap_standard_asset_value("ImageHandle", encode_binding(&self.0))
     }
 
-    pub fn try_from_runtime_value(
-        value: &RuntimeValue,
+    pub fn try_from_runtime_value<'a>(
+        value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
-        let payload = exact_standard_asset_payload(value, "ImageHandle")?;
-        decode_binding(payload.view()).map(Self)
+        let payload = exact_standard_asset_payload(value.into(), "ImageHandle")?;
+        decode_binding(payload.value).map(Self)
     }
 }
 
@@ -339,11 +339,11 @@ impl RuntimeAudioHandleValue {
         wrap_standard_asset_value("AudioHandle", encode_binding(&self.0))
     }
 
-    pub fn try_from_runtime_value(
-        value: &RuntimeValue,
+    pub fn try_from_runtime_value<'a>(
+        value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
-        let payload = exact_standard_asset_payload(value, "AudioHandle")?;
-        decode_binding(payload.view()).map(Self)
+        let payload = exact_standard_asset_payload(value.into(), "AudioHandle")?;
+        decode_binding(payload.value).map(Self)
     }
 }
 
@@ -362,11 +362,11 @@ impl RuntimeAssetErrorValue {
         wrap_standard_asset_value("AssetError", encode_failure(&self.0))
     }
 
-    pub fn try_from_runtime_value(
-        value: &RuntimeValue,
+    pub fn try_from_runtime_value<'a>(
+        value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
-        let payload = exact_standard_asset_payload(value, "AssetError")?;
-        decode_failure(payload.view()).map(Self)
+        let payload = exact_standard_asset_payload(value.into(), "AssetError")?;
+        decode_failure(payload.value).map(Self)
     }
 }
 
@@ -385,11 +385,11 @@ impl RuntimeVoiceErrorValue {
         wrap_standard_asset_value("VoiceError", encode_failure(&self.0))
     }
 
-    pub fn try_from_runtime_value(
-        value: &RuntimeValue,
+    pub fn try_from_runtime_value<'a>(
+        value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
-        let payload = exact_standard_asset_payload(value, "VoiceError")?;
-        decode_failure(payload.view()).map(Self)
+        let payload = exact_standard_asset_payload(value.into(), "VoiceError")?;
+        decode_failure(payload.value).map(Self)
     }
 }
 
@@ -413,12 +413,10 @@ pub(crate) fn standard_asset_opaque_payload_is_valid(
 /// Identifies an exact standard asset handle/error owner without validating
 /// its payload. `None` means the value is not one of these four owners.
 #[must_use]
-pub fn runtime_bundle_asset_opaque_role(
-    value: &RuntimeValue,
+pub fn runtime_bundle_asset_opaque_role<'a>(
+    value: impl Into<RuntimeBorrowedValue<'a>>,
 ) -> Option<RuntimeBundleAssetOpaqueRole> {
-    let RuntimeValue::Opaque(value) = value else {
-        return None;
-    };
+    let value = value.into().opaque()?;
     [
         RuntimeBundleAssetOpaqueRole::ImageHandle,
         RuntimeBundleAssetOpaqueRole::AudioHandle,
@@ -571,15 +569,15 @@ fn wrap_standard_asset_value(
 }
 
 fn exact_standard_asset_payload<'a>(
-    value: &'a RuntimeValue,
+    value: RuntimeBorrowedValue<'a>,
     role: &'static str,
-) -> Result<&'a RuntimeValue, RuntimeBundleAssetValueError> {
-    let RuntimeValue::Opaque(opaque) = value else {
+) -> Result<RuntimeBorrowedValue<'a>, RuntimeBundleAssetValueError> {
+    let Some(opaque) = value.opaque() else {
         return Err(RuntimeBundleAssetValueError::InvalidOwner { role });
     };
     let owner = standard_owner(role).ok_or(RuntimeBundleAssetValueError::InvalidOwner { role })?;
     owner
-        .accepts_opaque_value(opaque)
+        .accepts_opaque_view(opaque.value)
         .then_some(opaque.payload())
         .ok_or(RuntimeBundleAssetValueError::InvalidOwner { role })
 }

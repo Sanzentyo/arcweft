@@ -3067,6 +3067,41 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     }
 }
 
+impl<T> AwbcRuntimeDialogueActivationSnapshot<T> {
+    pub(crate) fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for scheduled in &self.scheduled {
+            match &scheduled.custody {
+                AwbcRuntimeScheduledCaptureCustodySnapshot::Packet(bindings) => {
+                    for binding in bindings {
+                        visit(&binding.value)?;
+                    }
+                }
+                AwbcRuntimeScheduledCaptureCustodySnapshot::LineScope(slots) => {
+                    for value in slots.iter().flat_map(|slot| slot.storage().values()) {
+                        visit(value)?;
+                    }
+                }
+                AwbcRuntimeScheduledCaptureCustodySnapshot::ChildFiber(_) => {}
+            }
+        }
+        for deferred in &self.deferred {
+            deferred.visit_saved_value_roots(visit)?;
+        }
+        match &self.result {
+            AwbcRuntimeDialogueResultSnapshot::Committed { value, .. }
+            | AwbcRuntimeDialogueResultSnapshot::Selected { value, .. }
+            | AwbcRuntimeDialogueResultSnapshot::Publishing { value, .. } => visit(value)?,
+            AwbcRuntimeDialogueResultSnapshot::Uncommitted
+            | AwbcRuntimeDialogueResultSnapshot::Published
+            | AwbcRuntimeDialogueResultSnapshot::Abandoned => {}
+        }
+        Ok(())
+    }
+}
+
 impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     pub(crate) fn from_live(
         state: &RuntimeDialogueActivationState<T>,

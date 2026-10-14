@@ -550,6 +550,19 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
         roles,
         vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
     );
+    let inert = executor.inert_rollback_image().unwrap().product;
+    let mut inert_roles = Vec::new();
+    inert
+        .visit_borrowed_runtime_values(|value| {
+            if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
+                inert_roles.push(role);
+                crate::value::RuntimeImageHandleValue::try_from_runtime_value(value)
+                    .expect("inert catalog inspection uses the same standard-owned codec");
+            }
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .expect("inert Product visits dialogue captures before activation");
+    assert_eq!(inert_roles, roles);
 }
 
 #[test]

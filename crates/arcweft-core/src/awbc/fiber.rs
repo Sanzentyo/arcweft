@@ -551,37 +551,48 @@ impl AwbcFiberStateSnapshot {
         &self,
     ) -> Result<Vec<crate::runtime_id::RuntimeLineHandleToken>, String> {
         let mut tokens = Vec::new();
+        self.visit_saved_value_roots(|value| {
+            extend_snapshot_line_handle_tokens(value, &mut tokens)
+        })?;
+        Ok(tokens)
+    }
+
+    /// Visits original inert value slots through the fiber's owning grammar.
+    pub(crate) fn visit_saved_value_roots<E>(
+        &self,
+        mut visit: impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
         for frame in &self.frames {
             for value in frame.registers.iter().flat_map(RuntimePlaceStorage::values) {
-                extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                visit(value)?;
             }
             if let Some(format) = &frame.format {
                 for value in format.storage.values.iter().flatten() {
-                    extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                    visit(value)?;
                 }
             }
             for attempt in &frame.format_attempts {
                 for value in attempt.values().iter().flatten() {
-                    extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                    visit(value)?;
                 }
             }
             if let Some(return_to) = &frame.return_to {
                 match &return_to.continuation {
                     AwbcFiberReturnContinuationSnapshot::ProjectCallDefault { pending, .. }
                     | AwbcFiberReturnContinuationSnapshot::ApplyGroupDefault { pending, .. } => {
-                        extend_callable_pending_line_handle_tokens(pending, &mut tokens)?;
+                        visit_callable_pending_snapshot_values(pending, &mut visit)?;
                     }
                     AwbcFiberReturnContinuationSnapshot::ContextCallbackDefault {
                         pending,
                         callable_pending,
                         ..
                     } => {
-                        extend_context_pending_line_handle_tokens(pending, &mut tokens)?;
-                        extend_callable_pending_line_handle_tokens(callable_pending, &mut tokens)?;
+                        visit_context_pending_snapshot_values(pending, &mut visit)?;
+                        visit_callable_pending_snapshot_values(callable_pending, &mut visit)?;
                     }
                     AwbcFiberReturnContinuationSnapshot::ContextCallbackInvoke {
                         pending, ..
-                    } => extend_context_pending_line_handle_tokens(pending, &mut tokens)?,
+                    } => visit_context_pending_snapshot_values(pending, &mut visit)?,
                     AwbcFiberReturnContinuationSnapshot::Ordinary
                     | AwbcFiberReturnContinuationSnapshot::ProjectCallTarget { .. }
                     | AwbcFiberReturnContinuationSnapshot::FormatOperand { .. }
@@ -591,18 +602,18 @@ impl AwbcFiberStateSnapshot {
             }
             for cleanup in &frame.root_cleanups {
                 for value in &cleanup.args {
-                    extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                    visit(value)?;
                 }
             }
             for scope in &frame.scopes {
                 for cleanup in &scope.cleanups {
                     for value in &cleanup.args {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
                 for registration in &scope.defers {
                     for value in &registration.captures {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
             }
@@ -617,23 +628,23 @@ impl AwbcFiberStateSnapshot {
                     ..
                 } => {
                     if let Some(target) = target {
-                        extend_snapshot_line_handle_tokens(target, &mut tokens)?;
+                        visit(target)?;
                     }
                     for binding in values.iter() {
-                        extend_snapshot_line_handle_tokens(&binding.value, &mut tokens)?;
+                        visit(&binding.value)?;
                     }
                     for effect in effects.iter() {
                         for value in effect.captures.iter() {
-                            extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                            visit(value)?;
                         }
                     }
                     for value in line_task_captures.iter() {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
                 FiberSuspensionReason::AwaitMany(state) => {
                     for value in &state.captured {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                     for handle in state
                         .base
@@ -641,35 +652,41 @@ impl AwbcFiberStateSnapshot {
                         .chain(state.in_flight.iter().map(|child| &child.handle))
                     {
                         for value in handle.request_values() {
-                            extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                            visit(value)?;
                         }
                     }
                     for value in &state.items {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                     for value in state.results.iter().flatten() {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
                 FiberSuspensionReason::HostCall { args, .. } => {
                     for value in args {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
-                FiberSuspensionReason::Choice { .. }
-                | FiberSuspensionReason::Await { .. }
-                | FiberSuspensionReason::BudgetYield => {}
+                FiberSuspensionReason::Await {
+                    target: FiberAwaitTarget::Need { need, .. },
+                    ..
+                } => {
+                    for value in need.request_values() {
+                        visit(value)?;
+                    }
+                }
+                FiberSuspensionReason::Choice { .. } | FiberSuspensionReason::BudgetYield => {}
             }
         }
         if let Some(terminal) = &self.terminal {
             match terminal {
                 FiberTerminalValue::Returned(value) => {
                     if let Some(value) = value.as_ref() {
-                        extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                        visit(value)?;
                     }
                 }
                 FiberTerminalValue::DialogueResultSelected(value) => {
-                    extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                    visit(value)?;
                 }
                 FiberTerminalValue::Cancelled
                 | FiberTerminalValue::Trapped(_)
@@ -679,10 +696,10 @@ impl AwbcFiberStateSnapshot {
         }
         for stream in &self.streams {
             for value in &stream.queue {
-                extend_snapshot_line_handle_tokens(value, &mut tokens)?;
+                visit(value)?;
             }
         }
-        Ok(tokens)
+        Ok(())
     }
 
     pub fn from_live(state: &FiberState, owner: &RuntimeProgramOwner) -> AwbcSaveResult<Self> {
@@ -1096,25 +1113,25 @@ fn extend_snapshot_line_handle_tokens(
     Ok(())
 }
 
-fn extend_callable_pending_line_handle_tokens(
+fn visit_callable_pending_snapshot_values<E>(
     pending: &RuntimeCallablePendingSnapshot,
-    tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
-) -> Result<(), String> {
+    visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+) -> Result<(), E> {
     for value in pending.retained.iter().chain(&pending.arguments).flatten() {
-        extend_snapshot_line_handle_tokens(value, tokens)?;
+        visit(value)?;
     }
     if let Some(value) = &pending.attached {
-        extend_snapshot_line_handle_tokens(value, tokens)?;
+        visit(value)?;
     }
     Ok(())
 }
 
-fn extend_context_pending_line_handle_tokens(
+fn visit_context_pending_snapshot_values<E>(
     pending: &RuntimeArcErrorContextPending<AwbcRuntimeValueSnapshot>,
-    tokens: &mut Vec<crate::runtime_id::RuntimeLineHandleToken>,
-) -> Result<(), String> {
+    visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+) -> Result<(), E> {
     if let RuntimeArcErrorContextPending::ResultErr(value) = pending {
-        extend_snapshot_line_handle_tokens(value, tokens)?;
+        visit(value)?;
     }
     Ok(())
 }
@@ -1684,9 +1701,15 @@ impl FiberState {
                 FiberSuspensionReason::HostCall { args, .. } => {
                     visit_value_slice(args, &mut visitor)?;
                 }
-                FiberSuspensionReason::Choice { .. }
-                | FiberSuspensionReason::Await { .. }
-                | FiberSuspensionReason::BudgetYield => {}
+                FiberSuspensionReason::Await {
+                    target: FiberAwaitTarget::Need { need, .. },
+                    ..
+                } => {
+                    for value in need.request_values() {
+                        visit_value_graph(value, &mut visitor)?;
+                    }
+                }
+                FiberSuspensionReason::Choice { .. } | FiberSuspensionReason::BudgetYield => {}
             }
         }
         for stream in &self.streams {
@@ -6160,6 +6183,29 @@ mod tests {
                 std::sync::Arc::new(program.clone()),
             ))
             .unwrap();
+        let mut live_request_count = 0;
+        fiber
+            .visit_runtime_values(|value| {
+                if let RuntimeValue::String(value) = value {
+                    assert_eq!(value, "need.progress");
+                    live_request_count += 1;
+                }
+                Ok::<(), std::convert::Infallible>(())
+            })
+            .unwrap();
+        assert_eq!(live_request_count, 1);
+        let mut inert_request_count = 0;
+        missing_progress
+            .state
+            .visit_saved_value_roots(|value| {
+                if let crate::value::AwbcRuntimeValueSnapshot::String(value) = value {
+                    assert_eq!(value, "need.progress");
+                    inert_request_count += 1;
+                }
+                Ok::<(), std::convert::Infallible>(())
+            })
+            .unwrap();
+        assert_eq!(inert_request_count, live_request_count);
         assert!(matches!(
             fiber.resume_await_observer_at(&program, AwbcResumePointId(1)),
             Err(FiberStateError::InvalidRuntimeValue { .. })

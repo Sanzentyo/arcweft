@@ -121,6 +121,13 @@ admit_root_snapshot!(
 );
 
 impl RootStateSaveSnapshotV1 {
+    /// Borrows the existing inert state carrier for pre-construction catalog
+    /// inspection. Selected-entry admission remains the original authority.
+    #[must_use]
+    pub fn retained_value(&self) -> crate::value::RuntimeBorrowedValue<'_> {
+        (&self.value).into()
+    }
+
     pub fn from_live(
         snapshot: &RootStateSnapshotV1,
         active: &crate::entry::ActiveEntrySnapshotV1,

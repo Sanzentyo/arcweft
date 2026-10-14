@@ -162,6 +162,21 @@ pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
     entries: Vec<RuntimeDialogueRegistrySaveEntry<F, T>>,
 }
 
+impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
+    pub(crate) fn try_visit_active<E>(
+        &self,
+        mut visit: impl FnMut(&F, &AwbcRuntimeDialogueActivationSnapshot<T>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for entry in &self.entries {
+            match entry {
+                RuntimeDialogueRegistrySaveEntry::Active { frame, line, .. } => visit(frame, line)?,
+                RuntimeDialogueRegistrySaveEntry::PublishedHandles { .. } => {}
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 enum RuntimeDialogueRegistrySaveEntry<F, T> {

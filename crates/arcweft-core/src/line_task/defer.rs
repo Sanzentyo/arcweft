@@ -127,6 +127,16 @@ pub(crate) struct AwbcRuntimeDeferredRegistrationSnapshot {
 }
 
 impl AwbcRuntimeDeferredRegistrationSnapshot {
+    pub(crate) fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for value in &self.captures {
+            visit(value)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn from_live(
         registration: &RuntimeLineDeferredRegistration,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {

@@ -6,7 +6,10 @@ use arcweft_core::{
         RuntimeSemanticTypeId,
     },
     program_types::RuntimeProgramTypes,
-    value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue},
+    value::{
+        RuntimeBorrowedValue, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+        RuntimeRetainedValueAdmission, RuntimeScalarView, RuntimeValue,
+    },
 };
 use arcweft_id::DeclarationIdentityFamily;
 
@@ -229,15 +232,35 @@ impl CharacterDialogueRuntimeSchema {
         role: Role,
         value: &RuntimeValue,
     ) -> Result<(), CharacterDialogueValueError> {
-        self.program_types()
-            .accepts_value(self.roles.value_type(role), value, Self::limits())?;
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            self.program_owner().clone(),
+            Self::limits(),
+        );
+        self.validate_retained_role(&mut admission, role, value.into())
+            .map_err(|error| *error)
+    }
+
+    pub(super) fn validate_retained_role(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        role: Role,
+        value: RuntimeBorrowedValue<'_>,
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        self.ensure_program_owner(
+            admission
+                .program_owner()
+                .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?,
+        )?;
         let authored = if role == Role::Style {
-            if let RuntimeValue::EntityRef(reference) = value {
+            if let Some(RuntimeScalarView::EntityRef(reference)) = value.scalar() {
+                admission
+                    .validate_typed_borrowed(value, self.roles.value_type(role))
+                    .map_err(CharacterDialogueValueError::from)?;
                 if reference.project_family() != Some(DeclarationIdentityFamily::Style) {
-                    return Err(CharacterDialogueValueError::RoleType {
+                    return Err(Box::new(CharacterDialogueValueError::RoleType {
                         role,
                         reason: "Style reference has another entity family",
-                    });
+                    }));
                 }
                 return Ok(());
             }
@@ -245,25 +268,29 @@ impl CharacterDialogueRuntimeSchema {
         } else {
             role
         };
-        let RuntimeValue::Opaque(value) = value else {
-            return Err(CharacterDialogueValueError::RoleType {
+        let Some(value) = value.opaque() else {
+            admission
+                .validate_typed_borrowed(value, self.roles.value_type(role))
+                .map_err(CharacterDialogueValueError::from)?;
+            return Err(Box::new(CharacterDialogueValueError::RoleType {
                 role,
                 reason: "authored role value is not opaque",
-            });
+            }));
         };
         let binding = self
             .roles
             .authored(authored)
             .expect("authored role has a fixed slot");
         let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body() else {
-            return Err(CharacterDialogueValueError::RoleType {
+            return Err(Box::new(CharacterDialogueValueError::RoleType {
                 role: authored,
                 reason: "role has no accepted payload codec",
-            });
+            }));
         };
-        self.program_types()
-            .accepts_value(payload, value.payload(), Self::limits())?;
-        codec.decode_properties(value.payload())?;
+        admission
+            .validate_typed_opaque_payload(value, self.roles.value_type(role), payload)
+            .map_err(CharacterDialogueValueError::from)?;
+        codec.validate_properties(value.payload())?;
         Ok(())
     }
 }

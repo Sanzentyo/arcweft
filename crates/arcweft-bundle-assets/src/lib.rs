@@ -10,10 +10,10 @@ use arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity;
 use arcweft_core::task::{AssetLoadKind, GenerationId};
 use arcweft_core::value::{
     RuntimeAssetContentDigest, RuntimeAssetErrorValue, RuntimeAudioHandleValue,
-    RuntimeBundleAssetBinding, RuntimeBundleAssetContext, RuntimeBundleAssetFailure,
-    RuntimeBundleAssetFailureReason, RuntimeBundleAssetOpaqueRole, RuntimeBundleAssetResourceId,
-    RuntimeBundleAssetValueError, RuntimeImageHandleValue, RuntimeValue, RuntimeVoiceErrorValue,
-    runtime_bundle_asset_opaque_role,
+    RuntimeBorrowedValue, RuntimeBundleAssetBinding, RuntimeBundleAssetContext,
+    RuntimeBundleAssetFailure, RuntimeBundleAssetFailureReason, RuntimeBundleAssetOpaqueRole,
+    RuntimeBundleAssetResourceId, RuntimeBundleAssetValueError, RuntimeImageHandleValue,
+    RuntimeValue, RuntimeVoiceErrorValue, runtime_bundle_asset_opaque_role,
 };
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -224,10 +224,11 @@ impl BundleAssetResolver {
     /// Validates any standalone opaque asset value visited during restore.
     /// Returns `false` for unrelated runtime values; malformed standard asset
     /// opaque values return an error instead of being treated as unrelated.
-    pub fn validate_owned_value(
+    pub fn validate_owned_value<'a>(
         &self,
-        value: &RuntimeValue,
+        value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<bool, BundleAssetValidationError> {
+        let value = value.into();
         match runtime_bundle_asset_opaque_role(value) {
             Some(RuntimeBundleAssetOpaqueRole::ImageHandle) => {
                 let handle = RuntimeImageHandleValue::try_from_runtime_value(value)

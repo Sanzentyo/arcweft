@@ -14,6 +14,10 @@ mod metadata;
 
 enum RetainedTypeObligation<'binding> {
     Stored(RuntimeSemanticTypeId),
+    OpaquePayload {
+        outer: RuntimeSemanticTypeId,
+        payload: RuntimeSemanticTypeId,
+    },
     Invocation {
         expected: RuntimeSemanticTypeId,
         binding: Option<&'binding RuntimeFunctionEffectInstantiation>,
@@ -54,6 +58,43 @@ impl RuntimeRetainedValueAdmission {
     /// Admits another borrowed live root without resetting any quota.
     pub fn validate(&mut self, value: &RuntimeValue) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.validate_view(value.view(), ValueAdmissionOrigin::Live, None)
+    }
+
+    /// Admits a read-only public projection with its original storage provenance.
+    /// Inspection cannot rebrand an inert descendant as a live carrier.
+    pub fn validate_borrowed(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(value.value, value.origin, None)
+    }
+
+    /// Checks a borrowed domain field under the caller's original stored type.
+    pub fn validate_typed_borrowed(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+        expected: RuntimeSemanticTypeId,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(
+            value.value,
+            value.origin,
+            Some(RetainedTypeObligation::Stored(expected)),
+        )
+    }
+
+    /// Checks a domain's original opaque header and payload type obligations
+    /// after one complete resource walk, sharing the same relation allowance.
+    pub fn validate_typed_opaque_payload(
+        &mut self,
+        value: crate::value::RuntimeBorrowedOpaque<'_>,
+        outer: RuntimeSemanticTypeId,
+        payload: RuntimeSemanticTypeId,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(
+            RuntimeValueView::Opaque(value.value),
+            value.origin,
+            Some(RetainedTypeObligation::OpaquePayload { outer, payload }),
+        )
     }
 
     /// Admits the complete typed Content codec, including nested formatted
@@ -241,6 +282,7 @@ impl RuntimeRetainedValueAdmission {
         value.admit_unrestricted(&mut self.resources)?;
         if let Some(obligation) = expected {
             let expected = match &obligation {
+                RetainedTypeObligation::OpaquePayload { outer, .. } => *outer,
                 RetainedTypeObligation::Stored(expected)
                 | RetainedTypeObligation::Invocation { expected, .. } => *expected,
             };
@@ -255,6 +297,22 @@ impl RuntimeRetainedValueAdmission {
                 }
                 RetainedTypeObligation::Invocation { binding, .. } => {
                     ty.validate_admitted_view(value, binding, &self.resources)?;
+                }
+                RetainedTypeObligation::OpaquePayload { payload, .. } => {
+                    ty.validate_snapshot_storage(value, &self.resources.work(), origin)?;
+                    let RuntimeValueView::Opaque(value) = value else {
+                        unreachable!(
+                            "opaque payload obligation is issued only from an opaque inspection"
+                        )
+                    };
+                    owner
+                        .types()
+                        .value_type(payload)?
+                        .validate_snapshot_storage(
+                            value.payload(),
+                            &self.resources.work(),
+                            origin,
+                        )?;
                 }
             }
         }

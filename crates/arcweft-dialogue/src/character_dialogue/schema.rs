@@ -483,16 +483,7 @@ impl CharacterDialogueRuntimeSchema {
             .program_owner()
             .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?;
         self.ensure_program_owner(owner)?;
-        admission
-            .validate_typed(value, self.roles.value_type(Role::Style))
-            .map_err(CharacterDialogueValueError::from)?;
-        if !value.ownership().permits_copy() {
-            return Err(Box::new(CharacterDialogueValueError::Field {
-                field: "style",
-                reason: "retained Style contains an affine value".to_owned(),
-            }));
-        }
-        self.validate_role(Role::Style, value).map_err(Box::new)
+        self.validate_retained_role(admission, Role::Style, value.into())
     }
 
     /// Checks an inert Style's original stored type and complete resources
@@ -507,10 +498,7 @@ impl CharacterDialogueRuntimeSchema {
                 .program_owner()
                 .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?,
         )?;
-        admission
-            .validate_typed_snapshot(value, self.roles.value_type(Role::Style))
-            .map_err(CharacterDialogueValueError::from)?;
-        Ok(())
+        self.validate_retained_role(admission, Role::Style, value.into())
     }
 
     /// Admits a retained fallback Style through the original generation role.

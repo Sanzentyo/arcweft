@@ -472,20 +472,24 @@ impl CharacterDialoguePresentationConfig {
         }
     }
 
-    pub(super) fn visit_runtime_values<E>(
+    pub(super) fn visit_runtime_values(
         &self,
-        visit: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
-    ) -> Result<(), E> {
+        visit: &mut impl for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
         match &self.source {
             CharacterDialoguePresentationSource::Program { value, .. } => {
-                arcweft_core::value::visit_runtime_value_graph(value.opaque().payload(), visit)
+                arcweft_core::value::RuntimeBorrowedValue::from(value.opaque())
+                    .try_visit(limits, visit)
+                    .map_err(|error| error.to_string())
             }
             CharacterDialoguePresentationSource::Standalone { inline_failure, .. } => {
                 for style in inline_failure.retained_styles() {
-                    arcweft_core::value::visit_runtime_value_graph(
-                        style.typed().value(),
-                        &mut *visit,
-                    )?;
+                    arcweft_core::value::RuntimeBorrowedValue::from(style.typed().value())
+                        .try_visit(limits, &mut *visit)
+                        .map_err(|error| error.to_string())?;
                 }
                 Ok(())
             }

@@ -195,7 +195,21 @@ pub enum CharacterDialogueValueError {
     #[error(transparent)]
     RuntimeSchema(#[from] arcweft_core::entry::RuntimeSchemaError),
     #[error(transparent)]
-    RetainedValue(#[from] arcweft_core::value::AwbcRuntimeValueSnapshotError),
+    RetainedValue(arcweft_core::value::AwbcRuntimeValueSnapshotError),
+}
+
+impl From<arcweft_core::value::AwbcRuntimeValueSnapshotError> for CharacterDialogueValueError {
+    fn from(error: arcweft_core::value::AwbcRuntimeValueSnapshotError) -> Self {
+        match error {
+            arcweft_core::value::AwbcRuntimeValueSnapshotError::ProgramType(error) => {
+                Self::ProgramType(*error)
+            }
+            arcweft_core::value::AwbcRuntimeValueSnapshotError::Resource(error) => {
+                Self::RuntimeSchema(error)
+            }
+            error => Self::RetainedValue(error),
+        }
+    }
 }
 
 impl From<CharacterDialogueCustomFieldIdError> for CharacterDialogueValueError {

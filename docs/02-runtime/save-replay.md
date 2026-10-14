@@ -333,6 +333,16 @@ program-owned descendant を構築できない Core の共通 decoder を使う�
 表示フレーム内の role/custom／Content callback／fallback Style も、既存の
 session catalog validator に渡してから facade を公開する。表示文字列から
 Content を再構成せず、元の Content envelope と捕捉値を保持する。
+カタログ検証の callback は Core の read-only `RuntimeBorrowedValue` を受け取る。
+この参照は既存の logical codec の tuple・sequence・scalar・opaque header と
+payload を公開し、子の live／inert provenance を保持する。表示フレームの
+typed Content を検証用 carrier に複製せず、同じ asset-handle codec が live と
+inert の両方を検査する。参照の取得は executable lease や復元の許可を発行しない。
+
+Style の reusable property codec もこの参照を使い、元の generation role が
+要求する outer／payload 型と、presentation catalog の property domain を確認する。
+保存データの property も同じ grammar で列挙値・単位・数値範囲・PublicId を検証する。
+property の所有値を作る decoder は全 field の借用検証後にのみ文字列・ID・row を構築する。
 
 直接の live session snapshot も、wire の frame producer と同じ original
 program／generation admission を通してから presentation をコピー・公開する。

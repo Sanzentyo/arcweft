@@ -121,6 +121,16 @@ pub struct RuntimeObservationSaveSnapshot {
 }
 
 impl RuntimeObservationSaveSnapshot {
+    pub(crate) fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for value in self.signals.values().chain(self.metrics.values()) {
+            visit(value)?;
+        }
+        Ok(())
+    }
+
     /// Captures observations through their exact immutable program lease.
     /// Restore may bind the inert result to an independently checked artifact.
     pub fn from_live_for_program(

@@ -5,7 +5,10 @@ use arcweft_core::{
     entry::RuntimeValueDigest,
     pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{RuntimePlanTypeProjection, RuntimePlanTypeSeed},
-    value::{RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth, RuntimeValue},
+    value::{
+        RuntimeBorrowedValue, RuntimeScalarView, RuntimeSignedIntWidth, RuntimeUInt,
+        RuntimeUnsignedIntWidth, RuntimeValue,
+    },
 };
 use arcweft_id::{PublicId, closed_enum::ClosedEnumDomainId};
 use arcweft_presentation::rich_text::{
@@ -71,16 +74,16 @@ pub struct CharacterDialogueRichTextProperties {
 
 /// Typed color accepted by the presentation Content property schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CharacterDialogueRichTextColor {
+pub enum CharacterDialogueRichTextColor<I = PublicId> {
     /// Literal RGBA8 color.
     Rgba8([u8; 4]),
     /// Presentation-owned named color resource.
-    Resource(PublicId),
+    Resource(I),
 }
 
 /// Typed scalar carried by one present RichText policy property.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CharacterDialogueRichTextPropertyValue {
+pub enum CharacterDialogueRichTextPropertyValue<S = String, I = PublicId> {
     Bool(bool),
     Int(i64),
     Milli(i32),
@@ -95,9 +98,9 @@ pub enum CharacterDialogueRichTextPropertyValue {
         domain: ClosedEnumDomainId,
         variant: u16,
     },
-    PublicId(PublicId),
-    Text(String),
-    Color(CharacterDialogueRichTextColor),
+    PublicId(I),
+    Text(S),
+    Color(CharacterDialogueRichTextColor<I>),
     Vec2 {
         x_milli: i32,
         y_milli: i32,
@@ -135,13 +138,23 @@ impl CharacterDialogueRolePayloadCodec {
     }
 
     /// Decodes only values admitted by this codec's exact property contract.
-    pub fn decode_properties(
+    pub fn decode_properties<'a>(
         self,
-        payload: &RuntimeValue,
+        payload: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<CharacterDialogueRichTextProperties, CharacterDialogueValueError> {
         match self {
-            Self::RichTextProperties => self.payload_schema()?.decode_properties(payload),
+            Self::RichTextProperties => self.payload_schema()?.decode_properties(payload.into()),
         }
+    }
+
+    /// Checks the same property grammar on live/inert borrowed fields without
+    /// building owned property rows or copying their strings.
+    pub fn validate_properties<'a>(
+        self,
+        payload: impl Into<RuntimeBorrowedValue<'a>>,
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        self.payload_schema()?
+            .visit_properties(payload.into(), |_, _| Ok(()))
     }
 }
 
@@ -250,35 +263,56 @@ impl CharacterDialogueRolePayloadSchema {
         self.checked_types.get(&identity)
     }
 
-    fn decode_properties(
+    fn decode_properties<'a>(
         &self,
-        payload: &RuntimeValue,
+        payload: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<CharacterDialogueRichTextProperties, CharacterDialogueValueError> {
-        let RuntimeValue::Tuple(slots) = payload else {
-            return Err(schema_error("payload root must be a tuple"));
+        let payload = payload.into();
+        self.visit_properties(payload, |_, _| Ok(()))
+            .map_err(|error| *error)?;
+        let mut properties = Vec::new();
+        self.visit_properties(payload, |field, value| {
+            properties.push(CharacterDialogueRichTextProperty {
+                definition: field.definition,
+                parameter: field.parameter.id,
+                value: value.into_owned()?,
+            });
+            Ok(())
+        })
+        .map_err(|error| *error)?;
+        Ok(CharacterDialogueRichTextProperties { properties })
+    }
+
+    fn visit_properties<'a>(
+        &self,
+        payload: RuntimeBorrowedValue<'a>,
+        mut visit: impl FnMut(
+            &RichTextPolicyField,
+            CharacterDialogueRichTextPropertyValue<&'a str, &'a str>,
+        ) -> Result<(), Box<CharacterDialogueValueError>>,
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        let Some(slots) = payload.tuple() else {
+            return Err(Box::new(schema_error("payload root must be a tuple")));
         };
         if slots.len() != self.fields.len() {
-            return Err(schema_error("payload tuple has the wrong field count"));
+            return Err(Box::new(schema_error(
+                "payload tuple has the wrong field count",
+            )));
         }
-        let mut properties = Vec::new();
-        for (field, slot) in self.fields.iter().zip(slots) {
+        for (field, slot) in self.fields.iter().zip(slots.iter()) {
             match slot.builtin_variant_case() {
                 Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => {}
                 Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => {
-                    properties.push(CharacterDialogueRichTextProperty {
-                        definition: field.definition,
-                        parameter: field.parameter.id,
-                        value: decode_property_value(field.parameter, value)?,
-                    });
+                    visit(field, decode_property_value(field.parameter, value)?)?;
                 }
                 _ => {
-                    return Err(schema_error(
+                    return Err(Box::new(schema_error(
                         "payload property slot is not a canonical Option",
-                    ));
+                    )));
                 }
             }
         }
-        Ok(CharacterDialogueRichTextProperties { properties })
+        Ok(())
     }
 }
 
@@ -438,20 +472,20 @@ fn plan_projection(
 
 fn decode_property_value(
     parameter: arcweft_presentation::rich_text::PresentationContentCallableParameterSpec,
-    value: &RuntimeValue,
-) -> Result<CharacterDialogueRichTextPropertyValue, CharacterDialogueValueError> {
+    value: RuntimeBorrowedValue<'_>,
+) -> Result<CharacterDialogueRichTextPropertyValue<&str, &str>, CharacterDialogueValueError> {
     use CharacterDialogueRichTextPropertyValue as PropertyValue;
-
+    use RuntimeScalarView as Scalar;
     let invalid = || schema_error("property value differs from its presentation schema");
     Ok(match parameter.kind {
         RichTextValueKind::Bool => {
-            let RuntimeValue::Bool(value) = value else {
+            let Some(Scalar::Bool(value)) = value.scalar() else {
                 return Err(invalid());
             };
-            PropertyValue::Bool(*value)
+            PropertyValue::Bool(value)
         }
         RichTextValueKind::Int => {
-            let RuntimeValue::Int(value) = value else {
+            let Some(Scalar::Int(value)) = value.scalar() else {
                 return Err(invalid());
             };
             let Some(value) = value.exact_i64() else {
@@ -460,34 +494,42 @@ fn decode_property_value(
             validate_numeric(parameter, value)?;
             PropertyValue::Int(value)
         }
-        RichTextValueKind::FixedMilli => {
-            let RuntimeValue::Int(value) = value else {
+        RichTextValueKind::FixedMilli | RichTextValueKind::Angle => {
+            let Some(Scalar::Int(value)) = value.scalar() else {
                 return Err(invalid());
             };
             let Some(value) = value.exact_i32() else {
                 return Err(invalid());
             };
             validate_numeric(parameter, i64::from(value))?;
-            PropertyValue::Milli(value)
+            if parameter.kind == RichTextValueKind::FixedMilli {
+                PropertyValue::Milli(value)
+            } else {
+                PropertyValue::Angle(value)
+            }
         }
         RichTextValueKind::Ratio => {
-            let RuntimeValue::UInt(value) = value else {
-                return Err(invalid());
-            };
-            let RuntimeUInt::U16(value) = *value else {
+            let Some(Scalar::UInt(RuntimeUInt::U16(value))) = value.scalar() else {
                 return Err(invalid());
             };
             validate_numeric(parameter, i64::from(value))?;
             PropertyValue::Ratio(value)
         }
         RichTextValueKind::Length => {
-            let RuntimeValue::Tuple(fields) = value else {
+            let Some(fields) = value.tuple().filter(|fields| fields.len() == 2) else {
                 return Err(invalid());
             };
-            let [RuntimeValue::Int(milli), RuntimeValue::UInt(unit)] = fields.as_slice() else {
+            let [
+                Some(Scalar::Int(milli)),
+                Some(Scalar::UInt(RuntimeUInt::U8(unit))),
+            ] = [
+                fields.get(0).and_then(RuntimeBorrowedValue::scalar),
+                fields.get(1).and_then(RuntimeBorrowedValue::scalar),
+            ]
+            else {
                 return Err(invalid());
             };
-            let (Some(milli), RuntimeUInt::U8(unit)) = (milli.exact_i32(), *unit) else {
+            let Some(milli) = milli.exact_i32() else {
                 return Err(invalid());
             };
             let Some(unit) = rich_text_unit(unit) else {
@@ -499,21 +541,8 @@ fn decode_property_value(
             validate_numeric(parameter, i64::from(milli))?;
             PropertyValue::Length { milli, unit }
         }
-        RichTextValueKind::Angle => {
-            let RuntimeValue::Int(value) = value else {
-                return Err(invalid());
-            };
-            let Some(value) = value.exact_i32() else {
-                return Err(invalid());
-            };
-            validate_numeric(parameter, i64::from(value))?;
-            PropertyValue::Angle(value)
-        }
         RichTextValueKind::Duration => {
-            let RuntimeValue::UInt(value) = value else {
-                return Err(invalid());
-            };
-            let RuntimeUInt::U64(value) = *value else {
+            let Some(Scalar::UInt(RuntimeUInt::U64(value))) = value.scalar() else {
                 return Err(invalid());
             };
             i64::try_from(value)
@@ -523,10 +552,7 @@ fn decode_property_value(
             PropertyValue::Duration(value)
         }
         RichTextValueKind::ClosedEnum(domain) => {
-            let RuntimeValue::UInt(value) = value else {
-                return Err(invalid());
-            };
-            let RuntimeUInt::U16(variant) = *value else {
+            let Some(Scalar::UInt(RuntimeUInt::U16(variant))) = value.scalar() else {
                 return Err(invalid());
             };
             if !enum_variant_is_accepted(parameter, domain, variant) {
@@ -535,26 +561,29 @@ fn decode_property_value(
             PropertyValue::ClosedEnum { domain, variant }
         }
         RichTextValueKind::Selector(SelectorKind::PublicId) | RichTextValueKind::PublicId => {
-            let RuntimeValue::String(value) = value else {
+            let Some(Scalar::String(value)) = value.scalar() else {
                 return Err(invalid());
             };
             validate_text(parameter, value)?;
-            PropertyValue::PublicId(PublicId::try_new(value.clone()).map_err(|_| invalid())?)
+            PublicId::validate_text(value).map_err(|_| invalid())?;
+            PropertyValue::PublicId(value)
         }
-        RichTextValueKind::Selector(SelectorKind::Closed) => return Err(invalid()),
         RichTextValueKind::Text => {
-            let RuntimeValue::String(value) = value else {
+            let Some(Scalar::String(value)) = value.scalar() else {
                 return Err(invalid());
             };
             validate_text(parameter, value)?;
-            PropertyValue::Text(value.clone())
+            PropertyValue::Text(value)
         }
         RichTextValueKind::Color => PropertyValue::Color(decode_color(parameter, value)?),
         RichTextValueKind::Vec2 => {
-            let RuntimeValue::Tuple(fields) = value else {
+            let Some(fields) = value.tuple().filter(|fields| fields.len() == 2) else {
                 return Err(invalid());
             };
-            let [RuntimeValue::Int(x), RuntimeValue::Int(y)] = fields.as_slice() else {
+            let [Some(Scalar::Int(x)), Some(Scalar::Int(y))] = [
+                fields.get(0).and_then(RuntimeBorrowedValue::scalar),
+                fields.get(1).and_then(RuntimeBorrowedValue::scalar),
+            ] else {
                 return Err(invalid());
             };
             let (Some(x_milli), Some(y_milli)) = (x.exact_i32(), y.exact_i32()) else {
@@ -565,48 +594,75 @@ fn decode_property_value(
             PropertyValue::Vec2 { x_milli, y_milli }
         }
         RichTextValueKind::Seed32 => {
-            let RuntimeValue::UInt(value) = value else {
-                return Err(invalid());
-            };
-            let RuntimeUInt::U32(value) = *value else {
+            let Some(Scalar::UInt(RuntimeUInt::U32(value))) = value.scalar() else {
                 return Err(invalid());
             };
             PropertyValue::Seed32(value)
         }
-        RichTextValueKind::Fx => return Err(invalid()),
+        RichTextValueKind::Selector(SelectorKind::Closed) | RichTextValueKind::Fx => {
+            return Err(invalid());
+        }
     })
 }
 
 fn decode_color(
     parameter: arcweft_presentation::rich_text::PresentationContentCallableParameterSpec,
-    value: &RuntimeValue,
-) -> Result<CharacterDialogueRichTextColor, CharacterDialogueValueError> {
+    value: RuntimeBorrowedValue<'_>,
+) -> Result<CharacterDialogueRichTextColor<&str>, CharacterDialogueValueError> {
     let invalid = || schema_error("Color value differs from its presentation schema");
-    match value {
-        RuntimeValue::String(value) => {
-            validate_text(parameter, value)?;
-            Ok(CharacterDialogueRichTextColor::Resource(
-                PublicId::try_new(value.clone()).map_err(|_| invalid())?,
-            ))
-        }
-        RuntimeValue::Tuple(fields) => {
-            let [
-                RuntimeValue::UInt(r),
-                RuntimeValue::UInt(g),
-                RuntimeValue::UInt(b),
-                RuntimeValue::UInt(a),
-            ] = fields.as_slice()
-            else {
-                return Err(invalid());
-            };
-            let (RuntimeUInt::U8(r), RuntimeUInt::U8(g), RuntimeUInt::U8(b), RuntimeUInt::U8(a)) =
-                (*r, *g, *b, *a)
-            else {
-                return Err(invalid());
-            };
-            Ok(CharacterDialogueRichTextColor::Rgba8([r, g, b, a]))
-        }
-        _ => Err(invalid()),
+    if let Some(RuntimeScalarView::String(value)) = value.scalar() {
+        validate_text(parameter, value)?;
+        PublicId::validate_text(value).map_err(|_| invalid())?;
+        return Ok(CharacterDialogueRichTextColor::Resource(value));
+    }
+    let Some(fields) = value.tuple().filter(|fields| fields.len() == 4) else {
+        return Err(invalid());
+    };
+    let channels =
+        std::array::from_fn(|index| fields.get(index).and_then(RuntimeBorrowedValue::scalar));
+    let [
+        Some(RuntimeScalarView::UInt(RuntimeUInt::U8(r))),
+        Some(RuntimeScalarView::UInt(RuntimeUInt::U8(g))),
+        Some(RuntimeScalarView::UInt(RuntimeUInt::U8(b))),
+        Some(RuntimeScalarView::UInt(RuntimeUInt::U8(a))),
+    ] = channels
+    else {
+        return Err(invalid());
+    };
+    Ok(CharacterDialogueRichTextColor::Rgba8([r, g, b, a]))
+}
+
+impl CharacterDialogueRichTextPropertyValue<&str, &str> {
+    fn into_owned(
+        self,
+    ) -> Result<CharacterDialogueRichTextPropertyValue, Box<CharacterDialogueValueError>> {
+        use CharacterDialogueRichTextPropertyValue as Value;
+        Ok(match self {
+            Self::Bool(value) => Value::Bool(value),
+            Self::Int(value) => Value::Int(value),
+            Self::Milli(value) => Value::Milli(value),
+            Self::Ratio(value) => Value::Ratio(value),
+            Self::Length { milli, unit } => Value::Length { milli, unit },
+            Self::Angle(value) => Value::Angle(value),
+            Self::Duration(value) => Value::Duration(value),
+            Self::ClosedEnum { domain, variant } => Value::ClosedEnum { domain, variant },
+            Self::PublicId(value) => Value::PublicId(
+                PublicId::try_new(value)
+                    .map_err(|_| schema_error("invalid admitted public identity"))?,
+            ),
+            Self::Text(value) => Value::Text(value.to_owned()),
+            Self::Color(CharacterDialogueRichTextColor::Rgba8(value)) => {
+                Value::Color(CharacterDialogueRichTextColor::Rgba8(value))
+            }
+            Self::Color(CharacterDialogueRichTextColor::Resource(value)) => {
+                Value::Color(CharacterDialogueRichTextColor::Resource(
+                    PublicId::try_new(value)
+                        .map_err(|_| schema_error("invalid admitted color identity"))?,
+                ))
+            }
+            Self::Vec2 { x_milli, y_milli } => Value::Vec2 { x_milli, y_milli },
+            Self::Seed32(value) => Value::Seed32(value),
+        })
     }
 }
 
@@ -794,6 +850,15 @@ mod tests {
         slots[index] = RuntimeValue::option_some(rgba);
 
         let decoded = schema.decode_properties(&payload).unwrap();
+        let snapshot =
+            arcweft_core::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                &payload,
+            )
+            .unwrap();
+        let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
+        codec.validate_properties(&payload).unwrap();
+        codec.validate_properties(&snapshot).unwrap();
+        assert_eq!(codec.decode_properties(&snapshot).unwrap(), decoded);
         assert_eq!(decoded.len(), 1);
         let property = decoded.iter().next().expect("one decoded property");
         assert_eq!(property.definition(), field.definition);
@@ -811,6 +876,13 @@ mod tests {
         };
         slots[index] = RuntimeValue::option_some(RuntimeValue::Bool(true));
         assert!(schema.decode_properties(&tampered).is_err());
+        let tampered_snapshot =
+            arcweft_core::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                &tampered,
+            )
+            .unwrap();
+        assert!(codec.validate_properties(&tampered_snapshot).is_err());
+        assert!(codec.decode_properties(&tampered_snapshot).is_err());
 
         let mut truncated = payload;
         let RuntimeValue::Tuple(slots) = &mut truncated else {
@@ -818,6 +890,39 @@ mod tests {
         };
         slots.pop();
         assert!(schema.decode_properties(&truncated).is_err());
+    }
+
+    #[test]
+    fn rich_text_borrowed_codec_rejects_domain_invalid_inert_fields() {
+        let schema = schema();
+        let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
+        for kind in [
+            RichTextValueKind::ClosedEnum(RichTextEnumDomain::LayoutDirection.domain_id()),
+            RichTextValueKind::Color,
+        ] {
+            let index = schema
+                .fields
+                .iter()
+                .rposition(|field| field.parameter.kind == kind)
+                .expect("reusable Style contains the domain field");
+            let mut payload = schema.no_overrides_payload.clone();
+            let RuntimeValue::Tuple(slots) = &mut payload else {
+                unreachable!()
+            };
+            slots[index] = RuntimeValue::option_some(match kind {
+                RichTextValueKind::ClosedEnum(_) => RuntimeValue::UInt(RuntimeUInt::U16(u16::MAX)),
+                RichTextValueKind::Color => RuntimeValue::String("@reserved".to_owned()),
+                _ => unreachable!(),
+            });
+            let snapshot =
+                arcweft_core::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                    &payload,
+                )
+                .unwrap();
+            assert!(codec.validate_properties(&payload).is_err());
+            assert!(codec.validate_properties(&snapshot).is_err());
+            assert!(codec.decode_properties(&snapshot).is_err());
+        }
     }
 
     #[test]

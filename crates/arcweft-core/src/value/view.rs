@@ -35,7 +35,7 @@ use super::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum RuntimeScalarView<'a> {
+pub enum RuntimeScalarView<'a> {
     Unit,
     Bool(bool),
     Int(RuntimeInt),

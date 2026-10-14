@@ -187,18 +187,22 @@ impl LineDisplayFrame {
 
     /// Visits every retained value, including original roles/custom fields,
     /// Content callbacks and fallback Styles, before presentation publication.
-    pub fn visit_runtime_values<E>(
+    pub fn visit_runtime_values(
         &self,
-        mut visit: impl FnMut(&arcweft_core::value::RuntimeValue) -> Result<(), E>,
-    ) -> Result<(), E> {
+        mut visit: impl for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
+    ) -> Result<(), String> {
         self.effective.visit_runtime_values(&mut visit)?;
-        arcweft_core::value::visit_runtime_value_graph(
-            &self.content.clone().into_runtime_value(),
-            &mut visit,
-        )?;
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+        arcweft_core::value::RuntimeBorrowedValue::from(&self.content)
+            .try_visit(limits, &mut visit)
+            .map_err(|error| error.to_string())?;
         for failure in &self.inline_failures {
             for style in failure.policy.retained_styles() {
-                arcweft_core::value::visit_runtime_value_graph(style.typed().value(), &mut visit)?;
+                arcweft_core::value::RuntimeBorrowedValue::from(style.typed().value())
+                    .try_visit(limits, &mut visit)
+                    .map_err(|error| error.to_string())?;
             }
         }
         Ok(())

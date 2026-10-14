@@ -55,6 +55,7 @@ mod integer;
 pub use imported_entity::{
     RuntimeImportedProjectEntityError, RuntimeImportedProjectEntityReference,
 };
+mod borrowed;
 mod literal_semantic;
 mod nesting;
 mod nominal_record;
@@ -73,6 +74,11 @@ mod sequence_constructors;
 mod sequence_impls;
 mod shape;
 mod view;
+pub use borrowed::{
+    RuntimeBorrowedOpaque, RuntimeBorrowedSequence, RuntimeBorrowedTuple, RuntimeBorrowedValue,
+    RuntimeBorrowedValueVisitError,
+};
+pub use view::RuntimeScalarView;
 pub(crate) use view::runtime_value_views_equal;
 mod virtual_path;
 
@@ -81,8 +87,8 @@ pub(crate) use view::{
     RuntimeCommandListView, RuntimeCommandView, RuntimeDenseNumericView, RuntimeIteratorKind,
     RuntimeIteratorView, RuntimeNeedView, RuntimeNominalRecordView, RuntimeOpaqueView,
     RuntimePredicateKind, RuntimePredicateListView, RuntimePredicateView, RuntimeRecordView,
-    RuntimeReductionView, RuntimeScalarView, RuntimeSequenceView, RuntimeTupleView,
-    RuntimeValueSource, RuntimeValueView, RuntimeVariantView,
+    RuntimeReductionView, RuntimeSequenceView, RuntimeTupleView, RuntimeValueSource,
+    RuntimeValueView, RuntimeVariantView,
 };
 
 mod runtime_public_id {
