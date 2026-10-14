@@ -1861,7 +1861,7 @@ impl AwbcProductStepExecutor {
         root::bind_startup(&program, &mut fiber, root_startup.as_ref())?;
         if origin.entry().is_some() && root_startup.is_none() && !fiber.frames.is_empty() {
             fiber
-                .bind_flow_parameter_coordinates(&program, &[])
+                .bind_flow_parameter_coordinates(&program, Vec::new())
                 .map_err(|error| AwbcProductStepBuildError::FiberState {
                     message: error.to_string(),
                 })?;
@@ -1930,7 +1930,7 @@ impl AwbcProductStepExecutor {
         })?;
         let bindings = bindings.into_iter().collect::<Vec<_>>();
         fiber
-            .bind_flow_parameter_coordinates(&program, &bindings)
+            .bind_flow_parameter_coordinates(&program, bindings)
             .map_err(|error| AwbcProductStepBuildError::FiberState {
                 message: error.to_string(),
             })?;

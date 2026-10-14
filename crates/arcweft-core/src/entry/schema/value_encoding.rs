@@ -126,6 +126,16 @@ pub(crate) fn validate_and_hash<V: ValueValidation>(
     validation: &mut V,
     expected: V::Expected,
 ) -> Result<super::RuntimeValueDigest, RuntimeSchemaError> {
+    validate_and_hash_view(value.view(), limits, validation, expected)
+}
+
+/// The same persistent grammar over an already borrowed live or inert graph.
+pub(crate) fn validate_and_hash_view<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
+    limits: super::RuntimeSchemaLimits,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<super::RuntimeValueDigest, RuntimeSchemaError> {
     let mut budget = ValueBudget::new(limits);
     let mut sink = super::CanonicalBlake3Sink::default();
     let mut writer = CanonicalWriter {
@@ -134,7 +144,7 @@ pub(crate) fn validate_and_hash<V: ValueValidation>(
         max_string_bytes: Some(limits.max_string_bytes),
     };
     visit(
-        value.view(),
+        value,
         0,
         &mut writer,
         Some(&mut budget),

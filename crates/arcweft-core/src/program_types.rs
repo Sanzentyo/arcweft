@@ -566,17 +566,35 @@ impl RuntimeProgramTypes<'_> {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, RuntimeProgramTypeError> {
+        self.accepts_value_view(
+            semantic_type,
+            value.view(),
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        )
+    }
+
+    pub(crate) fn accepts_value_view(
+        &self,
+        semantic_type: RuntimeSemanticTypeId,
+        value: crate::value::RuntimeValueView<'_>,
+        limits: RuntimeSchemaLimits,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+    ) -> Result<RuntimeValueDigest, RuntimeProgramTypeError> {
         match self {
             Self::Plan(plan) => {
                 let ty = plan
                     .type_table()
                     .id_for_semantic(semantic_type)
                     .ok_or(RuntimeProgramTypeError::Missing { semantic_type })?;
-                Ok(plan.accepts_value(ty, value, limits)?)
+                Ok(plan.accepts_value_view(ty, value, limits, origin)?)
             }
-            Self::Awbc(program) => {
-                Ok(program.accepts_value(self.awbc_type(semantic_type)?, value, limits)?)
-            }
+            Self::Awbc(program) => Ok(program.accepts_value_view(
+                self.awbc_type(semantic_type)?,
+                value,
+                limits,
+                origin,
+            )?),
         }
     }
 

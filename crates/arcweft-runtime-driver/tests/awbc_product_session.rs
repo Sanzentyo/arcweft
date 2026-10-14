@@ -1078,6 +1078,29 @@ fn session_view_metadata_limits_precede_live_restore_and_preserve_executor() {
 }
 
 #[test]
+fn session_restore_preflights_root_presence_and_preserves_executor() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session.snapshot_session().unwrap();
+    let original = exported_session_json(&session);
+    assert!(before.root.is_none());
+    let mut invalid = before.clone();
+    invalid.root = Some(arcweft_core::root::RootStateSnapshotV1 {
+        state_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.State").unwrap(),
+        state_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
+        event_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.Event").unwrap(),
+        event_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
+        value: arcweft_core::value::RuntimePayload(RuntimeValue::Unit),
+        next_sequence: arcweft_core::root::TransitionSequence::from_u64(0),
+    });
+    let error = session.restore_session_snapshot(invalid).unwrap_err();
+    assert!(matches!(error, BundleSessionSaveError::Root { message }
+        if message.contains("root presence")));
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original);
+}
+
+#[test]
 fn session_view_wire_rebinds_callable_capture_and_rejects_unknown_state_atomically() {
     let bytes = callable_product_awfb_bytes();
     let session = product_session_from_bytes(&bytes);

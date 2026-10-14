@@ -385,6 +385,9 @@ fn program_value_admission_distinguishes_live_snapshot_and_canonical_opaque_rule
                     .is_err()
             );
             assert!(types.accepts_value(semantic(2), &value, limits).is_err());
+            if value_class == RuntimeOpaqueValueClass::Plain {
+                assert_inert_canonical_rejection_matches_live(&types, &value, limits);
+            }
             types
                 .validate_snapshot_value(semantic(2), &value, limits)
                 .unwrap();
@@ -403,6 +406,26 @@ fn program_value_admission_distinguishes_live_snapshot_and_canonical_opaque_rule
             }
         }
     }
+}
+
+fn assert_inert_canonical_rejection_matches_live(
+    types: &crate::program_types::RuntimeProgramTypes<'_>,
+    value: &RuntimeValue,
+    limits: RuntimeSchemaLimits,
+) {
+    let inert =
+        crate::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(value).unwrap();
+    assert_eq!(
+        types
+            .accepts_value_view(
+                semantic(2),
+                inert.view(),
+                limits,
+                ValueAdmissionOrigin::InertSnapshot
+            )
+            .unwrap_err(),
+        types.accepts_value(semantic(2), value, limits).unwrap_err(),
+    );
 }
 
 #[test]

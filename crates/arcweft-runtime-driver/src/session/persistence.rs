@@ -437,6 +437,14 @@ impl BundleSession {
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;
+        crate::session_save::RootStateSnapshotV1::admit_optional_retained(
+            snapshot.root.as_ref(),
+            &snapshot.active_entry,
+            &mut admission,
+        )
+        .map_err(|error| BundleSessionSaveError::Root {
+            message: error.to_string(),
+        })?;
         let restored_locale = snapshot.active_locale.clone();
         self.validate_session_save_generation(&snapshot.generation)?;
         let expected_character_presentation = self.character_presentation_identity()?;

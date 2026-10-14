@@ -81,10 +81,7 @@ pub(super) fn bind_startup(
         return Ok(());
     };
     fiber
-        .bind_flow_parameter_coordinates(
-            program,
-            std::slice::from_ref(&startup.initial_state_binding),
-        )
+        .bind_flow_parameter_coordinates(program, vec![startup.initial_state_binding.clone()])
         .map_err(|error| AwbcProductStepBuildError::FiberState {
             message: error.to_string(),
         })

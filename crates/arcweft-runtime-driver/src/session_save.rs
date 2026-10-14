@@ -94,6 +94,12 @@ impl BundleSessionSavePayload {
             .view_runtime
             .admit_resources(&mut admission)
             .map_err(|error| error.to_string())?;
+        RootStateSnapshotV1::admit_optional_retained(
+            snapshot.root.as_ref(),
+            &snapshot.active_entry,
+            &mut admission,
+        )
+        .map_err(|error| error.to_string())?;
         snapshot
             .presentation
             .validate_runtime_context(program_owner, dialogue_schema)?;
@@ -151,6 +157,12 @@ impl BundleSessionSavePayload {
         self.view_runtime
             .admit_resources(&mut admission)
             .map_err(|error| error.to_string())?;
+        RootStateSaveSnapshotV1::admit_optional_retained(
+            self.root.as_ref(),
+            &self.active_entry,
+            &mut admission,
+        )
+        .map_err(|error| error.to_string())?;
         let root = self
             .root
             .map(|root| root.into_live(&self.active_entry, program_owner))

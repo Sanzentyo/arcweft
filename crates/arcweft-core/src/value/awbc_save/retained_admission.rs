@@ -167,6 +167,17 @@ impl RuntimeRetainedValueAdmission {
         self.resources.work()
     }
 
+    pub(crate) fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
+        self.owner.as_ref()
+    }
+
+    pub(crate) fn retain_failure(&mut self, error: AwbcRuntimeValueSnapshotError) {
+        if let AwbcRuntimeValueSnapshotError::Resource(resource) = &error {
+            self.resources.work().retain_failure(resource.clone());
+        }
+        self.failure.get_or_insert(error);
+    }
+
     fn validate_view(
         &mut self,
         value: RuntimeValueView<'_>,

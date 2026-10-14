@@ -96,6 +96,33 @@ fn each_selected_program_uses_source_identity_and_the_same_value_encoder() {
                 .unwrap(),
             value.try_digest(100).unwrap()
         );
+        let inert = crate::value::AwbcRuntimeValueSnapshot::Bool(true);
+        assert_eq!(
+            program
+                .accepts_value_view(
+                    semantic,
+                    inert.view(),
+                    RuntimeSchemaLimits::engine_default(),
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
+                )
+                .unwrap(),
+            value.try_digest(100).unwrap(),
+        );
+        let strict = RuntimeSchemaLimits {
+            max_encoded_bytes: 1,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        assert_eq!(
+            program
+                .accepts_value_view(
+                    semantic,
+                    inert.view(),
+                    strict,
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
+                )
+                .unwrap_err(),
+            program.accepts_value(semantic, &value, strict).unwrap_err(),
+        );
         assert!(matches!(
             program.accepts_value(
                 diagnostic_identity,

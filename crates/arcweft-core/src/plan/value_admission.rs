@@ -241,9 +241,20 @@ impl super::RuntimePlanInventory {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, RuntimePlanValueAdmissionError> {
+        self.accepts_value_view(ty, value.view(), limits, ValueAdmissionOrigin::Live)
+    }
+
+    pub(crate) fn accepts_value_view(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        limits: RuntimeSchemaLimits,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<RuntimeValueDigest, RuntimePlanValueAdmissionError> {
         let mut validation =
             PlanValueValidation::new(PlanValueAuthority::Inventory(self), ty, limits)?;
-        value_encoding::validate_and_hash(value, limits, &mut validation, Expected::Type(ty))
+        validation.origin = origin;
+        value_encoding::validate_and_hash_view(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
     }
 }

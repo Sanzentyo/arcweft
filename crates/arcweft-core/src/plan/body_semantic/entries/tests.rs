@@ -56,6 +56,13 @@ fn parameter(
 }
 
 fn stateful_plan(schema: RuntimeTypeSchema) -> RuntimePlan {
+    stateful_plan_with_limits(schema, RootExecutionLimits::engine_default())
+}
+
+fn stateful_plan_with_limits(
+    schema: RuntimeTypeSchema,
+    limits: RootExecutionLimits,
+) -> RuntimePlan {
     let graph = RuntimeNominalSchemaGraph::try_new(
         (1..=2)
             .map(|tag| {
@@ -106,7 +113,7 @@ fn stateful_plan(schema: RuntimeTypeSchema) -> RuntimePlan {
                         payload_layout: schema.try_layout_hash().unwrap(),
                         payload_schema: schema,
                     }],
-                    RootExecutionLimits::engine_default(),
+                    limits,
                 ),
             })),
         })
@@ -323,14 +330,10 @@ fn digest(
     (result, meter.totals())
 }
 
-#[test]
-fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
-    use crate::root::{RootStateSaveSnapshotV1, RootStateSnapshotV1, TransitionSequence};
-    use crate::task::RuntimeProgramOwner;
-    use crate::value::RuntimePayload;
-    let owner =
-        RuntimeProgramOwner::Plan(std::sync::Arc::new(stateful_plan(RuntimeTypeSchema::Bool)));
-    let RuntimeProgramOwner::Plan(plan) = &owner else {
+fn stateful_plan_root_snapshot(
+    owner: &crate::task::RuntimeProgramOwner,
+) -> (ActiveEntrySnapshotV1, crate::root::RootStateSnapshotV1) {
+    let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
         unreachable!()
     };
     let entry = &plan.entries()[0];
@@ -348,16 +351,74 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
             RuntimeSchemaLimits::engine_default(),
         )
         .unwrap();
-    let snapshot = RootStateSnapshotV1 {
+    let snapshot = crate::root::RootStateSnapshotV1 {
         state_identity: roles.state.identity.clone(),
         state_layout: roles.state.layout,
         event_identity: roles.event.identity.clone(),
         event_layout: roles.event.layout,
-        value: RuntimePayload(value),
-        next_sequence: TransitionSequence::from_u64(27),
+        value: crate::value::RuntimePayload(value),
+        next_sequence: crate::root::TransitionSequence::from_u64(27),
     };
+    (active, snapshot)
+}
+
+#[test]
+fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
+    use crate::root::{RootStateSaveSnapshotV1, RootStateSnapshotV1};
+    use crate::task::RuntimeProgramOwner;
+    let owner =
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(stateful_plan(RuntimeTypeSchema::Bool)));
+    let (active, snapshot) = stateful_plan_root_snapshot(&owner);
     let wire = RootStateSaveSnapshotV1::from_live(&snapshot, &active, &owner).unwrap();
     let bytes = serde_json::to_vec(&wire).unwrap();
+    let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+        owner.clone(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    let missing_root = crate::root::RootStateSaveSnapshotError::Root(
+        crate::root::RootRuntimeError::SnapshotRoleMismatch("root presence"),
+    );
+    assert_eq!(
+        RootStateSnapshotV1::admit_optional_retained(None, &active, &mut admission),
+        Err(missing_root.clone())
+    );
+    assert_eq!(
+        RootStateSaveSnapshotV1::admit_optional_retained(None, &active, &mut admission),
+        Err(missing_root)
+    );
+    // The enclosing session's previous retained root and this root share one
+    // node allowance in both borrowed live and inert representations.
+    for inert in [false, true] {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        admission
+            .validate(&crate::value::RuntimeValue::Unit)
+            .unwrap();
+        let result = if inert {
+            wire.admit_retained(&active, &mut admission)
+        } else {
+            snapshot.admit_retained(&active, &mut admission)
+        };
+        let expected = crate::value::AwbcRuntimeValueSnapshotError::Resource(
+            RuntimeSchemaError::BudgetExceeded { budget: "nodes" },
+        );
+        assert_eq!(
+            result,
+            Err(crate::root::RootStateSaveSnapshotError::Value(
+                expected.clone()
+            ))
+        );
+        assert_eq!(
+            admission.validate(&crate::value::RuntimeValue::Unit),
+            Err(expected)
+        );
+        assert_eq!(serde_json::to_vec(&wire).unwrap(), bytes);
+    }
     let decoded: RootStateSaveSnapshotV1 = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(decoded.into_live(&active, &owner).unwrap(), snapshot);
     let original = serde_json::to_value(&wire).unwrap();
@@ -395,17 +456,52 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
     wrong_entry.binding = EntryBindingIdentity::from_bytes([0; 32]);
     assert!(wire.clone().into_live(&wrong_entry, &owner).is_err());
     assert!(RootStateSaveSnapshotV1::from_live(&snapshot, &wrong_entry, &owner).is_err());
-    assert_eq!(
-        snapshot.value.0,
-        owner
-            .types()
-            .try_record_value(
-                roles.state.semantic_identity,
-                vec![],
-                RuntimeSchemaLimits::engine_default()
-            )
-            .unwrap()
-    );
+    assert_eq!(snapshot.value, stateful_plan_root_snapshot(&owner).1.value);
+}
+
+#[test]
+fn root_retained_group_preserves_the_selected_entrys_own_policy() {
+    use crate::root::RootStateSaveSnapshotV1;
+    use crate::task::RuntimeProgramOwner;
+    use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+    let permissive =
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(stateful_plan(RuntimeTypeSchema::Bool)));
+    let (active, snapshot) = stateful_plan_root_snapshot(&permissive);
+    let wire = RootStateSaveSnapshotV1::from_live(&snapshot, &active, &permissive).unwrap();
+    let strict = RuntimeProgramOwner::Plan(std::sync::Arc::new(stateful_plan_with_limits(
+        RuntimeTypeSchema::Bool,
+        RootExecutionLimits {
+            schema: RuntimeSchemaLimits {
+                max_encoded_bytes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+            ..RootExecutionLimits::engine_default()
+        },
+    )));
+    for inert in [false, true] {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            strict.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        let result = if inert {
+            wire.admit_retained(&active, &mut admission)
+        } else {
+            snapshot.admit_retained(&active, &mut admission)
+        };
+        let Err(crate::root::RootStateSaveSnapshotError::Value(error)) = result else {
+            panic!("expected the selected root policy's resource failure, got {result:?}");
+        };
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes"
+            })
+        );
+        assert_eq!(
+            admission.validate(&crate::value::RuntimeValue::Unit),
+            Err(error)
+        );
+    }
 }
 
 #[test]

@@ -1507,12 +1507,6 @@ pub enum FiberStateError {
     UnknownFlowParameter { parameter: FlowParameterCoordinate },
     #[error("AWBC Flow parameter coordinate {parameter:?} is duplicated")]
     DuplicateFlowParameter { parameter: FlowParameterCoordinate },
-    #[error("AWBC Flow parameter {parameter:?} expected {expected}, received {actual}")]
-    FlowParameterType {
-        parameter: FlowParameterCoordinate,
-        expected: String,
-        actual: String,
-    },
 }
 
 fn visit_value_graph<E>(
@@ -1996,7 +1990,7 @@ impl FiberState {
     pub(super) fn bind_flow_parameter_coordinates(
         &mut self,
         program: &AwbcProgram,
-        bindings: &[RuntimeFlowParameterBinding],
+        bindings: Vec<RuntimeFlowParameterBinding>,
     ) -> Result<(), FiberStateError> {
         let frame = self.active_frame()?;
         let function = program
@@ -2195,41 +2189,36 @@ impl FiberState {
         &mut self,
         program: &AwbcProgram,
         signature_id: AwbcSignatureId,
-        bindings: &[RuntimeFlowParameterBinding],
+        bindings: Vec<RuntimeFlowParameterBinding>,
     ) -> Result<(), FiberStateError> {
         let frame = self.active_frame()?;
         let signature = program
             .signatures
             .get(signature_id.index())
             .ok_or(FiberStateError::InvalidFrame)?;
+        let function = program
+            .functions
+            .get(frame.function.index())
+            .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
+        if function.signature != signature_id || function.frame_layout != frame.layout {
+            return Err(FiberStateError::InvalidFrame);
+        }
         let layout = program
             .frame_layouts
             .get(frame.layout.index())
             .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
-        let parameters = layout
-            .slots
-            .iter()
-            .enumerate()
-            .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
-            .collect::<Vec<_>>();
-        if parameters.len() != signature.params.len() {
+        if frame.registers.len() != layout.slots.len() {
             return Err(FiberStateError::InvalidFrame);
         }
-        if bindings.len() != parameters.len() {
+        if bindings.len() != signature.params.len() {
             return Err(FiberStateError::ArgumentCount {
-                expected: parameters.len(),
+                expected: signature.params.len(),
                 actual: bindings.len(),
             });
         }
 
-        let mut used = BTreeSet::new();
-        let mut register_values = frame.registers.clone();
+        let mut values = vec![None; signature.params.len()];
         for binding in bindings {
-            if !used.insert(binding.parameter) {
-                return Err(FiberStateError::DuplicateFlowParameter {
-                    parameter: binding.parameter,
-                });
-            }
             let position =
                 binding
                     .parameter
@@ -2237,26 +2226,24 @@ impl FiberState {
                     .map_err(|_| FiberStateError::UnknownFlowParameter {
                         parameter: binding.parameter,
                     })?;
-            let Some((register, slot)) = parameters.get(position).copied() else {
+            let Some(value) = values.get_mut(position) else {
                 return Err(FiberStateError::UnknownFlowParameter {
                     parameter: binding.parameter,
                 });
             };
-            let expected = signature.params[position];
-            if slot.ty != expected {
-                return Err(FiberStateError::InvalidFrame);
-            }
-            if !runtime_value_matches_type(program, &binding.value, expected, 0) {
-                return Err(FiberStateError::FlowParameterType {
+            if value.replace(binding.value).is_some() {
+                return Err(FiberStateError::DuplicateFlowParameter {
                     parameter: binding.parameter,
-                    expected: runtime_type_label(program, expected),
-                    actual: runtime_value_type_label(&binding.value),
                 });
             }
-            register_values[register] = binding.value.clone().into();
         }
-        self.active_frame_mut()?.registers = register_values;
-        Ok(())
+        let values = values
+            .into_iter()
+            .map(|value| {
+                value.expect("distinct in-range coordinates fill the exact argument count")
+            })
+            .collect::<Vec<_>>();
+        self.bind_function_argument_values_owned(program, values)
     }
 
     pub fn checkpoint(

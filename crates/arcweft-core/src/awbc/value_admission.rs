@@ -196,16 +196,26 @@ impl AwbcProgram {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, AwbcValueAdmissionError> {
+        self.accepts_value_view(ty, value.view(), limits, ValueAdmissionOrigin::Live)
+    }
+
+    pub(crate) fn accepts_value_view(
+        &self,
+        ty: AwbcTypeId,
+        value: View<'_>,
+        limits: RuntimeSchemaLimits,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<RuntimeValueDigest, AwbcValueAdmissionError> {
         self.runtime_types
             .get(ty.index())
             .ok_or(AwbcValueAdmissionError::UnknownType { ty })?;
         let mut validation = AwbcValueValidation {
             program: self,
             work: ValidationWork::new(limits),
-            origin: ValueAdmissionOrigin::Live,
+            origin,
             context: (),
         };
-        value_encoding::validate_and_hash(value, limits, &mut validation, Expected::Type(ty))
+        value_encoding::validate_and_hash_view(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| AwbcValueAdmissionError::Value { ty, source })
     }
 }
