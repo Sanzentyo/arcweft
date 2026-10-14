@@ -256,6 +256,28 @@ impl RuntimeRetainedValueAdmission {
         self.failure.get_or_insert(error);
     }
 
+    /// An owning composite authenticates its custody and original metadata
+    /// while borrowing this context's existing program and resource bank.
+    /// Success grants no copying or executable capability.
+    pub(crate) fn admit_composite(
+        &mut self,
+        origin: ValueAdmissionOrigin,
+        admit: impl FnOnce(
+            Option<&RuntimeProgramOwner>,
+            &mut ValueResourceAdmission,
+        ) -> Result<(), AwbcRuntimeValueSnapshotError>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        self.resources.set_origin(origin);
+        let result = admit(self.owner.as_ref(), &mut self.resources);
+        if let Err(failure) = &result {
+            self.retain_failure(failure.clone());
+        }
+        result
+    }
+
     fn validate_view(
         &mut self,
         value: RuntimeValueView<'_>,

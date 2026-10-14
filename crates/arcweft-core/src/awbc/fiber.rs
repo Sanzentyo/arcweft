@@ -920,6 +920,32 @@ impl AwbcFiberStateSnapshot {
             crate::task::RuntimeNeedHandleSaveSnapshot::view,
         )
     }
+
+    /// Admits this complete inert fiber before an enclosing owner constructs
+    /// any values. Original program, counters and sticky failures remain owned
+    /// by the enclosing admission; this issues no execution or Copy proof.
+    pub fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> AwbcSaveResult<()> {
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+            |owner, resources| {
+                let owner =
+                    owner.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "AWBC fiber admission requires its original AWBC program"
+                            .to_owned(),
+                    })?;
+                self.validate_retained(
+                    owner,
+                    resources,
+                    AwbcRuntimeValueSnapshot::view,
+                    crate::task::RuntimeNeedHandleSaveSnapshot::view,
+                )
+            },
+        )
+    }
+
     pub fn into_live_for_program(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberState> {
         self.validate_for_program(owner)?;
         Ok(FiberState {
@@ -1223,6 +1249,67 @@ impl FiberCallablePendingStorage for RuntimeCallablePendingSnapshot {
 }
 
 impl<P, V> FiberReturnContinuation<P, V> {
+    fn pending_packet(&self) -> Option<&P> {
+        match self {
+            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
+                Some(pending)
+            }
+            Self::ContextCallbackDefault {
+                callable_pending, ..
+            } => Some(callable_pending),
+            Self::Ordinary
+            | Self::ProjectCallTarget { .. }
+            | Self::FormatOperand { .. }
+            | Self::FormatDisplay { .. }
+            | Self::InstructionCall { .. }
+            | Self::ContextCallbackInvoke { .. } => None,
+        }
+    }
+
+    fn validate_context_inputs(
+        &self,
+        context: &FiberReturnContext<'_>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+        view: impl Fn(&V) -> crate::value::RuntimeValueView<'_> + Copy,
+    ) -> Result<(), FiberStateError>
+    where
+        P: FiberCallablePendingStorage,
+    {
+        match self {
+            Self::ContextCallbackDefault {
+                site,
+                pending,
+                callable_pending,
+            } => context.validate_context_pending(
+                *site,
+                pending,
+                true,
+                callable_pending.state(),
+                view,
+                resources,
+            ),
+            Self::ContextCallbackInvoke {
+                site,
+                pending,
+                callable_state,
+            } => context.validate_context_pending(
+                *site,
+                pending,
+                false,
+                *callable_state,
+                view,
+                resources,
+            ),
+            Self::Ordinary
+            | Self::ProjectCallDefault { .. }
+            | Self::ProjectCallTarget { .. }
+            | Self::ApplyGroupDefault { .. }
+            | Self::FormatOperand { .. }
+            | Self::FormatDisplay { .. }
+            | Self::InstructionCall { .. } => Ok(()),
+        }
+    }
+
     fn validate_pending_inputs(
         &self,
         owner: &RuntimeProgramOwner,
@@ -1233,48 +1320,9 @@ impl<P, V> FiberReturnContinuation<P, V> {
     where
         P: FiberCallablePendingStorage,
     {
-        let pending = match self {
-            Self::ProjectCallDefault { pending, .. } | Self::ApplyGroupDefault { pending, .. } => {
-                pending
-            }
-            Self::ContextCallbackDefault {
-                site,
-                pending,
-                callable_pending,
-            } => {
-                context
-                    .validate_context_pending(
-                        *site,
-                        pending,
-                        true,
-                        callable_pending.state(),
-                        view,
-                        resources,
-                    )
-                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)?;
-                callable_pending
-            }
-            Self::ContextCallbackInvoke {
-                site,
-                pending,
-                callable_state,
-            } => {
-                return context
-                    .validate_context_pending(
-                        *site,
-                        pending,
-                        false,
-                        *callable_state,
-                        view,
-                        resources,
-                    )
-                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from);
-            }
-            Self::Ordinary
-            | Self::ProjectCallTarget { .. }
-            | Self::FormatOperand { .. }
-            | Self::FormatDisplay { .. }
-            | Self::InstructionCall { .. } => return Ok(()),
+        self.validate_context_inputs(context, resources, view)?;
+        let Some(pending) = self.pending_packet() else {
+            return Ok(());
         };
         crate::value::RuntimeCallableBodyReference::Awbc(context.returning_function)
             .validate_default_return(owner.types(), pending.state())?;
@@ -2142,7 +2190,33 @@ impl FiberState {
             return Ok(());
         }
         for (index, frame) in self.frames.iter().enumerate() {
-            validate_frame(program, frame, &format!("frames[{index}]"))?;
+            validate_frame(program, frame, &mut resources, &format!("frames[{index}]"))?;
+            if let Some(point) = &frame.return_to {
+                if let Some(pending) = point.continuation.pending_packet() {
+                    pending
+                        .validate_borrowed_program_inputs(
+                            crate::program_types::RuntimeProgramTypes::Awbc(program),
+                            &mut resources,
+                        )
+                        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+                }
+                point.continuation.validate_context_inputs(
+                    &FiberReturnContext {
+                        program,
+                        caller: index
+                            .checked_sub(1)
+                            .map(|index| self.frames[index].function),
+                        binding: index
+                            .checked_sub(1)
+                            .and_then(|index| self.frames[index].type_instantiation.as_deref()),
+                        returning_function: frame.function,
+                        cursor: point.cursor,
+                        destination: point.destination,
+                    },
+                    &mut resources,
+                    RuntimeValue::view,
+                )?;
+            }
         }
         if let Some(terminal) = &self.terminal {
             terminal.validate_summary(
@@ -2158,12 +2232,16 @@ impl FiberState {
                     expected: FiberStatus::Suspended,
                 });
             }
-            suspension.validate_state(program, self)?;
+            suspension.validate_inputs(
+                &self.active_frame()?.value_context(program)?,
+                self.cursor,
+                &mut resources,
+                RuntimeValue::view,
+                crate::value::RuntimeOpaqueValue::view,
+                crate::task::RuntimeNeedHandle::view,
+            )?;
         }
         if let Some(terminal) = &self.terminal {
-            let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            );
             let context = self
                 .frames
                 .first()
@@ -2182,9 +2260,7 @@ impl FiberState {
             program,
             self.root,
             &self.streams,
-            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            ),
+            &mut resources,
             RuntimeValue::view,
         )?;
         Ok(())
@@ -3525,11 +3601,9 @@ fn validate_frame_layout<'program>(
 fn validate_frame(
     program: &AwbcProgram,
     frame: &FiberFrame,
+    resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     path: &str,
 ) -> Result<(), FiberStateError> {
-    let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
-        crate::entry::RuntimeSchemaLimits::engine_default(),
-    );
     let layout = validate_frame_layout(
         program,
         frame.function,
@@ -3543,7 +3617,7 @@ fn validate_frame(
         layout,
         frame.type_instantiation.as_deref(),
         &frame.registers,
-        &mut resources,
+        resources,
         RuntimeValue::view,
         path,
     )
@@ -3554,13 +3628,13 @@ fn validate_frame(
     frame.value_context(program)?.validate_formats(
         frame.format.as_ref(),
         &frame.format_attempts,
-        &mut resources,
+        resources,
         RuntimeValue::view,
     )?;
     frame.value_context(program)?.validate_scopes(
         &frame.root_cleanups,
         &frame.scopes,
-        &mut resources,
+        resources,
         RuntimeValue::view,
     )?;
     Ok(())
@@ -3989,15 +4063,61 @@ pub(crate) fn validate_function_argument_value_refs(
     })
 }
 
-fn validate_return_point<V: FiberStoredValue, B, P: FiberCallablePendingStorage>(
+fn validate_return_point(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    returning_function: AwbcFunctionId,
+    point: &FiberReturnPoint,
+) -> Result<(), FiberStateError> {
+    let mut resources =
+        RuntimeValue::resource_admission(crate::entry::RuntimeSchemaLimits::engine_default());
+    validate_return_point_metadata(
+        program,
+        caller,
+        returning_function,
+        point,
+        &mut resources.work(),
+    )?;
+    if matches!(
+        point.continuation,
+        FiberReturnContinuation::FormatOperand { .. }
+            | FiberReturnContinuation::FormatDisplay { .. }
+    ) {
+        let format = caller
+            .format
+            .as_ref()
+            .ok_or(FiberStateError::InvalidFrame)?;
+        format.validate_inputs(
+            &caller.value_context(program)?,
+            &mut resources,
+            RuntimeValue::view,
+        )?;
+    }
+    point.continuation.validate_context_inputs(
+        &FiberReturnContext {
+            program,
+            caller: Some(caller.function),
+            binding: caller.value_context(program)?.binding,
+            returning_function,
+            cursor: point.cursor,
+            destination: point.destination,
+        },
+        &mut resources,
+        RuntimeValue::view,
+    )
+}
+fn validate_return_point_metadata<V: FiberStoredValue, B, P: FiberCallablePendingStorage>(
     program: &AwbcProgram,
     caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<FiberReturnContinuation<P, V>>,
+    work: &mut crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<(), FiberStateError>
 where
     B: std::borrow::Borrow<crate::program_types::RuntimeFunctionEffectInstantiation>,
 {
+    work.charge(0)
+        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
     validate_cursor(program, return_to.cursor)?;
     if return_to.cursor.function != caller.function {
         return Err(FiberStateError::InvalidFrame);
@@ -4010,7 +4130,7 @@ where
             layout: caller.layout.0,
         });
     }
-    validate_return_continuation(program, caller, returning_function, return_to)?;
+    validate_return_continuation(program, caller, returning_function, return_to, work)?;
     Ok(())
 }
 
@@ -4019,10 +4139,19 @@ fn validate_return_continuation<V: FiberStoredValue, B, P: FiberCallablePendingS
     caller: &FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P, V>>>,
     returning_function: AwbcFunctionId,
     return_to: &FiberReturnPoint<FiberReturnContinuation<P, V>>,
+    work: &mut crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<(), FiberStateError>
 where
     B: std::borrow::Borrow<crate::program_types::RuntimeFunctionEffectInstantiation>,
 {
+    let context = FiberReturnContext {
+        program,
+        caller: Some(caller.function),
+        binding: caller.value_context(program)?.binding,
+        returning_function,
+        cursor: return_to.cursor,
+        destination: return_to.destination,
+    };
     let (site, default_stage) = match &return_to.continuation {
         FiberReturnContinuation::Ordinary => return Ok(()),
         FiberReturnContinuation::FormatOperand { site, ordinal } => {
@@ -4033,6 +4162,7 @@ where
                 return_to,
                 *site,
                 *ordinal,
+                work,
             );
         }
         FiberReturnContinuation::FormatDisplay { site } => {
@@ -4058,53 +4188,31 @@ where
             pending,
             callable_pending,
         } => {
-            return FiberReturnContext {
-                program,
-                caller: Some(caller.function),
-                binding: caller.value_context(program)?.binding,
-                returning_function,
-                cursor: return_to.cursor,
-                destination: return_to.destination,
-            }
-            .validate_context_return(*site, pending, true, callable_pending.state());
+            return context.validate_context_metadata(
+                *site,
+                pending.kind(),
+                true,
+                callable_pending.state(),
+            );
         }
         FiberReturnContinuation::ContextCallbackInvoke {
             site,
             pending,
             callable_state,
         } => {
-            return FiberReturnContext {
-                program,
-                caller: Some(caller.function),
-                binding: caller.value_context(program)?.binding,
-                returning_function,
-                cursor: return_to.cursor,
-                destination: return_to.destination,
-            }
-            .validate_context_return(*site, pending, false, *callable_state);
+            return context.validate_context_metadata(
+                *site,
+                pending.kind(),
+                false,
+                *callable_state,
+            );
         }
         FiberReturnContinuation::ProjectCallDefault { site, pending } => {
-            validate_project_call_stage_values(
-                program,
-                caller,
-                returning_function,
-                return_to,
-                *site,
-                Some(pending),
-                true,
-            )?;
+            validate_project_call_stage_values(&context, caller, *site, Some(pending), true, work)?;
             (*site, true)
         }
         FiberReturnContinuation::ProjectCallTarget { site } => {
-            validate_project_call_stage_values(
-                program,
-                caller,
-                returning_function,
-                return_to,
-                *site,
-                None::<&P>,
-                false,
-            )?;
+            validate_project_call_stage_values(&context, caller, *site, None::<&P>, false, work)?;
             (*site, false)
         }
         FiberReturnContinuation::ApplyGroupDefault {
@@ -4185,6 +4293,7 @@ fn validate_format_operand_return<V: FiberStoredValue, B, R, C>(
     return_to: &FiberReturnPoint<C>,
     site: FiberCursor,
     ordinal: usize,
+    work: &mut crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<(), FiberStateError>
 where
     B: std::borrow::Borrow<crate::program_types::RuntimeFunctionEffectInstantiation>,
@@ -4196,7 +4305,6 @@ where
         .format
         .as_ref()
         .ok_or(FiberStateError::InvalidFrame)?;
-    validate_format_state(program, caller, state)?;
     if state.storage.site != site || state.storage.next_operand != ordinal {
         return Err(FiberStateError::InvalidFrame);
     }
@@ -4215,18 +4323,21 @@ where
     if returning_function != operand.function
         || signature.result.is_none()
         || operand.captures.len() != signature.params.len()
-        || operand
-            .captures
-            .iter()
-            .zip(&signature.params)
-            .any(|(capture, ty)| {
-                layout
-                    .slots
-                    .get(capture.index())
-                    .is_none_or(|slot| slot.ty != *ty)
-            })
     {
         return Err(FiberStateError::InvalidFrame);
+    }
+    work.collection(operand.captures.len())
+        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+    for (capture, ty) in operand.captures.iter().zip(&signature.params) {
+        work.charge(0)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        if layout
+            .slots
+            .get(capture.index())
+            .is_none_or(|slot| slot.ty != *ty)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
     }
     Ok(())
 }
@@ -4248,7 +4359,6 @@ where
         .format
         .as_ref()
         .ok_or(FiberStateError::InvalidFrame)?;
-    validate_format_state(program, caller, state)?;
     let operand_count = format_operand_count_at_site(program, site)?;
     if state.storage.site != site
         || state.storage.next_operand != operand_count
@@ -4386,15 +4496,16 @@ fn instruction_call_receiver_update(
     Ok(Some((*destination, value)))
 }
 
-fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, C>(
-    program: &AwbcProgram,
+fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage>(
+    context: &FiberReturnContext<'_>,
     caller: &FiberFrame<V, B, R>,
-    returning_function: AwbcFunctionId,
-    return_to: &FiberReturnPoint<C>,
     site: AwbcProjectCallSite,
     pending: Option<&P>,
     default_stage: bool,
+    work: &mut crate::entry::schema::value_budget::ValidationWork,
 ) -> Result<(), FiberStateError> {
+    let program = context.program;
+    let returning_function = context.returning_function;
     let block = program
         .blocks
         .get(site.block.index())
@@ -4406,7 +4517,7 @@ fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, C
         .callable_states
         .get(call.state.index())
         .ok_or(FiberStateError::InvalidFrame)?;
-    if return_to.destination.is_some()
+    if context.destination.is_some()
         || state.result.index() >= program.runtime_types.len()
         || call.result_pattern.index() >= program.patterns.len()
     {
@@ -4435,14 +4546,21 @@ fn validate_project_call_stage_values<V, B, R, P: FiberCallablePendingStorage, C
         .registers
         .get(call.callee.index())
         .is_none_or(|storage| !storage.is_vacant())
-        || call.operands.iter().any(|operand| {
-            caller
-                .registers
-                .get(operand.value.index())
-                .is_none_or(|storage| !storage.is_vacant())
-        })
     {
         return Err(FiberStateError::InvalidFrame);
+    }
+    work.collection(call.operands.len())
+        .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+    for operand in &call.operands {
+        work.charge(0)
+            .map_err(|error| FiberStateError::Snapshot(error.into()))?;
+        if caller
+            .registers
+            .get(operand.value.index())
+            .is_none_or(|storage| !storage.is_vacant())
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
     }
     Ok(())
 }
@@ -5113,6 +5231,109 @@ mod tests {
             crate::plan::RuntimePlanBuilder::default().finish().unwrap(),
         ));
         assert!(image.into_live_for_program(&foreign).is_err());
+    }
+
+    #[test]
+    fn enclosing_retained_admission_keeps_fiber_nodes_and_first_failure() {
+        let program = one_unit_parameter_entry_program();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
+            .unwrap();
+        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let before = serde_json::to_vec(&image).unwrap();
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_nodes: 1,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(owner, limits);
+        image.admit_retained(&mut admission).unwrap();
+        let failure = admission.validate(&RuntimeValue::Unit).unwrap_err();
+        assert!(matches!(
+            failure,
+            crate::value::AwbcRuntimeValueSnapshotError::Resource(_)
+        ));
+        assert_eq!(image.admit_retained(&mut admission).unwrap_err(), failure);
+        assert_eq!(
+            admission.validate_metadata_string("later").unwrap_err(),
+            failure
+        );
+        assert_eq!(serde_json::to_vec(&image).unwrap(), before);
+
+        let mut standalone = crate::value::RuntimeRetainedValueAdmission::standalone(limits);
+        let missing = image.admit_retained(&mut standalone).unwrap_err();
+        assert!(matches!(
+            missing,
+            crate::value::AwbcRuntimeValueSnapshotError::Message { .. }
+        ));
+        assert_eq!(
+            standalone.validate(&RuntimeValue::Unit).unwrap_err(),
+            missing
+        );
+    }
+
+    #[test]
+    fn value_free_return_metadata_uses_the_enclosing_work_allowance() {
+        let mut program = zero_parameter_entry_program();
+        let mut function = program.functions[0].clone();
+        function.definition =
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+                *blake3::hash(b"arcweft.fiber-bank.return-metadata.definition.v1\0").as_bytes(),
+            );
+        function.kind = AwbcFunctionKind::Ordinary;
+        function.blocks = AwbcTableRange::new(1, 1);
+        function.entry_block = AwbcBlockId(1);
+        program.functions.push(function);
+        let mut block = program.blocks[0].clone();
+        block.owner = AwbcFunctionId(1);
+        program.blocks.push(block);
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber
+            .push_call_frame_at(
+                &program,
+                AwbcFunctionId(1),
+                FiberReturnPoint::ordinary(fiber.cursor, None),
+                &[],
+            )
+            .unwrap();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+        let image = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_nodes: 0,
+            max_encoded_bytes: 0,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        image
+            .admit_retained(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    limits,
+                ),
+            )
+            .unwrap();
+        let mut exhausted = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits {
+                max_validation_work: 4,
+                ..limits
+            },
+        );
+        let error = image.admit_retained(&mut exhausted).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::ValidationWork {
+                    limit: 4,
+                    consumed: 5,
+                    ..
+                }
+            )
+        ));
+        assert_eq!(
+            exhausted.validate_metadata_string("later").unwrap_err(),
+            error
+        );
     }
 
     #[test]

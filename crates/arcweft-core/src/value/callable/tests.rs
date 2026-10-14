@@ -881,6 +881,23 @@ fn native_pending_default_uses_the_same_inert_packet_and_original_owner() {
     else {
         panic!("native omission suspends its owning packet");
     };
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    pending
+        .validate_borrowed_program_inputs(
+            owner.types(),
+            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits),
+        )
+        .unwrap();
+    let foreign = RuntimeProgramOwner::Plan(Arc::new(
+        defaulted_attached_plan_builder(false).finish().unwrap(),
+    ));
+    assert_eq!(
+        pending.validate_borrowed_program_inputs(
+            foreign.types(),
+            &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits),
+        ),
+        Err(RuntimeCallableValueError::ForeignProgram)
+    );
     let snapshot =
         crate::value::RuntimeCallablePendingSnapshot::from_live(&pending, &owner).unwrap();
     let decoded = serde_json::from_slice::<crate::value::RuntimeCallablePendingSnapshot>(

@@ -179,11 +179,21 @@ impl RuntimeCallablePendingGroup {
         owner: &RuntimeProgramOwner,
         resources: &mut ValueResourceAdmission,
     ) -> Result<(), RuntimeCallableValueError> {
-        if !self.owner.same_program(owner) {
+        self.validate_borrowed_program_inputs(owner.types(), resources)
+    }
+
+    /// The original borrowed executable must own this exact live lease.
+    /// Packet validation then reuses that lease without reconstructing an owner.
+    pub(crate) fn validate_borrowed_program_inputs(
+        &self,
+        original: crate::program_types::RuntimeProgramTypes<'_>,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), RuntimeCallableValueError> {
+        if !original.owns_lease(&self.owner) {
             return Err(RuntimeCallableValueError::ForeignProgram);
         }
         Self::validate_packet(
-            owner,
+            &self.owner,
             self.state,
             &self.retained,
             &self.arguments,

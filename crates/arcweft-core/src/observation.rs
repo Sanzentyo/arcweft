@@ -1,49 +1,110 @@
-use crate::effect::{
-    LineEffectRequest, RuntimeAssignmentError, RuntimeCall, RuntimeEvent, RuntimeLog,
-};
+use crate::effect::{LineEffectRequest, RuntimeCall, RuntimeEvent, RuntimeLog};
 use crate::task::RuntimeProgramOwner;
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Retained evaluated observations. Every value is unrestricted before it can
-/// enter this cloneable owner; display labels are produced only by display APIs.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(try_from = "RuntimeObservationParts")]
-pub struct RuntimeObservationState {
-    signals: BTreeMap<String, RuntimePayload>,
-    metrics: BTreeMap<String, RuntimePayload>,
+impl<P> RuntimeObservationState<P> {
+    /// Names and diagnostic rows share the enclosing resource/work bank.
+    fn admit_metadata(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        for count in [
+            self.signals.len(),
+            self.metrics.len(),
+            self.logs.len(),
+            self.events.len(),
+            self.calls.len(),
+        ] {
+            admission.validate_metadata_collection(count)?;
+        }
+        for name in self.signals.keys().chain(self.metrics.keys()) {
+            admission.validate_metadata_string(name)?;
+        }
+        for log in &self.logs {
+            admission.validate_metadata_string(&log.level)?;
+            admission.validate_metadata_string(&log.message)?;
+        }
+        for event in &self.events {
+            admission.validate_metadata_string(&event.event)?;
+        }
+        for fields in self
+            .logs
+            .iter()
+            .map(|row| row.fields.as_slice())
+            .chain(self.events.iter().map(|row| row.fields.as_slice()))
+        {
+            admission.validate_metadata_collection(fields.len())?;
+            for field in fields {
+                admission.validate_metadata_string(&field.name)?;
+                admission.validate_metadata_string(&field.value)?;
+            }
+        }
+        for call in &self.calls {
+            admission.validate_metadata_string(&call.callee)?;
+            admission.validate_metadata_collection(call.args.len())?;
+            for argument in &call.args {
+                admission.validate_metadata_string(argument)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn admit_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        view: impl Fn(&P) -> crate::value::RuntimeBorrowedValue<'_>,
+        operation: &'static str,
+    ) -> Result<(), String> {
+        self.admit_metadata(admission)
+            .map_err(|error| error.to_string())?;
+        for (name, value) in self.signals.iter().chain(&self.metrics) {
+            admission
+                .validate_borrowed(view(value))
+                .map_err(|error| match error {
+                    crate::value::AwbcRuntimeValueSnapshotError::AffineValue => {
+                        format!("observation '{name}' cannot retain an affine value")
+                    }
+                    error => format!("observation '{name}' cannot be {operation}: {error}"),
+                })?;
+        }
+        Ok(())
+    }
+}
+
+/// Retained evaluated observations use one live/inert storage grammar.
+/// Live values are unrestricted before entering this cloneable owner.
+/// Decoding creates only the inert specialization.
+///
+/// ```compile_fail
+/// use arcweft_core::observation::RuntimeObservationState;
+/// let _: RuntimeObservationState = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, bound(deserialize = "P: InertObservationValue"))]
+pub struct RuntimeObservationState<P = RuntimePayload> {
+    signals: BTreeMap<String, P>,
+    metrics: BTreeMap<String, P>,
     pub logs: Vec<RuntimeLog>,
     pub events: Vec<RuntimeEvent>,
     pub calls: Vec<RuntimeCall>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RuntimeObservationParts {
-    signals: BTreeMap<String, RuntimePayload>,
-    metrics: BTreeMap<String, RuntimePayload>,
-    logs: Vec<RuntimeLog>,
-    events: Vec<RuntimeEvent>,
-    calls: Vec<RuntimeCall>,
-}
+trait InertObservationValue: serde::de::DeserializeOwned {}
+impl InertObservationValue for AwbcRuntimeValueSnapshot {}
 
-impl TryFrom<RuntimeObservationParts> for RuntimeObservationState {
-    type Error = RuntimeAssignmentError;
-
-    fn try_from(parts: RuntimeObservationParts) -> Result<Self, Self::Error> {
-        let state = Self {
-            signals: parts.signals,
-            metrics: parts.metrics,
-            logs: parts.logs,
-            events: parts.events,
-            calls: parts.calls,
-        };
-        state.validate_unrestricted()?;
-        Ok(state)
+impl<P> Default for RuntimeObservationState<P> {
+    fn default() -> Self {
+        Self {
+            signals: BTreeMap::new(),
+            metrics: BTreeMap::new(),
+            logs: Vec::new(),
+            events: Vec::new(),
+            calls: Vec::new(),
+        }
     }
 }
-
 impl RuntimeObservationState {
     #[must_use]
     pub fn signals(&self) -> &BTreeMap<String, RuntimePayload> {
@@ -62,16 +123,6 @@ impl RuntimeObservationState {
     ) -> Result<(), E> {
         for value in self.signals.values().chain(self.metrics.values()) {
             crate::value::visit_runtime_value_graph(value.value(), &mut visitor)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn validate_unrestricted(&self) -> Result<(), RuntimeAssignmentError> {
-        // The ownership query is already transitive; inspect each root once.
-        for value in self.signals.values().chain(self.metrics.values()) {
-            if !value.value().ownership().permits_copy() {
-                return Err(RuntimeAssignmentError::AffineValue);
-            }
         }
         Ok(())
     }
@@ -108,19 +159,17 @@ impl RuntimeObservationState {
     }
 }
 
-/// Inert observation projection used by session saves and native rollback.
-/// The existing value snapshot schema owns reconstruction and program binding.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RuntimeObservationSaveSnapshot {
-    signals: BTreeMap<String, AwbcRuntimeValueSnapshot>,
-    metrics: BTreeMap<String, AwbcRuntimeValueSnapshot>,
-    logs: Vec<RuntimeLog>,
-    events: Vec<RuntimeEvent>,
-    calls: Vec<RuntimeCall>,
-}
+/// Inert storage of the same observation owner, bound on restoration.
+pub type RuntimeObservationSaveSnapshot = RuntimeObservationState<AwbcRuntimeValueSnapshot>;
 
 impl RuntimeObservationSaveSnapshot {
+    /// Borrows all inert observation values before any live construction.
+    pub fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        self.admit_values(admission, |value| value.into(), "restored")
+    }
     pub(crate) fn visit_saved_value_roots<E>(
         &self,
         visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
@@ -144,17 +193,22 @@ impl RuntimeObservationSaveSnapshot {
         state: &RuntimeObservationState,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        state
-            .validate_unrestricted()
-            .map_err(|error| error.to_string())?;
+        state.admit_values(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            |value| value.value().into(),
+            "saved",
+        )?;
         let capture = |rows: &BTreeMap<String, RuntimePayload>| {
             rows.iter()
                 .map(|(name, value)| {
-                    let saved = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-                        value.value(),
-                        owner,
-                    )
-                    .map_err(|error| format!("observation '{name}' cannot be saved: {error}"))?;
+                    let saved =
+                        AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value.value(), owner)
+                            .map_err(|error| {
+                                format!("observation '{name}' cannot be saved: {error}")
+                            })?;
                     Ok((name.clone(), saved))
                 })
                 .collect::<Result<BTreeMap<_, _>, String>>()
@@ -172,19 +226,18 @@ impl RuntimeObservationSaveSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeObservationState, String> {
+        self.admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )?;
         let restore = |rows: BTreeMap<String, AwbcRuntimeValueSnapshot>| {
             rows.into_iter()
                 .map(|(name, saved)| {
-                    let value = saved
-                        .into_runtime_value_for_program(owner)
-                        .map_err(|error| {
-                            format!("observation '{name}' cannot be restored: {error}")
-                        })?;
-                    if !value.ownership().permits_copy() {
-                        return Err(format!(
-                            "observation '{name}' cannot retain an affine value"
-                        ));
-                    }
+                    let value = saved.into_admitted_runtime_value(owner).map_err(|error| {
+                        format!("observation '{name}' cannot be restored: {error}")
+                    })?;
                     Ok((name, RuntimePayload::new(value)))
                 })
                 .collect::<Result<BTreeMap<_, _>, String>>()
@@ -202,7 +255,7 @@ impl RuntimeObservationSaveSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::effect::RuntimeAssignment;
+    use crate::effect::{RuntimeAssignment, RuntimeAssignmentError};
     use crate::value::{RuntimeEntityReference, RuntimeImportedProjectEntityReference};
     use std::sync::Arc;
 
@@ -316,11 +369,70 @@ mod tests {
             Err(RuntimeAssignmentError::AffineValue),
         );
         let parts = serde_json::json!({
-            "signals": {"signal.current": RuntimePayload::new(affine)},
+            "signals": {"signal.current": AwbcRuntimeValueSnapshot::from_standalone_value(&affine).unwrap()},
             "metrics": {}, "logs": [], "events": [], "calls": [],
         });
-        assert!(serde_json::from_value::<RuntimeObservationState>(parts).is_err());
+        let saved: RuntimeObservationSaveSnapshot = serde_json::from_value(parts).unwrap();
+        let owner =
+            RuntimeProgramOwner::Awbc(Arc::new(crate::awbc::schema::AwbcProgram::default()));
+        assert!(
+            saved
+                .admit_retained(
+                    &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                        owner,
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                )
+                .is_err()
+        );
         assert_eq!(serde_json::to_vec(&state).unwrap(), prior);
+    }
+
+    #[test]
+    fn observations_share_metadata_and_value_resources_before_construction() {
+        let saved = RuntimeObservationSaveSnapshot {
+            signals: BTreeMap::from([("first".into(), AwbcRuntimeValueSnapshot::Unit)]),
+            metrics: BTreeMap::from([("second".into(), AwbcRuntimeValueSnapshot::Unit)]),
+            ..RuntimeObservationSaveSnapshot::default()
+        };
+        let before = serde_json::to_vec(&saved).unwrap();
+        let owner =
+            RuntimeProgramOwner::Awbc(Arc::new(crate::awbc::schema::AwbcProgram::default()));
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..crate::entry::RuntimeSchemaLimits::engine_default()
+            },
+        );
+        saved.admit_retained(&mut admission).unwrap();
+        assert!(
+            admission
+                .validate_snapshot(&AwbcRuntimeValueSnapshot::Unit)
+                .is_err()
+        );
+        let mut too_small = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..crate::entry::RuntimeSchemaLimits::engine_default()
+            },
+        );
+        assert!(saved.admit_retained(&mut too_small).is_err());
+        assert_eq!(serde_json::to_vec(&saved).unwrap(), before);
+        let mut metadata = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits {
+                max_string_bytes: 5,
+                ..crate::entry::RuntimeSchemaLimits::engine_default()
+            },
+        );
+        assert!(saved.admit_retained(&mut metadata).is_err());
+        assert!(
+            metadata
+                .validate_snapshot(&AwbcRuntimeValueSnapshot::Unit)
+                .is_err()
+        );
     }
 
     #[test]

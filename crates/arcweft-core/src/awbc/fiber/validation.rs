@@ -4,7 +4,8 @@ use super::{
     AwbcBlockId, AwbcFiberRoot, AwbcFunctionId, AwbcProgram, FiberCallablePendingStorage,
     FiberCursor, FiberReturnContext, FiberReturnContinuation, FiberReturnPoint, FiberState,
     FiberStateError, FiberStatus, FiberStoredValue, FiberStreamState, FiberTerminalValue,
-    format_operand_count_at_site, validate_cursor, validate_frame_layout, validate_return_point,
+    format_operand_count_at_site, validate_cursor, validate_frame_layout,
+    validate_return_point_metadata,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
@@ -90,6 +91,7 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
                 index.checked_sub(1).map(|index| &self.frames[index]),
                 self.frames.get(index + 1),
                 self.cursor,
+                &mut resources.work(),
             )?;
         }
         program
@@ -257,6 +259,7 @@ impl<V, B, P> super::FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P
         parent: Option<&Self>,
         child: Option<&Self>,
         cursor: FiberCursor,
+        work: &mut crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), FiberStateError>
     where
         V: FiberStoredValue,
@@ -286,7 +289,7 @@ impl<V, B, P> super::FiberFrame<V, B, FiberReturnPoint<FiberReturnContinuation<P
         }
         if let Some(point) = &self.return_to {
             let parent = parent.ok_or(FiberStateError::InvalidFrame)?;
-            validate_return_point(program, parent, self.function, point)?;
+            validate_return_point_metadata(program, parent, self.function, point, work)?;
         }
         Ok(())
     }

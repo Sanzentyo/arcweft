@@ -313,6 +313,17 @@ durable root の保存値も Core DTO を使う。active entry の identity・ki
 limits で検証する。live root state と in-memory root snapshot の serde reader を
 残さず、保存 wire の version は `1` を維持する。
 
+observation は `RuntimeObservationState<P>` の単一 grammar を使い、保存値は
+Core の inert value specialization とする。live observation の serde reader は
+持たない。signal／metric の名前と値、log／event／call の文字列と行 inventory を
+同じ retained admission で検証してから最初の payload を複製・構築する。
+Copy と元 program の lease は inert のまま照合し、構築後の所有権検査へ延期しない。
+Product の main／child Fiber と observation も、その owner の同じ資源枠へ接続する。
+復帰 metadata の declaration／capture／operand 照合は同じ validation-work を使い、
+payload を metadata 検査で重複して計上しない。value が空の継続も work 上限を消費する。
+資源枠への接続は Copy／実行 capability を発行せず、外側の wire byte grammar を
+検証する責務は enclosing codec に残る。
+
 Product の queued `Ready` は、保持された task admission の完全な correlation から
 outcome を選び、既存の `BoundTaskOutcome` で検証してから保存・復元結果を公開する。
 program outcome は選択中の immutable executable に束縛し、standalone outcome は

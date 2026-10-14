@@ -2155,16 +2155,6 @@ fn expected_deferred_children(
     Ok(expected)
 }
 
-fn validate_fiber_snapshot_for_program(
-    snapshot: &AwbcFiberStateSnapshot,
-    program: &std::sync::Arc<crate::awbc::schema::AwbcProgram>,
-) -> Result<(), String> {
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
-    snapshot
-        .validate_for_program(&owner)
-        .map_err(|error| error.to_string())
-}
-
 impl AwbcProductStepExecutor {
     /// Captures a fully inert rollback image directly from the sole live
     /// executor owner. Unlike `snapshot()`, this never clones live task-ready
@@ -2902,16 +2892,21 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
-        let observations = snapshot
-            .observations
-            .clone()
-            .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         if snapshot.fiber.root != self.fiber.root {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "saved fiber origin differs from the selected invocation".to_owned(),
             });
         }
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            program_owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        admission
+            .validate_metadata_collection(snapshot.child_fibers.len())
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
             fiber.suspension.as_ref().is_some_and(|suspension| {
                 matches!(
@@ -2941,6 +2936,10 @@ impl AwbcProductStepExecutor {
                         .to_owned(),
             });
         }
+        snapshot
+            .observations
+            .admit_retained(&mut admission)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         NeedProducerRegistry::validate_restore(&snapshot.need_producers).map_err(|error| {
             AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
@@ -2984,11 +2983,19 @@ impl AwbcProductStepExecutor {
                 });
             }
         }
-        validate_fiber_snapshot_for_program(&snapshot.fiber, &self.program)
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        snapshot
+            .fiber
+            .admit_retained(&mut admission)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         for child in &snapshot.child_fibers {
-            validate_fiber_snapshot_for_program(&child.fiber, &self.program)
-                .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+            child
+                .fiber
+                .admit_retained(&mut admission)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
             self.validate_child_owner(&child.owner)?;
             let host_call =
                 child
@@ -3629,7 +3636,11 @@ impl AwbcProductStepExecutor {
             snapshot,
             &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
         )?;
-        Ok(observations)
+        snapshot
+            .observations
+            .clone()
+            .into_live_for_program(&program_owner)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })
     }
 
     fn validate_child_owner(
