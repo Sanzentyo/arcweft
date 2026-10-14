@@ -13,7 +13,7 @@ use super::{
 use crate::{
     callable::{
         CallableFamily, CallableFamilyInvariantCode, CallableGroupIndex, CallableLimits,
-        CallableName, CallableParameterCoordinate, CallableParameterIndex, CallableSchemaError,
+        CallableParameterCoordinate, CallableParameterIndex, CallableSchemaError,
     },
     effect_row::EffectRow,
     effects::EffectSet,
@@ -195,7 +195,11 @@ impl CallableSignatureSchema {
                         }
                     })?,
                     Some(
-                        CallableName::try_new(format!("arg{}", index + 1)).map_err(|_| {
+                        arcweft_lang_syntax::name::CallArgumentName::try_new(&format!(
+                            "arg{}",
+                            index + 1
+                        ))
+                        .map_err(|_| {
                             CallableSchemaError::FamilyInvariant {
                                 family: CallableFamily::FunctionValue,
                                 code: CallableFamilyInvariantCode::InvalidParameterType,

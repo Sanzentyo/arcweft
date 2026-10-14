@@ -825,8 +825,19 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerCallEvidenceRule {
     kind: AnalyzerCallEvidenceRuleKind,
-    compile_time_scalar:
-        Option<Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>>,
+    source_admission: Option<AnalyzerCallSourceAdmission>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AnalyzerCallSourceAdmission {
+    CompileTimeScalar(Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>),
+    PublicIdReference(arcweft_id::ProjectEntityReferenceFamily),
+}
+
+impl AnalyzerCallSourceAdmission {
+    pub(super) const fn requires_reduction(&self) -> bool {
+        matches!(self, Self::CompileTimeScalar(_))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -842,14 +853,14 @@ impl AnalyzerCallEvidenceRule {
     fn guarded(guard: CallableSemanticValueGuard, declared: TypeKind) -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Guarded { guard, declared },
-            compile_time_scalar: None,
+            source_admission: None,
         }
     }
 
     fn otherwise() -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Otherwise,
-            compile_time_scalar: None,
+            source_admission: None,
         }
     }
 
@@ -858,7 +869,14 @@ impl AnalyzerCallEvidenceRule {
     ) -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Otherwise,
-            compile_time_scalar: Some(admission),
+            source_admission: Some(AnalyzerCallSourceAdmission::CompileTimeScalar(admission)),
+        }
+    }
+
+    fn public_id_reference(family: arcweft_id::ProjectEntityReferenceFamily) -> Self {
+        Self {
+            kind: AnalyzerCallEvidenceRuleKind::Otherwise,
+            source_admission: Some(AnalyzerCallSourceAdmission::PublicIdReference(family)),
         }
     }
 
@@ -1106,10 +1124,7 @@ pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control>
     application: Option<ExprId>,
     candidate: Option<Arc<PreparedResolvedCallable>>,
     consumer: Option<AnalyzerCallConsumerAdmission>,
-    compile_time_scalar_admissions: BTreeMap<
-        (AnalyzerCallConstraintSource, u32),
-        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
-    >,
+    source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
     prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
@@ -1128,9 +1143,9 @@ impl<'a, 'project, 'catalog, 'control>
         application: Option<ExprId>,
         candidate: Option<Arc<PreparedResolvedCallable>>,
         consumer: Option<AnalyzerCallConsumerAdmission>,
-        compile_time_scalar_admissions: BTreeMap<
+        source_admissions: BTreeMap<
             (AnalyzerCallConstraintSource, u32),
-            Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+            AnalyzerCallSourceAdmission,
         >,
         prepared_source_actuals: BTreeMap<
             AnalyzerCallConstraintSource,
@@ -1150,7 +1165,7 @@ impl<'a, 'project, 'catalog, 'control>
             application,
             candidate,
             consumer,
-            compile_time_scalar_admissions,
+            source_admissions,
             prepared_source_actuals,
             dialogue_patch_admissions,
             pass,
@@ -1394,9 +1409,7 @@ impl<'a, 'project, 'catalog, 'control>
         &mut self,
         source_id: AnalyzerCallConstraintSourceId,
         expectation: AnalyzerExpressionExpectation<'_>,
-        compile_time_scalar: Option<
-            &crate::checked_compile_time::PreparedCompileTimeScalarAdmission,
-        >,
+        source_admission: Option<&AnalyzerCallSourceAdmission>,
         application_context: Option<&super::PreparedCorrelatedCallRecipe>,
         phase: SourcePhase,
         mut parent_probe: Option<
@@ -1408,9 +1421,13 @@ impl<'a, 'project, 'catalog, 'control>
         >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
         let source = source_id.local();
-        let expectation = if phase == SourcePhase::Probe
+        let expectation = if let Some(AnalyzerCallSourceAdmission::PublicIdReference(family)) =
+            source_admission
+        {
+            expectation.public_id_reference(*family)
+        } else if phase == SourcePhase::Probe
             && parent_probe.is_some()
-            && compile_time_scalar.is_none()
+            && source_admission.is_none()
         {
             expectation.function_value_source()
         } else {
@@ -1437,7 +1454,9 @@ impl<'a, 'project, 'catalog, 'control>
                 &recipe.source_preparation.prepared_source_actuals
             });
         if let Some(prepared) = prepared_source_actuals.get(&source) {
-            if compile_time_scalar.is_some() || !prepared.validates(source) {
+            if source_admission.is_some_and(AnalyzerCallSourceAdmission::requires_reduction)
+                || !prepared.validates(source)
+            {
                 return Err(AnalyzerCallCheckFailure::Invariant(
                     AnalyzerCallClientInvariant::constraint(
                         source,
@@ -1511,7 +1530,7 @@ impl<'a, 'project, 'catalog, 'control>
             child_context
         };
         if phase == SourcePhase::Probe
-            && compile_time_scalar.is_none()
+            && !source_admission.is_some_and(AnalyzerCallSourceAdmission::requires_reduction)
             && let Some(parent_probe) = parent_probe.as_deref_mut()
             && let Some(expression_owner) = source.expression_owner()
         {
@@ -1655,7 +1674,7 @@ impl<'a, 'project, 'catalog, 'control>
             &child_context,
             source,
             expectation,
-            compile_time_scalar,
+            source_admission,
         );
         drop(child_context);
         match result {
@@ -2119,7 +2138,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     match self.check_source(
                         source_id,
                         expectation,
-                        alternative.evidence().compile_time_scalar.as_deref(),
+                        alternative.evidence().source_admission.as_ref(),
                         None,
                         SourcePhase::Probe,
                         Some(&mut *probe),
@@ -2565,10 +2584,10 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 )
             } else {
                 let expected = request.expected();
-                let compile_time_scalar = request.alternative().and_then(|alternative| {
+                let source_admission = request.alternative().and_then(|alternative| {
                     application_context
-                        .map_or(&self.compile_time_scalar_admissions, |recipe| {
-                            &recipe.source_preparation.compile_time_scalar_admissions
+                        .map_or(&self.source_admissions, |recipe| {
+                            &recipe.source_preparation.source_admissions
                         })
                         .get(&(source, alternative))
                         .cloned()
@@ -2576,7 +2595,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 match self.check_source(
                     source_id,
                     AnalyzerExpressionExpectation::from_complete(expected),
-                    compile_time_scalar.as_deref(),
+                    source_admission.as_ref(),
                     application_context,
                     SourcePhase::Materialize,
                     None,
@@ -2951,10 +2970,7 @@ pub(crate) struct PreparedCallConstraintSet {
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
     receiver_sources: Box<[PreparedSourceConstraint<AnalyzerCallConstraintDomain>]>,
-    compile_time_scalar_admissions: BTreeMap<
-        (AnalyzerCallConstraintSource, u32),
-        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
-    >,
+    source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
     base_constraints: Box<[PreparedCallTypeConstraint]>,
     type_application_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
@@ -3076,10 +3092,7 @@ pub(super) struct AnalyzerCallApplicationSources {
     prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
-    compile_time_scalar_admissions: BTreeMap<
-        (AnalyzerCallConstraintSource, u32),
-        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
-    >,
+    source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
 }
 
 impl PreparedCallConstraintSet {
@@ -3091,7 +3104,7 @@ impl PreparedCallConstraintSet {
             application,
             prepared_source_actuals: self.prepared_source_actuals.clone(),
             dialogue_patch_admissions: self.dialogue_patch_admissions.clone(),
-            compile_time_scalar_admissions: self.compile_time_scalar_admissions.clone(),
+            source_admissions: self.source_admissions.clone(),
         }
     }
 }
@@ -4244,7 +4257,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     result_source: ExprId,
     callee_inputs: PreparedCallCalleeConstraintInputs,
     dialogue_patch_admissions: &[AnalyzerPreparedDialoguePatchAdmission],
-    compile_time_scalar_admissions: &[AnalyzerPreparedCompileTimeScalarAdmission],
+    compile_time_scalar_rows: &[AnalyzerPreparedCompileTimeScalarAdmission],
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     consumer: AnalyzerCallConsumerAdmission,
     enclosing: &EnclosingGenericParameterScope,
@@ -4366,7 +4379,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     let type_application_constraints = type_application_constraints.into_boxed_slice();
     let view_fx_runtime_parameters = consumer.runtime_parameters();
     let mut compile_time_scalar_admission_map = BTreeMap::new();
-    for row in compile_time_scalar_admissions {
+    for row in compile_time_scalar_rows {
         if compile_time_scalar_admission_map
             .insert(row.coordinate(), Arc::clone(row.admission()))
             .is_some()
@@ -4862,7 +4875,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         (groups.into_boxed_slice(), actuals)
     };
 
-    let mut compile_time_scalar_admissions = BTreeMap::new();
+    let mut source_admissions = BTreeMap::new();
     for group in &source_groups {
         for prepared in group.sources() {
             if prepared.is_unchecked() {
@@ -4870,9 +4883,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
             }
             let source = prepared.source();
             for alternative in prepared.alternatives() {
-                if let Some(admission) = alternative.evidence().compile_time_scalar.as_ref()
-                    && compile_time_scalar_admissions
-                        .insert((source, alternative.alternative()), Arc::clone(admission))
+                if let Some(admission) = alternative.evidence().source_admission.as_ref()
+                    && source_admissions
+                        .insert((source, alternative.alternative()), admission.clone())
                         .is_some()
                 {
                     return Err(CallAnalysisFailure::Invariant(
@@ -5109,7 +5122,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         prepared_source_actuals,
         dialogue_patch_admissions: dialogue_patch_admission_map,
         receiver_sources: receiver_sources.into_boxed_slice(),
-        compile_time_scalar_admissions,
+        source_admissions,
         base_constraints: base_constraints.into_boxed_slice(),
         type_application_constraints,
         receiver_constraints: receiver_constraints.into_boxed_slice(),
@@ -5359,9 +5372,13 @@ fn prepare_parameter_source_constraint(
         })
         .collect::<Vec<_>>();
     let otherwise = rule.otherwise();
+    let otherwise_evidence = rule.public_id_reference().map_or_else(
+        AnalyzerCallEvidenceRule::otherwise,
+        AnalyzerCallEvidenceRule::public_id_reference,
+    );
     let otherwise = PreparedSourceAlternative::new(
         u32::try_from(rule.guarded().len()).unwrap_or(u32::MAX),
-        AnalyzerCallEvidenceRule::otherwise(),
+        otherwise_evidence,
         otherwise.expected().apply_to(&declared),
     );
     PreparedSourceConstraint::checked(source, projection, guarded, otherwise).map_err(|error| {
@@ -5405,7 +5422,7 @@ pub(crate) fn run_prepared_candidate(
         prepared_source_actuals,
         dialogue_patch_admissions,
         receiver_sources,
-        compile_time_scalar_admissions,
+        source_admissions,
         base_constraints,
         type_application_constraints,
         receiver_constraints,
@@ -5439,7 +5456,7 @@ pub(crate) fn run_prepared_candidate(
         Some(application),
         Some(Arc::clone(&candidate)),
         Some(consumer.clone()),
-        compile_time_scalar_admissions,
+        source_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
         pass,
@@ -6279,7 +6296,7 @@ pub(crate) fn run_prepared_child_candidate(
         prepared_source_actuals,
         dialogue_patch_admissions,
         receiver_sources,
-        compile_time_scalar_admissions,
+        source_admissions,
         base_constraints,
         type_application_constraints,
         receiver_constraints,
@@ -6313,7 +6330,7 @@ pub(crate) fn run_prepared_child_candidate(
         Some(application),
         Some(Arc::clone(&candidate)),
         Some(consumer),
-        compile_time_scalar_admissions,
+        source_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
         pass,

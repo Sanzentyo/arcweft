@@ -5165,9 +5165,7 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         source: AnalyzerCallConstraintSource,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
-        compile_time_scalar: Option<
-            &crate::checked_compile_time::PreparedCompileTimeScalarAdmission,
-        >,
+        source_admission: Option<&constraints::AnalyzerCallSourceAdmission>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
         match source {
             AnalyzerCallConstraintSource::BaseInstantiation
@@ -5184,7 +5182,9 @@ impl Analyzer<'_, '_, '_> {
                 source: CheckedCallArgumentSlotSource::CompactNumericElement { sequence, ordinal },
                 ..
             } => {
-                if compile_time_scalar.is_some() {
+                if source_admission
+                    .is_some_and(constraints::AnalyzerCallSourceAdmission::requires_reduction)
+                {
                     return Err(AnalyzerExpressionError::invariant(
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
@@ -5215,11 +5215,11 @@ impl Analyzer<'_, '_, '_> {
                 context,
                 expression,
                 expectation,
-                compile_time_scalar,
+                source_admission,
             ),
             AnalyzerCallConstraintSource::Receiver { source }
             | AnalyzerCallConstraintSource::Result { source } => {
-                if compile_time_scalar.is_some() {
+                if source_admission.is_some() {
                     return Err(AnalyzerExpressionError::invariant(
                         FinalSemanticAnalysisError::WrongPayloadFamily,
                     ));
@@ -5238,9 +5238,11 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         expression: ExprId,
         expectation: super::expressions::AnalyzerExpressionExpectation<'_>,
-        admission: Option<&crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+        admission: Option<&constraints::AnalyzerCallSourceAdmission>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
-        let Some(admission) = admission else {
+        let Some(constraints::AnalyzerCallSourceAdmission::CompileTimeScalar(admission)) =
+            admission
+        else {
             return self.evaluate_expression_with_expectation(context, expression, expectation);
         };
         if expectation.contextual_shape() != Some(admission.value_type()) {

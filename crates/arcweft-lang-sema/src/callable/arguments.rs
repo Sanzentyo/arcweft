@@ -794,9 +794,7 @@ fn named_parameter<'a>(
     parameters
         .iter()
         .find(|parameter| {
-            parameter
-                .name()
-                .is_some_and(|candidate| Some(candidate.as_str()) == name.single())
+            parameter.name().is_some_and(|candidate| candidate == name)
                 && matches!(
                     parameter.passing(),
                     CallableParameterPassing::PositionalOrNamed

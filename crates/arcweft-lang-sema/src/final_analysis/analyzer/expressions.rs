@@ -81,6 +81,12 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
     /// `String` expectation: entity references elsewhere still resolve to
     /// their project item and never become strings by source spelling.
     CompileTimePublicId(&'a TypeKind),
+    /// The parameter schema admits identifier tokens in this exact family.
+    /// Its ordinary expected type remains authoritative for other values.
+    PublicIdReference {
+        expected: Box<Self>,
+        family: arcweft_id::ProjectEntityReferenceFamily,
+    },
     EnumConstructorHead(&'a TypeKind),
     /// The borrowed callable component owns the conversion. Expression
     /// checking supplies its original scheme; it never opens a second solver.
@@ -169,7 +175,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
         match self {
             Self::Unconstrained => None,
-            Self::FunctionValueSource(expected) => expected.contextual_shape(),
+            Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
+                expected.contextual_shape()
+            }
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
@@ -201,7 +209,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     /// type. Nested calls use `nested_call_type` plus the retained scope lease.
     pub(super) fn complete_type(&self) -> Option<&'a TypeKind> {
         match self {
-            Self::FunctionValueSource(expected) => expected.complete_type(),
+            Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
+                expected.complete_type()
+            }
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
@@ -214,6 +224,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     /// unbound parameters must accompany it as rigid enclosing parameters.
     pub(super) fn nested_call_type(&self) -> Option<&'a TypeKind> {
         match self {
+            Self::PublicIdReference { expected, .. } => expected.nested_call_type(),
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
@@ -240,6 +251,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         &self,
     ) -> Option<&crate::types::constraints::ImportedGenericParameterScopeLease> {
         match self {
+            Self::PublicIdReference { expected, .. } => expected.nested_call_scope_lease(),
             Self::Parametric {
                 scope_lease: Some(scope_lease),
                 ..
@@ -250,6 +262,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     fn accepts_cached(&self, checked: &super::PreparedExpressionFact) -> bool {
         match self {
+            Self::PublicIdReference { expected, .. } => expected.accepts_cached(checked),
             Self::FunctionValueSource(expected) => {
                 matches!(checked.value_type(), Some(TypeKind::Function { binder, .. }) if !binder.is_empty())
                     || expected.accepts_cached(checked)
@@ -278,6 +291,24 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         Self::CompileTimePublicId(expected)
     }
 
+    pub(super) fn public_id_reference(
+        self,
+        family: arcweft_id::ProjectEntityReferenceFamily,
+    ) -> Self {
+        Self::PublicIdReference {
+            expected: Box::new(self),
+            family,
+        }
+    }
+
+    fn public_id_reference_family(&self) -> Option<arcweft_id::ProjectEntityReferenceFamily> {
+        match self {
+            Self::PublicIdReference { family, .. } => Some(*family),
+            Self::FunctionValueSource(expected) => expected.public_id_reference_family(),
+            _ => None,
+        }
+    }
+
     fn project<'b>(
         &self,
         expected: Option<&'b TypeKind>,
@@ -289,6 +320,15 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             return source
                 .project(Some(expected))
                 .map(AnalyzerExpressionExpectation::function_value_source);
+        }
+        if let Self::PublicIdReference {
+            expected: source,
+            family,
+        } = self
+        {
+            return source
+                .project(Some(expected))
+                .map(|projected| projected.public_id_reference(*family));
         }
         let Self::Parametric {
             unbound,
@@ -412,6 +452,24 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expectation: AnalyzerExpressionExpectation<'_>,
     ) -> Result<super::PreparedExpressionFact, AnalyzerExpressionError> {
+        // Check the token domain before consulting candidate/published caches:
+        // a prior string fact must not erase another parameter's family rule.
+        if let Some(family) = expectation.public_id_reference_family() {
+            let module = self
+                .module(owner.module())
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let expression = module.resolve_expr(owner).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if let HirExprKind::EntityReference(reference) = expression.kind()
+                && reference
+                    .as_resolved()
+                    .and_then(|reference| reference.project_entity_public_id(family))
+                    .is_none()
+            {
+                return Err(AnalyzerExpressionError::rejected(owner));
+            }
+        }
         let cached = match context.authority() {
             super::expression_error::AnalyzerExpressionFactAuthority::Published => {
                 self.facts.expressions().get(&owner).cloned()
@@ -4446,6 +4504,26 @@ impl Analyzer<'_, '_, '_> {
     {
         let expected = expectation.contextual_shape();
         match expression.kind() {
+            HirExprKind::EntityReference(reference)
+                if expectation.public_id_reference_family().is_some() =>
+            {
+                let family = expectation
+                    .public_id_reference_family()
+                    .expect("guarded family");
+                let value = reference
+                    .as_resolved()
+                    .and_then(|reference| reference.project_entity_public_id(family))
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                let literal = HirLiteral::String(HirStringLiteral::Value(
+                    value.as_str().to_owned().into_boxed_str(),
+                ));
+                Ok(CheckedExpression::value(
+                    TypeKind::String,
+                    CheckedTypeSelection::Expected,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Value(CheckedValueResolution::Constant(literal)),
+                ))
+            }
             HirExprKind::EntityReference(reference)
                 if matches!(
                     expectation,

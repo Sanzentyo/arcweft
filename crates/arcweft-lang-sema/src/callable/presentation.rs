@@ -75,6 +75,7 @@ pub(crate) enum PresentationNamedArgument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PresentationArgumentValuePolicy {
     Exact(TypeKind),
+    PublicIdReference(arcweft_id::ProjectEntityReferenceFamily, TypeKind),
     TokenScalar(TypeKind),
     Unchecked,
     MetadataScalar,
@@ -173,8 +174,16 @@ impl PresentationNamedArgument {
             Self::View => Exact(TypeKind::entity_ref(EntityKind::View)),
             Self::Asset => Exact(TypeKind::entity_ref(EntityKind::Asset)),
             Self::TargetEntity => Exact(TypeKind::entity_ref(EntityKind::Target)),
-            Self::TargetPublicId => Exact(public_id(EntityKind::Target)),
-            Self::LayerPublicId | Self::ProxyLayer => Exact(public_id(EntityKind::Layer)),
+            Self::TargetPublicId => PresentationArgumentValuePolicy::PublicIdReference(
+                arcweft_id::ProjectEntityReferenceFamily::Target,
+                public_id(EntityKind::Target),
+            ),
+            Self::LayerPublicId | Self::ProxyLayer => {
+                PresentationArgumentValuePolicy::PublicIdReference(
+                    arcweft_id::ProjectEntityReferenceFamily::Layer,
+                    public_id(EntityKind::Layer),
+                )
+            }
             Self::Slot => Exact(TypeKind::entity_ref(EntityKind::Slot)),
             Self::Scope => Exact(TypeKind::entity_ref(EntityKind::Other("scope".to_owned()))),
             Self::Depth | Self::ProxyDepth => Exact(TypeKind::I32),

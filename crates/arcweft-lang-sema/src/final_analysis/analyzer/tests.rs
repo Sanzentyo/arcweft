@@ -14,6 +14,53 @@ use super::expression_error::AnalyzerExpressionError;
 use super::state::CandidateFactTransactionAction;
 use super::*;
 
+#[test]
+fn public_id_reference_family_checks_precede_cached_string_reuse() {
+    let fixture =
+        crate::final_analysis::tests::fixture("fn caller() { @target.sample.sprite; }", None);
+    let module = fixture
+        .project
+        .analysis_view()
+        .expect("HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::EntityReference(_)).then_some(owner)
+        })
+        .expect("reference token");
+    let cancellation = AtomicBool::new(false);
+    let mut analyzer = Analyzer::new(
+        fixture.project.analysis_view().expect("HIR"),
+        &fixture.symbols,
+        FinalSemanticCatalogs::production(&fixture.registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .expect("analyzer");
+    let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+    let expected = TypeKind::String;
+    let accepted = analyzer
+        .evaluate_expression_with_expectation(
+            &context,
+            owner,
+            expressions::AnalyzerExpressionExpectation::from_complete(Some(&expected))
+                .public_id_reference(arcweft_id::ProjectEntityReferenceFamily::Target),
+        )
+        .expect("target role");
+    assert!(analyzer.facts.expressions().contains_key(&owner));
+    assert!(matches!(
+        analyzer.evaluate_expression_with_expectation(
+            &context,
+            owner,
+            expressions::AnalyzerExpressionExpectation::from_complete(Some(&expected))
+                .public_id_reference(arcweft_id::ProjectEntityReferenceFamily::Layer)
+        ),
+        Err(AnalyzerExpressionError::Rejected(_))
+    ));
+    assert_eq!(analyzer.facts.expressions().get(&owner), Some(&accepted));
+}
+
 fn assert_outer_expression_failure_rolls_back_call_publication(
     fixture: &crate::final_analysis::tests::Fixture,
 ) {

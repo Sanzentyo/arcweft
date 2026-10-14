@@ -595,7 +595,7 @@ impl SemanticSignatureIndex {
 pub struct SemanticParameter {
     coordinate: CallableParameterCoordinate,
     label: Arc<str>,
-    name: Option<CallableName>,
+    name: Option<arcweft_lang_syntax::name::CallArgumentName>,
     admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
@@ -608,7 +608,7 @@ impl SemanticParameter {
     pub fn try_new(
         coordinate: CallableParameterCoordinate,
         label: impl Into<Arc<str>>,
-        name: Option<CallableName>,
+        name: Option<arcweft_lang_syntax::name::CallArgumentName>,
         admission: CallableParameterAdmission,
         passing: CallableParameterPassing,
         presence: CallableParameterPresence,
@@ -637,7 +637,7 @@ impl SemanticParameter {
     pub fn label(&self) -> &str {
         &self.label
     }
-    pub const fn name(&self) -> Option<&CallableName> {
+    pub const fn name(&self) -> Option<&arcweft_lang_syntax::name::CallArgumentName> {
         self.name.as_ref()
     }
     pub const fn admission(&self) -> &CallableParameterAdmission {

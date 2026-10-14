@@ -276,7 +276,12 @@ fn assert_capacity_native_signature(
     };
     assert_eq!(parameter.coordinate(), active);
     assert_eq!(parameter.label(), "capacity: usize");
-    assert_eq!(parameter.name().map(CallableName::as_str), Some("capacity"));
+    assert_eq!(
+        parameter
+            .name()
+            .map(arcweft_lang_syntax::name::CallArgumentName::as_str),
+        Some("capacity")
+    );
     assert_eq!(parameter.declared_type(), Some(&TypeKind::USize));
     assert_eq!(
         parameter.passing(),

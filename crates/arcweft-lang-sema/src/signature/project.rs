@@ -525,7 +525,9 @@ fn parameter_label(parameter: &CallableParameter) -> String {
     let ty = parameter
         .declared_type()
         .map_or_else(|| "<unchecked-supply>".to_owned(), TypeKind::source_label);
-    let name = parameter.name().map(crate::callable::CallableName::as_str);
+    let name = parameter
+        .name()
+        .map(arcweft_lang_syntax::name::CallArgumentName::as_str);
     let mut label = match (parameter.passing(), name) {
         (
             CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed,

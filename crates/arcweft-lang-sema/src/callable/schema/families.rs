@@ -245,12 +245,13 @@ pub(crate) fn presentation_content_schema(
             };
             CallableParameter::try_new(
                 index,
-                Some(CallableName::try_new(spec.source_name).map_err(|_| {
-                    CallableSchemaError::MissingParameterName {
-                        group: crate::callable::CallableGroupIndex::ZERO,
-                        parameter: index,
-                    }
-                })?),
+                Some(
+                    arcweft_lang_syntax::name::CallArgumentName::try_new(spec.source_name)
+                        .map_err(|_| CallableSchemaError::MissingParameterName {
+                            group: crate::callable::CallableGroupIndex::ZERO,
+                            parameter: index,
+                        })?,
+                ),
                 admission,
                 passing,
                 presence,
@@ -1340,12 +1341,13 @@ pub(crate) fn fx_callable_schema(
             };
             CallableParameter::try_new(
                 index,
-                Some(CallableName::try_new(spec.source_name()).map_err(|_| {
-                    CallableSchemaError::MissingParameterName {
-                        group: crate::callable::CallableGroupIndex::ZERO,
-                        parameter: index,
-                    }
-                })?),
+                Some(
+                    arcweft_lang_syntax::name::CallArgumentName::try_new(spec.source_name())
+                        .map_err(|_| CallableSchemaError::MissingParameterName {
+                            group: crate::callable::CallableGroupIndex::ZERO,
+                            parameter: index,
+                        })?,
+                ),
                 CallableParameterAdmission::checked(ty),
                 passing,
                 presence,
@@ -1743,38 +1745,7 @@ pub(in crate::callable) fn presentation_schema(
             ],
             open_named_supply(),
         ),
-        PresentationCallableId::Image => (
-            vec![
-                parameter(
-                    0,
-                    Some("source"),
-                    CallableParameterAdmission::unchecked_supply(),
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Optional,
-                ),
-                optional_presentation_named(id, 1, "asset"),
-                optional_presentation_named(id, 2, "lifetime"),
-                optional_presentation_named(id, 3, "target"),
-                optional_presentation_named(id, 4, "layer"),
-                optional_presentation_named(id, 5, "depth"),
-                optional_presentation_named(id, 6, "enabled"),
-                optional_presentation_named(id, 7, "visible"),
-                optional_presentation_named(id, 8, "id"),
-                optional_presentation_named(id, 9, "action"),
-                optional_presentation_named(id, 10, "actions"),
-                optional_presentation_named(id, 11, "fit"),
-                optional_presentation_named(id, 12, "opacity"),
-                optional_presentation_named(id, 13, "x"),
-                optional_presentation_named(id, 14, "y"),
-                optional_presentation_named(id, 15, "width"),
-                optional_presentation_named(id, 16, "height"),
-                optional_presentation_named(id, 17, "focus"),
-                optional_presentation_named(id, 18, "input_capture"),
-                optional_presentation_named(id, 19, "owner"),
-                optional_presentation_named(id, 20, "drop"),
-            ],
-            open_named_supply(),
-        ),
+        PresentationCallableId::Image => (image_parameters(), open_named_supply()),
         PresentationCallableId::PlayerViewport => (
             vec![
                 optional_presentation_named(id, 0, "width"),
@@ -1822,6 +1793,57 @@ fn presentation_result(id: PresentationCallableId) -> TypeKind {
         PresentationCallableId::ClearBackground => named("Option<BackgroundSurface>"),
         PresentationCallableId::Hide => named("Option<CharacterSurface>"),
     }
+}
+
+fn image_parameters() -> Vec<CallableParameter> {
+    let id = PresentationCallableId::Image;
+    vec![
+        parameter(
+            0,
+            Some("source"),
+            CallableParameterAdmission::unchecked_supply(),
+            CallableParameterPassing::PositionalOnly,
+            CallableParameterPresence::Optional,
+        ),
+        optional_presentation_named(id, 1, "asset"),
+        optional_presentation_named(id, 2, "lifetime"),
+        optional_presentation_named(id, 3, "target"),
+        optional_presentation_named(id, 4, "layer"),
+        optional_presentation_named(id, 5, "depth"),
+        optional_presentation_named(id, 6, "enabled"),
+        optional_presentation_named(id, 7, "visible"),
+        optional_presentation_named(id, 8, "id"),
+        optional_presentation_named(id, 9, "action"),
+        optional_presentation_named(id, 10, "actions"),
+        optional_presentation_named(id, 11, "fit"),
+        optional_presentation_named(id, 12, "opacity"),
+        optional_presentation_named(id, 13, "x"),
+        optional_presentation_named(id, 14, "y"),
+        optional_presentation_named(id, 15, "width"),
+        optional_presentation_named(id, 16, "height"),
+        optional_presentation_named(id, 17, "focus"),
+        optional_presentation_named(id, 18, "input_capture"),
+        optional_presentation_named(id, 19, "owner"),
+        optional_presentation_named(id, 20, "drop"),
+        optional_presentation_named(id, 21, "alignment.x"),
+        optional_presentation_named(id, 22, "alignment.y"),
+        optional_presentation_named(id, 23, "playback.start"),
+        optional_presentation_named(id, 24, "playback.paused_at"),
+        optional_presentation_named(id, 25, "playback.local_time"),
+        optional_presentation_named(id, 26, "playback.rate"),
+        optional_presentation_named(id, 27, "transform.tx"),
+        optional_presentation_named(id, 28, "transform.ty"),
+        optional_presentation_named(id, 29, "transform.m11"),
+        optional_presentation_named(id, 30, "transform.m12"),
+        optional_presentation_named(id, 31, "transform.m21"),
+        optional_presentation_named(id, 32, "transform.m22"),
+        optional_presentation_named(id, 33, "proxy.id"),
+        optional_presentation_named(id, 34, "proxy.type"),
+        optional_presentation_named(id, 35, "proxy.role"),
+        optional_presentation_named(id, 36, "proxy.layer"),
+        optional_presentation_named(id, 37, "proxy.depth"),
+        optional_presentation_named(id, 38, "proxy.hit_test"),
+    ]
 }
 
 fn view_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
@@ -2119,6 +2141,12 @@ fn presentation_parameter_type(
         .resolve_named_argument(name)
         .expect("presentation schema parameter belongs to the callable argument catalog");
     match argument.value_policy() {
+        PresentationArgumentValuePolicy::PublicIdReference(family, ty) => {
+            CallableParameterAdmission::checked_with_rule(
+                ty,
+                super::CallableParameterValueRule::supply_public_id_reference(family),
+            )
+        }
         PresentationArgumentValuePolicy::Exact(ty)
         | PresentationArgumentValuePolicy::TokenScalar(ty) => {
             CallableParameterAdmission::checked(ty)
@@ -2173,8 +2201,10 @@ fn parameter(
 ) -> CallableParameter {
     let index = CallableParameterIndex::try_from_usize(index)
         .expect("family parameter index fits the production limit");
-    let name =
-        name.map(|name| CallableName::try_new(name).expect("family parameter name is valid"));
+    let name = name.map(|name| {
+        arcweft_lang_syntax::name::CallArgumentName::try_new(name)
+            .expect("family parameter name is valid")
+    });
     CallableParameter::try_new(index, name, admission, passing, presence, None, None)
         .expect("family parameter satisfies callable invariants")
 }
@@ -2276,7 +2306,9 @@ mod tests {
             group
                 .parameters()
                 .iter()
-                .map(|parameter| parameter.name().map(CallableName::as_str))
+                .map(|parameter| parameter
+                    .name()
+                    .map(arcweft_lang_syntax::name::CallArgumentName::as_str))
                 .collect::<Vec<_>>(),
             vec![
                 Some("character"),
@@ -2428,7 +2460,9 @@ mod tests {
                     panic!("context method has one required argument")
                 };
                 assert_eq!(
-                    parameter.name().map(CallableName::as_str),
+                    parameter
+                        .name()
+                        .map(arcweft_lang_syntax::name::CallArgumentName::as_str),
                     Some(parameter_name)
                 );
                 match parameter.declared_type() {

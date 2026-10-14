@@ -3508,7 +3508,26 @@ view Main(dialogue: DialogueView, label: String) {
     let product = compiled.view_product().product().as_ref().clone();
     let text = compiled.view_product().text().unwrap().clone();
     let resource = product.program().unwrap().resource();
-    let handler = resource.handlers.first().unwrap();
+    let definition = resource
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .expect("authored definition");
+    let body = &resource.instructions
+        [definition.body.start_instruction as usize..definition.body.end_instruction as usize];
+    let handler_program = body
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
+            _ => None,
+        })
+        .expect("authored handler binding");
+    let handler_index = resource
+        .handlers
+        .iter()
+        .position(|handler| handler.program == handler_program)
+        .expect("bound handler specification");
+    let handler = &resource.handlers[handler_index];
     assert_eq!(handler.captures.len(), 4);
     assert!(handler.captures.iter().all(|input| matches!(
         input.source,
@@ -3538,7 +3557,7 @@ view Main(dialogue: DialogueView, label: String) {
     for forgery in 0..4 {
         let mut forged = resource.clone();
         match forgery {
-            0 => forged.handlers[0].captures[0].source =
+            0 => forged.handlers[handler_index].captures[0].source =
                 arcweft_view::ViewExecutionInputSource::Local(arcweft_view::ViewLocalCoordinate {
                     program: arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest(
                         [0xf3; 32],
@@ -3546,11 +3565,11 @@ view Main(dialogue: DialogueView, label: String) {
                     output: 0,
                 }),
             1 => {
-                let duplicate = forged.handlers[0].captures[0];
-                forged.handlers[0].captures.push(duplicate);
+                let duplicate = forged.handlers[handler_index].captures[0];
+                forged.handlers[handler_index].captures.push(duplicate);
             }
             2 => {
-                forged.handlers[0].captures[0].value_type =
+                forged.handlers[handler_index].captures[0].value_type =
                     arcweft_core::pattern::RuntimeCheckedType::Bool.semantic_identity_digest()
             }
             _ => {
@@ -3558,7 +3577,7 @@ view Main(dialogue: DialogueView, label: String) {
                     .instructions
                     .iter()
                     .position(|instruction| {
-                        matches!(instruction, ViewProgramInstruction::BindHandler { .. })
+                        matches!(instruction, ViewProgramInstruction::BindHandler { handler, .. } if *handler == handler_program)
                     })
                     .unwrap();
                 let instruction = forged.instructions.remove(index);

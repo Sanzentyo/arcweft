@@ -287,7 +287,7 @@ mod tests {
     use arcweft_lang_sema::{
         callable::{
             BuiltinCallableId, CallPoison, CallableCandidateId, CallableDocumentation,
-            CallableGroupIndex, CallableGroupKind, CallableName, CallableParameterAdmission,
+            CallableGroupIndex, CallableGroupKind, CallableParameterAdmission,
             CallableParameterCoordinate, CallableParameterIndex, CallableParameterPassing,
             CallableParameterPresence, CallableResultSchema, CheckedContentRole,
             ContentCallableIdentity, LanguageCallableFamily, PRODUCTION_CALLABLE_LIMITS,
@@ -311,7 +311,7 @@ mod tests {
         let parameter = SemanticParameter::try_new(
             coordinate,
             "値: String",
-            Some(CallableName::try_new("値").expect("name")),
+            Some(arcweft_lang_syntax::name::CallArgumentName::try_new("値").expect("name")),
             CallableParameterAdmission::checked(TypeKind::String),
             CallableParameterPassing::PositionalOrNamed,
             CallableParameterPresence::Required,
@@ -399,7 +399,7 @@ mod tests {
                         ""
                     }
                 ),
-                Some(CallableName::try_new(name).expect("name")),
+                Some(arcweft_lang_syntax::name::CallArgumentName::try_new(name).expect("name")),
                 CallableParameterAdmission::checked(ty),
                 CallableParameterPassing::PositionalOnly,
                 presence,
@@ -471,7 +471,7 @@ mod tests {
         let parameter = SemanticParameter::try_new(
             coordinate,
             "value: String",
-            Some(CallableName::try_new("value").expect("name")),
+            Some(arcweft_lang_syntax::name::CallArgumentName::try_new("value").expect("name")),
             CallableParameterAdmission::checked(TypeKind::String),
             CallableParameterPassing::PositionalOnly,
             CallableParameterPresence::Required,
@@ -487,7 +487,7 @@ mod tests {
         )
         .expect("semantic group");
         let attached = SemanticAttachedContentParameter::new(
-            CallableName::try_new("body").expect("attached binding"),
+            arcweft_lang_sema::callable::CallableName::try_new("body").expect("attached binding"),
             CheckedContentRole::Rich,
             CallableParameterPresence::Optional,
         );
@@ -529,7 +529,7 @@ mod tests {
         assert!(projected.information.label.contains("[body?: RichContent]"));
 
         let defaulted = SemanticAttachedContentParameter::new(
-            CallableName::try_new("body").expect("attached binding"),
+            arcweft_lang_sema::callable::CallableName::try_new("body").expect("attached binding"),
             CheckedContentRole::Dialogue,
             CallableParameterPresence::Defaulted,
         );

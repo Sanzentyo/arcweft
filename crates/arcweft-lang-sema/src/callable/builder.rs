@@ -1204,9 +1204,9 @@ fn parameter_name(
     module: &HirModule,
     parameter: FinalProjectParameter<'_>,
     symbol: &CallableSymbol,
-) -> Result<Option<CallableName>, CallableCatalogBuildError> {
+) -> Result<Option<arcweft_lang_syntax::name::CallArgumentName>, CallableCatalogBuildError> {
     if matches!(parameter, FinalProjectParameter::Receiver) {
-        return CallableName::try_new("self")
+        return arcweft_lang_syntax::name::CallArgumentName::try_new("self")
             .map(Some)
             .map_err(|_| identity_mismatch(symbol));
     }
@@ -1221,7 +1221,7 @@ fn parameter_name(
         | HirPatternKind::MutableBinding(HirPatternBinding::Bound { name, .. }) => Some(name),
         _ => None,
     };
-    name.map(|name| CallableName::try_new(name.as_str()))
+    name.map(|name| arcweft_lang_syntax::name::CallArgumentName::try_new(name.as_str()))
         .transpose()
         .map_err(|_| identity_mismatch(symbol))
 }

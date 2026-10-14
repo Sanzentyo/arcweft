@@ -897,7 +897,10 @@ fn typed_overload_entry(
         .map(|(index, parameter)| {
             CallableParameter::try_new(
                 CallableParameterIndex::try_from_usize(index).expect("parameter index"),
-                Some(CallableName::try_new(format!("value{index}")).expect("parameter name")),
+                Some(
+                    arcweft_lang_syntax::name::CallArgumentName::try_new(&format!("value{index}"))
+                        .expect("parameter name"),
+                ),
                 parameter.admission,
                 parameter.passing,
                 parameter.presence,
@@ -5747,7 +5750,12 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
         let [parameter] = group.parameters() else {
             panic!("one checked capacity parameter")
         };
-        assert_eq!(parameter.name().map(CallableName::as_str), Some("capacity"));
+        assert_eq!(
+            parameter
+                .name()
+                .map(arcweft_lang_syntax::name::CallArgumentName::as_str),
+            Some("capacity")
+        );
         assert_eq!(parameter.declared_type(), Some(&TypeKind::USize));
         assert_eq!(
             parameter.passing(),

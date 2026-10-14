@@ -865,12 +865,17 @@ impl TypeCheckEnv {
                     })?;
                     CallableParameter::try_new(
                         index,
-                        Some(CallableName::try_new(parameter.source_name()).map_err(|_| {
-                            crate::callable::CallableSchemaError::MissingParameterName {
-                                group: CallableGroupIndex::ZERO,
-                                parameter: index,
-                            }
-                        })?),
+                        Some(
+                            arcweft_lang_syntax::name::CallArgumentName::try_new(
+                                parameter.source_name(),
+                            )
+                            .map_err(|_| {
+                                crate::callable::CallableSchemaError::MissingParameterName {
+                                    group: CallableGroupIndex::ZERO,
+                                    parameter: index,
+                                }
+                            })?,
+                        ),
                         CallableParameterAdmission::checked(self.canonical_accepted_type(
                             self.builtin_fx_parameter_type(row, parameter),
                         )),
@@ -2586,7 +2591,10 @@ fn standard_parameter(
     CallableParameter::try_new(
         CallableParameterIndex::try_from_usize(index)
             .expect("standard parameter index is representable"),
-        Some(CallableName::try_new(name).expect("standard parameter name is valid")),
+        Some(
+            arcweft_lang_syntax::name::CallArgumentName::try_new(name)
+                .expect("standard parameter name is valid"),
+        ),
         admission,
         passing,
         presence,

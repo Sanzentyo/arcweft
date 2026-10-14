@@ -60,6 +60,18 @@ above.
 `#` is reserved for Rust-like attributes in the `#[...]` form and is not an
 entity-reference marker.
 
+The selected parameter schema determines whether a reference token denotes a
+declaration or supplies a presentation identifier. Image `target`, `layer`, and
+`proxy.layer` parameters accept identifier tokens in their respective `target`
+or `layer` family without requiring a source declaration. The same parameters
+also accept checked runtime strings. A reference token from a different family
+is rejected; an ordinary `String` parameter does not acquire this token rule.
+
+Named argument paths use the same typed identity in source, callable schemas,
+mapping, and signature help. Thus `proxy.layer` and `layer` are distinct parameter
+names, and a dotted argument does not fall through to an open argument when its
+schema declares that exact path.
+
 コメント:
 
 ```arcw

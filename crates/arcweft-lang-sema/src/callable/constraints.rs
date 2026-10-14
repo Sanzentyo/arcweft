@@ -1224,8 +1224,10 @@ pub(crate) mod tests {
                             crate::callable::CallableParameterIndex::try_from_usize(index)
                                 .expect("test parameter"),
                             Some(
-                                crate::callable::CallableName::try_new(format!("arg{index}"))
-                                    .expect("test name"),
+                                arcweft_lang_syntax::name::CallArgumentName::try_new(&format!(
+                                    "arg{index}"
+                                ))
+                                .expect("test name"),
                             ),
                             crate::callable::CallableParameterAdmission::checked(
                                 TypeKind::GenericParam(parameter.clone()),

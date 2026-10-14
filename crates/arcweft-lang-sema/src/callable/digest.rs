@@ -315,6 +315,9 @@ impl CanonicalEncoder {
                 self.tag(0);
                 self.type_kind(declared);
                 self.consumer(consumer);
+                self.option(rule.public_id_reference().as_ref(), |encoder, family| {
+                    encoder.tag(u16::from(family.semantic_tag()));
+                });
                 self.usize(rule.len());
                 for alternative in rule.alternatives() {
                     self.value_alternative(alternative);
@@ -933,6 +936,28 @@ mod tests {
     }
 
     #[test]
+    fn public_id_reference_rules_commit_the_complete_family_identity() {
+        let encode = |rule| {
+            let mut encoder = CanonicalEncoder::default();
+            encoder.admission(
+                &CallableParameterAdmission::checked_with_rule(TypeKind::String, rule),
+                &CallableParameterConsumer::Value,
+            );
+            encoder.into_bytes().expect("admission transcript")
+        };
+        let mut transcripts =
+            std::collections::BTreeSet::from([encode(CallableParameterValueRule::supply())]);
+        for family in arcweft_id::ProjectEntityReferenceFamily::ALL {
+            assert!(
+                transcripts.insert(encode(
+                    CallableParameterValueRule::supply_public_id_reference(family),
+                )),
+                "every family differs from ordinary strings and other families: {family:?}"
+            );
+        }
+    }
+
+    #[test]
     fn checked_admission_golden_order_is_declared_consumer_then_alternatives() {
         let admission = CallableParameterAdmission::checked_with_rule(
             TypeKind::String,
@@ -955,6 +980,9 @@ mod tests {
                 .as_bytes(),
         );
         expected.consumer(&consumer);
+        expected.option::<arcweft_id::ProjectEntityReferenceFamily>(None, |encoder, family| {
+            encoder.tag(u16::from(family.semantic_tag()));
+        });
         expected.usize(rule.len());
         for alternative in rule.alternatives() {
             expected.value_alternative(alternative);

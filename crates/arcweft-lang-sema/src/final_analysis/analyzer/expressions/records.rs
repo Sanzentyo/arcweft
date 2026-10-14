@@ -185,6 +185,7 @@ fn expected_project_record_nominal<'a>(
         }
         AnalyzerExpressionExpectation::Complete(_)
         | AnalyzerExpressionExpectation::CompileTimePublicId(_)
+        | AnalyzerExpressionExpectation::PublicIdReference { .. }
         | AnalyzerExpressionExpectation::EnumConstructorHead(_) => {
             Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },

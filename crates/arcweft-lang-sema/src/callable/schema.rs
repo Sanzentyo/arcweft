@@ -1095,7 +1095,7 @@ pub enum CallableGroupKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableParameter {
     index: CallableParameterIndex,
-    name: Option<CallableName>,
+    name: Option<arcweft_lang_syntax::name::CallArgumentName>,
     semantic_binding: CallableParameterSemanticBinding,
     admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
@@ -1238,7 +1238,7 @@ impl CallableSchemaDependency {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CallableParameterSemanticBinding {
     Coordinate,
-    Named(CallableName),
+    Named(arcweft_lang_syntax::name::CallArgumentName),
     AcceptedVariantPayloadField(AcceptedVariantPayloadFieldSemanticId),
     AcceptedProjectRecordField(AcceptedRecordFieldSemanticId),
 }
@@ -1377,6 +1377,7 @@ pub enum CallableParameterAdmission {
 pub struct CallableParameterValueRule {
     guarded: Arc<[CallableParameterGuardedValueAlternative]>,
     otherwise: CallableParameterOtherwiseValueAlternative,
+    public_id_reference: Option<arcweft_id::ProjectEntityReferenceFamily>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1550,7 +1551,21 @@ impl CallableParameterValueRule {
                 expected: ParameterExpectedTypeProjection::Identity,
                 action: CallableArgumentSemanticAction::Supply,
             },
+            public_id_reference: None,
         }
+    }
+
+    /// Accepts reference tokens as identifiers in the supplied family. String
+    /// values still follow the parameter's ordinary checked type rule.
+    pub fn supply_public_id_reference(family: arcweft_id::ProjectEntityReferenceFamily) -> Self {
+        Self {
+            public_id_reference: Some(family),
+            ..Self::supply()
+        }
+    }
+
+    pub const fn public_id_reference(&self) -> Option<arcweft_id::ProjectEntityReferenceFamily> {
+        self.public_id_reference
     }
 
     pub(in crate::callable) fn clearable_option() -> Self {
@@ -1572,6 +1587,7 @@ impl CallableParameterValueRule {
                 expected: ParameterExpectedTypeProjection::Identity,
                 action: CallableArgumentSemanticAction::Supply,
             },
+            public_id_reference: None,
         }
     }
 
@@ -2459,7 +2475,7 @@ impl CallableSignatureSchema {
                             });
                         }
                     }
-                    CallableParameterAdmission::Checked { rule, .. } => {
+                    CallableParameterAdmission::Checked { declared, rule } => {
                         if matches!(parameter.consumer(), CallableParameterConsumer::Content(_)) {
                             return Err(CallableSchemaError::InvalidParameterAdmission {
                                 group: group.index,
@@ -2471,6 +2487,15 @@ impl CallableSignatureSchema {
                                 .iter()
                                 .any(|previous| previous.guard() == row.guard())
                         }) {
+                            return Err(CallableSchemaError::InvalidParameterAdmission {
+                                group: group.index,
+                                parameter: parameter.index,
+                            });
+                        }
+                        if rule.public_id_reference().is_some()
+                            && (!declared.accepts(&TypeKind::String)
+                                || !is_single_supply_identity_rule(rule))
+                        {
                             return Err(CallableSchemaError::InvalidParameterAdmission {
                                 group: group.index,
                                 parameter: parameter.index,
@@ -2603,7 +2628,11 @@ impl CallableSignatureSchema {
                 .groups
                 .iter()
                 .flat_map(|group| group.parameters())
-                .any(|parameter| parameter.name() == Some(reserved))
+                .any(|parameter| {
+                    parameter
+                        .name()
+                        .is_some_and(|name| name.single() == Some(reserved.as_str()))
+                })
         }) {
             let name = names
                 .iter()
@@ -2612,7 +2641,11 @@ impl CallableSignatureSchema {
                         .groups
                         .iter()
                         .flat_map(|group| group.parameters())
-                        .any(|parameter| parameter.name() == Some(reserved))
+                        .any(|parameter| {
+                            parameter
+                                .name()
+                                .is_some_and(|name| name.single() == Some(reserved.as_str()))
+                        })
                 })
                 .expect("reserved parameter collision was observed")
                 .clone();
@@ -2805,7 +2838,7 @@ impl CallableSignatureSchema {
         }
         let mut parameters = Vec::with_capacity(payload.field_count());
         let mut push_parameter = |index: usize,
-                                  name: Option<CallableName>,
+                                  name: Option<arcweft_lang_syntax::name::CallArgumentName>,
                                   semantic_id: AcceptedVariantPayloadFieldSemanticId,
                                   ty: &TypeKind,
                                   passing: CallableParameterPassing|
@@ -2845,12 +2878,17 @@ impl CallableSignatureSchema {
                 for (index, field) in fields.iter().enumerate() {
                     push_parameter(
                         index,
-                        Some(CallableName::try_new(field.diagnostic_name()).map_err(|_| {
-                            CallableSchemaError::FamilyInvariant {
-                                family: super::CallableFamily::EnumConstructor,
-                                code: super::CallableFamilyInvariantCode::InvalidParameterType,
-                            }
-                        })?),
+                        Some(
+                            arcweft_lang_syntax::name::CallArgumentName::try_new(
+                                field.diagnostic_name(),
+                            )
+                            .map_err(|_| {
+                                CallableSchemaError::FamilyInvariant {
+                                    family: super::CallableFamily::EnumConstructor,
+                                    code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                                }
+                            })?,
+                        ),
                         field.semantic_id(),
                         field.ty(),
                         CallableParameterPassing::NamedOnly,
@@ -3121,7 +3159,7 @@ fn function_parameter_group(
                 })?,
                 parameter
                     .name()
-                    .map(CallableName::try_new)
+                    .map(arcweft_lang_syntax::name::CallArgumentName::try_new)
                     .transpose()
                     .map_err(|_| CallableSchemaError::MissingParameterName {
                         group,
@@ -3325,7 +3363,7 @@ impl CallableParameterGroup {
 impl CallableParameter {
     pub fn try_new(
         index: CallableParameterIndex,
-        name: Option<CallableName>,
+        name: Option<arcweft_lang_syntax::name::CallArgumentName>,
         admission: impl Into<CallableParameterAdmission>,
         passing: CallableParameterPassing,
         presence: CallableParameterPresence,
@@ -3389,7 +3427,7 @@ impl CallableParameter {
     }
     fn for_accepted_variant_payload_field(
         index: CallableParameterIndex,
-        name: Option<CallableName>,
+        name: Option<arcweft_lang_syntax::name::CallArgumentName>,
         semantic_id: AcceptedVariantPayloadFieldSemanticId,
         admission: CallableParameterAdmission,
         passing: CallableParameterPassing,
@@ -3412,7 +3450,7 @@ impl CallableParameter {
     }
     pub(crate) fn for_accepted_project_record_field(
         index: CallableParameterIndex,
-        name: Option<CallableName>,
+        name: Option<arcweft_lang_syntax::name::CallArgumentName>,
         semantic_id: AcceptedRecordFieldSemanticId,
         admission: CallableParameterAdmission,
         passing: CallableParameterPassing,
@@ -3436,7 +3474,7 @@ impl CallableParameter {
     pub const fn index(&self) -> CallableParameterIndex {
         self.index
     }
-    pub fn name(&self) -> Option<&CallableName> {
+    pub fn name(&self) -> Option<&arcweft_lang_syntax::name::CallArgumentName> {
         self.name.as_ref()
     }
     pub(super) const fn semantic_binding(&self) -> &CallableParameterSemanticBinding {
@@ -3653,7 +3691,10 @@ mod generic_inventory_tests {
     fn parameter(index: usize, ty: TypeKind) -> CallableParameter {
         CallableParameter::try_new(
             CallableParameterIndex::try_from_usize(index).expect("test parameter index"),
-            Some(CallableName::try_new(format!("arg{index}")).expect("test parameter name")),
+            Some(
+                arcweft_lang_syntax::name::CallArgumentName::try_new(&format!("arg{index}"))
+                    .expect("test parameter name"),
+            ),
             CallableParameterAdmission::checked(ty),
             CallableParameterPassing::PositionalOnly,
             CallableParameterPresence::Required,
@@ -4257,7 +4298,9 @@ mod generic_inventory_tests {
         );
         let parameter = CallableParameter::for_accepted_project_record_field(
             CallableParameterIndex::try_from_usize(0).expect("parameter index"),
-            Some(CallableName::try_new("label").expect("field name")),
+            Some(
+                arcweft_lang_syntax::name::CallArgumentName::try_new("label").expect("field name"),
+            ),
             field,
             CallableParameterAdmission::compile_time_scalar(
                 CallableCompileTimeScalarKind::Text,
@@ -4311,7 +4354,7 @@ mod generic_inventory_tests {
         let ordinary = parameter(0, TypeKind::String);
         let semantic = CallableParameter::try_new(
             CallableParameterIndex::try_from_usize(1).expect("parameter index"),
-            Some(CallableName::try_new("type").expect("type name")),
+            Some(arcweft_lang_syntax::name::CallArgumentName::try_new("type").expect("type name")),
             CallableParameterAdmission::text_proxy_nominal(),
             CallableParameterPassing::NamedOnly,
             CallableParameterPresence::Required,
@@ -4363,7 +4406,7 @@ mod generic_inventory_tests {
 
         let wrong_kind = CallableParameter::try_new(
             CallableParameterIndex::try_from_usize(0).expect("parameter index"),
-            Some(CallableName::try_new("id").expect("id name")),
+            Some(arcweft_lang_syntax::name::CallArgumentName::try_new("id").expect("id name")),
             CallableParameterAdmission::compile_time_scalar(
                 CallableCompileTimeScalarKind::Text,
                 TypeKind::String,

@@ -626,7 +626,21 @@ impl AcceptedNominalWorld {
         };
         CallableParameter::try_new(
             parameter.index(),
-            parameter.name().cloned(),
+            parameter
+                .name()
+                .map(|name| {
+                    arcweft_lang_syntax::name::CallArgumentName::try_new(name.as_str()).map_err(
+                        |_| super::CallableSchemaError::MissingParameterName {
+                            group: group.index(),
+                            parameter: parameter.index(),
+                        },
+                    )
+                })
+                .transpose()
+                .map_err(CallablePublicationError::from)
+                .map_err(|error| {
+                    callable_diagnostic(record.item(), site.clone(), parameter.ty().source(), error)
+                })?,
             admission,
             parameter.passing(),
             parameter.presence(),

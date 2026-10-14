@@ -20,12 +20,12 @@ use crate::{
     callable::{
         CallableArgumentPolicy, CallableAttachedContentParameter, CallableCompileTimeScalarKind,
         CallableContentParameterConsumer, CallableEffectSchema, CallableGenericParameterIssuer,
-        CallableGroupIndex, CallableGroupKind, CallableName, CallableParameter,
-        CallableParameterAdmission, CallableParameterConsumer, CallableParameterGroup,
-        CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
-        CallableSchemaDependency, CallableSchemaDependencyDigest, CallableSchemaError,
-        CallableSignatureSchema, CallableValidator, ContentCallableIdentity,
-        PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        CallableGroupIndex, CallableGroupKind, CallableParameter, CallableParameterAdmission,
+        CallableParameterConsumer, CallableParameterGroup, CallableParameterIndex,
+        CallableParameterPassing, CallableParameterPresence, CallableSchemaDependency,
+        CallableSchemaDependencyDigest, CallableSchemaError, CallableSignatureSchema,
+        CallableValidator, ContentCallableIdentity, PRODUCTION_CALLABLE_LIMITS,
+        SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     checked_rich_text::CheckedObjectDepth,
     effect_row::EffectRow,
@@ -1109,12 +1109,12 @@ impl PreparedCheckedTextProxyDefinition {
                     limit: PRODUCTION_CALLABLE_LIMITS.max_parameters_per_callable(),
                 }
             })?;
-            let name = CallableName::try_new(field.diagnostic_name()).map_err(|_| {
-                CallableSchemaError::MissingParameterName {
-                    group: CallableGroupIndex::ZERO,
-                    parameter: index,
-                }
-            })?;
+            let name =
+                arcweft_lang_syntax::name::CallArgumentName::try_new(field.diagnostic_name())
+                    .map_err(|_| CallableSchemaError::MissingParameterName {
+                        group: CallableGroupIndex::ZERO,
+                        parameter: index,
+                    })?;
             let parameter = CallableParameter::for_accepted_project_record_field(
                 index,
                 Some(name),
@@ -1329,11 +1329,12 @@ fn content_parameter(
             limit: PRODUCTION_CALLABLE_LIMITS.max_parameters_per_callable(),
         }
     })?;
-    let name =
-        CallableName::try_new(name).map_err(|_| CallableSchemaError::MissingParameterName {
+    let name = arcweft_lang_syntax::name::CallArgumentName::try_new(name).map_err(|_| {
+        CallableSchemaError::MissingParameterName {
             group: CallableGroupIndex::ZERO,
             parameter: index,
-        })?;
+        }
+    })?;
     CallableParameter::try_new(
         index,
         Some(name),

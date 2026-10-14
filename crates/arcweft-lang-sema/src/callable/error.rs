@@ -148,7 +148,7 @@ pub enum CallableSchemaError {
     #[error("duplicate parameter name {name:?} in {group:?}")]
     DuplicateParameterName {
         group: CallableGroupIndex,
-        name: CallableName,
+        name: arcweft_lang_syntax::name::CallArgumentName,
     },
     #[error("parameter {parameter:?} in {group:?} requires a name")]
     MissingParameterName {

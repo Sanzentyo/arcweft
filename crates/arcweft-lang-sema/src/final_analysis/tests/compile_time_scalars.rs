@@ -17,6 +17,103 @@ use crate::{
 use super::{analyze, fixture};
 
 #[test]
+fn presentation_public_id_reference_tokens_keep_typed_families_and_runtime_strings() {
+    let fixture = fixture(
+        r#"
+fn target_name<T>(value: T) -> T { value }
+flow main() -> String {
+    image(asset = @asset:.bg.pulse, target = @target.sample.sprite, layer = @layer:.foreground, proxy.layer = @layer.hit)
+    image(asset = @asset:.bg.pulse, target = target_name("target.computed"), layer = "layer.dynamic")
+    return "ok"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("identifier roles and dynamic strings are admitted");
+    let identifiers = report
+        .expressions()
+        .filter_map(|(_, expression)| {
+            let CheckedExpressionResolution::Value(
+                crate::final_analysis::CheckedValueResolution::Constant(
+                    arcweft_lang_hir::leaf::HirLiteral::String(
+                        arcweft_lang_hir::leaf::HirStringLiteral::Value(value),
+                    ),
+                ),
+            ) = expression.resolution()
+            else {
+                return None;
+            };
+            Some(value.as_ref())
+        })
+        .collect::<BTreeSet<_>>();
+    assert!(identifiers.contains("target.sample.sprite"));
+    assert!(identifiers.contains("layer.foreground"));
+    assert!(identifiers.contains("layer.hit"));
+    assert!(
+        report.calls().any(
+            |(_, call)| call.selected_application().is_some_and(|application| {
+                let core = application.core();
+                core.execution()
+                    .arguments()
+                    .iter()
+                    .flat_map(crate::callable::CheckedCallExecutionArgument::slots)
+                    .any(|slot| {
+                        let crate::callable::CheckedCallOperandDestination::Parameter(coordinate) =
+                            slot.destination()
+                        else {
+                            return false;
+                        };
+                        core.candidates()
+                            .selected()
+                            .schema()
+                            .group(coordinate.group())
+                            .and_then(|group| group.parameter(coordinate.parameter()))
+                            .is_some_and(|parameter| {
+                                parameter
+                                    .name()
+                                    .is_some_and(|name| name.as_str() == "proxy.layer")
+                            })
+                            && slot.selection().alternative().is_some()
+                    })
+            })
+        ),
+        "the dotted argument reaches a declared checked parameter, rather than an open slot"
+    );
+    assert!(
+        report.calls().any(
+            |(_, call)| call.selected_application().is_some_and(|application| {
+                matches!(
+                    application.core().candidates().selected().id(),
+                    crate::callable::CallableCandidateId::Project(_)
+                )
+            })
+        ),
+        "the computed identifier is an actual selected runtime call"
+    );
+}
+
+#[test]
+fn presentation_public_id_reference_rejects_wrong_family_without_selected_call() {
+    for source in [
+        "flow main() { image(asset = @asset:.bg.pulse, target = @layer.foreground) }",
+        "flow main() { image(asset = @asset:.bg.pulse, layer = @target.sample.sprite) }",
+        "fn echo(value: String) -> String { value }\nflow main() { echo(@target.sample.sprite) }",
+    ] {
+        let fixture = fixture(source, None);
+        if let Ok(report) = analyze(&fixture) {
+            let calls = report.calls().map(|(_, call)| call).collect::<Vec<_>>();
+            assert!(!calls.is_empty(), "the rejected call retains a diagnostic");
+            assert!(
+                calls
+                    .iter()
+                    .all(|call| call.selected_application().is_none()),
+                "wrong token role cannot publish a selected call: {source}"
+            );
+        }
+    }
+}
+
+#[test]
 fn selected_free_dotted_builtin_does_not_publish_losing_nominal_receiver() {
     let fixture = fixture(
         r#"
