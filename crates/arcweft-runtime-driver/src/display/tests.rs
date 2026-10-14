@@ -1928,6 +1928,58 @@ mod dynamic_character_dialogue_context_tests {
     }
 
     #[test]
+    fn presentation_frames_use_one_value_allowance_across_dialogue_and_view() {
+        use arcweft_core::{entry::RuntimeSchemaLimits, value::RuntimeRetainedValueAdmission};
+        let fixture = Fixture::new();
+        let spec = fixture.spec(
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+                generation: fixture.schema.generation_digest(),
+            },
+            "group_admission",
+        );
+        let target = fixture.value(&fixture.alice, true);
+        let mut frame = fixture.frame(&spec, &target);
+        frame.effective = arcweft_text_model::CharacterDialoguePresentationConfig::standalone(
+            frame.effective.view().clone(),
+            arcweft_dialogue::InlineFailurePolicy::FailLine,
+        );
+        let limits = RuntimeSchemaLimits {
+            max_nodes: 200,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        let mut single = RuntimeRetainedValueAdmission::for_program(fixture.owner.clone(), limits);
+        frame.admit_retained_metadata(&mut single).unwrap();
+        frame.admit_retained_values(&mut single, None).unwrap();
+        let presentation = Fixture::presentation(frame);
+        let mut group = RuntimeRetainedValueAdmission::for_program(fixture.owner.clone(), limits);
+        assert!(presentation.admit_retained(&mut group, None).is_err());
+        assert!(
+            group
+                .validate(&arcweft_core::value::RuntimeValue::Unit)
+                .is_err()
+        );
+        let mut inert = RuntimeRetainedValueAdmission::for_program(fixture.owner.clone(), limits);
+        let snapshot = presentation
+            .clone()
+            .try_map_frames(|frame| {
+                arcweft_text_model::LineDisplayFrameSnapshot::from_live(
+                    &frame,
+                    Some(&fixture.owner),
+                    None,
+                )
+            })
+            .unwrap();
+        snapshot
+            .try_visit_frames(|frame| frame.admit_retained_metadata(&mut inert))
+            .unwrap();
+        assert!(
+            snapshot
+                .try_visit_frames(|frame| frame.admit_retained_values(&mut inert, None))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn inert_display_frame_retains_original_roles_and_rejects_forged_configuration() {
         let fixture = Fixture::new();
         let spec = fixture.spec(

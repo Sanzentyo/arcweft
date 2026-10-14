@@ -102,7 +102,7 @@ impl BundleSessionSavePayload {
         .map_err(|error| error.to_string())?;
         snapshot
             .presentation
-            .validate_runtime_context(program_owner, dialogue_schema)?;
+            .admit_retained(&mut admission, dialogue_schema)?;
         Ok(Self {
             generation: snapshot.generation.clone(),
             active_locale: snapshot.active_locale.clone(),
@@ -163,6 +163,11 @@ impl BundleSessionSavePayload {
             &mut admission,
         )
         .map_err(|error| error.to_string())?;
+        self.presentation
+            .try_visit_frames(|frame| frame.admit_retained_metadata(&mut admission))?;
+        self.presentation.try_visit_frames(|frame| {
+            frame.admit_retained_values(&mut admission, dialogue_schema)
+        })?;
         let root = self
             .root
             .map(|root| root.into_live(&self.active_entry, program_owner))

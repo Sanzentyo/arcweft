@@ -62,6 +62,38 @@ pub enum FallbackStylePolicy<S = CharacterDialogueStyleValue> {
 }
 
 impl<S> InlineFailurePolicy<S> {
+    /// Borrows the retained fallback text without constructing a policy copy.
+    #[must_use]
+    pub fn retained_text(&self) -> Option<&str> {
+        match self {
+            Self::Fallback {
+                fallback: InlineFallback::Text { text, .. },
+            } => Some(text),
+            Self::FailLine | Self::Discard | Self::Fallback { .. } => None,
+        }
+    }
+
+    /// Returns the actual retained Style rows for preflight before projection.
+    #[must_use]
+    pub fn retained_styles(&self) -> &[S] {
+        match self {
+            Self::Fallback {
+                fallback:
+                    InlineFallback::Text { style, .. }
+                    | InlineFallback::ExprSource { style }
+                    | InlineFallback::CallSource { style },
+            } => match style {
+                FallbackStylePolicy::Apply { styles } => styles,
+                FallbackStylePolicy::Plain | FallbackStylePolicy::InheritSurrounding => &[],
+            },
+            Self::FailLine
+            | Self::Discard
+            | Self::Fallback {
+                fallback: InlineFallback::ValuePlain,
+            } => &[],
+        }
+    }
+
     /// Borrows every retained Style while preserving the owning policy cases.
     pub fn borrow_styles(&self) -> InlineFailurePolicy<&S> {
         match self {

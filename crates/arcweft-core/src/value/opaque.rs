@@ -15,6 +15,9 @@ use crate::value::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
+mod borrowed;
+pub(crate) use borrowed::RuntimeDialogueTupleView;
+
 /// Closed producer authority for runtime-supplied dialogue values.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -173,6 +176,8 @@ pub enum RuntimeDialogueContentValueError {
     NodeLimit { maximum: usize },
     #[error("runtime dialogue content value exceeds the shared string limit of {maximum} bytes")]
     StringLimit { maximum: usize },
+    #[error(transparent)]
+    Resource(#[from] crate::entry::RuntimeSchemaError),
     #[error("runtime dialogue content cannot retain an affine value")]
     AffineValue,
 }
@@ -2231,17 +2236,34 @@ impl RuntimeDialogueContentValue {
         &self,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimeDialogueContentValueError> {
-        let runtime = self.clone().into_runtime_value();
-        let maximum_depth = usize::try_from(limits.max_depth)
-            .unwrap_or(usize::MAX)
-            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH);
-        runtime.validate_nesting_depth(maximum_depth).map_err(|_| {
-            RuntimeDialogueContentValueError::NestingLimit {
-                maximum: maximum_depth,
-            }
-        })?;
-        let mut budget = RuntimeContentValueBudget { limits, nodes: 0 };
-        budget.visit(&runtime)
+        crate::entry::schema::value_encoding::preflight_snapshot_view(self.view(), limits, None)
+            .map(|_| ())
+            .map_err(|error| match error {
+                crate::entry::RuntimeSchemaError::ValueNesting(_)
+                | crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "depth" }
+                | crate::entry::RuntimeSchemaError::ValidationDepth { .. } => {
+                    Self::graph_nesting_error(limits)
+                }
+                crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" } => {
+                    RuntimeDialogueContentValueError::NodeLimit {
+                        maximum: usize::try_from(limits.max_nodes).unwrap_or(usize::MAX),
+                    }
+                }
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "string_bytes",
+                } => RuntimeDialogueContentValueError::StringLimit {
+                    maximum: usize::try_from(limits.max_string_bytes).unwrap_or(usize::MAX),
+                },
+                error => error.into(),
+            })
+    }
+
+    fn graph_nesting_error(limits: RuntimeSchemaLimits) -> RuntimeDialogueContentValueError {
+        RuntimeDialogueContentValueError::NestingLimit {
+            maximum: usize::try_from(limits.max_depth)
+                .unwrap_or(usize::MAX)
+                .min(MAX_RUNTIME_VALUE_NESTING_DEPTH),
+        }
     }
 }
 
@@ -2518,125 +2540,6 @@ fn decode_content_bytes_owned(value: RuntimeValue, exact_bytes_kind: bool) -> Op
         return None;
     }
     sequence.as_bytes().map(ToOwned::to_owned)
-}
-
-struct RuntimeContentValueBudget {
-    limits: RuntimeSchemaLimits,
-    nodes: usize,
-}
-
-impl RuntimeContentValueBudget {
-    fn visit(&mut self, value: &RuntimeValue) -> Result<(), RuntimeDialogueContentValueError> {
-        self.nodes = self.nodes.saturating_add(1);
-        if !self.limits.permits_nodes(self.nodes) {
-            return Err(RuntimeDialogueContentValueError::NodeLimit {
-                maximum: usize::try_from(self.limits.max_nodes).unwrap_or(usize::MAX),
-            });
-        }
-        match value {
-            RuntimeValue::String(value) => {
-                if !self.limits.permits_string_bytes(value.len()) {
-                    return Err(RuntimeDialogueContentValueError::StringLimit {
-                        maximum: usize::try_from(self.limits.max_string_bytes)
-                            .unwrap_or(usize::MAX),
-                    });
-                }
-            }
-            RuntimeValue::Tuple(values) => {
-                self.visit_values(values.iter())?;
-            }
-            RuntimeValue::Seq(sequence) => {
-                if !self.limits.permits_sequence_items(sequence.len()) {
-                    return Err(RuntimeDialogueContentValueError::BindingLimit {
-                        actual: sequence.len(),
-                        maximum: usize::try_from(self.limits.max_sequence_items)
-                            .unwrap_or(usize::MAX),
-                    });
-                }
-                for value in sequence.clone().into_values() {
-                    self.visit(&value)?;
-                }
-            }
-            RuntimeValue::Record(fields) => {
-                for field in fields {
-                    self.visit(field.value())?;
-                }
-            }
-            RuntimeValue::NominalRecord(record) => self.visit_values(record.fields().iter())?,
-            RuntimeValue::Opaque(opaque) => self.visit(opaque.payload())?,
-            RuntimeValue::Reduction(reduction) => {
-                self.visit(reduction.state())?;
-                for command in reduction.commands() {
-                    self.visit(&command.payload().0)?;
-                }
-            }
-            RuntimeValue::Agent(agent) => {
-                for (_, nested) in agent.nested_runtime_values_with_depth() {
-                    self.visit(nested)?;
-                }
-            }
-            RuntimeValue::Iterator(iterator) => match iterator {
-                crate::value::RuntimeIterator::Values { items, .. } => {
-                    if !self.limits.permits_sequence_items(items.len()) {
-                        return Err(RuntimeDialogueContentValueError::BindingLimit {
-                            actual: items.len(),
-                            maximum: usize::try_from(self.limits.max_sequence_items)
-                                .unwrap_or(usize::MAX),
-                        });
-                    }
-                    self.visit_values(items.iter())?;
-                }
-                crate::value::RuntimeIterator::Witness(witness) => self.visit(witness.state())?,
-                crate::value::RuntimeIterator::Range(_) => {}
-            },
-            RuntimeValue::Variant(crate::value::RuntimeVariantValue { name, payload, .. }) => {
-                if !self.limits.permits_string_bytes(name.len()) {
-                    return Err(RuntimeDialogueContentValueError::StringLimit {
-                        maximum: usize::try_from(self.limits.max_string_bytes)
-                            .unwrap_or(usize::MAX),
-                    });
-                }
-                if let Some(payload) = payload {
-                    self.visit(payload)?;
-                }
-            }
-            RuntimeValue::Callable(callable) => self.visit_values(callable.retained().iter())?,
-            RuntimeValue::Unit
-            | RuntimeValue::Bool(_)
-            | RuntimeValue::Int(_)
-            | RuntimeValue::UInt(_)
-            | RuntimeValue::F32(_)
-            | RuntimeValue::F64(_)
-            | RuntimeValue::Color(_)
-            | RuntimeValue::MatrixF32(_)
-            | RuntimeValue::MatrixF64(_)
-            | RuntimeValue::TensorF32(_)
-            | RuntimeValue::TensorF64(_)
-            | RuntimeValue::NeedHandle(_)
-            | RuntimeValue::Char(_)
-            | RuntimeValue::Duration(_)
-            | RuntimeValue::Progress(_)
-            | RuntimeValue::Range(_)
-            | RuntimeValue::EntityRef(_) => {}
-        }
-        Ok(())
-    }
-
-    fn visit_values<'a>(
-        &mut self,
-        values: impl ExactSizeIterator<Item = &'a RuntimeValue>,
-    ) -> Result<(), RuntimeDialogueContentValueError> {
-        if !self.limits.permits_sequence_items(values.len()) {
-            return Err(RuntimeDialogueContentValueError::BindingLimit {
-                actual: values.len(),
-                maximum: usize::try_from(self.limits.max_sequence_items).unwrap_or(usize::MAX),
-            });
-        }
-        for value in values {
-            self.visit(value)?;
-        }
-        Ok(())
-    }
 }
 
 impl RuntimeDialogueOpaqueRole {
@@ -3703,6 +3606,122 @@ mod tests {
             RuntimeDialogueContentValue::try_from_runtime_value(&restored).unwrap(),
             content
         );
+    }
+
+    fn nested_formatted_content_with_callback() -> (
+        RuntimeDialogueContentValue,
+        crate::task::RuntimeProgramOwner,
+    ) {
+        let artifact = content_artifact(0x51);
+        let child = RuntimeDialogueContentValue::try_new(
+            artifact,
+            content_template(),
+            content_digest(),
+            [inline_binding(0, "nested")],
+        )
+        .unwrap();
+        let outcomes = [
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Text("text".into()),
+                color: None,
+            },
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Content(Box::new(child.clone())),
+                color: Some(crate::value::RuntimeColor::from_rgba8([1, 2, 3, 4])),
+            },
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason: "failure".into(),
+                value_plain: Some("plain".into()),
+            },
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason: "discard".into(),
+                value_plain: None,
+            },
+        ];
+        let policies = [
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+            RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::Tuple(vec![
+                RuntimeValue::Bool(true),
+                RuntimeValue::String("policy".into()),
+            ])),
+            RuntimeDialogueFormattedFailureSelection::Fallback("fallback".into()),
+            RuntimeDialogueFormattedFailureSelection::Discard(true),
+        ];
+        let mut bindings = vec![
+            inline_binding(0, "root"),
+            RuntimeDialogueContentBinding::Content {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(1).unwrap(),
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: child,
+            },
+        ];
+        bindings.extend(outcomes.into_iter().zip(policies).enumerate().map(
+            |(index, (outcome, policy))| RuntimeDialogueContentBinding::Formatted {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(index + 2).unwrap(),
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: RuntimeDialogueFormattedValue::try_new(outcome, policy).unwrap(),
+            },
+        ));
+        let (callback, owner) = awbc_test_callable(vec![RuntimeValue::u32(9)]);
+        let content = RuntimeDialogueContentValue::try_new_with_limits(
+            artifact,
+            content_template(),
+            content_digest(),
+            bindings,
+            [RuntimeDialogueContentEffectBinding::new(
+                crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0).unwrap(),
+                callback,
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        (content, owner)
+    }
+
+    #[test]
+    fn borrowed_content_codec_matches_nested_formatted_values_and_callback_admission() {
+        use crate::entry::schema::value_encoding::{preflight_snapshot_view, snapshot_view_bytes};
+        let (content, owner) = nested_formatted_content_with_callback();
+        let runtime = content.clone().into_runtime_value();
+        assert_eq!(
+            snapshot_view_bytes(content.view()).unwrap(),
+            snapshot_view_bytes(runtime.view()).unwrap()
+        );
+        let borrowed_snapshot =
+            AwbcRuntimeValueSnapshot::from_unrestricted_dialogue_content(&content, Some(&owner))
+                .unwrap();
+        let physical_snapshot =
+            AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(&runtime, &owner)
+                .unwrap();
+        assert_eq!(borrowed_snapshot, physical_snapshot);
+        let restored = borrowed_snapshot
+            .into_unrestricted_runtime_value_for_program(&owner)
+            .unwrap();
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&restored).unwrap(),
+            content
+        );
+        for maximum in [0, 16, 80, 200, 1000] {
+            let limits = RuntimeSchemaLimits {
+                max_nodes: maximum,
+                ..RuntimeSchemaLimits::engine_default()
+            };
+            assert_eq!(
+                preflight_snapshot_view(content.view(), limits, None).map(|_| ()),
+                preflight_snapshot_view(runtime.view(), limits, None).map(|_| ())
+            );
+        }
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            RuntimeSchemaLimits::engine_default(),
+        );
+        admission.validate_dialogue_content(&content).unwrap();
+        let (_, foreign) = awbc_test_callable(Vec::new());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            foreign,
+            RuntimeSchemaLimits::engine_default(),
+        );
+        assert!(admission.validate_dialogue_content(&content).is_err());
     }
 
     #[test]

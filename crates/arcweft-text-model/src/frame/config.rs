@@ -3,7 +3,7 @@
 use arcweft_core::{
     entry::RuntimeValueDigest,
     task::RuntimeProgramOwner,
-    value::{AwbcRuntimeValueSnapshot, RuntimeValue},
+    value::{AwbcRuntimeValueSnapshot, RuntimeRetainedValueAdmission, RuntimeValue},
 };
 use arcweft_dialogue::{
     CharacterDialogueRuntimeSchema, CharacterDialogueValue, CharacterDialogueValueError,
@@ -88,19 +88,84 @@ pub enum CharacterDialoguePresentationConfigSnapshot {
 }
 
 impl CharacterDialoguePresentationConfigSnapshot {
+    pub(super) fn admit_retained_metadata(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        match self {
+            Self::Standalone {
+                view,
+                style_sheet,
+                inline_failure,
+            } => {
+                admission
+                    .validate_metadata(&(view, style_sheet, inline_failure.retained_text()))
+                    .map_err(|error| error.to_string())?;
+                admission
+                    .validate_metadata_collection(inline_failure.retained_styles().len())
+                    .map_err(|error| error.to_string())?;
+            }
+            Self::Program { style_sheet, .. } => admission
+                .validate_metadata(style_sheet)
+                .map_err(|error| error.to_string())?,
+        }
+        Ok(())
+    }
+
+    pub(super) fn admit_retained_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        schema: Option<&CharacterDialogueRuntimeSchema>,
+    ) -> Result<(), String> {
+        match self {
+            Self::Standalone { inline_failure, .. } => {
+                for style in inline_failure.retained_styles() {
+                    let schema = schema.ok_or("fallback Style generation schema is unavailable")?;
+                    schema
+                        .validate_retained_style_snapshot(admission, style)
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            Self::Program {
+                generation, value, ..
+            } => {
+                let schema = schema.ok_or("CharacterDialogue generation schema is unavailable")?;
+                if !admission
+                    .program_owner()
+                    .is_some_and(|owner| schema.program_owner().same_program(owner))
+                    || schema.generation_digest() != *generation
+                {
+                    return Err("CharacterDialogue generation or executable is stale".to_owned());
+                }
+                admission
+                    .validate_snapshot(value)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn from_live(
         config: &CharacterDialoguePresentationConfig,
         owner: Option<&RuntimeProgramOwner>,
         schema: Option<&CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        config.admit_retained_metadata(&mut admission)?;
+        config.admit_retained_values(&mut admission, schema)?;
         match &config.source {
             CharacterDialoguePresentationSource::Standalone { view, inline_failure } => Ok(Self::Standalone {
                 view: view.clone(),
                 style_sheet: config.style_sheet.clone(),
                 inline_failure: inline_failure.borrow_styles().try_map_styles(&mut |style| {
-                    if let Some(schema) = schema {
-                        schema.admit_style(owner.ok_or("fallback Style executable is unavailable")?, style.typed().value()).map_err(|error| error.to_string())?;
-                    }
                     match owner { Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(style.typed().value(), owner), None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(style.typed().value()) }
                         .map_err(|error| error.to_string())
                 })?,
@@ -108,23 +173,11 @@ impl CharacterDialoguePresentationConfigSnapshot {
             CharacterDialoguePresentationSource::Program { generation, config_digest, value, owner: retained_owner } => {
                 let owner = owner.ok_or("CharacterDialogue executable is unavailable")?;
                 if !retained_owner.same_program(owner) { return Err("CharacterDialogue executable is stale".to_owned()); }
-                if let Some(schema) = schema {
-                if !retained_owner.same_program(owner) || !schema.program_owner().same_program(owner) || schema.generation_digest() != *generation {
-                    return Err("CharacterDialogue generation or executable is stale".to_owned());
-                }
-                let admitted = CharacterDialoguePresentationConfig::from_admitted(schema, value, config.style_sheet.clone())
-                    .map_err(|error| error.to_string())?;
-                if admitted.config_digest() != *config_digest {
-                    return Err("CharacterDialogue configuration digest is stale".to_owned());
-                }
-                }
                 Ok(Self::Program {
                     generation: *generation,
                     config_digest: *config_digest,
                     style_sheet: config.style_sheet.clone(),
-                    value: AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
-                        &RuntimeValue::Opaque(value.opaque().clone()), owner,
-                    ).map_err(|error| error.to_string())?,
+                    value: AwbcRuntimeValueSnapshot::from_unrestricted_opaque(value.opaque(), Some(owner)).map_err(|error| error.to_string())?,
                 })
             }
         }
@@ -135,6 +188,17 @@ impl CharacterDialoguePresentationConfigSnapshot {
         owner: Option<&RuntimeProgramOwner>,
         schema: Option<&CharacterDialogueRuntimeSchema>,
     ) -> Result<CharacterDialoguePresentationConfig, String> {
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        self.admit_retained_metadata(&mut admission)?;
+        self.admit_retained_values(&mut admission, schema)?;
         match self {
             Self::Standalone {
                 view,
@@ -194,6 +258,107 @@ impl CharacterDialoguePresentationConfigSnapshot {
 }
 
 impl CharacterDialoguePresentationConfig {
+    pub(super) fn admit_retained_metadata(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        if let Some(sheet) = &self.style_sheet {
+            admission
+                .validate_metadata_string(sheet.as_str())
+                .map_err(|error| error.to_string())?;
+        }
+        if let CharacterDialoguePresentationSource::Standalone {
+            view,
+            inline_failure,
+        } = &self.source
+        {
+            admission
+                .validate_metadata_string(view.as_str())
+                .map_err(|error| error.to_string())?;
+            if let Some(text) = inline_failure.retained_text() {
+                admission
+                    .validate_metadata_string(text)
+                    .map_err(|error| error.to_string())?;
+            }
+            admission
+                .validate_metadata_collection(inline_failure.retained_styles().len())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn admit_retained_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        schema: Option<&CharacterDialogueRuntimeSchema>,
+    ) -> Result<(), String> {
+        match &self.source {
+            CharacterDialoguePresentationSource::Standalone { inline_failure, .. } => {
+                for style in inline_failure.retained_styles() {
+                    if let Some(schema) = schema {
+                        schema
+                            .validate_retained_style(admission, style.typed().value())
+                            .map_err(|error| error.to_string())?;
+                    } else {
+                        admission
+                            .validate(style.typed().value())
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+            }
+            CharacterDialoguePresentationSource::Program {
+                owner,
+                generation,
+                config_digest,
+                value,
+            } => {
+                if !admission
+                    .program_owner()
+                    .is_some_and(|original| original.same_program(owner))
+                {
+                    return Err("CharacterDialogue executable is stale".to_owned());
+                }
+                if let Some(schema) = schema {
+                    if !schema.program_owner().same_program(owner)
+                        || schema.generation_digest() != *generation
+                    {
+                        return Err(
+                            "CharacterDialogue generation or executable is stale".to_owned()
+                        );
+                    }
+                    schema
+                        .validate_retained_dialogue(admission, value)
+                        .map_err(|error| error.to_string())?;
+                    if schema
+                        .effective_config_digest(value.dialogue())
+                        .map_err(|error| error.to_string())?
+                        != *config_digest
+                    {
+                        return Err("CharacterDialogue configuration digest is stale".to_owned());
+                    }
+                } else {
+                    admission
+                        .validate_opaque(value.opaque())
+                        .map_err(|error| error.to_string())?;
+                }
+                let expected_sheet = match value.dialogue().config().style().typed().value() {
+                    RuntimeValue::EntityRef(reference) => Some(
+                        reference
+                            .project_label(arcweft_id::DeclarationIdentityFamily::Style)
+                            .ok_or("Style reference has another entity family")?,
+                    ),
+                    _ => None,
+                };
+                if self.style_sheet.as_ref().map(ViewStyleSheetId::as_str) != expected_sheet {
+                    return Err(
+                        "stylesheet differs from the original admitted Style role".to_owned()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Context-free presentation for already resolved, standalone text.
     pub const fn standalone(view: ViewId, inline_failure: InlineFailurePolicy) -> Self {
         Self {
@@ -211,25 +376,14 @@ impl CharacterDialoguePresentationConfig {
         value: &CharacterDialogueValue,
         style_sheet: Option<ViewStyleSheetId>,
     ) -> Result<Self, Box<CharacterDialogueValueError>> {
-        value
-            .opaque()
-            .payload()
-            .validate_nesting_depth(arcweft_core::value::MAX_RUNTIME_VALUE_NESTING_DEPTH)
-            .map_err(|error| CharacterDialogueValueError::Field {
-                field: "runtime_value",
-                reason: error.to_string(),
-            })?;
-        if !value.opaque().payload().ownership().permits_copy() {
-            return Err(Box::new(CharacterDialogueValueError::Field {
-                field: "runtime_value",
-                reason: "retained CharacterDialogue contains an affine value".to_owned(),
-            }));
-        }
-        let value = schema.admit(
-            schema.program_owner(),
-            &RuntimeValue::Opaque(value.opaque().clone()),
-            value.opaque().semantic_identity(),
-        )?;
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            schema.program_owner().clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        admission
+            .validate_metadata(&style_sheet)
+            .map_err(CharacterDialogueValueError::from)?;
+        schema.validate_retained_dialogue(&mut admission, value)?;
         let config_digest = schema.effective_config_digest(value.dialogue())?;
         let expected_sheet = match value.dialogue().config().style().typed().value() {
             RuntimeValue::EntityRef(reference) => {
@@ -261,7 +415,7 @@ impl CharacterDialoguePresentationConfig {
                 owner: schema.program_owner().clone(),
                 generation: schema.generation_digest(),
                 config_digest,
-                value: Box::new(value),
+                value: Box::new(value.clone()),
             },
             style_sheet,
         })
@@ -327,14 +481,12 @@ impl CharacterDialoguePresentationConfig {
                 arcweft_core::value::visit_runtime_value_graph(value.opaque().payload(), visit)
             }
             CharacterDialoguePresentationSource::Standalone { inline_failure, .. } => {
-                inline_failure
-                    .borrow_styles()
-                    .try_map_styles(&mut |style| {
-                        arcweft_core::value::visit_runtime_value_graph(
-                            style.typed().value(),
-                            &mut *visit,
-                        )
-                    })?;
+                for style in inline_failure.retained_styles() {
+                    arcweft_core::value::visit_runtime_value_graph(
+                        style.typed().value(),
+                        &mut *visit,
+                    )?;
+                }
                 Ok(())
             }
         }

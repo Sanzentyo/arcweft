@@ -1,14 +1,16 @@
 //! One original-program allowance for a complete retained live/inert group.
 
 use super::{
-    AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeProgramOwner,
-    RuntimeSemanticTypeId, RuntimeValue,
+    AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeOpaqueValue,
+    RuntimeProgramOwner, RuntimeSemanticTypeId, RuntimeValue,
 };
 use crate::entry::RuntimeSchemaLimits;
 use crate::entry::schema::value_budget::ValidationWork;
 use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::value::RuntimeValueView;
+
+mod metadata;
 
 enum RetainedTypeObligation<'binding> {
     Stored(RuntimeSemanticTypeId),
@@ -52,6 +54,38 @@ impl RuntimeRetainedValueAdmission {
     /// Admits another borrowed live root without resetting any quota.
     pub fn validate(&mut self, value: &RuntimeValue) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.validate_view(value.view(), ValueAdmissionOrigin::Live, None)
+    }
+
+    /// Admits the complete typed Content codec, including nested formatted
+    /// values and original executable callbacks, before constructing a carrier.
+    pub fn validate_dialogue_content(
+        &mut self,
+        value: &crate::value::RuntimeDialogueContentValue,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(value.view(), ValueAdmissionOrigin::Live, None)
+    }
+
+    /// Admits a domain-owned opaque value without copying its payload into a
+    /// temporary `RuntimeValue` wrapper.
+    pub fn validate_opaque(
+        &mut self,
+        value: &RuntimeOpaqueValue,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(value.view(), ValueAdmissionOrigin::Live, None)
+    }
+
+    /// Checks a borrowed opaque value against the original program's stored
+    /// type obligation before any domain projection is constructed.
+    pub fn validate_typed_opaque(
+        &mut self,
+        value: &RuntimeOpaqueValue,
+        expected: RuntimeSemanticTypeId,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(
+            value.view(),
+            ValueAdmissionOrigin::Live,
+            Some(RetainedTypeObligation::Stored(expected)),
+        )
     }
 
     /// Checks the original expected type before any live value is copied.
@@ -167,7 +201,10 @@ impl RuntimeRetainedValueAdmission {
         self.resources.work()
     }
 
-    pub(crate) fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
+    /// Returns the immutable original executable lease for domain-owned
+    /// generation/role checks. The context cannot be rebound to another owner.
+    #[must_use]
+    pub fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
         self.owner.as_ref()
     }
 

@@ -262,6 +262,13 @@ pub struct DialogueEntryState<F = LineDisplayFrame> {
     pub(super) frame: F,
 }
 
+impl<F> DialogueEntryState<F> {
+    #[must_use]
+    pub const fn frame(&self) -> &F {
+        &self.frame
+    }
+}
+
 impl DialogueEntryState {
     #[must_use]
     pub const fn activation(&self) -> &DialogueActivationId {
@@ -300,11 +307,6 @@ impl DialogueEntryState {
     #[must_use]
     pub const fn stage_index(&self) -> DialogueStageIndex {
         self.stage
-    }
-
-    #[must_use]
-    pub const fn frame(&self) -> &LineDisplayFrame {
-        &self.frame
     }
 
     #[must_use]
@@ -417,6 +419,13 @@ pub struct DialoguePresentation<F = LineDisplayFrame> {
     pub(super) active: Option<DialogueEntryId>,
 }
 
+impl<F> DialoguePresentation<F> {
+    #[must_use]
+    pub fn entries(&self) -> &[DialogueEntryState<F>] {
+        &self.entries
+    }
+}
+
 impl DialoguePresentation {
     #[must_use]
     pub const fn id(&self) -> DialoguePresentationId {
@@ -431,11 +440,6 @@ impl DialoguePresentation {
     #[must_use]
     pub const fn revision(&self) -> DialogueRevision {
         self.revision
-    }
-
-    #[must_use]
-    pub fn entries(&self) -> &[DialogueEntryState] {
-        &self.entries
     }
 
     #[must_use]

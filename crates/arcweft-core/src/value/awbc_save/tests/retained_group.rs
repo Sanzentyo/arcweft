@@ -73,6 +73,74 @@ fn enclosing_metadata_uses_the_retained_groups_work_and_remains_sticky() {
 }
 
 #[test]
+fn typed_metadata_grammar_shares_depth_collections_and_first_failure_with_values() {
+    #[derive(serde::Serialize)]
+    struct Metadata<'a> {
+        names: &'a [&'a str],
+        children: &'a [Vec<bool>],
+    }
+    let metadata = Metadata {
+        names: &["name"],
+        children: &[vec![true, false]],
+    };
+    let limits = RuntimeSchemaLimits::engine_default();
+    RuntimeRetainedValueAdmission::standalone(limits)
+        .validate_metadata(&metadata)
+        .unwrap();
+    for (limits, expected) in [
+        (
+            RuntimeSchemaLimits {
+                max_sequence_items: 1,
+                ..limits
+            },
+            "sequence_items",
+        ),
+        (
+            RuntimeSchemaLimits {
+                max_string_bytes: 3,
+                ..limits
+            },
+            "string_bytes",
+        ),
+    ] {
+        let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+        let error = admission.validate_metadata(&metadata).unwrap_err();
+        assert!(
+            matches!(&error, AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded { budget }) if *budget == expected)
+        );
+        assert_eq!(admission.validate(&RuntimeValue::Unit), Err(error));
+    }
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_depth: 1,
+        ..limits
+    });
+    assert!(matches!(
+        admission.validate_metadata(&metadata),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            RuntimeSchemaError::ValidationDepth { limit: 1, .. }
+        ))
+    ));
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_validation_work: 3,
+        ..limits
+    });
+    admission.validate_metadata(&vec![true]).unwrap();
+    admission
+        .validate_snapshot(&AwbcRuntimeValueSnapshot::Unit)
+        .unwrap();
+    assert!(matches!(
+        admission.validate_metadata(&false),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            RuntimeSchemaError::ValidationWork {
+                limit: 3,
+                consumed: 4,
+                ..
+            }
+        ))
+    ));
+}
+
+#[test]
 fn retained_group_preserves_first_affine_failure_across_live_inert_switches() {
     let mut admission =
         RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits::engine_default());

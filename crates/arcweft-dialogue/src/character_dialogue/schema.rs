@@ -30,7 +30,8 @@ use arcweft_core::{
     task::RuntimeProgramOwner,
     value::{
         RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-        RuntimeOpaqueValueClass, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes,
+        RuntimeOpaqueValueClass, RuntimeRetainedValueAdmission, RuntimeSeq, RuntimeValue,
+        runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::DeclarationIdentityFamily;
@@ -450,26 +451,79 @@ impl CustomFieldCatalogDigestEncoder {
 }
 
 impl CharacterDialogueRuntimeSchema {
-    /// Admits a retained fallback Style through the original generation role.
-    pub fn admit_style(
+    /// Checks an already-issued immutable domain value under its original
+    /// executable and generation before a presentation copies its carrier.
+    pub fn validate_retained_dialogue(
         &self,
-        owner: &RuntimeProgramOwner,
+        admission: &mut RuntimeRetainedValueAdmission,
+        value: &CharacterDialogueValue,
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        self.ensure_program_owner(
+            admission
+                .program_owner()
+                .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?,
+        )?;
+        let expected = super::CharacterDialogueType::exact(value.dialogue().character().clone())
+            .runtime_opaque_owner()
+            .semantic_identity();
+        admission
+            .validate_typed_opaque(value.opaque(), expected)
+            .map_err(CharacterDialogueValueError::from)?;
+        self.validate_dialogue(value.dialogue()).map_err(Box::new)
+    }
+
+    /// Validates a borrowed fallback Style in the caller's complete retained
+    /// group, preserving this generation's original type/role authority.
+    pub fn validate_retained_style(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
         value: &RuntimeValue,
-    ) -> Result<CharacterDialogueStyleValue, Box<CharacterDialogueValueError>> {
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        let owner = admission
+            .program_owner()
+            .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?;
         self.ensure_program_owner(owner)?;
-        value
-            .validate_nesting_depth(arcweft_core::value::MAX_RUNTIME_VALUE_NESTING_DEPTH)
-            .map_err(|error| CharacterDialogueValueError::Field {
-                field: "style",
-                reason: error.to_string(),
-            })?;
+        admission
+            .validate_typed(value, self.roles.value_type(Role::Style))
+            .map_err(CharacterDialogueValueError::from)?;
         if !value.ownership().permits_copy() {
             return Err(Box::new(CharacterDialogueValueError::Field {
                 field: "style",
                 reason: "retained Style contains an affine value".to_owned(),
             }));
         }
-        self.validate_role(super::CharacterDialogueRuntimeRole::Style, value)?;
+        self.validate_role(Role::Style, value).map_err(Box::new)
+    }
+
+    /// Checks an inert Style's original stored type and complete resources
+    /// before its runtime carrier can be constructed during restoration.
+    pub fn validate_retained_style_snapshot(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        value: &arcweft_core::value::AwbcRuntimeValueSnapshot,
+    ) -> Result<(), Box<CharacterDialogueValueError>> {
+        self.ensure_program_owner(
+            admission
+                .program_owner()
+                .ok_or(CharacterDialogueValueError::ForeignProgramOwner)?,
+        )?;
+        admission
+            .validate_typed_snapshot(value, self.roles.value_type(Role::Style))
+            .map_err(CharacterDialogueValueError::from)?;
+        Ok(())
+    }
+
+    /// Admits a retained fallback Style through the original generation role.
+    pub fn admit_style(
+        &self,
+        owner: &RuntimeProgramOwner,
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueStyleValue, Box<CharacterDialogueValueError>> {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        self.validate_retained_style(&mut admission, value)?;
         Ok(CharacterDialogueStyleValue::try_new(
             CharacterDialogueTypedValue::try_new(value.clone())?,
         )?)

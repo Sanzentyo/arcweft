@@ -102,7 +102,10 @@ impl RuntimeSequenceView<'_> {
                         Self::Snapshot(AwbcRuntimeSeqSnapshot::RecordColumns {
                             fields, ..
                         }) => Some(Columns::SnapshotRecords(fields)),
-                        Self::Live(RuntimeSeq::Values(_) | RuntimeSeq::Dense(_))
+                        Self::Bytes(_)
+                        | Self::DialogueBindings(_)
+                        | Self::DialogueEffects(_)
+                        | Self::Live(RuntimeSeq::Values(_) | RuntimeSeq::Dense(_))
                         | Self::Snapshot(
                             AwbcRuntimeSeqSnapshot::Values(_) | AwbcRuntimeSeqSnapshot::Dense(_),
                         ) => None,

@@ -3,7 +3,7 @@
 use super::{CharacterDialoguePresentationConfigSnapshot, LineDisplayFrame};
 use arcweft_core::{
     task::RuntimeProgramOwner,
-    value::{AwbcRuntimeValueSnapshot, RuntimeDialogueContentValue},
+    value::{AwbcRuntimeValueSnapshot, RuntimeDialogueContentValue, RuntimeRetainedValueAdmission},
 };
 use arcweft_dialogue::{CharacterDialogueRuntimeSchema, InlineFailurePolicy, InlineTextFailure};
 use serde::{Deserialize, Serialize};
@@ -14,29 +14,82 @@ pub type LineDisplayStageSnapshot = crate::LineDisplayStageProjection<
     InlineTextFailureSnapshot,
 >;
 
-impl LineDisplayStageSnapshot {
-    pub(crate) fn from_live(frame: &crate::LineDisplayStageProjection) -> Result<Self, String> {
-        frame.validate().map_err(|error| error.to_string())?;
-        if frame
+impl crate::LineDisplayStageProjection {
+    fn admit_retained(&self, admission: &mut RuntimeRetainedValueAdmission) -> Result<(), String> {
+        admission
+            .validate_metadata(&(
+                &self.line,
+                &self.character,
+                &self.text_key,
+                &self.text,
+                &self.base_styles,
+                &self.style_contributions,
+                &self.display_map,
+                &self.host_events,
+                &self.unresolved,
+            ))
+            .map_err(|error| error.to_string())?;
+        self.effective.admit_retained_metadata(admission)?;
+        admission
+            .validate_metadata_collection(self.inline_failures.len())
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            admission
+                .validate_metadata(&(
+                    &failure.expr,
+                    &failure.reason,
+                    failure.policy.retained_text(),
+                ))
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_collection(failure.policy.retained_styles().len())
+                .map_err(|error| error.to_string())?;
+        }
+        self.effective.admit_retained_values(admission, None)?;
+        admission
+            .validate_dialogue_content(&self.content)
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            for style in failure.policy.retained_styles() {
+                admission
+                    .validate(style.typed().value())
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        self.validate().map_err(|error| error.to_string())?;
+        if self
             .effective
             .admitted()
-            .is_some_and(|value| value.dialogue().character() != &frame.character.id)
+            .is_some_and(|value| value.dialogue().character() != &self.character.id)
         {
             return Err(
                 "display stage Character differs from its admitted configuration".to_owned(),
             );
         }
+        Ok(())
+    }
+}
+
+impl LineDisplayStageSnapshot {
+    pub(crate) fn from_live(frame: &crate::LineDisplayStageProjection) -> Result<Self, String> {
         let owner = frame.effective.program_owner();
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        frame.admit_retained(&mut admission)?;
         Ok(Self {
             line: frame.line.clone(), character: frame.character.clone(), text_key: frame.text_key.clone(),
             effective: CharacterDialoguePresentationConfigSnapshot::from_live(&frame.effective, owner, None)?,
             text: frame.text.clone(), base_styles: frame.base_styles.clone(), style_contributions: frame.style_contributions.clone(),
             stage_index: frame.stage_index, page_index: frame.page_index, reveal_start: frame.reveal_start, end: frame.end,
             display_map: frame.display_map.clone(), host_events: frame.host_events.clone(), unresolved: frame.unresolved.clone(),
-            content: match owner {
-                Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(&frame.content.clone().into_runtime_value(), owner),
-                None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&frame.content.clone().into_runtime_value()),
-            }.map_err(|error| error.to_string())?,
+            content: AwbcRuntimeValueSnapshot::from_unrestricted_dialogue_content(&frame.content, owner).map_err(|error| error.to_string())?,
             inline_failures: frame.inline_failures.iter().map(|failure| {
                 Ok(InlineTextFailureSnapshot {
                     expr: failure.expr.clone(), reason: failure.reason.clone(),
@@ -69,6 +122,69 @@ pub type LineDisplayFrameSnapshot = LineDisplayFrame<
 >;
 
 impl LineDisplayFrame {
+    /// Bounds every display/source field through its owning typed serde grammar
+    /// before validation builds projections or persistence copies the frame.
+    pub fn admit_retained_metadata(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        self.admit_display_metadata(admission)?;
+        self.effective.admit_retained_metadata(admission)?;
+        admission
+            .validate_metadata_collection(self.inline_failures.len())
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            admission
+                .validate_metadata(&(
+                    &failure.expr,
+                    &failure.reason,
+                    failure.policy.retained_text(),
+                ))
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_collection(failure.policy.retained_styles().len())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Admits all runtime fields with the enclosing group's original executable
+    /// and cumulative allowance, without constructing a display snapshot.
+    pub fn admit_retained_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        schema: Option<&CharacterDialogueRuntimeSchema>,
+    ) -> Result<(), String> {
+        self.effective.admit_retained_values(admission, schema)?;
+        admission
+            .validate_dialogue_content(&self.content)
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            for style in failure.policy.retained_styles() {
+                if let Some(schema) = schema {
+                    schema
+                        .validate_retained_style(admission, style.typed().value())
+                        .map_err(|error| error.to_string())?;
+                } else {
+                    admission
+                        .validate(style.typed().value())
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+        }
+        self.validate().map_err(|error| error.to_string())?;
+        if self
+            .effective
+            .admitted()
+            .is_some_and(|value| value.dialogue().character() != &self.character.id)
+        {
+            return Err(
+                "display frame Character differs from its admitted configuration".to_owned(),
+            );
+        }
+        Ok(())
+    }
+
     /// Visits every retained value, including original roles/custom fields,
     /// Content callbacks and fallback Styles, before presentation publication.
     pub fn visit_runtime_values<E>(
@@ -81,21 +197,35 @@ impl LineDisplayFrame {
             &mut visit,
         )?;
         for failure in &self.inline_failures {
-            failure
-                .policy
-                .borrow_styles()
-                .try_map_styles(&mut |style| {
-                    arcweft_core::value::visit_runtime_value_graph(
-                        style.typed().value(),
-                        &mut visit,
-                    )
-                })?;
+            for style in failure.policy.retained_styles() {
+                arcweft_core::value::visit_runtime_value_graph(style.typed().value(), &mut visit)?;
+            }
         }
         Ok(())
     }
 }
 
 impl<E, C, I> LineDisplayFrame<E, C, I> {
+    fn admit_display_metadata(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        admission
+            .validate_metadata(&(
+                &self.line,
+                &self.character,
+                &self.text_key,
+                &self.text,
+                &self.base_styles,
+                &self.style_contributions,
+                &self.nodes,
+                &self.display_map,
+                &self.host_events,
+                &self.unresolved,
+            ))
+            .map_err(|error| error.to_string())
+    }
+
     /// Maps only runtime-owned fields; all display/source metadata moves intact.
     pub fn try_map_runtime<TE, TC, TI, X>(
         self,
@@ -126,44 +256,82 @@ impl<E, C, I> LineDisplayFrame<E, C, I> {
 }
 
 impl LineDisplayFrameSnapshot {
+    /// Bounds inert metadata in the same enclosing group as live frames.
+    pub fn admit_retained_metadata(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        self.admit_display_metadata(admission)?;
+        self.effective.admit_retained_metadata(admission)?;
+        admission
+            .validate_metadata_collection(self.inline_failures.len())
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            admission
+                .validate_metadata(&(
+                    &failure.expr,
+                    &failure.reason,
+                    failure.policy.retained_text(),
+                ))
+                .map_err(|error| error.to_string())?;
+            admission
+                .validate_metadata_collection(failure.policy.retained_styles().len())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// Completes original stored-type and resource checks before restoring any
+    /// Content callback or Style runtime carrier from this frame.
+    pub fn admit_retained_values(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+        schema: Option<&CharacterDialogueRuntimeSchema>,
+    ) -> Result<(), String> {
+        self.effective.admit_retained_values(admission, schema)?;
+        admission
+            .validate_snapshot(&self.content)
+            .map_err(|error| error.to_string())?;
+        for failure in &self.inline_failures {
+            for style in failure.policy.retained_styles() {
+                let schema = schema.ok_or("fallback Style generation schema is unavailable")?;
+                schema
+                    .validate_retained_style_snapshot(admission, style)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        self.validate().map_err(|error| error.to_string())
+    }
+
     pub fn from_live(
         frame: &LineDisplayFrame,
         owner: Option<&RuntimeProgramOwner>,
         schema: Option<&CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
-        frame.validate().map_err(|error| error.to_string())?;
-        if frame
-            .effective
-            .admitted()
-            .is_some_and(|value| value.dialogue().character() != &frame.character.id)
-        {
-            return Err(
-                "display frame Character differs from its admitted configuration".to_owned(),
-            );
-        }
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        frame.admit_retained_metadata(&mut admission)?;
+        frame.admit_retained_values(&mut admission, schema)?;
         let effective = CharacterDialoguePresentationConfigSnapshot::from_live(
             &frame.effective,
             owner,
             schema,
         )?;
-        let content = match owner {
-            Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(
-                &frame.content.clone().into_runtime_value(),
-                owner,
-            ),
-            None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
-                &frame.content.clone().into_runtime_value(),
-            ),
-        }
-        .map_err(|error| error.to_string())?;
+        let content =
+            AwbcRuntimeValueSnapshot::from_unrestricted_dialogue_content(&frame.content, owner)
+                .map_err(|error| error.to_string())?;
         let inline_failures = frame.inline_failures.iter().map(|failure| {
             Ok(InlineTextFailureSnapshot {
                 expr: failure.expr.clone(),
                 reason: failure.reason.clone(),
                 policy: failure.policy.borrow_styles().try_map_styles(&mut |style| {
-                    if let Some(schema) = schema {
-                        schema.admit_style(owner.ok_or("fallback Style executable is unavailable")?, style.typed().value()).map_err(|error| error.to_string())?;
-                    }
                     match owner {
                         Some(owner) => AwbcRuntimeValueSnapshot::from_unrestricted_runtime_value_for_program(style.typed().value(), owner),
                         None => AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(style.typed().value()),
@@ -193,7 +361,17 @@ impl LineDisplayFrameSnapshot {
         owner: Option<&RuntimeProgramOwner>,
         schema: Option<&CharacterDialogueRuntimeSchema>,
     ) -> Result<LineDisplayFrame, String> {
-        self.validate().map_err(|error| error.to_string())?;
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        self.admit_retained_metadata(&mut admission)?;
+        self.admit_retained_values(&mut admission, schema)?;
         let frame = self.try_map_runtime(
             |config| config.into_live(owner, schema),
             |content| {

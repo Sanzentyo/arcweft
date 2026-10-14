@@ -579,6 +579,7 @@ impl<'a> RuntimeValueSource<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeTupleView<'a> {
+    Dialogue(super::opaque::RuntimeDialogueTupleView<'a>),
     Values(&'a [RuntimeValue]),
     Deque(&'a std::collections::VecDeque<RuntimeValue>),
     Snapshots(&'a [super::AwbcRuntimeValueSnapshot]),
@@ -774,6 +775,7 @@ impl<'a> RuntimeTupleView<'a> {
     }
     pub(crate) fn len(self) -> usize {
         match self {
+            Self::Dialogue(value) => value.len(),
             Self::Values(values) => values.len(),
             Self::Deque(values) => values.len(),
             Self::Snapshots(values) => values.len(),
@@ -787,6 +789,7 @@ impl<'a> RuntimeTupleView<'a> {
 
     pub(crate) fn get(self, index: usize) -> Option<RuntimeValueView<'a>> {
         match self {
+            Self::Dialogue(value) => value.get(index),
             Self::Values(values) => values.get(index).map(RuntimeValue::view),
             Self::Deque(values) => values.get(index).map(RuntimeValue::view),
             Self::Snapshots(values) => values.get(index).map(super::AwbcRuntimeValueSnapshot::view),

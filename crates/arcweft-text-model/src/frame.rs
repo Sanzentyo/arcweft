@@ -504,6 +504,27 @@ mod serde_tests {
     }
 
     #[test]
+    fn live_and_inert_frame_metadata_share_limits_before_value_projection() {
+        use arcweft_core::{entry::RuntimeSchemaLimits, value::RuntimeRetainedValueAdmission};
+        let mut candidate = frame();
+        candidate.unresolved.push("oversized metadata".repeat(8));
+        let snapshot = LineDisplayFrameSnapshot::from_live(&candidate, None, None).unwrap();
+        let limits = RuntimeSchemaLimits {
+            max_string_bytes: 64,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        let mut live = RuntimeRetainedValueAdmission::standalone(limits);
+        let mut inert = RuntimeRetainedValueAdmission::standalone(limits);
+        assert!(candidate.admit_retained_metadata(&mut live).is_err());
+        assert!(snapshot.admit_retained_metadata(&mut inert).is_err());
+        assert_eq!(
+            live.validate(&arcweft_core::value::RuntimeValue::Unit),
+            inert.validate_snapshot(&arcweft_core::value::AwbcRuntimeValueSnapshot::Unit)
+        );
+        assert_eq!(snapshot.into_live(None, None).unwrap(), candidate);
+    }
+
+    #[test]
     fn line_display_frame_wire_rejects_invalid_ranges_and_removed_flat_fields() {
         let mut invalid_range = serde_json::to_value(
             LineDisplayFrameSnapshot::from_live(&frame(), None, None).unwrap(),

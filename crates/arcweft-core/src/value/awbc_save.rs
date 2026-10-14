@@ -318,6 +318,7 @@ pub struct AwbcRuntimeCallableSnapshot {
 }
 
 mod admission;
+mod projection;
 mod retained_admission;
 pub use retained_admission::RuntimeRetainedValueAdmission;
 
@@ -691,93 +692,7 @@ impl AwbcRuntimeValueSnapshot {
         value: &RuntimeValue,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Ok(match value {
-            RuntimeValue::Unit => Self::Unit,
-            RuntimeValue::Bool(value) => Self::Bool(*value),
-            RuntimeValue::Int(value) => Self::Int(*value),
-            RuntimeValue::UInt(value) => Self::UInt(*value),
-            RuntimeValue::F32(value) => Self::F32(value.to_bits()),
-            RuntimeValue::F64(value) => Self::F64(value.to_bits()),
-            value @ (RuntimeValue::MatrixF32(_)
-            | RuntimeValue::MatrixF64(_)
-            | RuntimeValue::TensorF32(_)
-            | RuntimeValue::TensorF64(_)) => Self::DenseNumeric(
-                crate::math::RuntimeDenseNumericPayload::try_from(value)
-                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
-            ),
-            RuntimeValue::String(value) => Self::String(value.clone()),
-            RuntimeValue::Color(value) => Self::Color(*value),
-            RuntimeValue::NeedHandle(value) => Self::NeedHandle(
-                crate::task::RuntimeNeedHandleSaveSnapshot::from_live(value, owner)?,
-            ),
-            RuntimeValue::Char(value) => Self::Char(*value),
-            RuntimeValue::Duration(value) => Self::Duration(*value),
-            RuntimeValue::Progress(value) => Self::Progress {
-                ratio: value.ratio(),
-                label: value.label().map(str::to_owned),
-            },
-            RuntimeValue::Range(value) => Self::Range(value.clone()),
-            RuntimeValue::Iterator(value) => {
-                Self::Iterator(Self::iterator_from_live(value, owner)?)
-            }
-            RuntimeValue::EntityRef(value) => Self::EntityRef(value.clone()),
-            RuntimeValue::Tuple(values) => Self::Tuple(
-                values
-                    .iter()
-                    .map(|value| Self::from_admitted_storage(value, owner))
-                    .collect::<Result<_, _>>()?,
-            ),
-            RuntimeValue::Seq(value) => Self::Seq(Self::sequence_from_live(value, owner)?),
-            RuntimeValue::Record(fields) => Self::Record(
-                fields
-                    .iter()
-                    .map(|field| {
-                        Ok(AwbcRuntimeFieldSnapshot {
-                            field: field.field(),
-                            name: field.name().to_owned(),
-                            value: Self::from_admitted_storage(field.value(), owner)?,
-                        })
-                    })
-                    .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-            ),
-            RuntimeValue::NominalRecord(record) => {
-                Self::NominalRecord(Self::nominal_from_live(record, owner)?)
-            }
-            RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value, owner)?),
-            RuntimeValue::Reduction(value) => {
-                Self::Reduction(Self::reduction_from_live(value, owner)?)
-            }
-            RuntimeValue::Agent(value) => Self::Agent(Self::agent_from_live(value, owner)?),
-            RuntimeValue::Callable(value) => {
-                Self::Callable(Self::callable_from_live(value, owner)?)
-            }
-            RuntimeValue::Variant(crate::value::RuntimeVariantValue {
-                owner: variant_owner,
-                ordinal,
-                name,
-                payload,
-                type_instantiation,
-            }) => {
-                if matches!(variant_owner, super::RuntimeVariantIdentity::Builtin(_))
-                    && value.builtin_variant_case().is_none()
-                {
-                    return Err(AwbcRuntimeValueSnapshotError::new(
-                        "invalid builtin variant snapshot",
-                    ));
-                }
-                Self::Variant {
-                    owner: variant_owner.clone(),
-                    ordinal: *ordinal,
-                    name: name.clone(),
-                    payload: payload
-                        .as_deref()
-                        .map(|value| Self::from_admitted_storage(value, owner))
-                        .transpose()?
-                        .map(Box::new),
-                    type_instantiation: type_instantiation.as_deref().cloned(),
-                }
-            }
-        })
+        Self::from_admitted_view(value.view(), owner)
     }
 
     /// Restores values, including `DataShape` witnesses, after the enclosing

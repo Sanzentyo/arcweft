@@ -338,6 +338,33 @@ pub(crate) fn preflight_snapshot_view<'a>(
     Ok(admission.work())
 }
 
+#[cfg(test)]
+pub(crate) fn snapshot_view_bytes(
+    value: RuntimeValueView<'_>,
+) -> Result<Vec<u8>, RuntimeSchemaError> {
+    let limits = super::RuntimeSchemaLimits::engine_default();
+    let mut sink = super::CanonicalBytesSink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_encoded_bytes: limits.max_encoded_bytes,
+        max_string_bytes: Some(limits.max_string_bytes),
+    };
+    let mut budget = ValueBudget::new(limits);
+    let mut validation = NoSchemaValidation {
+        resources: None,
+        depth: 0,
+        observer: None,
+    };
+    visit_work(
+        Work::Value(value, 0, (), None),
+        &mut writer,
+        Some(&mut budget),
+        &mut validation,
+        ValueEncoding::Snapshot,
+    )?;
+    Ok(sink.bytes)
+}
+
 pub(crate) fn validate_standalone_task_type(
     ty: &crate::pattern::RuntimeCheckedType,
     limits: super::RuntimeSchemaLimits,

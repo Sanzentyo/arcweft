@@ -11,6 +11,9 @@ use crate::entry::{
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeSequenceView<'a> {
+    Bytes(&'a [u8]),
+    DialogueBindings(&'a [super::super::RuntimeDialogueContentBinding]),
+    DialogueEffects(&'a [super::super::RuntimeDialogueContentEffectBinding]),
     Live(&'a RuntimeSeq),
     Snapshot(&'a AwbcRuntimeSeqSnapshot),
 }
@@ -23,6 +26,7 @@ impl<'a> RuntimeSequenceView<'a> {
     }
     pub(crate) fn dense_bytes(self) -> Option<&'a [u8]> {
         match self {
+            Self::Bytes(value) => Some(value),
             Self::Live(v) if v.dense_kind() == Some(super::super::DenseSeqKind::Bytes) => {
                 v.as_bytes()
             }
@@ -34,6 +38,7 @@ impl<'a> RuntimeSequenceView<'a> {
     }
     pub(crate) fn byte_storage(self) -> Option<&'a [u8]> {
         match self {
+            Self::Bytes(value) => Some(value),
             Self::Live(value) => value.as_bytes(),
             Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(value)) => value.as_bytes(),
             _ => None,
@@ -41,6 +46,9 @@ impl<'a> RuntimeSequenceView<'a> {
     }
     pub(crate) fn len(self) -> Result<usize, RuntimeSchemaError> {
         match self {
+            Self::Bytes(value) => Ok(value.len()),
+            Self::DialogueBindings(value) => Ok(value.len()),
+            Self::DialogueEffects(value) => Ok(value.len()),
             Self::Live(v) => Ok(v.len()),
             Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(v)) => Ok(v.len()),
             Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(v)) => Ok(v.len()),
@@ -57,6 +65,15 @@ impl<'a> RuntimeSequenceView<'a> {
             return None;
         }
         Some(match self {
+            Self::Bytes(value) => RuntimeValueView::Scalar(super::RuntimeScalarView::UInt(
+                super::super::RuntimeUInt::U8(*value.get(index)?),
+            )),
+            Self::DialogueBindings(value) => {
+                super::super::opaque::RuntimeDialogueTupleView::Binding(value.get(index)?).view()
+            }
+            Self::DialogueEffects(value) => {
+                super::super::opaque::RuntimeDialogueTupleView::Effect(value.get(index)?).view()
+            }
             Self::Live(v) => v.value_view(index)?,
             Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(v)) => v.get(index)?.view(),
             Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(v)) => {
@@ -86,7 +103,10 @@ impl<'a> RuntimeSequenceView<'a> {
     pub(super) const fn live_value(self) -> Option<&'a RuntimeSeq> {
         match self {
             Self::Live(v) => Some(v),
-            Self::Snapshot(_) => None,
+            Self::Snapshot(_)
+            | Self::Bytes(_)
+            | Self::DialogueBindings(_)
+            | Self::DialogueEffects(_) => None,
         }
     }
 }

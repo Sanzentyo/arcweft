@@ -38,6 +38,10 @@ impl<F> Default for DialoguePresentationStore<F> {
 }
 
 impl<F> DialoguePresentationStore<F> {
+    pub fn iter(&self) -> impl Iterator<Item = &DialoguePresentation<F>> {
+        self.presentations.values()
+    }
+
     pub(crate) fn try_map_frames<T, E>(
         self,
         map: &mut impl FnMut(F) -> Result<T, E>,
@@ -90,16 +94,28 @@ impl DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> {
         owner: Option<&arcweft_core::task::RuntimeProgramOwner>,
         schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<Self, String> {
-        store.validate().map_err(|error| error.to_string())?;
+        let mut admission = match owner {
+            Some(owner) => arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => arcweft_core::value::RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
         for dialogue in store.iter() {
             for entry in dialogue.entries() {
-                arcweft_text_model::LineDisplayFrameSnapshot::from_live(
-                    entry.frame(),
-                    owner,
-                    schema,
-                )?;
+                entry.frame().admit_retained_metadata(&mut admission)?;
             }
         }
+        for dialogue in store.iter() {
+            for entry in dialogue.entries() {
+                entry
+                    .frame()
+                    .admit_retained_values(&mut admission, schema)?;
+            }
+        }
+        store.validate().map_err(|error| error.to_string())?;
         store.clone().try_map_frames(&mut |frame| {
             arcweft_text_model::LineDisplayFrameSnapshot::from_live(&frame, owner, schema)
         })
@@ -111,6 +127,27 @@ impl DialoguePresentationStore<arcweft_text_model::LineDisplayFrameSnapshot> {
         owner: Option<&arcweft_core::task::RuntimeProgramOwner>,
         schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<DialoguePresentationStore, String> {
+        let mut admission = match owner {
+            Some(owner) => arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => arcweft_core::value::RuntimeRetainedValueAdmission::standalone(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        for dialogue in self.iter() {
+            for entry in dialogue.entries() {
+                entry.frame().admit_retained_metadata(&mut admission)?;
+            }
+        }
+        for dialogue in self.iter() {
+            for entry in dialogue.entries() {
+                entry
+                    .frame()
+                    .admit_retained_values(&mut admission, schema)?;
+            }
+        }
         let store = self.try_map_frames(&mut |frame| frame.into_live(owner, schema))?;
         store.validate().map_err(|error| error.to_string())?;
         Ok(store)
@@ -175,10 +212,6 @@ impl DialoguePresentationStore {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.presentations.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &DialoguePresentation> {
-        self.presentations.values()
     }
 
     #[must_use]

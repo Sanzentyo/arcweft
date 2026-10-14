@@ -98,6 +98,16 @@ borrowed view の descendant を inert のまま検証する。resource prefligh
 不成立 branch は effect obligation を巻き戻すが、消費 work と hard resource
 failure は巻き戻さない。validation-work・validation-depth の上限超過は
 値の位置を保持した資源エラーとして返す。
+
+retained presentation の display frame と stage は、表示・source metadata の
+既存 serde grammar を借用して同じ group の depth・collection・string・work
+上限を検証する。metadata を仮の RuntimeValue に変換せず、実際の wire-byte
+上限は enclosing codec が所有する。CharacterDialogue の original executable
+と generation、元の Style role、Content の入れ子と callback capture は、
+frame の複製や inert value の live 復元より前に検証する。Content は所有型の
+codec fields を直接 borrowed logical view へ投影し、検証用の live envelope を
+複製しない。保存の value projection もこの view を利用し、既存の型付き
+nominal・callable・Need の保存境界を維持する。
 durable root は選択された state role の型をこの構築前検証に渡す。
 inert callable と Iterator Witness の照合は選択中の original program を使い、
 その検証は live lease や Copy capability を発行しない。live 値の admission は

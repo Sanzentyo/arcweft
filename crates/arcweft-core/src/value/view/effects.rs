@@ -18,6 +18,7 @@ use crate::{
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RuntimeOpaqueView<'a> {
+    DialogueContent(&'a super::super::RuntimeDialogueContentValue),
     Live(&'a RuntimeOpaqueValue),
     Snapshot(&'a AwbcRuntimeOpaqueSnapshot),
 }
@@ -25,30 +26,45 @@ pub(crate) enum RuntimeOpaqueView<'a> {
 impl<'a> RuntimeOpaqueView<'a> {
     pub(crate) fn producer(self) -> &'a RuntimeOpaqueTypeProducerId {
         match self {
+            Self::DialogueContent(_) => {
+                super::super::RuntimeDialogueContentValue::borrowed_owner().producer()
+            }
             Self::Live(v) => v.producer(),
             Self::Snapshot(v) => &v.producer,
         }
     }
     pub(crate) fn semantic_identity(self) -> RuntimeSemanticTypeId {
         match self {
+            Self::DialogueContent(_) => {
+                super::super::RuntimeDialogueContentValue::borrowed_owner().semantic_identity()
+            }
             Self::Live(v) => v.semantic_identity(),
             Self::Snapshot(v) => v.semantic_identity,
         }
     }
     pub(crate) fn value_class(self) -> RuntimeOpaqueValueClass {
         match self {
+            Self::DialogueContent(_) => {
+                super::super::RuntimeDialogueOpaqueRole::Content.value_class()
+            }
             Self::Live(v) => v.value_class(),
             Self::Snapshot(v) => v.value_class,
         }
     }
     pub(crate) fn persistence(self) -> RuntimeOpaquePersistence {
         match self {
+            Self::DialogueContent(_) => {
+                super::super::RuntimeDialogueOpaqueRole::Content.persistence()
+            }
             Self::Live(v) => v.persistence(),
             Self::Snapshot(v) => v.persistence,
         }
     }
     pub(crate) fn payload(self) -> RuntimeValueView<'a> {
         match self {
+            Self::DialogueContent(v) => {
+                super::super::opaque::RuntimeDialogueTupleView::Content(v).view()
+            }
             Self::Live(v) => v.payload().view(),
             Self::Snapshot(v) => v.payload.view(),
         }
@@ -56,7 +72,7 @@ impl<'a> RuntimeOpaqueView<'a> {
     pub(super) const fn live_value(self) -> Option<&'a RuntimeOpaqueValue> {
         match self {
             Self::Live(v) => Some(v),
-            Self::Snapshot(_) => None,
+            Self::Snapshot(_) | Self::DialogueContent(_) => None,
         }
     }
 }

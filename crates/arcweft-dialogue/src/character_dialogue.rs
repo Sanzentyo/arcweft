@@ -194,6 +194,8 @@ pub enum CharacterDialogueValueError {
     Nominal(#[from] arcweft_core::value::RuntimeNominalRecordError),
     #[error(transparent)]
     RuntimeSchema(#[from] arcweft_core::entry::RuntimeSchemaError),
+    #[error(transparent)]
+    RetainedValue(#[from] arcweft_core::value::AwbcRuntimeValueSnapshotError),
 }
 
 impl From<CharacterDialogueCustomFieldIdError> for CharacterDialogueValueError {
