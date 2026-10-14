@@ -141,7 +141,12 @@ hard failure を共有 allowance に保持し、型の不一致へ置き換え�
 AWBC fiber の capture／restore は、全 frame の function・frame layout・
 register 数・宣言 effect 解の context を original AWBC program に照合してから
 metadata を複製し、live value を構築する。live frame の検証も同じ owning
-frame-layout 検証を使う。続いて全 frame の register place を、その layout の
+frame-layout 検証を使う。`FiberState`・`FiberFrame`・return point／continuation は
+一つの storage-parameterized owning grammar を使い、保存形式はその inert
+specialization とする。live frame と default の pending input owner は Clone
+も serde も持たない。root・cursor・frame instance・return destination・scope stack
+と format の復帰先は、全 frame header を検証した後、値の構築より前に照合する。
+続いて全 frame の register place を、その layout の
 元の型行と frame の immutable destination binding に照合してから、最初の
 値を複製・構築する。Native lexical environment も全 function scope と
 元の local declaration を同じ順序で検証し、live／inert の scope carrier と
@@ -157,6 +162,11 @@ field inventory と independent provenance を検証する。destination の型�
 部分ヘッダの名前・instantiation・深さ・子数も複製前に制限する。完全値の
 canonical byte 計上は、部分 place や frame wire 全体の byte 計上を代替しない。
 継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
+
+Product が保存 Fiber を検証する場合も inert storage を借用し、検証だけを目的とした
+live Fiber の構築・複製を行わない。terminal の return summary は、数値 shape・
+sequence の物理 storage kind・元 program の callable arity を含む共通 borrowed
+label projection と照合してから復元する。文字列 label は元の値を借用する。
 
 attached default の実行中に停止した callable の pending packet は、Native
 rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の

@@ -19,6 +19,47 @@ pub(crate) enum RuntimeSequenceView<'a> {
 }
 
 impl<'a> RuntimeSequenceView<'a> {
+    pub(crate) fn storage_label(self) -> &'static str {
+        use super::super::DenseSeqKind as Kind;
+        let dense = match self {
+            Self::Bytes(_) => Kind::Bytes,
+            Self::Live(RuntimeSeq::Dense(value))
+            | Self::Snapshot(AwbcRuntimeSeqSnapshot::Dense(value)) => value.kind(),
+            Self::Live(RuntimeSeq::Values(_))
+            | Self::Snapshot(AwbcRuntimeSeqSnapshot::Values(_))
+            | Self::DialogueBindings(_)
+            | Self::DialogueEffects(_) => return "values",
+            Self::Live(RuntimeSeq::TupleColumns(_))
+            | Self::Snapshot(AwbcRuntimeSeqSnapshot::TupleColumns { .. }) => return "tuple_columns",
+            Self::Live(RuntimeSeq::RecordColumns(_))
+            | Self::Snapshot(AwbcRuntimeSeqSnapshot::RecordColumns { .. }) => {
+                return "record_columns";
+            }
+        };
+        match dense {
+            Kind::Units => "units",
+            Kind::I8 => "i8",
+            Kind::I16 => "i16",
+            Kind::I32 => "i32",
+            Kind::I64 => "i64",
+            Kind::I128 => "i128",
+            Kind::ISize => "isize",
+            Kind::U8 => "u8",
+            Kind::U16 => "u16",
+            Kind::U32 => "u32",
+            Kind::U64 => "u64",
+            Kind::U128 => "u128",
+            Kind::USize => "usize",
+            Kind::F32 => "f32",
+            Kind::F64 => "f64",
+            Kind::Bool => "bool",
+            Kind::Bytes => "bytes",
+            Kind::Chars => "chars",
+            Kind::Durations => "durations",
+            Kind::Strings => "strings",
+            Kind::EntityRefs => "entity_refs",
+        }
+    }
     pub(crate) fn all(self, mut predicate: impl FnMut(RuntimeValueView<'a>) -> bool) -> bool {
         self.len().is_ok_and(|length| {
             (0..length).all(|index| self.value_view(index).is_some_and(&mut predicate))

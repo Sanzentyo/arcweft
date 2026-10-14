@@ -1808,13 +1808,7 @@ fn formatter_recovers_nested_helper_and_trait_errors_after_a_saved_budget_yield(
             panic!("nested call has a typed continuation");
         };
         site.instruction_offset += 1;
-        assert!(
-            forged
-                .into_live_for_program(&owner)
-                .expect("value projection succeeds")
-                .validate_for_program(&program)
-                .is_err()
-        );
+        assert!(forged.into_live_for_program(&owner).is_err());
 
         let mut restored = decoded
             .into_live_for_program(&owner)

@@ -178,13 +178,7 @@ fn mut_trait_return_updates_receiver_on_the_same_saved_fiber() {
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
         let mut forged = decoded.clone();
         forged.frames[1].return_to.as_mut().unwrap().destination = Some(AwbcRegisterId(0));
-        assert!(
-            forged
-                .into_live_for_program(&owner)
-                .unwrap()
-                .validate_for_program(&program)
-                .is_err()
-        );
+        assert!(forged.into_live_for_program(&owner).is_err());
         let mut restored = decoded.into_live_for_program(&owner).unwrap();
         restored.validate_for_program(&program).unwrap();
         restored.resume_budget_yield(&program).unwrap();

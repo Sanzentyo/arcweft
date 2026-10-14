@@ -133,11 +133,11 @@ pub use awbc_save::{
 };
 pub(crate) use callable::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
-    RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
-    RuntimeCallableZeroArgInvocationProof,
+    RuntimeCallableMaterializedArgument, RuntimeCallableZeroArgInvocationProof,
 };
 pub use callable::{
-    RuntimeCallablePendingSnapshot, RuntimeCallableValue, RuntimeCallableValueError,
+    RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot, RuntimeCallableValue,
+    RuntimeCallableValueError,
 };
 pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;
@@ -4197,93 +4197,11 @@ pub(crate) fn runtime_value_into_sequence_values(
 }
 
 pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
-    match value {
-        RuntimeValue::Unit => "()".to_owned(),
-        RuntimeValue::Bool(value) => value.to_string(),
-        RuntimeValue::Int(value) => value.label(),
-        RuntimeValue::UInt(value) => value.label(),
-        RuntimeValue::F32(value) => value.to_string(),
-        RuntimeValue::F64(value) => value.to_string(),
-        RuntimeValue::MatrixF32(value) => {
-            format!("matrix/f32/{}x{}", value.rows(), value.cols())
-        }
-        RuntimeValue::MatrixF64(value) => {
-            format!("matrix/f64/{}x{}", value.rows(), value.cols())
-        }
-        RuntimeValue::TensorF32(value) => {
-            format!("tensor/f32/{:?}", value.shape().dims())
-        }
-        RuntimeValue::TensorF64(value) => {
-            format!("tensor/f64/{:?}", value.shape().dims())
-        }
-        RuntimeValue::String(value) => value.clone(),
-        RuntimeValue::Color(value) => {
-            let [red, green, blue, alpha] = value.rgba8();
-            format!("#{red:02x}{green:02x}{blue:02x}{alpha:02x}")
-        }
-        RuntimeValue::NeedHandle(value) => format!("need/{}", value.need_id()),
-        RuntimeValue::EntityRef(value) => value.runtime_label(),
-        RuntimeValue::Char(value) => value.to_string(),
-        RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
-        RuntimeValue::Progress(value) => value
-            .label()
-            .map_or_else(|| format!("progress/{}", value.ratio()), str::to_owned),
-        RuntimeValue::Range(value) => value.label(),
-        RuntimeValue::Iterator(_) => "iterator".to_owned(),
-        RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
-        RuntimeValue::Seq(seq) => match seq {
-            RuntimeSeq::Values(values) => format!("seq/values/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::Units(len)) => format!("seq/units/{len}"),
-            RuntimeSeq::Dense(DenseSeq::I8(values)) => format!("seq/i8/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::I16(values)) => format!("seq/i16/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::I32(values)) => format!("seq/i32/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::I64(values)) => format!("seq/i64/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::I128(values)) => format!("seq/i128/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::ISize(values)) => format!("seq/isize/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::U8(values)) => format!("seq/u8/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::U16(values)) => format!("seq/u16/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::U32(values)) => format!("seq/u32/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::U64(values)) => format!("seq/u64/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::U128(values)) => format!("seq/u128/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::USize(values)) => format!("seq/usize/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::F32(values)) => format!("seq/f32/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::F64(values)) => format!("seq/f64/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::Bool(values)) => format!("seq/bool/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::Bytes(values)) => format!("seq/bytes/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::Chars(values)) => format!("seq/chars/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::Durations(values)) => {
-                format!("seq/durations/{}", values.len())
-            }
-            RuntimeSeq::Dense(DenseSeq::Strings(values)) => format!("seq/strings/{}", values.len()),
-            RuntimeSeq::Dense(DenseSeq::EntityRefs(values)) => {
-                format!("seq/entity_refs/{}", values.len())
-            }
-            RuntimeSeq::TupleColumns(values) => format!("seq/tuple_columns/{}", values.len()),
-            RuntimeSeq::RecordColumns(values) => format!("seq/record_columns/{}", values.len()),
-        },
-        RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
-        RuntimeValue::NominalRecord(record) => {
-            format!(
-                "nominal-record/{}/{}",
-                record.type_id().as_str(),
-                record.fields().len()
-            )
-        }
-        RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
-        RuntimeValue::Reduction(value) => format!("reduction/{}", value.commands().len()),
-        RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Callable(function) => function.remaining_arity().map_or_else(
-            |_| "function/invalid".to_owned(),
-            |arity| format!("function/{arity}"),
-        ),
-        RuntimeValue::Variant(crate::value::RuntimeVariantValue { name, payload, .. }) => {
-            if payload.is_some() {
-                format!(".{name}(...)")
-            } else {
-                format!(".{name}")
-            }
-        }
-    }
+    value
+        .view()
+        .label(None)
+        .expect("live storage has representable dimensions")
+        .into_owned()
 }
 
 impl RuntimeLocalReadMode {

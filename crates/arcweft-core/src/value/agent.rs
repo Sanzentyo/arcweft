@@ -1634,18 +1634,7 @@ impl RuntimeAgentValue {
 
     #[must_use]
     pub fn label(&self) -> &'static str {
-        match self {
-            Self::ActionTarget(_) => "agent/action_target",
-            Self::CaptureTarget(_) => "agent/capture_target",
-            Self::DebugStatePath(_) => "agent/debug_state_path",
-            Self::ObservationFieldPath(_) => "agent/observation_field_path",
-            Self::Probe(_) => "agent/probe",
-            Self::Diagnostics => "agent/diagnostics",
-            Self::Predicate(_) => "agent/predicate",
-            Self::ViewportPoint { .. } => "agent/viewport_point",
-            Self::BinaryData(_) => "agent/binary_data",
-            Self::DataShape(_) => "data/shape",
-        }
+        super::RuntimeAgentView::Live(self).label()
     }
 
     pub(crate) fn ownership(&self) -> RuntimeValueOwnership {

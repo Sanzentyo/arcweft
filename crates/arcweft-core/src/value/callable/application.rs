@@ -84,8 +84,16 @@ pub(crate) enum RuntimeCallableApplication {
 /// The owner packet suspended while an attached default body executes. An
 /// input used only by that body has already moved out of its indexed slot;
 /// every input needed on resume remains here under its original coordinate.
-#[derive(Clone, Debug)]
-pub(crate) struct RuntimeCallablePendingGroup {
+/// Construction and mutation remain inside its program-owned application.
+///
+/// ```compile_fail
+/// use arcweft_core::value::RuntimeCallablePendingGroup;
+/// fn duplicate(value: &RuntimeCallablePendingGroup) -> RuntimeCallablePendingGroup {
+///     value.clone()
+/// }
+/// ```
+#[derive(Debug)]
+pub struct RuntimeCallablePendingGroup {
     owner: RuntimeProgramOwner,
     state: RuntimeCallableStateId,
     retained: Vec<Option<RuntimeValue>>,

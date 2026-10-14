@@ -20,12 +20,12 @@ mod application;
 mod specialization;
 #[cfg(test)]
 mod tests;
-pub use application::RuntimeCallablePendingSnapshot;
 pub(crate) use application::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableGroupInspection,
-    RuntimeCallableInvocation, RuntimeCallableMaterializedArgument, RuntimeCallablePendingGroup,
+    RuntimeCallableInvocation, RuntimeCallableMaterializedArgument,
     RuntimeCallableZeroArgInvocationProof,
 };
+pub use application::{RuntimeCallablePendingGroup, RuntimeCallablePendingSnapshot};
 
 /// A rejected application retains every evaluated input for the caller's
 /// failure/cleanup transaction. It is deliberately not Clone.
@@ -239,20 +239,7 @@ impl RuntimeCallableValue {
     /// Number of ordinary inputs still required by this callable arrow.
     /// Attached content is supplied through the separate group-application ABI.
     pub fn remaining_arity(&self) -> Result<usize, RuntimeCallableValueError> {
-        let absent = || RuntimeCallableValueError::MissingState { state: self.state };
-        match &self.owner {
-            RuntimeProgramOwner::Plan(plan) => {
-                let state = plan.callable_states().get(self.state).ok_or_else(absent)?;
-                Ok(state.parameters.len())
-            }
-            RuntimeProgramOwner::Awbc(program) => {
-                let state = program
-                    .callable_states
-                    .get(self.state.index())
-                    .ok_or_else(absent)?;
-                Ok(state.parameters.len())
-            }
-        }
+        super::RuntimeCallableView::Live(self).remaining_arity(None)
     }
     pub fn validate_for_owner(
         &self,

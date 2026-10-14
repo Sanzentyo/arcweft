@@ -565,7 +565,7 @@ impl Engine {
                     self.fiber.frame.control_stack.push(FlowControlStackEntry {
                         kind: FlowControlStackEntryKind::WhileLet {
                             pattern: pattern.clone(),
-                            expr: expr.clone(),
+                            expr: Box::new(expr.clone()),
                             guard: guard.clone().map(Box::new),
                             body: Arc::clone(&body),
                         },
@@ -1759,14 +1759,19 @@ impl Engine {
             .frame
             .control_stack
             .last()
-            .map(|frame| frame.kind.clone())
+            .map(|frame| &frame.kind)
         else {
             return false;
         };
         self.fiber.frame.await_observer = None;
         match kind {
-            FlowControlStackEntryKind::Loop { body, .. } => self.push_loop_iteration(&body),
+            FlowControlStackEntryKind::Loop { body, .. } => {
+                let body = std::sync::Arc::clone(body);
+                self.push_loop_iteration(&body);
+            }
             FlowControlStackEntryKind::While { condition, body } => {
+                let condition = condition.clone();
+                let body = std::sync::Arc::clone(body);
                 self.push_ops(vec![FlowOp::WhileNext { condition, body }]);
             }
             FlowControlStackEntryKind::WhileLet {
@@ -1775,6 +1780,10 @@ impl Engine {
                 guard,
                 body,
             } => {
+                let pattern = pattern.clone();
+                let expr = expr.as_ref().clone();
+                let guard = guard.clone();
+                let body = std::sync::Arc::clone(body);
                 self.push_ops(vec![FlowOp::WhileLetNext {
                     pattern,
                     expr,

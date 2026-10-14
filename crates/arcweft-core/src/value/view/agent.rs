@@ -32,6 +32,20 @@ pub(crate) enum RuntimeAgentKind<'a> {
 }
 
 impl<'a> RuntimeAgentView<'a> {
+    pub(crate) fn label(self) -> &'static str {
+        match self.kind() {
+            RuntimeAgentKind::ActionTarget(_) => "agent/action_target",
+            RuntimeAgentKind::CaptureTarget(_) => "agent/capture_target",
+            RuntimeAgentKind::DebugStatePath(_) => "agent/debug_state_path",
+            RuntimeAgentKind::ObservationFieldPath(_) => "agent/observation_field_path",
+            RuntimeAgentKind::Probe(_) => "agent/probe",
+            RuntimeAgentKind::Diagnostics => "agent/diagnostics",
+            RuntimeAgentKind::Predicate(_) => "agent/predicate",
+            RuntimeAgentKind::ViewportPoint { .. } => "agent/viewport_point",
+            RuntimeAgentKind::BinaryData(_) => "agent/binary_data",
+            RuntimeAgentKind::DataShape(_) => "data/shape",
+        }
+    }
     pub(crate) fn kind(self) -> RuntimeAgentKind<'a> {
         use AwbcRuntimeAgentSnapshot as Snap;
         use RuntimeAgentKind as Kind;

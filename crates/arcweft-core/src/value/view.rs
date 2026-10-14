@@ -8,6 +8,7 @@ mod agent;
 mod dense_numeric;
 mod effects;
 mod iterator;
+mod label;
 mod need;
 mod nominal;
 mod sequence;

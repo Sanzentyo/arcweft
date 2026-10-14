@@ -298,13 +298,21 @@ impl<V> FiberTerminalValue<V> {
     }
 }
 
-impl FiberTerminalValue {
-    pub(super) fn validate_live_summary(
+impl<V> FiberTerminalValue<V> {
+    pub(super) fn validate_summary(
         &self,
+        original: Option<crate::program_types::RuntimeProgramTypes<'_>>,
         summary: Option<&str>,
+        view: impl Fn(&V) -> RuntimeValueView<'_>,
     ) -> Result<(), FiberStateError> {
         if let Self::Returned(Some(value)) = self
-            && summary != Some(crate::value::runtime_value_label(value).as_str())
+            && summary
+                != Some(
+                    view(value)
+                        .label(original)
+                        .map_err(|error| FiberStateError::Snapshot(error.into()))?
+                        .as_ref(),
+                )
         {
             return Err(FiberStateError::InvalidStatus {
                 actual: FiberStatus::Returned,
@@ -313,7 +321,9 @@ impl FiberTerminalValue {
         }
         Ok(())
     }
+}
 
+impl FiberTerminalValue {
     pub(super) fn snapshot_admitted(
         &self,
         owner: &RuntimeProgramOwner,

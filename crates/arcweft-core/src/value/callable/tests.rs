@@ -197,6 +197,11 @@ fn inert_callable_admission_uses_original_retained_types_and_preserves_live_leas
         RuntimeCallableValue::try_new(owner.clone(), state, [RuntimeValue::i64(42)]).unwrap(),
     );
     let image = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+    assert_eq!(value.view().label(None).unwrap(), "function/1");
+    assert_eq!(
+        image.view().label(Some(owner.types())).unwrap(),
+        "function/1"
+    );
     owner
         .types()
         .validate_inert_snapshot_value(function, &image, limits)

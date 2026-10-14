@@ -652,7 +652,7 @@ fn flow_fiber_line_handle_owners(
     Ok(owners)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct FlowControlStackEntry {
     pub(crate) kind: FlowControlStackEntryKind,
 }
@@ -675,7 +675,10 @@ impl FlowScopeCleanup {
 
 /// Structured frame kind for the minimal flow executor.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum FlowControlStackEntryKind {
+pub(crate) enum FlowControlStackEntryKind<
+    Function = FunctionCallFrame,
+    Format = NativeFormatAttemptFrame,
+> {
     Scope {
         origin: crate::scope::RuntimeScopeFrameOrigin,
         cleanups: Vec<FlowScopeCleanup>,
@@ -691,20 +694,20 @@ pub(crate) enum FlowControlStackEntryKind {
     },
     WhileLet {
         pattern: RuntimePattern,
-        expr: RuntimeExpr,
+        expr: Box<RuntimeExpr>,
         guard: Option<Box<RuntimeExpr>>,
         body: std::sync::Arc<[FlowOp]>,
     },
     /// One source-ordered formatter occurrence. The frame remains the sole
     /// outcome authority until its matching FormatContent expression consumes it.
-    FormatAttempt(NativeFormatAttemptFrame),
+    FormatAttempt(Format),
     /// Typed function-call return boundary. The callee's scope and any nested
     /// loop/scope frames are unwound before the returned value is admitted to
     /// the caller's result pattern.
-    FunctionCall(FunctionCallFrame),
+    FunctionCall(Function),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct NativeFormatAttemptFrame {
     pub(crate) attempt: RuntimeFormatAttemptId,
     pub(crate) context: crate::value::RuntimeFormatContext,
@@ -816,7 +819,7 @@ impl NativeFormatAttemptFrame {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct NativeFormatOperandFrame {
     pub(crate) ordinal: usize,
     pub(crate) resume: Option<FlowCursor>,
@@ -824,7 +827,7 @@ pub(crate) struct NativeFormatOperandFrame {
 }
 
 /// One invocation frame shared by direct and value-based function calls.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct FunctionCallFrame {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
@@ -836,7 +839,7 @@ pub(crate) struct FunctionCallFrame {
 
 #[derive(Clone, Debug, PartialEq)]
 enum FlowControlStackEntryRollbackImage {
-    Static(FlowControlStackEntryKind),
+    Static(FlowControlStackEntryKind<std::convert::Infallible, std::convert::Infallible>),
     FormatAttempt(NativeFormatAttemptRollbackImage),
     FunctionCall {
         site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -844,7 +847,7 @@ enum FlowControlStackEntryRollbackImage {
         function_scope: bool,
         resume: Option<FlowCursor>,
         caller_pending_ops: VecDeque<FlowOpRollbackImage>,
-        continuation: FunctionReturnContinuationRollbackImage,
+        continuation: Box<FunctionReturnContinuationRollbackImage>,
     },
 }
 
@@ -870,10 +873,43 @@ impl FlowControlStackEntry {
                         .iter()
                         .map(|op| FlowOpRollbackImage::from_live(op, owner))
                         .collect::<Result<_, String>>()?,
-                    continuation: frame.continuation.inert_rollback_image(owner, frame.site)?,
+                    continuation: Box::new(
+                        frame.continuation.inert_rollback_image(owner, frame.site)?,
+                    ),
                 }
             }
-            _ => FlowControlStackEntryRollbackImage::Static(self.kind.clone()),
+            FlowControlStackEntryKind::Scope {
+                origin,
+                cleanups,
+                match_guard,
+            } => FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::Scope {
+                origin: *origin,
+                cleanups: cleanups.clone(),
+                match_guard: match_guard.clone(),
+            }),
+            FlowControlStackEntryKind::Loop { body, result } => {
+                FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::Loop {
+                    body: Arc::clone(body),
+                    result: result.clone(),
+                })
+            }
+            FlowControlStackEntryKind::While { condition, body } => {
+                FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::While {
+                    condition: condition.clone(),
+                    body: Arc::clone(body),
+                })
+            }
+            FlowControlStackEntryKind::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::WhileLet {
+                pattern: pattern.clone(),
+                expr: expr.clone(),
+                guard: guard.clone(),
+                body: Arc::clone(body),
+            }),
         })
     }
 
@@ -882,7 +918,36 @@ impl FlowControlStackEntry {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         let kind = match image {
-            FlowControlStackEntryRollbackImage::Static(kind) => kind,
+            FlowControlStackEntryRollbackImage::Static(kind) => match kind {
+                FlowControlStackEntryKind::Scope {
+                    origin,
+                    cleanups,
+                    match_guard,
+                } => FlowControlStackEntryKind::Scope {
+                    origin,
+                    cleanups,
+                    match_guard,
+                },
+                FlowControlStackEntryKind::Loop { body, result } => {
+                    FlowControlStackEntryKind::Loop { body, result }
+                }
+                FlowControlStackEntryKind::While { condition, body } => {
+                    FlowControlStackEntryKind::While { condition, body }
+                }
+                FlowControlStackEntryKind::WhileLet {
+                    pattern,
+                    expr,
+                    guard,
+                    body,
+                } => FlowControlStackEntryKind::WhileLet {
+                    pattern,
+                    expr,
+                    guard,
+                    body,
+                },
+                FlowControlStackEntryKind::FormatAttempt(never)
+                | FlowControlStackEntryKind::FunctionCall(never) => match never {},
+            },
             FlowControlStackEntryRollbackImage::FormatAttempt(frame) => {
                 FlowControlStackEntryKind::FormatAttempt(
                     NativeFormatAttemptFrame::from_rollback_image(frame, owner)?,
@@ -917,7 +982,7 @@ impl FlowControlStackEntry {
                         .map(|op| op.into_live(owner))
                         .collect::<Result<_, String>>()?,
                     continuation: FunctionReturnContinuation::from_rollback_image(
-                        continuation,
+                        *continuation,
                         site,
                         owner,
                     )?,
@@ -947,7 +1012,7 @@ impl FunctionCallFrame {
 
 /// The caller operation resumed after an invocation returns. A default
 /// resumes its materialization plan without reevaluating source operands.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation {
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,

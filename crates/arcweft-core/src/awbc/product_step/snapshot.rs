@@ -2160,12 +2160,8 @@ fn validate_fiber_snapshot_for_program(
     program: &std::sync::Arc<crate::awbc::schema::AwbcProgram>,
 ) -> Result<(), String> {
     let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
-    let fiber = snapshot
-        .clone()
-        .into_live_for_program(&owner)
-        .map_err(|error| error.to_string())?;
-    fiber
-        .validate_for_program(program)
+    snapshot
+        .validate_for_program(&owner)
         .map_err(|error| error.to_string())
 }
 
@@ -3960,7 +3956,7 @@ mod tests {
     use crate::awbc::fiber::{
         AwbcFiberStateSnapshot, FiberBudget, FiberCursor, FiberStatus, FiberTrap,
     };
-    use crate::awbc::schema::{AwbcBlockId, AwbcEntryId, AwbcFunctionId, AwbcTrapCode, AwbcTypeId};
+    use crate::awbc::schema::{AwbcBlockId, AwbcFunctionId, AwbcTrapCode, AwbcTypeId};
     use crate::runtime_id::{
         DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeFiberInstanceId,
         RuntimeIdCursor, RuntimePersistentFiberId,
@@ -3979,16 +3975,16 @@ mod tests {
                     instance: RuntimeFiberInstanceId::from_allocated(NonZeroU64::MIN),
                     next_frame_instance: RuntimeIdCursor::initial(),
                     generation: 1,
-                    root: crate::awbc::fiber::AwbcFiberRoot::Entry(AwbcEntryId(0)),
+                    root: crate::awbc::fiber::AwbcFiberRoot::Empty,
                     cursor: FiberCursor {
                         function: AwbcFunctionId(0),
                         block: AwbcBlockId(0),
                         instruction_offset: 0,
                     },
                     frames: Vec::new(),
-                    status: FiberStatus::Running,
+                    status: FiberStatus::Returned,
                     suspension: None,
-                    terminal: None,
+                    terminal: Some(crate::awbc::fiber::FiberTerminalValue::Returned(None)),
                     return_summary: None,
                     budget: FiberBudget {
                         remaining: 1,

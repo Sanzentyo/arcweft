@@ -175,6 +175,31 @@ pub(crate) enum RuntimeCallableView<'a> {
 }
 
 impl<'a> RuntimeCallableView<'a> {
+    pub(crate) fn remaining_arity(
+        self,
+        original: Option<crate::program_types::RuntimeProgramTypes<'_>>,
+    ) -> Result<usize, super::super::RuntimeCallableValueError> {
+        let missing = || super::super::RuntimeCallableValueError::MissingState {
+            state: self.state(),
+        };
+        match self
+            .owner()
+            .map(RuntimeProgramOwner::types)
+            .or(original)
+            .ok_or_else(missing)?
+        {
+            crate::program_types::RuntimeProgramTypes::Plan(plan) => plan
+                .callable_states()
+                .get(self.state())
+                .map(|state| state.parameters.len())
+                .ok_or_else(missing),
+            crate::program_types::RuntimeProgramTypes::Awbc(program) => program
+                .callable_states
+                .get(self.state().index())
+                .map(|state| state.parameters.len())
+                .ok_or_else(missing),
+        }
+    }
     pub(crate) fn state(self) -> RuntimeCallableStateId {
         match self {
             Self::Live(v) => v.state(),

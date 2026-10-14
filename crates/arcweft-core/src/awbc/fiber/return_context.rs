@@ -20,21 +20,21 @@ pub(super) struct FiberReturnContext<'a> {
 }
 
 impl FiberReturnContext<'_> {
-    pub(super) fn validate_context_return(
+    pub(super) fn validate_context_return<V: super::FiberStoredValue>(
         &self,
         site: FiberCursor,
-        pending: &RuntimeArcErrorContextPending,
+        pending: &RuntimeArcErrorContextPending<V>,
         default_stage: bool,
         callable_state: crate::runtime_id::RuntimeCallableStateId,
     ) -> Result<(), FiberStateError> {
         let mut resources =
-            ValueResourceAdmission::live(crate::entry::RuntimeSchemaLimits::engine_default());
+            V::resource_admission(crate::entry::RuntimeSchemaLimits::engine_default());
         self.validate_context_pending(
             site,
             pending,
             default_stage,
             callable_state,
-            crate::value::RuntimeValue::view,
+            V::borrowed_view,
             &mut resources,
         )
     }

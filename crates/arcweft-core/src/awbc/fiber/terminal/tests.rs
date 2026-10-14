@@ -55,6 +55,20 @@ fn returned_live_and_inert_share_exact_resources_and_original_result_row() {
     let live = FiberTerminalValue::Returned(Some(RuntimeValue::String("cause".into())));
     let inert =
         FiberTerminalValue::Returned(Some(AwbcRuntimeValueSnapshot::String("cause".into())));
+    live.validate_summary(None, Some("cause"), RuntimeValue::view)
+        .unwrap();
+    inert
+        .validate_summary(None, Some("cause"), AwbcRuntimeValueSnapshot::view)
+        .unwrap();
+    assert!(
+        live.validate_summary(None, Some("forged"), RuntimeValue::view)
+            .is_err()
+    );
+    assert!(
+        inert
+            .validate_summary(None, Some("forged"), AwbcRuntimeValueSnapshot::view)
+            .is_err()
+    );
     let exact = RuntimeSchemaLimits {
         max_nodes: 1,
         max_encoded_bytes: 7,
