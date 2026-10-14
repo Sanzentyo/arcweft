@@ -12,9 +12,11 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 mod authority;
+mod parameter_values;
 use crate::pattern::RuntimeSemanticTypeId;
 use authority::FunctionTypeAuthority;
 pub(crate) use authority::RuntimeValueTypeContext;
+pub use parameter_values::RuntimeParameterValueAdmissionError;
 
 impl super::RuntimeProgramValueType<'_> {
     /// Admits a stored value under its original row and retained construction
@@ -852,26 +854,6 @@ impl AwbcProgram {
                     )
                     .is_err()
             {
-                return false;
-            }
-        }
-        matcher.accepted()
-    }
-    pub fn parameter_contract_accepts_values<'value>(
-        &self,
-        contract: AwbcTypeId,
-        inputs: impl IntoIterator<Item = (usize, &'value RuntimeValue)>,
-    ) -> bool {
-        let Some((parameters, mut matcher)) = ParameterMatcher::new(self, contract, None) else {
-            return false;
-        };
-        let mut seen = BTreeSet::new();
-        for (ordinal, value) in inputs {
-            let Some(expected) = parameters.get(ordinal) else {
-                return false;
-            };
-            let environment = matcher.parameters.clone();
-            if !seen.insert(ordinal) || matcher.value(*expected, value, 0, &environment).is_err() {
                 return false;
             }
         }

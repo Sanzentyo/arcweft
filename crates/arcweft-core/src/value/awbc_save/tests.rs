@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::*;
+mod retained_copy;
 use crate::{
     awbc::schema::{
         AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcStringId,

@@ -1397,18 +1397,33 @@ impl BundleViewRuntime {
     }
 
     fn ensure_unrestricted_runtime_bindings(&self) -> Result<(), ViewSaveError> {
-        if self
-            .view_root_bindings
-            .values()
-            .chain(self.mounts.values().flat_map(|mount| {
+        self.validate_retained_runtime_values(self.view_root_bindings.values().chain(
+            self.mounts.values().flat_map(|mount| {
                 mount
                     .runtime_parameters
                     .values()
                     .chain(mount.local_state.values().map(|field| &field.value))
-            }))
-            .any(|value| !value.ownership().permits_copy())
-        {
-            return Err(ViewSaveError::AffineRuntimeBinding);
+            }),
+        ))
+    }
+
+    fn validate_retained_runtime_values<'value>(
+        &self,
+        values: impl IntoIterator<Item = &'value RuntimeValue>,
+    ) -> Result<(), ViewSaveError> {
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+        let owner = match &self.program_runtime {
+            ViewProgramRuntimeAuthority::Awbc(program) => Some(
+                arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+            ),
+            ViewProgramRuntimeAuthority::CoreProgramFree => None,
+        };
+        for value in values {
+            match &owner {
+                Some(owner) => value.validate_unrestricted_for_program_with_limits(owner, limits),
+                None => value.validate_unrestricted_standalone_with_limits(limits),
+            }
+            .map_err(ViewSaveError::from)?;
         }
         Ok(())
     }
@@ -1423,23 +1438,19 @@ impl BundleViewRuntime {
         snapshot: &BundleViewRuntimeSnapshot,
         reconciled_root_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
-        if snapshot
-            .view_root_bindings
-            .iter()
-            .map(|binding| &binding.value)
-            .chain(snapshot.mounts.iter().flat_map(|mount| {
-                mount
-                    .runtime_parameters
-                    .iter()
-                    .map(|binding| &binding.value)
-                    .chain(mount.local_state.iter().map(|field| &field.value))
-            }))
-            .any(|value| !value.ownership().permits_copy())
-        {
-            return Err(BundleViewRuntimeError::Save(
-                ViewSaveError::AffineRuntimeBinding,
-            ));
-        }
+        self.validate_retained_runtime_values(
+            snapshot
+                .view_root_bindings
+                .iter()
+                .map(|binding| &binding.value)
+                .chain(snapshot.mounts.iter().flat_map(|mount| {
+                    mount
+                        .runtime_parameters
+                        .iter()
+                        .map(|binding| &binding.value)
+                        .chain(mount.local_state.iter().map(|field| &field.value))
+                })),
+        )?;
         let expected_program = self
             .catalog
             .as_ref()
@@ -1453,8 +1464,19 @@ impl BundleViewRuntime {
 
         let mut view_root_bindings = BTreeMap::new();
         for binding in &snapshot.view_root_bindings {
+            let value = match &self.program_runtime {
+                ViewProgramRuntimeAuthority::Awbc(program) => binding.value
+                    .copy_unrestricted_for_program_with_limits(
+                        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    ).map_err(ViewSaveError::from)?,
+                ViewProgramRuntimeAuthority::CoreProgramFree =>
+                    arcweft_core::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&binding.value)
+                        .and_then(arcweft_core::value::AwbcRuntimeValueSnapshot::into_unrestricted_standalone_value)
+                        .map_err(ViewSaveError::from)?,
+            };
             if view_root_bindings
-                .insert(binding.name.clone(), binding.value.clone())
+                .insert(binding.name.clone(), value)
                 .is_some()
             {
                 return Err(BundleViewRuntimeError::DuplicateRootBinding {
@@ -1514,27 +1536,18 @@ impl BundleViewRuntime {
                 &saved.initialized_state,
                 self.inventory.state_types(),
             )?;
-            let mut runtime_parameters = BTreeMap::new();
+            let mut parameter_names = BTreeSet::new();
             for parameter in &saved.runtime_parameters {
                 let declared = definition
                     .parameters
                     .iter()
                     .find(|declared| declared.name == parameter.name);
-                if !parameter.value.ownership().permits_copy()
-                    || declared.is_none()
-                    || (definition.parameter_contract.is_none()
-                        && matches!(&self.program_runtime, ViewProgramRuntimeAuthority::Awbc(program)
-                            if !program.semantic_type_id(declared.expect("declaration checked").semantic_type)
-                                .is_some_and(|ty| program.value_matches_type(&parameter.value, ty))))
-                {
+                if declared.is_none() {
                     return Err(BundleViewRuntimeError::InvalidRuntimeParameterContract {
                         definition: saved_view.clone(),
                     });
                 }
-                if runtime_parameters
-                    .insert(parameter.name.clone(), parameter.value.clone())
-                    .is_some()
-                {
+                if !parameter_names.insert(parameter.name.as_str()) {
                     return Err(BundleViewRuntimeError::DuplicateRuntimeParameter {
                         parameter: parameter.name.clone(),
                     });
@@ -1544,19 +1557,26 @@ impl BundleViewRuntime {
                 let valid = match &self.program_runtime {
                     ViewProgramRuntimeAuthority::Awbc(program) => {
                         program.semantic_type_id(contract).is_some_and(|contract| {
-                            runtime_parameters.keys().all(|name| {
+                            saved.runtime_parameters.iter().all(|input| {
                                 definition
                                     .parameters
                                     .iter()
-                                    .any(|parameter| &parameter.name == name)
-                            }) && program.parameter_contract_accepts_values(
-                                contract,
-                                definition.parameters.iter().filter_map(|parameter| {
-                                    runtime_parameters
-                                        .get(&parameter.name)
-                                        .map(|value| (usize::from(parameter.ordinal), value))
-                                }),
-                            )
+                                    .any(|parameter| parameter.name == input.name)
+                            }) && program
+                                .validate_parameter_contract_values(
+                                    contract,
+                                    definition.parameters.iter().filter_map(|parameter| {
+                                        saved
+                                            .runtime_parameters
+                                            .iter()
+                                            .find(|input| input.name == parameter.name)
+                                            .map(|input| {
+                                                (usize::from(parameter.ordinal), &input.value)
+                                            })
+                                    }),
+                                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                                )
+                                .is_ok()
                         })
                     }
                     ViewProgramRuntimeAuthority::CoreProgramFree => false,
@@ -1567,6 +1587,29 @@ impl BundleViewRuntime {
                     });
                 }
             }
+            let mut runtime_parameters = BTreeMap::new();
+            for parameter in &saved.runtime_parameters {
+                let declared = definition
+                    .parameters
+                    .iter()
+                    .find(|declared| declared.name == parameter.name)
+                    .expect("borrowed name preflight admitted the declaration");
+                let value = match &self.program_runtime {
+                    ViewProgramRuntimeAuthority::Awbc(program) => {
+                        let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program));
+                        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+                        if definition.parameter_contract.is_some() {
+                            parameter.value.copy_unrestricted_for_program_with_limits(&owner, limits)
+                        } else {
+                            parameter.value.copy_unrestricted_typed_for_program_with_limits(&owner, declared.semantic_type, limits)
+                        }
+                    }
+                    ViewProgramRuntimeAuthority::CoreProgramFree =>
+                        arcweft_core::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&parameter.value)
+                            .and_then(arcweft_core::value::AwbcRuntimeValueSnapshot::into_unrestricted_standalone_value),
+                }.map_err(|_| BundleViewRuntimeError::InvalidRuntimeParameterContract { definition: saved_view.clone() })?;
+                runtime_parameters.insert(parameter.name.clone(), value);
+            }
             let key = ViewOccurrenceKey {
                 handle: saved.handle.clone(),
                 path: saved.path.clone(),
@@ -1576,15 +1619,30 @@ impl BundleViewRuntime {
                 if !self.catalog.as_ref().is_some_and(|catalog| {
                     catalog.state_field_type(definition, &saved.path, &field.path, field.field)
                         == Some(field.value_type)
-                }) || !matches!(&self.program_runtime, ViewProgramRuntimeAuthority::Awbc(program)
-                    if program.semantic_type_id(field.value_type)
-                        .is_some_and(|ty| program.value_matches_type(&field.value, ty)))
-                    || local_state
-                        .insert((field.path.clone(), field.field), field.clone())
-                        .is_some()
+                }) || local_state.contains_key(&(field.path.clone(), field.field))
                 {
                     return Err(BundleViewRuntimeError::InvalidLocalState);
                 }
+                let ViewProgramRuntimeAuthority::Awbc(program) = &self.program_runtime else {
+                    return Err(BundleViewRuntimeError::InvalidLocalState);
+                };
+                let value = field
+                    .value
+                    .copy_unrestricted_typed_for_program_with_limits(
+                        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                        field.value_type,
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|_| BundleViewRuntimeError::InvalidLocalState)?;
+                local_state.insert(
+                    (field.path.clone(), field.field),
+                    BundleViewStateFieldSnapshot {
+                        path: field.path.clone(),
+                        field: field.field,
+                        value_type: field.value_type,
+                        value,
+                    },
+                );
             }
             if mounts
                 .insert(

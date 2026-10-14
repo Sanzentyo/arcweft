@@ -23,8 +23,10 @@ use crate::{
 mod construction;
 pub(crate) use construction::ProgramVariantCase;
 mod function_contract;
-pub use function_contract::RuntimeFunctionEffectInstantiation;
 pub(crate) use function_contract::RuntimeValueTypeContext;
+pub use function_contract::{
+    RuntimeFunctionEffectInstantiation, RuntimeParameterValueAdmissionError,
+};
 mod data_shapes;
 mod iterator;
 pub use construction::RuntimeProgramValueConstructionError;

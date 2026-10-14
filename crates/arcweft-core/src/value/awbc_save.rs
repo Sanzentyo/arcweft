@@ -317,6 +317,95 @@ pub struct AwbcRuntimeCallableSnapshot {
 
 mod admission;
 
+impl RuntimeValue {
+    /// Checks borrowed retained data before an enclosing publication copies
+    /// any of its roots. Uses the same admission as direct retained copying.
+    pub fn validate_unrestricted_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(Some(owner), None, limits)
+    }
+
+    /// Admits a borrowed retained value against its original expected type
+    /// without constructing another live value or snapshot.
+    pub fn validate_unrestricted_typed_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        expected: RuntimeSemanticTypeId,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(Some(owner), Some(expected), limits)
+    }
+
+    /// Admits borrowed context-free retained data without guessing an owner
+    /// for program-bound descendants.
+    pub fn validate_unrestricted_standalone_with_limits(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(None, None, limits)
+    }
+    /// Copies retained data after bounded deep Copy and original executable
+    /// admission, without constructing an intermediate snapshot.
+    pub fn copy_unrestricted_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        self.copy_unrestricted_value_for_program(owner, None, limits)
+    }
+
+    /// Checks the original expected type before copying any live descendant.
+    pub fn copy_unrestricted_typed_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        expected: RuntimeSemanticTypeId,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        self.copy_unrestricted_value_for_program(owner, Some(expected), limits)
+    }
+
+    fn copy_unrestricted_value_for_program(
+        &self,
+        owner: &RuntimeProgramOwner,
+        expected: Option<RuntimeSemanticTypeId>,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(Some(owner), expected, limits)?;
+        Ok(self.clone())
+    }
+
+    fn validate_unrestricted_value_for_program(
+        &self,
+        owner: Option<&RuntimeProgramOwner>,
+        expected: Option<RuntimeSemanticTypeId>,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+        );
+        self.view().admit_unrestricted(&mut resources)?;
+        if let Some(expected) = expected {
+            let owner = owner.expect("typed retained copying selects an original program");
+            let binding = self
+                .view()
+                .construction_instantiation()
+                .filter(|(identity, _)| *identity == expected)
+                .map(|(_, binding)| binding);
+            owner.types().value_type(expected)?.validate_admitted_view(
+                self.view(),
+                binding,
+                &resources,
+            )?;
+        }
+        AwbcRuntimeValueSnapshot::validate_admitted_storage_view(self.view(), owner, &resources)?;
+        Ok(())
+    }
+}
+
 impl AwbcRuntimeValueSnapshot {
     pub(crate) fn validate_admitted_storage_view(
         value: super::RuntimeValueView<'_>,
@@ -410,6 +499,40 @@ impl AwbcRuntimeValueSnapshot {
         expected: Option<RuntimeSemanticTypeId>,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(owner, expected, limits)?;
+        self.into_live_with_owner(Some(owner))
+    }
+
+    /// Copies an inert retained value only after admitting its complete graph
+    /// against the original program. The borrowed pass precedes DTO copying
+    /// and live construction and uses the same rules as owned restoration.
+    pub fn copy_unrestricted_runtime_value_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(owner, None, limits)?;
+        self.clone().into_live_with_owner(Some(owner))
+    }
+
+    /// Checks the original expected type while this retained snapshot is
+    /// borrowed, before copying its DTO or constructing any live descendants.
+    pub fn copy_unrestricted_typed_runtime_value_for_program_with_limits(
+        &self,
+        owner: &RuntimeProgramOwner,
+        expected: RuntimeSemanticTypeId,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.validate_unrestricted_value_for_program(owner, Some(expected), limits)?;
+        self.clone().into_live_with_owner(Some(owner))
+    }
+
+    fn validate_unrestricted_value_for_program(
+        &self,
+        owner: &RuntimeProgramOwner,
+        expected: Option<RuntimeSemanticTypeId>,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         let mut affine = false;
         let mut observe = |value: super::RuntimeValueView<'_>| {
             affine |= !value.intrinsic_ownership().permits_copy();
@@ -430,7 +553,7 @@ impl AwbcRuntimeValueSnapshot {
                 .map_err(|error| AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))?;
         }
         Self::validate_admitted_storage_view(self.view(), Some(owner), &resources)?;
-        self.into_live_with_owner(Some(owner))
+        Ok(())
     }
 
     /// Captures copyable standalone data. Program-owned descendants require

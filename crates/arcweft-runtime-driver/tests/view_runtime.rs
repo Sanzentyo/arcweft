@@ -1670,6 +1670,58 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
 
     let retained = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert_eq!(plain_text(&retained), "no");
+
+    let before = runtime.snapshot().unwrap();
+    let oversized = RuntimeValue::String(
+        "x".repeat(
+            usize::try_from(
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default().max_string_bytes,
+            )
+            .unwrap()
+                + 1,
+        ),
+    );
+    let rejected = runtime.evaluate(
+        std::slice::from_ref(&mounted),
+        &[
+            RuntimeBinding {
+                name: "active".to_owned(),
+                value: RuntimeValue::Bool(true),
+            },
+            RuntimeBinding {
+                name: "later".to_owned(),
+                value: oversized.clone(),
+            },
+        ],
+        false,
+    );
+    assert_eq!(
+        rejected.diagnostics[0].code,
+        BundleViewDiagnosticCode::InputType
+    );
+    assert!(rejected.mounts.is_empty());
+    assert_eq!(runtime.snapshot().unwrap(), before);
+
+    let mut invalid = before.clone();
+    invalid.view_root_bindings.push(RuntimeBinding {
+        name: "later".to_owned(),
+        value: oversized,
+    });
+    assert!(matches!(
+        runtime.restore(&invalid, std::slice::from_ref(&mounted)),
+        Err(BundleViewRuntimeError::Save(
+            arcweft_runtime_driver::view_runtime::ViewSaveError::InvalidRuntimeBinding { .. }
+        ))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+
+    let mut invalid = before.clone();
+    invalid.mounts[0].runtime_parameters[0].value = RuntimeValue::String("wrong type".to_owned());
+    assert!(matches!(
+        runtime.restore(&invalid, std::slice::from_ref(&mounted)),
+        Err(BundleViewRuntimeError::InvalidRuntimeParameterContract { .. })
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
 }
 
 #[test]

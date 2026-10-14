@@ -442,9 +442,8 @@ impl BundleViewRuntime {
         reduce_motion: bool,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
-        if let Some(binding) = bindings
-            .iter()
-            .find(|binding| !binding.value.ownership().permits_copy())
+        if let Err(error) =
+            self.validate_retained_runtime_values(bindings.iter().map(|binding| &binding.value))
         {
             return BundleViewFrame {
                 mounts: Vec::new(),
@@ -454,10 +453,7 @@ impl BundleViewRuntime {
                     mount: None,
                     view: None,
                     instruction: None,
-                    message: format!(
-                        "borrowed View input `{}` requires owned execution custody",
-                        binding.name
-                    ),
+                    message: error.to_string(),
                 }],
             };
         }
@@ -842,6 +838,41 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         mounted: &mut MountedView,
         mut call_arguments: Option<BTreeMap<u16, RuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
+        if let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime {
+            let supplied = definition.parameters.iter().filter_map(|parameter| {
+                let value = match &call_arguments {
+                    Some(arguments) => arguments.get(&parameter.ordinal),
+                    None => self.view_root_bindings.get(&parameter.name),
+                }?;
+                Some((parameter, value))
+            });
+            let failure = |message| {
+                EvaluationFailure::new(BundleViewDiagnosticCode::InputType, None, message)
+            };
+            if let Some(contract) = definition.parameter_contract {
+                let contract = program
+                    .semantic_type_id(contract)
+                    .ok_or_else(|| failure("missing View input contract".to_owned()))?;
+                program
+                    .validate_parameter_contract_values(
+                        contract,
+                        supplied.map(|(parameter, value)| (usize::from(parameter.ordinal), value)),
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|error| failure(error.to_string()))?;
+            } else {
+                let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+                for (parameter, value) in supplied {
+                    value
+                        .validate_unrestricted_typed_for_program_with_limits(
+                            &owner,
+                            parameter.semantic_type,
+                            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .map_err(|error| failure(error.to_string()))?;
+                }
+            }
+        }
         let mut supplied_parameters = BTreeSet::new();
         for parameter in &definition.parameters {
             if parameter.role == ViewParameterRole::Dialogue
@@ -934,29 +965,6 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 ));
             }
         }
-        if let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime {
-            for parameter in definition
-                .parameters
-                .iter()
-                .filter(|parameter| parameter.role == ViewParameterRole::Value)
-            {
-                if let Some(value) = mounted.runtime_parameters.get(&parameter.name)
-                    && definition.parameter_contract.is_none()
-                    && !program
-                        .semantic_type_id(parameter.semantic_type)
-                        .is_some_and(|ty| program.value_matches_type(value, ty))
-                {
-                    return Err(EvaluationFailure::new(
-                        BundleViewDiagnosticCode::InputType,
-                        None,
-                        format!(
-                            "View parameter `{}` violates its declared type",
-                            parameter.name
-                        ),
-                    ));
-                }
-            }
-        }
         if let Some(contract) = definition.parameter_contract {
             let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
                 return Err(EvaluationFailure::new(
@@ -1008,7 +1016,14 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .iter()
                         .map(|(ordinal, value)| (*ordinal, value)),
                 );
-            if !program.parameter_contract_accepts_values(contract, values) {
+            if program
+                .validate_parameter_contract_values(
+                    contract,
+                    values,
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .is_err()
+            {
                 return Err(EvaluationFailure::new(
                     BundleViewDiagnosticCode::InputType,
                     None,
@@ -1061,12 +1076,23 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 format!("parameter '{}' is uninitialized", source.name),
                             )
                         })?;
-                    if !value.ownership().permits_copy() {
-                        return Err(failure(
-                            "input requires its retained resource owner".to_owned(),
-                        ));
+                    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+                    if definition.parameter_contract.is_some() {
+                        value
+                            .copy_unrestricted_for_program_with_limits(
+                                &owner,
+                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .map_err(|error| failure(error.to_string()))?
+                    } else {
+                        value
+                            .copy_unrestricted_typed_for_program_with_limits(
+                                &owner,
+                                input.value_type(),
+                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .map_err(|error| failure(error.to_string()))?
                     }
-                    value.clone()
                 }
             }
             arcweft_view::ViewExecutionInputSource::Local(coordinate) => {
@@ -1079,20 +1105,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         failure("local input is outside its initialized lexical scope".to_owned())
                     })?;
                 let value = &value.value;
-                if !value.ownership().permits_copy() {
-                    return Err(failure(
-                        "input requires its retained resource owner".to_owned(),
-                    ));
-                }
-                let ty = program
-                    .semantic_type_id(input.value_type())
-                    .ok_or_else(|| failure("local type is missing".to_owned()))?;
-                if !program.value_matches_type(value, ty) {
-                    return Err(failure(
-                        "local input type disagrees with its ABI".to_owned(),
-                    ));
-                }
-                value.clone()
+                value
+                    .copy_unrestricted_typed_for_program_with_limits(
+                        &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+                        input.value_type(),
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|error| failure(error.to_string()))?
             }
         };
 
@@ -1155,8 +1174,10 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 .map_err(budget_failure)?;
             return cached
                 .result
-                .clone()
-                .into_runtime_value_for_program(&owner)
+                .copy_unrestricted_runtime_value_for_program_with_limits(
+                    &owner,
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
                 .map_err(|error| failure(error.to_string()));
         }
         let limit = self.value_budget.remaining();
@@ -1217,11 +1238,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             .take_program_result()
             .map_err(|error| failure(error.to_string()))?
             .ok_or_else(|| failure("program returned no value".to_owned()))?;
-        if !value.ownership().permits_copy() {
-            return Err(failure(
-                "result requires a retained resource execution owner".to_owned(),
-            ));
-        }
+        value
+            .validate_unrestricted_for_program_with_limits(
+                &owner,
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|error| failure(error.to_string()))?;
         let result = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
             .map_err(|error| failure(error.to_string()))?;
         mounted.expression_evaluations.insert(
@@ -1258,30 +1280,32 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let failure = |message| {
             EvaluationFailure::new(BundleViewDiagnosticCode::InvalidValueProgram, None, message)
         };
-        let expected = program
-            .runtime_types
-            .iter()
-            .position(|ty| ty.semantic_identity() == parameter.semantic_type)
-            .and_then(|index| u32::try_from(index).ok())
-            .map(arcweft_core::awbc::schema::AwbcTypeId)
-            .ok_or_else(|| failure("missing declared parameter type".to_owned()))?;
         let compatible = match definition.parameter_contract {
             Some(contract) => program.semantic_type_id(contract).is_some_and(|contract| {
-                program.parameter_contract_accepts_values(
-                    contract,
-                    definition.parameters.iter().filter_map(|source| {
-                        if source.ordinal == parameter.ordinal {
-                            Some((usize::from(source.ordinal), &value))
-                        } else {
-                            mounted
-                                .runtime_parameters
-                                .get(&source.name)
-                                .map(|value| (usize::from(source.ordinal), value))
-                        }
-                    }),
-                )
+                program
+                    .validate_parameter_contract_values(
+                        contract,
+                        definition.parameters.iter().filter_map(|source| {
+                            if source.ordinal == parameter.ordinal {
+                                Some((usize::from(source.ordinal), &value))
+                            } else {
+                                mounted
+                                    .runtime_parameters
+                                    .get(&source.name)
+                                    .map(|value| (usize::from(source.ordinal), value))
+                            }
+                        }),
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .is_ok()
             }),
-            None => program.value_matches_type(&value, expected),
+            None => value
+                .validate_unrestricted_typed_for_program_with_limits(
+                    &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+                    parameter.semantic_type,
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .is_ok(),
         };
         if !compatible {
             return Err(failure(
@@ -1896,6 +1920,28 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         arcweft_view::ViewBindingLifetime::Derived => None,
                         arcweft_view::ViewBindingLifetime::Retained { fields } => Some(fields),
                     };
+                    let program_runtime = self.program_runtime;
+                    let copy_retained = |value: &RuntimeValue, expected| {
+                        let ViewProgramRuntimeAuthority::Awbc(program) = program_runtime else {
+                            return Err(control_flow_failure(
+                                cursor,
+                                "retained state has no admitted Core program authority",
+                            ));
+                        };
+                        value
+                            .copy_unrestricted_typed_for_program_with_limits(
+                                &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+                                expected,
+                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .map_err(|error| {
+                                EvaluationFailure::new(
+                                    BundleViewDiagnosticCode::InvalidValueProgram,
+                                    Some(cursor),
+                                    error.to_string(),
+                                )
+                            })
+                    };
                     let saved = fields.map(|fields| {
                         fields
                             .iter()
@@ -1912,8 +1958,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             saved
                                 .expect("retained values checked")
                                 .into_iter()
-                                .map(|value| value.expect("all fields initialized").value.clone())
-                                .collect(),
+                                .zip(&binding.outputs)
+                                .map(|(value, output)| {
+                                    let value = value.expect("all fields initialized");
+                                    if value.value_type != output.value_type {
+                                        return Err(control_flow_failure(
+                                            cursor,
+                                            "retained field type changed",
+                                        ));
+                                    }
+                                    copy_retained(&value.value, output.value_type)
+                                })
+                                .collect::<Result<Vec<_>, _>>()?,
                         )
                     } else {
                         self.evaluate_expression_program(
@@ -1951,14 +2007,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                         "retained field type changed",
                                     ));
                                 }
-                                *value = saved.value.clone();
-                            }
-                            if !value.ownership().permits_copy() {
-                                return Err(EvaluationFailure::new(
-                                    BundleViewDiagnosticCode::InvalidValueProgram,
-                                    Some(cursor),
-                                    "retained state requires an admitted unrestricted value",
-                                ));
+                                if !initialized {
+                                    *value = copy_retained(&saved.value, output.value_type)?;
+                                }
                             }
                             if !mounted
                                 .local_state
@@ -1970,7 +2021,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                         path: structural_path.clone(),
                                         field: *field,
                                         value_type: output.value_type,
-                                        value: value.clone(),
+                                        value: copy_retained(value, output.value_type)?,
                                     },
                                 );
                             }

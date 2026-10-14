@@ -44,6 +44,11 @@ pub enum SavedViewOwner {
 pub enum ViewSaveError {
     #[error("View runtime binding contains an affine value that evaluation must copy")]
     AffineRuntimeBinding,
+    #[error("View runtime binding failed original-program admission: {source}")]
+    InvalidRuntimeBinding {
+        #[source]
+        source: Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>,
+    },
     #[error("anonymous Rust Views cannot be persisted")]
     AnonymousRustViewNotPersistable,
     #[error("public View identity is no longer registered: {0}")]
@@ -52,6 +57,19 @@ pub enum ViewSaveError {
     ImplementationKindMismatch,
     #[error("saved View program/revision is not the accepted program")]
     ProgramMismatch,
+}
+
+impl From<arcweft_core::value::AwbcRuntimeValueSnapshotError> for ViewSaveError {
+    fn from(source: arcweft_core::value::AwbcRuntimeValueSnapshotError) -> Self {
+        match source {
+            arcweft_core::value::AwbcRuntimeValueSnapshotError::AffineValue => {
+                Self::AffineRuntimeBinding
+            }
+            source => Self::InvalidRuntimeBinding {
+                source: Box::new(source),
+            },
+        }
+    }
 }
 
 /// Fully resolved in-memory owner authority for one live mount.

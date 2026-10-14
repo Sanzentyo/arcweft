@@ -89,25 +89,26 @@ impl BundleViewRuntime {
                             field: address.1,
                         }
                     })?;
-                    if cell.value_type != schema.value_type()
-                        || !cell.value.ownership().permits_copy()
-                    {
+                    if cell.value_type != schema.value_type() {
                         return Err(invalid());
                     }
-                    cell.value.clone()
+                    cell.value
+                        .copy_unrestricted_typed_for_program_with_limits(
+                            &owner,
+                            schema.value_type(),
+                            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .map_err(|_| invalid())?
                 } else {
                     capture
                         .snapshot
-                        .clone()
-                        .into_runtime_value_for_program(&owner)
+                        .copy_unrestricted_typed_runtime_value_for_program_with_limits(
+                            &owner,
+                            schema.value_type(),
+                            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                        )
                         .map_err(|_| invalid())?
                 };
-                if !program
-                    .semantic_type_id(schema.value_type())
-                    .is_some_and(|ty| program.value_matches_type(&value, ty))
-                {
-                    return Err(invalid());
-                }
                 Ok(value)
             })
             .collect::<Result<Vec<_>, BundleViewEventDispatchError>>()?;
@@ -116,12 +117,13 @@ impl BundleViewRuntime {
                 .map_err(|source| BundleViewEventDispatchError::ProgramExecution {
                     source: Box::new(source),
                 })?;
-        if !program
-            .semantic_type_id(result_type)
-            .is_some_and(|ty| program.value_matches_type(&result, ty))
-        {
-            return Err(invalid_result());
-        }
+        result
+            .validate_unrestricted_typed_for_program_with_limits(
+                &owner,
+                result_type,
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|_| invalid_result())?;
         let RuntimeValue::Tuple(results) = result else {
             return Err(invalid_result());
         };
@@ -161,14 +163,16 @@ impl BundleViewRuntime {
                         field: address.1,
                     }
                 })?;
-                if cell.value_type != expected
-                    || !value.ownership().permits_copy()
-                    || !program
-                        .semantic_type_id(expected)
-                        .is_some_and(|ty| program.value_matches_type(&value, ty))
-                {
+                if cell.value_type != expected {
                     return Err(invalid());
                 }
+                value
+                    .validate_unrestricted_typed_for_program_with_limits(
+                        &owner,
+                        expected,
+                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .map_err(|_| invalid())?;
                 Ok((address.clone(), value))
             })
             .collect::<Result<Vec<_>, BundleViewEventDispatchError>>()?;
