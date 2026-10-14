@@ -21,6 +21,32 @@ mod tests;
 macro_rules! admit_view_snapshot_resources {
     ($snapshot:ty, $value:ident, $typed_value:ident) => {
         impl $snapshot {
+            pub(crate) fn visit_borrowed_runtime_values(
+                &self,
+                mut visit: impl for<'value> FnMut(
+                    arcweft_core::value::RuntimeBorrowedValue<'value>,
+                ) -> Result<(), String>,
+            ) -> Result<(), String> {
+                let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+                for value in self
+                    .view_root_bindings
+                    .iter()
+                    .map(|binding| &binding.value)
+                    .chain(self.mounts.iter().flat_map(|mount| {
+                        mount
+                            .runtime_parameters
+                            .iter()
+                            .map(|binding| &binding.value)
+                            .chain(mount.local_state.iter().map(|field| &field.value))
+                    }))
+                {
+                    arcweft_core::value::RuntimeBorrowedValue::from(value)
+                        .try_visit(limits, &mut visit)
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok(())
+            }
+
             pub(crate) fn admit_resources(
                 &self,
                 admission: &mut RuntimeRetainedValueAdmission,

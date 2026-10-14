@@ -2507,6 +2507,99 @@ fn observation_only_asset_catalog_refusal_restores_the_complete_prior_session() 
 }
 
 #[test]
+fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let owner = session.program_owner();
+    let save = session_save_with_observation_value(
+        &session,
+        RuntimeValue::Tuple(vec![image_handle_for_bytes(b"unaccepted image")]),
+        &owner,
+    );
+    let mut payload = arcweft_save::decode_strict_typed_json_save::<serde_json::Value>(
+        &save,
+        &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+        BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+        &arcweft_save::SaveDecodeOptions::default(),
+    )
+    .expect("inert payload decodes");
+    // This independently invalid executor would fail when restored. Catalog
+    // rejection must happen while the original owner is still installed.
+    payload["executor"]["state"]["fiber"]["frames"][0]["function"] = 99.into();
+    let save = encode_session_json_value(&payload);
+    let mut seen = 0;
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &save,
+            &arcweft_save::SaveDecodeOptions::default(),
+            |value| {
+                if arcweft_core::value::runtime_bundle_asset_opaque_role(value).is_some() {
+                    seen += 1;
+                    return Err("catalog refused inert asset".into());
+                }
+                Ok(())
+            },
+        )
+        .expect_err("catalog rejects before executor restoration");
+    assert_eq!(seen, 1);
+    assert!(
+        matches!(error, BundleSessionSaveError::RuntimeValueValidation { message }
+        if message == "catalog refused inert asset")
+    );
+    assert!(session.program_owner().same_program(&owner));
+    assert_eq!(session.snapshot_session().unwrap(), before);
+
+    let mut snapshot = before.clone();
+    snapshot.executor.state.fiber.frames[0].function = AwbcFunctionId(99);
+    snapshot.executor.state.observations =
+        serde_json::from_value(payload["executor"]["state"]["observations"].clone())
+            .expect("observations remain inert");
+    let mut seen = 0;
+    let error = session
+        .restore_session_snapshot_with_value_validator(snapshot, |value| {
+            if arcweft_core::value::runtime_bundle_asset_opaque_role(value).is_some() {
+                seen += 1;
+                return Err("catalog refused snapshot asset".into());
+            }
+            Ok(())
+        })
+        .expect_err("snapshot catalog rejects before executor restoration");
+    assert_eq!(seen, 1);
+    assert!(
+        matches!(error, BundleSessionSaveError::RuntimeValueValidation { message }
+        if message == "catalog refused snapshot asset")
+    );
+    assert!(session.program_owner().same_program(&owner));
+    assert_eq!(session.snapshot_session().unwrap(), before);
+
+    let mut accepted = before.clone();
+    accepted.executor.state.observations =
+        serde_json::from_value(payload["executor"]["state"]["observations"].clone())
+            .expect("observations remain inert");
+    let expected = accepted.executor.state.observations.clone();
+    let mut seen = 0;
+    session
+        .restore_session_snapshot_with_value_validator(accepted, |value| {
+            if arcweft_core::value::runtime_bundle_asset_opaque_role(value).is_some() {
+                seen += 1;
+            }
+            Ok(())
+        })
+        .expect("accepted catalog values restore");
+    assert_eq!(seen, 1, "the catalog is checked once before restoration");
+    assert_eq!(
+        session
+            .snapshot_session()
+            .unwrap()
+            .executor
+            .state
+            .observations,
+        expected
+    );
+}
+
+#[test]
 fn cold_observation_callable_restore_binds_the_installed_current_program() {
     let bytes = callable_product_awfb_bytes();
     let session = product_session_from_bytes(&bytes);

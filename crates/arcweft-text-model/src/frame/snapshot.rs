@@ -121,6 +121,41 @@ pub type LineDisplayFrameSnapshot = LineDisplayFrame<
     InlineTextFailureSnapshot,
 >;
 
+// The owning frame selects the same retained fields in both storage forms.
+// Only the borrowed Style projection differs; no live value is reconstructed.
+macro_rules! visit_display_frame_values {
+    ($frame:ty, |$style:ident| $borrowed_style:expr) => {
+        impl $frame {
+            /// Visits retained configuration, Content and fallback Style values
+            /// without constructing or copying a live runtime carrier.
+            pub fn visit_runtime_values(
+                &self,
+                mut visit: impl for<'value> FnMut(
+                    arcweft_core::value::RuntimeBorrowedValue<'value>,
+                ) -> Result<(), String>,
+            ) -> Result<(), String> {
+                self.effective.visit_runtime_values(&mut visit)?;
+                let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+                arcweft_core::value::RuntimeBorrowedValue::from(&self.content)
+                    .try_visit(limits, &mut visit)
+                    .map_err(|error| error.to_string())?;
+                for failure in &self.inline_failures {
+                    for $style in failure.policy.retained_styles() {
+                        let value: arcweft_core::value::RuntimeBorrowedValue<'_> = $borrowed_style;
+                        value
+                            .try_visit(limits, &mut visit)
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+visit_display_frame_values!(LineDisplayFrame, |style| style.typed().value().into());
+visit_display_frame_values!(LineDisplayFrameSnapshot, |style| style.into());
+
 impl LineDisplayFrame {
     /// Bounds every display/source field through its owning typed serde grammar
     /// before validation builds projections or persistence copies the frame.
@@ -181,29 +216,6 @@ impl LineDisplayFrame {
             return Err(
                 "display frame Character differs from its admitted configuration".to_owned(),
             );
-        }
-        Ok(())
-    }
-
-    /// Visits every retained value, including original roles/custom fields,
-    /// Content callbacks and fallback Styles, before presentation publication.
-    pub fn visit_runtime_values(
-        &self,
-        mut visit: impl for<'value> FnMut(
-            arcweft_core::value::RuntimeBorrowedValue<'value>,
-        ) -> Result<(), String>,
-    ) -> Result<(), String> {
-        self.effective.visit_runtime_values(&mut visit)?;
-        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
-        arcweft_core::value::RuntimeBorrowedValue::from(&self.content)
-            .try_visit(limits, &mut visit)
-            .map_err(|error| error.to_string())?;
-        for failure in &self.inline_failures {
-            for style in failure.policy.retained_styles() {
-                arcweft_core::value::RuntimeBorrowedValue::from(style.typed().value())
-                    .try_visit(limits, &mut visit)
-                    .map_err(|error| error.to_string())?;
-            }
         }
         Ok(())
     }

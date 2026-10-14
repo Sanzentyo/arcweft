@@ -77,28 +77,56 @@ impl<'a> SessionRestoreValueValidator<'a> {
         self.finish(result)
     }
 
-    fn visit_product(
-        &mut self,
-        executor: &arcweft_core::executor::ArcweftRuntimeExecutor,
-    ) -> Result<(), BundleSessionSaveError> {
-        let result =
-            executor.visit_product_live_runtime_values(|value| self.validate_value(value.into()));
-        self.finish(result)
-    }
-
-    fn visit_view_runtime(
-        &mut self,
-        runtime: &BundleViewRuntime,
-    ) -> Result<(), BundleSessionSaveError> {
-        let result = runtime.visit_runtime_values(|value| self.validate_value(value.into()));
-        self.finish(result)
-    }
-
     fn visit_presentation(
         &mut self,
         presentation: &BundlePresentationSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         let result = presentation.try_visit_frames(|frame| {
+            frame.visit_runtime_values(|value| self.validate_value(value))
+        });
+        self.finish(result)
+    }
+
+    fn visit_snapshot(
+        &mut self,
+        snapshot: &BundleSessionSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        self.visit_root(snapshot.root.as_ref())?;
+        let result = snapshot
+            .executor
+            .state
+            .visit_borrowed_runtime_values(|value| self.validate_value(value))
+            .map_err(|error| error.to_string());
+        self.finish(result)?;
+        let result = snapshot
+            .view_runtime
+            .visit_borrowed_runtime_values(|value| self.validate_value(value));
+        self.finish(result)?;
+        self.visit_presentation(&snapshot.presentation)
+    }
+
+    fn visit_payload(
+        &mut self,
+        payload: &BundleSessionSavePayload,
+    ) -> Result<(), BundleSessionSaveError> {
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+        let result = payload.root.as_ref().map_or(Ok(()), |root| {
+            root.retained_value()
+                .try_visit(limits, |value| self.validate_value(value))
+                .map_err(|error| error.to_string())
+        });
+        self.finish(result)?;
+        let result = payload
+            .executor
+            .state
+            .visit_borrowed_runtime_values(|value| self.validate_value(value))
+            .map_err(|error| error.to_string());
+        self.finish(result)?;
+        let result = payload
+            .view_runtime
+            .visit_borrowed_runtime_values(|value| self.validate_value(value));
+        self.finish(result)?;
+        let result = payload.presentation.try_visit_frames(|frame| {
             frame.visit_runtime_values(|value| self.validate_value(value))
         });
         self.finish(result)
@@ -355,8 +383,8 @@ impl BundleSession {
         self.import_session_save_bytes_with_optional_value_validator(bytes, options, None)
     }
 
-    /// Imports a session save after the generation-pinned executor has
-    /// admitted every RuntimeValue and before the session facade is committed.
+    /// Validates retained values while the save is inert, before constructing
+    /// the generation-pinned executor or View state.
     /// The supplied validator should verify bundle-owned handles against the
     /// exact retained catalog for each artifact identity carried by the value.
     pub fn import_session_save_bytes_with_value_validator(
@@ -403,16 +431,25 @@ impl BundleSession {
                 tier: self.executor.tier().as_str().to_owned(),
             });
         }
-        let snapshot = payload
-            .into_snapshot(
-                &program_owner,
-                self.runtime_images
-                    .images()
-                    .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
-                    .find(|schema| schema.program_owner().same_program(&program_owner)),
+        let dialogue_schema = self
+            .runtime_images
+            .images()
+            .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
+            .find(|schema| schema.program_owner().same_program(&program_owner));
+        payload
+            .admit_retained(
+                &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                    program_owner.clone(),
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+                dialogue_schema,
             )
             .map_err(|message| BundleSessionSaveError::Decode { message })?;
-        self.restore_session_snapshot_with_optional_value_validator(snapshot, validator)
+        SessionRestoreValueValidator::new(validator).visit_payload(&payload)?;
+        let snapshot = payload
+            .into_admitted_snapshot(&program_owner, dialogue_schema)
+            .map_err(|message| BundleSessionSaveError::Decode { message })?;
+        self.restore_session_snapshot_admitted(snapshot)
     }
 
     pub fn restore_session_snapshot(
@@ -422,8 +459,7 @@ impl BundleSession {
         self.restore_session_snapshot_with_optional_value_validator(snapshot, None)
     }
 
-    /// Restores a decoded snapshot after owner-aware Core admission and
-    /// invokes `validator` on every retained RuntimeValue before facade commit.
+    /// Checks every retained value before restoring executor or View state.
     pub fn restore_session_snapshot_with_value_validator(
         &mut self,
         snapshot: BundleSessionSnapshot,
@@ -434,10 +470,6 @@ impl BundleSession {
         self.restore_session_snapshot_with_optional_value_validator(snapshot, Some(&mut validator))
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "session restore validates every candidate subsystem before committing the facade state atomically"
-    )]
     fn restore_session_snapshot_with_optional_value_validator(
         &mut self,
         snapshot: BundleSessionSnapshot,
@@ -446,6 +478,16 @@ impl BundleSession {
                 arcweft_core::value::RuntimeBorrowedValue<'value>,
             ) -> Result<(), String>,
         >,
+    ) -> Result<(), BundleSessionSaveError> {
+        self.validate_session_save_generation(&snapshot.generation)?;
+        self.admit_session_snapshot_resources(&snapshot)?;
+        SessionRestoreValueValidator::new(validator).visit_snapshot(&snapshot)?;
+        self.restore_session_snapshot_admitted(snapshot)
+    }
+
+    fn admit_session_snapshot_resources(
+        &self,
+        snapshot: &BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
             self.executor.program_owner(),
@@ -471,6 +513,26 @@ impl BundleSession {
         .map_err(|error| BundleSessionSaveError::Root {
             message: error.to_string(),
         })?;
+        let owner = self.executor.program_owner();
+        let schema = self
+            .runtime_images
+            .images()
+            .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
+            .find(|schema| schema.program_owner().same_program(&owner));
+        snapshot
+            .presentation
+            .admit_retained(&mut admission, schema)
+            .map_err(|message| BundleSessionSaveError::Presentation { message })
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "session restore validates every candidate subsystem before committing the facade state atomically"
+    )]
+    fn restore_session_snapshot_admitted(
+        &mut self,
+        snapshot: BundleSessionSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
         let restored_locale = snapshot.active_locale.clone();
         self.validate_session_save_generation(&snapshot.generation)?;
         let expected_character_presentation = self.character_presentation_identity()?;
@@ -693,12 +755,6 @@ impl BundleSession {
                 &snapshot.presentation,
                 &restored_executor.fiber().frame.status,
             )?;
-            let mut value_validator = SessionRestoreValueValidator::new(validator);
-            value_validator.visit_root(snapshot.root.as_ref())?;
-            value_validator.visit_product(&restored_executor)?;
-            value_validator.visit_view_runtime(&restored_view_runtime)?;
-            value_validator.visit_presentation(&snapshot.presentation)?;
-
             Ok((
                 restored_executor,
                 restored_tasks,

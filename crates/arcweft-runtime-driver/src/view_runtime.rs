@@ -1371,26 +1371,6 @@ impl BundleViewRuntime {
         })
     }
 
-    pub(crate) fn visit_runtime_values(
-        &self,
-        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), String>,
-    ) -> Result<(), String> {
-        for value in self.view_root_bindings.values() {
-            arcweft_core::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
-        }
-        for mount in self.mounts.values() {
-            for value in mount.runtime_parameters.values() {
-                arcweft_core::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
-            }
-            for field in mount.local_state.values() {
-                arcweft_core::value::visit_runtime_value_graph(&field.value, |nested| {
-                    visitor(nested)
-                })?;
-            }
-        }
-        Ok(())
-    }
-
     /// Duplicate View state only after proving every retained runtime value
     /// may be copied. The evaluator reuses root bindings across mounted Views,
     /// so an affine value cannot be admitted to these maps.

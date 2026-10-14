@@ -352,7 +352,11 @@ program-owned descendant を構築できない Core の共通 decoder を使う�
 保存・復元・observation の contract version は引き続き `1`。
 
 表示フレーム内の role/custom／Content callback／fallback Style も、既存の
-session catalog validator に渡してから facade を公開する。表示文字列から
+session catalog validator に借用値のまま渡してから live executor／View の復元を
+開始する。wire は inert root／Product／View／presentation、in-memory snapshot は
+同じ各 owner の保持値を走査する。Copy・型・資源の借用 admission が catalog
+callback に先行し、catalog の拒否は既存 session の owner を移動・破棄しない。
+各復元入口は catalog を一度検証し、復元後に同じ callback を再実行しない。表示文字列から
 Content を再構成せず、元の Content envelope と捕捉値を保持する。
 カタログ検証の callback は Core の read-only `RuntimeBorrowedValue` を受け取る。
 この参照は既存の logical codec の tuple・sequence・scalar・opaque header と

@@ -142,32 +142,34 @@ impl BundleSessionSavePayload {
         })
     }
 
-    pub(crate) fn into_snapshot(
-        self,
-        program_owner: &RuntimeProgramOwner,
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
-    ) -> Result<BundleSessionSnapshot, String> {
-        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-            program_owner.clone(),
-            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-        );
+    ) -> Result<(), String> {
         self.runtime
-            .admit_metadata(&mut admission)
+            .admit_metadata(admission)
             .map_err(|error| error.to_string())?;
         self.view_runtime
-            .admit_resources(&mut admission)
+            .admit_resources(admission)
             .map_err(|error| error.to_string())?;
         RootStateSaveSnapshotV1::admit_optional_retained(
             self.root.as_ref(),
             &self.active_entry,
-            &mut admission,
+            admission,
         )
         .map_err(|error| error.to_string())?;
         self.presentation
-            .try_visit_frames(|frame| frame.admit_retained_metadata(&mut admission))?;
-        self.presentation.try_visit_frames(|frame| {
-            frame.admit_retained_values(&mut admission, dialogue_schema)
-        })?;
+            .try_visit_frames(|frame| frame.admit_retained_metadata(admission))?;
+        self.presentation
+            .try_visit_frames(|frame| frame.admit_retained_values(admission, dialogue_schema))
+    }
+
+    pub(crate) fn into_admitted_snapshot(
+        self,
+        program_owner: &RuntimeProgramOwner,
+        dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    ) -> Result<BundleSessionSnapshot, String> {
         let root = self
             .root
             .map(|root| root.into_live(&self.active_entry, program_owner))

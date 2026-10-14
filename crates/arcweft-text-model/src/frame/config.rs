@@ -88,6 +88,28 @@ pub enum CharacterDialoguePresentationConfigSnapshot {
 }
 
 impl CharacterDialoguePresentationConfigSnapshot {
+    pub(super) fn visit_runtime_values(
+        &self,
+        visit: &mut impl for<'value> FnMut(
+            arcweft_core::value::RuntimeBorrowedValue<'value>,
+        ) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+        match self {
+            Self::Program { value, .. } => arcweft_core::value::RuntimeBorrowedValue::from(value)
+                .try_visit(limits, visit)
+                .map_err(|error| error.to_string()),
+            Self::Standalone { inline_failure, .. } => {
+                for style in inline_failure.retained_styles() {
+                    arcweft_core::value::RuntimeBorrowedValue::from(style)
+                        .try_visit(limits, &mut *visit)
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub(super) fn admit_retained_metadata(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
