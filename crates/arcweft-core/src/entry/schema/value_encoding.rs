@@ -439,6 +439,12 @@ impl ValueResourceAdmission {
         self.origin
     }
 
+    /// Selects the provenance of the next borrowed root in a mixed retained
+    /// admission. Counters and sticky work failures remain the same allowance.
+    pub(crate) fn set_origin(&mut self, origin: ValueAdmissionOrigin) {
+        self.origin = origin;
+    }
+
     pub(crate) fn has_program_storage_obligations(&self) -> bool {
         self.program_storage_obligations
     }

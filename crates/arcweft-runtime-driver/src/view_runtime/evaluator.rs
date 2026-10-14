@@ -442,9 +442,10 @@ impl BundleViewRuntime {
         reduce_motion: bool,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
-        if let Err(error) =
-            self.validate_retained_runtime_values(bindings.iter().map(|binding| &binding.value))
-        {
+        if let Err(error) = self.validate_retained_runtime_values(
+            self.retained_runtime_values()
+                .chain(bindings.iter().map(|binding| &binding.value)),
+        ) {
             return BundleViewFrame {
                 mounts: Vec::new(),
                 diagnostics: vec![BundleViewDiagnostic {
@@ -1034,18 +1035,18 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         Ok(())
     }
 
-    fn resolve_execution_input(
-        &self,
+    fn resolve_execution_input<'value>(
+        &'value self,
         handle: &PresentationHandleId,
         definition: &ViewDefinitionResource,
-        mounted: &MountedView,
+        mounted: &'value MountedView,
         instruction: usize,
         input: arcweft_view::ViewExecutionInput,
         diagnostic: BundleViewDiagnosticCode,
-    ) -> Result<RuntimeValue, EvaluationFailure> {
+    ) -> Result<std::borrow::Cow<'value, RuntimeValue>, EvaluationFailure> {
         let failure =
             |message: String| EvaluationFailure::new(diagnostic, Some(instruction), message);
-        let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
+        let ViewProgramRuntimeAuthority::Awbc(_) = self.program_runtime else {
             return Err(failure(
                 "execution input has no accepted Core authority".to_owned(),
             ));
@@ -1064,6 +1065,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             .get(handle)
                             .ok_or_else(|| failure("missing dialogue input".to_owned()))?,
                     )
+                    .map(std::borrow::Cow::Owned)
                     .map_err(failure)?
                 } else {
                     let value = mounted
@@ -1076,23 +1078,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                                 format!("parameter '{}' is uninitialized", source.name),
                             )
                         })?;
-                    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
-                    if definition.parameter_contract.is_some() {
-                        value
-                            .copy_unrestricted_for_program_with_limits(
-                                &owner,
-                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-                            )
-                            .map_err(|error| failure(error.to_string()))?
-                    } else {
-                        value
-                            .copy_unrestricted_typed_for_program_with_limits(
-                                &owner,
-                                input.value_type(),
-                                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-                            )
-                            .map_err(|error| failure(error.to_string()))?
-                    }
+                    std::borrow::Cow::Borrowed(value)
                 }
             }
             arcweft_view::ViewExecutionInputSource::Local(coordinate) => {
@@ -1104,18 +1090,27 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     .ok_or_else(|| {
                         failure("local input is outside its initialized lexical scope".to_owned())
                     })?;
-                let value = &value.value;
-                value
-                    .copy_unrestricted_typed_for_program_with_limits(
-                        &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
-                        input.value_type(),
-                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-                    )
-                    .map_err(|error| failure(error.to_string()))?
+                std::borrow::Cow::Borrowed(&value.value)
             }
         };
 
         Ok(value)
+    }
+
+    fn admit_execution_input(
+        definition: &ViewDefinitionResource,
+        input: arcweft_view::ViewExecutionInput,
+        value: &RuntimeValue,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), arcweft_core::value::AwbcRuntimeValueSnapshotError> {
+        let generic_parameter = definition.parameter_contract.is_some()
+            && matches!(input.source, arcweft_view::ViewExecutionInputSource::Parameter(parameter)
+                if definition.parameters[parameter.index()].role == ViewParameterRole::Value);
+        if generic_parameter {
+            admission.validate(value)
+        } else {
+            admission.validate_typed(value, input.value_type())
+        }
     }
 
     fn evaluate_expression_program(
@@ -1140,8 +1135,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             return Err(failure("no admitted Core program authority".to_owned()));
         };
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
-        let mut inputs = Vec::with_capacity(expression.inputs.len());
-        let mut snapshots = Vec::with_capacity(expression.inputs.len());
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let mut candidates = Vec::with_capacity(expression.inputs.len());
         for input in expression.inputs.iter() {
             let value = self.resolve_execution_input(
                 handle,
@@ -1151,6 +1149,14 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 *input,
                 BundleViewDiagnosticCode::InvalidValueProgram,
             )?;
+            Self::admit_execution_input(definition, *input, &value, &mut admission)
+                .map_err(|error| failure(error.to_string()))?;
+            candidates.push(value);
+        }
+        let mut inputs = Vec::with_capacity(expression.inputs.len());
+        let mut snapshots = Vec::with_capacity(expression.inputs.len());
+        for value in candidates {
+            let value = value.into_owned();
             snapshots.push(
                 AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
                     .map_err(|error| failure(error.to_string()))?,
@@ -1169,6 +1175,13 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             && cached.program == expression.program
             && cached.inputs.as_ref() == snapshots.as_slice()
         {
+            admission
+                .validate_typed_snapshot_in_invocation(
+                    &cached.result,
+                    expression.result_type,
+                    cached.type_instantiation.as_deref(),
+                )
+                .map_err(|error| failure(error.to_string()))?;
             self.value_budget
                 .charge_operations(cached.operations, instruction)
                 .map_err(budget_failure)?;
@@ -1234,14 +1247,23 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 output.output
             )));
         }
+        let type_instantiation = executor
+            .compact_fiber()
+            .frames
+            .first()
+            .ok_or_else(|| failure("program has no original invocation frame".to_owned()))?
+            .type_instantiation
+            .as_ref()
+            .map(std::sync::Arc::clone);
         let (_, value) = executor
             .take_program_result()
             .map_err(|error| failure(error.to_string()))?
             .ok_or_else(|| failure("program returned no value".to_owned()))?;
-        value
-            .validate_unrestricted_for_program_with_limits(
-                &owner,
-                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        admission
+            .validate_typed_in_invocation(
+                &value,
+                expression.result_type,
+                type_instantiation.as_deref(),
             )
             .map_err(|error| failure(error.to_string()))?;
         let result = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner)
@@ -1252,6 +1274,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 owner: std::sync::Arc::clone(program),
                 program: expression.program,
                 inputs: snapshots.into_boxed_slice(),
+                type_instantiation,
                 result,
                 operations,
             },
@@ -2451,7 +2474,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         }
 
         let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
-        let mut capture_snapshots = Vec::with_capacity(accepted.captures().len());
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            program_owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let mut candidates = Vec::with_capacity(accepted.captures().len());
         for capture in accepted.captures() {
             let value = self.resolve_execution_input(
                 &key.handle,
@@ -2461,6 +2488,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 *capture,
                 BundleViewDiagnosticCode::InvalidHandler,
             )?;
+            Self::admit_execution_input(definition, *capture, &value, &mut admission)
+                .map_err(|error| failure(error.to_string()))?;
+            candidates.push(value);
+        }
+        let mut capture_snapshots = Vec::with_capacity(accepted.captures().len());
+        for (capture, value) in accepted.captures().iter().zip(candidates) {
             let retained = match capture.source {
                 arcweft_view::ViewExecutionInputSource::Parameter(_) => None,
                 arcweft_view::ViewExecutionInputSource::Local(coordinate) => mounted
@@ -2521,8 +2554,10 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             .map(|input| {
                                 input
                                     .snapshot
-                                    .clone()
-                                    .into_runtime_value_for_program(&program_owner)
+                                    .copy_unrestricted_runtime_value_for_program_with_limits(
+                                        &program_owner,
+                                        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                                    )
                             })
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(|error| failure(error.to_string()))?;

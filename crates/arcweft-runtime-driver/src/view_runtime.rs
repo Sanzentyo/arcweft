@@ -699,6 +699,9 @@ struct MountedViewExpressionEvaluation {
     owner: Arc<AwbcProgram>,
     program: arcweft_id::runtime_program::RuntimePureProgramId,
     inputs: Box<[AwbcRuntimeValueSnapshot]>,
+    /// Exact immutable binding retained by this expression's original Core frame.
+    type_instantiation:
+        Option<Arc<arcweft_core::program_types::RuntimeFunctionEffectInstantiation>>,
     result: AwbcRuntimeValueSnapshot,
     operations: u32,
 }
@@ -1397,33 +1400,83 @@ impl BundleViewRuntime {
     }
 
     fn ensure_unrestricted_runtime_bindings(&self) -> Result<(), ViewSaveError> {
-        self.validate_retained_runtime_values(self.view_root_bindings.values().chain(
-            self.mounts.values().flat_map(|mount| {
+        let mut admission = self.retained_value_admission();
+        for value in self.retained_runtime_values() {
+            admission.validate(value).map_err(ViewSaveError::from)?;
+        }
+        for mount in self.mounts.values() {
+            for cached in mount.expression_evaluations.values() {
+                if !matches!(&self.program_runtime,
+                    ViewProgramRuntimeAuthority::Awbc(program) if Arc::ptr_eq(program, &cached.owner))
+                {
+                    return Err(ViewSaveError::ProgramMismatch);
+                }
+                let binding = cached
+                    .owner
+                    .pure_program_binding(cached.program)
+                    .filter(|binding| binding.input_types.len() == cached.inputs.len())
+                    .ok_or(ViewSaveError::ProgramMismatch)?;
+                for (value, expected) in cached.inputs.iter().zip(&binding.input_types) {
+                    admission
+                        .validate_typed_snapshot_in_invocation(
+                            value,
+                            *expected,
+                            cached.type_instantiation.as_deref(),
+                        )
+                        .map_err(ViewSaveError::from)?;
+                }
+                admission
+                    .validate_typed_snapshot_in_invocation(
+                        &cached.result,
+                        binding.result_type,
+                        cached.type_instantiation.as_deref(),
+                    )
+                    .map_err(ViewSaveError::from)?;
+            }
+            for seal in mount.handler_seals.values() {
+                for capture in &seal.captures {
+                    admission
+                        .validate_snapshot(&capture.snapshot)
+                        .map_err(ViewSaveError::from)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn retained_runtime_values(&self) -> impl Iterator<Item = &RuntimeValue> {
+        self.view_root_bindings
+            .values()
+            .chain(self.mounts.values().flat_map(|mount| {
                 mount
                     .runtime_parameters
                     .values()
                     .chain(mount.local_state.values().map(|field| &field.value))
-            }),
-        ))
+            }))
+    }
+
+    fn retained_value_admission(&self) -> arcweft_core::value::RuntimeRetainedValueAdmission {
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+        match &self.program_runtime {
+            ViewProgramRuntimeAuthority::Awbc(program) => {
+                arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                    arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                    limits,
+                )
+            }
+            ViewProgramRuntimeAuthority::CoreProgramFree => {
+                arcweft_core::value::RuntimeRetainedValueAdmission::standalone(limits)
+            }
+        }
     }
 
     fn validate_retained_runtime_values<'value>(
         &self,
         values: impl IntoIterator<Item = &'value RuntimeValue>,
     ) -> Result<(), ViewSaveError> {
-        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
-        let owner = match &self.program_runtime {
-            ViewProgramRuntimeAuthority::Awbc(program) => Some(
-                arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
-            ),
-            ViewProgramRuntimeAuthority::CoreProgramFree => None,
-        };
+        let mut admission = self.retained_value_admission();
         for value in values {
-            match &owner {
-                Some(owner) => value.validate_unrestricted_for_program_with_limits(owner, limits),
-                None => value.validate_unrestricted_standalone_with_limits(limits),
-            }
-            .map_err(ViewSaveError::from)?;
+            admission.validate(value).map_err(ViewSaveError::from)?;
         }
         Ok(())
     }

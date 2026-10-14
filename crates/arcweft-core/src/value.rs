@@ -32,6 +32,7 @@ pub use arc_error::{
 };
 pub(crate) use arc_error::{RuntimeArcErrorContextKind, RuntimeArcErrorContextStart};
 mod awbc_save;
+pub use awbc_save::RuntimeRetainedValueAdmission;
 mod callable;
 mod canonical_transform;
 pub use canonical_transform::{RuntimeValueMergeError, RuntimeValueNormalizationError};

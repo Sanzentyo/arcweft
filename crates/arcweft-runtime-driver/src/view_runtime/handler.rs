@@ -72,6 +72,35 @@ impl BundleViewRuntime {
             return Err(invalid_result());
         }
         let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+        let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        for (input, (capture, schema)) in seal.captures.iter().zip(accepted.captures()).enumerate()
+        {
+            let invalid = || BundleViewEventDispatchError::InvalidStateInput {
+                input,
+                expected: schema.value_type(),
+            };
+            if let Some(address) = &capture.retained {
+                let cell = mounted.local_state.get(address).ok_or_else(|| {
+                    BundleViewEventDispatchError::MissingStateField {
+                        path: address.0.clone(),
+                        field: address.1,
+                    }
+                })?;
+                if cell.value_type != schema.value_type() {
+                    return Err(invalid());
+                }
+                admission
+                    .validate_typed(&cell.value, schema.value_type())
+                    .map_err(|_| invalid())?;
+            } else {
+                admission
+                    .validate_typed_snapshot(&capture.snapshot, schema.value_type())
+                    .map_err(|_| invalid())?;
+            }
+        }
         let arguments = seal
             .captures
             .iter()
@@ -117,12 +146,8 @@ impl BundleViewRuntime {
                 .map_err(|source| BundleViewEventDispatchError::ProgramExecution {
                     source: Box::new(source),
                 })?;
-        result
-            .validate_unrestricted_typed_for_program_with_limits(
-                &owner,
-                result_type,
-                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-            )
+        admission
+            .validate_typed(&result, result_type)
             .map_err(|_| invalid_result())?;
         let RuntimeValue::Tuple(results) = result else {
             return Err(invalid_result());

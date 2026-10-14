@@ -2,9 +2,8 @@
 
 use super::{AwbcProgram, AwbcTypeId, BTreeSet, ParameterMatcher, RuntimeValue};
 use crate::entry::RuntimeSchemaLimits;
-use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
 use crate::task::RuntimeProgramOwner;
-use crate::value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
+use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
 use std::sync::Arc;
 
 /// Failure while admitting a borrowed View declaration parameter group.
@@ -42,16 +41,18 @@ impl AwbcProgram {
         inputs: impl IntoIterator<Item = (usize, &'value RuntimeValue)>,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimeParameterValueAdmissionError> {
-        let mut resources = ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live);
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Awbc(Arc::clone(self)),
+            limits,
+        );
         let (parameters, mut matcher) =
-            ParameterMatcher::new_with_work(self.as_ref(), contract, None, resources.work())
+            ParameterMatcher::new_with_work(self.as_ref(), contract, None, admission.work())
                 .ok_or_else(|| {
-                    resources.work().failure().map_or(
+                    admission.work().failure().map_or(
                         RuntimeParameterValueAdmissionError::Contract { contract },
                         |source| RuntimeParameterValueAdmissionError::Resource { source },
                     )
                 })?;
-        let owner = RuntimeProgramOwner::Awbc(Arc::clone(self));
         let mut seen = BTreeSet::new();
         for (ordinal, value) in inputs {
             let expected = parameters
@@ -62,26 +63,17 @@ impl AwbcProgram {
                 ordinal,
                 source: Box::new(source),
             };
-            value
-                .view()
-                .admit_unrestricted(&mut resources)
-                .map_err(failure)?;
-            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                value.view(),
-                Some(&owner),
-                &resources,
-            )
-            .map_err(failure)?;
+            admission.validate(value).map_err(failure)?;
             let environment = matcher.parameters.clone();
             if matcher.value(*expected, value, 0, &environment).is_err() {
-                return Err(resources.work().failure().map_or(
+                return Err(admission.work().failure().map_or(
                     RuntimeParameterValueAdmissionError::Relation { ordinal },
                     |error| failure(AwbcRuntimeValueSnapshotError::from(error)),
                 ));
             }
         }
         if !matcher.accepted() {
-            if let Some(error) = resources.work().failure() {
+            if let Some(error) = admission.work().failure() {
                 return Err(RuntimeParameterValueAdmissionError::Resource { source: error });
             }
             return Err(RuntimeParameterValueAdmissionError::Predicate);

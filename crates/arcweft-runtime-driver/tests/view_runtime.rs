@@ -1672,6 +1672,33 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     assert_eq!(plain_text(&retained), "no");
 
     let before = runtime.snapshot().unwrap();
+    let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
+    let aggregate = (0..=limits.max_encoded_bytes / limits.max_string_bytes)
+        .map(|ordinal| RuntimeBinding {
+            name: format!("unused-{ordinal}"),
+            value: RuntimeValue::String(
+                "x".repeat(usize::try_from(limits.max_string_bytes).unwrap()),
+            ),
+        })
+        .collect::<Vec<_>>();
+    let rejected = runtime.evaluate(std::slice::from_ref(&mounted), &aggregate, false);
+    assert_eq!(
+        rejected.diagnostics[0].code,
+        BundleViewDiagnosticCode::InputType
+    );
+    assert!(rejected.diagnostics[0].message.contains("encoded_bytes"));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    let mut invalid = before.clone();
+    invalid.view_root_bindings.extend(aggregate);
+    assert!(
+        matches!(runtime.restore(&invalid, std::slice::from_ref(&mounted)),
+        Err(BundleViewRuntimeError::Save(
+            arcweft_runtime_driver::view_runtime::ViewSaveError::InvalidRuntimeBinding { source }
+        )) if matches!(*source, arcweft_core::value::AwbcRuntimeValueSnapshotError::Resource(
+            arcweft_core::entry::RuntimeSchemaError::BudgetExceeded { budget: "encoded_bytes" }
+        )))
+    );
+    assert_eq!(runtime.snapshot().unwrap(), before);
     let oversized = RuntimeValue::String(
         "x".repeat(
             usize::try_from(

@@ -31,6 +31,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     AgentPredicate(#[from] RuntimeAgentConstructionError),
     #[error("unrestricted snapshot contains an affine value")]
     AffineValue,
+    #[error("retained type {expected:?} requires its original program owner")]
+    ProgramOwnerRequired { expected: RuntimeSemanticTypeId },
     #[error(transparent)]
     Nesting(#[from] super::RuntimeValueNestingError),
     #[error(transparent)]
@@ -316,6 +318,8 @@ pub struct AwbcRuntimeCallableSnapshot {
 }
 
 mod admission;
+mod retained_admission;
+pub use retained_admission::RuntimeRetainedValueAdmission;
 
 impl RuntimeValue {
     /// Checks borrowed retained data before an enclosing publication copies
@@ -383,26 +387,14 @@ impl RuntimeValue {
         expected: Option<RuntimeSemanticTypeId>,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            limits,
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-        );
-        self.view().admit_unrestricted(&mut resources)?;
-        if let Some(expected) = expected {
-            let owner = owner.expect("typed retained copying selects an original program");
-            let binding = self
-                .view()
-                .construction_instantiation()
-                .filter(|(identity, _)| *identity == expected)
-                .map(|(_, binding)| binding);
-            owner.types().value_type(expected)?.validate_admitted_view(
-                self.view(),
-                binding,
-                &resources,
-            )?;
+        let mut admission = match owner {
+            Some(owner) => RuntimeRetainedValueAdmission::for_program(owner.clone(), limits),
+            None => RuntimeRetainedValueAdmission::standalone(limits),
+        };
+        match expected {
+            Some(expected) => admission.validate_typed(self, expected),
+            None => admission.validate(self),
         }
-        AwbcRuntimeValueSnapshot::validate_admitted_storage_view(self.view(), owner, &resources)?;
-        Ok(())
     }
 }
 
@@ -533,27 +525,11 @@ impl AwbcRuntimeValueSnapshot {
         expected: Option<RuntimeSemanticTypeId>,
         limits: crate::entry::RuntimeSchemaLimits,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let mut affine = false;
-        let mut observe = |value: super::RuntimeValueView<'_>| {
-            affine |= !value.intrinsic_ownership().permits_copy();
-            Ok(())
-        };
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            limits,
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-        );
-        resources.validate_view(self.view(), 0, Some(&mut observe))?;
-        if affine {
-            return Err(AwbcRuntimeValueSnapshotError::AffineValue);
+        let mut admission = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        match expected {
+            Some(expected) => admission.validate_typed_snapshot(self, expected),
+            None => admission.validate_snapshot(self),
         }
-        if let Some(expected) = expected {
-            owner
-                .types()
-                .validate_inert_snapshot_view(expected, self.view(), &resources.work())
-                .map_err(|error| AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))?;
-        }
-        Self::validate_admitted_storage_view(self.view(), Some(owner), &resources)?;
-        Ok(())
     }
 
     /// Captures copyable standalone data. Program-owned descendants require
@@ -561,12 +537,10 @@ impl AwbcRuntimeValueSnapshot {
     pub fn from_unrestricted_standalone_value(
         value: &RuntimeValue,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+        RuntimeRetainedValueAdmission::standalone(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-        );
-        value.view().admit_unrestricted(&mut resources)?;
-        Self::validate_admitted_storage_view(value.view(), None, &resources)?;
+        )
+        .validate(value)?;
         Self::from_admitted_storage(value, None)
     }
 
@@ -575,12 +549,10 @@ impl AwbcRuntimeValueSnapshot {
     pub fn into_unrestricted_standalone_value(
         self,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+        RuntimeRetainedValueAdmission::standalone(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-        );
-        self.view().admit_unrestricted(&mut resources)?;
-        Self::validate_admitted_storage_view(self.view(), None, &resources)?;
+        )
+        .validate_snapshot(&self)?;
         self.into_live_with_owner(None)
     }
 
