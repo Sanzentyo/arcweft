@@ -24,6 +24,12 @@ enum RetainedTypeObligation<'binding> {
     },
 }
 
+#[derive(Clone, Copy)]
+enum RetainedValueRequirement {
+    Unrestricted,
+    Owned,
+}
+
 /// Admits every retained root before an enclosing frame/session copies or
 /// publishes them. Live values and inert caches share the same node, byte and
 /// relation-work allowance. The first failure remains final for this context.
@@ -79,6 +85,47 @@ impl RuntimeRetainedValueAdmission {
             value.value,
             value.origin,
             Some(RetainedTypeObligation::Stored(expected)),
+        )
+    }
+
+    /// An enclosing owning field may retain affine custody as inert data.
+    /// This inspection grants no Copy entitlement and never constructs a value.
+    pub(crate) fn validate_owned_borrowed(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view_with_requirement(
+            value.value,
+            value.origin,
+            None,
+            RetainedValueRequirement::Owned,
+        )
+    }
+
+    pub(crate) fn validate_owned_typed_borrowed(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+        expected: RuntimeSemanticTypeId,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view_with_requirement(
+            value.value,
+            value.origin,
+            Some(RetainedTypeObligation::Stored(expected)),
+            RetainedValueRequirement::Owned,
+        )
+    }
+
+    pub(crate) fn validate_owned_typed_borrowed_in_invocation(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view_with_requirement(
+            value.value,
+            value.origin,
+            Some(RetainedTypeObligation::Invocation { expected, binding }),
+            RetainedValueRequirement::Owned,
         )
     }
 
@@ -303,10 +350,25 @@ impl RuntimeRetainedValueAdmission {
         origin: ValueAdmissionOrigin,
         expected: Option<RetainedTypeObligation<'_>>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view_with_requirement(
+            value,
+            origin,
+            expected,
+            RetainedValueRequirement::Unrestricted,
+        )
+    }
+
+    fn validate_view_with_requirement(
+        &mut self,
+        value: RuntimeValueView<'_>,
+        origin: ValueAdmissionOrigin,
+        expected: Option<RetainedTypeObligation<'_>>,
+        requirement: RetainedValueRequirement,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         if let Some(failure) = &self.failure {
             return Err(failure.clone());
         }
-        let result = self.admit(value, origin, expected);
+        let result = self.admit(value, origin, expected, requirement);
         if let Err(failure) = &result {
             self.failure = Some(failure.clone());
         }
@@ -318,9 +380,15 @@ impl RuntimeRetainedValueAdmission {
         value: RuntimeValueView<'_>,
         origin: ValueAdmissionOrigin,
         expected: Option<RetainedTypeObligation<'_>>,
+        requirement: RetainedValueRequirement,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.resources.set_origin(origin);
-        value.admit_unrestricted(&mut self.resources)?;
+        match requirement {
+            RetainedValueRequirement::Unrestricted => {
+                value.admit_unrestricted(&mut self.resources)?;
+            }
+            RetainedValueRequirement::Owned => self.resources.validate_view(value, 0, None)?,
+        }
         if let Some(obligation) = expected {
             let expected = match &obligation {
                 RetainedTypeObligation::OpaquePayload { outer, .. } => *outer,

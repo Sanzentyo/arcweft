@@ -69,12 +69,7 @@ impl<'a> SnapshotStorageAdmission<'a> {
             },
             RuntimeValueView::Callable(callable) => Some(self.callable_type(callable)?),
             RuntimeValueView::Need(need) => {
-                need.validate_identity().map_err(|error| {
-                    AwbcRuntimeValueSnapshotError::Message {
-                        message: error.to_string(),
-                    }
-                })?;
-                need.outcome().validate_storage_owner(self.owner)?;
+                need.validate_admitted_storage(self.owner, self.resources)?;
                 None
             }
             RuntimeValueView::Iterator(iterator) => {

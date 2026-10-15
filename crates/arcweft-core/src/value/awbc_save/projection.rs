@@ -80,7 +80,7 @@ impl AwbcRuntimeValueSnapshot {
                 Self::Iterator(Self::iterator_from_live(value, owner)?)
             }
             View::Need(RuntimeNeedView::Live(value)) => Self::NeedHandle(
-                crate::task::RuntimeNeedHandleSaveSnapshot::from_live(value, owner)?,
+                crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(value, owner)?,
             ),
             View::DenseNumeric(value) => Self::DenseNumeric(
                 crate::math::RuntimeDenseNumericPayload::try_from(

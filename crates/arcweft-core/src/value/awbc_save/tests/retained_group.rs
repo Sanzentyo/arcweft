@@ -2,6 +2,63 @@ use super::*;
 use crate::value::RuntimeRetainedValueAdmission;
 
 #[test]
+fn owning_retained_admission_preserves_affine_custody_without_granting_copy() {
+    for owner in owners() {
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::NeedHandle(crate::tests::reusable_need("owning-retained-field")),
+        ]);
+        let inert =
+            AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&value, &owner).unwrap();
+        let before = serde_json::to_vec(&inert).unwrap();
+        let limits = RuntimeSchemaLimits::engine_default();
+        let mut owning = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        owning.validate_owned_borrowed((&value).into()).unwrap();
+        owning.validate_owned_borrowed((&inert).into()).unwrap();
+        let mut copying = RuntimeRetainedValueAdmission::for_program(owner, limits);
+        assert_eq!(
+            copying.validate(&value),
+            Err(AwbcRuntimeValueSnapshotError::AffineValue)
+        );
+        assert_eq!(
+            copying.validate_owned_borrowed((&inert).into()),
+            Err(AwbcRuntimeValueSnapshotError::AffineValue),
+        );
+        assert_eq!(serde_json::to_vec(&inert).unwrap(), before);
+        assert!(
+            matches!(&value, RuntimeValue::Tuple(values) if matches!(&values[1], RuntimeValue::NeedHandle(_)))
+        );
+    }
+}
+
+#[test]
+fn owning_and_copy_roots_share_nodes_and_the_first_resource_failure() {
+    for owner in owners() {
+        let limits = RuntimeSchemaLimits {
+            max_nodes: 1,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        let mut admission = RuntimeRetainedValueAdmission::for_program(owner, limits);
+        admission
+            .validate_owned_borrowed((&RuntimeValue::Bool(true)).into())
+            .unwrap();
+        let error = admission
+            .validate_snapshot(&AwbcRuntimeValueSnapshot::Bool(false))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "nodes"
+            })
+        );
+        assert_eq!(
+            admission.validate_owned_borrowed((&RuntimeValue::Unit).into()),
+            Err(error)
+        );
+    }
+}
+
+#[test]
 fn mixed_retained_roots_share_nodes_bytes_and_sticky_resource_failures() {
     let limits = RuntimeSchemaLimits::engine_default();
     for (limits, budget) in [

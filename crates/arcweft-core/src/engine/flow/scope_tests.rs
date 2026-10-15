@@ -92,8 +92,9 @@ fn at_control_frame() -> Engine {
 #[test]
 fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitted_exit() {
     let engine = at_control_frame();
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
-    let mut restored = Engine::from_rollback_image(image).unwrap();
+    let mut restored = Engine::from_rollback_image(image, &owner).unwrap();
     let options = RuntimeStepOptions {
         mode: RuntimeStepMode::OneOp,
         budget: RuntimeStepBudget { max_ops: 1 },
@@ -111,7 +112,7 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
             .any(|op| matches!(op, FlowOp::ExitScheduledScope { .. }))
     );
     let image = restored.inert_rollback_image().unwrap();
-    let mut restored = Engine::from_rollback_image(image).unwrap();
+    let mut restored = Engine::from_rollback_image(image, &owner).unwrap();
     let step = restored.step(Default::default(), options);
     assert!(step.output.diagnostics.is_empty(), "{step:?}");
     assert!(matches!(step.fiber_status, FlowFiberStatus::Done(_)));
@@ -120,6 +121,7 @@ fn native_scope_snapshot_retains_exact_closes_and_consumes_them_once_after_emitt
 fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
     use crate::engine::FlowOpRollbackImage;
     let engine = at_control_frame();
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
     let mut missing = image.clone();
     missing
@@ -128,7 +130,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         .pending_ops
         .retain(|op| !matches!(op, FlowOpRollbackImage::ExitScheduledScope { .. }));
     assert_eq!(
-        Engine::from_rollback_image(missing).unwrap_err(),
+        Engine::from_rollback_image(missing, &owner).unwrap_err(),
         "native scope frames and queued exact close markers are not bijective"
     );
     let mut duplicate = image.clone();
@@ -142,7 +144,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         .clone();
     duplicate.fiber.frame.pending_ops.push_back(close);
     assert_eq!(
-        Engine::from_rollback_image(duplicate).unwrap_err(),
+        Engine::from_rollback_image(duplicate, &owner).unwrap_err(),
         "native pending scope close has a foreign, repeated, or unallocated token"
     );
     let mut foreign = image;
@@ -165,7 +167,7 @@ fn native_scope_snapshot_rejects_missing_duplicate_and_foreign_close_tokens() {
         token.kind(),
     );
     assert_eq!(
-        Engine::from_rollback_image(foreign).unwrap_err(),
+        Engine::from_rollback_image(foreign, &owner).unwrap_err(),
         "native pending scope close has a foreign, repeated, or unallocated token"
     );
 }

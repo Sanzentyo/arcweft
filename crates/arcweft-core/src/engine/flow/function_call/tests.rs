@@ -84,8 +84,9 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
         .unwrap();
     let plan = Arc::new(builder.finish().unwrap());
     let engine = Engine::for_program_invocation(plan, program, vec![]).unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
-    let restored = Engine::from_rollback_image(image.clone()).unwrap();
+    let restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
     assert_eq!(
         restored
             .fiber
@@ -106,7 +107,7 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
         panic!("program did not retain its active function frame")
     };
     *type_instantiation = None;
-    assert!(Engine::from_rollback_image(missing).is_err());
+    assert!(Engine::from_rollback_image(missing, &owner).is_err());
 }
 
 fn completed_handle_program() -> (
@@ -268,7 +269,7 @@ fn program_continuation_moves_live_handle_with_need_context_and_returns_it_again
     assert!(engine.take_program_result().is_err());
     let image = engine.inert_rollback_image().unwrap();
     drop(engine);
-    let engine = Engine::from_rollback_image(image).unwrap();
+    let engine = Engine::from_rollback_image(image, &owner).unwrap();
     assert_eq!(
         engine.need_producers.inert_rollback_image(&owner).unwrap(),
         needs
@@ -464,7 +465,11 @@ fn program_return_preserves_typed_result_and_rollback_custody() {
         Some((program, RuntimeValue::Bool(true)))
     );
     assert_eq!(engine.take_program_result().unwrap(), None);
-    let mut restored = Engine::from_rollback_image(saved).unwrap();
+    let mut restored = Engine::from_rollback_image(
+        saved,
+        &crate::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    )
+    .unwrap();
     assert_eq!(
         restored.take_program_result().unwrap(),
         Some((program, RuntimeValue::Bool(true)))
@@ -570,7 +575,11 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
         ))
     );
     assert_eq!(engine.take_program_result().unwrap(), None);
-    let mut restored = Engine::from_rollback_image(saved).unwrap();
+    let mut restored = Engine::from_rollback_image(
+        saved,
+        &crate::task::RuntimeProgramOwner::Plan(engine.program_plan()),
+    )
+    .unwrap();
     assert_eq!(
         restored.take_program_result().unwrap(),
         Some((
@@ -814,8 +823,9 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         crate::engine::FlowFiberStatus::Running
     ));
     assert!(engine.take_function_result(site).unwrap().is_none());
+    let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     let saved = engine.inert_rollback_image().unwrap();
-    let mut restored = Engine::from_rollback_image(saved).unwrap();
+    let mut restored = Engine::from_rollback_image(saved, &owner).unwrap();
     assert!(Arc::ptr_eq(&restored.plan, &plan));
     for _ in 0..16 {
         let output = restored.step(Default::default(), options);
@@ -836,7 +846,6 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
     );
     let saved_result = restored.inert_rollback_image().unwrap();
     let mut forged_result = saved_result.clone();
-    let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));
     forged_result.invocation_result.as_mut().unwrap().1 =
         crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
             &RuntimeValue::Bool(true),
@@ -844,7 +853,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         )
         .unwrap();
     assert!(
-        Engine::from_rollback_image(forged_result).is_err(),
+        Engine::from_rollback_image(forged_result, &owner).is_err(),
         "the retained function result must have its original type"
     );
     assert_eq!(
@@ -852,7 +861,7 @@ fn scalar_executable_function_root_preserves_full_formals_budget_rollback_and_re
         Some(RuntimeValue::i64(7))
     );
     assert_eq!(restored.take_function_result(site).unwrap(), None);
-    let mut restored_result = Engine::from_rollback_image(saved_result).unwrap();
+    let mut restored_result = Engine::from_rollback_image(saved_result, &owner).unwrap();
     assert_eq!(
         restored_result.take_function_result(site).unwrap(),
         Some(RuntimeValue::i64(7))

@@ -51,7 +51,7 @@ impl<P> RuntimeObservationState<P> {
         Ok(())
     }
 
-    fn admit_values(
+    pub(crate) fn admit_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
         view: impl Fn(&P) -> crate::value::RuntimeBorrowedValue<'_>,

@@ -46,6 +46,7 @@ pub mod audio;
 pub mod dialogue;
 pub mod eval;
 mod numeric_map;
+mod rollback;
 pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
@@ -56,7 +57,7 @@ pub mod suspend;
 /// Ephemeral charge for the currently dispatched native operation. The driver
 /// reserves that dispatch first; physical bodies may consume only its actual
 /// remaining step budget. It is cleared before the next operation/host return.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 struct NativeScalarStepCharge {
     mode: RuntimeStepMode,
     fiber: FlowFiberId,
@@ -72,24 +73,46 @@ enum NativeInvocationRoot {
     Function(crate::runtime_id::RuntimeFunctionSiteId),
 }
 
+/// Native execution ownership shared by live state and inert rollback storage.
+/// Storage parameters do not grant live Clone or a wire reader.
+///
+/// ```compile_fail
+/// use arcweft_core::engine::Engine;
+/// fn copy(engine: &Engine) { let _: Engine = engine.clone(); }
+/// ```
+/// ```compile_fail
+/// use arcweft_core::engine::Engine;
+/// let _: Engine = serde_json::from_str("{}").unwrap();
+/// ```
+/// ```compile_fail
+/// use arcweft_core::engine::Engine;
+/// fn write(engine: &Engine) { let _ = serde_json::to_vec(engine); }
+/// ```
 #[derive(Debug, PartialEq)]
-pub struct Engine {
+pub struct Engine<
+    V = RuntimeValue,
+    N = NeedProducerRegistry,
+    P = RuntimePayload,
+    R = RootRuntime,
+    F = NativeFlowExecutionFrame,
+    D = dialogue::DialogueActivationStore,
+> {
     evaluation_stats: crate::pure::PureFunctionStats,
-    invocation_result: Option<(NativeInvocationRoot, RuntimeValue)>,
+    invocation_result: Option<(NativeInvocationRoot, V)>,
     plan: Arc<RuntimePlan>,
     format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
-    need_producers: NeedProducerRegistry,
+    need_producers: N,
     task_request_quota_remaining: usize,
     scalar_step_charge: Option<NativeScalarStepCharge>,
-    need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication>>,
+    need_publications: BTreeMap<crate::task::TaskCorrelation, VecDeque<RuntimeNeedPublication<P>>>,
     latest_need_publications:
         BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
     need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
     main_started: bool,
-    root: Option<RootRuntime>,
-    fiber: FlowFiber,
-    child_fibers: VecDeque<FlowFiber>,
+    root: Option<R>,
+    fiber: FlowFiber<F>,
+    child_fibers: VecDeque<FlowFiber<F>>,
     next_fiber_id: u64,
     next_scheduled_scope_sequence: u64,
     dialogue_occurrences: BTreeMap<
@@ -99,7 +122,7 @@ pub struct Engine {
         ),
         u64,
     >,
-    dialogue_activations: dialogue::DialogueActivationStore,
+    dialogue_activations: D,
     dialogue_effect_callback_activations:
         BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
     run_child_next: bool,
@@ -114,53 +137,47 @@ pub struct Engine {
 /// Inert, in-memory rollback of every mutable native Engine owner. Runtime
 /// values enter the image through the sealed value snapshot authority; the
 /// image may coexist with a live Engine because it carries no live values.
-#[derive(Clone, Debug, PartialEq)]
-struct NativeEngineRollbackImage {
-    evaluation_stats: crate::pure::PureFunctionStats,
-    invocation_result: Option<(NativeInvocationRoot, crate::value::AwbcRuntimeValueSnapshot)>,
-    plan: Arc<RuntimePlan>,
-    format_context: crate::value::RuntimeFormatContext,
-    generation: GenerationId,
-    need_producers: crate::task::NeedProducerRegistryRollbackImage,
-    task_request_quota_remaining: usize,
-    scalar_step_charge: Option<NativeScalarStepCharge>,
-    need_publications: BTreeMap<
-        crate::task::TaskCorrelation,
-        VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>,
-    >,
-    latest_need_publications:
-        BTreeMap<crate::task::TaskCorrelation, crate::task::RuntimeNeedPublicationRollbackImage>,
-    need_publication_frontiers: BTreeMap<crate::task::TaskCorrelation, TaskPublicationCursor>,
-    main_started: bool,
-    root: Option<crate::root::RootRuntimeRollbackImage>,
-    fiber: FlowFiberRollbackImage,
-    child_fibers: VecDeque<FlowFiberRollbackImage>,
-    next_fiber_id: u64,
-    next_scheduled_scope_sequence: u64,
-    dialogue_occurrences: BTreeMap<
-        (
-            RuntimePersistentFiberId,
-            crate::runtime_id::RuntimeDialogueContentPlanId,
-        ),
-        u64,
-    >,
-    dialogue_activations: dialogue::DialogueActivationStoreRollbackImage,
-    expected_deferred_children: BTreeMap<
-        DialogueActivationId,
-        (
-            crate::runtime_id::RuntimeDeferRegistrationId,
-            crate::runtime_id::RuntimeDeferSiteId,
-        ),
-    >,
-    dialogue_effect_callback_activations:
-        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
-    run_child_next: bool,
-    pure_i64_batch_inputs: Vec<i64>,
-    pure_i64_batch_outputs: Vec<i64>,
-    pure_helper_i64_call_shapes: Vec<bool>,
-    audio_epoch: u64,
-    next_audio_sequence: u64,
-    next_host_call_sequence: u64,
+type NativeEngineRollbackImage = Engine<
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::task::NeedProducerRegistryRollbackImage,
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::root::RootRuntimeRollbackImage,
+    NativeFlowExecutionFrameRollbackImage,
+    dialogue::DialogueActivationStoreRollbackImage,
+>;
+
+impl Clone for NativeEngineRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            evaluation_stats: self.evaluation_stats.clone(),
+            invocation_result: self.invocation_result.clone(),
+            plan: Arc::clone(&self.plan),
+            format_context: self.format_context.clone(),
+            generation: self.generation,
+            need_producers: self.need_producers.clone(),
+            task_request_quota_remaining: self.task_request_quota_remaining,
+            scalar_step_charge: self.scalar_step_charge,
+            need_publications: self.need_publications.clone(),
+            latest_need_publications: self.latest_need_publications.clone(),
+            need_publication_frontiers: self.need_publication_frontiers.clone(),
+            main_started: self.main_started,
+            root: self.root.clone(),
+            fiber: self.fiber.clone(),
+            child_fibers: self.child_fibers.clone(),
+            next_fiber_id: self.next_fiber_id,
+            next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
+            dialogue_occurrences: self.dialogue_occurrences.clone(),
+            dialogue_activations: self.dialogue_activations.clone(),
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
+            run_child_next: self.run_child_next,
+            pure_i64_batch_inputs: self.pure_i64_batch_inputs.clone(),
+            pure_i64_batch_outputs: self.pure_i64_batch_outputs.clone(),
+            pure_helper_i64_call_shapes: self.pure_helper_i64_call_shapes.clone(),
+            audio_epoch: self.audio_epoch,
+            next_audio_sequence: self.next_audio_sequence,
+            next_host_call_sequence: self.next_host_call_sequence,
+        }
+    }
 }
 
 pub(super) struct NativeLineTaskExecutionBatch {
@@ -283,12 +300,28 @@ impl Clone for NativeFlowExecutionFrameRollbackImage {
 }
 
 impl FlowFiber {
+    #[cfg(test)]
     fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FlowFiberRollbackImage, String> {
+        self.frame
+            .admit_owned_values(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        self.snapshot_with_admitted_values(owner)
+    }
+
+    fn snapshot_with_admitted_values(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<FlowFiberRollbackImage, String> {
         Ok(FlowFiberRollbackImage {
-            frame: self.frame.inert_rollback_image(owner)?,
+            frame: self.frame.snapshot_with_admitted_values(owner)?,
             id: self.id,
             persistent_id: self.persistent_id,
             execution: self.execution,
@@ -301,7 +334,7 @@ impl FlowFiber {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(Self {
-            frame: NativeFlowExecutionFrame::from_rollback_image(image.frame, owner)?,
+            frame: NativeFlowExecutionFrame::from_image_with_admitted_values(image.frame, owner)?,
             id: image.id,
             persistent_id: image.persistent_id,
             execution: image.execution,
@@ -312,6 +345,20 @@ impl FlowFiber {
 
 impl NativeFlowExecutionFrame {
     fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
+        self.admit_owned_values(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        self.snapshot_with_admitted_values(owner)
+    }
+
+    fn snapshot_with_admitted_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<NativeFlowExecutionFrameRollbackImage, String> {
@@ -334,22 +381,22 @@ impl NativeFlowExecutionFrame {
                 .map(|state| state.inert_rollback_image(owner).map(Box::new))
                 .transpose()?,
             root_cleanups: self.root_cleanups.clone(),
-            env: self.env.inert_rollback_image(owner)?,
+            env: self.env.snapshot_admitted(owner)?,
             observations:
-                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                crate::observation::RuntimeObservationSaveSnapshot::from_admitted_live_for_program(
                     &self.observations,
                     owner,
                 )?,
             stream_states: self
                 .stream_states
                 .iter()
-                .map(|(id, state)| Ok((id.clone(), state.inert_rollback_image(owner)?)))
+                .map(|(id, state)| Ok((id.clone(), state.snapshot_admitted(owner)?)))
                 .collect::<Result<_, String>>()?,
             selected_dialogue_result: self
                 .selected_dialogue_result
                 .as_ref()
                 .map(|value| {
-                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         value, owner,
                     )
                     .map_err(|error| error.to_string())
@@ -360,6 +407,21 @@ impl NativeFlowExecutionFrame {
     }
 
     fn from_rollback_image(
+        image: NativeFlowExecutionFrameRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        image
+            .admit_owned_values(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        Self::from_image_with_admitted_values(image, owner)
+    }
+
+    fn from_image_with_admitted_values(
         image: NativeFlowExecutionFrameRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
@@ -381,8 +443,8 @@ impl NativeFlowExecutionFrame {
                 .map(|state| AwaitState::from_rollback_image(*state, owner).map(Box::new))
                 .transpose()?,
             root_cleanups: image.root_cleanups,
-            env: RuntimeEnv::from_rollback_image(image.env, owner)?,
-            observations: image.observations.into_live_for_program(owner)?,
+            env: image.env.into_admitted_live(owner)?,
+            observations: image.observations.into_admitted_live_for_program(owner)?,
             stream_states: image
                 .stream_states
                 .into_iter()
@@ -392,7 +454,7 @@ impl NativeFlowExecutionFrame {
                 .selected_dialogue_result
                 .map(|saved| {
                     saved
-                        .into_runtime_value_for_program(owner)
+                        .into_admitted_runtime_value(owner)
                         .map_err(|error| error.to_string())
                 })
                 .transpose()?,
@@ -566,7 +628,7 @@ impl FlowOpRollbackImage {
 
 /// Stable executor-local identity. It is allocated independently from a
 /// plan node so an old child completion cannot be attributed to a later run.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, serde::Serialize)]
 pub struct FlowFiberId(u64);
 
 impl FlowFiberId {
@@ -576,13 +638,13 @@ impl FlowFiberId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) enum FlowFiberOwner {
     Executor,
     LineTask(LineTaskFiberOwner),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub(crate) struct LineTaskFiberOwner {
     pub(crate) tag: LineTaskWorkTag,
     pub(crate) join_policy: ChildJoinPolicy,
@@ -791,7 +853,7 @@ impl NativeFormatAttemptFrame {
                     value
                         .as_ref()
                         .map(|value| {
-                            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                                 value, owner,
                             )
                             .map_err(|error| error.to_string())
@@ -835,7 +897,7 @@ impl NativeFormatAttemptFrame {
                     value
                         .map(|saved| {
                             saved
-                                .into_runtime_value_for_program(owner)
+                                .into_admitted_runtime_value(owner)
                                 .map_err(|error| error.to_string())
                         })
                         .transpose()
@@ -920,7 +982,7 @@ impl FlowControlStackEntry {
                         .iter()
                         .map(|op| FlowOpRollbackImage::from_live(op, owner))
                         .collect::<Result<_, String>>()?,
-                    continuation: frame.continuation.inert_rollback_image(owner, frame.site)?,
+                    continuation: frame.continuation.snapshot_with_admitted_packet(owner)?,
                 })
             }
             FlowControlStackEntryKind::Scope {
@@ -1001,34 +1063,20 @@ impl FlowControlStackEntry {
                 resume,
                 caller_pending_ops,
                 continuation,
-            }) => {
-                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
-                    return Err("native function frame has a foreign program kind".to_owned());
-                };
-                plan.validate_function_instantiation(
-                    site,
-                    type_instantiation.as_deref(),
-                    &crate::entry::schema::value_budget::ValidationWork::new(
-                        crate::entry::RuntimeSchemaLimits::engine_default(),
-                    ),
-                )
-                .map_err(|error| error.to_string())?;
-                FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
-                    site,
-                    type_instantiation,
-                    function_scope,
-                    resume,
-                    caller_pending_ops: caller_pending_ops
-                        .into_iter()
-                        .map(|op| op.into_live(owner))
-                        .collect::<Result<_, String>>()?,
-                    continuation: FunctionReturnContinuation::from_rollback_image(
-                        continuation,
-                        site,
-                        owner,
-                    )?,
-                })
-            }
+            }) => FlowControlStackEntryKind::FunctionCall(FunctionCallFrame {
+                site,
+                type_instantiation,
+                function_scope,
+                resume,
+                caller_pending_ops: caller_pending_ops
+                    .into_iter()
+                    .map(|op| op.into_live(owner))
+                    .collect::<Result<_, String>>()?,
+                continuation: FunctionReturnContinuation::from_image_with_admitted_packet(
+                    continuation,
+                    owner,
+                )?,
+            }),
         };
         Ok(Self { kind })
     }
@@ -1090,10 +1138,9 @@ impl Clone for FunctionReturnContinuationRollbackImage {
 }
 
 impl FunctionReturnContinuation {
-    fn inert_rollback_image(
+    fn snapshot_with_admitted_packet(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
-        site: crate::runtime_id::RuntimeFunctionSiteId,
     ) -> Result<FunctionReturnContinuationRollbackImage, String> {
         Ok(match self {
             Self::Program { program } => {
@@ -1103,11 +1150,8 @@ impl FunctionReturnContinuation {
                 FunctionReturnContinuationRollbackImage::Function { site: *site }
             }
             Self::CallableDefault { pending, result } => {
-                crate::value::RuntimeCallableBodyReference::Plan(site)
-                    .validate_default_return(owner.types(), pending.state())
-                    .map_err(|error| error.to_string())?;
                 FunctionReturnContinuationRollbackImage::CallableDefault {
-                    pending: crate::value::RuntimeCallablePendingSnapshot::from_live(
+                    pending: crate::value::RuntimeCallablePendingSnapshot::from_live_admitted(
                         pending, owner,
                     )
                     .map_err(|error| error.to_string())?,
@@ -1120,42 +1164,39 @@ impl FunctionReturnContinuation {
         })
     }
 
+    #[cfg(test)]
     fn from_rollback_image(
         image: FunctionReturnContinuationRollbackImage,
         site: crate::runtime_id::RuntimeFunctionSiteId,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        image
+            .admit_header_and_packet(
+                site,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        Self::from_image_with_admitted_packet(image, owner)
+    }
+
+    fn from_image_with_admitted_packet(
+        image: FunctionReturnContinuationRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         Ok(match image {
             FunctionReturnContinuationRollbackImage::Program { program } => {
-                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
-                    return Err("native program continuation requires its plan owner".to_owned());
-                };
-                if !plan
-                    .resolve_pure_program(program)
-                    .is_ok_and(|binding| binding.site() == site)
-                {
-                    return Err("native program continuation is absent from its plan".to_owned());
-                }
                 Self::Program { program }
             }
             FunctionReturnContinuationRollbackImage::Function { site: target } => {
-                let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
-                    return Err("native function continuation requires its plan owner".to_owned());
-                };
-                if target != site
-                    || crate::pure::RuntimePureFunctionRef::resolve(plan, target).is_err()
-                {
-                    return Err("native function continuation is absent from its plan".to_owned());
-                }
                 Self::Function { site: target }
             }
             FunctionReturnContinuationRollbackImage::CallableDefault { pending, result } => {
-                crate::value::RuntimeCallableBodyReference::Plan(site)
-                    .validate_default_return(owner.types(), pending.state)
-                    .map_err(|error| error.to_string())?;
                 Self::CallableDefault {
                     pending: pending
-                        .into_live(owner)
+                        .into_live_admitted(owner)
                         .map_err(|error| error.to_string())?,
                     result,
                 }
@@ -1383,7 +1424,7 @@ impl FlowFiberStatus {
 type StreamRuntimeStateRollbackImage = StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot>;
 
 impl StreamRuntimeState {
-    fn inert_rollback_image(
+    fn snapshot_admitted(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<StreamRuntimeStateRollbackImage, String> {
@@ -1393,7 +1434,7 @@ impl StreamRuntimeState {
                 .queue
                 .iter()
                 .map(|value| {
-                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         value.value(),
                         owner,
                     )
@@ -1416,7 +1457,7 @@ impl StreamRuntimeState {
                 .into_iter()
                 .map(|saved| {
                     saved
-                        .into_runtime_value_for_program(owner)
+                        .into_admitted_runtime_value(owner)
                         .map(RuntimePayload)
                         .map_err(|error| error.to_string())
                 })
@@ -1860,39 +1901,44 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 impl Engine {
     fn inert_rollback_image(&self) -> Result<NativeEngineRollbackImage, String> {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan));
-        let mut expected_deferred_children = BTreeMap::new();
-        for child in &self.child_fibers {
-            let FlowFiberOwner::LineTask(child_owner) = &child.owner else {
-                continue;
-            };
-            let crate::line_task::LineTaskWork::Defer(id) = child_owner.tag.work() else {
-                continue;
-            };
-            let activation = child_owner.tag.activation_id();
-            let Some(line) = self.dialogue_activations.active_line(activation) else {
-                continue;
-            };
-            let Some((inflight_id, site)) = line.deferred_inflight() else {
-                // Scoped defers have a frame-owned in-flight marker instead.
-                continue;
-            };
-            if inflight_id != id
-                || expected_deferred_children
-                    .insert(activation.clone(), (id, site))
-                    .is_some()
-            {
-                return Err("native deferred child custody is inconsistent".to_owned());
-            }
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_metadata(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.admit_invocation_result(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.need_producers
+            .admit_retained(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.admit_publications(&mut admission)
+            .map_err(|error| error.to_string())?;
+        if let Some(root) = &self.root {
+            root.admit_retained(&mut admission)
+                .map_err(|error| error.to_string())?;
         }
+        self.validate_scheduled_scope_state(&mut admission)?;
+        for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
+            fiber
+                .frame
+                .admit_owned_values(&mut admission)
+                .map_err(|error| error.to_string())?;
+        }
+        self.expected_deferred_children(|activation| {
+            self.dialogue_activations
+                .active_line(activation)
+                .and_then(crate::line_task::RuntimeDialogueActivationState::deferred_inflight)
+        })?;
         let publication_image =
-            |publication: &RuntimeNeedPublication| publication.inert_rollback_image(&owner);
+            |publication: &RuntimeNeedPublication| publication.snapshot_admitted(&owner);
         Ok(NativeEngineRollbackImage {
             evaluation_stats: self.evaluation_stats.clone(),
             invocation_result: self
                 .invocation_result
                 .as_ref()
                 .map(|(program, value)| {
-                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         value, &owner,
                     )
                     .map(|snapshot| (*program, snapshot))
@@ -1902,7 +1948,10 @@ impl Engine {
             plan: Arc::clone(&self.plan),
             format_context: self.format_context.clone(),
             generation: self.generation,
-            need_producers: self.need_producers.inert_rollback_image(&owner)?,
+            need_producers: self
+                .need_producers
+                .snapshot_admitted(&owner)
+                .map_err(|error| error.to_string())?,
             task_request_quota_remaining: self.task_request_quota_remaining,
             scalar_step_charge: self.scalar_step_charge,
             need_publications: self
@@ -1924,19 +1973,18 @@ impl Engine {
             root: self
                 .root
                 .as_ref()
-                .map(|root| root.inert_rollback_image(&owner))
+                .map(|root| root.snapshot_admitted(&owner))
                 .transpose()?,
-            fiber: self.fiber.inert_rollback_image(&owner)?,
+            fiber: self.fiber.snapshot_with_admitted_values(&owner)?,
             child_fibers: self
                 .child_fibers
                 .iter()
-                .map(|child| child.inert_rollback_image(&owner))
+                .map(|child| child.snapshot_with_admitted_values(&owner))
                 .collect::<Result<_, String>>()?,
             next_fiber_id: self.next_fiber_id,
             next_scheduled_scope_sequence: self.next_scheduled_scope_sequence,
             dialogue_occurrences: self.dialogue_occurrences.clone(),
             dialogue_activations: self.dialogue_activations.inert_rollback_image(&owner)?,
-            expected_deferred_children,
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             run_child_next: self.run_child_next,
             pure_i64_batch_inputs: self.pure_i64_batch_inputs.clone(),
@@ -1948,40 +1996,28 @@ impl Engine {
         })
     }
 
-    fn from_rollback_image(image: NativeEngineRollbackImage) -> Result<Self, String> {
-        let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&image.plan));
+    fn from_rollback_image(
+        image: NativeEngineRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let expected_deferred_children = image.admit_rollback_values(owner)?;
         let restored = Self {
             evaluation_stats: image.evaluation_stats,
             invocation_result: image
                 .invocation_result
                 .map(|(root, value)| {
-                    let value = value
-                        .into_runtime_value_for_program(&owner)
-                        .map_err(|error| error.to_string())?;
-                    if let NativeInvocationRoot::Function(site) = root {
-                        let function =
-                            crate::pure::RuntimePureFunctionRef::resolve(&image.plan, site)
-                                .map_err(|error| error.to_string())?;
-                        if !image
-                            .plan
-                            .value_matches_type(function.result_type(), &value)
-                            .map_err(|error| error.to_string())?
-                        {
-                            return Err(
-                                "native function result disagrees with its admitted return type"
-                                    .to_owned(),
-                            );
-                        }
-                    }
-                    Ok((root, value))
+                    value
+                        .into_admitted_runtime_value(owner)
+                        .map(|value| (root, value))
+                        .map_err(|error| error.to_string())
                 })
                 .transpose()?,
             plan: image.plan,
             format_context: image.format_context,
             generation: image.generation,
-            need_producers: NeedProducerRegistry::from_rollback_image(
+            need_producers: NeedProducerRegistry::from_admitted_rollback_image(
                 image.need_producers,
-                &owner,
+                owner,
             )?,
             task_request_quota_remaining: image.task_request_quota_remaining,
             scalar_step_charge: image.scalar_step_charge,
@@ -1994,7 +2030,10 @@ impl Engine {
                         queue
                             .into_iter()
                             .map(|publication| {
-                                RuntimeNeedPublication::from_rollback_image(publication, &owner)
+                                RuntimeNeedPublication::from_admitted_rollback_image(
+                                    publication,
+                                    owner,
+                                )
                             })
                             .collect::<Result<_, String>>()?,
                     ))
@@ -2005,21 +2044,21 @@ impl Engine {
             main_started: image.main_started,
             root: image
                 .root
-                .map(|root| RootRuntime::from_rollback_image(root, &owner))
+                .map(|root| RootRuntime::from_admitted_rollback_image(root, owner))
                 .transpose()?,
-            fiber: FlowFiber::from_rollback_image(image.fiber, &owner)?,
+            fiber: FlowFiber::from_rollback_image(image.fiber, owner)?,
             child_fibers: image
                 .child_fibers
                 .into_iter()
-                .map(|child| FlowFiber::from_rollback_image(child, &owner))
+                .map(|child| FlowFiber::from_rollback_image(child, owner))
                 .collect::<Result<_, String>>()?,
             next_fiber_id: image.next_fiber_id,
             next_scheduled_scope_sequence: image.next_scheduled_scope_sequence,
             dialogue_occurrences: image.dialogue_occurrences,
             dialogue_activations: dialogue::DialogueActivationStore::from_rollback_image(
                 image.dialogue_activations,
-                &owner,
-                &image.expected_deferred_children,
+                owner,
+                &expected_deferred_children,
             )?,
             dialogue_effect_callback_activations: image.dialogue_effect_callback_activations,
             run_child_next: image.run_child_next,
@@ -2030,76 +2069,7 @@ impl Engine {
             next_audio_sequence: image.next_audio_sequence,
             next_host_call_sequence: image.next_host_call_sequence,
         };
-        restored.validate_scheduled_scope_state()?;
         Ok(restored)
-    }
-
-    fn validate_scheduled_scope_state(&self) -> Result<(), String> {
-        if self.next_scheduled_scope_sequence == 0 {
-            return Err("native control scope allocator is zero".into());
-        }
-        let mut opened = BTreeSet::new();
-        let mut closed = BTreeSet::new();
-        for fiber in std::iter::once(&self.fiber).chain(self.child_fibers.iter()) {
-            let valid = |token: crate::scope::RuntimeScheduledScopeToken| {
-                token.belongs_to(fiber.execution, fiber.persistent_id)
-                    && token.ordinal().get() < self.next_scheduled_scope_sequence
-            };
-            let mut pending = Vec::new();
-            pending.extend(fiber.frame.pending_ops.iter());
-            for frame in &fiber.frame.control_stack {
-                match &frame.kind {
-                    FlowControlStackEntryKind::Scope {
-                        origin: crate::scope::RuntimeScopeFrameOrigin::Scheduled(token),
-                        ..
-                    } => {
-                        if !valid(*token) || !opened.insert(*token) {
-                            return Err(
-                                "native scope frame has a foreign, repeated, or unallocated token"
-                                    .into(),
-                            );
-                        }
-                    }
-                    FlowControlStackEntryKind::FunctionCall(frame) => {
-                        pending.extend(frame.caller_pending_ops.iter())
-                    }
-                    FlowControlStackEntryKind::FormatAttempt(frame) => {
-                        if let Some(active) = &frame.active {
-                            pending.extend(active.caller_pending_ops.iter())
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            for op in &pending {
-                match op {
-                    FlowOp::EnterScheduledScope { identity, token } => {
-                        if token.kind() == crate::scope::RuntimeScopeFrameKind::Control
-                            && !matches!(identity, crate::scope::RuntimeScopeIdentity::Anonymous)
-                        {
-                            return Err(
-                                "native generated scope carries an authored namespace".into()
-                            );
-                        }
-                        if !valid(*token) || !opened.insert(*token) {
-                            return Err("native pending scope open has a foreign, repeated, or unallocated token".into());
-                        }
-                    }
-                    FlowOp::ExitScheduledScope { token } => {
-                        if !valid(*token) || !closed.insert(*token) {
-                            return Err("native pending scope close has a foreign, repeated, or unallocated token".into());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        if opened != closed {
-            return Err(
-                "native scope frames and queued exact close markers are not bijective".into(),
-            );
-        }
-        Ok(())
     }
 
     #[must_use]
@@ -3139,8 +3109,11 @@ impl Engine {
             .take_assignment_discard_authorization();
         if let Err(error) = drops.set_boundary(drop_policy) {
             drop(candidate);
-            *self = Self::from_rollback_image(image)
-                .expect("a native Engine rollback image reconstructs its admitted owner");
+            *self = Self::from_rollback_image(
+                image,
+                &crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+            )
+            .expect("a native Engine rollback image reconstructs its admitted owner");
             self.fail_eval(error, output);
             return 1;
         }
@@ -3148,8 +3121,11 @@ impl Engine {
             Ok(owners) => owners,
             Err(error) => {
                 drop(candidate);
-                *self = Self::from_rollback_image(image)
-                    .expect("a native Engine rollback image reconstructs its admitted owner");
+                *self = Self::from_rollback_image(
+                    image,
+                    &crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                )
+                .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 return 1;
             }
@@ -3163,8 +3139,11 @@ impl Engine {
             Ok(receipt) => receipt,
             Err(error) => {
                 drop(candidate);
-                *self = Self::from_rollback_image(image)
-                    .expect("a native Engine rollback image reconstructs its admitted owner");
+                *self = Self::from_rollback_image(
+                    image,
+                    &crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                )
+                .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 return 1;
             }
@@ -4003,8 +3982,11 @@ impl Engine {
             }
             Err(error) => {
                 drop(candidate);
-                *self = Self::from_rollback_image(image)
-                    .expect("a native Engine rollback image reconstructs its admitted owner");
+                *self = Self::from_rollback_image(
+                    image,
+                    &crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                )
+                .expect("a native Engine rollback image reconstructs its admitted owner");
                 self.fail_eval(error, output);
                 true
             }
@@ -4776,6 +4758,118 @@ mod rollback_tests {
     }
 
     #[test]
+    fn native_engine_metadata_obeys_exact_limits_in_both_storage_roles() {
+        let mut engine = Engine::new(RuntimePlanBuilder::new().finish().unwrap());
+        engine.pure_i64_batch_inputs = vec![7; 64];
+        let inert = engine.inert_rollback_image().unwrap();
+        let before = inert.clone();
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_sequence_items: 64,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        let mut exact =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        engine.admit_metadata(&mut exact).unwrap();
+        inert.admit_metadata(&mut exact).unwrap();
+        let mut short = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits {
+                max_sequence_items: 63,
+                ..limits
+            },
+        );
+        let error = engine.admit_metadata(&mut short).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "sequence_items"
+                }
+            )
+        ));
+        assert_eq!(inert.admit_metadata(&mut short).unwrap_err(), error);
+        let mut short = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits {
+                max_sequence_items: 63,
+                ..limits
+            },
+        );
+        assert_eq!(inert.admit_metadata(&mut short).unwrap_err(), error);
+        assert_eq!(inert, before);
+        assert_eq!(engine.inert_rollback_image().unwrap(), before);
+    }
+
+    #[test]
+    fn native_engine_metadata_borrows_the_enclosing_work_bank() {
+        let engine = Engine::new(RuntimePlanBuilder::new().finish().unwrap());
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_sequence_items: 512,
+            max_validation_work: 512,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        let mut fresh =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        engine.admit_metadata(&mut fresh).unwrap();
+        let mut shared = crate::value::RuntimeRetainedValueAdmission::for_program(owner, limits);
+        shared.validate_metadata(&[(); 511][..]).unwrap();
+        let error = engine.admit_metadata(&mut shared).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::ValidationWork {
+                    limit: 512,
+                    consumed: 513,
+                    ..
+                }
+            )
+        ));
+        assert_eq!(engine.admit_metadata(&mut shared).unwrap_err(), error);
+    }
+
+    #[test]
+    fn native_rollback_requires_the_exact_external_program_lease() {
+        let plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
+        let equal_plan = crate::plan::RuntimePlanBuilder::new().finish().unwrap();
+        assert_eq!(plan, equal_plan);
+        let engine = Engine::new(plan);
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let foreign = crate::task::RuntimeProgramOwner::Plan(Arc::new(equal_plan));
+        let image = engine.inert_rollback_image().unwrap();
+        assert_eq!(
+            Engine::from_rollback_image(image.clone(), &owner).unwrap(),
+            engine
+        );
+        assert_eq!(
+            Engine::from_rollback_image(image.clone(), &foreign).unwrap_err(),
+            "native rollback belongs to a different original executable",
+        );
+        let mut malformed = image;
+        malformed.invocation_result = Some((
+            NativeInvocationRoot::Function(
+                crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+                    std::num::NonZeroU32::MIN,
+                ),
+            ),
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                &RuntimeValue::Unit,
+                &owner,
+            )
+            .unwrap(),
+        ));
+        assert_ne!(
+            Engine::from_rollback_image(malformed.clone(), &owner).unwrap_err(),
+            "native rollback belongs to a different original executable",
+        );
+        assert_eq!(
+            Engine::from_rollback_image(malformed, &foreign).unwrap_err(),
+            "native rollback belongs to a different original executable",
+        );
+    }
+
+    #[test]
     fn native_static_rollback_rejects_nested_affine_literal_before_copy() {
         let owner = crate::task::RuntimeProgramOwner::Plan(Arc::new(
             RuntimePlanBuilder::new().finish().unwrap(),
@@ -4802,6 +4896,61 @@ mod rollback_tests {
         let unrestricted = make_op(RuntimeValue::Bool(false));
         let image = FlowOpRollbackImage::from_live(&unrestricted, &owner).unwrap();
         assert_eq!(image.into_live(&owner).unwrap(), unrestricted);
+    }
+
+    fn assert_publication_rollback_correspondence(
+        engine: &mut Engine,
+        image: &NativeEngineRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+        ready_correlation: crate::task::TaskCorrelation,
+    ) {
+        let mut foreign_correlation = ready_correlation;
+        foreign_correlation.generation = GenerationId::new(u64::MAX);
+        let mut wrong_queue = image.clone();
+        let Some(RuntimeNeedPublication::State { correlation, .. }) = wrong_queue
+            .need_publications
+            .get_mut(&ready_correlation)
+            .unwrap()
+            .front_mut()
+        else {
+            panic!("the saved queue retains its Ready publication")
+        };
+        *correlation = foreign_correlation;
+        assert_eq!(
+            Engine::from_rollback_image(wrong_queue, owner).unwrap_err(),
+            "native queued publications are cross-correlation or unordered",
+        );
+        let Some(RuntimeNeedPublication::State { correlation, .. }) = engine
+            .need_publications
+            .get_mut(&ready_correlation)
+            .unwrap()
+            .front_mut()
+        else {
+            panic!("the live queue retains its Ready publication")
+        };
+        *correlation = foreign_correlation;
+        assert_eq!(
+            engine.inert_rollback_image().unwrap_err(),
+            "native queued publications are cross-correlation or unordered",
+        );
+        let Some(RuntimeNeedPublication::State { correlation, .. }) = engine
+            .need_publications
+            .get_mut(&ready_correlation)
+            .unwrap()
+            .front_mut()
+        else {
+            unreachable!()
+        };
+        *correlation = ready_correlation;
+        let mut missing_frontier = image.clone();
+        missing_frontier
+            .need_publication_frontiers
+            .remove(&ready_correlation);
+        assert_eq!(
+            Engine::from_rollback_image(missing_frontier, owner).unwrap_err(),
+            "native latest publications and frontiers differ",
+        );
+        assert_eq!(engine.inert_rollback_image().unwrap(), *image);
     }
 
     #[test]
@@ -4882,9 +5031,11 @@ mod rollback_tests {
             &mut RuntimeStepOutput::default(),
         ));
 
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
         let image = engine.inert_rollback_image().expect("complete inert image");
+        assert_publication_rollback_correspondence(&mut engine, &image, &owner, ready_correlation);
         drop(engine);
-        let restored = Engine::from_rollback_image(image).expect("exact owner restore");
+        let restored = Engine::from_rollback_image(image, &owner).expect("exact owner restore");
         assert_eq!(
             restored.fiber.frame.env.get(local),
             Some(&RuntimeValue::NeedHandle(local_need))
@@ -4944,7 +5095,7 @@ mod rollback_tests {
             .expect("complete native rollback image");
         drop(engine);
         let restored =
-            Engine::from_rollback_image(image).expect("the original native owner restores");
+            Engine::from_rollback_image(image, &owner).expect("the original native owner restores");
         let RuntimeValue::Tuple(values) =
             restored.fiber.frame.observations.signals()["signal.callback"].value()
         else {

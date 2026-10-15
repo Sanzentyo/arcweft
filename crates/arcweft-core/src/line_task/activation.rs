@@ -179,6 +179,20 @@ pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
 }
 
 impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
+    pub(crate) fn active_line(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<&AwbcRuntimeDialogueActivationSnapshot<T>> {
+        self.entries.iter().find_map(|entry| match entry {
+            RuntimeDialogueRegistrySaveEntry::Active {
+                activation: candidate,
+                line,
+                ..
+            } if candidate == activation => Some(line),
+            _ => None,
+        })
+    }
+
     pub(crate) fn try_visit_active<'a, E>(
         &'a self,
         mut visit: impl FnMut(

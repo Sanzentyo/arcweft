@@ -16,6 +16,13 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
         spec: &TaskSpec,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Self::from_admitted_storage(spec, Some(owner))
+    }
+
+    pub(crate) fn from_admitted_storage(
+        spec: &TaskSpec,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             generation: spec.generation,
             producer: spec.producer.clone(),
@@ -26,7 +33,7 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
             outcome: spec.outcome.clone(),
             debug_label: spec.debug_label.clone(),
             request: spec.request.map_admitted(|value| {
-                AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value.value(), owner)
+                AwbcRuntimeValueSnapshot::from_admitted_storage(value.value(), owner)
             })?,
         })
     }
@@ -49,75 +56,33 @@ impl TaskSpec<AwbcRuntimeValueSnapshot> {
             })?,
         })
     }
+    #[cfg(test)]
     pub(crate) fn from_live(
         spec: &TaskSpec,
         owner: Option<&RuntimeProgramOwner>,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
-        );
-        spec.validate_descriptor_inputs(&mut resources, 0, |payload| payload.value().view())?;
-        spec.validate_outcome()
-            .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            })?;
-        spec.outcome.validate_storage_owner(owner)?;
-        for payload in spec.request.payloads() {
-            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                payload.value().view(),
-                owner,
-                &resources,
-            )?;
-        }
-        let value = |payload: &RuntimePayload| {
-            AwbcRuntimeValueSnapshot::from_admitted_storage(payload.value(), owner)
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let mut admission = match owner {
+            Some(owner) => {
+                crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits)
+            }
+            None => crate::value::RuntimeRetainedValueAdmission::standalone(limits),
         };
-        Ok(Self {
-            generation: spec.generation,
-            producer: spec.producer.clone(),
-            class: spec.class.clone(),
-            priority: spec.priority,
-            cancel_scope: spec.cancel_scope.clone(),
-            policy: spec.policy,
-            outcome: spec.outcome.clone(),
-            request: spec.request.map_admitted(value)?,
-            debug_label: spec.debug_label.clone(),
-        })
+        spec.admit_retained(&mut admission)?;
+        Self::from_admitted_storage(spec, owner)
     }
+
+    #[cfg(test)]
     pub(crate) fn into_live(
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<TaskSpec, AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-        );
-        self.validate_descriptor_inputs(&mut resources, 0, AwbcRuntimeValueSnapshot::view)?;
-        self.validate_outcome()
-            .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            })?;
-        self.outcome.validate_storage_owner(Some(owner))?;
-        for payload in self.request.payloads() {
-            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                payload.view(),
-                Some(owner),
-                &resources,
-            )?;
-        }
-        Ok(TaskSpec {
-            generation: self.generation,
-            producer: self.producer,
-            class: self.class,
-            priority: self.priority,
-            cancel_scope: self.cancel_scope,
-            policy: self.policy,
-            outcome: self.outcome,
-            request: self.request.into_mapped_admitted(|value| {
-                value.into_admitted_runtime_value(owner).map(RuntimePayload)
-            })?,
-            debug_label: self.debug_label,
-        })
+        self.admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )?;
+        self.into_admitted_live(owner)
     }
 }

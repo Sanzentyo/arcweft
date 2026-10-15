@@ -144,7 +144,12 @@ impl Engine {
             ))
         })?;
         let expected = manifest.operands()[ordinal].ty();
-        if !self.plan.value_matches_type(expected, &evaluated)? {
+        if !self
+            .fiber
+            .frame
+            .env
+            .value_matches_type(&self.plan, expected, &evaluated)?
+        {
             return Err(RuntimeEvalError::InvalidExpressionType(expected));
         }
         let Some(FlowControlStackEntry {
@@ -359,6 +364,139 @@ mod tests {
         RuntimeExpr::from_admitted_parts(ty, RuntimeExprKind::Value(value))
     }
 
+    fn completed_format_engine() -> (Engine, RuntimeFormatAttemptId) {
+        let (mut engine, attempt) = format_attempt_engine();
+        let integer = engine.plan.format_attempt(attempt).unwrap().operands()[0].ty();
+        let string = engine.plan.format_attempt(attempt).unwrap().operands()[1].ty();
+        engine.fiber.frame.status = FlowFiberStatus::Running;
+        engine.fiber.frame.pending_ops = VecDeque::from([
+            FlowOp::FormatOperandAttempt {
+                attempt,
+                parameter: RuntimeFmtParameterId::Value,
+                body: Vec::new(),
+                value: literal(integer, RuntimeValue::i64(17)),
+            },
+            FlowOp::FormatOperandAttempt {
+                attempt,
+                parameter: RuntimeFmtParameterId::Style,
+                body: Vec::new(),
+                value: literal(string, RuntimeValue::String("number".into())),
+            },
+        ]);
+        let mut output = RuntimeStepOutput::default();
+        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+        for _ in 0..4 {
+            engine.step_flow(&mut output, &mut backend, &mut None);
+        }
+        assert!(output.diagnostics.is_empty());
+        assert!(engine.fiber.frame.pending_ops.is_empty());
+        (engine, attempt)
+    }
+
+    #[test]
+    fn native_formatter_preflight_rejects_corrupt_abi_frontier_presence_and_types() {
+        let (mut engine, _) = completed_format_engine();
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let image = engine.inert_rollback_image().unwrap();
+        for case in 0..5 {
+            let mut corrupt = image.clone();
+            let Some(crate::engine::FlowControlStackEntryRollbackImage::FormatAttempt(frame)) =
+                corrupt.fiber.frame.control_stack.last_mut()
+            else {
+                panic!("completed original attempt remains owned")
+            };
+            match case {
+                0 => {
+                    frame.values.pop();
+                }
+                1 => {
+                    frame.next_operand += 1;
+                }
+                2 => {
+                    frame.values[0] = None;
+                }
+                3 => {
+                    frame.next_operand = 1;
+                }
+                4 => {
+                    frame.values[0] = Some(
+                        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                            &RuntimeValue::Unit,
+                            &owner,
+                        )
+                        .unwrap(),
+                    );
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                Engine::from_rollback_image(corrupt, &owner).is_err(),
+                "case {case}"
+            );
+        }
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FormatAttempt(frame),
+        }) = engine.fiber.frame.control_stack.last_mut()
+        else {
+            unreachable!()
+        };
+        let original = frame.values[0].replace(RuntimeValue::Unit).unwrap();
+        assert!(engine.inert_rollback_image().is_err());
+        let Some(FlowControlStackEntry {
+            kind: FlowControlStackEntryKind::FormatAttempt(frame),
+        }) = engine.fiber.frame.control_stack.last_mut()
+        else {
+            unreachable!()
+        };
+        frame.values[0] = Some(original);
+        assert_eq!(engine.inert_rollback_image().unwrap(), image);
+        let restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
+        assert_eq!(restored.inert_rollback_image().unwrap(), image);
+    }
+
+    #[test]
+    fn native_formatter_values_share_live_inert_and_parent_node_limits() {
+        let (engine, _) = completed_format_engine();
+        let image = engine.inert_rollback_image().unwrap();
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_nodes: 2,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        let mut exact =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        engine.fiber.frame.admit_owned_values(&mut exact).unwrap();
+        let mut exact =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        image.fiber.frame.admit_owned_values(&mut exact).unwrap();
+        for inert in [false, true] {
+            let mut shared =
+                crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+            shared.validate(&RuntimeValue::Bool(true)).unwrap();
+            let error = if inert {
+                image.fiber.frame.admit_owned_values(&mut shared)
+            } else {
+                engine.fiber.frame.admit_owned_values(&mut shared)
+            }
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                    crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" }
+                )
+            ));
+            assert_eq!(
+                engine
+                    .fiber
+                    .frame
+                    .admit_owned_values(&mut shared)
+                    .unwrap_err(),
+                error
+            );
+        }
+        assert_eq!(engine.inert_rollback_image().unwrap(), image);
+    }
+
     #[test]
     fn native_flow_attempt_catches_source_failure_then_evaluates_later_operand() {
         let (mut engine, attempt) = format_attempt_engine();
@@ -407,6 +545,10 @@ mod tests {
         assert!(engine.fiber.frame.pending_ops.is_empty());
         assert_eq!(engine.fiber.frame.status, FlowFiberStatus::Running);
         assert!(output.diagnostics.is_empty());
+        let owner = crate::task::RuntimeProgramOwner::Plan(engine.program_plan());
+        let image = engine.inert_rollback_image().unwrap();
+        let restored = Engine::from_rollback_image(image.clone(), &owner).unwrap();
+        assert_eq!(restored.inert_rollback_image().unwrap(), image);
         let values = engine.take_format_attempt_values(attempt).unwrap();
         assert_eq!(values.context.active_locale(), &initial_locale);
         assert_eq!(

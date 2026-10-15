@@ -612,7 +612,7 @@ pub struct RuntimeStepBudget {
 }
 
 /// Runtime drain strategy. Adapter loops remain outside `arcweft-core`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
 pub enum RuntimeStepMode {
     #[default]
     OneOp,

@@ -255,6 +255,15 @@ pub(crate) struct DialogueActivationStoreRollbackImage {
     >,
 }
 
+impl DialogueActivationStoreRollbackImage {
+    pub(crate) fn active_line(
+        &self,
+        activation: &DialogueActivationId,
+    ) -> Option<&crate::line_task::AwbcRuntimeDialogueActivationSnapshot<RuntimePlanTypeId>> {
+        self.registry.active_line(activation)
+    }
+}
+
 fn inert_dialogue_value(
     value: &RuntimeValue,
     owner: &crate::task::RuntimeProgramOwner,
@@ -663,7 +672,7 @@ pub(crate) enum PendingLineOperation<V = RuntimeValue> {
 /// transaction state. Fiber suspension retains only the activation identity
 /// and its published execution phase, never the activation's values.
 #[derive(Debug, Default, PartialEq)]
-pub(crate) struct DialogueActivationStore {
+pub struct DialogueActivationStore {
     registry: RuntimeDialogueActivationRegistry<EngineDialogueActivationFrame, RuntimePlanTypeId>,
 }
 

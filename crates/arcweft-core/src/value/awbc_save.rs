@@ -768,13 +768,13 @@ impl AwbcRuntimeValueSnapshot {
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
-            Self::NeedHandle(value) => {
-                RuntimeValue::NeedHandle(value.into_live(program_owner.ok_or_else(|| {
+            Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live_admitted(
+                program_owner.ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "Need values require a program-bound snapshot",
                     )
-                })?)?)
-            }
+                })?,
+            )?),
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
             Self::Progress { ratio, label } => {

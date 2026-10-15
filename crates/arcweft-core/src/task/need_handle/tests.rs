@@ -54,6 +54,54 @@ fn accepted(spec: TaskSpec, ordinal: u64) -> RuntimeNeedHandle {
 }
 
 #[test]
+fn admitted_need_projection_preserves_the_parent_resource_policy_in_both_directions() {
+    let live = accepted(specification(TaskPolicy::JoinSameKey), 0);
+    let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&live, None).unwrap();
+    let defaults = crate::entry::RuntimeSchemaLimits::engine_default();
+    let length = defaults.max_string_bytes + 1;
+    image.spec.debug_label = "d".repeat(usize::try_from(length).unwrap());
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(
+        crate::plan::RuntimePlanBuilder::new().finish().unwrap(),
+    ));
+    let limits = crate::entry::RuntimeSchemaLimits {
+        max_string_bytes: length,
+        ..defaults
+    };
+    let value = crate::value::AwbcRuntimeValueSnapshot::NeedHandle(image.clone());
+    let mut admission =
+        crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+    admission.validate_owned_borrowed((&value).into()).unwrap();
+    let RuntimeValue::NeedHandle(restored) = value.into_admitted_runtime_value(&owner).unwrap()
+    else {
+        panic!("Need storage role is preserved")
+    };
+    assert_eq!(
+        restored.spec().debug_label.len(),
+        usize::try_from(length).unwrap()
+    );
+    let mut admission =
+        crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+    crate::value::RuntimeNeedView::Live(&restored)
+        .admit_retained(&mut admission)
+        .unwrap();
+    let recaptured =
+        RuntimeNeedHandleSaveSnapshot::from_live_admitted(&restored, Some(&owner)).unwrap();
+    assert_eq!(
+        recaptured.spec.debug_label.len(),
+        usize::try_from(length).unwrap()
+    );
+    assert_eq!(recaptured.correlation, image.correlation);
+    assert!(matches!(
+        RuntimeNeedHandleSaveSnapshot::from_live(&restored, Some(&owner)),
+        Err(crate::value::AwbcRuntimeValueSnapshotError::Resource(_)),
+    ));
+    assert!(matches!(
+        image.into_live(&owner),
+        Err(crate::value::AwbcRuntimeValueSnapshotError::Resource(_))
+    ));
+}
+
+#[test]
 fn inert_handle_identity_rejects_before_request_callable_construction() {
     let live = accepted(specification(TaskPolicy::JoinSameKey), 0);
     let mut image = RuntimeNeedHandleSaveSnapshot::from_live(&live, None).unwrap();
@@ -110,7 +158,19 @@ fn need_handle_preparation_distinguishes_reusable_and_accepted_origins() {
 }
 
 #[test]
-fn need_handle_preparation_snapshot_moves_complete_specification_without_starting_work() {
+fn need_handle_environment_move_preserves_complete_specification_without_starting_work() {
+    let move_through_local = |handle| {
+        let local = crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+            std::num::NonZeroU32::new(1).unwrap(),
+        );
+        let mut env = crate::value::RuntimeEnv::default();
+        env.set(local, RuntimeValue::NeedHandle(handle));
+        let Some(RuntimeValue::NeedHandle(moved)) = env.take(local) else {
+            panic!("owned need handle fixture");
+        };
+        assert!(env.take(local).is_none());
+        moved
+    };
     for (policy, ordinal) in [(TaskPolicy::JoinSameKey, 0), (TaskPolicy::AlwaysStart, 1)] {
         let mut spec = specification(policy);
         spec.request = HostTaskRequest::Custom {
@@ -143,7 +203,7 @@ fn need_handle_preparation_snapshot_moves_complete_specification_without_startin
             panic!("owned string fixture");
         };
         let argument_address = argument.as_ptr();
-        let restored = RuntimeNeedHandle::try_from_snapshot(handle.into_snapshot()).unwrap();
+        let restored = move_through_local(handle);
         assert_eq!(restored.correlation(), correlation);
         assert_eq!(
             restored.0.spec.producer.arguments(),
@@ -163,7 +223,7 @@ fn need_handle_preparation_snapshot_moves_complete_specification_without_startin
         assert!(restored.reusable_spec().is_none());
     }
     let handle = RuntimeNeedHandle::try_from(specification(TaskPolicy::JoinSameKey)).unwrap();
-    let restored = RuntimeNeedHandle::try_from_snapshot(handle.into_snapshot()).unwrap();
+    let restored = move_through_local(handle);
     assert!(restored.reusable_spec().is_some());
 }
 
@@ -239,12 +299,10 @@ fn need_handle_preparation_rejects_every_forged_correlation_field() {
             ),
             Err(expected.clone())
         );
-        let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-        snapshot.0.correlation = forged;
-        assert_eq!(
-            RuntimeNeedHandle::try_from_snapshot(snapshot),
-            Err(expected)
-        );
+        let mut snapshot =
+            RuntimeNeedHandleSaveSnapshot::from_live(&accepted(spec.clone(), 1), None).unwrap();
+        snapshot.correlation = forged;
+        assert_eq!(snapshot.validate_identity(), Err(expected));
     }
 }
 
@@ -302,41 +360,42 @@ fn need_handle_preparation_rejects_changed_producer_instance_on_restore() {
             RuntimeValueDigest::from_bytes([9; 32]),
         ),
     ] {
-        let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
+        let mut snapshot =
+            RuntimeNeedHandleSaveSnapshot::from_live(&accepted(spec.clone(), 1), None).unwrap();
         let expected = if changed.contract() == base.contract() {
             RuntimeNeedHandleError::CorrelationMismatch
         } else {
             RuntimeNeedHandleError::ProducerContractMismatch
         };
-        snapshot.0.spec.producer = NeedProducerInstance::try_from(&changed).unwrap();
-        assert_eq!(
-            RuntimeNeedHandle::try_from_snapshot(snapshot),
-            Err(expected)
-        );
+        snapshot.spec.producer = NeedProducerInstance::try_from(&changed).unwrap();
+        assert_eq!(snapshot.validate_identity(), Err(expected));
     }
 }
 
 #[test]
 fn need_handle_preparation_checks_policy_origin_and_generation_on_restore() {
     let spec = specification(TaskPolicy::AlwaysStart);
-    let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.0.origin = RuntimeNeedHandleOrigin::ReusableJoin;
+    let mut snapshot =
+        RuntimeNeedHandleSaveSnapshot::from_live(&accepted(spec.clone(), 1), None).unwrap();
+    snapshot.origin = RuntimeNeedHandleOrigin::ReusableJoin;
     assert_eq!(
-        RuntimeNeedHandle::try_from_snapshot(snapshot),
+        snapshot.validate_identity(),
         Err(RuntimeNeedHandleError::ReusableAlwaysStart)
     );
-    let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.0.spec.policy = TaskPolicy::JoinSameKey;
+    let mut snapshot =
+        RuntimeNeedHandleSaveSnapshot::from_live(&accepted(spec.clone(), 1), None).unwrap();
+    snapshot.spec.policy = TaskPolicy::JoinSameKey;
     assert_eq!(
-        RuntimeNeedHandle::try_from_snapshot(snapshot),
+        snapshot.validate_identity(),
         Err(RuntimeNeedHandleError::Identity(
             TaskIdentityError::NonZeroJoinOrdinal
         ))
     );
-    let mut snapshot = accepted(spec.clone(), 1).into_snapshot();
-    snapshot.0.spec.generation = GenerationId::new(1);
+    let mut snapshot =
+        RuntimeNeedHandleSaveSnapshot::from_live(&accepted(spec.clone(), 1), None).unwrap();
+    snapshot.spec.generation = GenerationId::new(1);
     assert_eq!(
-        RuntimeNeedHandle::try_from_snapshot(snapshot),
+        snapshot.validate_identity(),
         Err(RuntimeNeedHandleError::CorrelationMismatch)
     );
     let mut rebased_spec = spec;

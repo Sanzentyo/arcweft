@@ -10,6 +10,40 @@ pub(crate) enum RuntimeNeedView<'a> {
 }
 
 impl<'a> RuntimeNeedView<'a> {
+    pub(crate) fn admit_retained(
+        self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        let origin = match self {
+            Self::Live(_) => crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            Self::Snapshot(_) => {
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
+            }
+        };
+        admission.validate_owned_borrowed(crate::value::RuntimeBorrowedValue {
+            value: RuntimeValueView::Need(self),
+            origin,
+        })
+    }
+
+    pub(crate) fn validate_admitted_storage(
+        self,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        match self {
+            Self::Live(value) => value.spec().validate_admitted_storage(owner, resources),
+            Self::Snapshot(value) => {
+                value.validate_admitted_identity().map_err(|error| {
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    }
+                })?;
+                value.spec().validate_admitted_storage(owner, resources)
+            }
+        }
+    }
+
     pub(crate) fn correlation(self) -> crate::task::TaskCorrelation {
         match self {
             Self::Live(value) => value.correlation(),

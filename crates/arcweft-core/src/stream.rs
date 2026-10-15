@@ -146,6 +146,53 @@ impl Clone for StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot> {
     }
 }
 
+impl<P> StreamRuntimeState<P> {
+    /// Native queues borrow their exact original stream item contract. Local
+    /// yield publishes both a queue item and an event, so retained items must
+    /// satisfy that same unrestricted ownership law.
+    pub(crate) fn admit_native_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        let invalid = |message: &str| crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: message.to_owned(),
+        };
+        admission.validate_metadata(&(&self.id, self.closed, self.emitted_count))?;
+        admission.validate_metadata_collection(self.queue.len())?;
+        if (self.closed && !self.queue.is_empty())
+            || u64::try_from(self.queue.len()).map_or(true, |len| len > self.emitted_count)
+        {
+            return Err(invalid(
+                "native stream queue disagrees with its closed/emitted state",
+            ));
+        }
+        let expected = {
+            let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+            else {
+                return Err(invalid(
+                    "native stream requires its original Plan executable",
+                ));
+            };
+            let stream = plan
+                .stream_plans()
+                .iter()
+                .find(|stream| stream.id() == &self.id)
+                .ok_or_else(|| invalid("native stream is absent from its original executable"))?;
+            plan.type_table()
+                .get(stream.item_ty())
+                .ok_or_else(|| invalid("native stream has an unknown original item type"))?
+                .semantic_identity()
+        };
+        for value in &self.queue {
+            admission.validate_typed_borrowed(value.borrowed_value(), expected)?;
+        }
+        Ok(())
+    }
+}
+
 /// Event emitted by an ordinary callable-backed stream.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum StreamEventKind<T, E> {
@@ -281,6 +328,136 @@ impl StreamRuntimeState {
 #[cfg(test)]
 mod semantic_tests {
     use super::*;
+
+    fn native_queue() -> (
+        crate::task::RuntimeProgramOwner,
+        StreamRuntimeState,
+        StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot>,
+    ) {
+        use crate::plan::{
+            RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+            RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+        };
+        let boolean = crate::pattern::RuntimeSemanticTypeId::from_bytes([91; 32]);
+        let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([92; 32]);
+        let id = StreamRuntimeId::canonical("owned").unwrap();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                ],
+                [],
+            )
+            .unwrap();
+        builder
+            .push_stream_plan_seed(RuntimeStreamPlanSeed {
+                id: id.clone(),
+                item_ty: boolean,
+                error_ty: unit,
+                ops: vec![RuntimeStreamOpSeed::Return],
+            })
+            .unwrap();
+        let owner =
+            crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
+        let mut live = StreamRuntimeState::new(id.clone());
+        for _ in 0..64 {
+            live.push_item(RuntimePayload::new(RuntimeValue::Bool(true)));
+        }
+        let inert = StreamRuntimeState {
+            id,
+            queue: live
+                .queue
+                .iter()
+                .map(|value| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        value.value(),
+                        &owner,
+                    )
+                    .unwrap()
+                })
+                .collect(),
+            closed: false,
+            emitted_count: 64,
+        };
+        (owner, live, inert)
+    }
+
+    #[test]
+    fn native_queue_admits_live_and_inert_items_with_exact_shared_limits() {
+        let (owner, live, inert) = native_queue();
+        let before = inert.clone();
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_sequence_items: 64,
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        let mut exact =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+        live.admit_native_retained(&mut exact).unwrap();
+        inert.admit_native_retained(&mut exact).unwrap();
+        let mut short = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits {
+                max_sequence_items: 63,
+                ..limits
+            },
+        );
+        let error = live.admit_native_retained(&mut short).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::value::AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "sequence_items"
+                }
+            )
+        ));
+        assert_eq!(inert.admit_native_retained(&mut short).unwrap_err(), error);
+        let mut short = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner,
+            crate::entry::RuntimeSchemaLimits {
+                max_sequence_items: 63,
+                ..limits
+            },
+        );
+        assert_eq!(inert.admit_native_retained(&mut short).unwrap_err(), error);
+        assert_eq!(inert, before);
+        assert_eq!(live.queue.len(), 64);
+    }
+
+    #[test]
+    fn native_queue_rejects_foreign_items_ids_and_inconsistent_progress() {
+        let (owner, mut live, inert) = native_queue();
+        let admission = || {
+            crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+        };
+        *live.queue.front_mut().unwrap() = RuntimePayload::new(RuntimeValue::Unit);
+        assert!(live.admit_native_retained(&mut admission()).is_err());
+        let mut wrong_item = inert.clone();
+        *wrong_item.queue.front_mut().unwrap() =
+            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                &RuntimeValue::Unit,
+                &owner,
+            )
+            .unwrap();
+        assert!(wrong_item.admit_native_retained(&mut admission()).is_err());
+        for (closed, emitted_count) in [(true, 64), (false, 63)] {
+            let mut wrong = inert.clone();
+            wrong.closed = closed;
+            wrong.emitted_count = emitted_count;
+            assert!(
+                matches!(wrong.admit_native_retained(&mut admission()), Err(crate::value::AwbcRuntimeValueSnapshotError::Message { message }) if message == "native stream queue disagrees with its closed/emitted state")
+            );
+        }
+        let mut foreign = inert;
+        foreign.id = StreamRuntimeId::canonical("foreign").unwrap();
+        assert!(
+            matches!(foreign.admit_native_retained(&mut admission()), Err(crate::value::AwbcRuntimeValueSnapshotError::Message { message }) if message == "native stream is absent from its original executable")
+        );
+    }
 
     #[test]
     fn deeply_nested_stream_body_is_encoded_without_recursive_descent() {

@@ -202,6 +202,23 @@ live／inert 特殊化を使う。live snapshot の無条件 Clone と直接の 
 は与えず、Root の entry／layout／type／資源検証は保存形態間で同じ実装を使う。
 復元時の Root は、候補 session から所有権をそのまま移す。
 
+Native Engine も live／inert で一つの owning grammar を使い、inert 特殊化だけに
+Clone を与える。復元は外側が保持する元 Plan の lease を要求し、候補が同じ内容の
+別 Plan を保持する場合も、metadata や値の構築より先に拒否する。
+deferred child の対応は、子 fiber と対話 ledger から借用で検査し、保存側の別表を
+正当性の根拠にしない。Engine の metadata、呼び出し結果、Need registry／通知、Root、
+main／child frame の環境・観測値・stream・選択済み結果は、同じ親の資源枠で検査して
+から、それらの値を変換する。function frame の callee context は環境の順序と照合し、
+formatter の保持値はその位置の caller context と元 operand ABI で検査する。
+default の戻り先と保持 packet も、元 program と共有資源枠で照合する。
+この計上は pending operation／control／Await 全体や session の総予算を代替しない。
+
+所有する保存欄は affine 値を inert のまま保持できる。資源・型・元 storage の検査は
+Copy 用の入口と共有し、Copy を要求する入口には unrestricted 条件を残す。
+Need descriptor の検証済み入力は、TaskSpec が所有する outcome／payload の規則を
+再利用して射影し、値ごとの既定資源枠を作り直さない。単体入口は自分の資源枠で
+検証してから同じ射影へ進み、親が明示した資源方針を途中で置き換えない。
+
 対話の line-task reducer と execution lane も、それぞれ一つの owning grammar の
 live／inert 特殊化を使い、Product wire は Core の inert 型をそのまま使う。
 reducer の collection／work 予算を親の資源枠で検査してから、元 content group の

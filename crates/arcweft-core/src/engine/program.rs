@@ -364,7 +364,7 @@ impl Engine {
         })();
         if let Err(reason) = committed {
             drop(self);
-            let executor = Self::from_rollback_image(image).expect(
+            let executor = Self::from_rollback_image(image, &owner).expect(
                 "the original completed executor restores after the candidate owner is dropped",
             );
             return Err(RuntimeProgramContinuationError {

@@ -8,10 +8,11 @@
 
 mod store;
 
+pub use store::DialogueActivationStore;
 pub(in crate::engine) use store::{
-    DialogueActivationFrame, DialogueActivationScope, DialogueActivationStore,
-    DialogueActivationStoreRollbackImage, DialogueActivationTransaction, DialogueCommitDisposition,
-    DialogueLineTaskState, PendingActivationHostCall, PendingLineOperation,
+    DialogueActivationFrame, DialogueActivationScope, DialogueActivationStoreRollbackImage,
+    DialogueActivationTransaction, DialogueCommitDisposition, DialogueLineTaskState,
+    PendingActivationHostCall, PendingLineOperation,
 };
 
 use super::{

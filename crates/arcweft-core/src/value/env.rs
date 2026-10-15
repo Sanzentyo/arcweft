@@ -52,6 +52,7 @@ impl<V: PartialEq> PartialEq for RuntimeEnv<V> {
 }
 
 impl RuntimeEnv {
+    #[cfg(test)]
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &RuntimeProgramOwner,
@@ -95,6 +96,7 @@ impl RuntimeEnv {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn from_rollback_image(
         image: RuntimeEnvRollbackImage,
         owner: &RuntimeProgramOwner,
@@ -143,6 +145,40 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    pub(crate) fn function_instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.function_instantiation_lease()
+            .map(std::sync::Arc::as_ref)
+    }
+
+    pub(crate) fn function_instantiation_lease(
+        &self,
+    ) -> Option<&std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>> {
+        self.function_contexts()
+            .next_back()
+            .and_then(|(_, binding)| binding)
+    }
+
+    pub(crate) fn function_contexts(
+        &self,
+    ) -> impl DoubleEndedIterator<
+        Item = (
+            crate::runtime_id::RuntimeFunctionSiteId,
+            Option<&std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+        ),
+    > {
+        self.scopes
+            .iter()
+            .filter_map(|scope| match &scope.function_context {
+                super::RuntimeScopeTypeContext::Lexical => None,
+                super::RuntimeScopeTypeContext::Function {
+                    site,
+                    instantiation,
+                } => Some((*site, instantiation.as_ref())),
+            })
+    }
+
     pub(crate) fn admit_retained(
         &self,
         admission: &mut super::RuntimeRetainedValueAdmission,
@@ -331,28 +367,6 @@ impl RuntimeEnv {
             site,
             instantiation: binding,
         };
-    }
-
-    pub(crate) fn function_instantiation(
-        &self,
-    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
-        self.function_instantiation_lease()
-            .map(std::sync::Arc::as_ref)
-    }
-
-    pub(crate) fn function_instantiation_lease(
-        &self,
-    ) -> Option<&std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| match &scope.function_context {
-                super::RuntimeScopeTypeContext::Lexical => None,
-                super::RuntimeScopeTypeContext::Function { instantiation, .. } => {
-                    Some(instantiation.as_ref())
-                }
-            })
-            .flatten()
     }
 
     pub(crate) fn value_matches_type(

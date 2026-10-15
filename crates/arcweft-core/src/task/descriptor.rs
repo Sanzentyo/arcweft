@@ -35,11 +35,6 @@ impl<P> TaskSpec<P> {
     {
         admission.admit_composite(P::admission_origin(), |owner, resources| {
             self.validate_descriptor_inputs(resources, 0, P::borrowed_view)?;
-            self.validate_outcome().map_err(|error| {
-                crate::value::AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                }
-            })?;
             if let Some(handle) = handle {
                 self.validate_handle(handle).map_err(|error| {
                     crate::value::AwbcRuntimeValueSnapshotError::Message {
@@ -47,26 +42,42 @@ impl<P> TaskSpec<P> {
                     }
                 })?;
             }
-            self.outcome.validate_storage_owner(owner)?;
-            for payload in self.request.payloads() {
-                let view = payload.borrowed_view();
-                crate::entry::schema::value_encoding::visit_admitted_storage(
-                    view,
-                    &resources.work(),
-                    |node| {
-                        if node.intrinsic_ownership().permits_copy() {
-                            Ok(())
-                        } else {
-                            Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
-                        }
-                    },
-                )?;
-                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                    view, owner, resources,
-                )?;
-            }
-            Ok(())
+            self.validate_admitted_storage(owner, resources)
         })
+    }
+
+    pub(crate) fn validate_admitted_storage(
+        &self,
+        owner: Option<&super::RuntimeProgramOwner>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        self.validate_outcome().map_err(|error| {
+            crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            }
+        })?;
+        self.outcome.validate_storage_owner(owner)?;
+        for payload in self.request.payloads() {
+            let view = payload.borrowed_view();
+            crate::entry::schema::value_encoding::visit_admitted_storage(
+                view,
+                &resources.work(),
+                |node| {
+                    if node.intrinsic_ownership().permits_copy() {
+                        Ok(())
+                    } else {
+                        Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+                    }
+                },
+            )?;
+            crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                view, owner, resources,
+            )?;
+        }
+        Ok(())
     }
     pub(super) fn validate_task_descriptor(&self) -> Result<(), super::TaskEnsureError>
     where

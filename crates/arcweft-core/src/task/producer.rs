@@ -1687,6 +1687,7 @@ impl NeedProducerRegistry {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn snapshot_retained(
         &self,
         owner: &RuntimeProgramOwner,
@@ -1720,6 +1721,7 @@ impl NeedProducerRegistry {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &RuntimeProgramOwner,
@@ -1732,17 +1734,26 @@ impl NeedProducerRegistry {
             .map_err(|error| error.to_string())
     }
 
+    #[cfg(test)]
     pub(crate) fn from_rollback_image(
         image: NeedProducerRegistryRollbackImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
         image
-            .admit_retained(&mut admission)
+            .admit_retained(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
             .map_err(|error| error.to_string())?;
+        Self::from_admitted_rollback_image(image, owner)
+    }
+
+    pub(crate) fn from_admitted_rollback_image(
+        image: NeedProducerRegistryRollbackImage,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         let restore = image
             .into_admitted_live(owner)
             .map_err(|error| error.to_string())?;
