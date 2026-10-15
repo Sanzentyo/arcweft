@@ -636,7 +636,7 @@ impl BundleSession {
                 .restore_snapshot(executor_snapshot)
                 .map_err(|error| BundleSessionSaveError::from(error.into_parts().1))?;
             restored_executor
-                .restore_product_root_snapshot(&active_entry, snapshot.root.clone())
+                .restore_product_root_snapshot(&active_entry, snapshot.root)
                 .map_err(|error| BundleSessionSaveError::Root {
                     message: error.to_string(),
                 })?;

@@ -562,7 +562,9 @@ fn awbc_product_session_save_preserves_exact_same_label_flow_identity() {
     let before_rejection = restored
         .snapshot_session()
         .expect("pre-rejection snapshot exports");
-    let mut substituted = before_rejection.clone();
+    let mut substituted = restored
+        .snapshot_session()
+        .expect("independent rejection candidate");
     substituted.executor.state.live_flow_bindings[0].flow = second;
     let error = restored
         .restore_session_snapshot(substituted)
@@ -631,7 +633,9 @@ fn fx_instances_and_logical_time_restore_atomically_with_the_session() {
     let before_rejection = restored
         .snapshot_session()
         .expect("restored snapshot exports");
-    let mut invalid = before_rejection.clone();
+    let mut invalid = restored
+        .snapshot_session()
+        .expect("independent rejection candidate");
     invalid.runtime.source_label = "must not leak".to_owned();
     let mut invalid_fx = serde_json::to_value(&invalid.presentation.fx).expect("Fx snapshot JSON");
     invalid_fx["instances"][0]["abi_hash"] =
@@ -713,7 +717,9 @@ fn rejected_session_restore_does_not_partially_mutate_the_live_session() {
         BundleStepInput::default(),
     );
     let before = session.snapshot_session().expect("live snapshot exports");
-    let mut invalid = before.clone();
+    let mut invalid = session
+        .snapshot_session()
+        .expect("independent rejection candidate");
     invalid.runtime.source_label = "invalid restore must not leak".to_owned();
     invalid.runtime.next_step_index = invalid.runtime.next_step_index.saturating_add(99);
     invalid.runtime.runtime_generation_pin = Some(GenerationId::new(
@@ -747,7 +753,9 @@ fn restored_dialogue_action_button_requires_sealed_mount_provenance() {
         BundleStepInput::default(),
     );
     let before = session.snapshot_session().expect("live snapshot exports");
-    let mut forged = before.clone();
+    let mut forged = session
+        .snapshot_session()
+        .expect("independent rejection candidate");
     forged
         .presentation
         .action_buttons
@@ -788,19 +796,24 @@ fn presentation_handle_save_load_restores_lifecycle_table() {
         BundleStepInput::default(),
     );
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    snapshot.presentation.revision = 7;
-    snapshot.presentation.presentation_handle_epoch = 2;
-    snapshot.presentation.presentation_handles = vec![view_handle(
-        "handle.flow.feedback.panel",
-        PresentationResourceState::Hidden,
-        1,
-        2,
-    )];
+    let mut expected = session
+        .snapshot_session()
+        .expect("independent expected snapshot");
+    for presentation in [&mut snapshot.presentation, &mut expected.presentation] {
+        presentation.revision = 7;
+        presentation.presentation_handle_epoch = 2;
+        presentation.presentation_handles = vec![view_handle(
+            "handle.flow.feedback.panel",
+            PresentationResourceState::Hidden,
+            1,
+            2,
+        )];
+    }
 
     session
-        .restore_session_snapshot(snapshot.clone())
+        .restore_session_snapshot(snapshot)
         .expect("snapshot restores");
-    assert_eq!(session.presentation(), &snapshot.presentation);
+    assert_eq!(session.presentation(), &expected.presentation);
 
     let save = session
         .export_session_save_bytes()
@@ -810,7 +823,7 @@ fn presentation_handle_save_load_restores_lifecycle_table() {
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
         .expect("session save imports presentation handles");
 
-    assert_eq!(restored.presentation(), &snapshot.presentation);
+    assert_eq!(restored.presentation(), &expected.presentation);
 }
 
 #[test]
@@ -825,14 +838,21 @@ fn presentation_handle_rollback_restores_tombstones() {
         1,
         1,
     )];
-    let mut released = live.clone();
-    released.presentation.presentation_handle_epoch = 2;
-    released.presentation.presentation_handles[0] = view_handle(
-        "handle.flow.feedback.panel",
-        PresentationResourceState::Released,
-        1,
-        2,
-    );
+    let released_snapshot = || {
+        let mut snapshot = session
+            .snapshot_session()
+            .expect("independent released snapshot");
+        snapshot.presentation.presentation_handle_epoch = 2;
+        snapshot.presentation.presentation_handles = vec![view_handle(
+            "handle.flow.feedback.panel",
+            PresentationResourceState::Released,
+            1,
+            2,
+        )];
+        snapshot
+    };
+    let released = released_snapshot();
+    let expected_released = released_snapshot();
 
     session
         .restore_session_snapshot(live)
@@ -843,7 +863,7 @@ fn presentation_handle_rollback_restores_tombstones() {
     );
 
     session
-        .restore_session_snapshot(released.clone())
+        .restore_session_snapshot(released)
         .expect("released snapshot restores");
     assert_eq!(
         session.presentation().presentation_handles[0].state,
@@ -861,7 +881,7 @@ fn presentation_handle_rollback_restores_tombstones() {
     restored
         .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
         .expect("released handle save imports");
-    assert_eq!(restored.presentation(), &released.presentation);
+    assert_eq!(restored.presentation(), &expected_released.presentation);
 }
 
 #[test]
@@ -939,8 +959,9 @@ fn awbc_save_load_preserves_cleanup_stacks() {
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
+    let expected = snapshot.executor.clone();
     session
-        .restore_session_snapshot(snapshot.clone())
+        .restore_session_snapshot(snapshot)
         .expect("snapshot with cleanup stacks restores");
     let save = session
         .export_session_save_bytes()
@@ -955,7 +976,7 @@ fn awbc_save_load_preserves_cleanup_stacks() {
             .snapshot_session()
             .expect("restored snapshot")
             .executor,
-        snapshot.executor
+        expected
     );
 }
 
@@ -1045,7 +1066,9 @@ fn session_view_metadata_limits_precede_live_restore_and_preserve_executor() {
     let original = exported_session_json(&session);
     let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
     let oversized_name = "x".repeat(usize::try_from(limits.max_string_bytes).unwrap() + 1);
-    let mut invalid = before.clone();
+    let mut invalid = session
+        .snapshot_session()
+        .expect("independent rejection candidate");
     invalid
         .view_runtime
         .view_root_bindings
@@ -1061,7 +1084,9 @@ fn session_view_metadata_limits_precede_live_restore_and_preserve_executor() {
     assert_eq!(session.snapshot_session().unwrap(), before);
     assert_eq!(exported_session_json(&session), original);
 
-    let mut invalid = before.clone();
+    let mut invalid = session
+        .snapshot_session()
+        .expect("independent rejection candidate");
     invalid.view_runtime.view_root_bindings = (0..=limits.max_sequence_items)
         .map(|_| arcweft_core::value::RuntimeBinding {
             name: String::new(),
@@ -1084,7 +1109,9 @@ fn session_restore_preflights_root_presence_and_preserves_executor() {
     let before = session.snapshot_session().unwrap();
     let original = exported_session_json(&session);
     assert!(before.root.is_none());
-    let mut invalid = before.clone();
+    let mut invalid = session
+        .snapshot_session()
+        .expect("independent rejection candidate");
     invalid.root = Some(arcweft_core::root::RootStateSnapshotV1 {
         state_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.State").unwrap(),
         state_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
@@ -1161,8 +1188,9 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
+    let expected = snapshot.executor.clone();
     session
-        .restore_session_snapshot(snapshot.clone())
+        .restore_session_snapshot(snapshot)
         .expect("AWBC-backed callable state restores");
     let encoded = session
         .export_session_save_bytes()
@@ -1176,7 +1204,7 @@ fn session_save_round_trips_program_owned_awbc_callable_values() {
     let restored_snapshot = restored
         .snapshot_session()
         .expect("restored snapshot exports");
-    let original_value = &snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0];
+    let original_value = &expected.state.fiber.frames[0].root_cleanups[0].args[0];
     let restored_value = &restored_snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0];
     let (
         arcweft_core::value::AwbcRuntimeValueSnapshot::Callable(original),
@@ -1217,8 +1245,9 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
     drop(fiber);
 
     let mut session = product_session_from_bytes(&bytes);
+    let expected = snapshot.executor.clone();
     session
-        .restore_session_snapshot(snapshot.clone())
+        .restore_session_snapshot(snapshot)
         .expect("opaque cleanup state restores");
     let encoded = session
         .export_session_save_bytes()
@@ -1234,7 +1263,7 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
             .snapshot_session()
             .expect("restored snapshot exports")
             .executor,
-        snapshot.executor
+        expected
     );
 
     let producer = tampered
@@ -1291,7 +1320,7 @@ fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown
 
     let mut session = product_session_from_bytes(&bytes);
     session
-        .restore_session_snapshot(snapshot.clone())
+        .restore_session_snapshot(snapshot)
         .expect("inert AWBC callable state rebinds to the selected program");
     let restored_snapshot = session.snapshot_session().expect("snapshot exports");
     let target_owner = session.program_owner();
@@ -1308,7 +1337,9 @@ fn session_restore_rebinds_awbc_callable_to_selected_program_and_rejects_unknown
     assert!(!rebound.owner().same_program(&owner));
     drop(restored_fiber);
 
-    let mut invalid_snapshot = snapshot;
+    let mut invalid_snapshot = session
+        .snapshot_session()
+        .expect("admitted restored callable snapshot");
     let arcweft_core::value::AwbcRuntimeValueSnapshot::Callable(callable) =
         &mut invalid_snapshot.executor.state.fiber.frames[0].root_cleanups[0].args[0]
     else {
@@ -2550,7 +2581,9 @@ fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot(
     assert!(session.program_owner().same_program(&owner));
     assert_eq!(session.snapshot_session().unwrap(), before);
 
-    let mut snapshot = before.clone();
+    let mut snapshot = session
+        .snapshot_session()
+        .expect("independent catalog candidate");
     snapshot.executor.state.fiber.frames[0].function = AwbcFunctionId(99);
     snapshot.executor.state.observations =
         serde_json::from_value(payload["executor"]["state"]["observations"].clone())
@@ -2573,7 +2606,9 @@ fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot(
     assert!(session.program_owner().same_program(&owner));
     assert_eq!(session.snapshot_session().unwrap(), before);
 
-    let mut accepted = before.clone();
+    let mut accepted = session
+        .snapshot_session()
+        .expect("independent catalog candidate");
     accepted.executor.state.observations =
         serde_json::from_value(payload["executor"]["state"]["observations"].clone())
             .expect("observations remain inert");

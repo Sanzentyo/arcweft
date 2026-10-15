@@ -375,7 +375,8 @@ fn retired_presentation_survives_chained_content_only_swap_and_fiber_completion(
     assert_ne!(session.view_style_program(), Some(&original_style));
     assert!(!session.has_runtime_image(GenerationId::new(0)));
     let snapshot = session.snapshot_session().unwrap();
-    session.restore_session_snapshot(snapshot.clone()).unwrap();
+    let candidate = session.snapshot_session().unwrap();
+    session.restore_session_snapshot(candidate).unwrap();
     assert_eq!(session.snapshot_session().unwrap(), snapshot);
 }
 
@@ -425,7 +426,8 @@ fn content_only_replacement_switches_presentation_owner_without_relabeling_the_f
     );
     assert!(step.finished, "{:?}", step.diagnostics);
     let snapshot = session.snapshot_session().unwrap();
-    session.restore_session_snapshot(snapshot.clone()).unwrap();
+    let candidate = session.snapshot_session().unwrap();
+    session.restore_session_snapshot(candidate).unwrap();
     assert_eq!(session.snapshot_session().unwrap(), snapshot);
     assert!(!session.has_runtime_image(GenerationId::new(0)));
 }

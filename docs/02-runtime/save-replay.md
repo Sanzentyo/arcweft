@@ -197,6 +197,10 @@ constructor／target／payload schema を照合する。親の累積資源枠に
 資源枠も Root 全体で累積する。資源検査後の schema relation と replay-safe 条件は
 既存の borrowed value visitor を使い、Agent／predicate も live に戻して検証しない。
 Root の値 inventory には、確定済み command の payload も含める。
+durable Root snapshot と session snapshot も、それぞれ一つの owning grammar の
+live／inert 特殊化を使う。live snapshot の無条件 Clone と直接の JSON reader／writer
+は与えず、Root の entry／layout／type／資源検証は保存形態間で同じ実装を使う。
+復元時の Root は、候補 session から所有権をそのまま移す。
 
 attached default の実行中に停止した callable の pending packet は、Native
 rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の

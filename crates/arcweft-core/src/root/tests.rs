@@ -436,7 +436,7 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
         let root = fixture.start(program);
         let snapshot = root.snapshot_state();
         assert_eq!(
-            RootRuntime::from_snapshot(fixture.contract.clone(), snapshot.clone(), program)
+            RootRuntime::from_snapshot(fixture.contract.clone(), root.snapshot_state(), program)
                 .unwrap()
                 .snapshot_state(),
             snapshot

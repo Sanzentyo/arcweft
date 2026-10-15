@@ -2,22 +2,25 @@
 
 use super::{
     RootRuntimeError, RootStateSnapshotV1, RuntimePayload, RuntimeStatefulEntryRoles,
-    TransitionSequence, TypeLayoutHash,
+    TypeLayoutHash,
 };
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Inert version-one wire projection of a durable root state.
 /// Values are admitted through the selected program before live publication.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct RootStateSaveSnapshotV1 {
-    state_identity: crate::entry::RuntimeNominalTypeId,
-    state_layout: TypeLayoutHash,
-    event_identity: crate::entry::RuntimeNominalTypeId,
-    event_layout: TypeLayoutHash,
-    value: crate::value::AwbcRuntimeValueSnapshot,
-    next_sequence: TransitionSequence,
+pub type RootStateSaveSnapshotV1 = super::RootStateSnapshot<crate::value::AwbcRuntimeValueSnapshot>;
+
+impl Clone for RootStateSaveSnapshotV1 {
+    fn clone(&self) -> Self {
+        Self {
+            state_identity: self.state_identity.clone(),
+            state_layout: self.state_layout,
+            event_identity: self.event_identity.clone(),
+            event_layout: self.event_layout,
+            value: self.value.clone(),
+            next_sequence: self.next_sequence,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -28,97 +31,119 @@ pub enum RootStateSaveSnapshotError {
     Value(#[from] crate::value::AwbcRuntimeValueSnapshotError),
 }
 
-// Live and inert roots have one metadata/role grammar. Both the enclosing
-// group's aggregate limit and the selected entry's own limit use the existing
-// Core value admission authority, before either representation is copied.
-macro_rules! admit_root_snapshot {
-    ($snapshot:ty, $validate:ident, $origin:ident, $($value:tt)+) => {
+// The shared owning grammar validates both storage roles with the original
+// selected entry and the enclosing resource bank. Entry-local policy is an
+// additional allowance for the complete root, never a replacement for it.
+impl<P> super::RootStateSnapshot<P> {
+    fn admit_root(
+        &self,
+        active: &crate::entry::ActiveEntrySnapshotV1,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), RootStateSaveSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.status()?;
+        admission.validate_metadata(&(
+            &self.state_identity,
+            self.state_layout,
+            &self.event_identity,
+            self.event_layout,
+            self.next_sequence,
+        ))?;
+        let owner =
+            admission
+                .program_owner()
+                .cloned()
+                .ok_or(RootRuntimeError::SnapshotRoleMismatch(
+                    "original program owner",
+                ))?;
+        let roles = RootStateSaveSnapshotV1::selected_roles(active, &owner)?;
+        roles
+            .event
+            .validate_for_program(owner.types())
+            .map_err(RootRuntimeError::InvalidSnapshotValue)?;
+        RootStateSaveSnapshotV1::validate_header(
+            &self.state_identity,
+            self.state_layout,
+            &self.event_identity,
+            self.event_layout,
+            roles,
+        )?;
+        roles
+            .state
+            .validate_for_program(owner.types())
+            .map_err(RootRuntimeError::InvalidSnapshotValue)?;
+        let value = self.value.borrowed_value();
+        let expected = roles.state.semantic_identity;
+        let entry_limits = roles.command_policy.root_limits.schema;
+        admission.validate_typed_borrowed(value, expected)?;
+        let mut entry_policy =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner, entry_limits);
+        entry_policy
+            .validate_typed_borrowed(value, expected)
+            .inspect_err(|error| admission.retain_failure(error.clone()))?;
+        Ok(())
+    }
+
+    fn admit_optional_root(
+        snapshot: Option<&Self>,
+        active: &crate::entry::ActiveEntrySnapshotV1,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), RootStateSaveSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata_collection(usize::from(snapshot.is_some()))?;
+        let owner = admission
+            .program_owner()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch(
+                "original program owner",
+            ))?;
+        let roles = RootStateSaveSnapshotV1::selected_entry_roles(active, owner)?;
+        if snapshot.is_some() != roles.stateful().is_some() {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("root presence").into());
+        }
+        if let Some(snapshot) = snapshot {
+            snapshot.admit_root(active, admission)?;
+        }
+        Ok(())
+    }
+}
+
+// The public names select concrete storage roles; no private storage bound
+// leaks through the API and a missing optional slot remains unambiguous.
+macro_rules! root_snapshot_admission_api {
+    ($snapshot:ty) => {
         impl $snapshot {
-            /// Admits this borrowed root under the enclosing group's original
-            /// selected entry before projection, activation or session restore.
+            /// Admits the complete root before projection or session restore.
             ///
             /// # Errors
-            /// Rejects incompatible entry/nominal/layout metadata, noncopyable
-            /// or mistyped values, and enclosing or entry-policy limit failures.
+            /// Rejects original entry/nominal/layout/type and resource failures.
             pub fn admit_retained(
                 &self,
                 active: &crate::entry::ActiveEntrySnapshotV1,
                 admission: &mut crate::value::RuntimeRetainedValueAdmission,
             ) -> Result<(), RootStateSaveSnapshotError> {
-                admission.validate_metadata_string(self.state_identity.as_str())?;
-                admission.validate_metadata_string(self.event_identity.as_str())?;
-                let owner = admission.program_owner().cloned().ok_or(
-                    RootRuntimeError::SnapshotRoleMismatch("original program owner"),
-                )?;
-                let roles = RootStateSaveSnapshotV1::selected_roles(active, &owner)?;
-                roles
-                    .event
-                    .validate_for_program(owner.types())
-                    .map_err(RootRuntimeError::InvalidSnapshotValue)?;
-                RootStateSaveSnapshotV1::validate_header(
-                    &self.state_identity,
-                    self.state_layout,
-                    &self.event_identity,
-                    self.event_layout,
-                    roles,
-                )?;
-                roles
-                    .state
-                    .validate_for_program(owner.types())
-                    .map_err(RootRuntimeError::InvalidSnapshotValue)?;
-                let value = &self.$($value)+;
-                admission.$validate(value, roles.state.semantic_identity)?;
-                let expected = roles.state.semantic_identity;
-                let entry_limits = roles.command_policy.root_limits.schema;
-                let mut entry_policy = crate::value::RuntimeRetainedValueAdmission::for_program(
-                    owner.clone(),
-                    entry_limits,
-                );
-                entry_policy
-                    .$validate(value, expected)
-                    .inspect_err(|error| admission.retain_failure(error.clone()))?;
-                owner.types()
-                    .accepts_value_view(expected, value.view(), entry_limits,
-                        crate::entry::schema::value_encoding::ValueAdmissionOrigin::$origin)
-                    .map_err(crate::value::AwbcRuntimeValueSnapshotError::from)
-                    .inspect_err(|error| admission.retain_failure(error.clone()))?;
-                Ok(())
+                self.admit_root(active, admission)
             }
 
-            /// Validates the selected entry's complete optional root slot.
+            /// Admits the selected entry's optional root, including presence.
             ///
             /// # Errors
-            /// Also rejects a missing required root or a root on a stateless
-            /// entry before the enclosing session copies or activates a prefix.
+            /// Also rejects a missing required root or a stateless entry's root.
             pub fn admit_optional_retained(
                 snapshot: Option<&Self>,
                 active: &crate::entry::ActiveEntrySnapshotV1,
                 admission: &mut crate::value::RuntimeRetainedValueAdmission,
             ) -> Result<(), RootStateSaveSnapshotError> {
-                admission.validate_metadata_collection(usize::from(snapshot.is_some()))?;
-                let owner = admission.program_owner().ok_or(
-                    RootRuntimeError::SnapshotRoleMismatch("original program owner"),
-                )?;
-                let roles = RootStateSaveSnapshotV1::selected_entry_roles(active, owner)?;
-                if snapshot.is_some() != roles.stateful().is_some() {
-                    return Err(RootRuntimeError::SnapshotRoleMismatch("root presence").into());
-                }
-                if let Some(snapshot) = snapshot {
-                    snapshot.admit_retained(active, admission)?;
-                }
-                Ok(())
+                Self::admit_optional_root(snapshot, active, admission)
             }
         }
     };
 }
-
-admit_root_snapshot!(RootStateSnapshotV1, validate_typed, Live, value.0);
-admit_root_snapshot!(
-    RootStateSaveSnapshotV1,
-    validate_typed_snapshot,
-    InertSnapshot,
-    value
-);
+root_snapshot_admission_api!(RootStateSnapshotV1);
+root_snapshot_admission_api!(RootStateSaveSnapshotV1);
 
 impl RootStateSaveSnapshotV1 {
     /// Borrows the existing inert state carrier for pre-construction catalog

@@ -16,6 +16,13 @@ pub(crate) trait RuntimeStoredValue {
     fn borrowed_view(&self) -> RuntimeValueView<'_>;
     fn admission_origin() -> ValueAdmissionOrigin;
 
+    fn borrowed_value(&self) -> super::RuntimeBorrowedValue<'_> {
+        super::RuntimeBorrowedValue {
+            value: self.borrowed_view(),
+            origin: Self::admission_origin(),
+        }
+    }
+
     fn resource_admission(limits: RuntimeSchemaLimits) -> ValueResourceAdmission {
         match Self::admission_origin() {
             ValueAdmissionOrigin::Live => ValueResourceAdmission::live(limits),

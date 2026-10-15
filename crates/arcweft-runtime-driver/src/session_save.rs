@@ -33,47 +33,70 @@ pub use crate::swap::BundleSessionArtifactIdentity;
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
 pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct BundleSessionSnapshot {
+/// One session storage grammar. The live root has neither Clone nor a wire
+/// reader; only the inert specialization can be copied and decoded.
+///
+/// ```compile_fail
+/// use arcweft_runtime_driver::session_save::BundleSessionSnapshot;
+/// fn copy(value: &BundleSessionSnapshot) { let _: BundleSessionSnapshot = value.clone(); }
+/// ```
+/// ```compile_fail
+/// use arcweft_runtime_driver::session_save::BundleSessionSnapshot;
+/// let _: BundleSessionSnapshot = serde_json::from_str("{}").unwrap();
+/// ```
+/// ```compile_fail
+/// use arcweft_runtime_driver::session_save::BundleSessionSnapshot;
+/// fn encode(value: &BundleSessionSnapshot) { serde_json::to_vec(value).unwrap(); }
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleSessionSnapshot<
+    R = RootStateSnapshotV1,
+    P = BundlePresentationSnapshot,
+    V = BundleViewRuntimeSnapshot,
+> {
     pub generation: BundleSessionGenerationSnapshot,
     pub active_locale: LocaleTag,
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
-    pub root: Option<RootStateSnapshotV1>,
+    pub root: Option<R>,
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSnapshot,
-    pub presentation: BundlePresentationSnapshot,
+    pub presentation: P,
     /// Exact per-mount range/scroll state, including off-window item descriptors.
     pub view_virtualization: ViewVirtualizationSnapshot,
     /// Exact executable View mount graph, typed slots, clocks, and allocator cursor.
-    pub view_runtime: BundleViewRuntimeSnapshot,
+    pub view_runtime: V,
 }
 
 /// Wire payload for the bundle-session save envelope.
 ///
 /// The in-memory snapshot also retains the inert AWBC value DTO. Decoding a
 /// save never creates a second live affine owner beside the active executor.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BundleSessionSavePayload {
-    pub generation: BundleSessionGenerationSnapshot,
-    pub active_locale: LocaleTag,
-    #[serde(deserialize_with = "deserialize_required_option")]
-    pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
-    pub active_entry: ActiveEntrySnapshotV1,
-    pub root: Option<RootStateSaveSnapshotV1>,
-    pub runtime: BundleSessionRuntimeSnapshot,
-    pub executor: BundleSessionExecutorSavePayload,
-    pub presentation: BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot>,
-    pub view_virtualization: ViewVirtualizationSnapshot,
-    pub view_runtime: BundleViewRuntimeSaveSnapshot,
-}
+pub(crate) type BundleSessionSavePayload = BundleSessionSnapshot<
+    RootStateSaveSnapshotV1,
+    BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot>,
+    BundleViewRuntimeSaveSnapshot,
+>;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BundleSessionExecutorSavePayload {
-    pub generation: GenerationId,
-    pub state: AwbcProductExecutorSaveSnapshot,
+pub(crate) type BundleSessionExecutorSavePayload = BundleSessionExecutorSnapshot;
+
+impl Clone for BundleSessionSavePayload {
+    fn clone(&self) -> Self {
+        Self {
+            generation: self.generation.clone(),
+            active_locale: self.active_locale.clone(),
+            character_presentation: self.character_presentation.clone(),
+            active_entry: self.active_entry.clone(),
+            root: self.root.clone(),
+            runtime: self.runtime.clone(),
+            executor: self.executor.clone(),
+            presentation: self.presentation.clone(),
+            view_virtualization: self.view_virtualization.clone(),
+            view_runtime: self.view_runtime.clone(),
+        }
+    }
 }
 
 impl BundleSessionSavePayload {
@@ -258,7 +281,8 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BundleSessionExecutorSnapshot {
     /// Generation that owns the Product AWBC fiber state.
     pub generation: GenerationId,

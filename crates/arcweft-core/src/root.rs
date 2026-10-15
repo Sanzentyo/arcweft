@@ -1420,15 +1420,33 @@ fn validate_replay_safe_node(
 }
 
 /// In-memory snapshot for one durable unrestricted root state.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RootStateSnapshotV1 {
+///
+/// ```compile_fail
+/// use arcweft_core::root::RootStateSnapshotV1;
+/// fn copy(value: &RootStateSnapshotV1) { let _: RootStateSnapshotV1 = value.clone(); }
+/// ```
+/// ```compile_fail
+/// use arcweft_core::root::RootStateSnapshotV1;
+/// let _: RootStateSnapshotV1 = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, serde::Deserialize, PartialEq, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+#[serde(bound(
+    serialize = "P: crate::value::InertRuntimeValueStorage",
+    deserialize = "P: crate::value::InertRuntimeValueStorage"
+))]
+pub struct RootStateSnapshot<P> {
     pub state_identity: crate::entry::RuntimeNominalTypeId,
     pub state_layout: TypeLayoutHash,
     pub event_identity: crate::entry::RuntimeNominalTypeId,
     pub event_layout: TypeLayoutHash,
-    pub value: RuntimePayload,
+    pub value: P,
     pub next_sequence: TransitionSequence,
 }
+
+/// Live version-one root snapshot; constructing another owner requires
+/// admission under its original selected entry.
+pub type RootStateSnapshotV1 = RootStateSnapshot<RuntimePayload>;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RootSaveBlockers {
