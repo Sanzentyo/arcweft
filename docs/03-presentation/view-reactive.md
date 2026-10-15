@@ -142,6 +142,14 @@ Never であり、uninhabited scrutinee の空 case inventory は選択値を生
 を持つ program は、payload が Never のときだけ AWBC join で受理する。
 返らない selector が評価予算に達した場合も、部分 frame を公開せず、restore 後に同じ失敗を保つ。
 
+compiler-local な Match catalog row は、元の `CheckedDeterministicProgram` とその
+accepted HIR／callable authority を保持する。site identity は受入済みの構造的 path、
+admission identity は完全な checked Match transcript から導く。意味が同じ再構築でも
+元 source authority の検証は省略しない。View 全体の merge と product 検証を終えてから、
+実際の program ID と accepted revision を同じ runtime program inventory に結び付ける。
+Match 外の変更による revision 更新は site／admission identity を変えない。
+この row は非 serialized であり、digest 単体から compiler admission を発行しない。
+
 guard 内の関数呼び出しは通常の Core flow 命令と関数 frame で Bool を計算する。
 Never を返す guard の制御移動は enclosing owner に属し、条件の評価へ戻らない。
 候補の値は guard の間は型付き slot が所有し、使用する pattern local だけを

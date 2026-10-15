@@ -13,6 +13,9 @@ use super::{
     CheckedStatementPayload, CheckedSuspensionRole, CheckedTryBoundaryOwner,
 };
 
+mod view_match;
+pub use view_match::{CompilerLocalViewMatchCatalogError, CompilerLocalViewMatchCatalogRow};
+
 /// A deterministic extracted root with boundary-relative control and place
 /// admission. Owned inputs may move or change inside the root. The runtime
 /// ingress still must discharge any borrowed input's deep Copy obligation.

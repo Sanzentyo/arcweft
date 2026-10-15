@@ -37,6 +37,43 @@ impl ProjectedRuntimeViewId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AcceptedViewProgramRevision([u8; 32]);
 
+/// Stable structural coordinate of one authored View Match.
+/// This identity carries no generation or admission evidence.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewMatchSiteId([u8; 32]);
+
+impl ViewMatchSiteId {
+    /// The semantic owner supplies its canonical accepted structural path.
+    pub fn for_semantic_coordinate(coordinate: &[u8]) -> Self {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.view.match-site.v1\0");
+        hash.update(coordinate);
+        Self(*hash.finalize().as_bytes())
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Identity of an exact complete checked Match transcript.
+/// A digest alone does not issue a compiler admission or View capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedViewMatchAdmissionDigest([u8; 32]);
+
+impl CheckedViewMatchAdmissionDigest {
+    pub fn for_match_semantic_transcript(checked: &[u8; 32]) -> Self {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.view.checked-match-admission.v1\0");
+        hash.update(checked);
+        Self(*hash.finalize().as_bytes())
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Invalid stable View identity data.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum ViewIdentityError {

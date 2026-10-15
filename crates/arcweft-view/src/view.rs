@@ -7,8 +7,8 @@ mod identity;
 mod registry;
 
 pub use identity::{
-    AcceptedViewProgramRevision, ProjectedRuntimeViewId, ViewId, ViewIdError, ViewIdentityError,
-    ViewProgramId,
+    AcceptedViewProgramRevision, CheckedViewMatchAdmissionDigest, ProjectedRuntimeViewId, ViewId,
+    ViewIdError, ViewIdentityError, ViewMatchSiteId, ViewProgramId,
 };
 pub use registry::{
     ViewDescriptor, ViewImplementation, ViewRegistry, ViewRegistryError, ViewRegistryId,

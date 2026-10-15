@@ -110,6 +110,7 @@ pub(crate) struct CheckedViewRuntimeProgram {
     id: ViewHandlerProgramId,
     result: ViewHandlerValueTypeId,
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
+    match_catalog: Option<arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>,
 }
 
 /// Join between a checked closure capture and its retained execution input.
@@ -133,6 +134,8 @@ pub(crate) struct ViewProjectLowerer<'a> {
 /// Failure to build one complete compiler-owned View product.
 #[derive(Debug, Error)]
 pub(crate) enum ViewProjectLowerError {
+    #[error(transparent)]
+    ViewMatchCatalog(#[from] arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogError),
     #[error(transparent)]
     GenericScope(#[from] arcweft_lang_sema::types::GenericScopeError),
     #[error("project source module `{module}` has no matching lowered HIR module")]
@@ -263,6 +266,15 @@ impl CompiledViewProduct {
 
     pub(crate) fn runtime_programs(&self) -> &[CheckedViewRuntimeProgram] {
         &self.runtime_programs
+    }
+
+    pub fn match_catalog_rows(
+        &self,
+    ) -> impl Iterator<Item = &arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>
+    {
+        self.runtime_programs
+            .iter()
+            .filter_map(|program| program.match_catalog.as_ref())
     }
 }
 
@@ -419,6 +431,24 @@ impl<'a> ViewProjectLowerer<'a> {
         }
 
         let text = merge_view_text(standard_view::dialogue_text(), authored.text);
+        let runtime_programs = authored
+            .runtime_programs
+            .into_iter()
+            .map(|mut runtime| {
+                if runtime.admission.input_abi().match_selection().is_some() {
+                    let program = product
+                        .program()
+                        .ok_or(ViewProjectLowerError::SemanticGenerationMismatch)?;
+                    runtime.match_catalog = Some(runtime.admission.view_match_catalog_row(
+                        self.semantic_analysis,
+                        executable,
+                        program.program_id().clone(),
+                        program.accepted_revision(),
+                    )?);
+                }
+                Ok(runtime)
+            })
+            .collect::<Result<Vec<_>, ViewProjectLowerError>>()?;
         Ok(CompiledViewProduct {
             product: Arc::new(product),
             text: Some(text),
@@ -428,7 +458,7 @@ impl<'a> ViewProjectLowerer<'a> {
             style_sources,
             authored_sources,
             resource_types: self.resource_types.digest(),
-            runtime_programs: authored.runtime_programs.into(),
+            runtime_programs: runtime_programs.into(),
         })
     }
 }
@@ -1178,6 +1208,7 @@ impl ViewExpressionLowerer<'_> {
                 id,
                 result: result_type,
                 admission,
+                match_catalog: None,
             });
         Ok(arcweft_view::ViewExpressionProgram {
             program: id,
@@ -2473,6 +2504,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 id: program_id,
                 result: result.value_type(),
                 admission,
+                match_catalog: None,
             });
         self.output.handlers.push(CheckedViewHandlerProgram {
             id: program_id,

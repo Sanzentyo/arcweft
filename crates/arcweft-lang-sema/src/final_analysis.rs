@@ -63,7 +63,10 @@ pub use entity_pattern::{CheckedEntityPatternProjection, CheckedEntityPatternPro
 pub use entity_value::{CheckedEntityValueProjection, CheckedEntityValueProjectionError};
 mod execution_inputs;
 mod flow_execution;
-pub use deterministic_program::{CheckedDeterministicProgram, CheckedProgramAdmissionError};
+pub use deterministic_program::{
+    CheckedDeterministicProgram, CheckedProgramAdmissionError, CompilerLocalViewMatchCatalogError,
+    CompilerLocalViewMatchCatalogRow,
+};
 pub use flow_execution::CheckedFlowExecutionDefinition;
 mod free_capture;
 pub use free_capture::CheckedLocalUseSite;

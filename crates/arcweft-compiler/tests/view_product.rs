@@ -5925,3 +5925,100 @@ fn compiler_source_maps_reject_a_file_outside_the_accepted_project_root() {
             .contains("outside its project root")
     );
 }
+
+#[test]
+fn view_match_catalog_keeps_stable_sites_exact_admissions_and_current_product_stamps() {
+    let source = r#"view Main(enabled: bool = true) {
+        match enabled { true => Text("yes"), false => Text("no") };
+        Text("outside")
+    }"#;
+    let compile = |text: &str| {
+        project_view_fixture(text, "arcweft-test://match-catalog")
+            .compile()
+            .unwrap()
+    };
+    let original = compile(source);
+    let rows = original
+        .view_product()
+        .match_catalog_rows()
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 1);
+    let row = rows[0];
+    let resource = original.view_product().product().program().unwrap();
+    assert_eq!(row.program_id(), resource.program_id());
+    assert_eq!(row.accepted_revision(), resource.accepted_revision());
+    row.validate_source(
+        original.analysis_lease().final_analysis(),
+        original
+            .analysis_lease()
+            .hir_project()
+            .analysis_view()
+            .unwrap(),
+    )
+    .unwrap();
+    let same = compile(source);
+    let same_row = same.view_product().match_catalog_rows().next().unwrap();
+    assert_eq!(row.site(), same_row.site());
+    assert_eq!(row.admission(), same_row.admission());
+    assert!(
+        row.validate_source(
+            same.analysis_lease().final_analysis(),
+            same.analysis_lease().hir_project().analysis_view().unwrap(),
+        )
+        .is_err()
+    );
+    assert!(
+        row.checked_program()
+            .view_match_catalog_row(
+                same.analysis_lease().final_analysis(),
+                same.analysis_lease().hir_project().analysis_view().unwrap(),
+                same_row.program_id().clone(),
+                same_row.accepted_revision(),
+            )
+            .is_err()
+    );
+    let replacement = compile(&source.replace("Text(\"outside\")", "Button(\"outside\")"));
+    let replaced = replacement
+        .view_product()
+        .match_catalog_rows()
+        .next()
+        .unwrap();
+    assert_eq!(row.program_id(), replaced.program_id());
+    assert_eq!(row.site(), replaced.site());
+    assert_eq!(row.admission(), replaced.admission());
+    assert_ne!(row.accepted_revision(), replaced.accepted_revision());
+    let changed = compile(&source.replace("Text(\"yes\")", "Text(\"changed\")"));
+    let changed_row = changed.view_product().match_catalog_rows().next().unwrap();
+    assert_eq!(row.site(), changed_row.site());
+    assert_ne!(row.admission(), changed_row.admission());
+}
+
+#[test]
+fn view_match_catalog_distinguishes_equal_authored_sites_in_one_program() {
+    let compiled = project_view_fixture(
+        r#"view Main(enabled: bool = true) {
+            match enabled { true => Text("yes"), false => Text("no") };
+            match enabled { true => Text("yes"), false => Text("no") };
+        }"#,
+        "arcweft-test://distinct-match-sites",
+    )
+    .compile()
+    .unwrap();
+    let rows = compiled
+        .view_product()
+        .match_catalog_rows()
+        .collect::<Vec<_>>();
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0].site(), rows[1].site());
+    for row in rows {
+        row.validate_source(
+            compiled.analysis_lease().final_analysis(),
+            compiled
+                .analysis_lease()
+                .hir_project()
+                .analysis_view()
+                .unwrap(),
+        )
+        .unwrap();
+    }
+}
