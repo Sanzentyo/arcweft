@@ -54,123 +54,149 @@ impl DialogueIngressError {
 
 /// Suspended dialogue line awaiting explicit host progression.
 #[derive(Debug, PartialEq)]
-pub(crate) struct DialogueActivationFrame {
+pub(crate) struct DialogueActivationFrame<
+    V = RuntimeValue,
+    O = crate::value::RuntimeOpaqueValue,
+    C = crate::value::RuntimeCallableValue,
+    E = super::super::NativeFlowExecutionFrame,
+> {
     pub(in crate::engine) line: crate::plan::RuntimeLineId,
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
-    pub(in crate::engine) target: Option<crate::value::RuntimeOpaqueValue>,
+    pub(in crate::engine) target: Option<O>,
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(in crate::engine) resume: Option<super::super::FlowCursor>,
     /// Source-order capture coordinates; the values themselves live only in
     /// `execution.env` and may be affine while activation executes.
     pub(in crate::engine) captures: Box<[RuntimeLocalDeclarationId]>,
     /// Copyable external and activation-local inputs for unscheduled line work.
-    pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding]>,
+    pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding<V>]>,
     /// The same execution frame used by ordinary fibers. The parent continuation
     /// and this frame never own each other's bindings or invocation stack.
-    pub(in crate::engine) execution: super::super::NativeFlowExecutionFrame,
+    pub(in crate::engine) execution: E,
     pub(in crate::engine) line_task: DialogueLineTaskState,
     /// Logical time accumulated while this line has been active.
     pub(in crate::engine) elapsed: crate::time::LogicalDuration,
     pub(in crate::engine) phase: DialogueRuntimePhase,
     pub(in crate::engine) result_target: crate::plan::RuntimeDialogueResultTarget,
     pub(in crate::engine) voice: crate::presentation::RuntimeDialogueVoiceState,
-    pub(in crate::engine) values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+    pub(in crate::engine) values: Box<[crate::plan::RuntimeDialogueValueBinding<V>]>,
     /// Exact callback closures captured when this dialogue content was
     /// activated. Reveal selects these rows by effect site; it never scans
     /// ordinary value slots for a callback.
     pub(in crate::engine) effect_callbacks:
-        Box<[crate::value::RuntimeDialogueContentEffectBinding]>,
+        Box<[crate::value::RuntimeDialogueContentEffectBinding<C>]>,
     pub(in crate::engine) activation_pc: usize,
     /// An `out` has staged the line result and exited the line-plan
     /// continuation. Only active lexical scopes may still unwind before reveal.
     pub(in crate::engine) exiting_for_result: bool,
     /// Pre-reveal lexical scopes, retained with the activation transaction
     /// across host commands and deferred-child suspension.
-    pub(in crate::engine) scopes: Vec<DialogueActivationScope>,
-    pub(in crate::engine) pending_line_operation: Option<PendingLineOperation>,
+    pub(in crate::engine) scopes: Vec<DialogueActivationScope<V>>,
+    pub(in crate::engine) pending_line_operation: Option<PendingLineOperation<V>>,
     pub(in crate::engine) pending_host_call: Option<PendingActivationHostCall>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeDialogueBindingRollbackImage {
-    local: RuntimeLocalDeclarationId,
-    value: crate::value::AwbcRuntimeValueSnapshot,
+type NativeDialogueBindingRollbackImage =
+    RuntimeLocalBinding<crate::value::AwbcRuntimeValueSnapshot>;
+type NativeDialogueValueRollbackImage =
+    crate::plan::RuntimeDialogueValueBinding<crate::value::AwbcRuntimeValueSnapshot>;
+type NativeDialogueScopeRollbackImage =
+    DialogueActivationScope<crate::value::AwbcRuntimeValueSnapshot>;
+type NativePendingLineOperationRollbackImage =
+    PendingLineOperation<crate::value::AwbcRuntimeValueSnapshot>;
+type NativeDialogueActivationFrameRollbackImage = DialogueActivationFrame<
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+    super::super::NativeFlowExecutionFrameRollbackImage,
+>;
+type NativeEngineDialogueFrameRollbackImage =
+    EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
+
+impl Clone for NativeDialogueActivationFrameRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            line: self.line.clone(),
+            content: self.content,
+            target: self.target.clone(),
+            task_group: self.task_group,
+            resume: self.resume,
+            captures: self.captures.clone(),
+            task_inputs: self.task_inputs.clone(),
+            execution: self.execution.clone(),
+            line_task: self.line_task.clone(),
+            elapsed: self.elapsed,
+            phase: self.phase,
+            result_target: self.result_target.clone(),
+            voice: self.voice.clone(),
+            values: self.values.clone(),
+            effect_callbacks: self.effect_callbacks.clone(),
+            activation_pc: self.activation_pc,
+            exiting_for_result: self.exiting_for_result,
+            scopes: self.scopes.clone(),
+            pending_line_operation: self.pending_line_operation.clone(),
+            pending_host_call: self.pending_host_call.clone(),
+            failure: self.failure.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeDialogueValueRollbackImage {
-    slot: crate::runtime_id::RuntimeDialogueValueSlotId,
-    role: crate::plan::RuntimeDialogueValueRole,
-    value: crate::value::AwbcRuntimeValueSnapshot,
+impl Clone for NativeEngineDialogueFrameRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            frame: self.frame.clone(),
+            inbox: self.inbox.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeDialogueEffectCallbackRollbackImage {
-    site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    callback: crate::value::AwbcRuntimeValueSnapshot,
+impl Clone for NativeDialogueScopeRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            deferred: self.deferred.clone(),
+            exit: self.exit,
+            inflight: self.inflight,
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeDialogueScopeRollbackImage {
-    deferred: Vec<crate::line_task::AwbcRuntimeDeferredRegistrationSnapshot>,
-    exit: Option<crate::line_task::ScopeExit>,
-    inflight: Option<(
-        crate::runtime_id::RuntimeDeferRegistrationId,
-        crate::runtime_id::RuntimeDeferSiteId,
-    )>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum NativePendingLineOperationRollbackImage {
-    AcquireActor {
-        command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    ActorLook {
-        command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    StartVoice {
-        command: crate::presentation::RuntimeLineCommandId,
-        binding: Option<RuntimePattern>,
-        site: crate::runtime_id::RuntimeLineHandleSiteId,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct NativeDialogueActivationFrameRollbackImage {
-    line: crate::plan::RuntimeLineId,
-    content: crate::runtime_id::RuntimeDialogueContentPlanId,
-    target: Option<crate::value::AwbcRuntimeValueSnapshot>,
-    task_group: crate::runtime_id::RuntimeLineTaskGroupId,
-    resume: Option<super::super::FlowCursor>,
-    captures: Box<[RuntimeLocalDeclarationId]>,
-    task_inputs: Vec<NativeDialogueBindingRollbackImage>,
-    execution: super::super::NativeFlowExecutionFrameRollbackImage,
-    line_task: DialogueLineTaskState,
-    elapsed: crate::time::LogicalDuration,
-    phase: DialogueRuntimePhase,
-    result_target: crate::plan::RuntimeDialogueResultTarget,
-    voice: crate::presentation::RuntimeDialogueVoiceState,
-    values: Vec<NativeDialogueValueRollbackImage>,
-    effect_callbacks: Vec<NativeDialogueEffectCallbackRollbackImage>,
-    activation_pc: usize,
-    exiting_for_result: bool,
-    scopes: Vec<NativeDialogueScopeRollbackImage>,
-    pending_line_operation: Option<NativePendingLineOperationRollbackImage>,
-    pending_host_call: Option<PendingActivationHostCall>,
-    failure: Option<super::DialogueExecutionError>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct NativeEngineDialogueFrameRollbackImage {
-    frame: NativeDialogueActivationFrameRollbackImage,
-    inbox: DialogueStepInbox,
+impl Clone for NativePendingLineOperationRollbackImage {
+    fn clone(&self) -> Self {
+        match self {
+            Self::AcquireActor {
+                command,
+                binding,
+                value,
+                token,
+            } => Self::AcquireActor {
+                command: command.clone(),
+                binding: binding.clone(),
+                value: value.clone(),
+                token: token.clone(),
+            },
+            Self::ActorLook {
+                command,
+                binding,
+                value,
+                token,
+            } => Self::ActorLook {
+                command: command.clone(),
+                binding: binding.clone(),
+                value: value.clone(),
+                token: token.clone(),
+            },
+            Self::StartVoice {
+                command,
+                binding,
+                site,
+            } => Self::StartVoice {
+                command: command.clone(),
+                binding: binding.clone(),
+                site: *site,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -386,15 +412,14 @@ impl DialogueActivationFrame {
                 .effect_callbacks
                 .iter()
                 .map(|binding| {
-                    Ok(NativeDialogueEffectCallbackRollbackImage {
-                        site: binding.site(),
-                        callback:
-                            crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
-                                binding.callback(),
-                                owner,
-                            )
-                            .map_err(|error| error.to_string())?,
-                    })
+                    Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
+                        binding.site(),
+                        crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
+                            binding.callback(),
+                            owner,
+                        )
+                        .map_err(|error| error.to_string())?,
+                    ))
                 })
                 .collect::<Result<_, String>>()?,
             activation_pc: self.activation_pc,
@@ -465,14 +490,13 @@ impl DialogueActivationFrame {
                 .effect_callbacks
                 .into_iter()
                 .map(|binding| {
-                    let RuntimeValue::Callable(callback) =
-                        live_dialogue_value(binding.callback, owner)?
+                    let (site, saved) = binding.into_parts();
+                    let RuntimeValue::Callable(callback) = live_dialogue_value(saved, owner)?
                     else {
                         return Err("dialogue rollback callback is not callable".to_owned());
                     };
                     Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
-                        binding.site,
-                        callback,
+                        site, callback,
                     ))
                 })
                 .collect::<Result<Vec<_>, String>>()?
@@ -526,8 +550,8 @@ pub(crate) struct PendingActivationHostCall {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct DialogueActivationScope {
-    pub(in crate::engine) deferred: Vec<crate::line_task::RuntimeLineDeferredRegistration>,
+pub(crate) struct DialogueActivationScope<V = RuntimeValue> {
+    pub(in crate::engine) deferred: Vec<crate::line_task::RuntimeLineDeferredRegistration<V>>,
     /// Frozen on first exit. A failing cleanup must not change its filter.
     pub(in crate::engine) exit: Option<crate::line_task::ScopeExit>,
     pub(in crate::engine) inflight: Option<(
@@ -567,17 +591,17 @@ pub(crate) enum DialogueLineTaskState {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum PendingLineOperation {
+pub(crate) enum PendingLineOperation<V = RuntimeValue> {
     AcquireActor {
         command: crate::presentation::RuntimeLineCommandId,
         binding: Option<RuntimePattern>,
-        value: RuntimeValue,
+        value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     ActorLook {
         command: crate::presentation::RuntimeLineCommandId,
         binding: Option<RuntimePattern>,
-        value: RuntimeValue,
+        value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     StartVoice {
@@ -807,8 +831,8 @@ impl DialogueActivationStore {
 }
 
 #[derive(Debug, PartialEq)]
-struct EngineDialogueActivationFrame {
-    frame: DialogueActivationFrame,
+struct EngineDialogueActivationFrame<F = DialogueActivationFrame> {
+    frame: F,
     inbox: DialogueStepInbox,
 }
 

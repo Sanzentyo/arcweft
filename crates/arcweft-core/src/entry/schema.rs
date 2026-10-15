@@ -460,6 +460,18 @@ impl Drop for RuntimeSchemaChoiceMismatch {
 }
 
 impl RuntimeTypeSchema {
+    pub(crate) fn validate_admitted_view(
+        &self,
+        value: crate::value::RuntimeValueView<'_>,
+        resources: &value_encoding::ValueResourceAdmission,
+    ) -> Result<(), RuntimeSchemaError> {
+        value_encoding::validate_admitted_view(
+            value,
+            &mut value_validation::SchemaValueValidation::tree_with_work(self, resources.work())?,
+            value_validation::Expected::Schema(self),
+        )
+    }
+
     pub fn try_layout_hash(&self) -> Result<TypeLayoutHash, RuntimeSchemaError> {
         canonical_schema_layout_hash(self, usize::MAX).map_err(|error| match error {
             RuntimeSchemaError::Encoding { .. } => RuntimeSchemaError::SchemaEncodingOverflow,
@@ -560,8 +572,15 @@ pub fn canonical_runtime_value_bytes(
     value: &RuntimeValue,
     max_encoded_bytes: usize,
 ) -> Result<Vec<u8>, RuntimeSchemaError> {
+    canonical_runtime_value_view_bytes(value.view(), max_encoded_bytes)
+}
+
+pub(crate) fn canonical_runtime_value_view_bytes(
+    value: crate::value::RuntimeValueView<'_>,
+    max_encoded_bytes: usize,
+) -> Result<Vec<u8>, RuntimeSchemaError> {
     let mut sink = CanonicalBytesSink::default();
-    visit_runtime_value(value, max_encoded_bytes, &mut sink)?;
+    visit_runtime_value_view(value, max_encoded_bytes, &mut sink)?;
     Ok(sink.finish())
 }
 

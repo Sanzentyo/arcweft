@@ -178,6 +178,25 @@ content template の value slot と callback capture ABI を、live 値の構築
 検証用に DialogueStore や中間の live frame snapshot を構築しない。全体の検証後は
 既存の admitted projection を使い、各値の変換時に資源枠を更新しない。
 一時的な `Transitioning` phase は codec と復元の両方で拒否する。
+activation 中の fiber root は、元 content group の activation function と一致させる。
+別の root として単体検証を通る fiber でも、この対応を置き換えられない。
+
+Native の fiber／frame、control kind と function return、formatter、Await／AwaitMany、
+対話 frame／scope／pending operation は、それぞれ同じ owning grammar の live／inert
+特殊化を使う。`RuntimeEnv` と `RootRuntime` も同じ構造を共有し、live owner に
+無条件 Clone を与えない。AwaitMany の in-flight handle も inert descriptor に変換する。
+Need publication の observer は、選択対象の通知群を元 program と Await handle の
+outcome 型で、同じ資源枠を使ってすべて検証してから Copy／move する。
+後続通知の拒否時にも先行する affine Ready、queue、観測済み cursor を保持する。
+保存用 publication は affine 値も inert のまま保持できる。
+
+Root の capture／restore は、状態値だけでなく queued event と committed command を
+最初の値の変換前に検証する。元 executable の entry から binding／roles／policy を
+借用し、保存側の metadata、nominal/layout、event sequence、command transition/index、
+constructor／target／payload schema を照合する。親の累積資源枠に加え、entry 固有の
+資源枠も Root 全体で累積する。資源検査後の schema relation と replay-safe 条件は
+既存の borrowed value visitor を使い、Agent／predicate も live に戻して検証しない。
+Root の値 inventory には、確定済み command の payload も含める。
 
 attached default の実行中に停止した callable の pending packet は、Native
 rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の

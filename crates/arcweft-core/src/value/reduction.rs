@@ -32,17 +32,17 @@ impl RuntimeReductionProducer {
 
 /// Opaque replay-safe command produced by an admitted reduction constructor.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeCommand {
+pub struct RuntimeCommand<P = RuntimePayload> {
     constructor: RuntimeCommandConstructorId,
     target: RuntimeCommandTargetId,
-    payload: RuntimePayload,
+    payload: P,
 }
 
-impl RuntimeCommand {
+impl<P> RuntimeCommand<P> {
     pub(crate) const fn new_accepted(
         constructor: RuntimeCommandConstructorId,
         target: RuntimeCommandTargetId,
-        payload: RuntimePayload,
+        payload: P,
     ) -> Self {
         Self {
             constructor,
@@ -62,8 +62,12 @@ impl RuntimeCommand {
     }
 
     #[must_use]
-    pub const fn payload(&self) -> &RuntimePayload {
+    pub const fn payload(&self) -> &P {
         &self.payload
+    }
+
+    pub(crate) fn into_parts(self) -> (RuntimeCommandConstructorId, RuntimeCommandTargetId, P) {
+        (self.constructor, self.target, self.payload)
     }
 }
 

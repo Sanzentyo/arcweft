@@ -6639,7 +6639,7 @@ fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_o
     );
 }
 
-fn stateful_entry_with_function_site_callables() -> AwbcProgram {
+pub(crate) fn stateful_entry_with_function_site_callables() -> AwbcProgram {
     let mut program = minimal_program();
     program.strings.extend([
         "GameState".to_owned(),

@@ -812,17 +812,14 @@ pub enum RuntimeDialogueContentBinding {
 ///
 /// The callback leases a program-owned callable state and its retained values.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeDialogueContentEffectBinding {
+pub struct RuntimeDialogueContentEffectBinding<C = RuntimeCallableValue> {
     site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    callback: RuntimeCallableValue,
+    callback: C,
 }
 
-impl RuntimeDialogueContentEffectBinding {
+impl<C> RuntimeDialogueContentEffectBinding<C> {
     #[must_use]
-    pub const fn new(
-        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-        callback: RuntimeCallableValue,
-    ) -> Self {
+    pub const fn new(site: crate::runtime_id::RuntimeDialogueEffectSiteId, callback: C) -> Self {
         Self { site, callback }
     }
 
@@ -832,17 +829,12 @@ impl RuntimeDialogueContentEffectBinding {
     }
 
     #[must_use]
-    pub const fn callback(&self) -> &RuntimeCallableValue {
+    pub const fn callback(&self) -> &C {
         &self.callback
     }
 
     #[must_use]
-    pub fn into_parts(
-        self,
-    ) -> (
-        crate::runtime_id::RuntimeDialogueEffectSiteId,
-        RuntimeCallableValue,
-    ) {
+    pub fn into_parts(self) -> (crate::runtime_id::RuntimeDialogueEffectSiteId, C) {
         (self.site, self.callback)
     }
 }

@@ -202,8 +202,8 @@ pub(super) struct NativePreparedDialogueEffectCallback {
 
 /// Executor identity and its current owned execution frame.
 #[derive(Debug, PartialEq)]
-pub struct FlowFiber {
-    pub frame: NativeFlowExecutionFrame,
+pub struct FlowFiber<F = NativeFlowExecutionFrame> {
+    pub frame: F,
     pub id: FlowFiberId,
     pub persistent_id: RuntimePersistentFiberId,
     pub execution: crate::runtime_id::ExecutionInstanceId,
@@ -213,44 +213,73 @@ pub struct FlowFiber {
 /// Budgeted native execution state shared by root, child and dialogue execution.
 /// A dialogue transaction owns its frame while the enclosing fiber is suspended;
 /// executing it borrows that fiber's identity without creating another fiber.
+///
+/// ```compile_fail
+/// use arcweft_core::engine::NativeFlowExecutionFrame;
+/// fn copy(value: &NativeFlowExecutionFrame) { let _: NativeFlowExecutionFrame = value.clone(); }
+/// ```
 #[derive(Debug, PartialEq)]
-pub struct NativeFlowExecutionFrame {
+pub struct NativeFlowExecutionFrame<
+    V = RuntimeValue,
+    P = RuntimePayload,
+    O = FlowOp,
+    C = FlowControlStackEntry,
+    A = AwaitState,
+    S = FlowFiberStatus,
+> {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
-    pub pending_ops: VecDeque<FlowOp>,
-    pub(crate) control_stack: Vec<FlowControlStackEntry>,
-    pub await_observer: Option<Box<AwaitState>>,
+    pub pending_ops: VecDeque<O>,
+    pub(crate) control_stack: Vec<C>,
+    pub await_observer: Option<Box<A>>,
     pub root_cleanups: Vec<FlowScopeCleanup>,
-    pub env: RuntimeEnv,
-    pub observations: RuntimeObservationState,
-    pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
+    pub env: RuntimeEnv<V>,
+    pub observations: RuntimeObservationState<P>,
+    pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState<P>>,
     /// Terminal cancellation selection awaiting the owning activation transaction.
-    pub(crate) selected_dialogue_result: Option<RuntimeValue>,
-    pub status: FlowFiberStatus,
+    pub(crate) selected_dialogue_result: Option<V>,
+    pub status: S,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct FlowFiberRollbackImage {
-    frame: NativeFlowExecutionFrameRollbackImage,
-    id: FlowFiberId,
-    persistent_id: RuntimePersistentFiberId,
-    execution: crate::runtime_id::ExecutionInstanceId,
-    owner: FlowFiberOwner,
+type FlowFiberRollbackImage = FlowFiber<NativeFlowExecutionFrameRollbackImage>;
+
+impl Clone for FlowFiberRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            frame: self.frame.clone(),
+            id: self.id,
+            persistent_id: self.persistent_id,
+            execution: self.execution,
+            owner: self.owner.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeFlowExecutionFrameRollbackImage {
-    line_cursor: usize,
-    cursor: Option<FlowCursor>,
-    pending_ops: VecDeque<FlowOpRollbackImage>,
-    control_stack: Vec<FlowControlStackEntryRollbackImage>,
-    await_observer: Option<Box<AwaitStateRollbackImage>>,
-    root_cleanups: Vec<FlowScopeCleanup>,
-    env: crate::value::RuntimeEnvRollbackImage,
-    observations: crate::observation::RuntimeObservationSaveSnapshot,
-    stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeStateRollbackImage>,
-    selected_dialogue_result: Option<crate::value::AwbcRuntimeValueSnapshot>,
-    status: FlowFiberStatusRollbackImage,
+type NativeFlowExecutionFrameRollbackImage = NativeFlowExecutionFrame<
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+    FlowOpRollbackImage,
+    FlowControlStackEntryRollbackImage,
+    AwaitStateRollbackImage,
+    FlowFiberStatusRollbackImage,
+>;
+
+impl Clone for NativeFlowExecutionFrameRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            line_cursor: self.line_cursor,
+            cursor: self.cursor,
+            pending_ops: self.pending_ops.clone(),
+            control_stack: self.control_stack.clone(),
+            await_observer: self.await_observer.clone(),
+            root_cleanups: self.root_cleanups.clone(),
+            env: self.env.clone(),
+            observations: self.observations.clone(),
+            stream_states: self.stream_states.clone(),
+            selected_dialogue_result: self.selected_dialogue_result.clone(),
+            status: self.status.clone(),
+        }
+    }
 }
 
 impl FlowFiber {
@@ -652,8 +681,10 @@ fn flow_fiber_line_handle_owners(
     Ok(owners)
 }
 
+/// Opaque control frame retained by the native executor. Its kind and mutation
+/// remain owned by that executor; the public frame storage role carries it.
 #[derive(Debug, PartialEq)]
-pub(crate) struct FlowControlStackEntry {
+pub struct FlowControlStackEntry {
     pub(crate) kind: FlowControlStackEntryKind,
 }
 
@@ -708,30 +739,41 @@ pub(crate) enum FlowControlStackEntryKind<
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct NativeFormatAttemptFrame {
+pub(crate) struct NativeFormatAttemptFrame<V = RuntimeValue, O = FlowOp> {
     pub(crate) attempt: RuntimeFormatAttemptId,
     pub(crate) context: crate::value::RuntimeFormatContext,
-    pub(crate) values: Vec<Option<RuntimeValue>>,
+    pub(crate) values: Vec<Option<V>>,
     pub(crate) first_recoverable: Option<String>,
     pub(crate) next_operand: usize,
-    pub(crate) active: Option<NativeFormatOperandFrame>,
+    pub(crate) active: Option<NativeFormatOperandFrame<O>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeFormatAttemptRollbackImage {
-    attempt: RuntimeFormatAttemptId,
-    context: crate::value::RuntimeFormatContext,
-    values: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
-    first_recoverable: Option<String>,
-    next_operand: usize,
-    active: Option<NativeFormatOperandRollbackImage>,
+type NativeFormatAttemptRollbackImage =
+    NativeFormatAttemptFrame<crate::value::AwbcRuntimeValueSnapshot, FlowOpRollbackImage>;
+
+type NativeFormatOperandRollbackImage = NativeFormatOperandFrame<FlowOpRollbackImage>;
+
+impl Clone for NativeFormatAttemptRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            attempt: self.attempt,
+            context: self.context.clone(),
+            values: self.values.clone(),
+            first_recoverable: self.first_recoverable.clone(),
+            next_operand: self.next_operand,
+            active: self.active.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NativeFormatOperandRollbackImage {
-    ordinal: usize,
-    resume: Option<FlowCursor>,
-    caller_pending_ops: VecDeque<FlowOpRollbackImage>,
+impl Clone for NativeFormatOperandRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            ordinal: self.ordinal,
+            resume: self.resume,
+            caller_pending_ops: self.caller_pending_ops.clone(),
+        }
+    }
 }
 
 impl NativeFormatAttemptFrame {
@@ -820,36 +862,41 @@ impl NativeFormatAttemptFrame {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct NativeFormatOperandFrame {
+pub(crate) struct NativeFormatOperandFrame<O = FlowOp> {
     pub(crate) ordinal: usize,
     pub(crate) resume: Option<FlowCursor>,
-    pub(crate) caller_pending_ops: VecDeque<FlowOp>,
+    pub(crate) caller_pending_ops: VecDeque<O>,
 }
 
 /// One invocation frame shared by direct and value-based function calls.
 #[derive(Debug, PartialEq)]
-pub(crate) struct FunctionCallFrame {
+pub(crate) struct FunctionCallFrame<O = FlowOp, P = crate::value::RuntimeCallablePendingGroup> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
     function_scope: bool,
     resume: Option<FlowCursor>,
-    caller_pending_ops: VecDeque<FlowOp>,
-    continuation: FunctionReturnContinuation,
+    caller_pending_ops: VecDeque<O>,
+    continuation: FunctionReturnContinuation<P>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum FlowControlStackEntryRollbackImage {
-    Static(FlowControlStackEntryKind<std::convert::Infallible, std::convert::Infallible>),
-    FormatAttempt(NativeFormatAttemptRollbackImage),
-    FunctionCall {
-        site: crate::runtime_id::RuntimeFunctionSiteId,
-        type_instantiation: Option<Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
-        function_scope: bool,
-        resume: Option<FlowCursor>,
-        caller_pending_ops: VecDeque<FlowOpRollbackImage>,
-        continuation: Box<FunctionReturnContinuationRollbackImage>,
-    },
+type FunctionCallFrameRollbackImage =
+    FunctionCallFrame<FlowOpRollbackImage, crate::value::RuntimeCallablePendingSnapshot>;
+
+impl Clone for FunctionCallFrameRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            site: self.site,
+            type_instantiation: self.type_instantiation.clone(),
+            function_scope: self.function_scope,
+            resume: self.resume,
+            caller_pending_ops: self.caller_pending_ops.clone(),
+            continuation: self.continuation.clone(),
+        }
+    }
 }
+
+type FlowControlStackEntryRollbackImage =
+    FlowControlStackEntryKind<FunctionCallFrameRollbackImage, NativeFormatAttemptRollbackImage>;
 
 impl FlowControlStackEntry {
     fn inert_rollback_image(
@@ -863,7 +910,7 @@ impl FlowControlStackEntry {
                 )
             }
             FlowControlStackEntryKind::FunctionCall(frame) => {
-                FlowControlStackEntryRollbackImage::FunctionCall {
+                FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                     site: frame.site,
                     type_instantiation: frame.type_instantiation.clone(),
                     function_scope: frame.function_scope,
@@ -873,43 +920,41 @@ impl FlowControlStackEntry {
                         .iter()
                         .map(|op| FlowOpRollbackImage::from_live(op, owner))
                         .collect::<Result<_, String>>()?,
-                    continuation: Box::new(
-                        frame.continuation.inert_rollback_image(owner, frame.site)?,
-                    ),
-                }
+                    continuation: frame.continuation.inert_rollback_image(owner, frame.site)?,
+                })
             }
             FlowControlStackEntryKind::Scope {
                 origin,
                 cleanups,
                 match_guard,
-            } => FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::Scope {
+            } => FlowControlStackEntryRollbackImage::Scope {
                 origin: *origin,
                 cleanups: cleanups.clone(),
                 match_guard: match_guard.clone(),
-            }),
+            },
             FlowControlStackEntryKind::Loop { body, result } => {
-                FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::Loop {
+                FlowControlStackEntryRollbackImage::Loop {
                     body: Arc::clone(body),
                     result: result.clone(),
-                })
+                }
             }
             FlowControlStackEntryKind::While { condition, body } => {
-                FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::While {
+                FlowControlStackEntryRollbackImage::While {
                     condition: condition.clone(),
                     body: Arc::clone(body),
-                })
+                }
             }
             FlowControlStackEntryKind::WhileLet {
                 pattern,
                 expr,
                 guard,
                 body,
-            } => FlowControlStackEntryRollbackImage::Static(FlowControlStackEntryKind::WhileLet {
+            } => FlowControlStackEntryRollbackImage::WhileLet {
                 pattern: pattern.clone(),
                 expr: expr.clone(),
                 guard: guard.clone(),
                 body: Arc::clone(body),
-            }),
+            },
         })
     }
 
@@ -918,49 +963,45 @@ impl FlowControlStackEntry {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         let kind = match image {
-            FlowControlStackEntryRollbackImage::Static(kind) => match kind {
-                FlowControlStackEntryKind::Scope {
-                    origin,
-                    cleanups,
-                    match_guard,
-                } => FlowControlStackEntryKind::Scope {
-                    origin,
-                    cleanups,
-                    match_guard,
-                },
-                FlowControlStackEntryKind::Loop { body, result } => {
-                    FlowControlStackEntryKind::Loop { body, result }
-                }
-                FlowControlStackEntryKind::While { condition, body } => {
-                    FlowControlStackEntryKind::While { condition, body }
-                }
-                FlowControlStackEntryKind::WhileLet {
-                    pattern,
-                    expr,
-                    guard,
-                    body,
-                } => FlowControlStackEntryKind::WhileLet {
-                    pattern,
-                    expr,
-                    guard,
-                    body,
-                },
-                FlowControlStackEntryKind::FormatAttempt(never)
-                | FlowControlStackEntryKind::FunctionCall(never) => match never {},
+            FlowControlStackEntryRollbackImage::Scope {
+                origin,
+                cleanups,
+                match_guard,
+            } => FlowControlStackEntryKind::Scope {
+                origin,
+                cleanups,
+                match_guard,
+            },
+            FlowControlStackEntryRollbackImage::Loop { body, result } => {
+                FlowControlStackEntryKind::Loop { body, result }
+            }
+            FlowControlStackEntryRollbackImage::While { condition, body } => {
+                FlowControlStackEntryKind::While { condition, body }
+            }
+            FlowControlStackEntryRollbackImage::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => FlowControlStackEntryKind::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
             },
             FlowControlStackEntryRollbackImage::FormatAttempt(frame) => {
                 FlowControlStackEntryKind::FormatAttempt(
                     NativeFormatAttemptFrame::from_rollback_image(frame, owner)?,
                 )
             }
-            FlowControlStackEntryRollbackImage::FunctionCall {
+            FlowControlStackEntryRollbackImage::FunctionCall(FunctionCallFrameRollbackImage {
                 site,
                 type_instantiation,
                 function_scope,
                 resume,
                 caller_pending_ops,
                 continuation,
-            } => {
+            }) => {
                 let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
                     return Err("native function frame has a foreign program kind".to_owned());
                 };
@@ -982,7 +1023,7 @@ impl FlowControlStackEntry {
                         .map(|op| op.into_live(owner))
                         .collect::<Result<_, String>>()?,
                     continuation: FunctionReturnContinuation::from_rollback_image(
-                        *continuation,
+                        continuation,
                         site,
                         owner,
                     )?,
@@ -1013,7 +1054,7 @@ impl FunctionCallFrame {
 /// The caller operation resumed after an invocation returns. A default
 /// resumes its materialization plan without reevaluating source operands.
 #[derive(Debug, PartialEq)]
-pub(crate) enum FunctionReturnContinuation {
+pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePendingGroup> {
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
@@ -1021,7 +1062,7 @@ pub(crate) enum FunctionReturnContinuation {
         site: crate::runtime_id::RuntimeFunctionSiteId,
     },
     CallableDefault {
-        pending: crate::value::RuntimeCallablePendingGroup,
+        pending: P,
         result: RuntimePattern,
     },
     Bind {
@@ -1029,21 +1070,23 @@ pub(crate) enum FunctionReturnContinuation {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum FunctionReturnContinuationRollbackImage {
-    Program {
-        program: arcweft_id::runtime_program::RuntimePureProgramId,
-    },
-    Function {
-        site: crate::runtime_id::RuntimeFunctionSiteId,
-    },
-    CallableDefault {
-        pending: crate::value::RuntimeCallablePendingSnapshot,
-        result: RuntimePattern,
-    },
-    Bind {
-        result: RuntimePattern,
-    },
+type FunctionReturnContinuationRollbackImage =
+    FunctionReturnContinuation<crate::value::RuntimeCallablePendingSnapshot>;
+
+impl Clone for FunctionReturnContinuationRollbackImage {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Program { program } => Self::Program { program: *program },
+            Self::Function { site } => Self::Function { site: *site },
+            Self::CallableDefault { pending, result } => Self::CallableDefault {
+                pending: pending.clone(),
+                result: result.clone(),
+            },
+            Self::Bind { result } => Self::Bind {
+                result: result.clone(),
+            },
+        }
+    }
 }
 
 impl FunctionReturnContinuation {
@@ -1243,28 +1286,42 @@ impl DialogueExecutionStatus {
 
 /// High-level flow status for the minimal runtime spine.
 #[derive(Debug, PartialEq)]
-pub enum FlowFiberStatus {
+pub enum FlowFiberStatus<A = AwaitState, M = WaitingManyStatus> {
     Running,
     Dialogue(DialogueExecutionStatus),
-    NeedWaiting(Box<AwaitState>),
-    WaitingMany(WaitingManyStatus),
+    NeedWaiting(Box<A>),
+    WaitingMany(M),
     HostCall(HostCallState),
     Choice(ChoiceState),
     Done(FlowExit),
     Failed(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum FlowFiberStatusRollbackImage {
-    Running,
-    Dialogue(DialogueExecutionStatus),
-    NeedWaiting(Box<AwaitStateRollbackImage>),
-    WaitingManyNative(Box<AwaitManyStateRollbackImage>),
-    WaitingManyObserved(AwaitManyProgress),
-    HostCall(HostCallState),
-    Choice(ChoiceState),
-    Done(FlowExit),
-    Failed(String),
+type FlowFiberStatusRollbackImage =
+    FlowFiberStatus<AwaitStateRollbackImage, WaitingManyStatus<AwaitManyStateRollbackImage>>;
+
+impl Clone for WaitingManyStatus<AwaitManyStateRollbackImage> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Native(state) => Self::Native(state.clone()),
+            Self::Observed(progress) => Self::Observed(progress.clone()),
+        }
+    }
+}
+
+impl Clone for FlowFiberStatusRollbackImage {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Running => Self::Running,
+            Self::Dialogue(activation) => Self::Dialogue(activation.clone()),
+            Self::NeedWaiting(state) => Self::NeedWaiting(state.clone()),
+            Self::WaitingMany(state) => Self::WaitingMany(state.clone()),
+            Self::HostCall(state) => Self::HostCall(state.clone()),
+            Self::Choice(state) => Self::Choice(state.clone()),
+            Self::Done(exit) => Self::Done(exit.clone()),
+            Self::Failed(message) => Self::Failed(message.clone()),
+        }
+    }
 }
 
 impl FlowFiberStatus {
@@ -1281,12 +1338,14 @@ impl FlowFiberStatus {
                 state.inert_rollback_image(owner)?,
             )),
             Self::WaitingMany(WaitingManyStatus::Native(state)) => {
-                FlowFiberStatusRollbackImage::WaitingManyNative(Box::new(
+                FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Native(Box::new(
                     state.inert_rollback_image(owner)?,
-                ))
+                )))
             }
             Self::WaitingMany(WaitingManyStatus::Observed(progress)) => {
-                FlowFiberStatusRollbackImage::WaitingManyObserved(progress.clone())
+                FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Observed(
+                    progress.clone(),
+                ))
             }
             Self::HostCall(state) => FlowFiberStatusRollbackImage::HostCall(state.clone()),
             Self::Choice(state) => FlowFiberStatusRollbackImage::Choice(state.clone()),
@@ -1305,12 +1364,12 @@ impl FlowFiberStatus {
             FlowFiberStatusRollbackImage::NeedWaiting(state) => {
                 Self::NeedWaiting(Box::new(AwaitState::from_rollback_image(*state, owner)?))
             }
-            FlowFiberStatusRollbackImage::WaitingManyNative(state) => {
+            FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Native(state)) => {
                 Self::WaitingMany(WaitingManyStatus::Native(Box::new(
                     AwaitManyState::from_rollback_image(*state, owner)?,
                 )))
             }
-            FlowFiberStatusRollbackImage::WaitingManyObserved(progress) => {
+            FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Observed(progress)) => {
                 Self::WaitingMany(WaitingManyStatus::Observed(progress))
             }
             FlowFiberStatusRollbackImage::HostCall(state) => Self::HostCall(state),
@@ -1321,13 +1380,7 @@ impl FlowFiberStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct StreamRuntimeStateRollbackImage {
-    id: StreamRuntimeId,
-    queue: VecDeque<crate::value::AwbcRuntimeValueSnapshot>,
-    closed: bool,
-    emitted_count: u64,
-}
+type StreamRuntimeStateRollbackImage = StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot>;
 
 impl StreamRuntimeState {
     fn inert_rollback_image(
@@ -1387,25 +1440,33 @@ pub enum FlowStatusLabelStyle {
 
 /// Suspended `await ... with` state.
 #[derive(Debug, PartialEq)]
-pub struct AwaitState {
+pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublication> {
     pub binding: Option<RuntimePattern>,
-    pub handle: crate::task::RuntimeNeedHandle,
+    pub handle: H,
     pub item_type: AwaitItemType,
     pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     pub resume: Option<FlowCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
-    pub queued: VecDeque<RuntimeNeedPublication>,
+    pub queued: VecDeque<P>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct AwaitStateRollbackImage {
-    binding: Option<RuntimePattern>,
-    handle: crate::task::RuntimeNeedHandleSaveSnapshot,
-    item_type: AwaitItemType,
-    observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
-    resume: Option<FlowCursor>,
-    observed_through: Option<TaskPublicationCursor>,
-    queued: VecDeque<crate::task::RuntimeNeedPublicationRollbackImage>,
+type AwaitStateRollbackImage = AwaitState<
+    crate::task::RuntimeNeedHandleSaveSnapshot,
+    crate::task::RuntimeNeedPublicationRollbackImage,
+>;
+
+impl Clone for AwaitStateRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            binding: self.binding.clone(),
+            handle: self.handle.clone(),
+            item_type: self.item_type,
+            observers: self.observers.clone(),
+            resume: self.resume,
+            observed_through: self.observed_through,
+            queued: self.queued.clone(),
+        }
+    }
 }
 
 impl AwaitState {
@@ -1465,29 +1526,39 @@ pub enum AwaitItemType {
 
 /// Suspended bounded fanout await state.
 #[derive(Debug, PartialEq)]
-pub struct AwaitManyState {
+pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, P = RuntimePayload>
+{
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
-    pub base: crate::task::RuntimeNeedHandle,
-    pub captured: Vec<RuntimeValue>,
+    pub base: H,
+    pub captured: Vec<V>,
     pub resume: Option<FlowCursor>,
-    pub items: Vec<RuntimeValue>,
+    pub items: Vec<V>,
     pub next_index: usize,
-    pub in_flight: Vec<AwaitManyInFlight>,
-    pub results: Vec<Option<RuntimePayload>>,
+    pub in_flight: Vec<AwaitManyInFlight<H>>,
+    pub results: Vec<Option<P>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct AwaitManyStateRollbackImage {
-    binding: Option<RuntimePattern>,
-    target: AwaitManyTarget,
-    base: crate::task::RuntimeNeedHandleSaveSnapshot,
-    captured: Vec<crate::value::AwbcRuntimeValueSnapshot>,
-    resume: Option<FlowCursor>,
-    items: Vec<crate::value::AwbcRuntimeValueSnapshot>,
-    next_index: usize,
-    in_flight: Vec<AwaitManyInFlight>,
-    results: Vec<Option<crate::value::AwbcRuntimeValueSnapshot>>,
+type AwaitManyStateRollbackImage = AwaitManyState<
+    crate::task::RuntimeNeedHandleSaveSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+>;
+
+impl Clone for AwaitManyStateRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            binding: self.binding.clone(),
+            target: self.target.clone(),
+            base: self.base.clone(),
+            captured: self.captured.clone(),
+            resume: self.resume,
+            items: self.items.clone(),
+            next_index: self.next_index,
+            in_flight: self.in_flight.clone(),
+            results: self.results.clone(),
+        }
+    }
 }
 
 impl AwaitManyState {
@@ -1512,7 +1583,20 @@ impl AwaitManyState {
                 .map(image)
                 .collect::<Result<_, String>>()?,
             next_index: self.next_index,
-            in_flight: self.in_flight.clone(),
+            in_flight: self
+                .in_flight
+                .iter()
+                .map(|flight| {
+                    Ok(AwaitManyInFlight {
+                        index: flight.index,
+                        handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(
+                            &flight.handle,
+                            Some(owner),
+                        )
+                        .map_err(|error| error.to_string())?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
             results: self
                 .results
                 .iter()
@@ -1554,7 +1638,19 @@ impl AwaitManyState {
                 .map(value)
                 .collect::<Result<_, String>>()?,
             next_index: image.next_index,
-            in_flight: image.in_flight,
+            in_flight: image
+                .in_flight
+                .into_iter()
+                .map(|flight| {
+                    Ok(AwaitManyInFlight {
+                        index: flight.index,
+                        handle: flight
+                            .handle
+                            .into_live(owner)
+                            .map_err(|error| error.to_string())?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
             results: image
                 .results
                 .into_iter()
@@ -1570,17 +1666,17 @@ impl AwaitManyState {
 
 /// One in-flight child task inside a bounded fanout await.
 #[derive(Clone, Debug, PartialEq)]
-pub struct AwaitManyInFlight {
+pub struct AwaitManyInFlight<H = crate::task::RuntimeNeedHandle> {
     pub index: usize,
-    pub handle: crate::task::RuntimeNeedHandle,
+    pub handle: H,
 }
 
 /// Shared status projection for both native and Product AwaitMany execution.
 /// Native retains its complete continuation; Product reports a display-only
 /// summary while its verified AWBC fiber remains the continuation authority.
 #[derive(Debug, PartialEq)]
-pub enum WaitingManyStatus {
-    Native(Box<AwaitManyState>),
+pub enum WaitingManyStatus<S = AwaitManyState> {
+    Native(Box<S>),
     Observed(AwaitManyProgress),
 }
 
@@ -2965,7 +3061,10 @@ impl Engine {
             self.step_next_child_fiber(input, events, output, pure_backend);
             return;
         }
-        self.latch_active_await_observer_publications();
+        if let Err(error) = self.latch_active_await_observer_publications() {
+            self.fail_eval(error, output);
+            return;
+        }
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -4232,7 +4331,10 @@ impl Engine {
             self.close_active_line_task_fiber(output, pure_backend);
             return;
         }
-        self.latch_active_await_observer_publications();
+        if let Err(error) = self.latch_active_await_observer_publications() {
+            self.fail_eval(error, output);
+            return;
+        }
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -4475,6 +4577,203 @@ mod rollback_tests {
     use crate::task::{LogicalEpoch, RuntimeNeedState, TaskSequence};
     use arcweft_need::Need;
     use std::num::NonZeroU32;
+
+    #[test]
+    fn await_observer_admits_the_whole_selection_before_moving_affine_ready() {
+        use crate::plan::{RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+        use crate::task::{RuntimeNeedOutcome, RuntimeProgramOwner, TaskOutcomeContract};
+        let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf2; 32]);
+        let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf3; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                    RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(unit)),
+                ],
+                [],
+            )
+            .unwrap();
+        let item_type = AwaitItemType::Plan(admitted.type_ids()[1]);
+        let mut engine = Engine::new(builder.finish().unwrap());
+        let owner = RuntimeProgramOwner::Plan(Arc::clone(&engine.plan));
+        let handle = crate::tests::reusable_need_with_outcome(
+            "observer.original-outcome",
+            TaskOutcomeContract::program(need),
+        );
+        let correlation = handle.correlation();
+        let publication = |sequence, value| RuntimeNeedPublication::State {
+            correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(1),
+                sequence: TaskSequence(sequence),
+            },
+            state: Need::Ready(RuntimeNeedOutcome::Value(RuntimePayload(value))),
+        };
+        let affine = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+            "observer.affine-ready",
+            TaskOutcomeContract::program(unit),
+        ));
+        assert!(!affine.ownership().permits_copy());
+        engine.need_publications.insert(
+            correlation,
+            VecDeque::from([publication(1, affine), publication(2, RuntimeValue::Unit)]),
+        );
+        engine.fiber.frame.await_observer = Some(Box::new(AwaitState {
+            binding: None,
+            handle,
+            item_type,
+            observers: vec![],
+            resume: None,
+            observed_through: None,
+            queued: VecDeque::new(),
+        }));
+        let before: Vec<_> = engine.need_publications[&correlation]
+            .iter()
+            .map(|publication| publication.inert_rollback_image(&owner).unwrap())
+            .collect();
+        let observer_before = engine
+            .fiber
+            .frame
+            .await_observer
+            .as_ref()
+            .unwrap()
+            .inert_rollback_image(&owner)
+            .unwrap();
+
+        assert!(engine.latch_active_await_observer_publications().is_err());
+        assert_eq!(
+            engine.need_publications[&correlation]
+                .iter()
+                .map(|publication| publication.inert_rollback_image(&owner).unwrap())
+                .collect::<Vec<_>>(),
+            before,
+        );
+        assert_eq!(
+            engine
+                .fiber
+                .frame
+                .await_observer
+                .as_ref()
+                .unwrap()
+                .inert_rollback_image(&owner)
+                .unwrap(),
+            observer_before,
+        );
+
+        engine
+            .need_publications
+            .get_mut(&correlation)
+            .unwrap()
+            .pop_back();
+        engine.latch_active_await_observer_publications().unwrap();
+        assert!(engine.need_publications[&correlation].is_empty());
+        let observer = engine.fiber.frame.await_observer.as_ref().unwrap();
+        assert_eq!(observer.observed_through, Some(before[0].cursor()));
+        assert_eq!(observer.queued.len(), 1);
+        assert_eq!(
+            observer.queued[0].inert_rollback_image(&owner).unwrap(),
+            before[0]
+        );
+    }
+
+    #[test]
+    fn need_publications_share_resources_and_only_copy_unrestricted_ready() {
+        use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+        use crate::plan::{RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+        use crate::task::{RuntimeNeedOutcome, RuntimeProgramOwner, TaskOutcomeContract};
+        use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+        let unit = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf1; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .unwrap();
+        let owner = RuntimeProgramOwner::Plan(Arc::new(builder.finish().unwrap()));
+        let handle = crate::tests::reusable_need_with_outcome(
+            "publication.copy",
+            TaskOutcomeContract::program(unit),
+        );
+        let make = |value| RuntimeNeedPublication::State {
+            correlation: handle.correlation(),
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(1),
+                sequence: TaskSequence(1),
+            },
+            state: Need::Ready(RuntimeNeedOutcome::Value(RuntimePayload(value))),
+        };
+        let publications = [make(RuntimeValue::Unit), make(RuntimeValue::Unit)];
+        let images: Vec<_> = publications
+            .iter()
+            .map(|publication| publication.inert_rollback_image(&owner).unwrap())
+            .collect();
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        publications[0].admit_retained(&mut admission).unwrap();
+        let failure = publications[1].admit_retained(&mut admission).unwrap_err();
+        assert_eq!(
+            failure,
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "nodes"
+            })
+        );
+        assert_eq!(
+            publications[0].admit_retained(&mut admission).unwrap_err(),
+            failure
+        );
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        images[0].admit_retained(&mut admission).unwrap();
+        assert_eq!(
+            images[1].admit_retained(&mut admission).unwrap_err(),
+            failure
+        );
+        let mut exact = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        for publication in &publications {
+            publication.admit_retained(&mut exact).unwrap();
+        }
+        assert_eq!(
+            publications
+                .iter()
+                .map(|publication| publication.snapshot_admitted(&owner).unwrap())
+                .collect::<Vec<_>>(),
+            images
+        );
+        assert_eq!(
+            publications[0].copy_for_observer(&owner).unwrap().as_ref(),
+            Some(&publications[0])
+        );
+        let affine = make(RuntimeValue::NeedHandle(handle.clone()));
+        assert!(affine.copy_for_observer(&owner).unwrap().is_none());
+        let image = affine.inert_rollback_image(&owner).unwrap();
+        let before = image.clone();
+        assert_eq!(
+            RuntimeNeedPublication::from_rollback_image(image, &owner).unwrap(),
+            affine
+        );
+        assert_eq!(affine.inert_rollback_image(&owner).unwrap(), before);
+    }
 
     #[test]
     fn native_static_rollback_rejects_nested_affine_literal_before_copy() {

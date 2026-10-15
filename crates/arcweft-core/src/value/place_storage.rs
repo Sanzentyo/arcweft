@@ -95,6 +95,7 @@ impl<T> From<T> for RuntimePlaceStorage<T> {
 impl<T> RuntimePlaceStorage<T> {
     /// Resolves every retained nominal header before activating any child.
     /// The same preflight applies to live capture and inert restore storage.
+    #[cfg(test)]
     pub(crate) fn validate_record_headers(
         &self,
         owner: Option<&crate::task::RuntimeProgramOwner>,
@@ -317,6 +318,7 @@ impl<T> Default for PlaceState<T> {
 }
 
 impl RuntimePlaceStorage<RuntimeValue> {
+    #[cfg(test)]
     pub(crate) fn snapshot_for_owner(
         &self,
         owner: Option<&crate::task::RuntimeProgramOwner>,
@@ -654,6 +656,7 @@ impl RuntimePlaceStorage<RuntimeValue> {
 }
 
 impl RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
+    #[cfg(test)]
     pub(crate) fn into_live_for_program(
         self,
         owner: &crate::task::RuntimeProgramOwner,

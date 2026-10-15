@@ -97,10 +97,11 @@ fn active_effect_frame_rollback_rejects_a_missing_frame_binding() {
         header
     );
     let mut missing = image;
-    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall {
-        type_instantiation,
-        ..
-    }) = missing.fiber.frame.control_stack.last_mut()
+    let Some(crate::engine::FlowControlStackEntryRollbackImage::FunctionCall(
+        crate::engine::FunctionCallFrameRollbackImage {
+            type_instantiation, ..
+        },
+    )) = missing.fiber.frame.control_stack.last_mut()
     else {
         panic!("program did not retain its active function frame")
     };

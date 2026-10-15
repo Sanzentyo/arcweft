@@ -263,7 +263,7 @@ impl TaskPublicationCursor {
 /// `NeedId`; the producer publishes the typed success/error payload here for
 /// the current deterministic runtime step. Fallible producers publish a
 /// `Result<T, E>` as this single payload.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RuntimeNeedState {
     pub correlation: TaskCorrelation,
     pub cursor: Option<TaskPublicationCursor>,
@@ -271,11 +271,16 @@ pub struct RuntimeNeedState {
 }
 /// Owned publication queued for one exact correlation. Local Ready payloads
 /// remain in their producer owner until the consuming Await takes them.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeNeedPublication {
+///
+/// ```compile_fail
+/// use arcweft_core::task::RuntimeNeedPublication;
+/// fn copy(value: &RuntimeNeedPublication) { let _: RuntimeNeedPublication = value.clone(); }
+/// ```
+#[derive(Debug, PartialEq)]
+pub enum RuntimeNeedPublication<P = RuntimePayload> {
     State {
         correlation: TaskCorrelation,
-        state: Need<RuntimeNeedOutcome>,
+        state: Need<RuntimeNeedOutcome<P>>,
         cursor: TaskPublicationCursor,
     },
     Producer {
@@ -289,35 +294,122 @@ pub enum RuntimeNeedPublication {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum RuntimeNeedPublicationRollbackImage {
-    State {
-        correlation: TaskCorrelation,
-        state: RuntimeNeedStateRollbackImage,
-        cursor: TaskPublicationCursor,
-    },
-    Producer {
-        correlation: TaskCorrelation,
-        cursor: TaskPublicationCursor,
-    },
-    InfrastructureFailure {
-        correlation: TaskCorrelation,
-        cursor: TaskPublicationCursor,
-        failure: RuntimeTaskFailure,
-    },
-}
+pub(crate) type RuntimeNeedPublicationRollbackImage =
+    RuntimeNeedPublication<crate::value::AwbcRuntimeValueSnapshot>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum RuntimeNeedStateRollbackImage {
-    NotStarted,
-    Pending(Progress),
-    Ready(crate::value::AwbcRuntimeValueSnapshot),
-    InfrastructureFailure(RuntimeTaskFailure),
-    Cancelled,
+impl Clone for RuntimeNeedPublicationRollbackImage {
+    fn clone(&self) -> Self {
+        match self {
+            Self::State {
+                correlation,
+                state,
+                cursor,
+            } => Self::State {
+                correlation: *correlation,
+                state: state.clone(),
+                cursor: *cursor,
+            },
+            Self::Producer {
+                correlation,
+                cursor,
+            } => Self::Producer {
+                correlation: *correlation,
+                cursor: *cursor,
+            },
+            Self::InfrastructureFailure {
+                correlation,
+                cursor,
+                failure,
+            } => Self::InfrastructureFailure {
+                correlation: *correlation,
+                cursor: *cursor,
+                failure: failure.clone(),
+            },
+        }
+    }
 }
 
 impl RuntimeNeedPublication {
+    /// Returns no copy for an affine Ready; its observer must take the queued
+    /// owner. All copied values are admitted under the original executable.
+    #[cfg(test)]
+    pub(crate) fn copy_for_observer(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Option<Self>, String> {
+        self.admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(self.copy_for_observer_admitted())
+    }
+
+    /// The enclosing selection has admitted every publication before any
+    /// queue owner moves. This projection cannot reject a later publication.
+    pub(crate) fn copy_for_observer_admitted(&self) -> Option<Self> {
+        if matches!(self, Self::State {
+            state: Need::Ready(RuntimeNeedOutcome::Value(value)), ..
+        } if !value.value().ownership().permits_copy())
+        {
+            return None;
+        }
+        Some(match self {
+            Self::State {
+                correlation,
+                state,
+                cursor,
+            } => Self::State {
+                correlation: *correlation,
+                cursor: *cursor,
+                state: match state {
+                    Need::NotStarted => Need::NotStarted,
+                    Need::Pending(progress) => Need::Pending(progress.clone()),
+                    Need::Ready(RuntimeNeedOutcome::Value(value)) => {
+                        Need::Ready(RuntimeNeedOutcome::Value(value.clone()))
+                    }
+                    Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
+                        Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure.clone()))
+                    }
+                    Need::Cancelled => Need::Cancelled,
+                },
+            },
+            Self::Producer {
+                correlation,
+                cursor,
+            } => Self::Producer {
+                correlation: *correlation,
+                cursor: *cursor,
+            },
+            Self::InfrastructureFailure {
+                correlation,
+                cursor,
+                failure,
+            } => Self::InfrastructureFailure {
+                correlation: *correlation,
+                cursor: *cursor,
+                failure: failure.clone(),
+            },
+        })
+    }
+
     pub(crate) fn inert_rollback_image(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeNeedPublicationRollbackImage, String> {
+        self.admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        self.snapshot_admitted(owner)
+    }
+
+    pub(crate) fn snapshot_admitted(
         &self,
         owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeNeedPublicationRollbackImage, String> {
@@ -330,23 +422,21 @@ impl RuntimeNeedPublication {
                 correlation: *correlation,
                 cursor: *cursor,
                 state: match state {
-                    Need::NotStarted => RuntimeNeedStateRollbackImage::NotStarted,
-                    Need::Pending(progress) => {
-                        RuntimeNeedStateRollbackImage::Pending(progress.clone())
-                    }
+                    Need::NotStarted => Need::NotStarted,
+                    Need::Pending(progress) => Need::Pending(progress.clone()),
                     Need::Ready(RuntimeNeedOutcome::Value(value)) => {
-                        RuntimeNeedStateRollbackImage::Ready(
-                            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                        Need::Ready(RuntimeNeedOutcome::Value(
+                            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                                 value.value(),
                                 owner,
                             )
                             .map_err(|error| error.to_string())?,
-                        )
+                        ))
                     }
                     Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
-                        RuntimeNeedStateRollbackImage::InfrastructureFailure(failure.clone())
+                        Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure.clone()))
                     }
-                    Need::Cancelled => RuntimeNeedStateRollbackImage::Cancelled,
+                    Need::Cancelled => Need::Cancelled,
                 },
             },
             Self::Producer {
@@ -372,6 +462,21 @@ impl RuntimeNeedPublication {
         image: RuntimeNeedPublicationRollbackImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
+        image
+            .admit_retained(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        Self::from_admitted_rollback_image(image, owner)
+    }
+
+    pub(crate) fn from_admitted_rollback_image(
+        image: RuntimeNeedPublicationRollbackImage,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         Ok(match image {
             RuntimeNeedPublicationRollbackImage::State {
                 correlation,
@@ -381,19 +486,19 @@ impl RuntimeNeedPublication {
                 correlation,
                 cursor,
                 state: match state {
-                    RuntimeNeedStateRollbackImage::NotStarted => Need::NotStarted,
-                    RuntimeNeedStateRollbackImage::Pending(progress) => Need::Pending(progress),
-                    RuntimeNeedStateRollbackImage::Ready(saved) => {
+                    Need::NotStarted => Need::NotStarted,
+                    Need::Pending(progress) => Need::Pending(progress),
+                    Need::Ready(RuntimeNeedOutcome::Value(saved)) => {
                         Need::Ready(RuntimeNeedOutcome::Value(RuntimePayload(
                             saved
-                                .into_runtime_value_for_program(owner)
+                                .into_admitted_runtime_value(owner)
                                 .map_err(|error| error.to_string())?,
                         )))
                     }
-                    RuntimeNeedStateRollbackImage::InfrastructureFailure(failure) => {
+                    Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure)) => {
                         Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure))
                     }
-                    RuntimeNeedStateRollbackImage::Cancelled => Need::Cancelled,
+                    Need::Cancelled => Need::Cancelled,
                 },
             },
             RuntimeNeedPublicationRollbackImage::Producer {
@@ -413,6 +518,77 @@ impl RuntimeNeedPublication {
                 failure,
             },
         })
+    }
+}
+
+impl<P> RuntimeNeedPublication<P> {
+    /// Checks the selected waiter's original outcome, rather than deriving an
+    /// expected type from the publication being copied or transferred.
+    pub(crate) fn admit_for_await(
+        &self,
+        handle: &RuntimeNeedHandle,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        self.admit_retained(admission)?;
+        admission.admit_composite(P::admission_origin(), |owner, resources| {
+            if self.correlation() != handle.correlation() {
+                return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "Await publication differs from its retained handle correlation"
+                        .to_owned(),
+                });
+            }
+            if let Self::State {
+                state: Need::Ready(RuntimeNeedOutcome::Value(value)),
+                ..
+            } = self
+            {
+                handle.outcome().validate_admitted_value_view(
+                    value.borrowed_view(),
+                    owner,
+                    resources,
+                )?;
+            }
+            Ok(())
+        })
+    }
+
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata(&(self.correlation(), self.cursor()))?;
+        match self {
+            Self::State {
+                state: Need::Ready(RuntimeNeedOutcome::Value(value)),
+                ..
+            } => admission.admit_composite(P::admission_origin(), |owner, resources| {
+                let value = value.borrowed_view();
+                resources.validate_view(value, 0, None)?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    value, owner, resources,
+                )
+            }),
+            Self::State {
+                state: Need::Pending(progress),
+                ..
+            } => admission.validate_metadata(progress),
+            Self::State {
+                state: Need::Ready(RuntimeNeedOutcome::InfrastructureFailure(failure)),
+                ..
+            }
+            | Self::InfrastructureFailure { failure, .. } => admission.validate_metadata(failure),
+            Self::State {
+                state: Need::NotStarted | Need::Cancelled,
+                ..
+            }
+            | Self::Producer { .. } => Ok(()),
+        }
     }
 
     pub const fn correlation(&self) -> TaskCorrelation {

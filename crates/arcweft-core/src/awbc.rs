@@ -19,3 +19,5 @@ pub mod vm;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::stateful_entry_with_function_site_callables as stateful_root_fixture;

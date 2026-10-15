@@ -696,7 +696,7 @@ pub trait PureFunctionBackend {
 pub struct VmPureFunctionBackend;
 
 /// Reusable VM fallback storage for repeated `i64` pure-helper evaluation.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct VmPureFunctionScratch {
     env: RuntimeEnv,
     format_context: crate::value::RuntimeFormatContext,
@@ -707,7 +707,7 @@ pub struct VmPureFunctionScratch {
 pub struct AotPureFunctionBackend;
 
 /// VM runtime backend used when no external pure accelerator is provided.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct VmRuntimePureCallBackend<E = NoRuntimeExternalCalls> {
     stats: RuntimePureCallStats,
     scratch: VmPureFunctionScratch,

@@ -59,7 +59,7 @@ fn stateful_plan(schema: RuntimeTypeSchema) -> RuntimePlan {
     stateful_plan_with_limits(schema, RootExecutionLimits::engine_default())
 }
 
-fn stateful_plan_with_limits(
+pub(crate) fn stateful_plan_with_limits(
     schema: RuntimeTypeSchema,
     limits: RootExecutionLimits,
 ) -> RuntimePlan {

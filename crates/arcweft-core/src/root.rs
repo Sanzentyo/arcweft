@@ -17,11 +17,11 @@ use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
 use crate::value::{
-    RuntimeAgentValue, RuntimeFlowParameterBinding, RuntimePayload, RuntimeReductionProducer,
-    RuntimeReductionValue, RuntimeScalarView, RuntimeValue, RuntimeValueView,
+    RuntimeFlowParameterBinding, RuntimePayload, RuntimeReductionProducer, RuntimeReductionValue,
+    RuntimeScalarView, RuntimeValue, RuntimeValueView,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use thiserror::Error;
 
@@ -69,18 +69,18 @@ impl RootEventInput {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct SequencedRootEvent {
+struct SequencedRootEvent<P = RuntimePayload> {
     sequence: TransitionSequence,
-    payload: RuntimePayload,
+    payload: P,
 }
 
 pub use crate::value::RuntimeCommand;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeCommandEnvelope {
+pub struct RuntimeCommandEnvelope<P = RuntimePayload> {
     pub transition: TransitionSequence,
     pub index: u32,
-    pub command: RuntimeCommand,
+    pub command: RuntimeCommand<P>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -114,18 +114,18 @@ impl RootTransitionOutcome {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ActiveRootState {
+#[derive(Debug, PartialEq)]
+pub struct ActiveRootState<P = RuntimePayload> {
     pub entry: EntryRuntimeId,
     pub binding: EntryBindingIdentity,
     pub state_identity: crate::entry::RuntimeNominalTypeId,
     pub state_layout: TypeLayoutHash,
     pub event_identity: crate::entry::RuntimeNominalTypeId,
     pub event_layout: TypeLayoutHash,
-    pub value: RuntimePayload,
+    pub value: P,
     pub next_sequence: TransitionSequence,
-    queued_events: VecDeque<SequencedRootEvent>,
-    committed_commands: VecDeque<RuntimeCommandEnvelope>,
+    queued_events: VecDeque<SequencedRootEvent<P>>,
+    committed_commands: VecDeque<RuntimeCommandEnvelope<P>>,
     reducer_active: bool,
 }
 
@@ -146,9 +146,15 @@ impl ActiveRootState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RootRuntime {
-    active: ActiveRootState,
+/// Complete root storage. A live root has one execution owner.
+///
+/// ```compile_fail
+/// use arcweft_core::root::RootRuntime;
+/// fn copy(root: &RootRuntime) { let _: RootRuntime = root.clone(); }
+/// ```
+#[derive(Debug, PartialEq)]
+pub struct RootRuntime<P = RuntimePayload> {
+    active: ActiveRootState<P>,
     roles: RuntimeStatefulEntryRoles,
     reducer: RuntimeCallableRole,
     limits: RootExecutionLimits,
@@ -157,38 +163,36 @@ pub struct RootRuntime {
 
 /// An in-memory rollback image of the complete root owner. All live payloads
 /// are represented by inert value DTOs until the old runtime has been dropped.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RootRuntimeRollbackImage {
-    entry: EntryRuntimeId,
-    binding: EntryBindingIdentity,
-    state_identity: crate::entry::RuntimeNominalTypeId,
-    state_layout: TypeLayoutHash,
-    event_identity: crate::entry::RuntimeNominalTypeId,
-    event_layout: TypeLayoutHash,
-    value: crate::value::AwbcRuntimeValueSnapshot,
-    next_sequence: TransitionSequence,
-    queued_events: VecDeque<RootRollbackEvent>,
-    committed_commands: VecDeque<RootRollbackCommand>,
-    reducer_active: bool,
-    roles: RuntimeStatefulEntryRoles,
-    reducer: RuntimeCallableRole,
-    limits: RootExecutionLimits,
-    failure: Option<RootRuntimeFailure>,
+pub type RootRuntimeRollbackImage = RootRuntime<crate::value::AwbcRuntimeValueSnapshot>;
+
+impl Clone for ActiveRootState<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        Self {
+            entry: self.entry.clone(),
+            binding: self.binding,
+            state_identity: self.state_identity.clone(),
+            state_layout: self.state_layout,
+            event_identity: self.event_identity.clone(),
+            event_layout: self.event_layout,
+            value: self.value.clone(),
+            next_sequence: self.next_sequence,
+            queued_events: self.queued_events.clone(),
+            committed_commands: self.committed_commands.clone(),
+            reducer_active: self.reducer_active,
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct RootRollbackEvent {
-    sequence: TransitionSequence,
-    payload: crate::value::AwbcRuntimeValueSnapshot,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct RootRollbackCommand {
-    transition: TransitionSequence,
-    index: u32,
-    constructor: crate::entry::RuntimeCommandConstructorId,
-    target: crate::entry::RuntimeCommandTargetId,
-    payload: crate::value::AwbcRuntimeValueSnapshot,
+impl Clone for RootRuntimeRollbackImage {
+    fn clone(&self) -> Self {
+        Self {
+            active: self.active.clone(),
+            roles: self.roles.clone(),
+            reducer: self.reducer.clone(),
+            limits: self.limits,
+            failure: self.failure.clone(),
+        }
+    }
 }
 
 /// Fully verified metadata needed to construct one durable root transaction
@@ -201,7 +205,7 @@ pub struct RootStartupContract {
     pub initial_state_parameter: crate::entry::FlowParameterCoordinate,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RootStartup {
     pub root: RootRuntime,
     pub initial_flow: FlowRuntimeId,
@@ -353,50 +357,304 @@ impl RootStartupContract {
     }
 }
 
+impl<P> RootRuntime<P> {
+    /// Borrows the complete retained root before capture or restoration.
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.status()?;
+        self.admit_retained_inner(admission)
+            .inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
+    fn admit_retained_inner(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        use crate::value::{AwbcRuntimeValueSnapshotError as Error, RuntimeRetainedValueAdmission};
+        let invalid = |message| Error::Message { message };
+        admission.validate_metadata(&(
+            &self.active.entry,
+            self.active.binding,
+            &self.active.state_identity,
+            self.active.state_layout,
+            &self.active.event_identity,
+            self.active.event_layout,
+            self.active.next_sequence,
+            self.active.reducer_active,
+            &self.roles,
+            &self.reducer,
+            self.limits,
+        ))?;
+        if let Some(RootRuntimeFailure::Transition {
+            sequence,
+            message,
+            digest,
+        }) = &self.failure
+        {
+            admission.validate_metadata(&(sequence, message, digest))?;
+        }
+        admission.validate_metadata_collection(self.active.queued_events.len())?;
+        admission.validate_metadata_collection(self.active.committed_commands.len())?;
+        let owner = admission
+            .program_owner()
+            .cloned()
+            .ok_or_else(|| invalid("root admission requires its original program".to_owned()))?;
+        let entry = owner
+            .types()
+            .entry(&self.active.entry)
+            .ok_or_else(|| invalid("root entry is absent from its original program".to_owned()))?;
+        let roles = entry
+            .roles()
+            .stateful()
+            .ok_or_else(|| invalid("root entry is not stateful".to_owned()))?;
+        if entry.binding() != self.active.binding
+            || roles.binding != self.active.binding
+            || &self.roles != roles
+            || self.reducer != roles.reducer
+            || self.limits != roles.command_policy.root_limits
+            || !self.limits.is_valid()
+        {
+            return Err(invalid(
+                "root metadata differs from its original selected entry".to_owned(),
+            ));
+        }
+        RootStateSaveSnapshotV1::validate_header(
+            &self.active.state_identity,
+            self.active.state_layout,
+            &self.active.event_identity,
+            self.active.event_layout,
+            roles,
+        )
+        .map_err(|error| invalid(error.to_string()))?;
+        roles.state.validate_for_program(owner.types())?;
+        roles.event.validate_for_program(owner.types())?;
+        if !self
+            .limits
+            .permits_pending_events(self.active.queued_events.len())
+            || !self
+                .limits
+                .permits_pending_commands(self.active.committed_commands.len())
+        {
+            return Err(invalid(
+                "root retained queue exceeds its selected entry limit".to_owned(),
+            ));
+        }
+        let mut next = self
+            .active
+            .next_sequence
+            .get()
+            .checked_add(u64::from(self.active.reducer_active));
+        for event in &self.active.queued_events {
+            admission.validate_metadata(&event.sequence)?;
+            if next != Some(event.sequence.get()) || event.sequence == TransitionSequence::TERMINAL
+            {
+                return Err(invalid(
+                    "root event queue differs from its transition frontier".to_owned(),
+                ));
+            }
+            next = event.sequence.get().checked_add(1);
+        }
+        let mut previous: Option<(TransitionSequence, u32)> = None;
+        for envelope in &self.active.committed_commands {
+            admission.validate_metadata(&(
+                envelope.transition,
+                envelope.index,
+                envelope.command.constructor(),
+                envelope.command.target(),
+            ))?;
+            if envelope.transition >= self.active.next_sequence
+                || envelope.index >= self.limits.max_commands_per_transition
+                || previous.is_some_and(|(transition, index)| {
+                    envelope.transition < transition
+                        || if envelope.transition == transition {
+                            index.checked_add(1) != Some(envelope.index)
+                        } else {
+                            envelope.index != 0
+                        }
+                })
+            {
+                return Err(invalid(
+                    "root committed command queue has an invalid transition order".to_owned(),
+                ));
+            }
+            previous = Some((envelope.transition, envelope.index));
+        }
+        self.admit_values(roles, admission)?;
+        let mut entry_policy =
+            RuntimeRetainedValueAdmission::for_program(owner.clone(), self.limits.schema);
+        self.admit_values(roles, &mut entry_policy)
+            .inspect_err(|error| admission.retain_failure(error.clone()))
+    }
+
+    fn admit_values(
+        &self,
+        roles: &RuntimeStatefulEntryRoles,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.admit_composite(P::admission_origin(), |owner, resources| {
+            let owner =
+                owner.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "root requires its original program".to_owned(),
+                })?;
+            let state = self.active.value.borrowed_view();
+            state.admit_unrestricted(resources)?;
+            owner
+                .types()
+                .value_type(roles.state.semantic_identity)?
+                .validate_snapshot_storage(state, &resources.work(), P::admission_origin())?;
+            crate::entry::schema::value_encoding::visit_admitted_storage(
+                state,
+                &resources.work(),
+                validate_replay_safe_node,
+            )?;
+            crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                state,
+                Some(owner),
+                resources,
+            )?;
+            for event in &self.active.queued_events {
+                let value = event.payload.borrowed_view();
+                resources.validate_view(value, 0, None)?;
+                owner
+                    .types()
+                    .value_type(roles.event.semantic_identity)?
+                    .validate_snapshot_storage(value, &resources.work(), P::admission_origin())?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    value,
+                    Some(owner),
+                    resources,
+                )?;
+            }
+            let mut transition = None;
+            let mut command_bytes = 0_usize;
+            for envelope in &self.active.committed_commands {
+                let command = &envelope.command;
+                let value = command.payload().borrowed_view();
+                value.admit_unrestricted(resources)?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    value,
+                    Some(owner),
+                    resources,
+                )?;
+                let contract = roles
+                    .command_policy
+                    .admitted
+                    .iter()
+                    .find(|contract| {
+                        &contract.constructor == command.constructor()
+                            && &contract.target == command.target()
+                    })
+                    .ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "root command is absent from its original selected policy"
+                            .to_owned(),
+                    })?;
+                contract
+                    .payload_schema
+                    .validate_admitted_view(value, resources)?;
+                crate::entry::schema::value_encoding::visit_admitted_storage(
+                    value,
+                    &resources.work(),
+                    validate_replay_safe_node,
+                )?;
+                if transition != Some(envelope.transition) {
+                    transition = Some(envelope.transition);
+                    command_bytes = 0;
+                }
+                let encoded =
+                    canonical_command_bytes(command, self.limits.schema.platform_encoded_bytes())
+                        .map_err(
+                        |message| crate::value::AwbcRuntimeValueSnapshotError::Message { message },
+                    )?;
+                command_bytes = command_bytes.checked_add(encoded.len()).ok_or_else(|| {
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "root command byte count overflows usize".to_owned(),
+                    }
+                })?;
+                if !self.limits.permits_transition_command_bytes(command_bytes) {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "root command bytes exceed the original per-transition limit"
+                            .to_owned(),
+                    });
+                }
+            }
+            Ok(())
+        })
+    }
+}
+
 impl RootRuntime {
     pub fn inert_rollback_image(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<RootRuntimeRollbackImage, String> {
+        self.admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        self.snapshot_admitted(owner)
+    }
+
+    pub(crate) fn snapshot_admitted(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RootRuntimeRollbackImage, String> {
         let image = |value: &crate::value::RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
                 .map_err(|error| error.to_string())
         };
         Ok(RootRuntimeRollbackImage {
-            entry: self.active.entry.clone(),
-            binding: self.active.binding,
-            state_identity: self.active.state_identity.clone(),
-            state_layout: self.active.state_layout,
-            event_identity: self.active.event_identity.clone(),
-            event_layout: self.active.event_layout,
-            value: image(self.active.value.value())?,
-            next_sequence: self.active.next_sequence,
-            queued_events: self
-                .active
-                .queued_events
-                .iter()
-                .map(|event| {
-                    Ok(RootRollbackEvent {
-                        sequence: event.sequence,
-                        payload: image(event.payload.value())?,
+            active: ActiveRootState {
+                entry: self.active.entry.clone(),
+                binding: self.active.binding,
+                state_identity: self.active.state_identity.clone(),
+                state_layout: self.active.state_layout,
+                event_identity: self.active.event_identity.clone(),
+                event_layout: self.active.event_layout,
+                value: image(self.active.value.value())?,
+                next_sequence: self.active.next_sequence,
+                queued_events: self
+                    .active
+                    .queued_events
+                    .iter()
+                    .map(|event| {
+                        Ok(SequencedRootEvent {
+                            sequence: event.sequence,
+                            payload: image(event.payload.value())?,
+                        })
                     })
-                })
-                .collect::<Result<_, String>>()?,
-            committed_commands: self
-                .active
-                .committed_commands
-                .iter()
-                .map(|envelope| {
-                    Ok(RootRollbackCommand {
-                        transition: envelope.transition,
-                        index: envelope.index,
-                        constructor: envelope.command.constructor().clone(),
-                        target: envelope.command.target().clone(),
-                        payload: image(envelope.command.payload().value())?,
+                    .collect::<Result<_, String>>()?,
+                committed_commands: self
+                    .active
+                    .committed_commands
+                    .iter()
+                    .map(|envelope| {
+                        Ok(RuntimeCommandEnvelope {
+                            transition: envelope.transition,
+                            index: envelope.index,
+                            command: RuntimeCommand::new_accepted(
+                                envelope.command.constructor().clone(),
+                                envelope.command.target().clone(),
+                                image(envelope.command.payload().value())?,
+                            ),
+                        })
                     })
-                })
-                .collect::<Result<_, String>>()?,
-            reducer_active: self.active.reducer_active,
+                    .collect::<Result<_, String>>()?,
+                reducer_active: self.active.reducer_active,
+            },
             roles: self.roles.clone(),
             reducer: self.reducer.clone(),
             limits: self.limits,
@@ -408,10 +666,31 @@ impl RootRuntime {
         image: RootRuntimeRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        let limits = image.limits.schema;
+        image
+            .admit_retained(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        Self::from_admitted_rollback_image(image, owner)
+    }
+
+    pub(crate) fn from_admitted_rollback_image(
+        image: RootRuntimeRollbackImage,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<Self, String> {
+        let RootRuntime {
+            active: image,
+            roles,
+            reducer,
+            limits,
+            failure,
+        } = image;
         let value = |image: crate::value::AwbcRuntimeValueSnapshot| {
             image
-                .into_runtime_value_for_program_with_limits(owner, limits)
+                .into_admitted_runtime_value(owner)
                 .map_err(|error| error.to_string())
         };
         Ok(Self {
@@ -438,23 +717,24 @@ impl RootRuntime {
                     .committed_commands
                     .into_iter()
                     .map(|envelope| {
+                        let (constructor, target, payload) = envelope.command.into_parts();
                         Ok(RuntimeCommandEnvelope {
                             transition: envelope.transition,
                             index: envelope.index,
                             command: RuntimeCommand::new_accepted(
-                                envelope.constructor,
-                                envelope.target,
-                                RuntimePayload(value(envelope.payload)?),
+                                constructor,
+                                target,
+                                RuntimePayload(value(payload)?),
                             ),
                         })
                     })
                     .collect::<Result<_, String>>()?,
                 reducer_active: image.reducer_active,
             },
-            roles: image.roles,
-            reducer: image.reducer,
-            limits: image.limits,
-            failure: image.failure,
+            roles,
+            reducer,
+            limits,
+            failure,
         })
     }
     /// Executes the state initializer and constructs the root/flow candidates.
@@ -523,12 +803,15 @@ impl RootRuntime {
         &self.active
     }
 
-    /// Visits the sole live root state and any queued event payloads without
+    /// Visits the sole live root state, queued events and committed commands without
     /// manufacturing another owner. Save and rollback admission use this view.
     pub fn visit_runtime_values(&self, mut visitor: impl FnMut(&crate::value::RuntimeValue)) {
         visitor(self.active.value.value());
         for event in &self.active.queued_events {
             visitor(event.payload.value());
+        }
+        for envelope in &self.active.committed_commands {
+            visitor(envelope.command.payload().value());
         }
     }
 
@@ -1046,12 +1329,15 @@ fn validate_commands(
     Ok(digests)
 }
 
-fn canonical_command_bytes(
-    command: &RuntimeCommand,
+fn canonical_command_bytes<P: crate::value::RuntimeStoredValue>(
+    command: &RuntimeCommand<P>,
     max_encoded_bytes: usize,
 ) -> Result<Vec<u8>, String> {
-    let payload = canonical_runtime_value_bytes(&command.payload().0, max_encoded_bytes)
-        .map_err(|error| error.to_string())?;
+    let payload = crate::entry::schema::canonical_runtime_value_view_bytes(
+        command.payload().borrowed_view(),
+        max_encoded_bytes,
+    )
+    .map_err(|error| error.to_string())?;
     let constructor = command.constructor().as_str().as_bytes();
     let target = command.target().as_str().as_bytes();
     let constructor_len = u32::try_from(constructor.len())
@@ -1088,208 +1374,49 @@ pub fn validate_replay_safe_payload(
     payload: &RuntimePayload,
     limits: RuntimeSchemaLimits,
 ) -> Result<RuntimeValueDigest, String> {
-    let mut nodes = 0_usize;
-    validate_replay_safe_value(&payload.0, limits, 0, &mut nodes)?;
+    let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+        limits,
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+    );
+    resources
+        .validate_view(payload.0.view(), 0, Some(&mut validate_replay_safe_node))
+        .map_err(|error| error.to_string())?;
     let bytes = canonical_runtime_value_bytes(&payload.0, limits.platform_encoded_bytes())
         .map_err(|error| error.to_string())?;
     Ok(RuntimeValueDigest::from_bytes(blake3::hash(&bytes).into()))
 }
 
-fn validate_replay_safe_value(
-    value: &RuntimeValue,
-    limits: RuntimeSchemaLimits,
-    depth: usize,
-    nodes: &mut usize,
-) -> Result<(), String> {
-    validate_replay_safe_view(value.view(), limits, depth, nodes)
-}
-
-fn validate_replay_safe_view(
+fn validate_replay_safe_node(
     value: RuntimeValueView<'_>,
-    limits: RuntimeSchemaLimits,
-    depth: usize,
-    nodes: &mut usize,
-) -> Result<(), String> {
-    if !limits.permits_depth(depth) {
-        return Err("replay-safe payload exceeds depth budget".to_owned());
-    }
-    *nodes = nodes
-        .checked_add(1)
-        .ok_or_else(|| "replay-safe node count overflows usize".to_owned())?;
-    if !limits.permits_nodes(*nodes) {
-        return Err("replay-safe payload exceeds node budget".to_owned());
-    }
-    match value {
+) -> Result<(), crate::entry::RuntimeSchemaError> {
+    let message = match value {
         RuntimeValueView::Scalar(RuntimeScalarView::F32(value)) if !value.is_finite() => {
-            Err("replay-safe payload contains non-finite f32".to_owned())
+            Some("replay-safe payload contains non-finite f32")
         }
         RuntimeValueView::Scalar(RuntimeScalarView::F64(value)) if !value.is_finite() => {
-            Err("replay-safe payload contains non-finite f64".to_owned())
+            Some("replay-safe payload contains non-finite f64")
         }
-        RuntimeValueView::Scalar(RuntimeScalarView::String(value))
-            if !limits.permits_string_bytes(value.len()) =>
+        RuntimeValueView::Opaque(value)
+            if value.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
+                || matches!(
+                    value.value_class(),
+                    crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+                ) =>
         {
-            Err("replay-safe payload exceeds string byte budget".to_owned())
-        }
-        RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(value))
-            if !limits.permits_string_bytes(value.runtime_label().len()) =>
-        {
-            Err("replay-safe payload exceeds string byte budget".to_owned())
-        }
-        RuntimeValueView::Scalar(RuntimeScalarView::Progress { label, .. })
-            if label.is_some_and(|label| !limits.permits_string_bytes(label.len())) =>
-        {
-            Err("replay-safe progress label exceeds string byte budget".to_owned())
-        }
-        RuntimeValueView::Tuple(values) => {
-            for index in 0..values.len() {
-                let value = values
-                    .get(index)
-                    .ok_or_else(|| "replay-safe payload has an invalid tuple element".to_owned())?;
-                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
-            }
-            Ok(())
-        }
-        RuntimeValueView::Sequence(values) => {
-            if !limits.permits_sequence_items(values.len().map_err(|error| error.to_string())?) {
-                return Err("replay-safe payload exceeds sequence item budget".to_owned());
-            }
-            for index in 0..values.len().map_err(|error| error.to_string())? {
-                let value = values
-                    .value_view(index)
-                    .ok_or_else(|| "replay-safe payload has an invalid sequence item".to_owned())?;
-                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
-            }
-            Ok(())
-        }
-        RuntimeValueView::Record(fields) => {
-            let mut names = BTreeSet::new();
-            for index in 0..fields.len() {
-                let (_, name, value) = fields
-                    .get(index)
-                    .ok_or_else(|| "replay-safe payload has an invalid record field".to_owned())?;
-                if !names.insert(name) {
-                    return Err(format!(
-                        "replay-safe payload contains duplicate field `{}`",
-                        name
-                    ));
-                }
-                validate_replay_safe_view(value, limits, depth + 1, nodes)?;
-            }
-            Ok(())
-        }
-        RuntimeValueView::NominalRecord(record) => {
-            if !limits.permits_sequence_items(record.fields().len()) {
-                return Err("replay-safe payload exceeds nominal field budget".to_owned());
-            }
-            for field in record.fields().iter() {
-                validate_replay_safe_view(field, limits, depth + 1, nodes)?;
-            }
-            Ok(())
-        }
-        RuntimeValueView::Opaque(value) => validate_replay_safe_opaque(value, limits, depth, nodes),
-        RuntimeValueView::Reduction(value) => {
-            validate_replay_safe_reduction(value, limits, depth, nodes)
-        }
-        RuntimeValueView::Agent(value) => validate_replay_safe_agent_value(
-            value
-                .live_value()
-                .ok_or_else(|| "replay-safe Agent validation requires its live value".to_owned())?,
-            limits,
-            depth,
-            nodes,
-        ),
-        RuntimeValueView::Variant(variant) => {
-            if let Some(payload) = variant.payload() {
-                validate_replay_safe_view(payload, limits, depth + 1, nodes)?;
-            }
-            Ok(())
+            Some("non-constant opaque value is not replay-safe")
         }
         RuntimeValueView::DenseNumeric(_)
         | RuntimeValueView::Range(_)
         | RuntimeValueView::Iterator(_)
         | RuntimeValueView::Need(_)
-        | RuntimeValueView::Callable(_) => Err("runtime-only value is not replay-safe".to_owned()),
-        RuntimeValueView::Scalar(_) => Ok(()),
-    }
-}
-
-fn validate_replay_safe_opaque(
-    value: crate::value::RuntimeOpaqueView<'_>,
-    limits: RuntimeSchemaLimits,
-    depth: usize,
-    nodes: &mut usize,
-) -> Result<(), String> {
-    if value.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
-        || matches!(
-            value.value_class(),
-            crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
-        )
-    {
-        return Err("non-constant opaque value is not replay-safe".to_owned());
-    }
-    validate_replay_safe_view(value.payload(), limits, depth + 1, nodes)
-}
-
-fn validate_replay_safe_reduction(
-    value: crate::value::RuntimeReductionView<'_>,
-    limits: RuntimeSchemaLimits,
-    depth: usize,
-    nodes: &mut usize,
-) -> Result<(), String> {
-    if !limits.permits_string_bytes(value.owner().producer().as_str().len()) {
-        return Err("replay-safe Reduction producer exceeds string byte budget".to_owned());
-    }
-    if !limits.permits_sequence_items(value.commands().len()) {
-        return Err("replay-safe Reduction exceeds command item budget".to_owned());
-    }
-    validate_replay_safe_view(value.state(), limits, depth + 1, nodes)?;
-    for command in value.commands().iter() {
-        if !limits.permits_string_bytes(command.constructor().as_str().len())
-            || !limits.permits_string_bytes(command.target().as_str().len())
-        {
-            return Err(
-                "replay-safe Reduction command identity exceeds string byte budget".to_owned(),
-            );
-        }
-        validate_replay_safe_view(command.payload(), limits, depth + 2, nodes)?;
-    }
-    Ok(())
-}
-
-fn validate_replay_safe_agent_value(
-    value: &RuntimeAgentValue,
-    limits: RuntimeSchemaLimits,
-    depth: usize,
-    nodes: &mut usize,
-) -> Result<(), String> {
-    if !limits.permits_depth(depth.saturating_add(value.structural_nesting_depth())) {
-        return Err("replay-safe payload exceeds depth budget".to_owned());
-    }
-    *nodes = nodes
-        .checked_add(value.additional_structural_node_count())
-        .ok_or_else(|| "replay-safe node count overflows usize".to_owned())?;
-    if !limits.permits_nodes(*nodes) {
-        return Err("replay-safe payload exceeds node budget".to_owned());
-    }
-    if value
-        .text_values()
-        .into_iter()
-        .any(|value| !limits.permits_string_bytes(value.len()))
-    {
-        return Err("replay-safe payload exceeds string byte budget".to_owned());
-    }
-    if value
-        .predicate_collection_lengths()
-        .into_iter()
-        .any(|length| !limits.permits_sequence_items(length))
-    {
-        return Err("replay-safe payload exceeds sequence item budget".to_owned());
-    }
-    for (offset, nested) in value.nested_runtime_values_with_depth() {
-        validate_replay_safe_value(nested, limits, depth.saturating_add(offset), nodes)?;
-    }
-    Ok(())
+        | RuntimeValueView::Callable(_) => Some("runtime-only value is not replay-safe"),
+        _ => None,
+    };
+    message.map_or(Ok(()), |message| {
+        Err(crate::entry::RuntimeSchemaError::Encoding {
+            message: message.to_owned(),
+        })
+    })
 }
 
 /// In-memory snapshot for one durable unrestricted root state.

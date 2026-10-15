@@ -173,7 +173,7 @@ impl RootStateSaveSnapshotV1 {
         })
     }
 
-    fn validate_header(
+    pub(super) fn validate_header(
         state_identity: &crate::entry::RuntimeNominalTypeId,
         state_layout: TypeLayoutHash,
         event_identity: &crate::entry::RuntimeNominalTypeId,
@@ -208,32 +208,13 @@ impl RootStateSaveSnapshotV1 {
         active: &crate::entry::ActiveEntrySnapshotV1,
         owner: &'a crate::task::RuntimeProgramOwner,
     ) -> Result<&'a crate::entry::RuntimeEntryRoles, RootRuntimeError> {
-        let roles = match owner {
-            crate::task::RuntimeProgramOwner::Plan(plan) => {
-                let entry = plan
-                    .entries()
-                    .iter()
-                    .find(|entry| entry.id == active.id)
-                    .ok_or_else(|| RootRuntimeError::MissingEntry(active.id.canonical_label()))?;
-                if entry.kind != active.kind || entry.binding != active.binding {
-                    return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
-                }
-                &entry.roles
-            }
-            crate::task::RuntimeProgramOwner::Awbc(program) => {
-                let entry = program
-                    .entries
-                    .iter()
-                    .find(|entry| entry.runtime_id == active.id)
-                    .ok_or_else(|| RootRuntimeError::MissingEntry(active.id.canonical_label()))?;
-                if entry.kind.runtime_kind(&program.strings).as_ref() != Some(&active.kind)
-                    || entry.binding != active.binding
-                {
-                    return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
-                }
-                &entry.roles
-            }
-        };
-        Ok(roles)
+        let entry = owner
+            .types()
+            .entry(&active.id)
+            .ok_or_else(|| RootRuntimeError::MissingEntry(active.id.canonical_label()))?;
+        if entry.binding() != active.binding || !entry.matches_kind(&active.kind) {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
+        }
+        Ok(entry.roles())
     }
 }

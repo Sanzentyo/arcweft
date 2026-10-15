@@ -28,6 +28,7 @@ pub use function_contract::{
     RuntimeFunctionEffectInstantiation, RuntimeParameterValueAdmissionError,
 };
 mod data_shapes;
+mod entry;
 mod iterator;
 pub use construction::RuntimeProgramValueConstructionError;
 pub use data_shapes::{

@@ -70,8 +70,17 @@ impl std::fmt::Display for RuntimeTaskFailure {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeNeedOutcome {
-    Value(super::RuntimePayload),
+#[derive(Debug, PartialEq)]
+pub enum RuntimeNeedOutcome<P = super::RuntimePayload> {
+    Value(P),
     InfrastructureFailure(RuntimeTaskFailure),
+}
+
+impl Clone for RuntimeNeedOutcome<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Value(value) => Self::Value(value.clone()),
+            Self::InfrastructureFailure(failure) => Self::InfrastructureFailure(failure.clone()),
+        }
+    }
 }

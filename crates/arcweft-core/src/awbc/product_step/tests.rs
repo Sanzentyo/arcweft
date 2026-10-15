@@ -3224,6 +3224,51 @@ fn dialogue_frame_cannot_replace_the_original_registry_activation() {
     assert!(executor.validate_snapshot(&snapshot).is_err());
 }
 
+#[test]
+fn dialogue_activation_rejects_an_independently_valid_foreign_root_before_copy() {
+    let (mut executor, activation) = initial_actor_dialogue_executor();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let mut snapshot = executor.snapshot().unwrap();
+    snapshot
+        .fiber
+        .admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
+    let mut encoded = serde_json::to_value(&snapshot.dialogues).unwrap();
+    encoded["entries"][0]["Active"]["frame"]["phase"]["Activating"]["fiber"] =
+        serde_json::to_value(&snapshot.fiber).unwrap();
+    snapshot.dialogues = serde_json::from_value(encoded).unwrap();
+    let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
+    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap_err();
+    assert!(
+        matches!(error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains("activation fiber root differs"))
+    );
+    assert_eq!(serde_json::to_vec(&snapshot.dialogues).unwrap(), before);
+    assert!(executor.validate_snapshot(&snapshot).is_err());
+
+    let entry = FiberState::for_entry(&executor.program, AwbcEntryId(0), 0, 64).unwrap();
+    entry
+        .admit_retained(
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+        .unwrap();
+    let mut transaction = executor.dialogues.begin_transaction(&activation).unwrap();
+    let ProductDialoguePhase::Activating { fiber, .. } = &mut transaction.frame_mut().phase else {
+        panic!("fixture activates");
+    };
+    *fiber = entry;
+    commit_test_dialogue_transaction(&mut executor, transaction);
+    let error = executor.snapshot().unwrap_err();
+    assert!(error.to_string().contains("activation fiber root differs"));
+}
+
 fn initial_actor_dialogue_executor() -> (
     AwbcProductStepExecutor,
     crate::runtime_id::DialogueActivationId,

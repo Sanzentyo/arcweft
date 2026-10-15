@@ -43,7 +43,6 @@ pub(crate) use collection::evaluate_collection_intrinsic;
 mod data_shape;
 mod dense_numeric;
 mod env;
-pub(crate) use env::RuntimeEnvRollbackImage;
 mod expression_literals;
 mod expression_locals;
 mod expression_semantic;
@@ -2563,10 +2562,17 @@ impl RuntimeBinaryOp {
     }
 }
 
+/// Native lexical storage. Live environments cannot be duplicated without
+/// selecting and checking their unrestricted captures.
+///
+/// ```compile_fail
+/// use arcweft_core::value::RuntimeEnv;
+/// fn copy(env: &RuntimeEnv) { let _: RuntimeEnv = env.clone(); }
+/// ```
 #[derive(Debug)]
-pub struct RuntimeEnv {
-    scopes: Vec<RuntimeScope>,
-    spare_scopes: Vec<RuntimeScope>,
+pub struct RuntimeEnv<V = RuntimeValue> {
+    scopes: Vec<RuntimeScope<V>>,
+    spare_scopes: Vec<RuntimeScope<V>>,
     assignment_discards: crate::line_task::RuntimeHandleDropAuthorization,
 }
 
@@ -2629,18 +2635,6 @@ impl<T> RuntimeLocalSlot<T> {
     }
 }
 
-impl RuntimeLocalSlot {
-    pub(crate) fn snapshot_for_owner(
-        &self,
-        owner: Option<&crate::task::RuntimeProgramOwner>,
-    ) -> Result<RuntimeLocalSlot<AwbcRuntimeValueSnapshot>, AwbcRuntimeValueSnapshotError> {
-        Ok(RuntimeLocalSlot::new(
-            self.local,
-            self.value.snapshot_for_owner(owner)?,
-        ))
-    }
-}
-
 impl RuntimeLocalSlot<AwbcRuntimeValueSnapshot> {
     pub(crate) fn into_admitted_live_for_program(
         self,
@@ -2649,16 +2643,6 @@ impl RuntimeLocalSlot<AwbcRuntimeValueSnapshot> {
         Ok(RuntimeLocalSlot::new(
             self.local,
             self.value.into_admitted_live_for_program(owner)?,
-        ))
-    }
-
-    pub(crate) fn into_live_for_program(
-        self,
-        owner: &crate::task::RuntimeProgramOwner,
-    ) -> Result<RuntimeLocalSlot, AwbcRuntimeValueSnapshotError> {
-        Ok(RuntimeLocalSlot::new(
-            self.local,
-            self.value.into_live_for_program(owner)?,
         ))
     }
 }

@@ -5,11 +5,12 @@ use crate::{
         AwbcStringId, AwbcTypeId, AwbcVariantCase, AwbcVariantIdentity,
     },
     entry::{
-        CallableContractHash, FlowContractHash, RuntimeCallableId, RuntimeCommandPolicy,
-        RuntimeFlowRole, RuntimeNominalRecordShape as Shape, RuntimeNominalRole,
-        RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
-        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
-        RuntimeNominalTypeId, RuntimeTypeSchema as Schema,
+        CallableContractHash, FlowContractHash, RuntimeCallableId, RuntimeCommandConstructorId,
+        RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeFlowRole,
+        RuntimeNominalRecordShape as Shape, RuntimeNominalRole, RuntimeNominalSchemaBody,
+        RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField,
+        RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
+        RuntimeTypeSchema as Schema,
     },
     pattern::{
         RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
@@ -522,24 +523,194 @@ fn reducer_receives_one_owned_affine_event_without_copying_it() {
 
 #[test]
 fn event_batch_admission_is_atomic_and_preserves_the_transition_cursor() {
-    let fixture = Fixture::new();
-    for program in fixture.programs() {
-        let mut root = fixture.start(program);
-        let before = root.clone();
+    for (mut root, owner) in [
+        retained_root_fixture(RootExecutionLimits::engine_default()),
+        retained_awbc_root_fixture(),
+    ] {
+        let before = root.inert_rollback_image(&owner).unwrap();
+        let event = owner
+            .types()
+            .try_record_value(
+                root.roles.event.semantic_identity,
+                vec![],
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .unwrap();
         assert!(matches!(
             root.ingress(
                 vec![
-                    fixture.event(RuntimeValue::Bool(true)),
+                    RootEventInput::new(RuntimePayload(event)),
                     RootEventInput::new(RuntimePayload(RuntimeValue::option_some(
                         RuntimeValue::Tuple(vec![RuntimeValue::Unit])
                     )))
                 ],
-                program
+                owner.types()
             ),
             Err(RootRuntimeError::InvalidEvent(_))
         ));
-        assert_eq!(root, before);
+        assert_eq!(root.inert_rollback_image(&owner).unwrap(), before);
     }
+}
+
+fn retained_awbc_root_fixture() -> (RootRuntime, crate::task::RuntimeProgramOwner) {
+    let program = crate::awbc::stateful_root_fixture();
+    program
+        .verify(
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext::default(),
+        )
+        .unwrap();
+    let entry = &program.entries[0];
+    let roles = entry.roles.stateful().unwrap();
+    let contract = RootStartupContract {
+        entry: entry.runtime_id.clone(),
+        roles: roles.clone(),
+        initial_flow: roles.initial_flow.flow.clone(),
+        initial_state_parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+    };
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+    let snapshot = RootStateSnapshotV1 {
+        state_identity: contract.roles.state.identity.clone(),
+        state_layout: contract.roles.state.layout,
+        event_identity: contract.roles.event.identity.clone(),
+        event_layout: contract.roles.event.layout,
+        value: RuntimePayload(
+            owner
+                .types()
+                .try_record_value(
+                    contract.roles.state.semantic_identity,
+                    vec![],
+                    contract.roles.command_policy.root_limits.schema,
+                )
+                .unwrap(),
+        ),
+        next_sequence: TransitionSequence::ZERO,
+    };
+    (
+        RootRuntime::from_snapshot(contract, snapshot, owner.types()).unwrap(),
+        owner,
+    )
+}
+
+fn retained_root_fixture(
+    limits: RootExecutionLimits,
+) -> (RootRuntime, crate::task::RuntimeProgramOwner) {
+    let plan = std::sync::Arc::new(crate::plan::body_semantic::stateful_root_fixture(
+        Schema::Bool,
+        limits,
+    ));
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan));
+    let contract = RootStartupContract::from_runtime_plan(&plan, &plan.entries()[0].id).unwrap();
+    let snapshot = RootStateSnapshotV1 {
+        state_identity: contract.roles.state.identity.clone(),
+        state_layout: contract.roles.state.layout,
+        event_identity: contract.roles.event.identity.clone(),
+        event_layout: contract.roles.event.layout,
+        value: RuntimePayload(
+            owner
+                .types()
+                .try_record_value(semantic(1), vec![], limits.schema)
+                .unwrap(),
+        ),
+        next_sequence: TransitionSequence::ZERO,
+    };
+    (
+        RootRuntime::from_snapshot(contract, snapshot, owner.types()).unwrap(),
+        owner,
+    )
+}
+
+#[test]
+fn complete_root_admission_bounds_state_events_and_committed_commands_together() {
+    use crate::task::RuntimeProgramOwner;
+    use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+    let (mut root, owner) = retained_root_fixture(RootExecutionLimits::engine_default());
+    root.active.next_sequence = TransitionSequence::from_u64(1);
+    root.ingress(
+        vec![RootEventInput::new(RuntimePayload(
+            owner
+                .types()
+                .try_record_value(semantic(2), vec![], root.limits.schema)
+                .unwrap(),
+        ))],
+        owner.types(),
+    )
+    .unwrap();
+    root.active
+        .committed_commands
+        .push_back(RuntimeCommandEnvelope {
+            transition: TransitionSequence::ZERO,
+            index: 0,
+            command: RuntimeCommand::new_accepted(
+                RuntimeCommandConstructorId::try_new("set").unwrap(),
+                RuntimeCommandTargetId::try_new("output").unwrap(),
+                RuntimePayload(RuntimeValue::Bool(true)),
+            ),
+        });
+    let mut visited = 0;
+    root.visit_runtime_values(|_| visited += 1);
+    assert_eq!(visited, 3);
+    let image = root.inert_rollback_image(&owner).unwrap();
+    let before = image.clone();
+    let limits = |nodes| RuntimeSchemaLimits {
+        max_nodes: nodes,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let mut live = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(2));
+    let failure = root.admit_retained(&mut live).unwrap_err();
+    assert_eq!(
+        failure,
+        AwbcRuntimeValueSnapshotError::Resource(crate::entry::RuntimeSchemaError::BudgetExceeded {
+            budget: "nodes"
+        })
+    );
+    assert_eq!(root.admit_retained(&mut live).unwrap_err(), failure);
+    let mut inert = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(2));
+    assert_eq!(image.admit_retained(&mut inert).unwrap_err(), failure);
+    assert_eq!(image, before);
+    let mut exact = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(3));
+    root.admit_retained(&mut exact).unwrap();
+    assert_eq!(root.snapshot_admitted(&owner).unwrap(), image);
+    let mut exact = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(3));
+    image.admit_retained(&mut exact).unwrap();
+    assert_eq!(
+        RootRuntime::from_admitted_rollback_image(image.clone(), &owner).unwrap(),
+        root
+    );
+    let mut forged = image;
+    forged.active.committed_commands[0].command = RuntimeCommand::new_accepted(
+        RuntimeCommandConstructorId::try_new("set").unwrap(),
+        RuntimeCommandTargetId::try_new("output").unwrap(),
+        crate::value::AwbcRuntimeValueSnapshot::Unit,
+    );
+    let rejected = forged.clone();
+    let mut admission = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(3));
+    let failure = forged.admit_retained(&mut admission).unwrap_err();
+    assert_eq!(root.admit_retained(&mut admission).unwrap_err(), failure);
+    assert_eq!(forged, rejected);
+    assert!(RootRuntime::from_rollback_image(forged, &owner).is_err());
+
+    let RuntimeProgramOwner::Plan(original) = owner else {
+        unreachable!()
+    };
+    let foreign = crate::plan::body_semantic::stateful_root_fixture(
+        Schema::String,
+        RootExecutionLimits::engine_default(),
+    );
+    assert!(
+        root.admit_retained(&mut RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Plan(std::sync::Arc::new(foreign)),
+            limits(3)
+        ))
+        .is_err()
+    );
+    assert!(
+        root.admit_retained(&mut RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Plan(original),
+            limits(3)
+        ))
+        .is_ok()
+    );
 }
 
 #[test]

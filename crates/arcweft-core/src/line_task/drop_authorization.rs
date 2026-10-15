@@ -15,6 +15,17 @@ pub(crate) struct RuntimeHandleDropAuthorization {
 }
 
 impl RuntimeHandleDropAuthorization {
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(self.displaced.len())?;
+        for token in self.displaced.keys() {
+            admission.validate_metadata(token)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn has_displaced_values(&self) -> bool {
         !self.displaced.is_empty()
     }

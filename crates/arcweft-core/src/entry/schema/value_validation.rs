@@ -73,9 +73,13 @@ impl<'a> SchemaValueValidation<'a> {
         schema: &'a Schema,
         limits: super::RuntimeSchemaLimits,
     ) -> Result<Self, Error> {
+        Self::tree_with_work(schema, ValidationWork::new(limits))
+    }
+
+    pub(super) fn tree_with_work(schema: &'a Schema, work: ValidationWork) -> Result<Self, Error> {
         Ok(Self {
             authority: SchemaAuthority::Tree(schema_definitions(schema)?),
-            work: ValidationWork::new(limits),
+            work,
         })
     }
 

@@ -112,12 +112,38 @@ pub struct StreamMatchArm {
     pub ops: Vec<StreamOp>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct StreamRuntimeState {
+/// Native and Product stream queue storage; only inert queues have a reader.
+///
+/// ```compile_fail
+/// use arcweft_core::stream::StreamRuntimeState;
+/// fn copy(value: &StreamRuntimeState) { let _: StreamRuntimeState = value.clone(); }
+/// ```
+/// ```compile_fail
+/// use arcweft_core::stream::StreamRuntimeState;
+/// let _: StreamRuntimeState = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+#[serde(bound(
+    serialize = "V: crate::value::InertRuntimeValueStorage",
+    deserialize = "V: crate::value::InertRuntimeValueStorage"
+))]
+pub struct StreamRuntimeState<V = RuntimePayload> {
     pub id: StreamRuntimeId,
-    pub queue: VecDeque<RuntimePayload>,
+    pub queue: VecDeque<V>,
     pub closed: bool,
     pub emitted_count: u64,
+}
+
+impl Clone for StreamRuntimeState<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            queue: self.queue.clone(),
+            closed: self.closed,
+            emitted_count: self.emitted_count,
+        }
+    }
 }
 
 /// Event emitted by an ordinary callable-backed stream.

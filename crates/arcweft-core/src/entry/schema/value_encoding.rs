@@ -429,6 +429,28 @@ pub(crate) fn visit_admitted_storage<E: From<RuntimeSchemaError>>(
     }
 }
 
+/// Applies the existing schema predicate to already admitted storage, without
+/// refreshing any value quota. Its predicate owns the enclosing shared work.
+pub(super) fn validate_admitted_view<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<(), RuntimeSchemaError> {
+    let mut sink = super::CanonicalCountingSink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_encoded_bytes: u64::MAX,
+        max_string_bytes: None,
+    };
+    visit_work(
+        Work::Value(value, 0, expected, None),
+        &mut writer,
+        None,
+        validation,
+        ValueEncoding::Snapshot,
+    )
+}
+
 /// Resource ownership for an admission containing several complete values and
 /// partial places. Logical nodes, encoded complete-value bytes and relation
 /// work accumulate across descendants; visiting another value grants no quota.

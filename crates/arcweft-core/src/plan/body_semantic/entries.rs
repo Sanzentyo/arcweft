@@ -236,4 +236,4 @@ impl crate::plan::RuntimeHttpMethod {
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

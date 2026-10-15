@@ -499,7 +499,7 @@ fn spare_scopes_do_not_affect_runtime_env_semantics() {
 
     let baseline = RuntimeEnv::default();
     assert_eq!(env, baseline);
-    assert_eq!(env.clone(), baseline);
+    assert_eq!(env.try_capture_unrestricted(&[]).unwrap(), baseline);
 
     env.push_scope_with_capacity(1);
     assert!(env.get(scoped).is_none());

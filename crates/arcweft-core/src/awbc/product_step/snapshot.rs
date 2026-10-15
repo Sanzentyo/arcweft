@@ -963,7 +963,15 @@ pub struct AwbcProductDialogueEffectSaveSnapshot {
     pub callback: crate::value::AwbcRuntimeValueSnapshot,
 }
 
-impl<V, O, E, P, H> super::AwbcProductActiveDialogue<V, O, E, P, H> {
+impl<V, O, E, N, B, R, L, P, H>
+    super::AwbcProductActiveDialogue<
+        V,
+        O,
+        E,
+        super::AwbcProductDialoguePhase<crate::awbc::fiber::FiberState<V, O, N, B, R>, L, P>,
+        H,
+    >
+{
     /// Borrows the original frame grammar before either storage role is projected.
     fn admit_retained_values<'a>(
         &'a self,
@@ -977,7 +985,6 @@ impl<V, O, E, P, H> super::AwbcProductActiveDialogue<V, O, E, P, H> {
                 crate::value::RuntimeValueView<'a>,
             ),
         >,
-        has_reducer: bool,
     ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError>
     where
         V: crate::value::RuntimeStoredValue,
@@ -1022,6 +1029,22 @@ impl<V, O, E, P, H> super::AwbcProductActiveDialogue<V, O, E, P, H> {
             .line_task_group
             .and_then(|id| program.line_task_groups.get(id.index()))
             .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
+        if activation_fiber_in_phase(self).is_some_and(|fiber| {
+            fiber.root != crate::awbc::fiber::AwbcFiberRoot::Function(group.activation)
+        }) {
+            return Err(invalid(
+                "dialogue activation fiber root differs from its original content group",
+            ));
+        }
+        let has_reducer = matches!(
+            &self.phase,
+            super::AwbcProductDialoguePhase::Reducing { .. }
+                | super::AwbcProductDialoguePhase::Publishing { .. }
+                | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                    state: super::AwbcProductDialogueClosingState::LineTask { .. },
+                    ..
+                })
+        );
         admission.validate_metadata_collection(program.content_templates.len())?;
         let template = program
             .content_templates
@@ -1239,7 +1262,6 @@ impl super::ActiveDialogue {
                     ),
                 )
             }),
-            self.line_task().is_some(),
         )?;
         match &self.phase {
             super::ProductDialoguePhase::Transitioning => {
@@ -1348,7 +1370,6 @@ impl AwbcProductActiveDialogueSaveSnapshot {
             self.effect_callbacks
                 .iter()
                 .map(|binding| (binding.site, binding.callback.view())),
-            self.line_task().is_some(),
         )?;
         match &self.phase {
             super::AwbcProductDialoguePhase::Transitioning => {

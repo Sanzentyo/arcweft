@@ -24,6 +24,7 @@ use crate::task::{
 use crate::value::{DenseSeq, RuntimeFieldValue, RuntimeVirtualPath};
 use arcweft_need::Need;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 impl Engine {
     fn task_outcome_accepts_live_value(
@@ -355,12 +356,18 @@ impl Engine {
         mut state: AwaitState,
         output: &mut RuntimeStepOutput,
     ) {
-        let publication = state.queued.pop_front().or_else(|| {
-            self.next_need_publication_for_await(
-                &state.handle.correlation(),
-                state.observed_through,
-            )
-        });
+        let publication = match state.queued.pop_front() {
+            Some(publication) => Some(publication),
+            None => {
+                match self.next_need_publication_for_await(&state.handle, state.observed_through) {
+                    Ok(publication) => publication,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                }
+            }
+        };
         let Some(publication) = publication else {
             self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
             return;
@@ -624,9 +631,9 @@ impl Engine {
         self.fiber.frame.status = FlowFiberStatus::NeedWaiting(Box::new(state));
     }
 
-    pub(super) fn latch_active_await_observer_publications(&mut self) {
-        let Some(state) = self.fiber.frame.await_observer.as_mut() else {
-            return;
+    pub(super) fn latch_active_await_observer_publications(&mut self) -> Result<(), String> {
+        let Some(state) = self.fiber.frame.await_observer.as_ref() else {
+            return Ok(());
         };
         let queued_cursor = state.queued.back().map(RuntimeNeedPublication::cursor);
         let queued_through = match (state.observed_through, queued_cursor) {
@@ -638,9 +645,29 @@ impl Engine {
             },
         };
         let correlation = state.handle.correlation();
+        let Some(queue) = self.need_publications.get_mut(&correlation) else {
+            return Ok(());
+        };
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        admission
+            .validate_metadata_collection(queue.len())
+            .map_err(|error| error.to_string())?;
+        // Borrow the complete selection first. A later rejection must leave
+        // earlier affine Ready owners and the observer cursor untouched.
+        let mut through = queued_through;
+        while let Some(index) = next_need_publication_index(queue, through) {
+            let publication = &queue[index];
+            publication
+                .admit_for_await(&state.handle, &mut admission)
+                .map_err(|error| error.to_string())?;
+            through = Some(publication.cursor());
+        }
         let mut through = queued_through;
         let mut additions = Vec::new();
-        while let Some(publication) = self.next_need_publication_for_await(&correlation, through) {
+        while let Some(publication) = take_admitted_need_publication(queue, through) {
             through = Some(publication.cursor());
             additions.push(publication);
         }
@@ -662,6 +689,7 @@ impl Engine {
             });
             state.queued.push_back(publication);
         }
+        Ok(())
     }
 
     /// Selects a publication for one observer. An affine Ready moves out of
@@ -669,27 +697,25 @@ impl Engine {
     /// copied for another observer of the same Need.
     fn next_need_publication_for_await(
         &mut self,
-        correlation: &crate::task::TaskCorrelation,
+        handle: &crate::task::RuntimeNeedHandle,
         through: Option<crate::task::TaskPublicationCursor>,
-    ) -> Option<RuntimeNeedPublication> {
-        let queue = self.need_publications.get_mut(correlation)?;
-        let index = queue.iter().position(|publication| {
-            through.is_none_or(|cursor| {
-                cursor.compare_same_source(publication.cursor()) == Some(std::cmp::Ordering::Less)
-            })
-        })?;
-        let publication = queue.get(index)?;
-        if matches!(
-            publication,
-            RuntimeNeedPublication::State {
-                state: Need::Ready(crate::task::RuntimeNeedOutcome::Value(value)),
-                ..
-            } if !value.value().ownership().permits_copy()
-        ) {
-            queue.remove(index)
-        } else {
-            Some(publication.clone())
-        }
+    ) -> Result<Option<RuntimeNeedPublication>, String> {
+        let Some(queue) = self.need_publications.get_mut(&handle.correlation()) else {
+            return Ok(None);
+        };
+        let Some(index) = next_need_publication_index(queue, through) else {
+            return Ok(None);
+        };
+        queue[index]
+            .admit_for_await(
+                handle,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(take_admitted_need_publication(queue, through))
     }
 
     pub(super) fn reserve_new_task_request(&mut self) -> bool {
@@ -1783,6 +1809,27 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Callable(_)
         | RuntimeValue::Variant(_) => super::runtime_value_label(value),
     }
+}
+
+fn next_need_publication_index(
+    queue: &VecDeque<RuntimeNeedPublication>,
+    through: Option<crate::task::TaskPublicationCursor>,
+) -> Option<usize> {
+    queue.iter().position(|publication| {
+        through.is_none_or(|cursor| {
+            cursor.compare_same_source(publication.cursor()) == Some(std::cmp::Ordering::Less)
+        })
+    })
+}
+
+fn take_admitted_need_publication(
+    queue: &mut VecDeque<RuntimeNeedPublication>,
+    through: Option<crate::task::TaskPublicationCursor>,
+) -> Option<RuntimeNeedPublication> {
+    let index = next_need_publication_index(queue, through)?;
+    queue[index]
+        .copy_for_observer_admitted()
+        .or_else(|| queue.remove(index))
 }
 
 fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &str)> {
