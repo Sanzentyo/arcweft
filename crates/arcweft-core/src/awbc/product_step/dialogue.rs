@@ -449,9 +449,37 @@ impl ProductDialogueStore {
         self.registry.commit_parent_fiber_reconciliation(prepared)
     }
 
-    pub(super) fn to_save_snapshot<S>(
+    pub(super) fn admit_retained(
         &self,
-        owner: &crate::task::RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        mut admit_frame: impl FnMut(
+            &DialogueActivationId,
+            &ActiveDialogue,
+            &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>,
+            &mut crate::value::RuntimeRetainedValueAdmission,
+        ) -> Result<
+            (),
+            crate::line_task::RuntimeDialogueRegistrySnapshotError,
+        >,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        self.registry.admit_retained(admission)?;
+        for activation in self.registry.active_ids() {
+            let frame = self
+                .registry
+                .active_frame(&activation)
+                .expect("active entry owns its frame");
+            let line = self
+                .registry
+                .active_line(&activation)
+                .expect("active entry owns its line");
+            admit_frame(&activation, frame, line, admission)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn snapshot_admitted<S>(
+        &self,
+        owner: &RuntimeProgramOwner,
         snapshot_frame: impl FnMut(
             &ActiveDialogue,
         )
@@ -460,19 +488,12 @@ impl ProductDialogueStore {
         crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
         crate::line_task::RuntimeDialogueRegistrySnapshotError,
     > {
-        self.registry.to_rollback_snapshot(owner, snapshot_frame)
+        self.registry.snapshot_admitted(Some(owner), snapshot_frame)
     }
 
-    pub(super) fn from_save_snapshot<S>(
+    pub(super) fn from_admitted_save_snapshot<S>(
         snapshot: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
         owner: &crate::task::RuntimeProgramOwner,
-        expected_deferred_children: &BTreeMap<
-            DialogueActivationId,
-            (
-                crate::runtime_id::RuntimeDeferRegistrationId,
-                crate::runtime_id::RuntimeDeferSiteId,
-            ),
-        >,
         restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -489,13 +510,11 @@ impl ProductDialogueStore {
                 },
             );
         };
-        let registry =
-            RuntimeDialogueActivationRegistry::from_save_snapshot_with_deferred_children(
-                snapshot,
-                owner,
-                expected_deferred_children,
-                restore_frame,
-            )?;
+        let registry = RuntimeDialogueActivationRegistry::from_admitted_save_snapshot(
+            snapshot,
+            owner,
+            restore_frame,
+        )?;
         Ok(Self { registry })
     }
 }

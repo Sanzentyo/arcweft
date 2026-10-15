@@ -23,10 +23,9 @@ use self::mapping::{MappedEffect, content_request, source_diagnostic};
 use self::runtime_id::line_id_from_awbc_public_id;
 pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSaveSnapshot,
-    AwbcProductActiveDialogueSnapshot, AwbcProductChildFiberOwnerSnapshot,
-    AwbcProductChildFiberSaveSnapshot, AwbcProductChildFiberSnapshot,
-    AwbcProductDialogueEffectSaveSnapshot, AwbcProductExecutorRollbackImage,
-    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
+    AwbcProductChildFiberOwnerSnapshot, AwbcProductChildFiberSaveSnapshot,
+    AwbcProductChildFiberSnapshot, AwbcProductDialogueEffectSaveSnapshot,
+    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
     AwbcProductLineTaskCancelSnapshot, AwbcProductLineTaskExitPolicySnapshot,
     AwbcProductLineTaskExitSnapshot, AwbcProductLineTaskFiberPhaseSnapshot,
     AwbcProductLineTaskJoinSnapshot, AwbcProductLineTaskLiveSnapshot,
@@ -326,81 +325,114 @@ fn partition_drop_observation(
     Ok((authorization, remaining))
 }
 
-#[derive(Debug, PartialEq)]
-struct ActiveDialogue {
-    activation: crate::runtime_id::DialogueActivationId,
-    content: AwbcContentUnitId,
-    target: crate::value::RuntimeOpaqueValue,
-    target_type: crate::awbc::schema::AwbcTypeId,
-    line: crate::plan::RuntimeLineId,
+/// One owning dialogue frame; only inert storage roles can be read or copied.
+///
+/// ```compile_fail
+/// use arcweft_core::{awbc::product_step::AwbcProductActiveDialogue, value::RuntimeValue};
+/// type Live = AwbcProductActiveDialogue<RuntimeValue, RuntimeValue, (), (), ()>;
+/// fn copy_owner(value: &Live) -> Live { Clone::clone(value) }
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::{awbc::product_step::AwbcProductActiveDialogue, value::RuntimeValue};
+/// type Live = AwbcProductActiveDialogue<RuntimeValue, RuntimeValue, (), (), ()>;
+/// let _: Live = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage, O: crate::value::InertRuntimeValueStorage, E: serde::Serialize, P: serde::Serialize, H: serde::Serialize",
+        deserialize = "V: crate::value::InertRuntimeValueStorage, O: crate::value::InertRuntimeValueStorage, E: serde::Deserialize<'de>, P: serde::Deserialize<'de>, H: serde::Deserialize<'de>"
+    )
+)]
+pub struct AwbcProductActiveDialogue<V, O, E, P, H> {
+    pub activation: crate::runtime_id::DialogueActivationId,
+    pub content: AwbcContentUnitId,
+    pub target: O,
+    pub target_type: crate::awbc::schema::AwbcTypeId,
+    pub line: crate::plan::RuntimeLineId,
+    pub result: crate::awbc::schema::AwbcDialogueResultTarget,
     /// External caller inputs, retained for the activation function ABI.
-    captures: Box<[RuntimeValue]>,
+    pub captures: Box<[V]>,
     /// Copyable line-task inputs after reveal: external inputs, then activation exports.
-    task_inputs: Box<[RuntimeValue]>,
-    values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+    pub task_inputs: Box<[V]>,
+    pub values: Box<[crate::plan::RuntimeDialogueValueBinding<V>]>,
     /// Pending callbacks are removed at their first accepted effect event.
     /// The callback value has exactly one live owner until child activation.
-    effect_callbacks:
-        BTreeMap<crate::runtime_id::RuntimeDialogueEffectSiteId, RuntimeCallableValue>,
-    voice: crate::presentation::RuntimeDialogueVoiceState,
-    result: crate::awbc::schema::AwbcDialogueResultTarget,
-    phase: ProductDialoguePhase,
-    elapsed_nanos: u64,
-    pending_content_events: Vec<crate::step::RuntimeDialogueContentEventKind>,
-    pending_advance: bool,
-    pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
-    pending_activation_host_call: Option<PendingHostCall>,
+    #[serde(rename = "effects")]
+    pub effect_callbacks: E,
+    pub voice: crate::presentation::RuntimeDialogueVoiceState,
+    pub phase: P,
+    pub elapsed_nanos: u64,
+    pub pending_content_events: Vec<crate::step::RuntimeDialogueContentEventKind>,
+    pub pending_advance: bool,
+    pub pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
+    pub pending_activation_host_call: Option<H>,
 }
 
-#[derive(Debug, PartialEq)]
-enum ProductDialoguePhase {
+type ActiveDialogue = AwbcProductActiveDialogue<
+    RuntimeValue,
+    crate::value::RuntimeOpaqueValue,
+    BTreeMap<crate::runtime_id::RuntimeDialogueEffectSiteId, RuntimeCallableValue>,
+    ProductDialoguePhase,
+    PendingHostCall,
+>;
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProductDialoguePhase<F, L, P> {
     /// In-process move boundary while the sole activation fiber is executing.
     /// This marker carries no runtime value and must never be saved or published.
+    #[serde(skip)]
     Transitioning,
     Activating {
-        fiber: FiberState,
-        pending: Option<ProductPendingLineOperation>,
+        fiber: F,
+        pending: Option<P>,
     },
     Reducing {
-        line_task: LineTaskLiveState,
+        line_task: L,
     },
     Publishing {
-        line_task: LineTaskLiveState,
+        line_task: L,
     },
-    Closing(ProductDialogueClosing),
+    Closing(AwbcProductDialogueClosing<F, L, P>),
 }
 
-#[derive(Debug, PartialEq)]
-struct ProductDialogueClosing {
-    failure: FiberTrap,
-    state: ProductDialogueClosingState,
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProductDialogueClosing<F, L, P> {
+    pub failure: FiberTrap,
+    pub state: AwbcProductDialogueClosingState<F, L, P>,
 }
 
-#[derive(Debug, PartialEq)]
-enum ProductDialogueClosingState {
-    Activation {
-        fiber: FiberState,
-        pending: Option<ProductPendingLineOperation>,
-    },
-    LineTask {
-        line_task: LineTaskLiveState,
-    },
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProductDialogueClosingState<F, L, P> {
+    Activation { fiber: F, pending: Option<P> },
+    LineTask { line_task: L },
 }
 
-#[derive(Debug, PartialEq)]
-enum ProductPendingLineOperation {
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage",
+        deserialize = "V: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub enum AwbcProductPendingLineOperation<V> {
     AcquireActor {
         cursor: FiberCursor,
         destination: crate::awbc::schema::AwbcRegisterId,
         command: crate::presentation::RuntimeLineCommandId,
-        value: RuntimeValue,
+        value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     ActorLook {
         cursor: FiberCursor,
         destination: crate::awbc::schema::AwbcRegisterId,
         command: crate::presentation::RuntimeLineCommandId,
-        value: RuntimeValue,
+        value: V,
         token: crate::runtime_id::RuntimeLineHandleToken,
     },
     StartVoice {
@@ -411,7 +443,7 @@ enum ProductPendingLineOperation {
     },
 }
 
-impl ProductPendingLineOperation {
+impl<V> AwbcProductPendingLineOperation<V> {
     fn command(&self) -> &crate::presentation::RuntimeLineCommandId {
         match self {
             Self::AcquireActor { command, .. }
@@ -421,6 +453,13 @@ impl ProductPendingLineOperation {
     }
 }
 
+type ProductDialoguePhase =
+    AwbcProductDialoguePhase<FiberState, LineTaskLiveState, ProductPendingLineOperation>;
+type ProductDialogueClosing =
+    AwbcProductDialogueClosing<FiberState, LineTaskLiveState, ProductPendingLineOperation>;
+type ProductDialogueClosingState =
+    AwbcProductDialogueClosingState<FiberState, LineTaskLiveState, ProductPendingLineOperation>;
+type ProductPendingLineOperation = AwbcProductPendingLineOperation<RuntimeValue>;
 impl ActiveDialogue {
     fn line_task(&self) -> Option<&LineTaskLiveState> {
         match &self.phase {

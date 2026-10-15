@@ -1227,160 +1227,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
-    pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
-        &self.ledger
-    }
-
-    pub(crate) fn restore_admit_reducer<P: LineTaskPlanView>(
-        &self,
-        activation: &DialogueActivationId,
-        plan: &P,
-        reducer: &LineTaskLiveSnapshot,
-    ) -> Result<(), LineRuntimeError> {
-        if reducer.activation() != activation {
-            return Err(LineRuntimeError::InvalidRestoredScheduledState);
-        }
-        if let RuntimeDialogueResultState::Selected { source, .. } = &self.result {
-            if source.activation_id() != activation || !source.is_well_formed() {
-                return Err(LineRuntimeError::InvalidRestoredResultState);
-            }
-            match source.work() {
-                LineTaskWork::Cancellation(action)
-                    if reducer.cancellation_action() == Some(&action)
-                        && plan.has_cancellation_work(&action)
-                        && !reducer
-                            .outstanding()
-                            .contains(&LineTaskWork::Cancellation(action.clone()))
-                        && matches!(
-                            reducer.phase(),
-                            super::LineTaskPhase::Closing {
-                                exit: ScopeExit::Cancelled
-                            } | super::LineTaskPhase::Closed {
-                                exit: ScopeExit::Cancelled
-                            }
-                        ) => {}
-                LineTaskWork::Node(action) => {
-                    let mark = super::mark_result_source(plan, action)
-                        .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
-                    if !reducer
-                        .consumed_content_events()
-                        .contains(&RuntimeDialogueContentEventKind::Mark(mark))
-                        || matches!(
-                            reducer.phase(),
-                            super::LineTaskPhase::Closing {
-                                exit: ScopeExit::Failed
-                            } | super::LineTaskPhase::Closed {
-                                exit: ScopeExit::Failed
-                            }
-                        )
-                    {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
-                    }
-                    let completed = match source.instance() {
-                        LineTaskWorkInstance::Activation(_) => reducer
-                            .node_states()
-                            .get(action.index())
-                            .is_some_and(|state| *state == LineTaskNodeState::Completed),
-                        LineTaskWorkInstance::Scheduled(token) => {
-                            let scheduled = self.scheduled.iter().find(|scheduled| {
-                                scheduled.token() == token
-                                    && plan.scheduled_child(token.site()) == Some(scheduled.child())
-                            });
-                            let Some(scheduled) = scheduled else {
-                                return Err(LineRuntimeError::InvalidRestoredResultState);
-                            };
-                            let mut subtree = std::collections::BTreeSet::new();
-                            if super::collect_line_task_subtree(
-                                plan,
-                                scheduled.child(),
-                                &mut subtree,
-                            )
-                            .is_err()
-                                || !subtree.contains(&action)
-                            {
-                                return Err(LineRuntimeError::InvalidRestoredResultState);
-                            }
-                            reducer
-                                .scheduled_lanes()
-                                .iter()
-                                .find(|lane| lane.token() == token)
-                                .map_or_else(
-                                    || scheduled.state() == RuntimeScheduledState::Completed,
-                                    |lane| {
-                                        lane.lane().node_states().get(action.index()).is_some_and(
-                                            |state| *state == LineTaskNodeState::Completed,
-                                        )
-                                    },
-                                )
-                        }
-                    };
-                    if !completed {
-                        return Err(LineRuntimeError::InvalidRestoredResultState);
-                    }
-                }
-                LineTaskWork::Cancellation(_)
-                | LineTaskWork::Cleanup(_)
-                | LineTaskWork::Defer(_) => {
-                    return Err(LineRuntimeError::InvalidRestoredResultState);
-                }
-            }
-        }
-        let ready = reducer
-            .scheduled_ready()
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>();
-        let lanes = reducer
-            .scheduled_lanes()
-            .iter()
-            .map(|lane| lane.token().clone())
-            .collect::<std::collections::BTreeSet<_>>();
-        if ready.len() != reducer.scheduled_ready().len()
-            || lanes.len() != reducer.scheduled_lanes().len()
-            || ready.iter().any(|token| lanes.contains(token))
-        {
-            return Err(LineRuntimeError::InvalidRestoredScheduledState);
-        }
-        for scheduled in &self.scheduled {
-            if scheduled.token().activation() != reducer.activation()
-                || scheduled.work().scheduled_token() != Some(scheduled.token())
-            {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-            let (expects_ready, expects_lane) = match (&scheduled.state, &scheduled.custody) {
-                (RuntimeScheduledState::Armed, RuntimeScheduledCaptureCustody::Packet(_))
-                | (
-                    RuntimeScheduledState::Completed
-                    | RuntimeScheduledState::Cancelled
-                    | RuntimeScheduledState::Failed,
-                    RuntimeScheduledCaptureCustody::LineScope(_),
-                ) => (false, false),
-                (RuntimeScheduledState::Running, RuntimeScheduledCaptureCustody::Packet(_)) => {
-                    (true, false)
-                }
-                (
-                    RuntimeScheduledState::Running | RuntimeScheduledState::Cancelling,
-                    RuntimeScheduledCaptureCustody::ChildFiber(_),
-                ) => (false, true),
-                _ => return Err(LineRuntimeError::InvalidRestoredScheduledState),
-            };
-            if ready.contains(scheduled.token()) != expects_ready
-                || lanes.contains(scheduled.token()) != expects_lane
-            {
-                return Err(LineRuntimeError::InvalidRestoredScheduledState);
-            }
-        }
-        if ready.iter().chain(lanes.iter()).any(|token| {
-            !self
-                .scheduled
-                .iter()
-                .any(|scheduled| scheduled.token() == token)
-        }) {
-            return Err(LineRuntimeError::InvalidRestoredScheduledState);
-        }
-        Ok(())
-    }
-
     pub(crate) const fn command_sequence(&self) -> u64 {
         self.command_sequence
     }
@@ -1519,21 +1365,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             .find(|scheduled| scheduled.token() == token)
             .ok_or(LineRuntimeError::MissingScheduledWork)?;
         Ok(packet.child_fiber_locals()?.to_vec().into_boxed_slice())
-    }
-
-    pub(crate) fn scheduled_child_custody_keys(
-        &self,
-    ) -> Vec<(LineTaskWorkTag, RuntimeLineHandleToken)> {
-        self.scheduled
-            .iter()
-            .filter(|scheduled| {
-                matches!(
-                    &scheduled.custody,
-                    RuntimeScheduledCaptureCustody::ChildFiber(_)
-                )
-            })
-            .map(|scheduled| (scheduled.work().clone(), scheduled.token().clone()))
-            .collect()
     }
 
     pub(crate) fn terminalize_unstarted_scheduled_packet(
@@ -1746,10 +1577,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             }
         }
         self.ledger = stage.ledger;
-    }
-
-    pub(crate) const fn result(&self) -> &RuntimeDialogueResultState<T> {
-        &self.result
     }
 
     pub(crate) fn take_commit_receipt(&mut self) -> RuntimeDialogueCommitReceipt {
@@ -2050,13 +1877,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         self.record_commands(tag.activation_id(), queue)?;
         self.ledger = ledger;
         Ok(())
-    }
-
-    pub(crate) fn issued_command(
-        &self,
-        command: &crate::presentation::RuntimeLineCommandId,
-    ) -> Option<&crate::presentation::RuntimeLineHostCommand> {
-        self.issued_commands.get(command)
     }
 
     pub(crate) fn consume_issued_command(
@@ -2830,6 +2650,7 @@ impl<T> AwbcRuntimeDialogueActivationSnapshot<T> {
 }
 
 impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
+    #[cfg(test)]
     pub(crate) fn from_live(
         state: &RuntimeDialogueActivationState<T>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError>
@@ -2839,6 +2660,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
         Self::from_live_with_owner(state, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn from_live_for_program(
         state: &RuntimeDialogueActivationState<T>,
         owner: &RuntimeProgramOwner,
@@ -2849,6 +2671,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
         Self::from_live_with_owner(state, Some(owner))
     }
 
+    #[cfg(test)]
     fn from_live_with_owner(
         state: &RuntimeDialogueActivationState<T>,
         owner: Option<&RuntimeProgramOwner>,
@@ -2856,11 +2679,6 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
     where
         T: RuntimeDialogueTypeCoordinate,
     {
-        if !state.prepared_commands.is_empty() {
-            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                message: "cannot snapshot an in-flight line command preparation".to_owned(),
-            });
-        }
         let mut admission = match owner {
             Some(owner) => crate::value::RuntimeRetainedValueAdmission::for_program(
                 owner.clone(),
@@ -2871,6 +2689,13 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             ),
         };
         state.admit_retained_resources(&mut admission)?;
+        Self::from_admitted_live(state, owner)
+    }
+
+    pub(crate) fn from_admitted_live(
+        state: &RuntimeDialogueActivationState<T>,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             ledger: state.ledger.clone(),
             command_sequence: state.command_sequence,
@@ -2885,11 +2710,8 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             deferred: state
                 .deferred
                 .iter()
-                .map(|deferred| match owner {
-                    Some(owner) => AwbcRuntimeDeferredRegistrationSnapshot::from_live_for_program(
-                        deferred, owner,
-                    ),
-                    None => AwbcRuntimeDeferredRegistrationSnapshot::from_live(deferred),
+                .map(|deferred| {
+                    AwbcRuntimeDeferredRegistrationSnapshot::from_admitted_live(deferred, owner)
                 })
                 .collect::<Result<_, _>>()?,
             next_defer_registration: state.next_defer_registration,
@@ -2900,6 +2722,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn into_live(
         self,
         owner: &RuntimeProgramOwner,
@@ -2913,6 +2736,14 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
         )?;
+        self.into_admitted_live(owner)
+    }
+
+    pub(crate) fn into_admitted_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeDialogueActivationState<T>, crate::value::AwbcRuntimeValueSnapshotError>
+    {
         Ok(RuntimeDialogueActivationState {
             ledger: self.ledger,
             command_sequence: self.command_sequence,
@@ -2927,7 +2758,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             deferred: self
                 .deferred
                 .into_iter()
-                .map(|registration| registration.into_live(owner))
+                .map(|registration| registration.into_admitted_live(owner))
                 .collect::<Result<_, _>>()?,
             next_defer_registration: self.next_defer_registration,
             defer_unwind: self.defer_unwind,
@@ -2986,7 +2817,16 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
             RuntimeScheduledCaptureCustody::LineScope(bindings) => Self::LineScope(
                 bindings
                     .iter()
-                    .map(|binding| binding.snapshot_for_owner(owner))
+                    .map(|binding| {
+                        Ok::<_, crate::value::AwbcRuntimeValueSnapshotError>(
+                            crate::value::RuntimeLocalSlot::new(
+                                binding.local(),
+                                binding.storage().try_map_ref(&mut |value| {
+                                    snapshot_runtime_value_for_owner(value, owner)
+                                })?,
+                            ),
+                        )
+                    })
                     .collect::<Result<_, _>>()?,
             ),
         })
@@ -3005,7 +2845,7 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
                 bindings
                     .into_vec()
                     .into_iter()
-                    .map(|binding| binding.into_live_for_program(owner))
+                    .map(|binding| binding.into_admitted_live_for_program(owner))
                     .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()?
                     .into_boxed_slice(),
             ),
@@ -3017,12 +2857,7 @@ fn snapshot_runtime_value_for_owner(
     value: &RuntimeValue,
     owner: Option<&RuntimeProgramOwner>,
 ) -> Result<crate::value::AwbcRuntimeValueSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
-    match owner {
-        Some(owner) => {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-        }
-        None => crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(value),
-    }
+    crate::value::AwbcRuntimeValueSnapshot::from_admitted_storage(value, owner)
 }
 
 fn snapshot_local_bindings(
@@ -3050,7 +2885,7 @@ fn live_local_bindings(
         .map(|capture| {
             Ok(RuntimeLocalBinding {
                 local: capture.local,
-                value: capture.value.into_runtime_value_for_program(owner)?,
+                value: capture.value.into_admitted_runtime_value(owner)?,
             })
         })
         .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()
@@ -3108,16 +2943,16 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
             Self::Uncommitted => RuntimeDialogueResultState::Uncommitted,
             Self::Committed { ty, value } => RuntimeDialogueResultState::Committed {
                 ty,
-                value: value.into_runtime_value_for_program(owner)?,
+                value: value.into_admitted_runtime_value(owner)?,
             },
             Self::Selected { ty, value, source } => RuntimeDialogueResultState::Selected {
                 ty,
-                value: value.into_runtime_value_for_program(owner)?,
+                value: value.into_admitted_runtime_value(owner)?,
                 source,
             },
             Self::Publishing { ty, value } => RuntimeDialogueResultState::Publishing {
                 ty,
-                value: value.into_runtime_value_for_program(owner)?,
+                value: value.into_admitted_runtime_value(owner)?,
             },
             Self::Published => RuntimeDialogueResultState::Published,
             Self::Abandoned => RuntimeDialogueResultState::Abandoned,
@@ -4740,6 +4575,186 @@ pub enum LineRuntimeError {
 }
 
 impl<T, V> RuntimeDialogueActivationState<T, V> {
+    pub(crate) const fn ledger(&self) -> &RuntimeLineHandleLedger {
+        &self.ledger
+    }
+
+    pub(crate) fn restore_admit_reducer<P: LineTaskPlanView>(
+        &self,
+        activation: &DialogueActivationId,
+        plan: &P,
+        reducer: &LineTaskLiveSnapshot,
+    ) -> Result<(), LineRuntimeError> {
+        if reducer.activation() != activation {
+            return Err(LineRuntimeError::InvalidRestoredScheduledState);
+        }
+        if let RuntimeDialogueResultState::Selected { source, .. } = &self.result {
+            if source.activation_id() != activation || !source.is_well_formed() {
+                return Err(LineRuntimeError::InvalidRestoredResultState);
+            }
+            match source.work() {
+                LineTaskWork::Cancellation(action)
+                    if reducer.cancellation_action() == Some(&action)
+                        && plan.has_cancellation_work(&action)
+                        && !reducer
+                            .outstanding()
+                            .contains(&LineTaskWork::Cancellation(action.clone()))
+                        && matches!(
+                            reducer.phase(),
+                            super::LineTaskPhase::Closing {
+                                exit: ScopeExit::Cancelled
+                            } | super::LineTaskPhase::Closed {
+                                exit: ScopeExit::Cancelled
+                            }
+                        ) => {}
+                LineTaskWork::Node(action) => {
+                    let mark = super::mark_result_source(plan, action)
+                        .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
+                    if !reducer
+                        .consumed_content_events()
+                        .contains(&RuntimeDialogueContentEventKind::Mark(mark))
+                        || matches!(
+                            reducer.phase(),
+                            super::LineTaskPhase::Closing {
+                                exit: ScopeExit::Failed
+                            } | super::LineTaskPhase::Closed {
+                                exit: ScopeExit::Failed
+                            }
+                        )
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                    let completed = match source.instance() {
+                        LineTaskWorkInstance::Activation(_) => reducer
+                            .node_states()
+                            .get(action.index())
+                            .is_some_and(|state| *state == LineTaskNodeState::Completed),
+                        LineTaskWorkInstance::Scheduled(token) => {
+                            let scheduled = self.scheduled.iter().find(|scheduled| {
+                                scheduled.token() == token
+                                    && plan.scheduled_child(token.site()) == Some(scheduled.child())
+                            });
+                            let Some(scheduled) = scheduled else {
+                                return Err(LineRuntimeError::InvalidRestoredResultState);
+                            };
+                            let mut subtree = std::collections::BTreeSet::new();
+                            if super::collect_line_task_subtree(
+                                plan,
+                                scheduled.child(),
+                                &mut subtree,
+                            )
+                            .is_err()
+                                || !subtree.contains(&action)
+                            {
+                                return Err(LineRuntimeError::InvalidRestoredResultState);
+                            }
+                            reducer
+                                .scheduled_lanes()
+                                .iter()
+                                .find(|lane| lane.token() == token)
+                                .map_or_else(
+                                    || scheduled.state() == RuntimeScheduledState::Completed,
+                                    |lane| {
+                                        lane.lane().node_states().get(action.index()).is_some_and(
+                                            |state| *state == LineTaskNodeState::Completed,
+                                        )
+                                    },
+                                )
+                        }
+                    };
+                    if !completed {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                }
+                LineTaskWork::Cancellation(_)
+                | LineTaskWork::Cleanup(_)
+                | LineTaskWork::Defer(_) => {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                }
+            }
+        }
+        let ready = reducer
+            .scheduled_ready()
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let lanes = reducer
+            .scheduled_lanes()
+            .iter()
+            .map(|lane| lane.token().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        if ready.len() != reducer.scheduled_ready().len()
+            || lanes.len() != reducer.scheduled_lanes().len()
+            || ready.iter().any(|token| lanes.contains(token))
+        {
+            return Err(LineRuntimeError::InvalidRestoredScheduledState);
+        }
+        for scheduled in &self.scheduled {
+            if scheduled.token().activation() != reducer.activation()
+                || scheduled.work().scheduled_token() != Some(scheduled.token())
+            {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+            let (expects_ready, expects_lane) = match (&scheduled.state, &scheduled.custody) {
+                (RuntimeScheduledState::Armed, RuntimeScheduledCaptureCustody::Packet(_))
+                | (
+                    RuntimeScheduledState::Completed
+                    | RuntimeScheduledState::Cancelled
+                    | RuntimeScheduledState::Failed,
+                    RuntimeScheduledCaptureCustody::LineScope(_),
+                ) => (false, false),
+                (RuntimeScheduledState::Running, RuntimeScheduledCaptureCustody::Packet(_)) => {
+                    (true, false)
+                }
+                (
+                    RuntimeScheduledState::Running | RuntimeScheduledState::Cancelling,
+                    RuntimeScheduledCaptureCustody::ChildFiber(_),
+                ) => (false, true),
+                _ => return Err(LineRuntimeError::InvalidRestoredScheduledState),
+            };
+            if ready.contains(scheduled.token()) != expects_ready
+                || lanes.contains(scheduled.token()) != expects_lane
+            {
+                return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+        }
+        if ready.iter().chain(lanes.iter()).any(|token| {
+            !self
+                .scheduled
+                .iter()
+                .any(|scheduled| scheduled.token() == token)
+        }) {
+            return Err(LineRuntimeError::InvalidRestoredScheduledState);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn scheduled_child_custody_keys(
+        &self,
+    ) -> Vec<(LineTaskWorkTag, RuntimeLineHandleToken)> {
+        self.scheduled
+            .iter()
+            .filter(|scheduled| {
+                matches!(
+                    &scheduled.custody,
+                    RuntimeScheduledCaptureCustody::ChildFiber(_)
+                )
+            })
+            .map(|scheduled| (scheduled.work().clone(), scheduled.token().clone()))
+            .collect()
+    }
+
+    pub(crate) const fn result(&self) -> &RuntimeDialogueResultState<T, V> {
+        &self.result
+    }
+
+    pub(crate) fn issued_command(
+        &self,
+        command: &crate::presentation::RuntimeLineCommandId,
+    ) -> Option<&crate::presentation::RuntimeLineHostCommand> {
+        self.issued_commands.get(command)
+    }
+
     pub(crate) fn visit_retained_value_roots<E>(
         &self,
         mut visit: impl FnMut(&V) -> Result<(), E>,
@@ -4783,6 +4798,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         V: crate::value::RuntimeStoredValue,
     {
         admission.status()?;
+        if !self.prepared_commands.is_empty() {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "cannot snapshot an in-flight line command preparation".to_owned(),
+            });
+        }
         admission.validate_metadata(&(
             &self.ledger,
             self.command_sequence,
@@ -4797,6 +4817,9 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         admission.validate_metadata_collection(self.scheduled.len())?;
         admission.validate_metadata_collection(self.deferred.len())?;
         for scheduled in &self.scheduled {
+            scheduled
+                .validate_custody()
+                .map_err(|error| scheduled_custody_snapshot_error(&error))?;
             admission.validate_metadata(&(
                 &scheduled.token,
                 scheduled.child,

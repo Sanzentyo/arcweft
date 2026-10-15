@@ -2642,6 +2642,16 @@ impl RuntimeLocalSlot {
 }
 
 impl RuntimeLocalSlot<AwbcRuntimeValueSnapshot> {
+    pub(crate) fn into_admitted_live_for_program(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimeLocalSlot, AwbcRuntimeValueSnapshotError> {
+        Ok(RuntimeLocalSlot::new(
+            self.local,
+            self.value.into_admitted_live_for_program(owner)?,
+        ))
+    }
+
     pub(crate) fn into_live_for_program(
         self,
         owner: &crate::task::RuntimeProgramOwner,

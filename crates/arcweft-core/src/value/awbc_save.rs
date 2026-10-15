@@ -432,6 +432,13 @@ impl AwbcRuntimeValueSnapshot {
         );
         resources.validate_view(view, 0, None)?;
         Self::validate_admitted_storage_view(view, Some(owner), &resources)?;
+        Self::from_admitted_callable(value, owner)
+    }
+
+    pub(crate) fn from_admitted_callable(
+        value: &RuntimeCallableValue,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         Self::callable_from_live(value, Some(owner)).map(Self::Callable)
     }
 

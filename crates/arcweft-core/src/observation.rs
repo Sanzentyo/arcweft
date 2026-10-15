@@ -106,6 +106,14 @@ impl<P> Default for RuntimeObservationState<P> {
     }
 }
 impl RuntimeObservationState {
+    /// Preflights borrowed live observations in the enclosing retained group.
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        self.admit_values(admission, |value| value.value().into(), "saved")
+    }
+
     #[must_use]
     pub fn signals(&self) -> &BTreeMap<String, RuntimePayload> {
         &self.signals
@@ -193,14 +201,19 @@ impl RuntimeObservationSaveSnapshot {
         state: &RuntimeObservationState,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        state.admit_values(
+        state.admit_retained(
             &mut crate::value::RuntimeRetainedValueAdmission::for_program(
                 owner.clone(),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
-            |value| value.value().into(),
-            "saved",
         )?;
+        Self::from_admitted_live_for_program(state, owner)
+    }
+
+    pub(crate) fn from_admitted_live_for_program(
+        state: &RuntimeObservationState,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, String> {
         let capture = |rows: &BTreeMap<String, RuntimePayload>| {
             rows.iter()
                 .map(|(name, value)| {
@@ -232,6 +245,13 @@ impl RuntimeObservationSaveSnapshot {
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
         )?;
+        self.into_admitted_live_for_program(owner)
+    }
+
+    pub(crate) fn into_admitted_live_for_program(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeObservationState, String> {
         let restore = |rows: BTreeMap<String, AwbcRuntimeValueSnapshot>| {
             rows.into_iter()
                 .map(|(name, saved)| {

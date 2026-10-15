@@ -842,6 +842,15 @@ impl AwbcFiberStateSnapshot {
             crate::value::RuntimeOpaqueValue::view,
             crate::task::RuntimeNeedHandle::view,
         )?;
+        Self::from_admitted_live(state, owner)
+    }
+
+    /// Captures a fiber whose complete original frame inventory and retained
+    /// descendants were admitted by the enclosing frame/Product allowance.
+    pub(crate) fn from_admitted_live(
+        state: &FiberState,
+        owner: &RuntimeProgramOwner,
+    ) -> AwbcSaveResult<Self> {
         Ok(Self {
             instance: state.instance,
             next_frame_instance: state.next_frame_instance,
@@ -914,6 +923,14 @@ impl AwbcFiberStateSnapshot {
 
     pub fn into_live_for_program(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberState> {
         self.validate_for_program(owner)?;
+        self.into_admitted_live_for_program(owner)
+    }
+
+    /// Consumes the admitted inert grammar without refreshing value quotas.
+    pub(crate) fn into_admitted_live_for_program(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> AwbcSaveResult<FiberState> {
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
@@ -996,7 +1013,7 @@ impl AwbcFiberFrameSnapshot {
             registers: frame
                 .registers
                 .iter()
-                .map(|value| value.snapshot_for_owner(Some(owner)))
+                .map(|value| value.snapshot_admitted_for_program(owner))
                 .collect::<Result<_, _>>()?,
             format: frame
                 .format
@@ -1034,7 +1051,7 @@ impl AwbcFiberFrameSnapshot {
             registers: self
                 .registers
                 .into_iter()
-                .map(|value| value.into_live_for_program(owner))
+                .map(|value| value.into_admitted_live_for_program(owner))
                 .collect::<AwbcSaveResult<_>>()?,
             format: self
                 .format
@@ -1433,6 +1450,30 @@ fn visit_deferred_capture_values<E>(
 }
 
 impl FiberState {
+    /// Borrows live frame/value owners under the enclosing original program
+    /// and allowance before any retained snapshot carrier is copied.
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> AwbcSaveResult<()> {
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            |owner, resources| {
+                let owner =
+                    owner.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "AWBC fiber admission requires its original AWBC program"
+                            .to_owned(),
+                    })?;
+                self.validate_retained(
+                    owner,
+                    resources,
+                    crate::value::RuntimeOpaqueValue::view,
+                    crate::task::RuntimeNeedHandle::view,
+                )
+            },
+        )
+    }
+
     /// Completed root frames may retain Copy values and lexical metadata.
     /// Their affine owners and unfinished cleanup work cannot be discarded by
     /// a program continuation.
@@ -5197,6 +5238,86 @@ mod tests {
             crate::plan::RuntimePlanBuilder::default().finish().unwrap(),
         ));
         assert!(image.into_live_for_program(&foreign).is_err());
+    }
+
+    #[test]
+    fn live_and_inert_fibers_share_retained_nodes_before_admitted_projection() {
+        use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+        use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+        let program = one_unit_parameter_entry_program();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program.clone()));
+        let make = || {
+            let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+            fiber
+                .bind_function_argument_values_owned(&program, vec![RuntimeValue::Unit])
+                .unwrap();
+            fiber
+        };
+        let fibers = [make(), make()];
+        let images: Vec<_> = fibers
+            .iter()
+            .map(|fiber| AwbcFiberStateSnapshot::from_live(fiber, &owner).unwrap())
+            .collect();
+        let before = serde_json::to_vec(&images).unwrap();
+        let mut live = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        fibers[0].admit_retained(&mut live).unwrap();
+        let error = fibers[1].admit_retained(&mut live).unwrap_err();
+        assert_eq!(
+            error,
+            AwbcRuntimeValueSnapshotError::ProgramType(Box::new(
+                crate::program_types::RuntimeProgramTypeError::Resource(Box::new(
+                    RuntimeSchemaError::BudgetExceeded { budget: "nodes" },
+                )),
+            ))
+        );
+        assert_eq!(fibers[0].admit_retained(&mut live).unwrap_err(), error);
+        let mut inert = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        images[0].admit_retained(&mut inert).unwrap();
+        assert_eq!(images[1].admit_retained(&mut inert).unwrap_err(), error);
+        assert_eq!(serde_json::to_vec(&images).unwrap(), before);
+        let mut exact = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        for fiber in &fibers {
+            fiber.admit_retained(&mut exact).unwrap();
+        }
+        let projected: Vec<_> = fibers
+            .iter()
+            .map(|fiber| AwbcFiberStateSnapshot::from_admitted_live(fiber, &owner).unwrap())
+            .collect();
+        assert_eq!(projected, images);
+        let mut exact = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_nodes: 2,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        for image in &projected {
+            image.admit_retained(&mut exact).unwrap();
+        }
+        for (image, original) in projected.into_iter().zip(fibers) {
+            assert_eq!(
+                image.into_admitted_live_for_program(&owner).unwrap(),
+                original
+            );
+        }
     }
 
     #[test]

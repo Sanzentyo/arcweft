@@ -163,13 +163,22 @@ pub(crate) struct RuntimeDialogueRegistrySaveSnapshot<F, T> {
 }
 
 impl<F, T> RuntimeDialogueRegistrySaveSnapshot<F, T> {
-    pub(crate) fn try_visit_active<E>(
-        &self,
-        mut visit: impl FnMut(&F, &AwbcRuntimeDialogueActivationSnapshot<T>) -> Result<(), E>,
+    pub(crate) fn try_visit_active<'a, E>(
+        &'a self,
+        mut visit: impl FnMut(
+            &'a DialogueActivationId,
+            &'a F,
+            &'a AwbcRuntimeDialogueActivationSnapshot<T>,
+        ) -> Result<(), E>,
     ) -> Result<(), E> {
         for entry in &self.entries {
             match entry {
-                RuntimeDialogueRegistrySaveEntry::Active { frame, line, .. } => visit(frame, line)?,
+                RuntimeDialogueRegistrySaveEntry::Active {
+                    activation,
+                    frame,
+                    line,
+                    ..
+                } => visit(activation, frame, line)?,
                 RuntimeDialogueRegistrySaveEntry::PublishedHandles { .. } => {}
             }
         }
@@ -254,6 +263,7 @@ impl<F, T> RuntimeDialogueActivationTransaction<F, T> {
 }
 
 impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
+    #[cfg(test)]
     pub(crate) fn to_save_snapshot<S>(
         &self,
         snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
@@ -278,7 +288,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     fn to_snapshot_with_owner<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
-        mut snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+        snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
     ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
     where
         T: super::handle::RuntimeDialogueTypeCoordinate,
@@ -292,12 +302,23 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 crate::entry::RuntimeSchemaLimits::engine_default(),
             ),
         };
+        self.admit_retained(&mut admission)?;
+        self.snapshot_admitted(owner, snapshot_frame)
+    }
+
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), RuntimeDialogueRegistrySnapshotError>
+    where
+        T: super::handle::RuntimeDialogueTypeCoordinate,
+    {
         admission.validate_metadata_collection(self.entries.len())?;
         for (activation, entry) in &self.entries {
             match entry {
                 RuntimeDialogueRegistryEntry::Active { revision, line, .. } => {
                     admission.validate_metadata(&(activation, revision))?;
-                    line.admit_retained_resources(&mut admission)?;
+                    line.admit_retained_resources(admission)?;
                 }
                 RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } => {
                     admission.validate_metadata(&(activation, revision, handles))?;
@@ -310,6 +331,17 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 }
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn snapshot_admitted<S>(
+        &self,
+        owner: Option<&RuntimeProgramOwner>,
+        mut snapshot_frame: impl FnMut(&F) -> Result<S, RuntimeDialogueRegistrySnapshotError>,
+    ) -> Result<RuntimeDialogueRegistrySaveSnapshot<S, T>, RuntimeDialogueRegistrySnapshotError>
+    where
+        T: super::handle::RuntimeDialogueTypeCoordinate,
+    {
         let entries = self
             .entries
             .iter()
@@ -323,14 +355,9 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                         activation: activation.clone(),
                         revision: *revision,
                         frame: snapshot_frame(frame)?,
-                        line: match owner {
-                            Some(owner) => {
-                                AwbcRuntimeDialogueActivationSnapshot::from_live_for_program(
-                                    line, owner,
-                                )?
-                            }
-                            None => AwbcRuntimeDialogueActivationSnapshot::from_live(line)?,
-                        },
+                        line: AwbcRuntimeDialogueActivationSnapshot::from_admitted_live(
+                            line, owner,
+                        )?,
                     },
                     RuntimeDialogueRegistryEntry::PublishedHandles { revision, handles } => {
                         RuntimeDialogueRegistrySaveEntry::PublishedHandles {
@@ -357,7 +384,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             DialogueActivationId,
             (RuntimeDeferRegistrationId, RuntimeDeferSiteId),
         >,
-        mut restore_frame: impl FnMut(
+        restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
             &RuntimeDialogueActivationState<T>,
@@ -371,55 +398,23 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        admission.validate_metadata_collection(snapshot.entries.len())?;
-        admission.validate_metadata(expected_children)?;
-        let mut identities = std::collections::BTreeSet::new();
-        let mut active_children = std::collections::BTreeSet::new();
-        for entry in &snapshot.entries {
-            let (activation, revision) = match entry {
-                RuntimeDialogueRegistrySaveEntry::Active {
-                    activation,
-                    revision,
-                    ..
-                }
-                | RuntimeDialogueRegistrySaveEntry::PublishedHandles {
-                    activation,
-                    revision,
-                    ..
-                } => (activation, revision),
-            };
-            admission.validate_metadata(&(activation, revision))?;
-            if !identities.insert(activation) {
-                return Err(RuntimeDialogueRegistrySnapshotError::DuplicateActivation {
-                    activation: activation.clone(),
-                });
-            }
-            match entry {
-                RuntimeDialogueRegistrySaveEntry::Active { line, .. } => {
-                    line.admit_retained_resources(&mut admission)?;
-                    line.restore_admit_with_deferred_child(
-                        activation,
-                        expected_children.get(activation).copied(),
-                    )?;
-                    active_children.insert(activation);
-                }
-                RuntimeDialogueRegistrySaveEntry::PublishedHandles { handles, .. } => {
-                    admission.validate_metadata(handles)?;
-                    handles.restore_admit(activation)?;
-                    if handles.is_terminal() {
-                        return Err(RuntimeDialogueRegistrySnapshotError::TerminalPublishedHandles);
-                    }
-                }
-            }
-        }
-        if expected_children
-            .keys()
-            .any(|activation| !active_children.contains(activation))
-        {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState.into());
-        }
+        snapshot.admit_retained(&mut admission, expected_children)?;
+        Self::from_admitted_save_snapshot(snapshot, owner, restore_frame)
+    }
+
+    pub(crate) fn from_admitted_save_snapshot<S>(
+        snapshot: RuntimeDialogueRegistrySaveSnapshot<S, T>,
+        owner: &RuntimeProgramOwner,
+        mut restore_frame: impl FnMut(
+            &DialogueActivationId,
+            S,
+            &RuntimeDialogueActivationState<T>,
+        ) -> Result<F, RuntimeDialogueRegistrySnapshotError>,
+    ) -> Result<Self, RuntimeDialogueRegistrySnapshotError>
+    where
+        T: super::handle::RuntimeDialogueTypeCoordinate,
+    {
         let mut entries = BTreeMap::new();
-        let mut unmatched_children = expected_children.clone();
         for entry in snapshot.entries {
             let (activation, entry) = match entry {
                 RuntimeDialogueRegistrySaveEntry::Active {
@@ -428,8 +423,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     frame,
                     line,
                 } => {
-                    let line = line.into_live(owner)?;
-                    unmatched_children.remove(&activation);
+                    let line = line.into_admitted_live(owner)?;
                     let frame = restore_frame(&activation, frame, &line)?;
                     (
                         activation,
@@ -460,12 +454,73 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                 }
             }
         }
-        if !unmatched_children.is_empty() {
-            return Err(LineRuntimeError::InvalidRestoredDeferredState.into());
-        }
         Ok(Self { entries })
     }
+}
 
+impl<F, T: Clone + super::handle::RuntimeDialogueTypeCoordinate>
+    RuntimeDialogueRegistrySaveSnapshot<F, T>
+{
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        expected_children: &BTreeMap<
+            DialogueActivationId,
+            (RuntimeDeferRegistrationId, RuntimeDeferSiteId),
+        >,
+    ) -> Result<(), RuntimeDialogueRegistrySnapshotError> {
+        admission.validate_metadata_collection(self.entries.len())?;
+        admission.validate_metadata(expected_children)?;
+        let mut identities = std::collections::BTreeSet::new();
+        let mut active_children = std::collections::BTreeSet::new();
+        for entry in &self.entries {
+            let (activation, revision) = match entry {
+                RuntimeDialogueRegistrySaveEntry::Active {
+                    activation,
+                    revision,
+                    ..
+                }
+                | RuntimeDialogueRegistrySaveEntry::PublishedHandles {
+                    activation,
+                    revision,
+                    ..
+                } => (activation, revision),
+            };
+            admission.validate_metadata(&(activation, revision))?;
+            if !identities.insert(activation) {
+                return Err(RuntimeDialogueRegistrySnapshotError::DuplicateActivation {
+                    activation: activation.clone(),
+                });
+            }
+            match entry {
+                RuntimeDialogueRegistrySaveEntry::Active { line, .. } => {
+                    line.admit_retained_resources(admission)?;
+                    line.restore_admit_with_deferred_child(
+                        activation,
+                        expected_children.get(activation).copied(),
+                    )?;
+                    active_children.insert(activation);
+                }
+                RuntimeDialogueRegistrySaveEntry::PublishedHandles { handles, .. } => {
+                    admission.validate_metadata(handles)?;
+                    handles.restore_admit(activation)?;
+                    if handles.is_terminal() {
+                        return Err(RuntimeDialogueRegistrySnapshotError::TerminalPublishedHandles);
+                    }
+                }
+            }
+        }
+        if expected_children
+            .keys()
+            .any(|activation| !active_children.contains(activation))
+        {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState.into());
+        }
+        Ok(())
+    }
+}
+
+impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
     pub(crate) fn begin(
         &mut self,
         activation: DialogueActivationId,

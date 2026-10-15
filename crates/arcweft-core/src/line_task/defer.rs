@@ -227,12 +227,6 @@ impl Clone for AwbcRuntimeDeferredRegistrationSnapshot {
 }
 
 impl AwbcRuntimeDeferredRegistrationSnapshot {
-    pub(crate) fn from_live(
-        registration: &RuntimeLineDeferredRegistration,
-    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
-        Self::from_live_with_owner(registration, None)
-    }
-
     pub(crate) fn from_live_for_program(
         registration: &RuntimeLineDeferredRegistration,
         owner: &crate::task::RuntimeProgramOwner,
@@ -244,6 +238,40 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         registration: &RuntimeLineDeferredRegistration,
         owner: Option<&crate::task::RuntimeProgramOwner>,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        let mut admission = match owner {
+            Some(owner) => crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None => crate::value::RuntimeRetainedValueAdmission::standalone(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        };
+        admission.validate_metadata(&(
+            registration.id,
+            registration.site,
+            registration.outcome_filter,
+        ))?;
+        admission.validate_metadata_collection(registration.captures.len())?;
+        for capture in &registration.captures {
+            admission.validate(capture)?;
+        }
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            |owner, resources| {
+                if let Some(owner) = owner {
+                    registration.admit_original_capture_types(owner, resources)?;
+                }
+                Ok(())
+            },
+        )?;
+        Self::from_admitted_live(registration, owner)
+    }
+
+    pub(crate) fn from_admitted_live(
+        registration: &RuntimeLineDeferredRegistration,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
             id: registration.id,
             site: registration.site,
@@ -251,13 +279,8 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
             captures: registration
                 .captures
                 .iter()
-                .map(|value| match owner {
-                    Some(owner) => {
-                        crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
-                            value, owner,
-                        )
-                    }
-                    None => crate::value::AwbcRuntimeValueSnapshot::from_standalone_value(value),
+                .map(|value| {
+                    crate::value::AwbcRuntimeValueSnapshot::from_admitted_storage(value, owner)
                 })
                 .collect::<Result<_, _>>()?,
         })
@@ -267,13 +290,33 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        admission.validate_metadata(&(self.id, self.site, self.outcome_filter))?;
+        admission.validate_metadata_collection(self.captures.len())?;
+        for capture in &self.captures {
+            admission.validate_snapshot(capture)?;
+        }
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+            |_, resources| self.admit_original_capture_types(owner, resources),
+        )?;
+        self.into_admitted_live(owner)
+    }
+
+    pub(crate) fn into_admitted_live(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(RuntimeLineDeferredRegistration::new(
             self.id,
             self.site,
             self.outcome_filter,
             self.captures
                 .into_iter()
-                .map(|capture| capture.into_runtime_value_for_program(owner))
+                .map(|capture| capture.into_admitted_runtime_value(owner))
                 .collect::<Result<_, _>>()?,
         ))
     }

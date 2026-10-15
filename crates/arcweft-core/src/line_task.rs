@@ -767,6 +767,13 @@ impl LineTaskScheduledLaneSnapshot {
 }
 
 impl LineTaskLiveSnapshot {
+    pub(crate) fn admit_for_plan<P: LineTaskPlanView>(
+        &self,
+        plan: &P,
+    ) -> Result<(), LineTaskSnapshotError> {
+        validate_snapshot(plan, self)
+    }
+
     #[must_use]
     pub(crate) fn new(
         activation: DialogueActivationId,
@@ -1040,12 +1047,17 @@ impl LineTaskLiveState {
 
     /// Restores only an owner-validated complete snapshot. `P` is the same
     /// plan view used by the reducer, so native and AWBC share validation.
+    #[cfg(test)]
     pub(crate) fn restore<P: LineTaskPlanView>(
         plan: &P,
         snapshot: LineTaskLiveSnapshot,
     ) -> Result<Self, LineTaskSnapshotError> {
         validate_snapshot(plan, &snapshot)?;
-        Ok(Self {
+        Ok(Self::from_admitted_snapshot(snapshot))
+    }
+
+    pub(crate) fn from_admitted_snapshot(snapshot: LineTaskLiveSnapshot) -> Self {
+        Self {
             activation: snapshot.activation,
             phase: snapshot.phase,
             cancellation_action: snapshot.cancellation_action,
@@ -1073,7 +1085,7 @@ impl LineTaskLiveState {
                 .into_iter()
                 .collect(),
             cleanup_started: snapshot.cleanup_started,
-        })
+        }
     }
 
     #[must_use]

@@ -487,17 +487,113 @@ fn fixture_bundle_image_handle() -> RuntimeValue {
         .expect("fixture ImageHandle is standard-owned")
 }
 
+fn append_asset_capture_type(program: &mut AwbcProgram) -> AwbcTypeId {
+    let image_owner = crate::pattern::runtime_standard_opaque_type(&["ImageHandle"])
+        .unwrap()
+        .monomorphic_owner()
+        .unwrap();
+    let producer = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program
+        .strings
+        .push(image_owner.producer().as_str().to_owned());
+    let image_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program.runtime_types.push(AwbcRuntimeType::new(
+        image_owner.semantic_identity(),
+        AwbcRuntimeTypeShape::Opaque {
+            producer,
+            admission: image_owner.admission(),
+            value_class: image_owner.value_class(),
+            persistence: image_owner.persistence(),
+            arguments: Vec::new(),
+        },
+    ));
+    let capture_type = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
+    program.runtime_types.push(AwbcRuntimeType::new(
+        crate::pattern::RuntimeCheckedType::Tuple(vec![
+            crate::pattern::RuntimeCheckedType::Opaque { owner: image_owner },
+        ])
+        .semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Tuple(vec![image_type]),
+    ));
+    capture_type
+}
+
+fn asset_capture_program() -> (AwbcProgram, AwbcFunctionId) {
+    let mut program = actor_look_program();
+    let capture_type = append_asset_capture_type(&mut program);
+    let signature = AwbcSignatureId(u32::try_from(program.signatures.len()).unwrap());
+    program.signatures.push(AwbcSignature {
+        params: vec![capture_type],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    let layout = AwbcFrameLayoutId(u32::try_from(program.frame_layouts.len()).unwrap());
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: capture_type,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    let function = AwbcFunctionId(u32::try_from(program.functions.len()).unwrap());
+    let block = AwbcBlockId(u32::try_from(program.blocks.len()).unwrap());
+    let mut activation_function = program.functions[1].clone();
+    activation_function.definition =
+        crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
+            *blake3::hash(b"arcweft.test.asset-capture-activation.v1\0").as_bytes(),
+        );
+    activation_function.signature = signature;
+    activation_function.frame_layout = layout;
+    activation_function.blocks = AwbcTableRange::new(block.0, 1);
+    activation_function.entry_block = block;
+    activation_function.input_ownership = vec![AwbcFunctionInputOwnership::capture(
+        manual_awbc_capture_origin("asset-capture"),
+        0,
+        crate::plan::RuntimeFunctionCaptureMode::Copy,
+    )];
+    program.functions.push(activation_function);
+    program.blocks.push(AwbcBlock {
+        owner: function,
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    let mut capture_group = program.line_task_groups[0].clone();
+    capture_group.activation = function;
+    capture_group.captures = vec![
+        crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+    ];
+    capture_group.handle_sites.clear();
+    capture_group.root = crate::awbc::schema::AwbcLineTaskNodeId(1);
+    capture_group.nodes = AwbcTableRange::new(1, 1);
+    program
+        .line_task_nodes
+        .push(crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new()));
+    program.line_task_groups.push(capture_group);
+    let mut capture_content = program.content_units[0].clone();
+    capture_content.public_id = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program.strings.push("content.asset.capture".to_owned());
+    capture_content.line_task_group = Some(crate::awbc::schema::AwbcLineTaskGroupId(1));
+    program.content_units.push(capture_content);
+    program.canonicalize_string_table();
+    (program, function)
+}
+
 #[test]
 fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
-    let mut executor = AwbcProductStepExecutor::for_entry(
-        return_program(),
-        crate::awbc::schema::AwbcEntryId(0),
-        64,
-    )
-    .expect("fixture Product executor starts");
-    let content_id = AwbcContentUnitId(0);
+    let (program, function) = asset_capture_program();
+    let mut executor =
+        AwbcProductStepExecutor::for_entry(program, crate::awbc::schema::AwbcEntryId(0), 64)
+            .expect("fixture Product executor starts");
+    let content_id = AwbcContentUnitId(1);
     let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-        std::num::NonZeroU32::MIN,
+        std::num::NonZeroU32::new(2).unwrap(),
     );
     let activation = crate::runtime_id::DialogueActivationId::new(
         executor.artifact_fingerprint,
@@ -511,11 +607,11 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
             activation,
             content: content_id,
             target: fixture_dialogue_target(),
-            target_type: AwbcTypeId(0),
+            target_type: AwbcTypeId(6),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.asset.capture")
                 .expect("fixture line identity"),
             result: crate::awbc::schema::AwbcDialogueResultTarget {
-                ty: AwbcTypeId(0),
+                ty: AwbcTypeId(5),
                 pattern: AwbcPatternId(0),
                 destination: AwbcRegisterId(0),
             },
@@ -525,7 +621,14 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
             effect_callbacks: BTreeMap::new(),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             phase: ProductDialoguePhase::Activating {
-                fiber: copyable_fixture_fiber(&executor),
+                fiber: FiberState::for_function(
+                    &executor.program,
+                    crate::awbc::fiber::AwbcFiberRoot::Function(function),
+                    function,
+                    1,
+                    64,
+                )
+                .unwrap(),
                 pending: None,
             },
             elapsed_nanos: 0,
@@ -3000,7 +3103,131 @@ fn activation_effect_moves_affine_handle_through_effect_observation_and_default_
 }
 
 #[test]
-fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
+fn dialogue_frame_joins_the_original_bank_before_capture_or_restore() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    use crate::value::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+    let (executor, _) = initial_actor_dialogue_executor();
+    let frame = executor.dialogues.active_frame().unwrap();
+    let line = executor.dialogues.active_line().unwrap();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let snapshot = executor.snapshot().unwrap();
+    let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
+    let limits = |max_nodes| RuntimeSchemaLimits {
+        max_nodes,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let unrelated = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        executor.program.as_ref().clone(),
+    ));
+    let mut foreign = RuntimeRetainedValueAdmission::for_program(
+        unrelated,
+        RuntimeSchemaLimits::engine_default(),
+    );
+    assert_eq!(
+        frame
+            .admit_retained(&executor.program, &frame.activation, line, &mut foreign)
+            .unwrap_err(),
+        crate::line_task::RuntimeDialogueRegistrySnapshotError::Value(
+            AwbcRuntimeValueSnapshotError::Message {
+                message: "dialogue frame admission requires its original AWBC program owner"
+                    .to_owned()
+            }
+        )
+    );
+    let mut live_admission = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(2));
+    live_admission.validate(&RuntimeValue::Unit).unwrap();
+    let error = frame
+        .admit_retained(
+            &executor.program,
+            &frame.activation,
+            line,
+            &mut live_admission,
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        crate::line_task::RuntimeDialogueRegistrySnapshotError::Value(
+            AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                budget: "nodes"
+            })
+        )
+    );
+    assert_eq!(
+        frame
+            .admit_retained(
+                &executor.program,
+                &frame.activation,
+                line,
+                &mut live_admission
+            )
+            .unwrap_err(),
+        error
+    );
+    let mut exact = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(3));
+    exact.validate(&RuntimeValue::Unit).unwrap();
+    frame
+        .admit_retained(&executor.program, &frame.activation, line, &mut exact)
+        .unwrap();
+    snapshot
+        .dialogues
+        .try_visit_active(|_, saved, _| {
+            let mut inert = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(2));
+            inert
+                .validate_snapshot(&crate::value::AwbcRuntimeValueSnapshot::Unit)
+                .unwrap();
+            assert_eq!(
+                saved
+                    .admit_retained(&executor.program, &mut inert)
+                    .unwrap_err(),
+                error
+            );
+            assert_eq!(
+                saved
+                    .admit_retained(&executor.program, &mut inert)
+                    .unwrap_err(),
+                error
+            );
+            let mut exact = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits(3));
+            exact
+                .validate_snapshot(&crate::value::AwbcRuntimeValueSnapshot::Unit)
+                .unwrap();
+            saved.admit_retained(&executor.program, &mut exact).unwrap();
+            Ok::<_, std::convert::Infallible>(())
+        })
+        .unwrap();
+    assert_eq!(serde_json::to_vec(&snapshot.dialogues).unwrap(), before);
+    executor.validate_snapshot(&snapshot).unwrap();
+}
+#[test]
+fn dialogue_frame_cannot_replace_the_original_registry_activation() {
+    let (executor, activation) = initial_actor_dialogue_executor();
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+    let mut snapshot = executor.snapshot().unwrap();
+    let mut encoded = serde_json::to_value(&snapshot.dialogues).unwrap();
+    let replacement = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+        activation.occurrence() + 1,
+    );
+    encoded["entries"][0]["Active"]["frame"]["activation"] =
+        serde_json::to_value(replacement).unwrap();
+    snapshot.dialogues = serde_json::from_value(encoded).unwrap();
+    let before = serde_json::to_vec(&snapshot.dialogues).unwrap();
+    let error = AwbcProductExecutorSaveSnapshot::from_live(&snapshot, &owner).unwrap_err();
+    assert!(
+        matches!(error, super::snapshot::AwbcProductSaveError::InvalidSnapshot { message } if message.contains("phase/result authority is not isomorphic"))
+    );
+    assert_eq!(serde_json::to_vec(&snapshot.dialogues).unwrap(), before);
+    assert!(executor.validate_snapshot(&snapshot).is_err());
+}
+
+fn initial_actor_dialogue_executor() -> (
+    AwbcProductStepExecutor,
+    crate::runtime_id::DialogueActivationId,
+) {
     let mut executor = AwbcProductStepExecutor::for_entry(actor_look_program(), AwbcEntryId(0), 64)
         .expect("two-look Product executor starts");
     let activation = crate::runtime_id::DialogueActivationId::new(
@@ -3053,6 +3280,13 @@ fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
             pending_activation_host_call: None,
         })
         .expect("two-look dialogue activation begins");
+
+    (executor, activation)
+}
+
+#[test]
+fn actor_look_borrows_one_stage_actor_across_two_looks_and_out_return() {
+    let (mut executor, activation) = initial_actor_dialogue_executor();
 
     fn activation_step(
         executor: &mut AwbcProductStepExecutor,

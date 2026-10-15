@@ -4,10 +4,10 @@ use super::{
     ProductLineTaskFiberPhase, stream_id_for,
 };
 mod task_publication;
-use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberState, FiberStatus};
+use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberStatus};
 use crate::awbc::schema::{
-    AwbcChoiceId, AwbcContentUnitId, AwbcDialogueResultTarget, AwbcFlowBinding, AwbcFunctionKind,
-    AwbcHostCallId, AwbcStreamPlanId, AwbcTypeId,
+    AwbcChoiceId, AwbcContentUnitId, AwbcFlowBinding, AwbcFunctionKind, AwbcHostCallId,
+    AwbcStreamPlanId, AwbcTypeId,
 };
 use crate::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskActiveRoot, LineTaskExecutionLaneSnapshot,
@@ -53,22 +53,27 @@ fn restore_exit(exit: AwbcProductLineTaskExitSnapshot) -> ScopeExit {
     }
 }
 
-fn validate_product_dialogue_phase(
+fn validate_product_dialogue_phase<V, O, E, F, L, P, H, R>(
     program: &crate::awbc::schema::AwbcProgram,
     activation: &DialogueActivationId,
-    frame: &super::ActiveDialogue,
-    line: &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>,
+    frame: &super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>,
+    result: &crate::line_task::RuntimeDialogueResultState<AwbcTypeId, R>,
+    is_closed: impl Fn(&L) -> bool,
 ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
     use crate::line_task::RuntimeDialogueResultState;
 
     let valid = activation == &frame.activation
-        && match (&frame.phase, line.result()) {
+        && match (&frame.phase, result) {
             (
-                super::ProductDialoguePhase::Activating { .. },
+                super::AwbcProductDialoguePhase::Activating { .. },
                 RuntimeDialogueResultState::Uncommitted,
+            )
+            | (
+                super::AwbcProductDialoguePhase::Closing(_),
+                RuntimeDialogueResultState::Abandoned,
             ) => frame.pending_content_events.is_empty() && !frame.pending_advance,
             (
-                super::ProductDialoguePhase::Activating { .. },
+                super::AwbcProductDialoguePhase::Activating { .. },
                 RuntimeDialogueResultState::Committed { ty, .. },
             ) => {
                 *ty == frame.result.ty
@@ -76,11 +81,12 @@ fn validate_product_dialogue_phase(
                     && !frame.pending_advance
             }
             (
-                super::ProductDialoguePhase::Reducing { .. },
-                RuntimeDialogueResultState::Committed { ty, .. },
+                super::AwbcProductDialoguePhase::Reducing { .. },
+                RuntimeDialogueResultState::Committed { ty, .. }
+                | RuntimeDialogueResultState::Selected { ty, .. },
             ) => *ty == frame.result.ty,
             (
-                super::ProductDialoguePhase::Reducing { .. },
+                super::AwbcProductDialoguePhase::Reducing { .. },
                 RuntimeDialogueResultState::Uncommitted,
             ) => program
                 .content_units
@@ -93,34 +99,27 @@ fn validate_product_dialogue_phase(
                             .is_some_and(|view| view.has_mark_result_selector())
                 }),
             (
-                super::ProductDialoguePhase::Reducing { .. },
-                RuntimeDialogueResultState::Selected { ty, .. },
-            ) => *ty == frame.result.ty,
-            (
-                super::ProductDialoguePhase::Publishing { line_task },
+                super::AwbcProductDialoguePhase::Publishing { line_task },
                 RuntimeDialogueResultState::Publishing { ty, .. },
             ) => {
-                line_task.is_closed()
+                is_closed(line_task)
                     && *ty == frame.result.ty
                     && frame.pending_content_events.is_empty()
                     && !frame.pending_advance
             }
-            (super::ProductDialoguePhase::Closing(_), RuntimeDialogueResultState::Abandoned) => {
-                frame.pending_content_events.is_empty() && !frame.pending_advance
-            }
             (
-                super::ProductDialoguePhase::Activating { .. }
-                | super::ProductDialoguePhase::Reducing { .. }
-                | super::ProductDialoguePhase::Publishing { .. }
-                | super::ProductDialoguePhase::Closing(_),
+                super::AwbcProductDialoguePhase::Activating { .. }
+                | super::AwbcProductDialoguePhase::Reducing { .. }
+                | super::AwbcProductDialoguePhase::Publishing { .. }
+                | super::AwbcProductDialoguePhase::Closing(_),
                 RuntimeDialogueResultState::Uncommitted
                 | RuntimeDialogueResultState::Committed { .. }
                 | RuntimeDialogueResultState::Selected { .. }
                 | RuntimeDialogueResultState::Publishing { .. }
                 | RuntimeDialogueResultState::Published
                 | RuntimeDialogueResultState::Abandoned,
-            ) => false,
-            (super::ProductDialoguePhase::Transitioning, _) => false,
+            )
+            | (super::AwbcProductDialoguePhase::Transitioning, _) => false,
         };
     valid.then_some(()).ok_or_else(|| {
         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
@@ -129,18 +128,20 @@ fn validate_product_dialogue_phase(
     })
 }
 
-fn activation_fiber_in_phase(frame: &super::ActiveDialogue) -> Option<&FiberState> {
+fn activation_fiber_in_phase<V, O, E, F, L, P, H>(
+    frame: &super::AwbcProductActiveDialogue<V, O, E, super::AwbcProductDialoguePhase<F, L, P>, H>,
+) -> Option<&F> {
     match &frame.phase {
-        super::ProductDialoguePhase::Activating { fiber, .. }
-        | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
-            state: super::ProductDialogueClosingState::Activation { fiber, .. },
+        super::AwbcProductDialoguePhase::Activating { fiber, .. }
+        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+            state: super::AwbcProductDialogueClosingState::Activation { fiber, .. },
             ..
         }) => Some(fiber),
-        super::ProductDialoguePhase::Reducing { .. }
-        | super::ProductDialoguePhase::Publishing { .. }
-        | super::ProductDialoguePhase::Transitioning
-        | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
-            state: super::ProductDialogueClosingState::LineTask { .. },
+        super::AwbcProductDialoguePhase::Reducing { .. }
+        | super::AwbcProductDialoguePhase::Publishing { .. }
+        | super::AwbcProductDialoguePhase::Transitioning
+        | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+            state: super::AwbcProductDialogueClosingState::LineTask { .. },
             ..
         }) => None,
     }
@@ -924,28 +925,37 @@ fn restore_need_producer_registry(
     })
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductActiveDialogueSaveSnapshot {
-    pub activation: DialogueActivationId,
-    pub content: AwbcContentUnitId,
-    pub target: crate::value::AwbcRuntimeValueSnapshot,
-    pub target_type: crate::awbc::schema::AwbcTypeId,
-    pub line: crate::plan::RuntimeLineId,
-    pub result: AwbcDialogueResultTarget,
-    pub captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
-    pub task_inputs: Vec<crate::value::AwbcRuntimeValueSnapshot>,
-    pub values: Vec<AwbcProductDialogueValueSaveSnapshot>,
-    pub effects: Vec<AwbcProductDialogueEffectSaveSnapshot>,
-    pub voice: crate::presentation::RuntimeDialogueVoiceState,
-    pub phase: AwbcProductDialoguePhaseSaveSnapshot,
-    pub elapsed_nanos: u64,
-    pub pending_content_events: Vec<RuntimeDialogueContentEventKind>,
-    pub pending_advance: bool,
-    pub pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
-    pub pending_activation_host_call: Option<AwbcProductPendingHostCallSnapshot>,
-}
+pub type AwbcProductActiveDialogueSaveSnapshot = super::AwbcProductActiveDialogue<
+    AwbcRuntimeValueSnapshot,
+    AwbcRuntimeValueSnapshot,
+    Vec<AwbcProductDialogueEffectSaveSnapshot>,
+    AwbcProductDialoguePhaseSaveSnapshot,
+    AwbcProductPendingHostCallSnapshot,
+>;
 
+impl Clone for AwbcProductActiveDialogueSaveSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            activation: self.activation.clone(),
+            content: self.content,
+            target: self.target.clone(),
+            target_type: self.target_type,
+            line: self.line.clone(),
+            result: self.result.clone(),
+            captures: self.captures.clone(),
+            task_inputs: self.task_inputs.clone(),
+            values: self.values.clone(),
+            effect_callbacks: self.effect_callbacks.clone(),
+            voice: self.voice.clone(),
+            phase: self.phase.clone(),
+            elapsed_nanos: self.elapsed_nanos,
+            pending_content_events: self.pending_content_events.clone(),
+            pending_advance: self.pending_advance,
+            pending_line_outcomes: self.pending_line_outcomes.clone(),
+            pending_activation_host_call: self.pending_activation_host_call.clone(),
+        }
+    }
+}
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductDialogueEffectSaveSnapshot {
@@ -953,7 +963,456 @@ pub struct AwbcProductDialogueEffectSaveSnapshot {
     pub callback: crate::value::AwbcRuntimeValueSnapshot,
 }
 
+impl<V, O, E, P, H> super::AwbcProductActiveDialogue<V, O, E, P, H> {
+    /// Borrows the original frame grammar before either storage role is projected.
+    fn admit_retained_values<'a>(
+        &'a self,
+        program: &crate::awbc::schema::AwbcProgram,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        target: crate::value::RuntimeValueView<'a>,
+        callbacks: impl Clone
+        + ExactSizeIterator<
+            Item = (
+                crate::runtime_id::RuntimeDialogueEffectSiteId,
+                crate::value::RuntimeValueView<'a>,
+            ),
+        >,
+        has_reducer: bool,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+    {
+        use crate::value::RuntimeValueView;
+        let invalid =
+            |message: &str| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                message: message.to_owned(),
+            };
+        admission.admit_composite(V::admission_origin(), |owner, _| {
+            if matches!(owner, Some(crate::task::RuntimeProgramOwner::Awbc(original)) if std::ptr::eq(original.as_ref(), program)) {
+                Ok(())
+            } else {
+                Err(crate::value::AwbcRuntimeValueSnapshotError::Message { message: "dialogue frame admission requires its original AWBC program owner".to_owned() })
+            }
+        })?;
+        admission.validate_metadata(&(
+            &self.activation,
+            self.content,
+            self.target_type,
+            &self.line,
+            &self.result,
+            &self.voice,
+            self.elapsed_nanos,
+            &self.pending_content_events,
+            self.pending_advance,
+            &self.pending_line_outcomes,
+        ))?;
+        for count in [
+            self.captures.len(),
+            self.task_inputs.len(),
+            self.values.len(),
+            callbacks.len(),
+        ] {
+            admission.validate_metadata_collection(count)?;
+        }
+        let content = program
+            .content_units
+            .get(self.content.index())
+            .ok_or_else(|| invalid("active dialogue snapshot references missing AWBC content"))?;
+        let group = content
+            .line_task_group
+            .and_then(|id| program.line_task_groups.get(id.index()))
+            .ok_or_else(|| invalid("active dialogue snapshot content has no line-task group"))?;
+        admission.validate_metadata_collection(program.content_templates.len())?;
+        let template = program
+            .content_templates
+            .get(content.template.index())
+            .filter(|template| template.id == content.template)
+            .ok_or_else(|| invalid("active dialogue template is absent from its AWBC program"))?;
+        if self.values.len() != template.slots.len() {
+            return Err(invalid(
+                "active dialogue value slots disagree with its content template",
+            ));
+        }
+        for (binding, declared) in self.values.iter().zip(&template.slots) {
+            let role = match declared.role {
+                crate::awbc::schema::AwbcDialogueValueRole::Interpolation => {
+                    crate::plan::RuntimeDialogueValueRole::Interpolation
+                }
+                crate::awbc::schema::AwbcDialogueValueRole::Content => {
+                    crate::plan::RuntimeDialogueValueRole::Content
+                }
+                crate::awbc::schema::AwbcDialogueValueRole::Formatted => {
+                    crate::plan::RuntimeDialogueValueRole::Formatted
+                }
+            };
+            if binding.slot != declared.slot || binding.role != role {
+                return Err(invalid(
+                    "active dialogue value slot has a different template role",
+                ));
+            }
+        }
+        let signature = program
+            .functions
+            .get(group.activation.index())
+            .and_then(|function| program.signatures.get(function.signature.index()))
+            .ok_or_else(|| invalid("line task group activation signature is absent"))?;
+        if self.captures.len() != group.captures.len()
+            || self.captures.len() != signature.params.len()
+        {
+            return Err(invalid(
+                "active dialogue snapshot capture arity disagrees with its content group",
+            ));
+        }
+        let expected_inputs = if has_reducer {
+            group.captures.len() + group.activation_exports.len()
+        } else {
+            0
+        };
+        if self.task_inputs.len() != expected_inputs
+            || has_reducer
+                && self
+                    .task_inputs
+                    .iter()
+                    .zip(&self.captures)
+                    .any(|(left, right)| {
+                        !crate::value::runtime_value_views_equal(
+                            left.borrowed_view(),
+                            right.borrowed_view(),
+                        )
+                    })
+        {
+            return Err(invalid(
+                "active dialogue snapshot line-task input ABI is invalid",
+            ));
+        }
+        if !matches!(target, RuntimeValueView::Opaque(_))
+            || !crate::awbc::fiber::dialogue_target_type_matches_program(program, self.target_type)
+        {
+            return Err(invalid(
+                "active dialogue target is not admitted by its AWBC executable",
+            ));
+        }
+        let mut effects = BTreeSet::new();
+        for binding in &self.values {
+            admission.validate_metadata(&(binding.slot, binding.role))?;
+        }
+        for (site, callback) in callbacks.clone() {
+            admission.validate_metadata(&site)?;
+            if !effects.insert(site) {
+                return Err(invalid("dialogue effect snapshot repeats a site"));
+            }
+            if !matches!(callback, RuntimeValueView::Callable(_)) {
+                return Err(invalid("dialogue effect snapshot is not a callable"));
+            }
+        }
+        admission.admit_composite(V::admission_origin(), |owner, resources| {
+            resources.validate_view(target, 0, None)?;
+            AwbcRuntimeValueSnapshot::validate_admitted_storage_view(target, owner, resources)?;
+            for value in self.captures.iter().chain(self.task_inputs.iter()) {
+                let view = value.borrowed_view();
+                view.admit_unrestricted(resources)?;
+                AwbcRuntimeValueSnapshot::validate_admitted_storage_view(view, owner, resources)?;
+            }
+            for value in self
+                .values
+                .iter()
+                .map(|binding| binding.value.borrowed_view())
+                .chain(callbacks.clone().map(|(_, callback)| callback))
+            {
+                resources.validate_view(value, 0, None)?;
+                AwbcRuntimeValueSnapshot::validate_admitted_storage_view(value, owner, resources)?;
+            }
+            crate::program_types::RuntimeProgramValueType::Awbc {
+                program,
+                ty: self.target_type,
+            }
+            .validate_snapshot_storage(
+                target,
+                &resources.work(),
+                V::admission_origin(),
+            )?;
+            for (capture, ty) in self.captures.iter().zip(&signature.params) {
+                crate::program_types::RuntimeProgramValueType::Awbc { program, ty: *ty }
+                    .validate_snapshot_storage(
+                        capture.borrowed_view(),
+                        &resources.work(),
+                        V::admission_origin(),
+                    )?;
+            }
+            for (value, export) in self
+                .task_inputs
+                .iter()
+                .skip(group.captures.len())
+                .zip(&group.activation_exports)
+            {
+                crate::program_types::RuntimeProgramValueType::Awbc {
+                    program,
+                    ty: export.ty,
+                }
+                .validate_snapshot_storage(
+                    value.borrowed_view(),
+                    &resources.work(),
+                    V::admission_origin(),
+                )?;
+            }
+            for (binding, declared) in self.values.iter().zip(&template.slots) {
+                crate::program_types::RuntimeProgramValueType::Awbc {
+                    program,
+                    ty: declared.semantic_type,
+                }
+                .validate_snapshot_storage(
+                    binding.value.borrowed_view(),
+                    &resources.work(),
+                    V::admission_origin(),
+                )?;
+            }
+            for (site, callback) in callbacks {
+                let declared = template
+                    .effects
+                    .get(site.index())
+                    .filter(|declared| declared.site == site)
+                    .ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message:
+                            "active dialogue callback site is absent from its content template"
+                                .to_owned(),
+                    })?;
+                let RuntimeValueView::Callable(callback) = callback else {
+                    unreachable!("borrowed callback shape was admitted")
+                };
+                if callback.retained().len() != declared.capture_types.len()
+                    || callback
+                        .remaining_arity(owner.map(crate::task::RuntimeProgramOwner::types))
+                        .map_err(
+                            |error| crate::value::AwbcRuntimeValueSnapshotError::Message {
+                                message: error.to_string(),
+                            },
+                        )?
+                        != 0
+                {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "active dialogue callback has a different capture ABI".to_owned(),
+                    });
+                }
+                for (value, ty) in callback.retained().iter().zip(&declared.capture_types) {
+                    crate::program_types::RuntimeProgramValueType::Awbc { program, ty: *ty }
+                        .validate_snapshot_storage(
+                            value,
+                            &resources.work(),
+                            V::admission_origin(),
+                        )?;
+                }
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+}
+impl super::ActiveDialogue {
+    pub(super) fn admit_retained(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+        activation: &DialogueActivationId,
+        line: &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        let invalid = |message: String| {
+            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message }
+        };
+        if let super::ProductDialoguePhase::Closing(closing) = &self.phase {
+            admission.validate_metadata(&closing.failure)?;
+        }
+        admission.validate_metadata(
+            &self
+                .pending_activation_host_call
+                .as_ref()
+                .map(|pending| (pending.call, &pending.id.0)),
+        )?;
+        self.admit_retained_values(
+            program,
+            admission,
+            self.target.view(),
+            self.effect_callbacks.iter().map(|(site, callback)| {
+                (
+                    *site,
+                    crate::value::RuntimeValueView::Callable(
+                        crate::value::RuntimeCallableView::Live(callback),
+                    ),
+                )
+            }),
+            self.line_task().is_some(),
+        )?;
+        match &self.phase {
+            super::ProductDialoguePhase::Transitioning => {
+                return Err(invalid(
+                    "cannot snapshot an in-flight dialogue phase transition".to_owned(),
+                ));
+            }
+            super::ProductDialoguePhase::Activating { fiber, pending }
+            | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
+                state: super::ProductDialogueClosingState::Activation { fiber, pending },
+                ..
+            }) => {
+                fiber.admit_retained(admission)?;
+                match pending {
+                    Some(
+                        super::ProductPendingLineOperation::AcquireActor {
+                            cursor,
+                            destination,
+                            command,
+                            value,
+                            token,
+                        }
+                        | super::ProductPendingLineOperation::ActorLook {
+                            cursor,
+                            destination,
+                            command,
+                            value,
+                            token,
+                        },
+                    ) => {
+                        admission.validate_metadata(&(cursor, destination, command, token))?;
+                        admission.validate(value)?;
+                    }
+                    Some(super::ProductPendingLineOperation::StartVoice {
+                        cursor,
+                        destination,
+                        command,
+                        site,
+                    }) => admission.validate_metadata(&(cursor, destination, command, site))?,
+                    None => {}
+                }
+            }
+            _ => {}
+        }
+        validate_product_dialogue_phase(
+            program,
+            activation,
+            self,
+            line.result(),
+            LineTaskLiveState::is_closed,
+        )?;
+        if let Some(reducer) = self.line_task() {
+            let reducer = reducer.snapshot();
+            admission.validate_metadata(&snapshot_live_state(
+                self.line_task().expect("borrowed reducer remains present"),
+            ))?;
+            let group = program
+                .content_units
+                .get(self.content.index())
+                .and_then(|content| content.line_task_group)
+                .and_then(|group| program.line_task_groups.get(group.index()))
+                .ok_or_else(|| {
+                    invalid("active dialogue snapshot content has no line-task group".to_owned())
+                })?;
+            let view = AwbcLineTaskPlanView::new(program, group).ok_or_else(|| {
+                invalid("active dialogue line task graph is malformed".to_owned())
+            })?;
+            reducer
+                .admit_for_plan(&view)
+                .map_err(|error| invalid(format!("invalid line-task reducer snapshot: {error}")))?;
+            line.restore_admit_reducer(&self.activation, &view, &reducer)?;
+        }
+        Ok(())
+    }
+}
 impl AwbcProductActiveDialogueSaveSnapshot {
+    fn line_task(&self) -> Option<&AwbcProductLineTaskLiveSnapshot> {
+        match &self.phase {
+            super::AwbcProductDialoguePhase::Reducing { line_task }
+            | super::AwbcProductDialoguePhase::Publishing { line_task }
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::LineTask { line_task },
+                ..
+            }) => Some(line_task),
+            _ => None,
+        }
+    }
+
+    pub(super) fn admit_retained(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        let invalid =
+            |message: &str| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                message: message.to_owned(),
+            };
+        if let AwbcProductDialoguePhaseSaveSnapshot::Closing(closing) = &self.phase {
+            admission.validate_metadata(&closing.failure)?;
+        }
+        admission.validate_metadata(&self.pending_activation_host_call)?;
+        self.admit_retained_values(
+            program,
+            admission,
+            self.target.view(),
+            self.effect_callbacks
+                .iter()
+                .map(|binding| (binding.site, binding.callback.view())),
+            self.line_task().is_some(),
+        )?;
+        match &self.phase {
+            super::AwbcProductDialoguePhase::Transitioning => {
+                return Err(invalid("dialogue transition cannot be restored"));
+            }
+            super::AwbcProductDialoguePhase::Activating { fiber, pending }
+            | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                state: super::AwbcProductDialogueClosingState::Activation { fiber, pending },
+                ..
+            }) => {
+                fiber.admit_retained(admission)?;
+                match pending {
+                    Some(
+                        super::AwbcProductPendingLineOperation::AcquireActor {
+                            cursor,
+                            destination,
+                            command,
+                            value,
+                            token,
+                        }
+                        | super::AwbcProductPendingLineOperation::ActorLook {
+                            cursor,
+                            destination,
+                            command,
+                            value,
+                            token,
+                        },
+                    ) => {
+                        admission.validate_metadata(&(cursor, destination, command, token))?;
+                        admission.validate_snapshot(value)?;
+                    }
+                    Some(super::AwbcProductPendingLineOperation::StartVoice {
+                        cursor,
+                        destination,
+                        command,
+                        site,
+                    }) => admission.validate_metadata(&(cursor, destination, command, site))?,
+                    None => {}
+                }
+            }
+            _ => {}
+        }
+        if let Some(reducer) = self.line_task() {
+            admission.validate_metadata(reducer)?;
+            let group = program
+                .content_units
+                .get(self.content.index())
+                .and_then(|content| content.line_task_group)
+                .and_then(|group| program.line_task_groups.get(group.index()))
+                .ok_or_else(|| {
+                    invalid("active dialogue snapshot content has no line-task group")
+                })?;
+            let view = AwbcLineTaskPlanView::new(program, group)
+                .ok_or_else(|| invalid("active dialogue line task graph is malformed"))?;
+            restore_live_snapshot(reducer.clone())
+                .map_err(|error| invalid(&error.to_string()))?
+                .admit_for_plan(&view)
+                .map_err(|error| {
+                    invalid(&format!("invalid line-task reducer snapshot: {error}"))
+                })?;
+        }
+        Ok(())
+    }
+
     fn visit_saved_value_roots<E>(
         &self,
         visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
@@ -965,7 +1424,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
         for value in &self.values {
             visit(&value.value)?;
         }
-        for effect in &self.effects {
+        for effect in &self.effect_callbacks {
             visit(&effect.callback)?;
         }
         let activation = match &self.phase {
@@ -977,7 +1436,8 @@ impl AwbcProductActiveDialogueSaveSnapshot {
                     ..
                 },
             ) => Some((fiber, pending)),
-            AwbcProductDialoguePhaseSaveSnapshot::Reducing { .. }
+            AwbcProductDialoguePhaseSaveSnapshot::Transitioning
+            | AwbcProductDialoguePhaseSaveSnapshot::Reducing { .. }
             | AwbcProductDialoguePhaseSaveSnapshot::Publishing { .. }
             | AwbcProductDialoguePhaseSaveSnapshot::Closing(
                 AwbcProductDialogueClosingSaveSnapshot {
@@ -1000,74 +1460,112 @@ impl AwbcProductActiveDialogueSaveSnapshot {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductDialogueValueSaveSnapshot {
-    pub slot: crate::runtime_id::RuntimeDialogueValueSlotId,
-    pub role: crate::plan::RuntimeDialogueValueRole,
-    pub value: crate::value::AwbcRuntimeValueSnapshot,
+pub type AwbcProductDialogueValueSaveSnapshot =
+    crate::plan::RuntimeDialogueValueBinding<AwbcRuntimeValueSnapshot>;
+
+pub type AwbcProductDialoguePhaseSaveSnapshot = super::AwbcProductDialoguePhase<
+    AwbcFiberStateSnapshot,
+    AwbcProductLineTaskLiveSnapshot,
+    AwbcProductPendingLineOperationSaveSnapshot,
+>;
+pub type AwbcProductDialogueClosingSaveSnapshot = super::AwbcProductDialogueClosing<
+    AwbcFiberStateSnapshot,
+    AwbcProductLineTaskLiveSnapshot,
+    AwbcProductPendingLineOperationSaveSnapshot,
+>;
+pub type AwbcProductDialogueClosingStateSaveSnapshot = super::AwbcProductDialogueClosingState<
+    AwbcFiberStateSnapshot,
+    AwbcProductLineTaskLiveSnapshot,
+    AwbcProductPendingLineOperationSaveSnapshot,
+>;
+pub type AwbcProductPendingLineOperationSaveSnapshot =
+    super::AwbcProductPendingLineOperation<AwbcRuntimeValueSnapshot>;
+
+impl Clone for AwbcProductPendingLineOperationSaveSnapshot {
+    fn clone(&self) -> Self {
+        match self {
+            Self::AcquireActor {
+                cursor,
+                destination,
+                command,
+                value,
+                token,
+            } => Self::AcquireActor {
+                cursor: *cursor,
+                destination: *destination,
+                command: command.clone(),
+                value: value.clone(),
+                token: token.clone(),
+            },
+            Self::ActorLook {
+                cursor,
+                destination,
+                command,
+                value,
+                token,
+            } => Self::ActorLook {
+                cursor: *cursor,
+                destination: *destination,
+                command: command.clone(),
+                value: value.clone(),
+                token: token.clone(),
+            },
+            Self::StartVoice {
+                cursor,
+                destination,
+                command,
+                site,
+            } => Self::StartVoice {
+                cursor: *cursor,
+                destination: *destination,
+                command: command.clone(),
+                site: *site,
+            },
+        }
+    }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProductDialoguePhaseSaveSnapshot {
-    Activating {
-        fiber: AwbcFiberStateSnapshot,
-        pending: Option<AwbcProductPendingLineOperationSaveSnapshot>,
-    },
-    Reducing {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
-    Publishing {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
-    Closing(AwbcProductDialogueClosingSaveSnapshot),
+impl Clone for AwbcProductDialogueClosingStateSaveSnapshot {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Activation { fiber, pending } => Self::Activation {
+                fiber: fiber.clone(),
+                pending: pending.clone(),
+            },
+            Self::LineTask { line_task } => Self::LineTask {
+                line_task: line_task.clone(),
+            },
+        }
+    }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductDialogueClosingSaveSnapshot {
-    failure: crate::awbc::fiber::FiberTrap,
-    state: AwbcProductDialogueClosingStateSaveSnapshot,
+impl Clone for AwbcProductDialogueClosingSaveSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            failure: self.failure.clone(),
+            state: self.state.clone(),
+        }
+    }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProductDialogueClosingStateSaveSnapshot {
-    Activation {
-        fiber: AwbcFiberStateSnapshot,
-        pending: Option<AwbcProductPendingLineOperationSaveSnapshot>,
-    },
-    LineTask {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
+impl Clone for AwbcProductDialoguePhaseSaveSnapshot {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Transitioning => Self::Transitioning,
+            Self::Activating { fiber, pending } => Self::Activating {
+                fiber: fiber.clone(),
+                pending: pending.clone(),
+            },
+            Self::Reducing { line_task } => Self::Reducing {
+                line_task: line_task.clone(),
+            },
+            Self::Publishing { line_task } => Self::Publishing {
+                line_task: line_task.clone(),
+            },
+            Self::Closing(closing) => Self::Closing(closing.clone()),
+        }
+    }
 }
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProductPendingLineOperationSaveSnapshot {
-    AcquireActor {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    ActorLook {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        value: crate::value::AwbcRuntimeValueSnapshot,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    StartVoice {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        site: crate::awbc::schema::AwbcLineHandleSiteId,
-    },
-}
-
 pub(super) type AwbcProductDialogueSnapshotState =
     crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
         AwbcProductActiveDialogueSaveSnapshot,
@@ -1081,50 +1579,6 @@ pub struct AwbcProductChildFiberSaveSnapshot {
     pub fiber: AwbcFiberStateSnapshot,
     pub runtime_generation: crate::task::GenerationId,
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
-}
-
-fn restore_pending_line_operation(
-    pending: AwbcProductPendingLineOperationSnapshot,
-) -> super::ProductPendingLineOperation {
-    match pending {
-        AwbcProductPendingLineOperationSnapshot::AcquireActor {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        } => super::ProductPendingLineOperation::AcquireActor {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        },
-        AwbcProductPendingLineOperationSnapshot::ActorLook {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        } => super::ProductPendingLineOperation::ActorLook {
-            cursor,
-            destination,
-            command,
-            value,
-            token,
-        },
-        AwbcProductPendingLineOperationSnapshot::StartVoice {
-            cursor,
-            destination,
-            command,
-            site,
-        } => super::ProductPendingLineOperation::StartVoice {
-            cursor,
-            destination,
-            command,
-            site,
-        },
-    }
 }
 
 fn snapshot_pending_line_operation_for_save(
@@ -1143,7 +1597,7 @@ fn snapshot_pending_line_operation_for_save(
             cursor: *cursor,
             destination: *destination,
             command: command.clone(),
-            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                 value, owner,
             )?,
             token: token.clone(),
@@ -1158,7 +1612,7 @@ fn snapshot_pending_line_operation_for_save(
             cursor: *cursor,
             destination: *destination,
             command: command.clone(),
-            value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+            value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                 value, owner,
             )?,
             token: token.clone(),
@@ -1189,7 +1643,7 @@ fn snapshot_dialogue_phase_for_save(
         }
         super::ProductDialoguePhase::Activating { fiber, pending } => {
             AwbcProductDialoguePhaseSaveSnapshot::Activating {
-                fiber: AwbcFiberStateSnapshot::from_live(fiber, owner)?,
+                fiber: AwbcFiberStateSnapshot::from_admitted_live(fiber, owner)?,
                 pending: pending
                     .as_ref()
                     .map(|pending| snapshot_pending_line_operation_for_save(pending, owner))
@@ -1212,7 +1666,7 @@ fn snapshot_dialogue_phase_for_save(
                 state: match &closing.state {
                     super::ProductDialogueClosingState::Activation { fiber, pending } => {
                         AwbcProductDialogueClosingStateSaveSnapshot::Activation {
-                            fiber: AwbcFiberStateSnapshot::from_live(fiber, owner)?,
+                            fiber: AwbcFiberStateSnapshot::from_admitted_live(fiber, owner)?,
                             pending: pending
                                 .as_ref()
                                 .map(|pending| {
@@ -1235,7 +1689,7 @@ fn snapshot_dialogue_phase_for_save(
 fn restore_pending_line_operation_from_save(
     pending: AwbcProductPendingLineOperationSaveSnapshot,
     owner: &crate::task::RuntimeProgramOwner,
-) -> Result<AwbcProductPendingLineOperationSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+) -> Result<super::ProductPendingLineOperation, crate::value::AwbcRuntimeValueSnapshotError> {
     Ok(match pending {
         AwbcProductPendingLineOperationSaveSnapshot::AcquireActor {
             cursor,
@@ -1243,11 +1697,11 @@ fn restore_pending_line_operation_from_save(
             command,
             value,
             token,
-        } => AwbcProductPendingLineOperationSnapshot::AcquireActor {
+        } => super::ProductPendingLineOperation::AcquireActor {
             cursor,
             destination,
             command,
-            value: value.into_runtime_value_for_program(owner)?,
+            value: value.into_admitted_runtime_value(owner)?,
             token,
         },
         AwbcProductPendingLineOperationSaveSnapshot::ActorLook {
@@ -1256,11 +1710,11 @@ fn restore_pending_line_operation_from_save(
             command,
             value,
             token,
-        } => AwbcProductPendingLineOperationSnapshot::ActorLook {
+        } => super::ProductPendingLineOperation::ActorLook {
             cursor,
             destination,
             command,
-            value: value.into_runtime_value_for_program(owner)?,
+            value: value.into_admitted_runtime_value(owner)?,
             token,
         },
         AwbcProductPendingLineOperationSaveSnapshot::StartVoice {
@@ -1268,7 +1722,7 @@ fn restore_pending_line_operation_from_save(
             destination,
             command,
             site,
-        } => AwbcProductPendingLineOperationSnapshot::StartVoice {
+        } => super::ProductPendingLineOperation::StartVoice {
             cursor,
             destination,
             command,
@@ -1280,12 +1734,15 @@ fn restore_pending_line_operation_from_save(
 fn restore_dialogue_phase_from_save(
     phase: AwbcProductDialoguePhaseSaveSnapshot,
     owner: &crate::task::RuntimeProgramOwner,
-) -> Result<AwbcProductDialoguePhaseSnapshot, String> {
+) -> Result<super::ProductDialoguePhase, String> {
     Ok(match phase {
+        AwbcProductDialoguePhaseSaveSnapshot::Transitioning => {
+            return Err("dialogue transition cannot be restored".into());
+        }
         AwbcProductDialoguePhaseSaveSnapshot::Activating { fiber, pending } => {
-            AwbcProductDialoguePhaseSnapshot::Activating {
+            super::ProductDialoguePhase::Activating {
                 fiber: fiber
-                    .into_live_for_program(owner)
+                    .into_admitted_live_for_program(owner)
                     .map_err(|error| error.to_string())?,
                 pending: pending
                     .map(|pending| restore_pending_line_operation_from_save(pending, owner))
@@ -1294,19 +1751,27 @@ fn restore_dialogue_phase_from_save(
             }
         }
         AwbcProductDialoguePhaseSaveSnapshot::Reducing { line_task } => {
-            AwbcProductDialoguePhaseSnapshot::Reducing { line_task }
+            super::ProductDialoguePhase::Reducing {
+                line_task: LineTaskLiveState::from_admitted_snapshot(
+                    restore_live_snapshot(line_task).map_err(|error| error.to_string())?,
+                ),
+            }
         }
         AwbcProductDialoguePhaseSaveSnapshot::Publishing { line_task } => {
-            AwbcProductDialoguePhaseSnapshot::Publishing { line_task }
+            super::ProductDialoguePhase::Publishing {
+                line_task: LineTaskLiveState::from_admitted_snapshot(
+                    restore_live_snapshot(line_task).map_err(|error| error.to_string())?,
+                ),
+            }
         }
         AwbcProductDialoguePhaseSaveSnapshot::Closing(closing) => {
-            AwbcProductDialoguePhaseSnapshot::Closing(AwbcProductDialogueClosingSnapshot {
+            super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
                 failure: closing.failure,
                 state: match closing.state {
                     AwbcProductDialogueClosingStateSaveSnapshot::Activation { fiber, pending } => {
-                        AwbcProductDialogueClosingStateSnapshot::Activation {
+                        super::ProductDialogueClosingState::Activation {
                             fiber: fiber
-                                .into_live_for_program(owner)
+                                .into_admitted_live_for_program(owner)
                                 .map_err(|error| error.to_string())?,
                             pending: pending
                                 .map(|pending| {
@@ -1317,7 +1782,12 @@ fn restore_dialogue_phase_from_save(
                         }
                     }
                     AwbcProductDialogueClosingStateSaveSnapshot::LineTask { line_task } => {
-                        AwbcProductDialogueClosingStateSnapshot::LineTask { line_task }
+                        super::ProductDialogueClosingState::LineTask {
+                            line_task: LineTaskLiveState::from_admitted_snapshot(
+                                restore_live_snapshot(line_task)
+                                    .map_err(|error| error.to_string())?,
+                            ),
+                        }
                     }
                 },
             })
@@ -1335,7 +1805,7 @@ fn snapshot_active_dialogue(
     Ok(AwbcProductActiveDialogueSaveSnapshot {
         activation: active.activation.clone(),
         content: active.content,
-        target: crate::value::AwbcRuntimeValueSnapshot::from_opaque_for_program(
+        target: crate::value::AwbcRuntimeValueSnapshot::from_admitted_opaque(
             &active.target,
             owner,
         )?,
@@ -1346,14 +1816,14 @@ fn snapshot_active_dialogue(
             .captures
             .iter()
             .map(|value| {
-                crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
             })
             .collect::<Result<_, _>>()?,
         task_inputs: active
             .task_inputs
             .iter()
             .map(|value| {
-                crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+                crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
             })
             .collect::<Result<_, _>>()?,
         values: active
@@ -1363,20 +1833,20 @@ fn snapshot_active_dialogue(
                 Ok(AwbcProductDialogueValueSaveSnapshot {
                     slot: binding.slot,
                     role: binding.role,
-                    value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(
+                    value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                         &binding.value,
                         owner,
                     )?,
                 })
             })
             .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
-        effects: active
+        effect_callbacks: active
             .effect_callbacks
             .iter()
             .map(|(site, callback)| {
                 Ok(AwbcProductDialogueEffectSaveSnapshot {
                     site: *site,
-                    callback: crate::value::AwbcRuntimeValueSnapshot::from_callable_for_program(
+                    callback: crate::value::AwbcRuntimeValueSnapshot::from_admitted_callable(
                         callback, owner,
                     )?,
                 })
@@ -1395,6 +1865,1024 @@ fn snapshot_active_dialogue(
             }
         }),
     })
+}
+
+impl AwbcProductExecutorSnapshot {
+    /// Admits the complete original-program image before copying or activating any value.
+    fn admit_retained(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let crate::task::RuntimeProgramOwner::Awbc(program) = owner else {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "Product snapshot requires its original AWBC program".to_owned(),
+            });
+        };
+        admission
+            .admit_composite(
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+                |selected, _| {
+                    if selected.is_some_and(|selected| selected.same_program(owner)) {
+                        Ok(())
+                    } else {
+                        Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                            message: "Product admission selected a different executable lease"
+                                .to_owned(),
+                        })
+                    }
+                },
+            )
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        let snapshot = self;
+        admission
+            .validate_metadata(&(
+                (
+                    self.runtime_generation,
+                    &self.dialogue_effect_callback_activations,
+                    &self.live_flow_bindings,
+                    self.entry_bound,
+                    &self.active_choice,
+                    &self.pending_host_call,
+                    &self.started_tasks,
+                    &self.task_publications,
+                    &self.need_publications,
+                    &self.emitted_content,
+                    &self.stream_sequences,
+                    self.next_generation,
+                    self.next_fiber_instance,
+                    &self.dialogue_occurrences,
+                    self.next_host_call_sequence,
+                    self.next_audio_sequence,
+                ),
+                &self.compact_pure_stats,
+            ))
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        admission
+            .validate_metadata_collection(snapshot.child_fibers.len())
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
+            fiber.suspension.as_ref().is_some_and(|suspension| {
+                matches!(
+                    &suspension.reason,
+                    crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)
+                        if state.base.as_ref().is_some_and(|base| {
+                            base.correlation().generation > snapshot.runtime_generation
+                        })
+                )
+            })
+        };
+        if snapshot.fiber.generation > snapshot.runtime_generation.get()
+            || snapshot
+                .child_fibers
+                .iter()
+                .any(|child| child.runtime_generation > snapshot.runtime_generation)
+            || has_invalid_await_many_identity(&snapshot.fiber)
+            || snapshot
+                .child_fibers
+                .iter()
+                .any(|child| has_invalid_await_many_identity(&child.fiber))
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message:
+                    "Product snapshot generation pin or AwaitMany occurrence identity is invalid"
+                        .to_owned(),
+            });
+        }
+        validate_task_publications(snapshot, admission)?;
+        if let Err(error) = snapshot.need_producers.admit_retained(admission) {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: format!("invalid Need producer registry snapshot: {error}"),
+            });
+        }
+        snapshot
+            .observations
+            .admit_retained(admission)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        validate_need_publication_cursors(snapshot, &snapshot.need_producers)?;
+        for launch in &snapshot.need_producers.launches {
+            let projected = restore_need_producer_plan(
+                program,
+                launch.plan.site(),
+                launch.plan.semantic_digest().map_err(|error| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    }
+                })?,
+            )
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+            if projected != launch.plan {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "Need producer launch plan differs from its verified AWBC row"
+                        .to_owned(),
+                });
+            }
+            owner.types().value_type(launch.plan.payload_type()).map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "Need producer payload type is absent or ambiguous in the AWBC runtime type table"
+                        .to_owned(),
+                })?;
+        }
+        snapshot.fiber.admit_retained(admission).map_err(|error| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            }
+        })?;
+        for child in &snapshot.child_fibers {
+            admission
+                .validate_metadata(&(
+                    &child.owner,
+                    child.runtime_generation,
+                    &child.pending_host_call,
+                ))
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
+            child.fiber.admit_retained(admission).map_err(|error| {
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
+            Self::validate_child_owner(program, &child.owner)?;
+            let host_call =
+                child
+                    .fiber
+                    .suspension
+                    .as_ref()
+                    .and_then(|suspension| match &suspension.reason {
+                        crate::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } => {
+                            Some(*call)
+                        }
+                        _ => None,
+                    });
+            match (&child.owner, &child.pending_host_call, host_call) {
+                (
+                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    Some(pending),
+                    Some(call),
+                ) if pending.call == call && program.host_calls.get(call.index()).is_some() => {}
+                (
+                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    None,
+                    None,
+                ) => {}
+                (
+                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
+                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
+                    _,
+                    _,
+                ) => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "deferred child host-call suspension and pending request are not paired"
+                                .to_owned(),
+                    });
+                }
+                (_, None, _) => {}
+                _ => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "non-deferred child carries a pending host call".to_owned(),
+                    });
+                }
+            }
+        }
+        self.validate_live_flow_bindings(program)?;
+        let deferred_children = expected_deferred_children(snapshot)?;
+        snapshot
+            .dialogues
+            .admit_retained(admission, &deferred_children)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        let mut active_dialogue = None;
+        snapshot
+            .dialogues
+            .try_visit_active(|activation, frame, line| {
+                frame
+                    .admit_retained(program, admission)
+                    .map_err(|error| error.to_string())?;
+                if active_dialogue.replace((activation, frame, line)).is_some() {
+                    return Err("Product snapshot repeats an active dialogue".to_owned());
+                }
+                Ok(())
+            })
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        if let Some((activation, active, shared_line)) = active_dialogue {
+            let reducer = active
+                .line_task()
+                .map(|saved| restore_live_snapshot(saved.clone()))
+                .transpose()?;
+            let content = program
+                .content_units
+                .get(active.content.index())
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active dialogue snapshot references missing content".to_owned(),
+                })?;
+            let group = content
+                .line_task_group
+                .and_then(|group| program.line_task_groups.get(group.index()));
+            let expected_captures = group.map_or(0, |group| group.captures.len());
+            if active.captures.len() != expected_captures {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "active dialogue snapshot capture arity disagrees with its content group"
+                            .to_owned(),
+                });
+            }
+            let expected_task_inputs = if active.line_task().is_some() {
+                group.map_or(0, |group| {
+                    group.captures.len() + group.activation_exports.len()
+                })
+            } else {
+                0
+            };
+            if active.task_inputs.len() != expected_task_inputs
+                || active.line_task().is_some()
+                    && active
+                        .task_inputs
+                        .get(..expected_captures)
+                        .is_none_or(|prefix| {
+                            prefix.iter().zip(&active.captures).any(|(left, right)| {
+                                !crate::value::runtime_value_views_equal(left.view(), right.view())
+                            })
+                        })
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active dialogue snapshot line-task input ABI is invalid".to_owned(),
+                });
+            }
+            let pending = active
+                .pending_content_events
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            if pending.len() != active.pending_content_events.len()
+                || active.line_task().is_none() && !pending.is_empty()
+                || pending.iter().any(|event| match event {
+                    RuntimeDialogueContentEventKind::Mark(mark) => content
+                        .marks
+                        .get(mark.index())
+                        .is_none_or(|row| row.id != *mark),
+                    RuntimeDialogueContentEventKind::Effect(effect) => {
+                        effect.get().get() > content.effect_site_count
+                    }
+                })
+                || active.line_task().is_some_and(|line_task| {
+                    line_task
+                        .consumed_content_events
+                        .as_slice()
+                        .iter()
+                        .any(|event| pending.contains(event))
+                })
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active dialogue snapshot has invalid pending content ingress"
+                        .to_owned(),
+                });
+            }
+            validate_product_dialogue_phase(
+                program,
+                activation,
+                active,
+                shared_line.result(),
+                |saved| matches!(saved.phase, AwbcProductLineTaskPhaseSnapshot::Closed { .. }),
+            )
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+            if let Some(reducer) = &reducer {
+                let group = program
+                    .content_units
+                    .get(active.content.index())
+                    .and_then(|content| content.line_task_group)
+                    .and_then(|group| program.line_task_groups.get(group.index()))
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "active dialogue is missing its line task graph".to_owned(),
+                    })?;
+                let view = AwbcLineTaskPlanView::new(program, group).ok_or_else(|| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "active dialogue line task graph is malformed".to_owned(),
+                    }
+                })?;
+                shared_line
+                    .restore_admit_reducer(&active.activation, &view, reducer)
+                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: format!(
+                            "line reducer is not isomorphic to scheduled handle authority: {error}"
+                        ),
+                    })?;
+            }
+            let expected_child_custody = shared_line
+                .scheduled_child_custody_keys()
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let pending = match &active.phase {
+                super::AwbcProductDialoguePhase::Activating { pending, .. }
+                | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                    state: super::AwbcProductDialogueClosingState::Activation { pending, .. },
+                    ..
+                }) => pending.as_ref(),
+                super::AwbcProductDialoguePhase::Reducing { .. }
+                | super::AwbcProductDialoguePhase::Publishing { .. }
+                | super::AwbcProductDialoguePhase::Closing(super::AwbcProductDialogueClosing {
+                    state: super::AwbcProductDialogueClosingState::LineTask { .. },
+                    ..
+                }) => None,
+                super::AwbcProductDialoguePhase::Transitioning => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "cannot validate a transient dialogue transition".to_owned(),
+                    });
+                }
+            };
+            if let Some(pending) = pending {
+                let command = shared_line
+                    .issued_command(pending.command())
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "pending line operation has no exact issued command".to_owned(),
+                    })?;
+                let exact = matches!(
+                    (pending, command),
+                    (
+                        super::AwbcProductPendingLineOperation::AcquireActor { .. },
+                        crate::presentation::RuntimeLineHostCommand::Stage(
+                            crate::presentation::RuntimeStageCommand::AcquireActor { .. }
+                        )
+                    ) | (
+                        super::AwbcProductPendingLineOperation::ActorLook { .. },
+                        crate::presentation::RuntimeLineHostCommand::Stage(
+                            crate::presentation::RuntimeStageCommand::SetCharacterLook { .. }
+                        )
+                    ) | (
+                        super::AwbcProductPendingLineOperation::StartVoice { .. },
+                        crate::presentation::RuntimeLineHostCommand::Voice(
+                            crate::presentation::RuntimeVoiceCommand::StartDialogueVoice { .. }
+                        )
+                    )
+                );
+                if !exact {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "pending line operation command kind is inconsistent".to_owned(),
+                    });
+                }
+            }
+            let activation_host_suspension = activation_fiber_in_phase(active)
+                .and_then(|fiber| fiber.suspension.as_ref())
+                .filter(|_| {
+                    activation_fiber_in_phase(active)
+                        .is_some_and(|fiber| fiber.status == FiberStatus::Suspended)
+                });
+            match (
+                active.pending_activation_host_call.as_ref(),
+                activation_host_suspension,
+            ) {
+                (Some(pending), Some(suspension))
+                    if !pending.id.is_empty()
+                        && program.host_calls.get(pending.call.index()).is_some()
+                        && matches!(
+                            &suspension.reason,
+                            crate::awbc::fiber::FiberSuspensionReason::HostCall {
+                                call,
+                                ..
+                            } if *call == pending.call
+                        )
+                        && matches!(
+                            suspension.resume,
+                            crate::awbc::fiber::FiberResumeTarget::Declared(_)
+                        ) => {}
+                (None, Some(suspension))
+                    if matches!(
+                        &suspension.reason,
+                        crate::awbc::fiber::FiberSuspensionReason::BudgetYield
+                    ) => {}
+                (None, Some(suspension))
+                    if matches!(
+                        &suspension.reason,
+                        crate::awbc::fiber::FiberSuspensionReason::HostCall { .. }
+                    ) =>
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "activation host-call suspension is missing its pending request"
+                            .to_owned(),
+                    });
+                }
+                (Some(_), _) | (None, Some(_)) => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "activation host-call request is not paired with its exact suspended fiber"
+                                .to_owned(),
+                    });
+                }
+                (None, None) => {}
+            }
+            let mut actual_child_custody = BTreeSet::new();
+            for child in &snapshot.child_fibers {
+                let AwbcProductChildFiberOwnerSnapshot::LineTask { content, tag, .. } =
+                    &child.owner
+                else {
+                    continue;
+                };
+                let tag = restore_work_tag(tag.clone()).ok_or_else(|| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "scheduled child snapshot has an invalid work tag".to_owned(),
+                    }
+                })?;
+                let Some(token) = tag.scheduled_token().cloned() else {
+                    continue;
+                };
+                let key = (tag, token);
+                if *content != active.content || !actual_child_custody.insert(key) {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "scheduled child snapshot is duplicate or belongs to stale content"
+                                .to_owned(),
+                    });
+                }
+            }
+            if actual_child_custody != expected_child_custody {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "scheduled packet ChildFiber custody is not isomorphic to child snapshots"
+                            .to_owned(),
+                });
+            }
+            let expected_joined = reducer
+                .as_ref()
+                .map(LineTaskLiveSnapshot::outstanding_tags)
+                .unwrap_or_default();
+            let mut actual_joined = BTreeSet::new();
+            let mut actual_child_tokens = BTreeMap::new();
+            let mut all_child_tokens = BTreeSet::new();
+            for child in &snapshot.child_fibers {
+                let AwbcProductChildFiberOwnerSnapshot::LineTask {
+                    content,
+                    tag,
+                    policy,
+                    ..
+                } = &child.owner
+                else {
+                    continue;
+                };
+                if policy.join == AwbcProductLineTaskJoinSnapshot::Detached {
+                    continue;
+                }
+                if *content != active.content {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "joined line-owned child fiber has no active dialogue owner"
+                            .to_owned(),
+                    });
+                }
+                let tag = restore_work_tag(tag.clone()).ok_or_else(|| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "joined line-owned child fiber has an invalid work identity"
+                            .to_owned(),
+                    }
+                })?;
+                if !actual_joined.insert(tag.clone()) {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "joined line-task work has more than one child fiber".to_owned(),
+                    });
+                }
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                actual_child_tokens.insert(tag, tokens);
+            }
+            if actual_joined != expected_joined {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "joined reducer outstanding work is not isomorphic to child snapshots"
+                        .to_owned(),
+                });
+            }
+            let mut actual_deferred_pair = None;
+            for child in &snapshot.child_fibers {
+                let AwbcProductChildFiberOwnerSnapshot::Deferred {
+                    content,
+                    activation,
+                    registration,
+                    site,
+                } = &child.owner
+                else {
+                    continue;
+                };
+                let function = program
+                    .defer_sites
+                    .get(site.index())
+                    .copied()
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "deferred child references a missing defer site".to_owned(),
+                    })?;
+                if content != &active.content
+                    || activation != &active.activation
+                    || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
+                    || actual_deferred_pair
+                        .replace((*registration, *site))
+                        .is_some()
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "deferred child owner does not match one active dialogue registration"
+                                .to_owned(),
+                    });
+                }
+                let tag = LineTaskWorkTag::activation(
+                    active.activation.clone(),
+                    LineTaskWork::Defer(*registration),
+                );
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                if actual_child_tokens.insert(tag, tokens).is_some() {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "deferred child duplicates another line child work tag".to_owned(),
+                    });
+                }
+            }
+            let activation_fiber = activation_fiber_in_phase(active);
+            let mut actual_scoped_inflight = None;
+            for child in &snapshot.child_fibers {
+                let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
+                    content,
+                    activation,
+                    frame,
+                    scope,
+                    registration,
+                    site,
+                } = &child.owner
+                else {
+                    continue;
+                };
+                let function = program
+                    .defer_sites
+                    .get(site.index())
+                    .copied()
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "scoped deferred child references a missing defer site".to_owned(),
+                    })?;
+                let expected = (*frame, *scope, *registration, *site);
+                let matching_scope = activation_fiber
+                    .and_then(|fiber| fiber.frames.iter().find(|row| row.instance == *frame))
+                    .and_then(|frame| frame.scopes.iter().find(|row| row.id == *scope));
+                if *content != active.content
+                    || activation != &active.activation
+                    || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
+                    || child.fiber.status == FiberStatus::Returned
+                    || child.fiber.status == FiberStatus::Cancelled
+                    || child.fiber.status == FiberStatus::Trapped
+                    || matching_scope.is_none_or(|scope| {
+                        scope.defer_exit.is_none()
+                            || scope.defer_inflight
+                                != Some(crate::awbc::fiber::FiberDeferredInFlight {
+                                    registration: *registration,
+                                    site: *site,
+                                })
+                    })
+                    || actual_scoped_inflight.replace(expected).is_some()
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "scoped defer child does not match one active activation scope"
+                            .to_owned(),
+                    });
+                }
+                let tag = LineTaskWorkTag::activation(
+                    active.activation.clone(),
+                    LineTaskWork::Defer(*registration),
+                );
+                let tokens = child
+                    .fiber
+                    .affine_line_handle_tokens()
+                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
+                    .into_iter()
+                    .map(|token| {
+                        if !all_child_tokens.insert(token.clone()) {
+                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                message: "affine line handle occurs in more than one child fiber"
+                                    .to_owned(),
+                            });
+                        }
+                        Ok(token)
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                if actual_child_tokens.insert(tag, tokens).is_some() {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "scoped defer duplicates another child work tag".to_owned(),
+                    });
+                }
+            }
+            if actual_deferred_pair != shared_line.deferred_inflight() {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot is not paired with the activation inflight registration"
+                        .to_owned(),
+                });
+            }
+            let mut expected_scoped_inflight = None;
+            let mut scope_defer_tokens = BTreeMap::new();
+            if let Some(fiber) = activation_fiber {
+                for frame in &fiber.frames {
+                    for scope in &frame.scopes {
+                        if let Some(inflight) = scope.defer_inflight {
+                            if expected_scoped_inflight
+                                .replace((
+                                    frame.instance,
+                                    scope.id,
+                                    inflight.registration,
+                                    inflight.site,
+                                ))
+                                .is_some()
+                            {
+                                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                    message: "activation has more than one in-flight scoped defer"
+                                        .to_owned(),
+                                });
+                            }
+                        }
+                        for deferred in &scope.defers {
+                            for capture in &deferred.captures {
+                                for handle in
+                                    capture.view().affine_line_handles().map_err(|error| {
+                                        AwbcProductStepBuildError::RestoreSnapshot {
+                                            message: error.to_string(),
+                                        }
+                                    })?
+                                {
+                                    if handle.token().activation() != &active.activation
+                                        || scope_defer_tokens
+                                            .insert(handle.token().clone(), deferred.id)
+                                            .is_some()
+                                    {
+                                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                            message: "scoped defer capture ownership is duplicated or stale"
+                                                .to_owned(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        for release in &scope.defer_releasing {
+                            for token in &release.tokens {
+                                if token.activation() != &active.activation
+                                    || scope_defer_tokens
+                                        .insert(token.clone(), release.registration)
+                                        .is_some()
+                                {
+                                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                                        message:
+                                            "scoped defer release token is duplicated or stale"
+                                                .to_owned(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let ledger_scoped_tokens = shared_line
+                .ledger()
+                .leases()
+                .iter()
+                .filter_map(|(token, lease)| match lease.owner() {
+                    crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(registration) => {
+                        Some((token.clone(), *registration))
+                    }
+                    _ => None,
+                })
+                .collect::<BTreeMap<_, _>>();
+            if ledger_scoped_tokens != scope_defer_tokens {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "ScopedDefer ledger custody is not isomorphic to scope packets and pending releases"
+                            .to_owned(),
+                });
+            }
+            if actual_scoped_inflight != expected_scoped_inflight {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "scoped defer child snapshot is not paired with the exact activation scope"
+                            .to_owned(),
+                });
+            }
+            let mut ledger_child_tokens = BTreeMap::<_, BTreeSet<_>>::new();
+            for (token, lease) in shared_line.ledger().leases() {
+                if let crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag) = lease.owner() {
+                    ledger_child_tokens
+                        .entry(tag.clone())
+                        .or_default()
+                        .insert(token.clone());
+                }
+            }
+            for tag in &expected_joined {
+                ledger_child_tokens.entry(tag.clone()).or_default();
+            }
+            if let Some((registration, _)) = actual_deferred_pair {
+                ledger_child_tokens
+                    .entry(LineTaskWorkTag::activation(
+                        active.activation.clone(),
+                        LineTaskWork::Defer(registration),
+                    ))
+                    .or_default();
+            }
+            if actual_child_tokens != ledger_child_tokens {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "child fiber affine graph is not isomorphic to ChildScope ledger ownership"
+                            .to_owned(),
+                });
+            }
+        } else if !deferred_children.is_empty() {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "deferred child snapshot has no active dialogue registration owner"
+                    .to_owned(),
+            });
+        }
+        if let Some(active) = &snapshot.active_choice {
+            Self::validate_active_choice(program, active)?;
+        }
+        if let Some(pending) = &snapshot.pending_host_call
+            && program.host_calls.get(pending.call.index()).is_none()
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "pending host-call snapshot references missing AWBC host call".to_owned(),
+            });
+        }
+        if snapshot
+            .emitted_content
+            .iter()
+            .any(|content| program.content_units.get(content.index()).is_none())
+            || snapshot
+                .stream_sequences
+                .keys()
+                .any(|stream| program.stream_plans.get(stream.index()).is_none())
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "executor snapshot references missing AWBC content or stream table"
+                    .to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn validate_child_owner(
+        program: &crate::awbc::schema::AwbcProgram,
+        owner: &AwbcProductChildFiberOwnerSnapshot,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        if let AwbcProductChildFiberOwnerSnapshot::Deferred { site, .. }
+        | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { site, .. } = owner
+        {
+            let function_id = program
+                .defer_sites
+                .get(site.index())
+                .copied()
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing defer site".to_owned(),
+                })?;
+            let function = program.functions.get(function_id.index()).ok_or_else(|| {
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing function".to_owned(),
+                }
+            })?;
+            let signature = program
+                .signatures
+                .get(function.signature.index())
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing signature".to_owned(),
+                })?;
+            if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary
+                || !signature.result.is_some_and(|result| {
+                    matches!(
+                        program
+                            .runtime_types
+                            .get(result.index())
+                            .map(crate::awbc::schema::AwbcRuntimeType::shape),
+                        Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
+                    )
+                })
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot no longer matches its verified Unit function"
+                        .to_owned(),
+                });
+            }
+            return Ok(());
+        }
+        let AwbcProductChildFiberOwnerSnapshot::LineTask {
+            content,
+            tag,
+            policy,
+            ..
+        } = owner
+        else {
+            return Ok(());
+        };
+        let Some(group) = program
+            .content_units
+            .get(content.index())
+            .and_then(|content| content.line_task_group)
+            .and_then(|group| program.line_task_groups.get(group.index()))
+        else {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "line-owned child fiber references content without a line-task group"
+                    .to_owned(),
+            });
+        };
+        if matches!(policy.cancel, AwbcProductLineTaskCancelSnapshot::Detach) {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "line-owned child fiber uses unverified detach ownership".to_owned(),
+            });
+        }
+        match &tag.work {
+            AwbcProductLineTaskWorkSnapshot::Node(node) => {
+                let Some(global) = group.nodes.start.checked_add(*node) else {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "line-owned child fiber node index overflows its group".to_owned(),
+                    });
+                };
+                if *node >= group.nodes.len
+                    || !matches!(
+                        program.line_task_nodes.get(global as usize),
+                        Some(crate::awbc::schema::AwbcLineTaskNode::Action(_))
+                    )
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "line-owned child fiber references a non-action node outside its content group"
+                            .to_owned(),
+                    });
+                }
+            }
+            AwbcProductLineTaskWorkSnapshot::Cancellation(action) => {
+                if !group
+                    .cancel_handlers
+                    .iter()
+                    .any(|handler| &handler.trigger == action)
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "line-owned child fiber references unknown cancellation work"
+                            .to_owned(),
+                    });
+                }
+            }
+            AwbcProductLineTaskWorkSnapshot::Cleanup(exit) => {
+                let present = match exit {
+                    AwbcProductLineTaskExitSnapshot::Completed => group.cleanup_completed.is_some(),
+                    AwbcProductLineTaskExitSnapshot::Cancelled => group.cleanup_cancelled.is_some(),
+                    AwbcProductLineTaskExitSnapshot::Failed => group.cleanup_failed.is_some(),
+                };
+                if !present {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "line-owned child fiber references unavailable cleanup work"
+                            .to_owned(),
+                    });
+                }
+            }
+            AwbcProductLineTaskWorkSnapshot::Defer(_) => {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "defer child work requires an activation-owned inflight registration"
+                        .to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_active_choice(
+        program: &crate::awbc::schema::AwbcProgram,
+        active: &AwbcProductActiveChoiceSnapshot,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let Some(choice) = program.choices.get(active.choice.index()) else {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice snapshot references missing AWBC choice".to_owned(),
+            });
+        };
+        let start = usize::try_from(choice.options.start).map_err(|_| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice source range start exceeds usize".to_owned(),
+            }
+        })?;
+        let end = usize::try_from(choice.options.checked_end().ok_or_else(|| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice source range overflows u32".to_owned(),
+            }
+        })?)
+        .map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
+            message: "active choice source range end exceeds usize".to_owned(),
+        })?;
+        let mut previous = None;
+        for source_index in &active.option_indices {
+            if *source_index < start
+                || *source_index >= end
+                || previous.is_some_and(|previous| previous >= *source_index)
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "active choice snapshot does not match its exact typed source option range"
+                            .to_owned(),
+                });
+            }
+            if program.choice_options.get(*source_index).is_none() {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active choice snapshot references a missing source option".to_owned(),
+                });
+            }
+            previous = Some(*source_index);
+        }
+        Ok(())
+    }
+
+    fn validate_live_flow_bindings(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let snapshot = self;
+        let mut flows = BTreeSet::new();
+        let mut functions = BTreeSet::new();
+        for binding in &snapshot.live_flow_bindings {
+            if !flows.insert(binding.flow.clone()) || !functions.insert(binding.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "snapshot repeats a live semantic Flow binding".to_owned(),
+                });
+            }
+            if program.flow_function(&binding.flow) != Some(binding.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: format!(
+                        "snapshot Flow `{}` no longer owns AWBC function {}",
+                        binding.flow.canonical_label(),
+                        binding.function.0
+                    ),
+                });
+            }
+        }
+        for frame in snapshot.fiber.frames.iter().chain(
+            snapshot
+                .child_fibers
+                .iter()
+                .flat_map(|child| &child.fiber.frames),
+        ) {
+            let is_flow = program
+                .functions
+                .get(frame.function.index())
+                .is_some_and(|function| function.kind == AwbcFunctionKind::Flow);
+            if is_flow && !functions.contains(&frame.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: format!(
+                        "snapshot Flow frame {} has no semantic identity evidence",
+                        frame.function.0
+                    ),
+                });
+            }
+        }
+        if let Some(active) = &snapshot.active_choice {
+            for target in active.option_indices.iter().filter_map(|source_index| {
+                program
+                    .choice_options
+                    .get(*source_index)
+                    .and_then(|option| option.target)
+                    .map(|target| {
+                        program
+                            .flow_identity(target)
+                            .expect("verified choice target has an exact Flow identity")
+                    })
+            }) {
+                if !flows.contains(target) {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: format!(
+                            "snapshot choice target `{}` has no semantic Flow binding evidence",
+                            target.canonical_label()
+                        ),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl AwbcProductExecutorSaveSnapshot {
@@ -1420,7 +2908,7 @@ impl AwbcProductExecutorSaveSnapshot {
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut *visit)?;
         }
-        self.dialogues.try_visit_active(|frame, line| {
+        self.dialogues.try_visit_active(|_, frame, line| {
             frame.visit_saved_value_roots(&mut *visit)?;
             line.visit_saved_value_roots(&mut *visit)
         })?;
@@ -1457,8 +2945,7 @@ impl AwbcProductExecutorSaveSnapshot {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
         snapshot
-            .need_producers
-            .admit_retained(&mut admission)
+            .admit_retained(owner, &mut admission)
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
@@ -1598,86 +3085,6 @@ impl AwbcProductExecutorSaveSnapshot {
             observations: self.observations,
         })
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct AwbcProductActiveDialogueSnapshot {
-    pub activation: DialogueActivationId,
-    pub content: AwbcContentUnitId,
-    pub target: crate::value::RuntimeOpaqueValue,
-    pub target_type: crate::awbc::schema::AwbcTypeId,
-    pub line: crate::plan::RuntimeLineId,
-    pub result: AwbcDialogueResultTarget,
-    pub captures: Vec<RuntimePayload>,
-    pub task_inputs: Vec<RuntimePayload>,
-    pub values: Vec<crate::plan::RuntimeDialogueValueBinding>,
-    pub effects: BTreeMap<
-        crate::runtime_id::RuntimeDialogueEffectSiteId,
-        crate::value::RuntimeCallableValue,
-    >,
-    pub voice: crate::presentation::RuntimeDialogueVoiceState,
-    pub phase: AwbcProductDialoguePhaseSnapshot,
-    pub elapsed_nanos: u64,
-    pub pending_content_events: Vec<RuntimeDialogueContentEventKind>,
-    pub pending_advance: bool,
-    pub pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
-    pub pending_activation_host_call: Option<AwbcProductPendingHostCallSnapshot>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AwbcProductDialoguePhaseSnapshot {
-    Activating {
-        fiber: FiberState,
-        pending: Option<AwbcProductPendingLineOperationSnapshot>,
-    },
-    Reducing {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
-    Publishing {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
-    Closing(AwbcProductDialogueClosingSnapshot),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct AwbcProductDialogueClosingSnapshot {
-    pub failure: crate::awbc::fiber::FiberTrap,
-    pub state: AwbcProductDialogueClosingStateSnapshot,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AwbcProductDialogueClosingStateSnapshot {
-    Activation {
-        fiber: FiberState,
-        pending: Option<AwbcProductPendingLineOperationSnapshot>,
-    },
-    LineTask {
-        line_task: AwbcProductLineTaskLiveSnapshot,
-    },
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AwbcProductPendingLineOperationSnapshot {
-    AcquireActor {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        value: crate::value::RuntimeValue,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    ActorLook {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        value: crate::value::RuntimeValue,
-        token: crate::runtime_id::RuntimeLineHandleToken,
-    },
-    StartVoice {
-        cursor: crate::awbc::fiber::FiberCursor,
-        destination: crate::awbc::schema::AwbcRegisterId,
-        command: crate::presentation::RuntimeLineCommandId,
-        site: crate::awbc::schema::AwbcLineHandleSiteId,
-    },
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
@@ -1989,22 +3396,29 @@ impl AwbcProductStepExecutor {
         let invalid = |message: String| AwbcProductSaveError::InvalidSnapshot { message };
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let owner = &program_owner;
-        let fiber = AwbcFiberStateSnapshot::from_live(
-            &self.fiber,
-            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
-        )
-        .map_err(|error| invalid(error.to_string()))?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_fiber_state(&mut admission)?;
+        self.admit_task_state(&mut admission)?;
+        self.dialogues
+            .admit_retained(&mut admission, |activation, frame, line, admission| {
+                frame.admit_retained(&self.program, activation, line, admission)
+            })
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
+        let fiber = AwbcFiberStateSnapshot::from_admitted_live(&self.fiber, owner)
+            .map_err(|error| invalid(error.to_string()))?;
         let child_fibers = self
             .child_fibers
             .iter()
             .map(|child| {
                 Ok(AwbcProductChildFiberSaveSnapshot {
                     owner: child.owner.snapshot(),
-                    fiber: AwbcFiberStateSnapshot::from_live(
-                        &child.fiber,
-                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
-                    )
-                    .map_err(|error| error.to_string())?,
+                    fiber: AwbcFiberStateSnapshot::from_admitted_live(&child.fiber, owner)
+                        .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.as_ref().map(|pending| {
                         AwbcProductPendingHostCallSnapshot {
@@ -2018,13 +3432,9 @@ impl AwbcProductStepExecutor {
             .map_err(invalid)?;
         let dialogues = self
             .dialogues
-            .to_save_snapshot(owner, |active| snapshot_active_dialogue(active, owner))
+            .snapshot_admitted(owner, |active| snapshot_active_dialogue(active, owner))
             .map_err(|error| invalid(error.to_string()))?;
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        let (retained, queued_task_events) = self.snapshot_task_state(owner, &mut admission)?;
+        let (retained, queued_task_events) = self.snapshot_admitted_task_state(owner)?;
         let need_producers = save_need_producer_registry(&retained).map_err(invalid)?;
         Ok(AwbcProductExecutorSaveSnapshot {
             runtime_generation: self.runtime_generation,
@@ -2081,7 +3491,7 @@ impl AwbcProductStepExecutor {
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
             observations:
-                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                crate::observation::RuntimeObservationSaveSnapshot::from_admitted_live_for_program(
                     &self.facade_fiber.frame.observations,
                     &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                 )
@@ -2248,17 +3658,10 @@ impl AwbcProductStepExecutor {
     }
 
     #[must_use]
-    fn snapshot_task_state(
+    fn admit_task_state(
         &self,
-        owner: &crate::task::RuntimeProgramOwner,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<
-        (
-            NeedProducerRegistrySaveSnapshot,
-            VecDeque<AwbcProductTaskEventSaveSnapshot>,
-        ),
-        AwbcProductSaveError,
-    > {
+    ) -> Result<(), AwbcProductSaveError> {
         let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
             AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
@@ -2275,10 +3678,51 @@ impl AwbcProductStepExecutor {
                 )
                 .map_err(invalid)?;
         }
+        self.need_producers
+            .admit_retained(admission)
+            .map_err(invalid)
+    }
+
+    fn admit_fiber_state(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcProductSaveError> {
+        let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
+            AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            }
+        };
+        admission
+            .validate_metadata_collection(self.child_fibers.len())
+            .map_err(invalid)?;
+        self.fiber.admit_retained(admission).map_err(invalid)?;
+        for child in &self.child_fibers {
+            child.fiber.admit_retained(admission).map_err(invalid)?;
+        }
+        self.facade_fiber
+            .frame
+            .observations
+            .admit_retained(admission)
+            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
+        Ok(())
+    }
+
+    fn snapshot_admitted_task_state(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<
+        (
+            NeedProducerRegistrySaveSnapshot,
+            VecDeque<AwbcProductTaskEventSaveSnapshot>,
+        ),
+        AwbcProductSaveError,
+    > {
         let need_producers = self
             .need_producers
-            .snapshot_retained(owner, admission)
-            .map_err(invalid)?;
+            .snapshot_admitted(owner)
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
         let queued_task_events = self
             .queued_task_events
             .iter()
@@ -2295,20 +3739,29 @@ impl AwbcProductStepExecutor {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        let (need_producers, queued_task_events) =
-            self.snapshot_task_state(&owner, &mut admission)?;
-        let fiber = AwbcFiberStateSnapshot::from_live(&self.fiber, &owner).map_err(|error| {
-            AwbcProductSaveError::InvalidSnapshot {
+        self.admit_fiber_state(&mut admission)?;
+        self.admit_task_state(&mut admission)?;
+        self.dialogues
+            .admit_retained(&mut admission, |activation, frame, line, admission| {
+                frame.admit_retained(&self.program, activation, line, admission)
+            })
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
-            }
-        })?;
+            })?;
+        let (need_producers, queued_task_events) = self.snapshot_admitted_task_state(&owner)?;
+        let fiber =
+            AwbcFiberStateSnapshot::from_admitted_live(&self.fiber, &owner).map_err(|error| {
+                AwbcProductSaveError::InvalidSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
         let child_fibers = self
             .child_fibers
             .iter()
             .map(|child| {
                 Ok(AwbcProductChildFiberSnapshot {
                     owner: child.owner.snapshot(),
-                    fiber: AwbcFiberStateSnapshot::from_live(&child.fiber, &owner)
+                    fiber: AwbcFiberStateSnapshot::from_admitted_live(&child.fiber, &owner)
                         .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.as_ref().map(|pending| {
@@ -2323,7 +3776,7 @@ impl AwbcProductStepExecutor {
             .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
         let dialogues = self
             .dialogues
-            .to_save_snapshot(&owner, |active| snapshot_active_dialogue(active, &owner))
+            .snapshot_admitted(&owner, |active| snapshot_active_dialogue(active, &owner))
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
@@ -2372,7 +3825,7 @@ impl AwbcProductStepExecutor {
             next_audio_sequence: self.next_audio_sequence,
             compact_pure_stats: self.compact_pure_stats,
             observations:
-                crate::observation::RuntimeObservationSaveSnapshot::from_live_for_program(
+                crate::observation::RuntimeObservationSaveSnapshot::from_admitted_live_for_program(
                     &self.facade_fiber.frame.observations,
                     &owner,
                 )
@@ -2393,7 +3846,6 @@ impl AwbcProductStepExecutor {
         policy: crate::task::NeedProducerRestorePolicy,
     ) -> Result<(), AwbcProductStepBuildError> {
         let observations = self.validate_snapshot(&snapshot)?;
-        let deferred_children = expected_deferred_children(&snapshot)?;
         let program_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
         let queued_task_events = snapshot
@@ -2410,11 +3862,13 @@ impl AwbcProductStepExecutor {
                 });
             }
         };
-        self.fiber
-            .replace_from_snapshot(snapshot.fiber, &program_owner)
+        let fiber = snapshot
+            .fiber
+            .into_admitted_live_for_program(&program_owner)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid root fiber snapshot: {error}"),
             })?;
+        self.fiber = fiber;
         drop(std::mem::take(&mut self.child_fibers));
         self.child_fibers = snapshot
             .child_fibers
@@ -2424,7 +3878,7 @@ impl AwbcProductStepExecutor {
                     owner: ProductChildFiberOwner::restore(&child.owner),
                     fiber: child
                         .fiber
-                        .into_live_for_program(&program_owner)
+                        .into_admitted_live_for_program(&program_owner)
                         .map_err(|error| error.to_string())?,
                     runtime_generation: child.runtime_generation,
                     pending_host_call: child.pending_host_call.map(|pending| PendingHostCall {
@@ -2439,7 +3893,7 @@ impl AwbcProductStepExecutor {
         self.dialogue_effect_callback_activations = snapshot.dialogue_effect_callback_activations;
         self.entry_bound = snapshot.entry_bound;
         drop(std::mem::take(&mut self.dialogues));
-        self.dialogues = self.restore_dialogue_store(snapshot.dialogues, &deferred_children)?;
+        self.dialogues = self.restore_dialogue_store(snapshot.dialogues)?;
         self.active_choice = snapshot
             .active_choice
             .map(|active| self.restore_active_choice(active))
@@ -2476,283 +3930,108 @@ impl AwbcProductStepExecutor {
         Ok(())
     }
 
-    fn restore_active_dialogue(
-        &self,
-        active: AwbcProductActiveDialogueSnapshot,
-    ) -> Result<ActiveDialogue, AwbcProductStepBuildError> {
-        let has_group = self
-            .program
-            .content_units
-            .get(active.content.index())
-            .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active dialogue snapshot references missing AWBC content".to_owned(),
-            })?
-            .line_task_group
-            .is_some();
-        if !has_group {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active dialogue snapshot content has no line-task group".to_owned(),
-            });
-        }
-        if active
-            .task_inputs
-            .iter()
-            .any(|input| !input.value().ownership().permits_copy())
-        {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: crate::line_task::LineRuntimeError::AffineGroupCapture.to_string(),
-            });
-        }
-        if !crate::awbc::fiber::dialogue_target_opaque_matches_program(
-            &self.program,
-            active.target_type,
-            &active.target,
-        ) {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active dialogue target is not admitted by its AWBC executable".to_owned(),
-            });
-        }
-        let restore_line_task = |snapshot| {
-            let view = self.line_task_view(active.content).ok_or_else(|| {
-                AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active dialogue snapshot has no verified line-task view".to_owned(),
-                }
-            })?;
-            LineTaskLiveState::restore(&view, restore_live_snapshot(snapshot)?).map_err(|error| {
-                AwbcProductStepBuildError::RestoreSnapshot {
-                    message: format!("invalid line-task reducer snapshot: {error}"),
-                }
-            })
-        };
-        let phase = match active.phase {
-            AwbcProductDialoguePhaseSnapshot::Activating { fiber, pending } => {
-                fiber.validate_for_program(&self.program).map_err(|error| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: format!("invalid line-activation fiber snapshot: {error}"),
-                    }
-                })?;
-                super::ProductDialoguePhase::Activating {
-                    fiber,
-                    pending: pending.map(restore_pending_line_operation),
-                }
-            }
-            AwbcProductDialoguePhaseSnapshot::Reducing { line_task } => {
-                let line_task = restore_line_task(line_task)?;
-                super::ProductDialoguePhase::Reducing { line_task }
-            }
-            AwbcProductDialoguePhaseSnapshot::Publishing { line_task } => {
-                let line_task = restore_line_task(line_task)?;
-                if !line_task.is_closed() {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "publishing dialogue phase requires a closed reducer".to_owned(),
-                    });
-                }
-                super::ProductDialoguePhase::Publishing { line_task }
-            }
-            AwbcProductDialoguePhaseSnapshot::Closing(closing) => {
-                super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
-                    failure: closing.failure,
-                    state: match closing.state {
-                        AwbcProductDialogueClosingStateSnapshot::Activation { fiber, pending } => {
-                            fiber.validate_for_program(&self.program).map_err(|error| {
-                                AwbcProductStepBuildError::RestoreSnapshot {
-                                    message: format!(
-                                        "invalid closing line-activation fiber snapshot: {error}"
-                                    ),
-                                }
-                            })?;
-                            super::ProductDialogueClosingState::Activation {
-                                fiber,
-                                pending: pending.map(restore_pending_line_operation),
-                            }
-                        }
-                        AwbcProductDialogueClosingStateSnapshot::LineTask { line_task } => {
-                            super::ProductDialogueClosingState::LineTask {
-                                line_task: restore_line_task(line_task)?,
-                            }
-                        }
-                    },
-                })
-            }
-        };
-        Ok(ActiveDialogue {
-            activation: active.activation,
-            content: active.content,
-            target: active.target,
-            target_type: active.target_type,
-            line: active.line,
-            result: active.result,
-            captures: active
-                .captures
-                .into_iter()
-                .map(RuntimePayload::into_value)
-                .collect(),
-            task_inputs: active
-                .task_inputs
-                .into_iter()
-                .map(RuntimePayload::into_value)
-                .collect(),
-            values: active.values.into_boxed_slice(),
-            effect_callbacks: active.effects,
-            voice: active.voice,
-            phase,
-            elapsed_nanos: active.elapsed_nanos,
-            pending_content_events: active.pending_content_events,
-            pending_advance: active.pending_advance,
-            pending_line_outcomes: active.pending_line_outcomes,
-            pending_activation_host_call: active.pending_activation_host_call.map(|pending| {
-                super::PendingHostCall {
-                    call: pending.call,
-                    id: RuntimeHostCallId(pending.id),
-                }
-            }),
-        })
-    }
-
     fn restore_dialogue_store(
         &self,
         snapshot: AwbcProductDialogueSnapshotState,
-        expected_deferred_children: &BTreeMap<
-            DialogueActivationId,
-            (
-                crate::runtime_id::RuntimeDeferRegistrationId,
-                crate::runtime_id::RuntimeDeferSiteId,
-            ),
-        >,
     ) -> Result<super::ProductDialogueStore, AwbcProductStepBuildError> {
-        let program_owner =
-            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
-        super::ProductDialogueStore::from_save_snapshot(
-                    snapshot,
-                    &program_owner,
-                    expected_deferred_children,
-                    |activation, active, line| {
-                    let effects = active.effects.into_iter().try_fold(
-                        BTreeMap::new(),
-                        |mut callbacks, binding| {
-                            let value = binding
-                                .callback
-                                .into_runtime_value_for_program(&program_owner)
-                                .map_err(|error| {
-                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                        message: error.to_string(),
-                                    }
-                                })?;
-                            let crate::value::RuntimeValue::Callable(callback) = value else {
-                                return Err(
-                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                        message: "dialogue effect snapshot is not a callable".to_owned(),
-                                    },
-                                );
-                            };
-                            if callbacks.insert(binding.site, callback).is_some() {
-                                return Err(
-                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                        message: "dialogue effect snapshot repeats a site".to_owned(),
-                                    },
-                                );
-                            }
-                            Ok(callbacks)
-                        },
-                    )?;
-                    let active = AwbcProductActiveDialogueSnapshot {
-                        activation: active.activation,
-                        content: active.content,
-                        target: match active
-                            .target
-                            .into_runtime_value_for_program(&program_owner)
-                            .map_err(|error| {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        super::ProductDialogueStore::from_admitted_save_snapshot(
+            snapshot,
+            &owner,
+            |_, active, _| {
+                let invalid = |error: crate::value::AwbcRuntimeValueSnapshotError| {
+                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                        message: error.to_string(),
+                    }
+                };
+                let effect_callbacks = active
+                    .effect_callbacks
+                    .into_iter()
+                    .map(|binding| {
+                        let value = binding
+                            .callback
+                            .into_admitted_runtime_value(&owner)
+                            .map_err(invalid)?;
+                        let RuntimeValue::Callable(callback) = value else {
+                            return Err(
                                 crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                    message: error.to_string(),
-                                }
-                            })? {
-                            crate::value::RuntimeValue::Opaque(target) => target,
-                            _ => {
-                                return Err(
-                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                        message: "dialogue target snapshot is not opaque".to_owned(),
-                                    },
-                                );
-                            }
-                        },
-                        target_type: active.target_type,
-                        line: active.line,
-                        result: active.result,
-                        captures: active
-                            .captures
-                            .into_iter()
-                            .map(|capture| {
-                                capture
-                                    .into_runtime_value_for_program(&program_owner)
-                                    .map(RuntimePayload::from)
-                                    .map_err(|error| {
-                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: error.to_string(),
-                                        }
-                                    })
-                            })
-                            .collect::<Result<_, _>>()?,
-                        task_inputs: active
-                            .task_inputs
-                            .into_iter()
-                            .map(|input| {
-                                input
-                                    .into_runtime_value_for_program(&program_owner)
-                                    .map(RuntimePayload::from)
-                                    .map_err(|error| {
-                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: error.to_string(),
-                                        }
-                                    })
-                            })
-                            .collect::<Result<_, _>>()?,
-                        values: active
-                            .values
-                            .into_iter()
-                            .map(|binding| {
-                                Ok::<
-                                    _,
-                                    crate::line_task::RuntimeDialogueRegistrySnapshotError,
-                                >(crate::plan::RuntimeDialogueValueBinding {
-                                    slot: binding.slot,
-                                    role: binding.role,
-                                    value: binding.value.into_runtime_value_for_program(&program_owner).map_err(|error| {
-                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: error.to_string(),
-                                        }
-                                    })?,
-                                })
-                            })
-                            .collect::<Result<_, _>>()?,
-                        effects,
-                        voice: active.voice,
-                        phase: restore_dialogue_phase_from_save(active.phase, &program_owner).map_err(
-                            |message| {
-                                crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                    message,
-                                }
-                            },
-                        )?,
-                        elapsed_nanos: active.elapsed_nanos,
-                        pending_content_events: active.pending_content_events,
-                        pending_advance: active.pending_advance,
-                        pending_line_outcomes: active.pending_line_outcomes,
-                        pending_activation_host_call: active.pending_activation_host_call,
-                    };
-                    let active = self.restore_active_dialogue(active).map_err(|error| {
+                                    message: "admitted dialogue callback is not callable"
+                                        .to_owned(),
+                                },
+                            );
+                        };
+                        Ok((binding.site, callback))
+                    })
+                    .collect::<Result<_, _>>()?;
+                let RuntimeValue::Opaque(target) = active
+                    .target
+                    .into_admitted_runtime_value(&owner)
+                    .map_err(invalid)?
+                else {
+                    return Err(
                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                            message: error.to_string(),
-                        }
-                    })?;
-                    validate_product_dialogue_phase(&self.program, activation, &active, line)?;
-                    Ok(active)
-                    },
-                )
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
+                            message: "admitted dialogue target is not opaque".to_owned(),
+                        },
+                    );
+                };
+                Ok(ActiveDialogue {
+                    activation: active.activation,
+                    content: active.content,
+                    target,
+                    target_type: active.target_type,
+                    line: active.line,
+                    result: active.result,
+                    captures: active
+                        .captures
+                        .into_vec()
+                        .into_iter()
+                        .map(|value| value.into_admitted_runtime_value(&owner))
+                        .collect::<Result<_, _>>()
+                        .map_err(invalid)?,
+                    task_inputs: active
+                        .task_inputs
+                        .into_vec()
+                        .into_iter()
+                        .map(|value| value.into_admitted_runtime_value(&owner))
+                        .collect::<Result<_, _>>()
+                        .map_err(invalid)?,
+                    values: active
+                        .values
+                        .into_vec()
+                        .into_iter()
+                        .map(|binding| {
+                            Ok(crate::plan::RuntimeDialogueValueBinding {
+                                slot: binding.slot,
+                                role: binding.role,
+                                value: binding.value.into_admitted_runtime_value(&owner)?,
+                            })
+                        })
+                        .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()
+                        .map_err(invalid)?,
+                    effect_callbacks,
+                    voice: active.voice,
+                    phase: restore_dialogue_phase_from_save(active.phase, &owner).map_err(
+                        |message| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                            message,
+                        },
+                    )?,
+                    elapsed_nanos: active.elapsed_nanos,
+                    pending_content_events: active.pending_content_events,
+                    pending_advance: active.pending_advance,
+                    pending_line_outcomes: active.pending_line_outcomes,
+                    pending_activation_host_call: active.pending_activation_host_call.map(
+                        |pending| PendingHostCall {
+                            call: pending.call,
+                            id: RuntimeHostCallId(pending.id),
+                        },
+                    ),
                 })
+            },
+        )
+        .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+            message: error.to_string(),
+        })
     }
-
     pub(super) fn validate_snapshot(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
@@ -2762,907 +4041,25 @@ impl AwbcProductStepExecutor {
                 message: "saved fiber origin differs from the selected invocation".to_owned(),
             });
         }
-        let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            program_owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        admission
-            .validate_metadata_collection(snapshot.child_fibers.len())
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
-        let has_invalid_await_many_identity = |fiber: &AwbcFiberStateSnapshot| {
-            fiber.suspension.as_ref().is_some_and(|suspension| {
-                matches!(
-                    &suspension.reason,
-                    crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)
-                        if state.base.as_ref().is_some_and(|base| {
-                            base.correlation().generation > snapshot.runtime_generation
-                        })
-                )
-            })
-        };
-        if snapshot.runtime_generation != self.runtime_generation
-            || snapshot.fiber.generation > snapshot.runtime_generation.get()
-            || snapshot
-                .child_fibers
-                .iter()
-                .any(|child| child.runtime_generation > snapshot.runtime_generation)
-            || has_invalid_await_many_identity(&snapshot.fiber)
-            || snapshot
-                .child_fibers
-                .iter()
-                .any(|child| has_invalid_await_many_identity(&child.fiber))
-        {
+        if snapshot.runtime_generation != self.runtime_generation {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message:
                     "Product snapshot generation pin or AwaitMany occurrence identity is invalid"
                         .to_owned(),
             });
         }
-        validate_task_publications(snapshot, &mut admission)?;
-        if let Err(error) = snapshot.need_producers.admit_retained(&mut admission) {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: format!("invalid Need producer registry snapshot: {error}"),
-            });
-        }
-        snapshot
-            .observations
-            .admit_retained(&mut admission)
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        validate_need_publication_cursors(snapshot, &snapshot.need_producers)?;
-        for launch in &snapshot.need_producers.launches {
-            let projected = restore_need_producer_plan(
-                &self.program,
-                launch.plan.site(),
-                launch.plan.semantic_digest().map_err(|error| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: error.to_string(),
-                    }
-                })?,
-            )
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-            if projected != launch.plan {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "Need producer launch plan differs from its verified AWBC row"
-                        .to_owned(),
-                });
-            }
-            self
-                .awbc_type_id_for_semantic_identity(launch.plan.payload_type())
-                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "Need producer payload type is absent or ambiguous in the AWBC runtime type table"
-                        .to_owned(),
-                })?;
-        }
-        snapshot
-            .fiber
-            .admit_retained(&mut admission)
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
-        for child in &snapshot.child_fibers {
-            child
-                .fiber
-                .admit_retained(&mut admission)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
-            self.validate_child_owner(&child.owner)?;
-            let host_call =
-                child
-                    .fiber
-                    .suspension
-                    .as_ref()
-                    .and_then(|suspension| match &suspension.reason {
-                        crate::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } => {
-                            Some(*call)
-                        }
-                        _ => None,
-                    });
-            match (&child.owner, &child.pending_host_call, host_call) {
-                (
-                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
-                    Some(pending),
-                    Some(call),
-                ) if pending.call == call
-                    && self.program.host_calls.get(call.index()).is_some() => {}
-                (
-                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
-                    None,
-                    None,
-                ) => {}
-                (
-                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. }
-                    | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { .. },
-                    _,
-                    _,
-                ) => {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message:
-                            "deferred child host-call suspension and pending request are not paired"
-                                .to_owned(),
-                    });
-                }
-                (_, None, _) => {}
-                _ => {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "non-deferred child carries a pending host call".to_owned(),
-                    });
-                }
-            }
-        }
-        self.validate_live_flow_bindings(snapshot)?;
-        let deferred_children = expected_deferred_children(snapshot)?;
-        let dialogues =
-            self.restore_dialogue_store(snapshot.dialogues.clone(), &deferred_children)?;
-        if let Some(active) = dialogues.active_frame() {
-            let content = self
-                .program
-                .content_units
-                .get(active.content.index())
-                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active dialogue snapshot references missing content".to_owned(),
-                })?;
-            let group = content
-                .line_task_group
-                .and_then(|group| self.program.line_task_groups.get(group.index()));
-            let expected_captures = group.map_or(0, |group| group.captures.len());
-            if active.captures.len() != expected_captures {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "active dialogue snapshot capture arity disagrees with its content group"
-                            .to_owned(),
-                });
-            }
-            let expected_task_inputs = if active.line_task().is_some() {
-                group.map_or(0, |group| {
-                    group.captures.len() + group.activation_exports.len()
-                })
-            } else {
-                0
-            };
-            if active.task_inputs.len() != expected_task_inputs
-                || active.line_task().is_some()
-                    && active.task_inputs.get(..expected_captures) != Some(active.captures.as_ref())
-                || group.is_some_and(|group| {
-                    active
-                        .task_inputs
-                        .iter()
-                        .skip(expected_captures)
-                        .zip(&group.activation_exports)
-                        .any(|(value, export)| {
-                            !crate::awbc::fiber::runtime_value_matches_type(
-                                &self.program,
-                                value,
-                                export.ty,
-                                0,
-                            )
-                        })
-                })
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active dialogue snapshot line-task input ABI is invalid".to_owned(),
-                });
-            }
-            let pending = active
-                .pending_content_events
-                .iter()
-                .copied()
-                .collect::<BTreeSet<_>>();
-            if pending.len() != active.pending_content_events.len()
-                || active.line_task().is_none() && !pending.is_empty()
-                || pending.iter().any(|event| match event {
-                    RuntimeDialogueContentEventKind::Mark(mark) => content
-                        .marks
-                        .get(mark.index())
-                        .is_none_or(|row| row.id != *mark),
-                    RuntimeDialogueContentEventKind::Effect(effect) => {
-                        effect.get().get() > content.effect_site_count
-                    }
-                })
-                || active.line_task().is_some_and(|line_task| {
-                    line_task
-                        .snapshot()
-                        .consumed_content_events()
-                        .iter()
-                        .any(|event| pending.contains(event))
-                })
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active dialogue snapshot has invalid pending content ingress"
-                        .to_owned(),
-                });
-            }
-            if active
-                .captures
-                .iter()
-                .chain(active.task_inputs.iter())
-                .any(|capture| !capture.ownership().permits_copy())
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: crate::line_task::LineRuntimeError::AffineGroupCapture.to_string(),
-                });
-            }
-            let shared_line = dialogues.active_line().ok_or_else(|| {
-                AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active dialogue snapshot is missing its command authority".to_owned(),
-                }
-            })?;
-            validate_product_dialogue_phase(&self.program, &active.activation, active, shared_line)
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
-            if let Some(reducer) = dialogues.active_frame().and_then(ActiveDialogue::line_task) {
-                let group = self
-                    .dialogue_group(active.content)
-                    .and_then(|group| self.program.line_task_groups.get(group.index()))
-                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "active dialogue is missing its line task graph".to_owned(),
-                    })?;
-                let view = AwbcLineTaskPlanView::new(&self.program, group).ok_or_else(|| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "active dialogue line task graph is malformed".to_owned(),
-                    }
-                })?;
-                shared_line
-                    .restore_admit_reducer(&active.activation, &view, &reducer.snapshot())
-                    .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: format!(
-                            "line reducer is not isomorphic to scheduled handle authority: {error}"
-                        ),
-                    })?;
-            }
-            let expected_child_custody = shared_line
-                .scheduled_child_custody_keys()
-                .into_iter()
-                .collect::<BTreeSet<_>>();
-            let pending = match &active.phase {
-                super::ProductDialoguePhase::Activating { pending, .. }
-                | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
-                    state: super::ProductDialogueClosingState::Activation { pending, .. },
-                    ..
-                }) => pending.as_ref(),
-                super::ProductDialoguePhase::Reducing { .. }
-                | super::ProductDialoguePhase::Publishing { .. }
-                | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
-                    state: super::ProductDialogueClosingState::LineTask { .. },
-                    ..
-                }) => None,
-                super::ProductDialoguePhase::Transitioning => {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "cannot validate a transient dialogue transition".to_owned(),
-                    });
-                }
-            };
-            if let Some(pending) = pending {
-                let command = shared_line
-                    .issued_command(pending.command())
-                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "pending line operation has no exact issued command".to_owned(),
-                    })?;
-                let exact = matches!(
-                    (pending, command),
-                    (
-                        super::ProductPendingLineOperation::AcquireActor { .. },
-                        crate::presentation::RuntimeLineHostCommand::Stage(
-                            crate::presentation::RuntimeStageCommand::AcquireActor { .. }
-                        )
-                    ) | (
-                        super::ProductPendingLineOperation::ActorLook { .. },
-                        crate::presentation::RuntimeLineHostCommand::Stage(
-                            crate::presentation::RuntimeStageCommand::SetCharacterLook { .. }
-                        )
-                    ) | (
-                        super::ProductPendingLineOperation::StartVoice { .. },
-                        crate::presentation::RuntimeLineHostCommand::Voice(
-                            crate::presentation::RuntimeVoiceCommand::StartDialogueVoice { .. }
-                        )
-                    )
-                );
-                if !exact {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "pending line operation command kind is inconsistent".to_owned(),
-                    });
-                }
-            }
-            let activation_host_suspension = activation_fiber_in_phase(active)
-                .and_then(|fiber| fiber.suspension.as_ref())
-                .filter(|_| {
-                    activation_fiber_in_phase(active)
-                        .is_some_and(|fiber| fiber.status == FiberStatus::Suspended)
-                });
-            match (
-                active.pending_activation_host_call.as_ref(),
-                activation_host_suspension,
-            ) {
-                (Some(pending), Some(suspension))
-                    if !pending.id.0.is_empty()
-                        && self.program.host_calls.get(pending.call.index()).is_some()
-                        && matches!(
-                            &suspension.reason,
-                            crate::awbc::fiber::FiberSuspensionReason::HostCall {
-                                call,
-                                ..
-                            } if *call == pending.call
-                        )
-                        && matches!(
-                            suspension.resume,
-                            crate::awbc::fiber::FiberResumeTarget::Declared(_)
-                        ) => {}
-                (None, Some(suspension))
-                    if matches!(
-                        &suspension.reason,
-                        crate::awbc::fiber::FiberSuspensionReason::BudgetYield
-                    ) => {}
-                (None, Some(suspension))
-                    if matches!(
-                        &suspension.reason,
-                        crate::awbc::fiber::FiberSuspensionReason::HostCall { .. }
-                    ) =>
-                {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "activation host-call suspension is missing its pending request"
-                            .to_owned(),
-                    });
-                }
-                (Some(_), _) | (None, Some(_)) => {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message:
-                            "activation host-call request is not paired with its exact suspended fiber"
-                                .to_owned(),
-                    });
-                }
-                (None, None) => {}
-            }
-            let mut actual_child_custody = BTreeSet::new();
-            for child in &snapshot.child_fibers {
-                let AwbcProductChildFiberOwnerSnapshot::LineTask { content, tag, .. } =
-                    &child.owner
-                else {
-                    continue;
-                };
-                let tag = restore_work_tag(tag.clone()).ok_or_else(|| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "scheduled child snapshot has an invalid work tag".to_owned(),
-                    }
-                })?;
-                let Some(token) = tag.scheduled_token().cloned() else {
-                    continue;
-                };
-                let key = (tag, token);
-                if *content != active.content || !actual_child_custody.insert(key) {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message:
-                            "scheduled child snapshot is duplicate or belongs to stale content"
-                                .to_owned(),
-                    });
-                }
-            }
-            if actual_child_custody != expected_child_custody {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "scheduled packet ChildFiber custody is not isomorphic to child snapshots"
-                            .to_owned(),
-                });
-            }
-            let expected_joined = active
-                .line_task()
-                .map(|live| live.snapshot().outstanding_tags())
-                .unwrap_or_default();
-            let mut actual_joined = BTreeSet::new();
-            let mut actual_child_tokens = BTreeMap::new();
-            let mut all_child_tokens = BTreeSet::new();
-            for child in &snapshot.child_fibers {
-                let AwbcProductChildFiberOwnerSnapshot::LineTask {
-                    content,
-                    tag,
-                    policy,
-                    ..
-                } = &child.owner
-                else {
-                    continue;
-                };
-                if policy.join == AwbcProductLineTaskJoinSnapshot::Detached {
-                    continue;
-                }
-                if *content != active.content {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "joined line-owned child fiber has no active dialogue owner"
-                            .to_owned(),
-                    });
-                }
-                let tag = restore_work_tag(tag.clone()).ok_or_else(|| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "joined line-owned child fiber has an invalid work identity"
-                            .to_owned(),
-                    }
-                })?;
-                if !actual_joined.insert(tag.clone()) {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "joined line-task work has more than one child fiber".to_owned(),
-                    });
-                }
-                let tokens = child
-                    .fiber
-                    .affine_line_handle_tokens()
-                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
-                    .into_iter()
-                    .map(|token| {
-                        if !all_child_tokens.insert(token.clone()) {
-                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                message: "affine line handle occurs in more than one child fiber"
-                                    .to_owned(),
-                            });
-                        }
-                        Ok(token)
-                    })
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-                actual_child_tokens.insert(tag, tokens);
-            }
-            if actual_joined != expected_joined {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "joined reducer outstanding work is not isomorphic to child snapshots"
-                        .to_owned(),
-                });
-            }
-            let mut actual_deferred_pair = None;
-            for child in &snapshot.child_fibers {
-                let AwbcProductChildFiberOwnerSnapshot::Deferred {
-                    content,
-                    activation,
-                    registration,
-                    site,
-                } = &child.owner
-                else {
-                    continue;
-                };
-                let function = self
-                    .program
-                    .defer_sites
-                    .get(site.index())
-                    .copied()
-                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "deferred child references a missing defer site".to_owned(),
-                    })?;
-                if content != &active.content
-                    || activation != &active.activation
-                    || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
-                    || actual_deferred_pair
-                        .replace((*registration, *site))
-                        .is_some()
-                {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message:
-                            "deferred child owner does not match one active dialogue registration"
-                                .to_owned(),
-                    });
-                }
-                let tag = LineTaskWorkTag::activation(
-                    active.activation.clone(),
-                    LineTaskWork::Defer(*registration),
-                );
-                let tokens = child
-                    .fiber
-                    .affine_line_handle_tokens()
-                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
-                    .into_iter()
-                    .map(|token| {
-                        if !all_child_tokens.insert(token.clone()) {
-                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                message: "affine line handle occurs in more than one child fiber"
-                                    .to_owned(),
-                            });
-                        }
-                        Ok(token)
-                    })
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-                if actual_child_tokens.insert(tag, tokens).is_some() {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "deferred child duplicates another line child work tag".to_owned(),
-                    });
-                }
-            }
-            let activation_fiber = activation_fiber_in_phase(active);
-            let mut actual_scoped_inflight = None;
-            for child in &snapshot.child_fibers {
-                let AwbcProductChildFiberOwnerSnapshot::ScopedDeferred {
-                    content,
-                    activation,
-                    frame,
-                    scope,
-                    registration,
-                    site,
-                } = &child.owner
-                else {
-                    continue;
-                };
-                let function = self
-                    .program
-                    .defer_sites
-                    .get(site.index())
-                    .copied()
-                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "scoped deferred child references a missing defer site".to_owned(),
-                    })?;
-                let expected = (*frame, *scope, *registration, *site);
-                let matching_scope = activation_fiber
-                    .and_then(|fiber| fiber.frames.iter().find(|row| row.instance == *frame))
-                    .and_then(|frame| frame.scopes.iter().find(|row| row.id == *scope));
-                if *content != active.content
-                    || activation != &active.activation
-                    || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
-                    || child.fiber.status == FiberStatus::Returned
-                    || child.fiber.status == FiberStatus::Cancelled
-                    || child.fiber.status == FiberStatus::Trapped
-                    || matching_scope.is_none_or(|scope| {
-                        scope.defer_exit.is_none()
-                            || scope.defer_inflight
-                                != Some(crate::awbc::fiber::FiberDeferredInFlight {
-                                    registration: *registration,
-                                    site: *site,
-                                })
-                    })
-                    || actual_scoped_inflight.replace(expected).is_some()
-                {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "scoped defer child does not match one active activation scope"
-                            .to_owned(),
-                    });
-                }
-                let tag = LineTaskWorkTag::activation(
-                    active.activation.clone(),
-                    LineTaskWork::Defer(*registration),
-                );
-                let tokens = child
-                    .fiber
-                    .affine_line_handle_tokens()
-                    .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
-                    .into_iter()
-                    .map(|token| {
-                        if !all_child_tokens.insert(token.clone()) {
-                            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                message: "affine line handle occurs in more than one child fiber"
-                                    .to_owned(),
-                            });
-                        }
-                        Ok(token)
-                    })
-                    .collect::<Result<BTreeSet<_>, _>>()?;
-                if actual_child_tokens.insert(tag, tokens).is_some() {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "scoped defer duplicates another child work tag".to_owned(),
-                    });
-                }
-            }
-            if actual_deferred_pair != shared_line.deferred_inflight() {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "deferred child snapshot is not paired with the activation inflight registration"
-                        .to_owned(),
-                });
-            }
-            let mut expected_scoped_inflight = None;
-            let mut scope_defer_tokens = BTreeMap::new();
-            if let Some(fiber) = activation_fiber {
-                for frame in &fiber.frames {
-                    for scope in &frame.scopes {
-                        if let Some(inflight) = scope.defer_inflight {
-                            if expected_scoped_inflight
-                                .replace((
-                                    frame.instance,
-                                    scope.id,
-                                    inflight.registration,
-                                    inflight.site,
-                                ))
-                                .is_some()
-                            {
-                                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                    message: "activation has more than one in-flight scoped defer"
-                                        .to_owned(),
-                                });
-                            }
-                        }
-                        for deferred in &scope.defers {
-                            for capture in &deferred.captures {
-                                for handle in capture.affine_line_handles().map_err(|error| {
-                                    AwbcProductStepBuildError::RestoreSnapshot {
-                                        message: error.to_string(),
-                                    }
-                                })? {
-                                    if handle.token().activation() != &active.activation
-                                        || scope_defer_tokens
-                                            .insert(handle.token().clone(), deferred.id)
-                                            .is_some()
-                                    {
-                                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                            message: "scoped defer capture ownership is duplicated or stale"
-                                                .to_owned(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        for release in &scope.defer_releasing {
-                            for token in &release.tokens {
-                                if token.activation() != &active.activation
-                                    || scope_defer_tokens
-                                        .insert(token.clone(), release.registration)
-                                        .is_some()
-                                {
-                                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                                        message:
-                                            "scoped defer release token is duplicated or stale"
-                                                .to_owned(),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            let ledger_scoped_tokens = shared_line
-                .ledger()
-                .leases()
-                .iter()
-                .filter_map(|(token, lease)| match lease.owner() {
-                    crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(registration) => {
-                        Some((token.clone(), *registration))
-                    }
-                    _ => None,
-                })
-                .collect::<BTreeMap<_, _>>();
-            if ledger_scoped_tokens != scope_defer_tokens {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "ScopedDefer ledger custody is not isomorphic to scope packets and pending releases"
-                            .to_owned(),
-                });
-            }
-            if actual_scoped_inflight != expected_scoped_inflight {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "scoped defer child snapshot is not paired with the exact activation scope"
-                            .to_owned(),
-                });
-            }
-            let mut ledger_child_tokens = BTreeMap::<_, BTreeSet<_>>::new();
-            for (token, lease) in shared_line.ledger().leases() {
-                if let crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag) = lease.owner() {
-                    ledger_child_tokens
-                        .entry(tag.clone())
-                        .or_default()
-                        .insert(token.clone());
-                }
-            }
-            for tag in &expected_joined {
-                ledger_child_tokens.entry(tag.clone()).or_default();
-            }
-            if let Some((registration, _)) = actual_deferred_pair {
-                ledger_child_tokens
-                    .entry(LineTaskWorkTag::activation(
-                        active.activation.clone(),
-                        LineTaskWork::Defer(registration),
-                    ))
-                    .or_default();
-            }
-            if actual_child_tokens != ledger_child_tokens {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "child fiber affine graph is not isomorphic to ChildScope ledger ownership"
-                            .to_owned(),
-                });
-            }
-        } else if !deferred_children.is_empty() {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "deferred child snapshot has no active dialogue registration owner"
-                    .to_owned(),
-            });
-        }
-        if let Some(active) = &snapshot.active_choice {
-            self.validate_active_choice(active)?;
-        }
-        if let Some(pending) = &snapshot.pending_host_call
-            && self.program.host_calls.get(pending.call.index()).is_none()
-        {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "pending host-call snapshot references missing AWBC host call".to_owned(),
-            });
-        }
-        if snapshot
-            .emitted_content
-            .iter()
-            .any(|content| self.program.content_units.get(content.index()).is_none())
-            || snapshot
-                .stream_sequences
-                .keys()
-                .any(|stream| self.program.stream_plans.get(stream.index()).is_none())
-        {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "executor snapshot references missing AWBC content or stream table"
-                    .to_owned(),
-            });
-        }
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        snapshot.admit_retained(&owner, &mut admission)?;
         snapshot
             .observations
             .clone()
-            .into_live_for_program(&program_owner)
+            .into_admitted_live_for_program(&owner)
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })
     }
-
-    fn validate_child_owner(
-        &self,
-        owner: &AwbcProductChildFiberOwnerSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        if let AwbcProductChildFiberOwnerSnapshot::Deferred { site, .. }
-        | AwbcProductChildFiberOwnerSnapshot::ScopedDeferred { site, .. } = owner
-        {
-            let function_id = self
-                .program
-                .defer_sites
-                .get(site.index())
-                .copied()
-                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "deferred child snapshot references a missing defer site".to_owned(),
-                })?;
-            let function = self
-                .program
-                .functions
-                .get(function_id.index())
-                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "deferred child snapshot references a missing function".to_owned(),
-                })?;
-            let signature = self
-                .program
-                .signatures
-                .get(function.signature.index())
-                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "deferred child snapshot references a missing signature".to_owned(),
-                })?;
-            if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary
-                || !signature.result.is_some_and(|result| {
-                    matches!(
-                        self.program
-                            .runtime_types
-                            .get(result.index())
-                            .map(crate::awbc::schema::AwbcRuntimeType::shape),
-                        Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
-                    )
-                })
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "deferred child snapshot no longer matches its verified Unit function"
-                        .to_owned(),
-                });
-            }
-            return Ok(());
-        }
-        let AwbcProductChildFiberOwnerSnapshot::LineTask {
-            content,
-            tag,
-            policy,
-            ..
-        } = owner
-        else {
-            return Ok(());
-        };
-        let Some(group) = self
-            .program
-            .content_units
-            .get(content.index())
-            .and_then(|content| content.line_task_group)
-            .and_then(|group| self.program.line_task_groups.get(group.index()))
-        else {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "line-owned child fiber references content without a line-task group"
-                    .to_owned(),
-            });
-        };
-        if matches!(policy.cancel, AwbcProductLineTaskCancelSnapshot::Detach) {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "line-owned child fiber uses unverified detach ownership".to_owned(),
-            });
-        }
-        match &tag.work {
-            AwbcProductLineTaskWorkSnapshot::Node(node) => {
-                let Some(global) = group.nodes.start.checked_add(*node) else {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-owned child fiber node index overflows its group".to_owned(),
-                    });
-                };
-                if *node >= group.nodes.len
-                    || !matches!(
-                        self.program.line_task_nodes.get(global as usize),
-                        Some(crate::awbc::schema::AwbcLineTaskNode::Action(_))
-                    )
-                {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-owned child fiber references a non-action node outside its content group"
-                            .to_owned(),
-                    });
-                }
-            }
-            AwbcProductLineTaskWorkSnapshot::Cancellation(action) => {
-                if !group
-                    .cancel_handlers
-                    .iter()
-                    .any(|handler| &handler.trigger == action)
-                {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-owned child fiber references unknown cancellation work"
-                            .to_owned(),
-                    });
-                }
-            }
-            AwbcProductLineTaskWorkSnapshot::Cleanup(exit) => {
-                let present = match exit {
-                    AwbcProductLineTaskExitSnapshot::Completed => group.cleanup_completed.is_some(),
-                    AwbcProductLineTaskExitSnapshot::Cancelled => group.cleanup_cancelled.is_some(),
-                    AwbcProductLineTaskExitSnapshot::Failed => group.cleanup_failed.is_some(),
-                };
-                if !present {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-owned child fiber references unavailable cleanup work"
-                            .to_owned(),
-                    });
-                }
-            }
-            AwbcProductLineTaskWorkSnapshot::Defer(_) => {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "defer child work requires an activation-owned inflight registration"
-                        .to_owned(),
-                });
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_active_choice(
-        &self,
-        active: &AwbcProductActiveChoiceSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        let Some(choice) = self.program.choices.get(active.choice.index()) else {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active choice snapshot references missing AWBC choice".to_owned(),
-            });
-        };
-        let start = usize::try_from(choice.options.start).map_err(|_| {
-            AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active choice source range start exceeds usize".to_owned(),
-            }
-        })?;
-        let end = usize::try_from(choice.options.checked_end().ok_or_else(|| {
-            AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active choice source range overflows u32".to_owned(),
-            }
-        })?)
-        .map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
-            message: "active choice source range end exceeds usize".to_owned(),
-        })?;
-        let mut previous = None;
-        for source_index in &active.option_indices {
-            if *source_index < start
-                || *source_index >= end
-                || previous.is_some_and(|previous| previous >= *source_index)
-            {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message:
-                        "active choice snapshot does not match its exact typed source option range"
-                            .to_owned(),
-                });
-            }
-            if self.program.choice_options.get(*source_index).is_none() {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "active choice snapshot references a missing source option".to_owned(),
-                });
-            }
-            previous = Some(*source_index);
-        }
-        Ok(())
-    }
-
     fn restore_active_choice(
         &self,
         active: AwbcProductActiveChoiceSnapshot,
@@ -3720,69 +4117,6 @@ impl AwbcProductStepExecutor {
             .collect()
     }
 
-    fn validate_live_flow_bindings(
-        &self,
-        snapshot: &AwbcProductExecutorSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        let mut flows = BTreeSet::new();
-        let mut functions = BTreeSet::new();
-        for binding in &snapshot.live_flow_bindings {
-            if !flows.insert(binding.flow.clone()) || !functions.insert(binding.function) {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "snapshot repeats a live semantic Flow binding".to_owned(),
-                });
-            }
-            if self.program.flow_function(&binding.flow) != Some(binding.function) {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: format!(
-                        "snapshot Flow `{}` no longer owns AWBC function {}",
-                        binding.flow.canonical_label(),
-                        binding.function.0
-                    ),
-                });
-            }
-        }
-        for frame in snapshot.fiber.frames.iter().chain(
-            snapshot
-                .child_fibers
-                .iter()
-                .flat_map(|child| &child.fiber.frames),
-        ) {
-            let is_flow = self
-                .program
-                .functions
-                .get(frame.function.index())
-                .is_some_and(|function| function.kind == AwbcFunctionKind::Flow);
-            if is_flow && !functions.contains(&frame.function) {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: format!(
-                        "snapshot Flow frame {} has no semantic identity evidence",
-                        frame.function.0
-                    ),
-                });
-            }
-        }
-        if let Some(active) = &snapshot.active_choice {
-            for target in active.option_indices.iter().filter_map(|source_index| {
-                self.program
-                    .choice_options
-                    .get(*source_index)
-                    .map(|option| self.choice_runtime_option(option))
-                    .and_then(|option| option.target)
-            }) {
-                if !flows.contains(&target) {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: format!(
-                            "snapshot choice target `{}` has no semantic Flow binding evidence",
-                            target.canonical_label()
-                        ),
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub(super) fn rebuild_facade_stream_states_from_compact(&mut self) {
         self.facade_fiber.frame.stream_states.clear();
         for (index, _) in self.program.stream_plans.iter().enumerate() {
@@ -3822,6 +4156,23 @@ mod tests {
         RuntimeIdCursor, RuntimePersistentFiberId,
     };
     use std::num::{NonZeroU32, NonZeroU64};
+
+    #[test]
+    fn transient_dialogue_phase_is_rejected_by_both_codec_and_projection() {
+        let phase = AwbcProductDialoguePhaseSaveSnapshot::Transitioning;
+        assert!(serde_json::to_vec(&phase).is_err());
+        assert!(
+            serde_json::from_str::<AwbcProductDialoguePhaseSaveSnapshot>("\"Transitioning\"")
+                .is_err()
+        );
+        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ));
+        assert_eq!(
+            super::restore_dialogue_phase_from_save(phase, &owner).unwrap_err(),
+            "dialogue transition cannot be restored"
+        );
+    }
 
     fn closing_phase() -> AwbcProductDialoguePhaseSaveSnapshot {
         AwbcProductDialoguePhaseSaveSnapshot::Closing(AwbcProductDialogueClosingSaveSnapshot {
@@ -3947,8 +4298,26 @@ mod tests {
         };
         let mut line = crate::line_task::RuntimeDialogueActivationState::<AwbcTypeId>::new();
         let program = crate::awbc::schema::AwbcProgram::default();
-        assert!(validate_product_dialogue_phase(&program, &activation, &frame, &line).is_err());
+        assert!(
+            validate_product_dialogue_phase(
+                &program,
+                &activation,
+                &frame,
+                line.result(),
+                crate::line_task::LineTaskLiveState::is_closed
+            )
+            .is_err()
+        );
         line.abandon().expect("abandon result");
-        assert!(validate_product_dialogue_phase(&program, &activation, &frame, &line).is_ok());
+        assert!(
+            validate_product_dialogue_phase(
+                &program,
+                &activation,
+                &frame,
+                line.result(),
+                crate::line_task::LineTaskLiveState::is_closed
+            )
+            .is_ok()
+        );
     }
 }

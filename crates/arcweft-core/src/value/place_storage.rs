@@ -334,6 +334,20 @@ impl RuntimePlaceStorage<RuntimeValue> {
         })
     }
 
+    /// Projects a place only after its enclosing frame admitted every header,
+    /// initialized descendant and original type in the same program allowance.
+    pub(crate) fn snapshot_admitted_for_program(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<
+        RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot>,
+        super::AwbcRuntimeValueSnapshotError,
+    > {
+        self.try_map_ref(&mut |value| {
+            super::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
+        })
+    }
+
     /// Checks the sealed cleanup contour against drop flags. A record header
     /// counts as an initialized container even when a child has been moved.
     /// This is artifact/state validation; source access legality is static.
@@ -647,6 +661,15 @@ impl RuntimePlaceStorage<super::AwbcRuntimeValueSnapshot> {
         self.validate_record_headers(Some(owner))
             .map_err(|message| super::AwbcRuntimeValueSnapshotError::Message { message })?;
         self.try_map(&mut |value| value.into_runtime_value_for_program(owner))
+    }
+
+    /// Consumes inert place storage after the enclosing original-program
+    /// admission has established its complete header and value obligations.
+    pub(crate) fn into_admitted_live_for_program(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<RuntimePlaceStorage<RuntimeValue>, super::AwbcRuntimeValueSnapshotError> {
+        self.try_map(&mut |value| value.into_admitted_runtime_value(owner))
     }
 }
 

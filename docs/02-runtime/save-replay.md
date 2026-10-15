@@ -168,6 +168,17 @@ live Fiber の構築・複製を行わない。terminal の return summary は�
 sequence の物理 storage kind・元 program の callable arity を含む共通 borrowed
 label projection と照合してから復元する。文字列 label は元の値を借用する。
 
+Product image は root／child／dialogue の fiber、対話 ledger と frame、Need registry、
+queued publication、観測値を同じ original program の累積 admission で検証する。
+save 変換の公開入口も同じ image owner の検証を通してから inert 値を複製する。
+対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
+を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の
+activation key、phase と結果、元 activation signature の capture、reveal 後の input、
+content template の value slot と callback capture ABI を、live 値の構築前に照合する。
+検証用に DialogueStore や中間の live frame snapshot を構築しない。全体の検証後は
+既存の admitted projection を使い、各値の変換時に資源枠を更新しない。
+一時的な `Transitioning` phase は codec と復元の両方で拒否する。
+
 attached default の実行中に停止した callable の pending packet は、Native
 rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の
 default capture と後続 transition が、各 retained／argument slot の値の有無を

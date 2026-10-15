@@ -1642,11 +1642,10 @@ fn validate_restore_launch<
 }
 
 impl NeedProducerRegistry {
-    pub(crate) fn snapshot_retained(
+    pub(crate) fn admit_retained(
         &self,
-        owner: &RuntimeProgramOwner,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
-    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
         admission.validate_metadata_collection(self.task_journal.accepted_len())?;
         admission.validate_metadata_collection(self.launches.len())?;
         for (spec, handle) in self.task_journal.borrowed_submissions() {
@@ -1685,6 +1684,22 @@ impl NeedProducerRegistry {
             admission.validate_metadata(&(invocation, launch.correlation))?;
         }
         admission.validate_metadata(&self.next_invocation_sequence)?;
+        Ok(())
+    }
+
+    pub(crate) fn snapshot_retained(
+        &self,
+        owner: &RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+        self.admit_retained(admission)?;
+        self.snapshot_admitted(owner)
+    }
+
+    pub(crate) fn snapshot_admitted(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(NeedProducerRegistrySaveSnapshot {
             task_admissions: self.task_journal.borrowed_submissions().map(|(spec, handle)| {
                 Ok(TaskSubmission { spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(spec, owner)?, handle })
