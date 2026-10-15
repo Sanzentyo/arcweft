@@ -10,18 +10,15 @@ use crate::awbc::schema::{
     AwbcStreamPlanId, AwbcTypeId,
 };
 use crate::line_task::{
-    ChildCancelPolicy, ChildJoinPolicy, LineTaskActiveRoot, LineTaskExecutionLaneSnapshot,
-    LineTaskExitPolicy, LineTaskLiveSnapshot, LineTaskLiveState, LineTaskNodeState, LineTaskPhase,
-    LineTaskScheduledLaneSnapshot, LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag, ScopeExit,
+    ChildCancelPolicy, ChildJoinPolicy, LineTaskExitPolicy, LineTaskLiveSnapshot,
+    LineTaskLiveState, LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag, ScopeExit,
 };
 use crate::observation::RuntimeObservationState;
 use crate::runtime_id::{
     DialogueActivationId, RuntimeDialogueEffectCallbackActivationId, RuntimeLineHandleToken,
     RuntimeLineTaskNodeId, RuntimePersistentFiberId,
 };
-use crate::step::{
-    RuntimeDialogueContentEventKind, RuntimeDialogueInputActionEvent, RuntimeHostCallId,
-};
+use crate::step::{RuntimeDialogueContentEventKind, RuntimeHostCallId};
 use crate::stream::StreamRuntimeState;
 use crate::task::{
     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
@@ -30,7 +27,6 @@ use crate::task::{
     RuntimeNeedProducerState, TaskId, TaskPlanSemanticDigest, TaskPublicationCursor,
 };
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
-use arcweft_interaction_model::input::InputActionId;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub use task_publication::{
@@ -237,182 +233,6 @@ fn restore_exit_policy(policy: AwbcProductLineTaskExitPolicySnapshot) -> LineTas
             AwbcProductLineTaskCancelSnapshot::Detach => ChildCancelPolicy::Detach,
         },
     }
-}
-
-fn snapshot_node_state(state: LineTaskNodeState) -> AwbcProductLineTaskNodeStateSnapshot {
-    match state {
-        LineTaskNodeState::Armed => AwbcProductLineTaskNodeStateSnapshot::Armed,
-        LineTaskNodeState::Running => AwbcProductLineTaskNodeStateSnapshot::Running,
-        LineTaskNodeState::Cancelling => AwbcProductLineTaskNodeStateSnapshot::Cancelling,
-        LineTaskNodeState::Detached => AwbcProductLineTaskNodeStateSnapshot::Detached,
-        LineTaskNodeState::Completed => AwbcProductLineTaskNodeStateSnapshot::Completed,
-        LineTaskNodeState::Cancelled => AwbcProductLineTaskNodeStateSnapshot::Cancelled,
-        LineTaskNodeState::Failed => AwbcProductLineTaskNodeStateSnapshot::Failed,
-    }
-}
-
-fn restore_node_state(state: AwbcProductLineTaskNodeStateSnapshot) -> LineTaskNodeState {
-    match state {
-        AwbcProductLineTaskNodeStateSnapshot::Armed => LineTaskNodeState::Armed,
-        AwbcProductLineTaskNodeStateSnapshot::Running => LineTaskNodeState::Running,
-        AwbcProductLineTaskNodeStateSnapshot::Cancelling => LineTaskNodeState::Cancelling,
-        AwbcProductLineTaskNodeStateSnapshot::Detached => LineTaskNodeState::Detached,
-        AwbcProductLineTaskNodeStateSnapshot::Completed => LineTaskNodeState::Completed,
-        AwbcProductLineTaskNodeStateSnapshot::Cancelled => LineTaskNodeState::Cancelled,
-        AwbcProductLineTaskNodeStateSnapshot::Failed => LineTaskNodeState::Failed,
-    }
-}
-
-fn snapshot_live_state(state: &LineTaskLiveState) -> AwbcProductLineTaskLiveSnapshot {
-    let state = state.snapshot();
-    AwbcProductLineTaskLiveSnapshot {
-        activation: state.activation().clone(),
-        phase: match state.phase() {
-            LineTaskPhase::Active => AwbcProductLineTaskPhaseSnapshot::Active,
-            LineTaskPhase::Closing { exit } => AwbcProductLineTaskPhaseSnapshot::Closing {
-                exit: snapshot_exit(exit),
-            },
-            LineTaskPhase::Closed { exit } => AwbcProductLineTaskPhaseSnapshot::Closed {
-                exit: snapshot_exit(exit),
-            },
-        },
-        activation_lane: snapshot_execution_lane(
-            state.node_states(),
-            state.outstanding(),
-            state.active_roots(),
-            state.cancelling_nodes(),
-        ),
-        scheduled_lanes: state
-            .scheduled_lanes()
-            .iter()
-            .map(|scheduled| AwbcProductLineTaskScheduledLaneSnapshot {
-                token: scheduled.token().clone(),
-                lane: snapshot_execution_lane(
-                    scheduled.lane().node_states(),
-                    scheduled.lane().outstanding(),
-                    scheduled.lane().active_roots(),
-                    scheduled.lane().cancelling_nodes(),
-                ),
-            })
-            .collect(),
-        scheduled_ready: state.scheduled_ready().to_vec(),
-        consumed_content_events: state.consumed_content_events().to_vec(),
-        consumed_input_actions: state.consumed_input_actions().to_vec(),
-        cleanup_started: state.cleanup_started(),
-        cancellation_action: state.cancellation_action().cloned(),
-    }
-}
-
-fn snapshot_execution_lane(
-    node_states: &[LineTaskNodeState],
-    outstanding: &[LineTaskWork],
-    active_roots: &[LineTaskActiveRoot],
-    cancelling_nodes: &[RuntimeLineTaskNodeId],
-) -> AwbcProductLineTaskExecutionLaneSnapshot {
-    AwbcProductLineTaskExecutionLaneSnapshot {
-        node_states: node_states
-            .iter()
-            .copied()
-            .map(snapshot_node_state)
-            .collect(),
-        outstanding: outstanding.iter().map(snapshot_work).collect(),
-        active_roots: active_roots
-            .iter()
-            .copied()
-            .map(|root| AwbcProductLineTaskActiveRootSnapshot {
-                node: snapshot_node_index(root.node()),
-            })
-            .collect(),
-        cancelling_nodes: cancelling_nodes
-            .iter()
-            .copied()
-            .map(snapshot_node_index)
-            .collect(),
-    }
-}
-
-fn restore_live_snapshot(
-    snapshot: AwbcProductLineTaskLiveSnapshot,
-) -> Result<LineTaskLiveSnapshot, AwbcProductStepBuildError> {
-    let restore_nodes = |nodes: Vec<u32>| {
-        nodes
-            .into_iter()
-            .map(|node| {
-                let node = usize::try_from(node).map_err(|_| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-task snapshot node index exceeds platform range".to_owned(),
-                    }
-                })?;
-                RuntimeLineTaskNodeId::from_zero_based(node).ok_or_else(|| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "line-task snapshot node index exceeds runtime identity range"
-                            .to_owned(),
-                    }
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()
-    };
-    let restore_lane = |lane: AwbcProductLineTaskExecutionLaneSnapshot| {
-        let outstanding = lane
-            .outstanding
-            .into_iter()
-            .map(|work| {
-                restore_work(work).ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "line-task snapshot work references an invalid node identity"
-                        .to_owned(),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let active_roots = restore_nodes(
-            lane.active_roots
-                .into_iter()
-                .map(|root| root.node)
-                .collect(),
-        )?
-        .into_iter()
-        .map(LineTaskActiveRoot::new)
-        .collect::<Vec<_>>();
-        Ok::<_, AwbcProductStepBuildError>(LineTaskExecutionLaneSnapshot::new(
-            lane.node_states
-                .into_iter()
-                .map(restore_node_state)
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-            outstanding.into_boxed_slice(),
-            active_roots.into_boxed_slice(),
-            restore_nodes(lane.cancelling_nodes)?.into_boxed_slice(),
-        ))
-    };
-    let activation_lane = restore_lane(snapshot.activation_lane)?;
-    let scheduled_lanes = snapshot
-        .scheduled_lanes
-        .into_iter()
-        .map(|scheduled| {
-            Ok(LineTaskScheduledLaneSnapshot::new(
-                scheduled.token,
-                restore_lane(scheduled.lane)?,
-            ))
-        })
-        .collect::<Result<Vec<_>, AwbcProductStepBuildError>>()?;
-    Ok(LineTaskLiveSnapshot::new(
-        snapshot.activation,
-        match snapshot.phase {
-            AwbcProductLineTaskPhaseSnapshot::Active => LineTaskPhase::Active,
-            AwbcProductLineTaskPhaseSnapshot::Closing { exit } => LineTaskPhase::Closing {
-                exit: restore_exit(exit),
-            },
-            AwbcProductLineTaskPhaseSnapshot::Closed { exit } => LineTaskPhase::Closed {
-                exit: restore_exit(exit),
-            },
-        },
-        snapshot.cancellation_action,
-        activation_lane,
-        scheduled_lanes.into_boxed_slice(),
-        snapshot.scheduled_ready.into_boxed_slice(),
-        snapshot.consumed_content_events.into_boxed_slice(),
-        snapshot.consumed_input_actions.into_boxed_slice(),
-        snapshot.cleanup_started,
-    ))
 }
 
 impl ProductChildFiberOwner {
@@ -1314,10 +1134,6 @@ impl super::ActiveDialogue {
             LineTaskLiveState::is_closed,
         )?;
         if let Some(reducer) = self.line_task() {
-            let reducer = reducer.snapshot();
-            admission.validate_metadata(&snapshot_live_state(
-                self.line_task().expect("borrowed reducer remains present"),
-            ))?;
             let group = program
                 .content_units
                 .get(self.content.index())
@@ -1329,10 +1145,8 @@ impl super::ActiveDialogue {
             let view = AwbcLineTaskPlanView::new(program, group).ok_or_else(|| {
                 invalid("active dialogue line task graph is malformed".to_owned())
             })?;
-            reducer
-                .admit_for_plan(&view)
-                .map_err(|error| invalid(format!("invalid line-task reducer snapshot: {error}")))?;
-            line.restore_admit_reducer(&self.activation, &view, &reducer)?;
+            reducer.admit_retained(&view, admission)?;
+            line.restore_admit_reducer(&self.activation, &view, reducer)?;
         }
         Ok(())
     }
@@ -1413,7 +1227,6 @@ impl AwbcProductActiveDialogueSaveSnapshot {
             _ => {}
         }
         if let Some(reducer) = self.line_task() {
-            admission.validate_metadata(reducer)?;
             let group = program
                 .content_units
                 .get(self.content.index())
@@ -1424,12 +1237,7 @@ impl AwbcProductActiveDialogueSaveSnapshot {
                 })?;
             let view = AwbcLineTaskPlanView::new(program, group)
                 .ok_or_else(|| invalid("active dialogue line task graph is malformed"))?;
-            restore_live_snapshot(reducer.clone())
-                .map_err(|error| invalid(&error.to_string()))?
-                .admit_for_plan(&view)
-                .map_err(|error| {
-                    invalid(&format!("invalid line-task reducer snapshot: {error}"))
-                })?;
+            reducer.admit_retained(&view, admission)?;
         }
         Ok(())
     }
@@ -1673,12 +1481,12 @@ fn snapshot_dialogue_phase_for_save(
         }
         super::ProductDialoguePhase::Reducing { line_task } => {
             AwbcProductDialoguePhaseSaveSnapshot::Reducing {
-                line_task: snapshot_live_state(line_task),
+                line_task: line_task.snapshot(),
             }
         }
         super::ProductDialoguePhase::Publishing { line_task } => {
             AwbcProductDialoguePhaseSaveSnapshot::Publishing {
-                line_task: snapshot_live_state(line_task),
+                line_task: line_task.snapshot(),
             }
         }
         super::ProductDialoguePhase::Closing(closing) => {
@@ -1698,7 +1506,7 @@ fn snapshot_dialogue_phase_for_save(
                     }
                     super::ProductDialogueClosingState::LineTask { line_task } => {
                         AwbcProductDialogueClosingStateSaveSnapshot::LineTask {
-                            line_task: snapshot_live_state(line_task),
+                            line_task: line_task.snapshot(),
                         }
                     }
                 },
@@ -1773,16 +1581,12 @@ fn restore_dialogue_phase_from_save(
         }
         AwbcProductDialoguePhaseSaveSnapshot::Reducing { line_task } => {
             super::ProductDialoguePhase::Reducing {
-                line_task: LineTaskLiveState::from_admitted_snapshot(
-                    restore_live_snapshot(line_task).map_err(|error| error.to_string())?,
-                ),
+                line_task: LineTaskLiveState::from_admitted_snapshot(line_task),
             }
         }
         AwbcProductDialoguePhaseSaveSnapshot::Publishing { line_task } => {
             super::ProductDialoguePhase::Publishing {
-                line_task: LineTaskLiveState::from_admitted_snapshot(
-                    restore_live_snapshot(line_task).map_err(|error| error.to_string())?,
-                ),
+                line_task: LineTaskLiveState::from_admitted_snapshot(line_task),
             }
         }
         AwbcProductDialoguePhaseSaveSnapshot::Closing(closing) => {
@@ -1804,10 +1608,7 @@ fn restore_dialogue_phase_from_save(
                     }
                     AwbcProductDialogueClosingStateSaveSnapshot::LineTask { line_task } => {
                         super::ProductDialogueClosingState::LineTask {
-                            line_task: LineTaskLiveState::from_admitted_snapshot(
-                                restore_live_snapshot(line_task)
-                                    .map_err(|error| error.to_string())?,
-                            ),
+                            line_task: LineTaskLiveState::from_admitted_snapshot(line_task),
                         }
                     }
                 },
@@ -2096,10 +1897,7 @@ impl AwbcProductExecutorSnapshot {
             })
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         if let Some((activation, active, shared_line)) = active_dialogue {
-            let reducer = active
-                .line_task()
-                .map(|saved| restore_live_snapshot(saved.clone()))
-                .transpose()?;
+            let reducer = active.line_task();
             let content = program
                 .content_units
                 .get(active.content.index())
@@ -2157,8 +1955,7 @@ impl AwbcProductExecutorSnapshot {
                 })
                 || active.line_task().is_some_and(|line_task| {
                     line_task
-                        .consumed_content_events
-                        .as_slice()
+                        .consumed_content_events()
                         .iter()
                         .any(|event| pending.contains(event))
                 })
@@ -2173,12 +1970,17 @@ impl AwbcProductExecutorSnapshot {
                 activation,
                 active,
                 shared_line.result(),
-                |saved| matches!(saved.phase, AwbcProductLineTaskPhaseSnapshot::Closed { .. }),
+                |saved| {
+                    matches!(
+                        saved.phase(),
+                        AwbcProductLineTaskPhaseSnapshot::Closed { .. }
+                    )
+                },
             )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
-            if let Some(reducer) = &reducer {
+            if let Some(reducer) = reducer {
                 let group = program
                     .content_units
                     .get(active.content.index())
@@ -2334,7 +2136,6 @@ impl AwbcProductExecutorSnapshot {
                 });
             }
             let expected_joined = reducer
-                .as_ref()
                 .map(LineTaskLiveSnapshot::outstanding_tags)
                 .unwrap_or_default();
             let mut actual_joined = BTreeSet::new();
@@ -3115,48 +2916,11 @@ pub struct AwbcProductDialogueOccurrenceSnapshot {
     pub next: u64,
 }
 
-/// Complete persisted reducer state for one content-owned dialogue group.
-#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductLineTaskLiveSnapshot {
-    pub activation: DialogueActivationId,
-    pub phase: AwbcProductLineTaskPhaseSnapshot,
-    pub cancellation_action: Option<InputActionId>,
-    pub activation_lane: AwbcProductLineTaskExecutionLaneSnapshot,
-    pub scheduled_lanes: Vec<AwbcProductLineTaskScheduledLaneSnapshot>,
-    pub scheduled_ready: Vec<RuntimeLineHandleToken>,
-    pub consumed_content_events: Vec<RuntimeDialogueContentEventKind>,
-    pub consumed_input_actions: Vec<RuntimeDialogueInputActionEvent>,
-    pub cleanup_started: bool,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductLineTaskExecutionLaneSnapshot {
-    pub node_states: Vec<AwbcProductLineTaskNodeStateSnapshot>,
-    pub outstanding: Vec<AwbcProductLineTaskWorkSnapshot>,
-    pub active_roots: Vec<AwbcProductLineTaskActiveRootSnapshot>,
-    pub cancelling_nodes: Vec<u32>,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductLineTaskScheduledLaneSnapshot {
-    pub token: RuntimeLineHandleToken,
-    pub lane: AwbcProductLineTaskExecutionLaneSnapshot,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProductLineTaskPhaseSnapshot {
-    Active,
-    Closing {
-        exit: AwbcProductLineTaskExitSnapshot,
-    },
-    Closed {
-        exit: AwbcProductLineTaskExitSnapshot,
-    },
-}
+/// The canonical Core reducer grammar is also the version-one Product wire.
+/// Storage aliases retain typed node identities and duplicate inert rows until
+/// original-plan admission; no intermediate reducer record is constructed.
+pub type AwbcProductLineTaskLiveSnapshot = crate::line_task::LineTaskLiveSnapshot;
+pub type AwbcProductLineTaskPhaseSnapshot = crate::line_task::LineTaskPhase;
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -3166,17 +2930,7 @@ pub enum AwbcProductLineTaskExitSnapshot {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProductLineTaskNodeStateSnapshot {
-    Armed,
-    Running,
-    Cancelling,
-    Detached,
-    Completed,
-    Cancelled,
-    Failed,
-}
+pub type AwbcProductLineTaskNodeStateSnapshot = crate::line_task::LineTaskNodeState;
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
@@ -3199,12 +2953,6 @@ pub struct AwbcProductLineTaskWorkTagSnapshot {
 pub enum AwbcProductLineTaskWorkInstanceSnapshot {
     Activation(DialogueActivationId),
     Scheduled(RuntimeLineHandleToken),
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductLineTaskActiveRootSnapshot {
-    pub node: u32,
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]

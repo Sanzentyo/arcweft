@@ -3,9 +3,9 @@ use super::defer::{
     RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration, RuntimeScopedDeferDecision,
 };
 use super::{
-    LineTaskLiveSnapshot, LineTaskNodeState, LineTaskPlanView, LineTaskScheduledCompletion,
-    LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag, RuntimeDialogueContentEventKind,
-    ScopeExit,
+    LineTaskLaneView, LineTaskNodeState, LineTaskPlanView, LineTaskReducerView,
+    LineTaskScheduledCompletion, LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag,
+    RuntimeDialogueContentEventKind, ScopeExit,
 };
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
@@ -4583,7 +4583,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         &self,
         activation: &DialogueActivationId,
         plan: &P,
-        reducer: &LineTaskLiveSnapshot,
+        reducer: &impl LineTaskReducerView,
     ) -> Result<(), LineRuntimeError> {
         if reducer.activation() != activation {
             return Err(LineRuntimeError::InvalidRestoredScheduledState);
@@ -4597,8 +4597,9 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                     if reducer.cancellation_action() == Some(&action)
                         && plan.has_cancellation_work(&action)
                         && !reducer
+                            .activation_lane()
                             .outstanding()
-                            .contains(&LineTaskWork::Cancellation(action.clone()))
+                            .any(|work| matches!(work, LineTaskWork::Cancellation(candidate) if candidate == &action))
                         && matches!(
                             reducer.phase(),
                             super::LineTaskPhase::Closing {
@@ -4612,7 +4613,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                         .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
                     if !reducer
                         .consumed_content_events()
-                        .contains(&RuntimeDialogueContentEventKind::Mark(mark))
+                        .any(|event| *event == RuntimeDialogueContentEventKind::Mark(mark))
                         || matches!(
                             reducer.phase(),
                             super::LineTaskPhase::Closing {
@@ -4626,6 +4627,7 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                     }
                     let completed = match source.instance() {
                         LineTaskWorkInstance::Activation(_) => reducer
+                            .activation_lane()
                             .node_states()
                             .get(action.index())
                             .is_some_and(|state| *state == LineTaskNodeState::Completed),
@@ -4650,12 +4652,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
                             }
                             reducer
                                 .scheduled_lanes()
-                                .iter()
-                                .find(|lane| lane.token() == token)
+                                .find(|(lane_token, _)| *lane_token == token)
                                 .map_or_else(
                                     || scheduled.state() == RuntimeScheduledState::Completed,
-                                    |lane| {
-                                        lane.lane().node_states().get(action.index()).is_some_and(
+                                    |(_, lane)| {
+                                        lane.node_states().get(action.index()).is_some_and(
                                             |state| *state == LineTaskNodeState::Completed,
                                         )
                                     },
@@ -4675,13 +4676,11 @@ impl<T, V> RuntimeDialogueActivationState<T, V> {
         }
         let ready = reducer
             .scheduled_ready()
-            .iter()
             .cloned()
             .collect::<std::collections::BTreeSet<_>>();
         let lanes = reducer
             .scheduled_lanes()
-            .iter()
-            .map(|lane| lane.token().clone())
+            .map(|(token, _)| token.clone())
             .collect::<std::collections::BTreeSet<_>>();
         if ready.len() != reducer.scheduled_ready().len()
             || lanes.len() != reducer.scheduled_lanes().len()

@@ -57,6 +57,22 @@ impl RuntimePublishedDialogueRegistry {
 }
 
 impl<F, T> RuntimeDialogueActivationRegistry<F, T> {
+    pub(crate) fn try_visit_active<'a, E>(
+        &'a self,
+        mut visit: impl FnMut(
+            &'a DialogueActivationId,
+            &'a F,
+            &'a RuntimeDialogueActivationState<T>,
+        ) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for (activation, entry) in &self.entries {
+            if let RuntimeDialogueRegistryEntry::Active { frame, line, .. } = entry {
+                visit(activation, frame, line)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn into_published(
         self,
     ) -> Result<RuntimePublishedDialogueRegistry, (Self, LineRuntimeError)> {
@@ -216,6 +232,17 @@ pub(crate) enum RuntimeDialogueRegistrySnapshotError {
     Frame { message: String },
 }
 
+impl From<super::LineTaskSnapshotError> for RuntimeDialogueRegistrySnapshotError {
+    fn from(error: super::LineTaskSnapshotError) -> Self {
+        match error {
+            super::LineTaskSnapshotError::Value(error) => Self::Value(error),
+            error => Self::Frame {
+                message: format!("invalid line-task reducer snapshot: {error}"),
+            },
+        }
+    }
+}
+
 impl RuntimeDialogueRegistryCommitReceipt {
     pub(crate) fn into_line(self) -> RuntimeDialogueCommitReceipt {
         self.line
@@ -274,6 +301,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         self.to_snapshot_with_owner(None, snapshot_frame)
     }
 
+    #[cfg(test)]
     pub(crate) fn to_rollback_snapshot<S>(
         &self,
         owner: &RuntimeProgramOwner,
@@ -285,6 +313,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         self.to_snapshot_with_owner(Some(owner), snapshot_frame)
     }
 
+    #[cfg(test)]
     fn to_snapshot_with_owner<S>(
         &self,
         owner: Option<&RuntimeProgramOwner>,
@@ -377,6 +406,7 @@ impl<F, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         Ok(RuntimeDialogueRegistrySaveSnapshot { entries })
     }
 
+    #[cfg(test)]
     pub(crate) fn from_save_snapshot_with_deferred_children<S>(
         snapshot: RuntimeDialogueRegistrySaveSnapshot<S, T>,
         owner: &RuntimeProgramOwner,

@@ -202,6 +202,16 @@ live／inert 特殊化を使う。live snapshot の無条件 Clone と直接の 
 は与えず、Root の entry／layout／type／資源検証は保存形態間で同じ実装を使う。
 復元時の Root は、候補 session から所有権をそのまま移す。
 
+対話の line-task reducer と execution lane も、それぞれ一つの owning grammar の
+live／inert 特殊化を使い、Product wire は Core の inert 型をそのまま使う。
+reducer の collection／work 予算を親の資源枠で検査してから、元 content group の
+node／phase／scheduled scope と、activation の結果・取消・journal custody を
+借用参照で照合する。検証用 snapshot の構築や、保存値を live に戻す処理は行わない。
+Native は全 active frame の inbox と reducer を検査してから、最初の frame 値を変換する。
+activation／content／task group は元 program と対応させる。Product の reducer wire の
+node は Core の型付き identity を保持し、version 1 の形を直接更新する。
+旧 reducer DTO とその変換・reader は保持しない。
+
 attached default の実行中に停止した callable の pending packet は、Native
 rollback と AWBC fiber で一つの inert carrier を使う。元の callable state の
 default capture と後続 transition が、各 retained／argument slot の値の有無を

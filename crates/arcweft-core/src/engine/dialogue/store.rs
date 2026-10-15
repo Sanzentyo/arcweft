@@ -114,6 +114,54 @@ type NativeDialogueActivationFrameRollbackImage = DialogueActivationFrame<
 type NativeEngineDialogueFrameRollbackImage =
     EngineDialogueActivationFrame<NativeDialogueActivationFrameRollbackImage>;
 
+impl<V, O, C, E> DialogueActivationFrame<V, O, C, E> {
+    fn admit_reducer<L>(
+        &self,
+        activation: &DialogueActivationId,
+        line: &RuntimeDialogueActivationState<RuntimePlanTypeId, L>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::line_task::RuntimeDialogueRegistrySnapshotError> {
+        let DialogueLineTaskState::Live(reducer) = &self.line_task else {
+            return Ok(());
+        };
+        let invalid =
+            |message: &str| crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                message: message.to_owned(),
+            };
+        let owner = admission
+            .program_owner()
+            .cloned()
+            .ok_or_else(|| invalid("native reducer requires its original program"))?;
+        let crate::task::RuntimeProgramOwner::Plan(plan) = owner else {
+            return Err(invalid(
+                "native reducer requires its original Plan executable",
+            ));
+        };
+        admission.validate_metadata(&(self.content, self.task_group.index()))?;
+        if activation.content() != self.content {
+            return Err(invalid(
+                "native reducer frame content differs from its activation",
+            ));
+        }
+        let content = plan
+            .dialogue_content()
+            .get(self.content)
+            .ok_or_else(|| invalid("native reducer content is absent from its original program"))?;
+        if content.line_task_group() != Some(self.task_group) {
+            return Err(invalid(
+                "native reducer group differs from its original content",
+            ));
+        }
+        let group = plan
+            .line_task_groups()
+            .get(self.task_group.index())
+            .ok_or_else(|| invalid("native reducer group is absent from its original program"))?;
+        reducer.admit_retained(group, admission)?;
+        line.restore_admit_reducer(activation, group, reducer)?;
+        Ok(())
+    }
+}
+
 impl Clone for NativeDialogueActivationFrameRollbackImage {
     fn clone(&self) -> Self {
         Self {
@@ -576,7 +624,7 @@ impl DialogueActivationScope {
 
 /// Durable step ingress owned by one activation until its executor phase can
 /// consume each channel exactly once.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 struct DialogueStepInbox {
     content_events: Vec<RuntimeDialogueContentEventKind>,
     line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
@@ -778,9 +826,22 @@ impl DialogueActivationStore {
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<DialogueActivationStoreRollbackImage, String> {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.registry
+            .admit_retained(&mut admission)
+            .map_err(|error| error.to_string())?;
+        self.registry
+            .try_visit_active(|activation, active, line| {
+                admission.validate_metadata(&active.inbox)?;
+                active.frame.admit_reducer(activation, line, &mut admission)
+            })
+            .map_err(|error| error.to_string())?;
         let registry = self
             .registry
-            .to_rollback_snapshot(owner, |active| {
+            .snapshot_admitted(Some(owner), |active| {
                 Ok(NativeEngineDialogueFrameRollbackImage {
                     frame: active
                         .frame
@@ -808,24 +869,37 @@ impl DialogueActivationStore {
             ),
         >,
     ) -> Result<Self, String> {
-        let registry =
-            RuntimeDialogueActivationRegistry::from_save_snapshot_with_deferred_children(
-                image.registry,
-                owner,
-                expected_deferred_children,
-                |_, active, _| {
-                    Ok(EngineDialogueActivationFrame {
-                        frame: DialogueActivationFrame::from_rollback_image(active.frame, owner)
-                            .map_err(|message| {
-                                crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                    message,
-                                }
-                            })?,
-                        inbox: active.inbox,
-                    })
-                },
-            )
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        image
+            .registry
+            .admit_retained(&mut admission, expected_deferred_children)
             .map_err(|error| error.to_string())?;
+        image
+            .registry
+            .try_visit_active(|activation, active, line| {
+                admission.validate_metadata(&active.inbox)?;
+                active.frame.admit_reducer(activation, line, &mut admission)
+            })
+            .map_err(|error| error.to_string())?;
+        let registry = RuntimeDialogueActivationRegistry::from_admitted_save_snapshot(
+            image.registry,
+            owner,
+            |_, active, _| {
+                Ok(EngineDialogueActivationFrame {
+                    frame: DialogueActivationFrame::from_rollback_image(active.frame, owner)
+                        .map_err(|message| {
+                            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                message,
+                            }
+                        })?,
+                    inbox: active.inbox,
+                })
+            },
+        )
+        .map_err(|error| error.to_string())?;
         Ok(Self { registry })
     }
 }
@@ -1320,6 +1394,80 @@ mod tests {
             pending_host_call: None,
             failure: None,
         }
+    }
+
+    #[test]
+    fn rollback_admits_every_native_reducer_before_projecting_any_frame_value() {
+        let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::new(
+            crate::plan::RuntimePlanBuilder::new().finish().unwrap(),
+        ));
+        // This input exceeds the actual snapshot depth policy. The later
+        // reducer's original content/group correspondence must reject before
+        // capture projects any value from this earlier frame.
+        let mut first = frame(DialogueRuntimePhase::Ready);
+        let mut deep = RuntimeValue::Unit;
+        for _ in 0..=crate::entry::RuntimeSchemaLimits::engine_default().max_depth {
+            deep = RuntimeValue::Tuple(vec![deep]);
+        }
+        first.task_inputs = vec![RuntimeLocalBinding {
+            local: RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+            value: deep,
+        }]
+        .into_boxed_slice();
+        let first_value_error = first.inert_rollback_image(&owner).unwrap_err();
+        let mut second = frame(DialogueRuntimePhase::Ready);
+        let group = crate::line_task::LineTaskGroup::new(
+            crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([73; 32]),
+            Box::new([]),
+            Box::new([]),
+            Box::new([]),
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            Box::new([]),
+            crate::runtime_id::RuntimeLineTaskNodeId::from_zero_based(0).unwrap(),
+            vec![crate::line_task::LineTaskNode::Action(Box::new([]))].into_boxed_slice(),
+            Box::new([]),
+            crate::line_task::LineTaskCleanup::default(),
+        );
+        second.line_task =
+            DialogueLineTaskState::Live(LineTaskLiveState::new(&group, activation(2)));
+        second.content =
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(2).unwrap());
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        assert!(matches!(
+            second.admit_reducer(&activation(2), &RuntimeDialogueActivationState::new(), &mut admission),
+            Err(crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame { message })
+                if message == "native reducer frame content differs from its activation"
+        ));
+        second.content = activation(2).content();
+        let mut store = DialogueActivationStore::default();
+        for (id, frame) in [(activation(1), first), (activation(2), second)] {
+            store
+                .registry
+                .begin(
+                    id,
+                    EngineDialogueActivationFrame {
+                        frame,
+                        inbox: DialogueStepInbox::default(),
+                    },
+                )
+                .unwrap();
+        }
+        let before = store.registry.active_ids();
+        let error = store.inert_rollback_image(&owner).unwrap_err();
+        assert_eq!(
+            error,
+            crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                message: "native reducer content is absent from its original program".to_owned(),
+            }
+            .to_string(),
+        );
+        assert_ne!(error, first_value_error);
+        assert_eq!(store.registry.active_ids(), before);
+        assert!(store.registry.active_frame(&activation(1)).is_some());
+        assert!(store.registry.active_frame(&activation(2)).is_some());
     }
 
     fn stage_actor_owner() -> RuntimeOpaqueTypeOwner {
