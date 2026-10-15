@@ -661,7 +661,7 @@ impl Engine {
         while let Some(index) = next_need_publication_index(queue, through) {
             let publication = &queue[index];
             publication
-                .admit_for_await(&state.handle, &mut admission)
+                .admit_for_await((&state.handle).into(), &mut admission)
                 .map_err(|error| error.to_string())?;
             through = Some(publication.cursor());
         }
@@ -708,7 +708,7 @@ impl Engine {
         };
         queue[index]
             .admit_for_await(
-                handle,
+                handle.into(),
                 &mut crate::value::RuntimeRetainedValueAdmission::for_program(
                     crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
                     crate::entry::RuntimeSchemaLimits::engine_default(),

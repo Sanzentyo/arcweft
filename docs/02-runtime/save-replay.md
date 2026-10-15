@@ -211,6 +211,10 @@ main／child frame の環境・観測値・stream・選択済み結果は、同�
 から、それらの値を変換する。function frame の callee context は環境の順序と照合し、
 formatter の保持値はその位置の caller context と元 operand ABI で検査する。
 default の戻り先と保持 packet も、元 program と共有資源枠で照合する。
+parked Await と待機 status の Need／通知値も同じ枠を使い、通知は元 Need の
+outcome・相関・cursor 順序と照合する。AwaitMany の保持 item／capture は元 Plan の
+local declaration と、その待機を実行中の呼び出し binding で型検査し、frontier・
+in-flight・result の対応を検査してから検証済み値を射影する。
 この計上は pending operation／control／Await 全体や session の総予算を代替しない。
 
 所有する保存欄は affine 値を inert のまま保持できる。資源・型・元 storage の検査は

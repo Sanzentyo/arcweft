@@ -378,7 +378,7 @@ impl NativeFlowExecutionFrame {
             await_observer: self
                 .await_observer
                 .as_ref()
-                .map(|state| state.inert_rollback_image(owner).map(Box::new))
+                .map(|state| state.snapshot_with_admitted_values(owner).map(Box::new))
                 .transpose()?,
             root_cleanups: self.root_cleanups.clone(),
             env: self.env.snapshot_admitted(owner)?,
@@ -402,7 +402,7 @@ impl NativeFlowExecutionFrame {
                     .map_err(|error| error.to_string())
                 })
                 .transpose()?,
-            status: self.status.inert_rollback_image(owner)?,
+            status: self.status.snapshot_with_admitted_values(owner)?,
         })
     }
 
@@ -440,7 +440,9 @@ impl NativeFlowExecutionFrame {
                 .collect::<Result<_, String>>()?,
             await_observer: image
                 .await_observer
-                .map(|state| AwaitState::from_rollback_image(*state, owner).map(Box::new))
+                .map(|state| {
+                    AwaitState::from_image_with_admitted_values(*state, owner).map(Box::new)
+                })
                 .transpose()?,
             root_cleanups: image.root_cleanups,
             env: image.env.into_admitted_live(owner)?,
@@ -458,7 +460,7 @@ impl NativeFlowExecutionFrame {
                         .map_err(|error| error.to_string())
                 })
                 .transpose()?,
-            status: FlowFiberStatus::from_rollback_image(image.status, owner)?,
+            status: FlowFiberStatus::from_image_with_admitted_values(image.status, owner)?,
         })
     }
 }
@@ -1366,7 +1368,7 @@ impl Clone for FlowFiberStatusRollbackImage {
 }
 
 impl FlowFiberStatus {
-    fn inert_rollback_image(
+    fn snapshot_with_admitted_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FlowFiberStatusRollbackImage, String> {
@@ -1376,11 +1378,11 @@ impl FlowFiberStatus {
                 FlowFiberStatusRollbackImage::Dialogue(activation.clone())
             }
             Self::NeedWaiting(state) => FlowFiberStatusRollbackImage::NeedWaiting(Box::new(
-                state.inert_rollback_image(owner)?,
+                state.snapshot_with_admitted_values(owner)?,
             )),
             Self::WaitingMany(WaitingManyStatus::Native(state)) => {
                 FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Native(Box::new(
-                    state.inert_rollback_image(owner)?,
+                    state.snapshot_with_admitted_values(owner)?,
                 )))
             }
             Self::WaitingMany(WaitingManyStatus::Observed(progress)) => {
@@ -1395,19 +1397,19 @@ impl FlowFiberStatus {
         })
     }
 
-    fn from_rollback_image(
+    fn from_image_with_admitted_values(
         image: FlowFiberStatusRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(match image {
             FlowFiberStatusRollbackImage::Running => Self::Running,
             FlowFiberStatusRollbackImage::Dialogue(activation) => Self::Dialogue(activation),
-            FlowFiberStatusRollbackImage::NeedWaiting(state) => {
-                Self::NeedWaiting(Box::new(AwaitState::from_rollback_image(*state, owner)?))
-            }
+            FlowFiberStatusRollbackImage::NeedWaiting(state) => Self::NeedWaiting(Box::new(
+                AwaitState::from_image_with_admitted_values(*state, owner)?,
+            )),
             FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Native(state)) => {
                 Self::WaitingMany(WaitingManyStatus::Native(Box::new(
-                    AwaitManyState::from_rollback_image(*state, owner)?,
+                    AwaitManyState::from_image_with_admitted_values(*state, owner)?,
                 )))
             }
             FlowFiberStatusRollbackImage::WaitingMany(WaitingManyStatus::Observed(progress)) => {
@@ -1511,13 +1513,30 @@ impl Clone for AwaitStateRollbackImage {
 }
 
 impl AwaitState {
+    #[cfg(test)]
     fn inert_rollback_image(
+        &self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<AwaitStateRollbackImage, String> {
+        rollback::SuspendedValues::admit_suspended_values(
+            self,
+            &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            None,
+        )
+        .map_err(|error| error.to_string())?;
+        self.snapshot_with_admitted_values(owner)
+    }
+
+    fn snapshot_with_admitted_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<AwaitStateRollbackImage, String> {
         Ok(AwaitStateRollbackImage {
             binding: self.binding.clone(),
-            handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(
+            handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                 &self.handle,
                 Some(owner),
             )
@@ -1529,12 +1548,12 @@ impl AwaitState {
             queued: self
                 .queued
                 .iter()
-                .map(|publication| publication.inert_rollback_image(owner))
+                .map(|publication| publication.snapshot_admitted(owner))
                 .collect::<Result<_, String>>()?,
         })
     }
 
-    fn from_rollback_image(
+    fn from_image_with_admitted_values(
         image: AwaitStateRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
@@ -1542,7 +1561,7 @@ impl AwaitState {
             binding: image.binding,
             handle: image
                 .handle
-                .into_live(owner)
+                .into_live_admitted(owner)
                 .map_err(|error| error.to_string())?,
             item_type: image.item_type,
             observers: image.observers,
@@ -1551,7 +1570,9 @@ impl AwaitState {
             queued: image
                 .queued
                 .into_iter()
-                .map(|publication| RuntimeNeedPublication::from_rollback_image(publication, owner))
+                .map(|publication| {
+                    RuntimeNeedPublication::from_admitted_rollback_image(publication, owner)
+                })
                 .collect::<Result<_, String>>()?,
         })
     }
@@ -1603,19 +1624,22 @@ impl Clone for AwaitManyStateRollbackImage {
 }
 
 impl AwaitManyState {
-    fn inert_rollback_image(
+    fn snapshot_with_admitted_values(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<AwaitManyStateRollbackImage, String> {
         let image = |value: &RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
+            crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value, owner)
                 .map_err(|error| error.to_string())
         };
         Ok(AwaitManyStateRollbackImage {
             binding: self.binding.clone(),
             target: self.target.clone(),
-            base: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(&self.base, Some(owner))
-                .map_err(|error| error.to_string())?,
+            base: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
+                &self.base,
+                Some(owner),
+            )
+            .map_err(|error| error.to_string())?,
             captured: self.captured.iter().map(image).collect::<Result<_, _>>()?,
             resume: self.resume,
             items: self
@@ -1630,7 +1654,7 @@ impl AwaitManyState {
                 .map(|flight| {
                     Ok(AwaitManyInFlight {
                         index: flight.index,
-                        handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live(
+                        handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                             &flight.handle,
                             Some(owner),
                         )
@@ -1651,13 +1675,13 @@ impl AwaitManyState {
         })
     }
 
-    fn from_rollback_image(
+    fn from_image_with_admitted_values(
         image: AwaitManyStateRollbackImage,
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         let value = |saved: crate::value::AwbcRuntimeValueSnapshot| {
             saved
-                .into_runtime_value_for_program(owner)
+                .into_admitted_runtime_value(owner)
                 .map_err(|error| error.to_string())
         };
         Ok(Self {
@@ -1665,7 +1689,7 @@ impl AwaitManyState {
             target: image.target,
             base: image
                 .base
-                .into_live(owner)
+                .into_live_admitted(owner)
                 .map_err(|error| error.to_string())?,
             captured: image
                 .captured
@@ -1687,7 +1711,7 @@ impl AwaitManyState {
                         index: flight.index,
                         handle: flight
                             .handle
-                            .into_live(owner)
+                            .into_live_admitted(owner)
                             .map_err(|error| error.to_string())?,
                     })
                 })

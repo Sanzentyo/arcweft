@@ -10,6 +10,16 @@ use crate::task::TaskPublicationCursor;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
+mod await_state;
+
+pub(super) trait SuspendedValues {
+    fn admit_suspended_values(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>;
+}
+
 fn admit_default_packet(
     state: crate::runtime_id::RuntimeCallableStateId,
     site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -235,6 +245,8 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         V: crate::value::RuntimeStoredValue,
         P: crate::value::RuntimeStoredValue,
         C: ScopeControl<O>,
+        A: SuspendedValues,
+        S: SuspendedValues,
     {
         let invalid =
             |message: String| crate::value::AwbcRuntimeValueSnapshotError::Message { message };
@@ -247,6 +259,11 @@ impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
         if let Some(cursor) = self.cursor {
             cursor.admit_retained(admission)?;
         }
+        if let Some(state) = &self.await_observer {
+            state.admit_suspended_values(admission, self.env.function_instantiation())?;
+        }
+        self.status
+            .admit_suspended_values(admission, self.env.function_instantiation())?;
         self.env.admit_retained(admission)?;
         self.admit_function_contexts(admission)?;
         if let Err(message) =

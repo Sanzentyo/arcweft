@@ -88,6 +88,19 @@ impl RuntimeRetainedValueAdmission {
         )
     }
 
+    pub(crate) fn validate_typed_borrowed_in_invocation(
+        &mut self,
+        value: crate::value::RuntimeBorrowedValue<'_>,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.validate_view(
+            value.value,
+            value.origin,
+            Some(RetainedTypeObligation::Invocation { expected, binding }),
+        )
+    }
+
     /// An enclosing owning field may retain affine custody as inert data.
     /// This inspection grants no Copy entitlement and never constructs a value.
     pub(crate) fn validate_owned_borrowed(

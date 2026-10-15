@@ -9,6 +9,18 @@ pub(crate) enum RuntimeNeedView<'a> {
     Snapshot(&'a RuntimeNeedHandleSaveSnapshot),
 }
 
+impl<'a> From<&'a RuntimeNeedHandle> for RuntimeNeedView<'a> {
+    fn from(value: &'a RuntimeNeedHandle) -> Self {
+        Self::Live(value)
+    }
+}
+
+impl<'a> From<&'a RuntimeNeedHandleSaveSnapshot> for RuntimeNeedView<'a> {
+    fn from(value: &'a RuntimeNeedHandleSaveSnapshot) -> Self {
+        Self::Snapshot(value)
+    }
+}
+
 impl<'a> RuntimeNeedView<'a> {
     pub(crate) fn admit_retained(
         self,

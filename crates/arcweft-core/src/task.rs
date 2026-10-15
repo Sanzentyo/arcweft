@@ -458,6 +458,7 @@ impl RuntimeNeedPublication {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn from_rollback_image(
         image: RuntimeNeedPublicationRollbackImage,
         owner: &RuntimeProgramOwner,
@@ -526,7 +527,7 @@ impl<P> RuntimeNeedPublication<P> {
     /// expected type from the publication being copied or transferred.
     pub(crate) fn admit_for_await(
         &self,
-        handle: &RuntimeNeedHandle,
+        handle: crate::value::RuntimeNeedView<'_>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
