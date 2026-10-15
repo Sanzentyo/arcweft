@@ -66,7 +66,7 @@ use arcweft_project::{
     graph::CompileUnitId,
     sources::{ProjectSourceFile, ProjectSources},
 };
-use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, lower_runtime_plan_with_stats};
+use arcweft_runtime_plan::flow::RuntimePlanLowerReport;
 #[cfg(test)]
 use arcweft_source::SourceDocumentId;
 use arcweft_source::{
@@ -879,7 +879,7 @@ where
                 )
             })?;
             let pure_programs = view_product.runtime_programs().iter().map(|program| {
-                let fact = lower::programs::project(program.id(), Arc::clone(program.admission()),
+                let fact = lower::programs::project_view(program,
                     registered_world.symbols(), registered_world, final_analysis)?;
                 if fact.result().identity().as_bytes() != program.result().as_bytes() {
                     return Err(lower::RuntimeSemanticProjectionError::Facts(Box::new(
@@ -992,8 +992,8 @@ where
                     ],
                 )
             })?;
-            let runtime_plan =
-                lower_runtime_plan_with_stats(executable, &runtime_facts, &entry_runtime_input)
+            let prepared =
+                arcweft_runtime_plan::flow::prepare_runtime_plan_with_stats(executable, &runtime_facts, &entry_runtime_input)
                     .map_err(|errors| {
                         linked_error(
                             ProjectCompileStage::RuntimePlanLower,
@@ -1003,6 +1003,15 @@ where
                             }),
                         )
                     })?;
+            view_product.bind_runtime_task_plans(prepared.view_task_plans(), final_analysis, executable,
+                arcweft_bundle::resource_codec::ViewProductValidationLimits::default())
+                .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
+            let authority = view_product.product().program()
+                .map(|program| program as &dyn arcweft_core::task::ViewTaskPlanAuthority);
+            let runtime_plan = prepared.finish(arcweft_core::plan::RuntimeTaskPlanSealLimits::default(), authority)
+                .map_err(|errors| linked_error(ProjectCompileStage::RuntimePlanLower,
+                    errors.into_iter().map(|error| Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("compiler.runtime_plan_lower"))))?;
             runtime_plan.plan.verify().map_err(|error| {
                 linked_error(
                     ProjectCompileStage::RuntimePlanLower,

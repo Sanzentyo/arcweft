@@ -2,9 +2,14 @@ pub(crate) mod body_semantic;
 mod callable_specialization;
 mod callable_states;
 mod construction;
-pub(crate) use construction::task_coordinates::{
-    RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanCoordinateOwner,
+pub use body_semantic::{
+    ProducerFunctionSemanticDigest, RuntimeRequestArgument, RuntimeRequestArgumentRole,
+    RuntimeRequestField, RuntimeRequestFieldRole, RuntimeRequestPathStep,
+    RuntimeRequestValueSource, RuntimeTaskRequestSource, RuntimeTaskRequestTemplate,
+    RuntimeTaskRequestTemplateSeed, TaskRequestTemplateDigest,
 };
+pub use construction::task_coordinates::RuntimeTaskPlanBuildCoordinate;
+pub(crate) use construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
 mod control_effect;
 mod dialogue_content;
 pub mod entry_inventory;
@@ -139,7 +144,13 @@ pub use project_call::{
     RuntimeProjectCallRestMaterialization, RuntimeProjectCallRestMaterializationSeed,
     RuntimeProjectCallSite, RuntimeProjectCallSiteTable, RuntimeProjectCallSiteTableError,
 };
-pub use task_semantic::RuntimeTaskPlanSealLimits;
+pub use task_semantic::{
+    RuntimeExecutableSemanticDigest, RuntimeTaskPlan, RuntimeTaskPlanDigestBase,
+    RuntimeTaskPlanFunctionRootSeed, RuntimeTaskPlanIndex, RuntimeTaskPlanSealLimits,
+    RuntimeTaskPlanSeed, RuntimeTaskPlanTable, RuntimeTaskPlanValidationError,
+    RuntimeTaskSemanticBinding, RuntimeTaskSemanticBindingKind, ViewTaskPlanAuthority,
+    ViewTaskPlanDigestRequest, ViewTaskPlanValidationError,
+};
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
     RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeClass,
@@ -201,10 +212,15 @@ use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 
+pub use body_semantic::RuntimeBodySemanticError;
+pub use body_semantic::task_image::RuntimeTaskPlanSealError;
+pub use construction::RuntimeTaskPlanConstructionContext;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePlan {
     pub(crate) artifact: Option<crate::effect::RuntimeArtifactFingerprint>,
     pub(crate) inventory: RuntimePlanInventory,
+    semantics: Arc<task_semantic::RuntimeTaskProgramSemantics>,
 }
 
 impl std::ops::Deref for RuntimePlan {
@@ -225,6 +241,25 @@ pub enum RuntimePlanValueTypeError {
 }
 
 impl RuntimePlan {
+    /// Resolves only a source coordinate belonging to this completed program.
+    /// Equal content or an equal issued key does not transfer program ownership.
+    #[must_use]
+    pub fn task_plan(
+        &self,
+        coordinate: &RuntimeTaskPlanBuildCoordinate,
+    ) -> Option<(&RuntimeTaskPlan, crate::task::TaskPlanSemanticDigest)> {
+        coordinate.resolve_in(&self.semantics)
+    }
+
+    #[must_use]
+    pub fn task_plans(&self) -> &RuntimeTaskPlanTable {
+        &self.semantics.task_plans
+    }
+
+    #[must_use]
+    pub fn executable_semantic_digest(&self) -> RuntimeExecutableSemanticDigest {
+        self.semantics.executable
+    }
     #[must_use]
     pub const fn control_effect_contracts(&self) -> &RuntimeControlEffectContractTable {
         self.inventory.control_effect_contracts()
@@ -1184,12 +1219,14 @@ impl RuntimeNeedAwaitTarget {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedProducerStartTarget {
     plan: NeedProducerTaskPlan,
+    task_plan: RuntimeTaskPlanBuildCoordinate,
     arguments: Box<[crate::task::RuntimeHostArgumentTemplate]>,
 }
 
 impl RuntimeNeedProducerStartTarget {
     pub fn try_new(
         plan: NeedProducerTaskPlan,
+        task_plan: RuntimeTaskPlanBuildCoordinate,
         arguments: Vec<crate::task::RuntimeHostArgumentTemplate>,
     ) -> Result<Self, RuntimeNeedProducerStartTargetError> {
         if arguments.len() != plan.argument_count() {
@@ -1232,6 +1269,7 @@ impl RuntimeNeedProducerStartTarget {
         }
         Ok(Self {
             plan,
+            task_plan,
             arguments: arguments.into_boxed_slice(),
         })
     }
@@ -1239,6 +1277,11 @@ impl RuntimeNeedProducerStartTarget {
     #[must_use]
     pub const fn plan(&self) -> &NeedProducerTaskPlan {
         &self.plan
+    }
+
+    #[must_use]
+    pub const fn task_plan(&self) -> &RuntimeTaskPlanBuildCoordinate {
+        &self.task_plan
     }
 
     #[must_use]
@@ -1359,16 +1402,42 @@ impl RuntimeDialogueResultTarget {
 
 /// Direct host-call request surface for runtime-step hosts.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeHostCallTarget {
-    pub producer: crate::task::HostCallProducerDefinition,
+pub struct RuntimeHostCallTarget<
+    Plan = RuntimeTaskPlanBuildCoordinate,
+    Expression = RuntimeExpr,
+    Ty = RuntimePlanTypeId,
+> {
+    pub producer: crate::task::HostCallProducerDefinition<Plan>,
     pub public_id: String,
     pub capability: String,
     pub operation: String,
     pub contract: Option<crate::step::HostCallContractDigest>,
-    pub args: Vec<RuntimeHostArgumentTemplate>,
-    pub result: RuntimePlanTypeId,
+    pub args: Vec<RuntimeHostArgumentTemplate<Expression>>,
+    pub result: Ty,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
+}
+
+impl RuntimeHostCallTarget {
+    pub(crate) fn encode_control_metadata(
+        &self,
+        encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.digest(self.producer.contract.as_bytes());
+        encoder.digest(self.producer.site.as_bytes());
+        encoder.string(&self.public_id);
+        encoder.string(&self.capability);
+        encoder.string(&self.operation);
+        encoder.tag(u8::from(self.contract.is_some()));
+        if let Some(contract) = self.contract {
+            encoder.digest(contract.as_bytes());
+        }
+        encoder.tag(match self.mode {
+            RuntimeHostCallMode::Immediate => 0,
+            RuntimeHostCallMode::Suspend => 1,
+        });
+        encoder.tag(u8::from(self.deterministic));
+    }
 }
 
 /// One executable `match` arm in the runtime flow model.

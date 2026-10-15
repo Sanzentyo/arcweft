@@ -17,6 +17,7 @@ mod handle;
 #[cfg(test)]
 mod result_selection_tests;
 pub(crate) mod semantic;
+pub use semantic::LinePlanSemanticDigest;
 
 pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
 pub(crate) use defer::{RuntimeDeferUnwindStep, RuntimeScopedDeferDecision};

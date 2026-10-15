@@ -12,7 +12,7 @@ fn run(
     let result =
         RuntimeExecutableSemanticRows::new(plan, owner, limits, &mut meter).and_then(|mut rows| {
             let mut encoder = TaskSemanticEncoder::new(b"test-executable-prefix.v1\0", &mut meter);
-            rows.write_tables(&mut encoder, &mut |_| panic!("fixture has no task edges"))?;
+            rows.write_tables(&mut encoder)?;
             encoder.finish().map_err(Into::into)
         });
     (result, meter.totals())
@@ -25,15 +25,9 @@ fn shared_function_is_walked_once_for_callable_flow_and_function_rows() {
     let limits = RuntimeTaskPlanSealLimits::default();
     let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
-    let mut no_tasks = |_: super::super::flow::RuntimeBodyTaskSource<'_>| panic!("no task edge");
     let ordinal = function.get().get() as usize - 1;
-    rows.complete(
-        ExecutableTable::Functions,
-        ordinal,
-        &mut meter,
-        &mut no_tasks,
-    )
-    .unwrap();
+    rows.complete(ExecutableTable::Functions, ordinal, &mut meter)
+        .unwrap();
     let proof = rows.functions[ordinal].proof().unwrap();
     // Compute the exact cost of E7/E8/E9 from the completed F owner, without
     // its body. The global traversal must have precisely that same cost.
@@ -58,27 +52,17 @@ fn shared_function_is_walked_once_for_callable_flow_and_function_rows() {
     let before = meter.totals();
     assert_eq!(
         callable,
-        rows.complete(
-            ExecutableTable::CallableExecutables,
-            0,
-            &mut meter,
-            &mut no_tasks
-        )
-        .unwrap()
+        rows.complete(ExecutableTable::CallableExecutables, 0, &mut meter)
+            .unwrap()
     );
     assert_eq!(
         executable,
-        rows.complete(
-            ExecutableTable::FlowExecutables,
-            0,
-            &mut meter,
-            &mut no_tasks
-        )
-        .unwrap()
+        rows.complete(ExecutableTable::FlowExecutables, 0, &mut meter)
+            .unwrap()
     );
     assert_eq!(
         flow,
-        rows.complete(ExecutableTable::Flows, 0, &mut meter, &mut no_tasks)
+        rows.complete(ExecutableTable::Flows, 0, &mut meter)
             .unwrap()
     );
     let after = meter.totals();
@@ -89,7 +73,7 @@ fn shared_function_is_walked_once_for_callable_flow_and_function_rows() {
     let done = meter.totals();
     assert_eq!(
         flow,
-        rows.complete(ExecutableTable::Flows, 0, &mut meter, &mut no_tasks)
+        rows.complete(ExecutableTable::Flows, 0, &mut meter)
             .unwrap()
     );
     assert_eq!(meter.totals(), done);
@@ -104,13 +88,7 @@ fn expected_controller_prefix(
     let context = RuntimeBodySemanticContext::new(plan);
     let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
     let producer = context
-        .producer_function(
-            &mut meter,
-            function,
-            owner,
-            &mut |_| panic!("no task edge"),
-            limits,
-        )
+        .producer_function(&mut meter, function, owner, limits)
         .unwrap();
     let ty = plan.type_table().declarations().next().unwrap();
     let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
@@ -261,8 +239,7 @@ fn global_prefix_shares_exact_limits_and_charges_reused_digest_atoms() {
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
     let emit = |rows: &mut RuntimeExecutableSemanticRows<'_, '_>, meter: &mut TaskSemanticMeter| {
         let mut encoder = TaskSemanticEncoder::new(b"test-executable-prefix.v1\0", meter);
-        rows.write_tables(&mut encoder, &mut |_| panic!("no task edge"))
-            .unwrap();
+        rows.write_tables(&mut encoder).unwrap();
         encoder.finish().unwrap()
     };
     let first = emit(&mut rows, &mut meter);
@@ -304,9 +281,7 @@ fn row_count_preflight_and_visiting_failure_poison_the_whole_pass() {
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
     rows.rows[4][0] = RowState::Visiting;
     assert!(matches!(
-        rows.complete(ExecutableTable::Flows, 0, &mut meter, &mut |_| panic!(
-            "no task edge"
-        )),
+        rows.complete(ExecutableTable::Flows, 0, &mut meter),
         Err(RuntimeBodySemanticError::ExecutableCycle {
             table: 4,
             ordinal: 0
@@ -317,9 +292,7 @@ fn row_count_preflight_and_visiting_failure_poison_the_whole_pass() {
         Err(TaskSemanticEncodingError::OwnerRejected)
     );
     assert!(matches!(
-        rows.complete(ExecutableTable::Types, 0, &mut meter, &mut |_| panic!(
-            "no task edge"
-        )),
+        rows.complete(ExecutableTable::Types, 0, &mut meter),
         Err(RuntimeBodySemanticError::Encoding(
             TaskSemanticEncodingError::OwnerRejected
         ))
@@ -358,17 +331,10 @@ fn task_binding_and_executable_line_row_share_one_original_line_walk() {
     let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
     let group = crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap();
-    let mut no_tasks =
-        |_: super::super::flow::RuntimeBodyTaskSource<'_>| panic!("fixture has no task edges");
-    let first = rows
-        .prepare_line(group, &mut meter, &mut no_tasks)
-        .unwrap()
-        .digest();
+    let first = rows.prepare_line(group, &mut meter).unwrap().digest();
     let before = meter.totals();
     assert_eq!(
-        rows.prepare_line(group, &mut meter, &mut no_tasks)
-            .unwrap()
-            .digest(),
+        rows.prepare_line(group, &mut meter).unwrap().digest(),
         first
     );
     assert_eq!(meter.totals(), before);
@@ -381,7 +347,7 @@ fn task_binding_and_executable_line_row_share_one_original_line_walk() {
         .unwrap();
     expected.charge_work(1).unwrap();
     assert_eq!(
-        rows.complete(ExecutableTable::Lines, 0, &mut meter, &mut no_tasks)
+        rows.complete(ExecutableTable::Lines, 0, &mut meter)
             .unwrap(),
         digest
     );
@@ -439,9 +405,7 @@ fn row_visit_budget_fails_before_owner_state_or_function_proof_changes() {
     )
     .unwrap();
     assert!(matches!(
-        rows.complete(ExecutableTable::Functions, 0, &mut meter, &mut |_| panic!(
-            "body must not be visited"
-        )),
+        rows.complete(ExecutableTable::Functions, 0, &mut meter),
         Err(RuntimeBodySemanticError::Encoding(
             TaskSemanticEncodingError::SemanticWork
         ))
@@ -457,18 +421,26 @@ fn first_f_and_q_complete_before_e4_and_e4_reuses_the_body_proof() {
     let limits = RuntimeTaskPlanSealLimits::default();
     let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
-    let mut references = 0;
-    let mut task_reference = |_: super::super::flow::RuntimeBodyTaskSource<'_>| {
-        references += 1;
-        Ok(owner.resolve(0).unwrap())
-    };
     let context = RuntimeBodySemanticContext::new(&plan);
-    let proof = rows
-        .prepare_function(function, &mut meter, &mut task_reference)
-        .unwrap();
+    let before_f = meter.totals();
+    let proof = rows.prepare_function(function, &mut meter).unwrap();
     let expected_f = proof.digest();
+    let after_f = meter.totals();
+    let mut direct_f_meter =
+        TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+    assert_eq!(
+        expected_f,
+        context
+            .producer_function_digest(&mut direct_f_meter, function, &owner, limits)
+            .unwrap()
+    );
+    assert_eq!(
+        (after_f.0 - before_f.0, after_f.1 - before_f.1),
+        direct_f_meter.totals()
+    );
+    assert!(proof.endpoint(1).is_none());
     context
-        .host_request_template_digest(&mut meter, proof.endpoint(0).unwrap(), limits)
+        .static_request_template_digest(&mut meter, proof.endpoint(0).unwrap(), limits)
         .unwrap();
     let mut expected_meter =
         TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
@@ -480,27 +452,21 @@ fn first_f_and_q_complete_before_e4_and_e4_reuses_the_body_proof() {
     let before = meter.totals();
     assert_eq!(
         expected_f,
-        rows.prepare_function(function, &mut meter, &mut task_reference)
+        rows.prepare_function(function, &mut meter)
             .unwrap()
             .digest()
     );
     assert_eq!(before, meter.totals());
     assert_eq!(
         expected_e4,
-        rows.complete(
-            ExecutableTable::Functions,
-            0,
-            &mut meter,
-            &mut task_reference
-        )
-        .unwrap()
+        rows.complete(ExecutableTable::Functions, 0, &mut meter)
+            .unwrap()
     );
     let after = meter.totals();
     assert_eq!(
         (after.0 - before.0, after.1 - before.1),
         expected_meter.totals()
     );
-    assert_eq!(references, 1); // one body task edge; E4 never revisits it
 }
 
 #[test]
@@ -510,19 +476,12 @@ fn first_f_failure_poison_precedes_e4_row_completion() {
     let mut meter = TaskSemanticMeter::new(0, limits.max_transcript_bytes);
     let mut rows = RuntimeExecutableSemanticRows::new(&plan, &owner, limits, &mut meter).unwrap();
     assert!(matches!(
-        rows.prepare_function(function, &mut meter, &mut |_| panic!(
-            "budget must reject before task edge"
-        )),
+        rows.prepare_function(function, &mut meter),
         Err(RuntimeBodySemanticError::Encoding(
             TaskSemanticEncodingError::SemanticWork
         ))
     ));
     assert!(matches!(rows.functions[0], FunctionState::Visiting));
     assert!(matches!(rows.rows[4][0], RowState::Unvisited));
-    assert!(
-        rows.prepare_function(function, &mut meter, &mut |_| panic!(
-            "poison must not revisit body"
-        ))
-        .is_err()
-    );
+    assert!(rows.prepare_function(function, &mut meter).is_err());
 }

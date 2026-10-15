@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use thiserror::Error;
@@ -14,6 +15,8 @@ mod lower;
 mod nominal_schema;
 mod seed;
 pub(crate) mod task_coordinates;
+mod task_plans;
+pub use task_plans::RuntimeTaskPlanConstructionContext;
 
 pub use callable_specialization::{
     RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
@@ -147,6 +150,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error(transparent)]
+    TaskPlanSeal(Box<super::RuntimeTaskPlanSealError>),
     #[error(transparent)]
     LocalPlacement(#[from] super::RuntimeLocalPlacementError),
     #[error("runtime executable inventory count overflow")]
@@ -427,8 +432,11 @@ pub enum RuntimePlanBuildError {
     InvalidIteratorWitness { context: &'static str },
     #[error("AwaitMany concurrency limit must be greater than zero")]
     ZeroAwaitManyLimit,
-    #[error("{context} has inconsistent producer family, payload, or policy")]
-    InvalidProducerTemplate { context: &'static str },
+    #[error("invalid task producer at {context}: {source}")]
+    InvalidTaskProducerDefinition {
+        context: &'static str,
+        source: super::RuntimeTaskPlanValidationError,
+    },
     #[error("runtime function site {site} was defined more than once")]
     DuplicateFunctionSiteDefinition {
         site: crate::runtime_id::RuntimeFunctionSiteId,
@@ -487,8 +495,6 @@ pub enum RuntimePlanBuildError {
         context: &'static str,
         semantic_identity: RuntimeSemanticTypeId,
     },
-    #[error("{context} uses a program-owned nominal type in a standalone task outcome")]
-    InvalidStandaloneTaskOutcome { context: &'static str },
     #[error("{context} expected plan type {expected}, found {actual}")]
     TypeMismatch {
         context: &'static str,
@@ -724,18 +730,30 @@ impl RuntimeProjectCallSiteTableBuilder {
     }
 }
 
-/// Sole mutable aggregate owner. Its internal issuers are never published or
-/// cloned; successful `finish` consumes them into one immutable plan.
+impl From<super::RuntimeTaskPlanSealError> for RuntimePlanBuildError {
+    fn from(error: super::RuntimeTaskPlanSealError) -> Self {
+        match error {
+            super::RuntimeTaskPlanSealError::Construction(source) => *source,
+            super::RuntimeTaskPlanSealError::Verification(source) => Self::Plan(*source),
+            super::RuntimeTaskPlanSealError::Control(source) => Self::ControlEffectContract(source),
+            source => Self::TaskPlanSeal(Box::new(source)),
+        }
+    }
+}
+
+/// Sole mutable aggregate owner. Source capabilities retain its original
+/// namespace; successful `finish` publishes one immutable completed plan.
 #[derive(Debug)]
 pub struct RuntimePlanBuilder {
     issuer: Arc<RuntimePlanConstructionIssuer>,
-    poisoned: bool,
+    poisoned: Arc<AtomicBool>,
     types: RuntimePlanTypeTableBuilder,
     locals: Arc<Mutex<RuntimeLocalDeclarationTableBuilder>>,
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
     control_effect_contracts: Vec<Option<super::RuntimeControlEffectContract>>,
+    task_plan_definitions: task_plans::RuntimeTaskPlanDefinitions,
     defer_sites: Vec<crate::runtime_id::RuntimeFunctionSiteId>,
     callable_states: RefCell<callable_states::RuntimeCallableStateBuilder>,
     callable_specializations: Vec<
@@ -818,14 +836,15 @@ impl RuntimePlanBuilder {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            issuer: Arc::new(RuntimePlanConstructionIssuer),
-            poisoned: false,
+            issuer: Arc::new(RuntimePlanConstructionIssuer::default()),
+            poisoned: Arc::new(AtomicBool::new(false)),
             types: RuntimePlanTypeTableBuilder::new(),
             locals: Arc::new(Mutex::new(RuntimeLocalDeclarationTableBuilder::new())),
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
             control_effect_contracts: Vec::new(),
+            task_plan_definitions: Arc::new(Mutex::new(Some(Vec::new()))),
             defer_sites: Vec::new(),
             callable_states: RefCell::new(callable_states::RuntimeCallableStateBuilder::default()),
             callable_specializations: Vec::new(),
@@ -1016,7 +1035,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_reserve_function_site_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1133,7 +1152,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_reserve_defer_site_seed(function);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1176,7 +1195,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_define_function_site_seed(site, body.into());
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1244,7 +1263,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_push_dialogue_content_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1258,7 +1277,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_register_dialogue_content_template_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1272,7 +1291,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_register_plain_text_context_template_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1296,7 +1315,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_reserve_format_attempt_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -1682,7 +1701,7 @@ impl RuntimePlanBuilder {
             if !matches!(
                 self.types
                     .get(result)
-                    .map(|declaration| declaration.projection()),
+                    .map(super::RuntimePlanTypeDeclaration::projection),
                 Some(super::RuntimePlanTypeProjection::Unit)
             ) {
                 return Err(RuntimePlanBuildError::DialogueEffectResultMismatch {
@@ -1788,7 +1807,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_push_line_task_group_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2170,7 +2189,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_attach_line_task_group_seed(content, group);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2286,11 +2305,11 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let Some((site, _, parameters, result, _, effects)) = seed.site.resolve(&self.issuer)
         else {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
             return Err(RuntimePlanBuildError::ForeignFunctionSiteSeed);
         };
         if !effects.is_empty() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
             return Err(RuntimePlanBuildError::InvalidTypeProjection {
                 context: "pure program requires an effect-free function frame",
                 ty: result,
@@ -2321,7 +2340,7 @@ impl RuntimePlanBuilder {
             .iter()
             .any(|binding| binding.program() == seed.program)
         {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
             return Err(RuntimePlanBuildError::DuplicatePureProgram {
                 program: seed.program,
             });
@@ -2364,7 +2383,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_reserve_pure_helper_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2432,7 +2451,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_define_pure_helper_seed(helper, body);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2489,7 +2508,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_reserve_trait_method_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2560,7 +2579,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_define_trait_method_seed(method, body);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2605,7 +2624,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_push_callable_executable_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2668,11 +2687,14 @@ impl RuntimePlanBuilder {
         push_row(&mut self.flow_schemas, value, RuntimePlanTable::FlowSchemas)
     }
 
-    pub fn push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
+    pub fn push_flow_seed(
+        &mut self,
+        seed: RuntimeFlowSeed,
+    ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         self.ensure_usable()?;
         let result = self.try_push_flow_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2685,7 +2707,7 @@ impl RuntimePlanBuilder {
         self.ensure_usable()?;
         let result = self.try_push_stream_plan_seed(seed);
         if result.is_err() {
-            self.poisoned = true;
+            self.poisoned.store(true, Ordering::Release);
         }
         result
     }
@@ -2713,12 +2735,18 @@ impl RuntimePlanBuilder {
         self,
         limits: super::RuntimeTaskPlanSealLimits,
     ) -> Result<RuntimePlan, RuntimePlanBuildError> {
-        let inventory = self.prepare_inventory(limits)?;
-        inventory.verify()?;
-        Ok(RuntimePlan {
-            artifact: None,
-            inventory,
-        })
+        self.finish_with_task_authority(limits, None)
+    }
+
+    pub fn finish_with_task_authority(
+        self,
+        limits: super::RuntimeTaskPlanSealLimits,
+        authority: Option<&dyn super::ViewTaskPlanAuthority>,
+    ) -> Result<RuntimePlan, RuntimePlanBuildError> {
+        self.prepare_task_image(limits)
+            .and_then(|image| image.seal(limits, authority))
+            .map(|sealed| sealed.into_plan())
+            .map_err(RuntimePlanBuildError::from)
     }
 
     /// Materializes the sole table authority before public-plan construction.
@@ -2726,8 +2754,9 @@ impl RuntimePlanBuilder {
     pub(super) fn prepare_inventory(
         self,
         limits: super::RuntimeTaskPlanSealLimits,
+        task_rows: u32,
     ) -> Result<super::RuntimePlanInventory, RuntimePlanBuildError> {
-        self.preflight_executable_inventory(limits)?;
+        self.preflight_executable_inventory(limits, task_rows)?;
         self.callable_states.borrow_mut().seal()?;
         self.validate_finish_preconditions()?;
         let mut function_site_builder = RuntimeFunctionSiteTableBuilder::new();
@@ -2803,11 +2832,7 @@ impl RuntimePlanBuilder {
             })
             .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
         let type_table = self.types.finish()?;
-        let mut meter = crate::task::semantic::TaskSemanticMeter::new(
-            limits.max_semantic_work,
-            limits.max_transcript_bytes,
-        );
-        let control_effect_contracts = super::RuntimeControlEffectContractTable::seal(
+        let control_effect_contracts = super::RuntimeControlEffectContractTable::from_definitions(
             self.control_effect_contracts
                 .into_iter()
                 .enumerate()
@@ -2815,10 +2840,7 @@ impl RuntimePlanBuilder {
                     row.ok_or(super::RuntimeControlEffectContractError::Incomplete { index })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-            &type_table,
-            limits,
-            &mut meter,
-        )?;
+        );
         let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = {
             let mut locals = self
@@ -2869,8 +2891,9 @@ impl RuntimePlanBuilder {
     fn preflight_executable_inventory(
         &self,
         limits: super::RuntimeTaskPlanSealLimits,
+        task_rows: u32,
     ) -> Result<(), RuntimePlanBuildError> {
-        // The accepted table inventory 0..13; table 14 has no candidate owner yet.
+        // The accepted table inventory 0..13 plus the actual inline task rows.
         // Auxiliary implementation tables are not extra semantic image rows.
         let counts = [
             self.types.len(),
@@ -2891,7 +2914,7 @@ impl RuntimePlanBuilder {
             self.line_task_groups.len(),
             self.stream_plans.len(),
         ];
-        let actual = counts.into_iter().try_fold(0_u32, |total, count| {
+        let actual = counts.into_iter().try_fold(task_rows, |total, count| {
             u32::try_from(count)
                 .ok()
                 .and_then(|count| total.checked_add(count))
@@ -2907,7 +2930,7 @@ impl RuntimePlanBuilder {
     }
 
     fn validate_finish_preconditions(&self) -> Result<(), RuntimePlanBuildError> {
-        if self.poisoned {
+        if self.poisoned.load(Ordering::Acquire) {
             return Err(RuntimePlanBuildError::Poisoned);
         }
         let incomplete_callable_states = self
@@ -2992,7 +3015,10 @@ impl RuntimePlanBuilder {
         Ok(())
     }
 
-    fn try_push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
+    fn try_push_flow_seed(
+        &mut self,
+        seed: RuntimeFlowSeed,
+    ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         let (id, declaration, body) = seed.into_parts();
         if declaration.role != super::RuntimeFunctionSemanticRole::Flow
             || declaration.body_kind != RuntimeFunctionSiteBodyKind::Executable
@@ -3024,7 +3050,8 @@ impl RuntimePlanBuilder {
                 params,
             },
             RuntimePlanTable::Flows,
-        )
+        )?;
+        Ok(site)
     }
 
     fn resolve_function_locals(
@@ -3054,7 +3081,7 @@ impl RuntimePlanBuilder {
     }
 
     fn ensure_usable(&self) -> Result<(), RuntimePlanBuildError> {
-        if self.poisoned {
+        if self.poisoned.load(Ordering::Acquire) {
             Err(RuntimePlanBuildError::Poisoned)
         } else {
             Ok(())
@@ -3967,7 +3994,7 @@ mod tests {
                 Err(RuntimePlanBuildError::InvalidFunctionInputSource { index: 0 })
             ));
             assert!(builder.function_sites.is_empty());
-            assert!(builder.poisoned);
+            assert!(builder.poisoned.load(Ordering::Acquire));
         }
     }
 

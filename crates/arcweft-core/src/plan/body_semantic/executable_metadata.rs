@@ -318,16 +318,9 @@ impl RuntimeBodySemanticContext<'_> {
         meter: &mut crate::task::semantic::TaskSemanticMeter,
         function: crate::runtime_id::RuntimeFunctionSiteId,
         task_owner: &crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            crate::plan::construction::task_coordinates::RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
         limits: plan::RuntimeTaskPlanSealLimits,
     ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
-        let producer =
-            self.producer_function(meter, function, task_owner, task_reference, limits)?;
+        let producer = self.producer_function(meter, function, task_owner, limits)?;
         producer.executable_row_digest(self, meter)
     }
 }
@@ -404,12 +397,6 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         meter: &mut crate::task::semantic::TaskSemanticMeter,
         group: crate::runtime_id::RuntimeLineTaskGroupId,
         task_owner: &crate::plan::RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            crate::plan::RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<LineSemantic<'a>, RuntimeBodySemanticError> {
         meter.status()?;
@@ -424,7 +411,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
                     ordinal: group.index(),
                 }
             })?;
-        let digest = row.semantic_digest(self, meter, group, task_owner, task_reference, limits)?;
+        let digest = row.semantic_digest(self, meter, group, task_owner, limits)?;
         Ok(LineSemantic {
             plan: self.plan,
             group,

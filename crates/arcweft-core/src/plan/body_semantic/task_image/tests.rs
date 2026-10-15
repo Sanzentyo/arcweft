@@ -1,6 +1,9 @@
 use super::*;
-use crate::plan::RuntimePlanBuilder;
+use crate::plan::RuntimeTaskPlanSealLimits;
+use crate::plan::{RuntimeControlEffectContractId, RuntimePlanBuilder, RuntimeTaskRequestTemplate};
+use crate::runtime_id::RuntimeFunctionSiteId;
 use crate::task::semantic::TaskSemanticMeter;
+use crate::task::{NeedProducerFamily, TaskClass};
 
 pub(super) fn row(
     plan: &RuntimePlanInventory,
@@ -14,7 +17,6 @@ pub(super) fn row(
             &mut meter,
             function,
             owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -23,7 +25,7 @@ pub(super) fn row(
         family: NeedProducerFamily::HostAdapterTask,
         class: TaskClass::Io,
         request_template: context
-            .host_request_template(
+            .static_request_template(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
@@ -39,8 +41,8 @@ fn task_image_moves_the_actual_inventory_and_keeps_expected_bytes_as_data() {
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let task = row(&plan, &owner, function);
     let original_site = std::ptr::from_ref(plan.function_sites().get(function).unwrap());
-    let image = UnsealedRuntimePlanImage::new(
-        plan.inventory,
+    let image = UnsealedRuntimePlanImage::new_for_test(
+        plan,
         owner,
         Box::new([task]),
         Some(Box::new([ExpectedTaskPlanKey::new([0; 32])])),
@@ -59,13 +61,13 @@ fn task_image_moves_the_actual_inventory_and_keeps_expected_bytes_as_data() {
 fn task_image_coordinate_count_precedes_expected_key_count() {
     let (plan, owner, _) = super::super::tests::producer_host_plan(true);
     assert!(matches!(
-        UnsealedRuntimePlanImage::new(
-            plan.inventory,
+        UnsealedRuntimePlanImage::new_for_test(
+            plan,
             owner,
             Box::new([]),
             Some(Box::new([ExpectedTaskPlanKey::new([1; 32])]))
         ),
-        Err(RuntimeTaskPlanImageError::CoordinateCount {
+        Err(RuntimeTaskPlanSealError::CoordinateCount {
             rows: 0,
             coordinates: 1
         })
@@ -73,13 +75,15 @@ fn task_image_coordinate_count_precedes_expected_key_count() {
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let task = row(&plan, &owner, function);
     assert!(matches!(
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), Some(Box::new([]))),
-        Err(RuntimeTaskPlanImageError::ExpectedKeyCount { rows: 1, keys: 0 })
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), Some(Box::new([]))),
+        Err(RuntimeTaskPlanSealError::ExpectedKeyCount { rows: 1, keys: 0 })
     ));
     let builder = RuntimePlanBuilder::new();
     let owner = builder.task_coordinate_owner(0);
-    let plan = builder.finish().unwrap();
-    UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([]), None).unwrap();
+    let plan = builder
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
+        .unwrap();
+    UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([]), None).unwrap();
 }
 
 #[test]
@@ -87,7 +91,7 @@ fn task_preflight_counts_table_fourteen_before_any_reference_resolution() {
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let task = row(&plan, &owner, function);
     let image =
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), None).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
         image.preflight_rows(
@@ -98,7 +102,7 @@ fn task_preflight_counts_table_fourteen_before_any_reference_resolution() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::TaskRows {
+        Err(RuntimeTaskPlanSealError::TaskRows {
             actual: 1,
             maximum: 0
         })
@@ -113,7 +117,7 @@ fn task_preflight_counts_table_fourteen_before_any_reference_resolution() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Body(
+        Err(RuntimeTaskPlanSealError::Body(
             super::super::RuntimeBodySemanticError::ExecutableRows {
                 actual: 4,
                 maximum: 3
@@ -138,7 +142,7 @@ fn task_preflight_counts_table_fourteen_before_any_reference_resolution() {
 fn global_function_roles_precede_request_roles_and_semantic_type_errors() {
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let mut task = row(&plan, &owner, function);
-    task.request_template = super::super::request::RuntimeTaskRequestTemplate::new(
+    task.request_template = super::super::request::RuntimeTaskRequestTemplate::at_operation(
         0,
         Box::new([super::super::request::RuntimeRequestArgument {
             role: super::super::request::RuntimeRequestArgumentRole::Positional,
@@ -152,7 +156,7 @@ fn global_function_roles_precede_request_roles_and_semantic_type_errors() {
         Box::new([]),
     );
     let image =
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), None).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
         image.preflight_roles(
@@ -163,7 +167,7 @@ fn global_function_roles_precede_request_roles_and_semantic_type_errors() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Body(
+        Err(RuntimeTaskPlanSealError::Body(
             super::super::RuntimeBodySemanticError::FunctionRoles {
                 actual: 1,
                 maximum: 0
@@ -180,7 +184,7 @@ fn global_function_roles_precede_request_roles_and_semantic_type_errors() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Body(
+        Err(RuntimeTaskPlanSealError::Body(
             super::super::RuntimeBodySemanticError::RequestRoles {
                 actual: 1,
                 maximum: 0
@@ -202,7 +206,7 @@ fn common_preflight_children_precede_function_roles_without_hash_work() {
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let task = row(&plan, &owner, function);
     let image =
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), None).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
         image.preflight(
@@ -213,7 +217,7 @@ fn common_preflight_children_precede_function_roles_without_hash_work() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Children {
+        Err(RuntimeTaskPlanSealError::Children {
             table: 4,
             ordinal: 0,
             actual: 2,
@@ -227,8 +231,10 @@ fn common_preflight_children_precede_function_roles_without_hash_work() {
 fn common_preflight_view_count_precedes_known_bytes_and_accepts_exact_empty_bound() {
     let builder = RuntimePlanBuilder::new();
     let owner = builder.task_coordinate_owner(0);
-    let plan = builder.finish().unwrap();
-    let image = UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([]), None).unwrap();
+    let plan = builder
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
+        .unwrap();
+    let image = UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([]), None).unwrap();
     let known = b"arcweft.runtime-plan.executable-semantic.v1\0".len() as u64 + 2 + 15 * 5;
     let limits = crate::plan::RuntimeTaskPlanSealLimits {
         max_transcript_bytes: known,
@@ -240,7 +246,7 @@ fn common_preflight_view_count_precedes_known_bytes_and_accepts_exact_empty_boun
     let mut meter = TaskSemanticMeter::new(0, known - 1);
     assert!(matches!(
         image.preflight(limits, &mut meter),
-        Err(RuntimeTaskPlanImageError::Encoding(
+        Err(RuntimeTaskPlanSealError::Encoding(
             crate::task::semantic::TaskSemanticEncodingError::TranscriptBytes
         ))
     ));
@@ -248,7 +254,7 @@ fn common_preflight_view_count_precedes_known_bytes_and_accepts_exact_empty_boun
     let mut task = row(&plan, &owner, function);
     task.binding = RuntimeTaskSemanticBinding::View;
     let image =
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), None).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
         image.preflight(
@@ -258,7 +264,7 @@ fn common_preflight_view_count_precedes_known_bytes_and_accepts_exact_empty_boun
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::ViewRows {
+        Err(RuntimeTaskPlanSealError::ViewRows {
             actual: 1,
             maximum: 0
         })
@@ -274,7 +280,7 @@ fn task_request_path_children_reject_before_unknown_type_completion() {
     };
     let (plan, owner, function) = super::super::tests::producer_host_plan(true);
     let mut task = row(&plan, &owner, function);
-    task.request_template = RuntimeTaskRequestTemplate::new(
+    task.request_template = RuntimeTaskRequestTemplate::at_operation(
         0,
         Box::new([RuntimeRequestArgument {
             role: RuntimeRequestArgumentRole::Positional,
@@ -292,7 +298,7 @@ fn task_request_path_children_reject_before_unknown_type_completion() {
         Box::new([]),
     );
     let image =
-        UnsealedRuntimePlanImage::new(plan.inventory, owner, Box::new([task]), None).unwrap();
+        UnsealedRuntimePlanImage::new_for_test(plan, owner, Box::new([task]), None).unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
         image.preflight(
@@ -302,7 +308,7 @@ fn task_request_path_children_reject_before_unknown_type_completion() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Children {
+        Err(RuntimeTaskPlanSealError::Children {
             table: 14,
             ordinal: 0,
             actual: 3,

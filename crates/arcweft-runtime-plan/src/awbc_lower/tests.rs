@@ -15,13 +15,13 @@ use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeDialogueContentPlanSeed, RuntimeDialogueContentTemplateManifestSeed, RuntimeEntryKind,
     RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-    RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed, RuntimeHttpMethod,
-    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeRoutePath,
-    RuntimeRoutePathSegment, RuntimeRouteSpec, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
+    RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHttpMethod, RuntimeLineTaskCancelRuleSeed,
+    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLocalDeclarationSeed,
+    RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeRoutePath, RuntimeRoutePathSegment,
+    RuntimeRouteSpec, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{RuntimeLocalReadMode, RuntimeValue};
@@ -139,6 +139,133 @@ fn build_plan(
         builder.push_entry(entry).expect("test entry admits");
     }
     builder.finish().expect("test runtime plan seals")
+}
+
+fn host_call_plan(mode: RuntimeHostCallMode, messages: &[Option<&str>]) -> RuntimePlan {
+    use arcweft_core::plan::*;
+    use arcweft_core::task::*;
+    assert!(!messages.is_empty());
+    let has_argument = messages[0].is_some();
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.is_some() == has_argument)
+    );
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
+            ],
+            [],
+        )
+        .unwrap();
+    let coordinate = builder.reserve_task_plan().unwrap();
+    let mut ops = messages
+        .iter()
+        .map(|message| RuntimeFlowOpSeed::HostCall {
+            binding: None,
+            target: RuntimeHostCallTargetSeed {
+                producer: HostCallProducerDefinition {
+                    contract: NeedProducerContractDigest::from_bytes([1; 32]),
+                    plan: coordinate.clone(),
+                    site: NeedProducerSiteDigest::from_bytes([3; 32]),
+                },
+                public_id: "test.notify".into(),
+                capability: "test".into(),
+                operation: "notify".into(),
+                contract: None,
+                args: message
+                    .map(|value| {
+                        vec![RuntimeHostArgumentSeed::Positional(
+                            RuntimeRequestRoleIdentity::from_accepted_identity([42; 32]),
+                            string_expr(value),
+                        )]
+                    })
+                    .unwrap_or_default(),
+                result: type_id(2),
+                mode,
+                deterministic: false,
+            },
+        })
+        .collect::<Vec<_>>();
+    ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_expr()));
+    let main = flow_id("main");
+    builder.push_flow_schema(flow_schema(&main)).unwrap();
+    let function = builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            main.clone(),
+            RuntimeFunctionSiteDeclarationSeed::flow(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([61; 32]),
+                None,
+                Box::new([]),
+                type_id(2),
+                RuntimeEffectSet::empty(),
+            ),
+            RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: ops.into_boxed_slice(),
+            },
+        ))
+        .unwrap();
+    let control = builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: match mode {
+                RuntimeHostCallMode::Immediate => RuntimeTaskControlMode::StraightLine,
+                RuntimeHostCallMode::Suspend => RuntimeTaskControlMode::MustSuspend,
+            },
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: Some(RuntimeControlEffectIdentity::from_checked_digest([1; 32])),
+                inputs: if has_argument {
+                    Box::new([type_id(1)])
+                } else {
+                    Box::new([])
+                },
+                output: Some(type_id(2)),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap();
+    let arguments = if has_argument {
+        vec![RuntimeRequestArgument {
+            role: RuntimeRequestArgumentRole::Positional,
+            identity: None,
+            ty: type_id(1),
+            source: RuntimeRequestValueSource::Literal,
+            path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+        }]
+        .into_boxed_slice()
+    } else {
+        Box::new([])
+    };
+    builder
+        .define_task_plan(
+            &coordinate,
+            RuntimeTaskPlanSeed::new(
+                function,
+                NeedProducerFamily::HostAdapterTask,
+                TaskClass::Io,
+                RuntimeTaskRequestTemplateSeed::new(
+                    RuntimeTaskRequestSource::Operation(0),
+                    arguments,
+                    Box::new([]),
+                ),
+                control,
+                RuntimeTaskSemanticBinding::Ordinary,
+            ),
+        )
+        .unwrap();
+    builder
+        .push_flow_executable(flow_executable(&main))
+        .unwrap();
+    builder.push_entry(flow_entry("main", main)).unwrap();
+    builder.finish().unwrap()
 }
 
 fn build_bool_flow_plan(
@@ -1459,37 +1586,7 @@ fn builder_sealed_plan_roundtrips_through_canonical_awbc() {
 
 #[test]
 fn discarded_host_call_result_still_has_an_awbc_destination() {
-    let main = flow_id("main");
-    let report = lower_plan(&build_plan(
-        type_id(2),
-        [(
-            main.clone(),
-            vec![
-                RuntimeFlowOpSeed::HostCall {
-                    binding: None,
-                    target: RuntimeHostCallTargetSeed {
-                        producer: arcweft_core::task::HostCallProducerDefinition {
-                            contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                                [1; 32],
-                            ),
-                            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
-                            site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
-                        },
-                        public_id: "test.notify".to_owned(),
-                        capability: "test".to_owned(),
-                        operation: "notify".to_owned(),
-                        contract: None,
-                        args: Vec::new(),
-                        result: type_id(2),
-                        mode: RuntimeHostCallMode::Suspend,
-                        deterministic: false,
-                    },
-                },
-                RuntimeFlowOpSeed::ReturnExpr(unit_expr()),
-            ],
-        )],
-        [flow_entry("main", main)],
-    ));
+    let report = lower_plan(&host_call_plan(RuntimeHostCallMode::Suspend, &[None]));
     let destination = report.program.blocks.iter().find_map(|block| {
         let AwbcTerminator::HostCall { dst, .. } = block.terminator else {
             return None;
@@ -1502,43 +1599,7 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
 #[test]
 fn host_signature_preserves_every_admitted_operand_and_result_identity() {
     for mode in [RuntimeHostCallMode::Immediate, RuntimeHostCallMode::Suspend] {
-        let main = flow_id("main");
-        let plan = build_plan(type_id(2),
-            [(
-                main.clone(),
-                vec![
-                    RuntimeFlowOpSeed::HostCall {
-                        binding: None,
-                        target: RuntimeHostCallTargetSeed {
-                            producer: arcweft_core::task::HostCallProducerDefinition {
-                                contract:
-                                    arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                                        [1; 32],
-                                    ),
-                                plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
-                                    [2; 32],
-                                ),
-                                site: arcweft_core::task::NeedProducerSiteDigest::from_bytes(
-                                    [3; 32],
-                                ),
-                            },
-                            public_id: "test.notify".to_owned(),
-                            capability: "test".to_owned(),
-                            operation: "notify".to_owned(),
-                            contract: None,
-                            args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([42;32]),
-                                string_expr("message"),
-                            )],
-                            result: type_id(2),
-                            mode,
-                            deterministic: false,
-                        },
-                    },
-                    RuntimeFlowOpSeed::ReturnExpr(unit_expr()),
-                ],
-            )],
-            [flow_entry("main", main)],
-        );
+        let plan = host_call_plan(mode, &[Some("message")]);
         let report = lower_plan(&plan);
         let [host] = report.program.host_calls.as_slice() else {
             panic!("one exact host call");
@@ -1571,38 +1632,9 @@ fn host_signature_preserves_every_admitted_operand_and_result_identity() {
 
 #[test]
 fn host_descriptor_interning_preserves_distinct_call_site_values() {
-    let main = flow_id("main");
-    let mut ops = ["first", "second"]
-        .into_iter()
-        .map(|message| RuntimeFlowOpSeed::HostCall {
-            binding: None,
-            target: RuntimeHostCallTargetSeed {
-                producer: arcweft_core::task::HostCallProducerDefinition {
-                    contract: arcweft_core::task::NeedProducerContractDigest::from_bytes([1; 32]),
-                    plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
-                    site: arcweft_core::task::NeedProducerSiteDigest::from_bytes([3; 32]),
-                },
-                public_id: "test.notify".to_owned(),
-                capability: "test".to_owned(),
-                operation: "notify".to_owned(),
-                contract: None,
-                args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
-                    arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
-                        [42; 32],
-                    ),
-                    string_expr(message),
-                )],
-                result: type_id(2),
-                mode: RuntimeHostCallMode::Suspend,
-                deterministic: false,
-            },
-        })
-        .collect::<Vec<_>>();
-    ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_expr()));
-    let report = lower_plan(&build_plan(
-        type_id(2),
-        [(main.clone(), ops)],
-        [flow_entry("main", main)],
+    let report = lower_plan(&host_call_plan(
+        RuntimeHostCallMode::Suspend,
+        &[Some("first"), Some("second")],
     ));
     assert_eq!(
         report.program.host_calls.len(),

@@ -1760,6 +1760,7 @@ dependencies = [
 name = "arcweft-view"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "arcweft-id",
  "arcweft-image",
  "arcweft-presentation",

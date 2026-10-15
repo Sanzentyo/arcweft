@@ -110,7 +110,14 @@ pub(crate) struct CheckedViewRuntimeProgram {
     id: ViewHandlerProgramId,
     result: ViewHandlerValueTypeId,
     admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
-    match_catalog: Option<arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>,
+    match_catalog: Option<Arc<arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ViewMatchSourceJoinKind {
+    Missing,
+    Duplicate,
+    Unexpected,
 }
 
 /// Join between a checked closure capture and its retained execution input.
@@ -134,6 +141,13 @@ pub(crate) struct ViewProjectLowerer<'a> {
 /// Failure to build one complete compiler-owned View product.
 #[derive(Debug, Error)]
 pub(crate) enum ViewProjectLowerError {
+    #[error(transparent)]
+    TaskPlanBinding(#[from] arcweft_core::task::ViewTaskPlanValidationError),
+    #[error("{kind:?} retained View Match source for runtime program {program}")]
+    MatchSourceJoin {
+        program: ViewHandlerProgramId,
+        kind: ViewMatchSourceJoinKind,
+    },
     #[error(transparent)]
     ViewMatchCatalog(#[from] arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogError),
     #[error(transparent)]
@@ -216,6 +230,8 @@ pub(crate) enum ViewProjectLowerError {
     #[error(transparent)]
     Product(#[from] ViewProductValidationError),
     #[error(transparent)]
+    MatchSource(#[from] arcweft_core::pattern::MatchSourceMaterializationError),
+    #[error(transparent)]
     SourceMap(#[from] SourceMapBuildError),
     #[error(transparent)]
     ProjectSourcePath(#[from] arcweft_project::sources::ProjectSourcePathError),
@@ -228,6 +244,60 @@ pub(crate) enum ViewProjectLowerError {
 }
 
 impl CompiledViewProduct {
+    pub(crate) fn bind_runtime_task_plans(
+        &self,
+        sources: &[arcweft_runtime_plan::flow::RuntimeViewMatchTaskPlanSource],
+        analysis: &FinalSemanticAnalysis,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        limits: ViewProductValidationLimits,
+    ) -> Result<(), ViewProjectLowerError> {
+        if u64::try_from(sources.len())
+            .map_err(|_| arcweft_core::task::ViewTaskPlanValidationError::ArithmeticOverflow)?
+            > limits.validation_work
+        {
+            return Err(arcweft_core::task::ViewTaskPlanValidationError::WorkLimitExceeded.into());
+        }
+        let mut expected = Vec::with_capacity(sources.len());
+        let mut bindings = Vec::with_capacity(sources.len());
+        let mut originals: BTreeMap<_, _> = self
+            .runtime_programs
+            .iter()
+            .filter_map(|runtime| {
+                runtime
+                    .match_catalog
+                    .as_deref()
+                    .map(|catalog| (runtime.id, catalog))
+            })
+            .collect();
+        for source in sources {
+            let catalog = source.catalog();
+            let original = originals
+                .remove(&source.program())
+                .ok_or(arcweft_core::task::ViewTaskPlanValidationError::BindingSetMismatch)?;
+            if !std::ptr::eq(original, catalog) {
+                return Err(
+                    arcweft_core::task::ViewTaskPlanValidationError::AdmissionMismatch.into(),
+                );
+            }
+            catalog.validate_source(analysis, project)?;
+            expected.push(source.coordinate().clone());
+            bindings.push(
+                arcweft_bundle::resource_codec::view::ViewTaskPlanBindingSource::new(
+                    catalog.program_id().clone(),
+                    catalog.accepted_revision(),
+                    catalog.site(),
+                    catalog.admission(),
+                    source.coordinate().clone(),
+                ),
+            );
+        }
+        if !originals.is_empty() {
+            return Err(arcweft_core::task::ViewTaskPlanValidationError::BindingSetMismatch.into());
+        }
+        self.product.bind_task_plans(&expected, bindings, limits)?;
+        Ok(())
+    }
+
     pub const fn product(&self) -> &Arc<ValidatedViewProduct> {
         &self.product
     }
@@ -274,11 +344,72 @@ impl CompiledViewProduct {
     {
         self.runtime_programs
             .iter()
-            .filter_map(|program| program.match_catalog.as_ref())
+            .filter_map(|program| program.match_catalog.as_deref())
     }
 }
 
 impl CheckedViewRuntimeProgram {
+    pub(crate) fn runtime_admission(
+        &self,
+    ) -> arcweft_runtime_plan::semantic_facts::RuntimePureProgramAdmission {
+        use arcweft_runtime_plan::semantic_facts::RuntimePureProgramAdmission;
+        match &self.match_catalog {
+            Some(source) => RuntimePureProgramAdmission::ViewMatch(Arc::clone(source)),
+            None => RuntimePureProgramAdmission::Ordinary(Arc::clone(&self.admission)),
+        }
+    }
+
+    fn bind_match_catalogs(
+        mut programs: Vec<Self>,
+        analysis: &FinalSemanticAnalysis,
+        project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        product: &ValidatedViewProduct,
+    ) -> Result<Vec<Self>, ViewProjectLowerError> {
+        let mut sources = BTreeMap::new();
+        if let Some(current) = product.program() {
+            for instruction in &current.resource().instructions {
+                if let ViewProgramInstruction::Match { program, .. } = instruction
+                    && sources.insert(program.execution.program, program).is_some()
+                {
+                    return Err(ViewProjectLowerError::MatchSourceJoin {
+                        program: program.execution.program,
+                        kind: ViewMatchSourceJoinKind::Duplicate,
+                    });
+                }
+            }
+        }
+        for runtime in &mut programs {
+            if runtime.admission.input_abi().match_selection().is_none() {
+                continue;
+            }
+            let current = product
+                .program()
+                .ok_or(ViewProjectLowerError::SemanticGenerationMismatch)?;
+            let source =
+                sources
+                    .remove(&runtime.id)
+                    .ok_or(ViewProjectLowerError::MatchSourceJoin {
+                        program: runtime.id,
+                        kind: ViewMatchSourceJoinKind::Missing,
+                    })?;
+            runtime.match_catalog = Some(Arc::new(runtime.admission.view_match_catalog_row(
+                analysis,
+                project,
+                current.program_id().clone(),
+                current.accepted_revision(),
+                &source.source,
+            )?));
+        }
+        if let Some(program) = sources.keys().next() {
+            return Err(ViewProjectLowerError::MatchSourceJoin {
+                program: *program,
+                kind: ViewMatchSourceJoinKind::Unexpected,
+            });
+        }
+        Ok(programs)
+    }
+
+    #[cfg(test)]
     pub(crate) fn admission(
         &self,
     ) -> &Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram> {
@@ -431,24 +562,12 @@ impl<'a> ViewProjectLowerer<'a> {
         }
 
         let text = merge_view_text(standard_view::dialogue_text(), authored.text);
-        let runtime_programs = authored
-            .runtime_programs
-            .into_iter()
-            .map(|mut runtime| {
-                if runtime.admission.input_abi().match_selection().is_some() {
-                    let program = product
-                        .program()
-                        .ok_or(ViewProjectLowerError::SemanticGenerationMismatch)?;
-                    runtime.match_catalog = Some(runtime.admission.view_match_catalog_row(
-                        self.semantic_analysis,
-                        executable,
-                        program.program_id().clone(),
-                        program.accepted_revision(),
-                    )?);
-                }
-                Ok(runtime)
-            })
-            .collect::<Result<Vec<_>, ViewProjectLowerError>>()?;
+        let runtime_programs = CheckedViewRuntimeProgram::bind_match_catalogs(
+            authored.runtime_programs,
+            self.semantic_analysis,
+            executable,
+            &product,
+        )?;
         Ok(CompiledViewProduct {
             product: Arc::new(product),
             text: Some(text),
@@ -472,6 +591,7 @@ struct AuthoredViewArtifact {
 }
 
 struct AuthoredViewLowering {
+    match_source_budget: arcweft_core::pattern::MatchSourceMaterializationBudget,
     style_patches: Vec<arcweft_view::style::ViewStylePatch>,
     style_sources: Vec<arcweft_source::ProductSourceRef>,
     style_ranges: Vec<arcweft_bundle::resource_codec::SourceRangeRef>,
@@ -701,6 +821,9 @@ fn lower_authored_views(
         })
         .collect();
     let mut output = AuthoredViewLowering {
+        match_source_budget: arcweft_core::pattern::MatchSourceMaterializationBudget::new(
+            ViewProductValidationLimits::default().match_source_bytes,
+        ),
         style_patches: Vec::new(),
         style_sources: Vec::new(),
         style_ranges: Vec::new(),
@@ -1193,6 +1316,9 @@ impl ViewExpressionLowerer<'_> {
         digest.update(&(self.view.as_str().len() as u64).to_le_bytes());
         digest.update(self.view.as_str().as_bytes());
         digest.update(&semantic);
+        if matches!(source, CheckedExecutionSource::SelectMatch(_)) {
+            digest.update(admission.view_match_site()?.as_bytes());
+        }
         let id = ViewHandlerProgramId::from_checked_digest(*digest.finalize().as_bytes());
         if self
             .output
@@ -1358,12 +1484,17 @@ impl AuthoredViewBodyLowerer<'_> {
         if selection.outputs().len() != matched.arms().len() {
             return Err(invalid());
         }
+        let source = selection
+            .checked_match()
+            .source_definition()
+            .materialize_source(&mut self.output.match_source_budget)?;
         let index = self.output.instructions.len();
         self.output
             .instructions
             .push(ViewProgramInstruction::Match {
                 program: arcweft_view::ViewMatchProgram {
                     execution: execution.clone(),
+                    source: Arc::new(source),
                     arms: Box::new([]),
                 },
                 source: None,

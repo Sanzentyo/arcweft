@@ -55,6 +55,7 @@ impl From<ViewParameterInput> for ViewExecutionInput {
 #[serde(deny_unknown_fields)]
 pub struct ViewMatchProgram {
     pub execution: ViewExpressionProgram,
+    pub source: std::sync::Arc<arcweft_core::pattern::MatchSourceData>,
     pub arms: Box<[ViewMatchArm]>,
 }
 
@@ -74,6 +75,25 @@ pub struct ViewMatchRanges {
 
 impl ViewMatchProgram {
     pub fn outputs_are_canonical(&self) -> bool {
+        if !self.source.coverage().exhaustive()
+            || !self.source.has_canonical_arm_coordinates()
+            || self.source.arms().len() != self.arms.len()
+            || !self
+                .source
+                .arms()
+                .iter()
+                .zip(self.arms.iter())
+                .all(|(source, arm)| {
+                    source.bindings().len() == arm.outputs.len()
+                        && source.bindings().iter().zip(arm.outputs.iter()).all(
+                            |(binding, output)| {
+                                binding.ty().as_ref() == output.value_type.as_bytes()
+                            },
+                        )
+                })
+        {
+            return false;
+        }
         let mut ordinal = 0usize;
         self.arms
             .iter()

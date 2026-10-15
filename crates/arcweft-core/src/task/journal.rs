@@ -13,12 +13,12 @@ use std::collections::BTreeMap;
 #[serde(
     deny_unknown_fields,
     bound(
-        serialize = "TaskSpec<P>: serde::Serialize",
-        deserialize = "P: crate::value::InertRuntimeValueStorage, TaskSpec<P>: serde::Deserialize<'de>"
+        serialize = "TaskSpec<P, Plan>: serde::Serialize",
+        deserialize = "P: crate::value::InertRuntimeValueStorage, TaskSpec<P, Plan>: serde::Deserialize<'de>"
     )
 )]
-pub struct TaskSubmission<P = crate::value::RuntimePayload> {
-    pub(super) spec: TaskSpec<P>,
+pub struct TaskSubmission<P = crate::value::RuntimePayload, Plan = super::TaskPlanSemanticDigest> {
+    pub(super) spec: TaskSpec<P, Plan>,
     pub(super) handle: TaskHandle,
 }
 

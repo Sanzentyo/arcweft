@@ -1,16 +1,30 @@
 //! Static request-role transcript. It never reads expression literal payloads.
 
-use super::function::ProducerEndpoint;
+use super::function::{OriginalRequestEndpoint, ProducerEndpoint};
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
 mod admission;
 pub(crate) mod codec;
 
+/// Source-checked request proof; wire bytes remain untrusted definitions.
+///
+/// ```compile_fail
+/// use arcweft_core::plan::TaskRequestTemplateDigest;
+/// let _ = TaskRequestTemplateDigest::from_bytes([0; 32]);
+/// ```
+/// ```compile_fail
+/// fn encode<T: serde::Serialize>() {}
+/// encode::<arcweft_core::plan::TaskRequestTemplateDigest>();
+/// ```
+/// ```compile_fail
+/// fn decode<T: serde::de::DeserializeOwned>() {}
+/// decode::<arcweft_core::plan::TaskRequestTemplateDigest>();
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct TaskRequestTemplateDigest([u8; 32]);
+pub struct TaskRequestTemplateDigest([u8; 32]);
 impl TaskRequestTemplateDigest {
-    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -18,7 +32,7 @@ impl TaskRequestTemplateDigest {
 pub(crate) use crate::task::RuntimeRequestRoleIdentity;
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum RuntimeRequestArgumentRole {
+pub enum RuntimeRequestArgumentRole {
     Positional,
     Named,
     Spread,
@@ -43,8 +57,8 @@ impl RuntimeRequestArgumentRole {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) enum RuntimeRequestValueSource {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeRequestValueSource {
     Literal,
     Local,
     Capture,
@@ -54,7 +68,7 @@ pub(crate) enum RuntimeRequestValueSource {
     NeedHandle,
 }
 impl RuntimeRequestValueSource {
-    const fn semantic_tag(&self) -> u8 {
+    const fn semantic_tag(self) -> u8 {
         match self {
             Self::Literal => 0,
             Self::Local => 1,
@@ -68,7 +82,7 @@ impl RuntimeRequestValueSource {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum RuntimeRequestPathStep {
+pub enum RuntimeRequestPathStep {
     Operand(u32),
     Tuple(u32),
     Record(RuntimeRequestRoleIdentity),
@@ -117,16 +131,16 @@ impl RuntimeRequestPathStep {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct RuntimeRequestArgument {
-    pub(crate) role: RuntimeRequestArgumentRole,
-    pub(crate) identity: Option<RuntimeRequestRoleIdentity>,
-    pub(crate) ty: crate::runtime_id::RuntimePlanTypeId,
-    pub(crate) source: RuntimeRequestValueSource,
-    pub(crate) path: Box<[RuntimeRequestPathStep]>,
+pub struct RuntimeRequestArgument<Ty = crate::runtime_id::RuntimePlanTypeId> {
+    pub role: RuntimeRequestArgumentRole,
+    pub identity: Option<RuntimeRequestRoleIdentity>,
+    pub ty: Ty,
+    pub source: RuntimeRequestValueSource,
+    pub path: Box<[RuntimeRequestPathStep]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) enum RuntimeRequestFieldRole {
+pub enum RuntimeRequestFieldRole {
     Required,
     Optional,
     Repeated,
@@ -146,25 +160,100 @@ impl RuntimeRequestFieldRole {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct RuntimeRequestField {
-    pub(crate) identity: RuntimeRequestRoleIdentity,
-    pub(crate) role: RuntimeRequestFieldRole,
-    pub(crate) ty: crate::runtime_id::RuntimePlanTypeId,
-    pub(crate) path: Box<[RuntimeRequestPathStep]>,
+pub struct RuntimeRequestField<Ty = crate::runtime_id::RuntimePlanTypeId> {
+    pub identity: RuntimeRequestRoleIdentity,
+    pub role: RuntimeRequestFieldRole,
+    pub ty: Ty,
+    pub path: Box<[RuntimeRequestPathStep]>,
 }
 
 /// The static request definition owned by a private task image. Runtime
-/// argument values stay on their execution owner; this row owns only checked
-/// endpoint/role/type/path meaning. Codec data does not mint a Q proof.
+/// argument values stay on their execution owner. These endpoint/role/type/path
+/// definitions issue no Q proof until checked against the original F source.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct RuntimeTaskRequestTemplate {
-    endpoint: u32,
-    arguments: Box<[RuntimeRequestArgument]>,
-    fields: Box<[RuntimeRequestField]>,
+pub struct RuntimeTaskRequestTemplate<Ty = crate::runtime_id::RuntimePlanTypeId> {
+    source: RuntimeTaskRequestSource,
+    pub(super) arguments: Box<[RuntimeRequestArgument<Ty>]>,
+    fields: Box<[RuntimeRequestField<Ty>]>,
 }
 
-impl RuntimeTaskRequestTemplate {
-    pub(super) fn try_visit_path_lengths<E>(
+/// Construction data uses semantic types in the same definition grammar.
+pub type RuntimeTaskRequestTemplateSeed =
+    RuntimeTaskRequestTemplate<crate::pattern::RuntimeSemanticTypeId>;
+
+/// Selects either the original function ABI or one original operation endpoint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeTaskRequestSource {
+    FunctionRoot,
+    Operation(u32),
+}
+
+impl<Ty> RuntimeTaskRequestTemplate<Ty> {
+    #[must_use]
+    pub fn new(
+        source: RuntimeTaskRequestSource,
+        arguments: Box<[RuntimeRequestArgument<Ty>]>,
+        fields: Box<[RuntimeRequestField<Ty>]>,
+    ) -> Self {
+        Self {
+            source,
+            arguments,
+            fields,
+        }
+    }
+
+    #[must_use]
+    pub fn arguments(&self) -> &[RuntimeRequestArgument<Ty>] {
+        &self.arguments
+    }
+
+    #[must_use]
+    pub fn fields(&self) -> &[RuntimeRequestField<Ty>] {
+        &self.fields
+    }
+
+    /// The owning builder preflights the whole candidate before mapping types.
+    /// All other role/source/path storage moves without cloning or re-extraction.
+    pub(crate) fn try_map_types<Next, E>(
+        self,
+        mut map: impl FnMut(Ty) -> Result<Next, E>,
+    ) -> Result<RuntimeTaskRequestTemplate<Next>, E> {
+        let arguments = self
+            .arguments
+            .into_vec()
+            .into_iter()
+            .map(|argument| {
+                Ok(RuntimeRequestArgument {
+                    role: argument.role,
+                    identity: argument.identity,
+                    ty: map(argument.ty)?,
+                    source: argument.source,
+                    path: argument.path,
+                })
+            })
+            .collect::<Result<Vec<_>, E>>()?
+            .into_boxed_slice();
+        let fields = self
+            .fields
+            .into_vec()
+            .into_iter()
+            .map(|field| {
+                Ok(RuntimeRequestField {
+                    identity: field.identity,
+                    role: field.role,
+                    ty: map(field.ty)?,
+                    path: field.path,
+                })
+            })
+            .collect::<Result<Vec<_>, E>>()?
+            .into_boxed_slice();
+        Ok(RuntimeTaskRequestTemplate {
+            source: self.source,
+            arguments,
+            fields,
+        })
+    }
+    pub(in crate::plan) fn try_visit_path_lengths<E>(
         &self,
         visitor: &mut impl FnMut(usize) -> Result<(), E>,
     ) -> Result<(), E> {
@@ -220,11 +309,12 @@ impl RuntimeTaskRequestTemplate {
         Ok(bytes)
     }
 
-    pub(super) const fn endpoint(&self) -> u32 {
-        self.endpoint
+    #[must_use]
+    pub const fn source(&self) -> RuntimeTaskRequestSource {
+        self.source
     }
 
-    pub(super) fn role_count(
+    pub(in crate::plan) fn role_count(
         &self,
         meter: &mut TaskSemanticMeter,
     ) -> Result<usize, RuntimeBodySemanticError> {
@@ -233,13 +323,13 @@ impl RuntimeTaskRequestTemplate {
             .map_err(Into::into)
     }
 
-    pub(crate) fn new(
+    pub(crate) fn at_operation(
         endpoint: u32,
-        arguments: Box<[RuntimeRequestArgument]>,
-        fields: Box<[RuntimeRequestField]>,
+        arguments: Box<[RuntimeRequestArgument<Ty>]>,
+        fields: Box<[RuntimeRequestField<Ty>]>,
     ) -> Self {
         Self {
-            endpoint,
+            source: RuntimeTaskRequestSource::Operation(endpoint),
             arguments,
             fields,
         }
@@ -247,35 +337,87 @@ impl RuntimeTaskRequestTemplate {
 }
 
 impl RuntimeBodySemanticContext<'_> {
-    /// Reads actual HostCall/MakeNeed arguments through F's opaque endpoint.
+    /// Reads original function inputs or operation arguments through F's proof.
     /// Literal/evaluated payloads and display names never supply Q evidence.
-    pub(crate) fn host_request_template_digest(
+    pub(crate) fn static_request_template_digest(
         &self,
         meter: &mut TaskSemanticMeter,
         endpoint: ProducerEndpoint<'_>,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<TaskRequestTemplateDigest, RuntimeBodySemanticError> {
-        let template = self.host_request_template(meter, endpoint, limits)?;
+        let template = self.static_request_template(meter, endpoint, limits)?;
         self.encode_request_template(meter, endpoint, &template, limits)
             .map(|hash| TaskRequestTemplateDigest(*hash.as_bytes()))
     }
 
     /// Extracts the static definition for storage/codec from the same actual
     /// endpoint used by the Q transcript. Extraction issues no digest proof.
-    pub(crate) fn host_request_template(
+    pub(crate) fn static_request_template<'source>(
         &self,
         meter: &mut TaskSemanticMeter,
-        endpoint: ProducerEndpoint<'_>,
+        endpoint: impl Into<OriginalRequestEndpoint<'source>>,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<RuntimeTaskRequestTemplate, RuntimeBodySemanticError> {
+        let endpoint = endpoint.into();
         meter.status()?;
         if !endpoint.belongs_to(self.plan) {
             meter.reject_owner();
-            return Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint);
+            return Err(RuntimeBodySemanticError::InvalidRequestSource);
+        }
+        endpoint.definition(meter, limits)
+    }
+}
+
+impl OriginalRequestEndpoint<'_> {
+    pub(in crate::plan) fn definition(
+        self,
+        meter: &mut TaskSemanticMeter,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<RuntimeTaskRequestTemplate, RuntimeBodySemanticError> {
+        use crate::plan::RuntimeFunctionInputSource as Source;
+        let endpoint = self;
+        meter.status()?;
+        if let Some(inputs) = endpoint.function_inputs() {
+            let actual = meter.checked_count_sum(inputs.len(), 0)?;
+            if actual > limits.max_request_roles as usize {
+                meter.reject_owner();
+                return Err(RuntimeBodySemanticError::RequestRoles {
+                    actual,
+                    maximum: limits.max_request_roles,
+                });
+            }
+            let mut arguments = Vec::with_capacity(actual);
+            for input in inputs {
+                meter.charge_work(1)?;
+                let (role, source, path) = match input.source() {
+                    Source::Capture { position } | Source::CapturedParameter { position, .. } => (
+                        RuntimeRequestArgumentRole::Capture,
+                        RuntimeRequestValueSource::Capture,
+                        RuntimeRequestPathStep::Capture(position),
+                    ),
+                    Source::Parameter { position, .. } => (
+                        RuntimeRequestArgumentRole::Positional,
+                        RuntimeRequestValueSource::Local,
+                        RuntimeRequestPathStep::Operand(position),
+                    ),
+                };
+                arguments.push(RuntimeRequestArgument {
+                    role,
+                    identity: None,
+                    ty: input.pattern().ty(),
+                    source,
+                    path: Box::new([path]),
+                });
+            }
+            return Ok(RuntimeTaskRequestTemplate {
+                source: RuntimeTaskRequestSource::FunctionRoot,
+                arguments: arguments.into_boxed_slice(),
+                fields: Box::new([]),
+            });
         }
         let actual_arguments = endpoint.host_arguments().ok_or_else(|| {
             meter.reject_owner();
-            RuntimeBodySemanticError::InvalidHostRequestEndpoint
+            RuntimeBodySemanticError::InvalidRequestSource
         })?;
         let actual = meter.checked_count_sum(actual_arguments.len(), 0)?;
         if actual > limits.max_request_roles as usize {
@@ -294,30 +436,13 @@ impl RuntimeBodySemanticContext<'_> {
                     crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow,
                 )
             })?;
-            let identity = argument.identity();
-            let mut path = vec![RuntimeRequestPathStep::Operand(ordinal)];
-            let (role, name) = match argument {
-                crate::task::RuntimeHostArgumentTemplate::Positional(..) => {
-                    (RuntimeRequestArgumentRole::Positional, None)
-                }
-                crate::task::RuntimeHostArgumentTemplate::Named(..) => {
-                    path.push(RuntimeRequestPathStep::NamedArgument(identity));
-                    (RuntimeRequestArgumentRole::Named, Some(identity))
-                }
-                crate::task::RuntimeHostArgumentTemplate::Spread(..) => {
-                    path.push(RuntimeRequestPathStep::SpreadArgument(ordinal));
-                    (RuntimeRequestArgumentRole::Spread, None)
-                }
-            };
-            arguments.push(RuntimeRequestArgument {
-                role,
-                identity: name,
-                ty: argument.value().ty(),
-                source: self.request_value_source(meter, endpoint, argument.value())?,
-                path: path.into_boxed_slice(),
-            });
+            arguments.push(argument.request_definition(
+                ordinal,
+                argument.value().ty(),
+                endpoint.request_value_source(meter, argument.value())?,
+            ));
         }
-        Ok(RuntimeTaskRequestTemplate::new(
+        Ok(RuntimeTaskRequestTemplate::at_operation(
             endpoint.ordinal(),
             arguments.into_boxed_slice(),
             Box::new([]),
@@ -327,22 +452,15 @@ impl RuntimeBodySemanticContext<'_> {
     fn request_value_source(
         &self,
         meter: &mut TaskSemanticMeter,
-        endpoint: ProducerEndpoint<'_>,
         mut expression: &crate::value::RuntimeExpr,
     ) -> Result<RuntimeRequestValueSource, RuntimeBodySemanticError> {
         use crate::value::RuntimeExprKind as Expr;
         loop {
             meter.charge_work(1)?;
-            let ty = self.plan.type_table().get(expression.ty()).ok_or_else(|| {
-                meter.reject_owner();
-                RuntimeBodySemanticError::UnknownType {
-                    ty: expression.ty(),
-                }
-            })?;
-            if matches!(
-                ty.projection(),
-                crate::plan::RuntimePlanTypeProjection::Need(_)
-            ) {
+            if self
+                .source_type_is_need(expression.ty())
+                .inspect_err(|_| meter.reject_owner())?
+            {
                 return Ok(RuntimeRequestValueSource::NeedHandle);
             }
             return Ok(match expression.kind() {
@@ -352,20 +470,9 @@ impl RuntimeBodySemanticContext<'_> {
                 }
                 Expr::Local(read) => {
                     meter.charge_work(1)?;
-                    let local = self
-                        .plan
-                        .local_declarations()
-                        .get(read.local())
-                        .ok_or_else(|| {
-                            meter.reject_owner();
-                            RuntimeBodySemanticError::UnknownLocal {
-                                local: read.local(),
-                            }
-                        })?;
-                    let captured = local
-                        .placement()
-                        .function_capture_position(endpoint.function_id())
-                        .is_some();
+                    let captured = self
+                        .source_local_is_capture(read.local())
+                        .inspect_err(|_| meter.reject_owner())?;
                     if captured {
                         RuntimeRequestValueSource::Capture
                     } else {
@@ -409,7 +516,9 @@ impl RuntimeBodySemanticContext<'_> {
             });
         }
     }
+}
 
+impl RuntimeBodySemanticContext<'_> {
     /// Encodes the definition grammar without issuing admission evidence.
     /// The source-derived and strict decoded-definition paths own Q issuance.
     pub(super) fn encode_request_template(
@@ -432,13 +541,13 @@ impl RuntimeBodySemanticContext<'_> {
         }
         if !endpoint.belongs_to(self.plan) {
             meter.reject_owner();
-            return Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint);
+            return Err(RuntimeBodySemanticError::InvalidRequestSource);
         }
-        if template.endpoint != endpoint.ordinal() {
+        if template.source != endpoint.request_source() {
             meter.reject_owner();
             return Err(RuntimeBodySemanticError::InvalidRequestEndpoint {
-                expected: endpoint.ordinal(),
-                actual: template.endpoint,
+                expected: endpoint.request_source(),
+                actual: template.source,
             });
         }
         let mut encoder = TaskSemanticEncoder::new(b"arcweft.task.request-template.v1\0", meter);

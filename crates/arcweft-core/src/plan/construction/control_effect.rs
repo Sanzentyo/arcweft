@@ -25,7 +25,7 @@ impl RuntimeControlEffectContractSeedId {
         self.id
     }
 
-    fn resolve(
+    pub(super) fn resolve(
         &self,
         builder: &RuntimePlanBuilder,
     ) -> Result<RuntimeControlEffectContractId, RuntimePlanBuildError> {

@@ -21,9 +21,8 @@ use crate::runtime_id::{
     RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::scope::RuntimeScopeIdentity;
-use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamRuntimeId;
-use crate::task::{HostCapabilityId, NamedHostArg, NeedId, NeedProducerTaskPlan, TaskId};
+use crate::task::{HostCapabilityId, NeedId, NeedProducerTaskPlan, TaskId};
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentField, RuntimeBinaryOp, RuntimeCallArgumentMode,
     RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeFmtParameterId,
@@ -40,8 +39,11 @@ use super::super::{
     RuntimeTraitMethodIdentity,
 };
 
-#[derive(Debug)]
-pub(super) struct RuntimePlanConstructionIssuer;
+#[derive(Debug, Default)]
+pub(super) struct RuntimePlanConstructionIssuer {
+    pub(super) sealed_tasks:
+        std::sync::OnceLock<Arc<crate::plan::task_semantic::RuntimeTaskProgramSemantics>>,
+}
 
 /// One local declaration request in canonical semantic-fact order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1215,6 +1217,7 @@ pub struct RuntimeAwaitTargetSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedProducerStartTargetSeed {
     pub plan: NeedProducerTaskPlan,
+    pub task_plan: crate::plan::RuntimeTaskPlanBuildCoordinate,
     pub arguments: Vec<RuntimeHostArgumentSeed>,
 }
 
@@ -1227,22 +1230,11 @@ pub struct RuntimeAwaitManyTargetSeed {
     pub child: RuntimeNeedProducerTemplateSeed,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeNeedProducerTemplateSeed {
-    pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
-    pub family: crate::task::NeedProducerFamily,
-    pub contract: crate::task::NeedProducerContractDigest,
-    pub plan: crate::task::TaskPlanSemanticDigest,
-    pub producer_site: crate::task::NeedProducerSiteDigest,
-    pub payload_type: crate::task::RuntimeTypeSemanticDigest,
-    pub class: crate::task::TaskClass,
-    pub priority: crate::task::TaskPriority,
-    pub cancel_scope: crate::task::CancelScopeId,
-    pub policy: crate::task::TaskPolicy,
-    pub outcome: crate::task::TaskOutcomeContract,
-    pub request: RuntimeHostTaskRequestTemplateSeed,
-    pub debug_label: String,
-}
+/// Source expressions and accepted expressions use the same producer grammar.
+pub type RuntimeNeedProducerTemplateSeed = crate::task::NeedProducerTemplate<
+    crate::plan::RuntimeTaskPlanBuildCoordinate,
+    RuntimeHostTaskRequestTemplateSeed,
+>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostTaskRequestTemplateSeed {
@@ -1259,28 +1251,13 @@ impl RuntimeHostTaskRequestTemplateSeed {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeHostArgumentSeed {
-    Positional(crate::task::RuntimeRequestRoleIdentity, RuntimeExprSeed),
-    Named(
-        crate::task::RuntimeRequestRoleIdentity,
-        NamedHostArg<RuntimeExprSeed>,
-    ),
-    Spread(crate::task::RuntimeRequestRoleIdentity, RuntimeExprSeed),
-}
+pub type RuntimeHostArgumentSeed = crate::task::RuntimeHostArgumentTemplate<RuntimeExprSeed>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeHostCallTargetSeed {
-    pub producer: crate::task::HostCallProducerDefinition,
-    pub public_id: String,
-    pub capability: String,
-    pub operation: String,
-    pub contract: Option<crate::step::HostCallContractDigest>,
-    pub args: Vec<RuntimeHostArgumentSeed>,
-    pub result: RuntimeSemanticTypeId,
-    pub mode: RuntimeHostCallMode,
-    pub deterministic: bool,
-}
+pub type RuntimeHostCallTargetSeed = crate::plan::RuntimeHostCallTarget<
+    crate::plan::RuntimeTaskPlanBuildCoordinate,
+    RuntimeExprSeed,
+    RuntimeSemanticTypeId,
+>;
 
 /// Host-facing effect metadata, with the sole expression-bearing Audio arm
 /// split out so a raw `RuntimeAudioCommand` cannot bypass recursive admission.
@@ -1668,6 +1645,12 @@ pub struct RuntimeFunctionSiteSeedId {
 }
 
 impl RuntimeFunctionSiteSeedId {
+    /// Table reference after this builder's aggregate has successfully finished.
+    #[must_use]
+    pub const fn id(&self) -> RuntimeFunctionSiteId {
+        self.site
+    }
+
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         site: RuntimeFunctionSiteId,

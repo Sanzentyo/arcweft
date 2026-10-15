@@ -8,18 +8,12 @@ use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
     BundleRuntimeSummary,
 };
-use arcweft_core::entry::{
-    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
-    RuntimeFlowSchema,
-};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimeNeedProducerStartTargetSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimePlan,
 };
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -350,6 +344,7 @@ impl HostAdapter for CustomEchoAdapter {
 }
 
 fn custom_echo_plan() -> RuntimePlan {
+    use arcweft_core::plan::*;
     let string_ty = custom_echo_payload_type();
     let need_ty = RuntimeSemanticTypeId::from_bytes([2; 32]);
     let host_contract = custom_echo_host_call().contract_digest();
@@ -388,7 +383,27 @@ fn custom_echo_plan() -> RuntimePlan {
         )
         .expect("string type admits");
     let need_local = admitted.local_ids()[0].clone();
-    builder
+    let task_class = producer_plan.class().clone();
+    let task_coordinate = builder.reserve_task_plan().unwrap();
+    let task_control = builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: RuntimeTaskControlMode::RuntimeAggregate,
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: Some(RuntimeControlEffectIdentity::from_checked_digest(
+                    *producer_plan.contract().as_bytes(),
+                )),
+                inputs: Box::new([string_ty]),
+                output: Some(producer_plan.payload_type()),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap();
+    let function = builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
@@ -412,6 +427,7 @@ fn custom_echo_plan() -> RuntimePlan {
                             },
                         ),
                         target: RuntimeNeedProducerStartTargetSeed {
+                            task_plan: task_coordinate.clone(),
                             plan: producer_plan,
                             arguments:
                                 vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
@@ -446,6 +462,29 @@ fn custom_echo_plan() -> RuntimePlan {
             },
         ))
         .expect("custom flow admits");
+    builder
+        .define_task_plan(
+            &task_coordinate,
+            RuntimeTaskPlanSeed::new(
+                function,
+                arcweft_core::task::NeedProducerFamily::SelectedCallable,
+                task_class,
+                RuntimeTaskRequestTemplateSeed::new(
+                    RuntimeTaskRequestSource::Operation(0),
+                    Box::new([RuntimeRequestArgument {
+                        role: RuntimeRequestArgumentRole::Positional,
+                        identity: None,
+                        ty: string_ty,
+                        source: RuntimeRequestValueSource::Literal,
+                        path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+                    }]),
+                    Box::new([]),
+                ),
+                task_control,
+                RuntimeTaskSemanticBinding::Ordinary,
+            ),
+        )
+        .unwrap();
     builder
         .push_flow_schema(RuntimeFlowSchema {
             flow: flow.clone(),

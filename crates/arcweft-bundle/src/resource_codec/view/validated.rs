@@ -27,15 +27,18 @@ pub struct ViewProductValidationLimits {
     pub source_refs: usize,
     pub source_ranges: usize,
     pub validation_work: u64,
+    pub match_source_bytes: u64,
 }
 
 /// View program whose complete source dependencies and source ranges are valid.
 #[derive(Clone, Debug)]
 pub struct ValidatedViewProgramResource {
-    resource: ViewProgramResource,
+    resource: Arc<ViewProgramResource>,
     program_id: ViewProgramId,
     accepted_revision: AcceptedViewProgramRevision,
     source_set_revision: SourceSetRevision,
+    pub(super) task_bindings:
+        Arc<std::sync::OnceLock<super::task_plans::ValidatedViewTaskPlanBindings>>,
 }
 
 /// Native Style resource accepted against the same complete source product.
@@ -104,6 +107,8 @@ pub enum ViewProductValidationError {
     StyleEnvironment(#[from] ViewStyleEnvironmentSourceError),
     #[error(transparent)]
     View(#[from] SectionCodecError),
+    #[error(transparent)]
+    MatchSource(#[from] arcweft_core::pattern::MatchSourceMaterializationError),
 }
 
 impl Default for ViewProductValidationLimits {
@@ -112,6 +117,7 @@ impl Default for ViewProductValidationLimits {
             source_refs: 65_536,
             source_ranges: 1_048_576,
             validation_work: 2_097_152,
+            match_source_bytes: 16_777_216,
         }
     }
 }
@@ -191,10 +197,11 @@ impl ValidatedViewProduct {
                 let program_id = resource.program_id.clone();
                 let accepted_revision = super::semantic::accepted_revision(&resource)?;
                 Ok(Arc::new(ValidatedViewProgramResource {
-                    resource,
+                    resource: Arc::new(resource),
                     program_id,
                     accepted_revision,
                     source_set_revision,
+                    task_bindings: Arc::new(std::sync::OnceLock::new()),
                 }))
             })
             .transpose()?;
@@ -221,6 +228,20 @@ impl ValidatedViewProduct {
 
     pub fn style(&self) -> Option<&ValidatedViewStyleResource> {
         self.style.as_deref()
+    }
+
+    pub(super) fn install_task_bindings(
+        &self,
+        bindings: super::task_plans::ValidatedViewTaskPlanBindings,
+    ) -> Result<(), arcweft_core::task::ViewTaskPlanValidationError> {
+        let program = self
+            .program
+            .as_ref()
+            .ok_or(arcweft_core::task::ViewTaskPlanValidationError::ProgramMismatch)?;
+        program
+            .task_bindings
+            .set(bindings)
+            .map_err(|_| arcweft_core::task::ViewTaskPlanValidationError::AuthorityAlreadyBound)
     }
 }
 
@@ -270,7 +291,7 @@ impl ValidatedViewProgramResource {
         &self.resource.source_refs[index.index()]
     }
 
-    pub const fn resource(&self) -> &ViewProgramResource {
+    pub fn resource(&self) -> &ViewProgramResource {
         &self.resource
     }
 }
@@ -301,6 +322,16 @@ fn validate_product_limits(
     style: Option<&ViewStyleResource>,
     limits: ViewProductValidationLimits,
 ) -> Result<(), ViewProductValidationError> {
+    let mut match_sources =
+        arcweft_core::pattern::MatchSourceMaterializationBudget::new(limits.match_source_bytes);
+    for instruction in program
+        .into_iter()
+        .flat_map(|program| &program.instructions)
+    {
+        if let super::ViewProgramInstruction::Match { program, .. } = instruction {
+            program.source.preflight_source(&mut match_sources)?;
+        }
+    }
     let source_ref_count = program
         .map_or(0, |resource| resource.source_refs.len())
         .checked_add(style.map_or(0, |resource| resource.source_refs.len()))

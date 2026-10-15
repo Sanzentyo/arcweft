@@ -7,9 +7,7 @@ use super::function::ProducerFunctionSemantic;
 use super::pure_rows::PureHelperSemantic;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::entry::RuntimeCallableExecutableCode;
-use crate::plan::construction::task_coordinates::{
-    RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanCoordinateOwner,
-};
+use crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
 use crate::plan::{RuntimeNominalRecordDomain, RuntimeTaskPlanSealLimits, RuntimeVariantDomain};
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
@@ -165,12 +163,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
     pub(super) fn write_tables(
         &mut self,
         encoder: &mut TaskSemanticEncoder<'_>,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<(), RuntimeBodySemanticError> {
         for table in ExecutableTable::ORDER {
             encoder.status()?;
@@ -182,8 +174,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 encoder.enter_element();
                 encoder.count(ordinal);
                 encoder.tag(self.kind(table, ordinal));
-                let digest = encoder
-                    .owner_child(|meter| self.complete(table, ordinal, meter, task_reference))?;
+                let digest = encoder.owner_child(|meter| self.complete(table, ordinal, meter))?;
                 encoder.digest(digest.as_bytes());
             }
         }
@@ -234,12 +225,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         table: ExecutableTable,
         ordinal: usize,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
         meter.status()?;
         match self.rows[table.tag() as usize].get(ordinal) {
@@ -263,7 +248,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         meter.charge_work(1)?; // first executable row visit, before owner work
         self.rows[table.tag() as usize][ordinal] = RowState::Visiting;
         let digest = self
-            .complete_owner(table, ordinal, meter, task_reference)
+            .complete_owner(table, ordinal, meter)
             .inspect_err(|_| meter.reject_owner())?;
         self.rows[table.tag() as usize][ordinal] = RowState::Done(digest);
         Ok(digest)
@@ -274,12 +259,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         table: ExecutableTable,
         ordinal: usize,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
         let plan = self.context.plan;
         match table {
@@ -302,7 +281,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 self.prepare_function(
                     RuntimeFunctionSiteId::from_accepted_ordinal(Self::id(ordinal)),
                     meter,
-                    task_reference,
                 )?;
                 self.functions[ordinal]
                     .proof()
@@ -311,9 +289,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             }
             ExecutableTable::Content => self.context.dialogue_content_row_digest(meter, ordinal),
             ExecutableTable::Entries => self.context.entry_row_digest(meter, ordinal),
-            ExecutableTable::CallableExecutables => {
-                self.callable_row_digest(ordinal, meter, task_reference)
-            }
+            ExecutableTable::CallableExecutables => self.callable_row_digest(ordinal, meter),
             ExecutableTable::FlowExecutables => {
                 let index = plan
                     .flows
@@ -326,7 +302,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     .get()
                     .get() as usize
                     - 1;
-                self.complete(ExecutableTable::Functions, index, meter, task_reference)?;
+                self.complete(ExecutableTable::Functions, index, meter)?;
                 self.context.flow_executable_row_digest(
                     meter,
                     ordinal,
@@ -337,7 +313,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             }
             ExecutableTable::Flows => {
                 let index = plan.flows()[ordinal].function_site().get().get() as usize - 1;
-                self.complete(ExecutableTable::Functions, index, meter, task_reference)?;
+                self.complete(ExecutableTable::Functions, index, meter)?;
                 self.functions[index]
                     .proof()
                     .expect("completed function proof")
@@ -358,7 +334,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(ordinal)
                         .expect("preflighted Line row"),
                     meter,
-                    task_reference,
                 )?;
                 self.lines[ordinal]
                     .as_ref()
@@ -375,12 +350,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         &mut self,
         function: RuntimeFunctionSiteId,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<&ProducerFunctionSemantic<'plan>, RuntimeBodySemanticError> {
         meter.status()?;
         let ordinal = function.get().get() as usize - 1;
@@ -397,13 +366,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                 self.functions[ordinal] = FunctionState::Visiting;
                 let proof = self
                     .context
-                    .producer_function(
-                        meter,
-                        function,
-                        self.task_owner,
-                        task_reference,
-                        self.limits,
-                    )
+                    .producer_function(meter, function, self.task_owner, self.limits)
                     .inspect_err(|_| meter.reject_owner())?;
                 self.functions[ordinal] = FunctionState::Done(proof);
             }
@@ -424,12 +387,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         &mut self,
         group: crate::runtime_id::RuntimeLineTaskGroupId,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<&super::executable_metadata::LineSemantic<'plan>, RuntimeBodySemanticError> {
         meter.status()?;
         let ordinal = group.index();
@@ -443,7 +400,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         if self.lines[ordinal].is_none() {
             let proof = self
                 .context
-                .line_semantic(meter, group, self.task_owner, task_reference, self.limits)
+                .line_semantic(meter, group, self.task_owner, self.limits)
                 .inspect_err(|_| meter.reject_owner())?;
             self.lines[ordinal] = Some(proof);
         }
@@ -455,18 +412,12 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         &mut self,
         ordinal: usize,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<blake3::Hash, RuntimeBodySemanticError> {
         let plan = self.context.plan;
         let code = &plan.callable_executables()[ordinal].code;
         match code {
             RuntimeCallableExecutableCode::PureHelper(helper) => {
-                self.complete(ExecutableTable::Helpers, helper.0, meter, task_reference)?;
+                self.complete(ExecutableTable::Helpers, helper.0, meter)?;
                 self.context.callable_executable_row_digest(
                     meter,
                     ordinal,
@@ -479,7 +430,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             }
             RuntimeCallableExecutableCode::FunctionSite(function) => {
                 let index = function.get().get() as usize - 1;
-                self.complete(ExecutableTable::Functions, index, meter, task_reference)?;
+                self.complete(ExecutableTable::Functions, index, meter)?;
                 self.context.callable_executable_row_digest(
                     meter,
                     ordinal,
@@ -502,7 +453,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     .get()
                     .get() as usize
                     - 1;
-                self.complete(ExecutableTable::Functions, index, meter, task_reference)?;
+                self.complete(ExecutableTable::Functions, index, meter)?;
                 self.context.callable_executable_row_digest(
                     meter,
                     ordinal,
@@ -529,7 +480,6 @@ pub(in crate::plan::body_semantic) fn fixture_prefix(
     let mut meter = TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
     let mut rows = RuntimeExecutableSemanticRows::new(plan, &owner, limits, &mut meter).unwrap();
     let mut encoder = TaskSemanticEncoder::new(b"test-executable-prefix.v1\0", &mut meter);
-    rows.write_tables(&mut encoder, &mut |_| panic!("fixture has no task edges"))
-        .unwrap();
+    rows.write_tables(&mut encoder).unwrap();
     encoder.finish().unwrap()
 }

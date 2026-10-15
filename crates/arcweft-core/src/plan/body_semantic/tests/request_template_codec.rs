@@ -6,7 +6,7 @@ use crate::plan::{
 };
 
 fn template(ty: RuntimePlanTypeId, endpoint: u32) -> RuntimeTaskRequestTemplate {
-    RuntimeTaskRequestTemplate::new(
+    RuntimeTaskRequestTemplate::at_operation(
         endpoint,
         Box::new([RuntimeRequestArgument {
             role: RuntimeRequestArgumentRole::Positional,
@@ -38,7 +38,6 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -49,7 +48,7 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
         encoded_bytes: 1000,
     };
     let definition = context
-        .host_request_template(
+        .static_request_template(
             &mut meter,
             endpoint,
             crate::plan::RuntimeTaskPlanSealLimits::default(),
@@ -107,8 +106,8 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
             crate::plan::RuntimeTaskPlanSealLimits::default()
         ),
         Err(RuntimeBodySemanticError::InvalidRequestEndpoint {
-            expected: 0,
-            actual: 1
+            expected: RuntimeTaskRequestSource::Operation(0),
+            actual: RuntimeTaskRequestSource::Operation(1)
         })
     ));
     assert_eq!(meter.totals(), (0, 0));
@@ -185,13 +184,12 @@ fn all_host_argument_transports_round_trip_and_reissue_only_the_original_q() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
     let endpoint = producer.endpoint(0).unwrap();
     let definition = context
-        .host_request_template(&mut meter, endpoint, RuntimeTaskPlanSealLimits::default())
+        .static_request_template(&mut meter, endpoint, RuntimeTaskPlanSealLimits::default())
         .unwrap();
     let limits = RuntimeTaskRequestCodecLimits {
         roles: 3,
@@ -203,7 +201,7 @@ fn all_host_argument_transports_round_trip_and_reissue_only_the_original_q() {
     assert_eq!(definition, decoded);
     assert_eq!(
         context
-            .host_request_template_digest(
+            .static_request_template_digest(
                 &mut meter,
                 endpoint,
                 RuntimeTaskPlanSealLimits::default()
@@ -240,7 +238,6 @@ fn decoded_request_cannot_forge_any_original_argument_or_field_component() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -292,7 +289,7 @@ fn decoded_request_cannot_forge_any_original_argument_or_field_component() {
             }
             _ => unreachable!(),
         }
-        let definition = RuntimeTaskRequestTemplate::new(
+        let definition = RuntimeTaskRequestTemplate::at_operation(
             endpoint.ordinal(),
             arguments.into_boxed_slice(),
             fields.into_boxed_slice(),
@@ -340,13 +337,12 @@ fn decoded_request_has_exact_shared_work_and_bytes_without_refreshing_allowance(
             &mut preparation,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
     let endpoint = producer.endpoint(0).unwrap();
     let definition = context
-        .host_request_template(
+        .static_request_template(
             &mut preparation,
             endpoint,
             RuntimeTaskPlanSealLimits::default(),

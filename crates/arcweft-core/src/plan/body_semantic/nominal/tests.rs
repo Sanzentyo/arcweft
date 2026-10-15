@@ -100,7 +100,7 @@ fn record_inventory(shape: Shape, types: &[bool], wire: Option<&str>) -> Runtime
         )
         .unwrap();
     let inventory = builder
-        .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
         .unwrap();
     inventory.verify().unwrap();
     inventory
@@ -169,7 +169,7 @@ fn variant_inventory(payloads: &[Option<bool>]) -> RuntimePlanInventory {
         )
         .unwrap();
     let inventory = builder
-        .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
         .unwrap();
     inventory.verify().unwrap();
     inventory
@@ -479,7 +479,7 @@ fn nominal_occurrence_codec_children_are_admitted_by_common_count_preflight() {
     let domain = inventory.nominal_record_domains().domains().next().unwrap();
     assert!(domain.data_codec().is_some());
     let owner = RuntimePlanBuilder::new().task_coordinate_owner(0);
-    let image = super::super::task_image::UnsealedRuntimePlanImage::new(
+    let image = super::super::task_image::UnsealedRuntimePlanImage::new_for_test(
         inventory,
         owner,
         Box::new([]),

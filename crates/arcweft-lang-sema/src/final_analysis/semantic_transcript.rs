@@ -14,9 +14,8 @@ use super::{
     match_coverage::{
         CheckedCoverageWitness, CheckedGuardClass, CheckedMatchBudget, CheckedMatchBuildError,
         CheckedMatchCoverage, CheckedMatchLimitKind, CheckedSequencePartitionWitness,
-        CheckedUnreachableReason, CheckedVariantCoverageWitness,
-        CheckedVariantRecordCoverageWitnessField, CoverageArmInput, MatchCoverageAnalyzer,
-        StableMatchArmCoordinate,
+        CheckedVariantCoverageWitness, CheckedVariantRecordCoverageWitnessField, CoverageArmInput,
+        MatchCoverageAnalyzer, StableMatchArmCoordinate,
     },
     transcript_writer::{TranscriptByteCounter, TranscriptHasher, TranscriptWriteError},
 };
@@ -500,105 +499,52 @@ impl CheckedBodySemanticDigest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatchBinding {
-    coordinate: StableCheckedValueCoordinate,
-    ty: SemanticTypeDigest,
-}
+pub type CheckedMatchBinding =
+    arcweft_core::pattern::MatchSourceBinding<StableCheckedValueCoordinate, SemanticTypeDigest>;
 
-impl CheckedMatchBinding {
-    pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
-        &self.coordinate
+pub type CheckedGuardSemantic =
+    arcweft_core::pattern::MatchSourceGuard<CheckedExpressionSemanticDigest>;
+pub type CheckedMatchArmResult = arcweft_core::pattern::MatchSourceArmResult<
+    CheckedExpressionSemanticDigest,
+    CheckedBodySemanticDigest,
+>;
+pub type CheckedMatchArm = arcweft_core::pattern::MatchSourceArm<
+    StableMatchArmCoordinate,
+    CheckedPatternSemanticDigest,
+    CheckedGuardSemantic,
+    CheckedMatchArmResult,
+    CheckedMatchBinding,
+>;
+pub type CheckedMatchDefinition = arcweft_core::pattern::MatchSourceDefinition<
+    CheckedSemanticPath,
+    CheckedExpressionSemanticDigest,
+    SemanticTypeDigest,
+    CheckedMatchArm,
+    CheckedMatchCoverage,
+>;
+
+impl AsRef<[u8; 32]> for CheckedExpressionSemanticDigest {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
     }
-
-    pub const fn ty(&self) -> SemanticTypeDigest {
-        self.ty
-    }
 }
-
-/// The checked meaning of an authored Match guard.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CheckedGuardSemantic {
-    Absent,
-    ConstantTrue(CheckedExpressionSemanticDigest),
-    ConstantFalse(CheckedExpressionSemanticDigest),
-    Dynamic(CheckedExpressionSemanticDigest),
-}
-
-impl CheckedGuardSemantic {
-    const fn expression(self) -> Option<CheckedExpressionSemanticDigest> {
-        match self {
-            Self::Absent => None,
-            Self::ConstantTrue(digest) | Self::ConstantFalse(digest) | Self::Dynamic(digest) => {
-                Some(digest)
-            }
-        }
-    }
-
-    const fn class(self) -> CheckedGuardClass {
-        match self {
-            Self::Absent => CheckedGuardClass::Absent,
-            Self::ConstantTrue(_) => CheckedGuardClass::ConstantTrue,
-            Self::ConstantFalse(_) => CheckedGuardClass::ConstantFalse,
-            Self::Dynamic(_) => CheckedGuardClass::Dynamic,
-        }
+impl AsRef<[u8; 32]> for CheckedBodySemanticDigest {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
     }
 }
 
-/// The complete result region of an arm, retaining its expression/body role.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CheckedMatchArmResult {
-    Expression(CheckedExpressionSemanticDigest),
-    Body(CheckedBodySemanticDigest),
-}
-
-impl CheckedMatchArmResult {
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        match self {
-            Self::Expression(value) => value.as_bytes(),
-            Self::Body(value) => value.as_bytes(),
-        }
-    }
-    const fn tag(self) -> u8 {
-        match self {
-            Self::Expression(_) => 0,
-            Self::Body(_) => 1,
-        }
+impl AsRef<[u8; 32]> for CheckedPatternSemanticDigest {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
     }
 }
 
-/// One source-ordered checked Match arm.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatchArm {
-    coordinate: StableMatchArmCoordinate,
-    pattern: CheckedPatternSemanticDigest,
-    guard: CheckedGuardSemantic,
-    result: CheckedMatchArmResult,
-    bindings: Box<[CheckedMatchBinding]>,
-}
-
-impl CheckedMatchArm {
-    pub const fn coordinate(&self) -> &StableMatchArmCoordinate {
-        &self.coordinate
-    }
-
-    pub const fn pattern(&self) -> CheckedPatternSemanticDigest {
-        self.pattern
-    }
-
-    pub const fn guard(&self) -> CheckedGuardSemantic {
-        self.guard
-    }
-
-    pub const fn result(&self) -> CheckedMatchArmResult {
-        self.result
-    }
-
-    pub fn bindings(&self) -> &[CheckedMatchBinding] {
-        &self.bindings
+impl AsRef<[u8; 32]> for SemanticTypeDigest {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
     }
 }
-
 /// Version-one digest and local checked byte length of a complete Match transcript.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MatchSemanticTranscript {
@@ -627,21 +573,20 @@ impl MatchSemanticTranscript {
 #[derive(Clone, Debug)]
 pub struct CheckedMatch {
     lookup: CheckedMatchRef,
-    path: CheckedSemanticPath,
-    scrutinee: CheckedExpressionSemanticDigest,
-    scrutinee_type: SemanticTypeDigest,
-    arms: Box<[CheckedMatchArm]>,
+    definition: CheckedMatchDefinition,
     transcript: MatchSemanticTranscript,
-    coverage: CheckedMatchCoverage,
 }
 
 impl CheckedMatch {
+    pub const fn source_definition(&self) -> &CheckedMatchDefinition {
+        &self.definition
+    }
     pub const fn path(&self) -> &CheckedSemanticPath {
-        &self.path
+        self.definition.coordinate()
     }
 
     pub const fn root(&self) -> AcceptedSemanticRoot {
-        self.path.root()
+        self.definition.coordinate().root()
     }
 
     pub const fn callable_owner(&self) -> Option<AcceptedDeclarationSemanticId> {
@@ -652,11 +597,11 @@ impl CheckedMatch {
     }
 
     pub const fn scrutinee(&self) -> CheckedExpressionSemanticDigest {
-        self.scrutinee
+        self.definition.scrutinee()
     }
 
     pub const fn scrutinee_type(&self) -> SemanticTypeDigest {
-        self.scrutinee_type
+        self.definition.scrutinee_type()
     }
 
     pub const fn transcript(&self) -> &MatchSemanticTranscript {
@@ -667,10 +612,10 @@ impl CheckedMatch {
         self.transcript.digest()
     }
     pub fn arms(&self) -> &[CheckedMatchArm] {
-        &self.arms
+        self.definition.arms()
     }
     pub const fn coverage(&self) -> &CheckedMatchCoverage {
-        &self.coverage
+        self.definition.coverage()
     }
 }
 
@@ -705,7 +650,8 @@ pub(super) fn build_checked_match_transaction(
         }
     };
     product
-        .coverage
+        .definition
+        .coverage_mut()
         .finish_transaction_work(builder.budget.work());
     Ok(product)
 }
@@ -1079,20 +1025,20 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                     CheckedMatchArmResult::Body(digest)
                 }
             };
-            arms.push(CheckedMatchArm {
-                coordinate: arm_coordinate.clone(),
+            arms.push(CheckedMatchArm::new(
+                arm_coordinate.clone(),
                 pattern,
                 guard,
                 result,
-                bindings: bindings.into_boxed_slice(),
-            });
+                bindings.into_boxed_slice(),
+            ));
             coverage_arms.push(CoverageArmInput {
                 coordinate: arm_coordinate,
                 pattern: arm.pattern(),
                 guard: guard.class(),
             });
         }
-        let mut coverage = MatchCoverageAnalyzer::new(
+        let coverage = MatchCoverageAnalyzer::new(
             self.analysis,
             self.module,
             self.control,
@@ -1104,22 +1050,21 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
         if let Some(witness) = coverage.witness().cloned() {
             return Err(SemanticTranscriptError::NonExhaustive { witness });
         }
-        let transcript = match_digest(
-            &mut self.budget,
+        let mut definition = CheckedMatchDefinition::new(
+            match_path,
             scrutinee,
             scrutinee_type,
-            &arms,
-            &coverage,
-        )?;
-        coverage.finish_transaction_work(self.budget.work());
+            arms.into_boxed_slice(),
+            coverage,
+        );
+        let transcript = match_digest(&mut self.budget, &definition)?;
+        definition
+            .coverage_mut()
+            .finish_transaction_work(self.budget.work());
         Ok(CheckedMatch {
             lookup: CheckedMatchRef::new(self.module.snapshot_id(), owner),
-            path: match_path,
-            scrutinee,
-            scrutinee_type,
-            arms: arms.into_boxed_slice(),
+            definition,
             transcript,
-            coverage,
         })
     }
 
@@ -1249,12 +1194,10 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
         if let super::CheckedPatternResolution::Record(record) = checked.resolution() {
             for field in record.fields() {
                 if let Some(binding) = field.source().binding() {
-                    bindings.push(CheckedMatchBinding {
-                        coordinate: StableCheckedValueCoordinate::Binding(
-                            binding.coordinate().clone(),
-                        ),
-                        ty: field.field_type_digest(),
-                    });
+                    bindings.push(CheckedMatchBinding::new(
+                        StableCheckedValueCoordinate::Binding(binding.coordinate().clone()),
+                        field.field_type_digest(),
+                    ));
                 } else if let Some(child) = field.source().raw_pattern() {
                     let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
                     self.collect_pattern_bindings(child, &child_coordinate, bindings)?;
@@ -1269,10 +1212,10 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                     .ok_or(SemanticTranscriptError::MissingIdentity)?
                     .ty()
                     .semantic_identity_digest()?;
-                bindings.push(CheckedMatchBinding {
-                    coordinate: StableCheckedValueCoordinate::Binding(binding.coordinate().clone()),
+                bindings.push(CheckedMatchBinding::new(
+                    StableCheckedValueCoordinate::Binding(binding.coordinate().clone()),
                     ty,
-                });
+                ));
             }
             return Ok(());
         }
@@ -1289,7 +1232,9 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                 self.collect_pattern_bindings(*alternative, &child, &mut current)?;
                 let index = current
                     .iter()
-                    .map(|binding: &CheckedMatchBinding| (binding.coordinate.clone(), binding.ty))
+                    .map(|binding: &CheckedMatchBinding| {
+                        (binding.coordinate().clone(), binding.ty())
+                    })
                     .collect::<BTreeMap<_, _>>();
                 if index.len() != current.len() {
                     return Err(SemanticTranscriptError::MissingIdentity);
@@ -1315,12 +1260,10 @@ impl<'analysis, 'control> SemanticTranscriptGraph<'analysis, 'control> {
                         .ok_or(SemanticTranscriptError::MissingIdentity)?
                         .ty()
                         .semantic_identity_digest()?;
-                    bindings.push(CheckedMatchBinding {
-                        coordinate: StableCheckedValueCoordinate::Binding(
-                            self.coordinates.binding(local)?,
-                        ),
+                    bindings.push(CheckedMatchBinding::new(
+                        StableCheckedValueCoordinate::Binding(self.coordinates.binding(local)?),
                         ty,
-                    });
+                    ));
                 }
                 HirPatternChild::Pattern(child) => {
                     let child_coordinate =
@@ -2268,52 +2211,12 @@ fn guard_class(
 
 fn match_digest(
     budget: &mut CheckedMatchBudget,
-    scrutinee: CheckedExpressionSemanticDigest,
-    scrutinee_type: SemanticTypeDigest,
-    arms: &[CheckedMatchArm],
-    coverage: &CheckedMatchCoverage,
+    definition: &CheckedMatchDefinition,
 ) -> Result<MatchSemanticTranscript, SemanticTranscriptError> {
     let mut hasher = TranscriptHasher::new(budget);
-    transcript_update!(hasher, b"arcweft.lang.checked-match-semantic.v1\0");
-    transcript_update!(hasher, scrutinee.as_bytes());
-    transcript_update!(hasher, scrutinee_type.as_bytes());
-    write_len(&mut hasher, arms.len())?;
-    for arm in arms {
-        transcript_update!(hasher, &arm.coordinate.ordinal().to_le_bytes());
-        transcript_update!(hasher, arm.pattern.as_bytes());
-        write_len(&mut hasher, arm.bindings.len())?;
-        for binding in &arm.bindings {
-            transcript_update!(hasher, &binding.coordinate.canonical_bytes()?);
-            transcript_update!(hasher, binding.ty.as_bytes());
-        }
-        match arm.guard.expression() {
-            Some(digest) => {
-                transcript_update!(hasher, &[1]);
-                transcript_update!(hasher, digest.as_bytes());
-                transcript_update!(hasher, &[guard_tag(arm.guard.class())]);
-            }
-            None => {
-                transcript_update!(hasher, &[0]);
-            }
-        }
-        transcript_update!(hasher, &[arm.result.tag()]);
-        transcript_update!(hasher, arm.result.as_bytes());
-    }
-    transcript_update!(hasher, &[u8::from(coverage.exhaustive())]);
-    transcript_update!(hasher, coverage.domain_digest().as_bytes());
-    write_len(&mut hasher, coverage.unreachable().len())?;
-    for row in coverage.unreachable() {
-        transcript_update!(hasher, &row.arm().owner().canonical_bytes()?);
-        transcript_update!(hasher, &row.arm().ordinal().to_le_bytes());
-        match row.alternative() {
-            Some(alternative) => {
-                transcript_update!(hasher, &[1]);
-                transcript_update!(hasher, &alternative.canonical_bytes()?);
-            }
-            None => transcript_update!(hasher, &[0]),
-        }
-        transcript_update!(hasher, &[unreachable_tag(row.reason())]);
-    }
+    let mut output = arcweft_core::pattern::MatchSourceWriter::new(&mut hasher);
+    let encoded = definition.write_semantic(&mut output);
+    output.finish(encoded)?;
     let byte_len = hasher.byte_len();
     Ok(MatchSemanticTranscript {
         version: MatchSemanticTranscript::VERSION,
@@ -2321,7 +2224,6 @@ fn match_digest(
         byte_len,
     })
 }
-
 fn child_pattern_coordinate(
     parent: &StablePatternCoordinate,
     owner: &HirPatternKind,
@@ -3725,24 +3627,6 @@ fn write_bytes(
     write_len(hasher, value.len())?;
     transcript_update!(hasher, value);
     Ok(())
-}
-
-fn guard_tag(value: CheckedGuardClass) -> u8 {
-    match value {
-        CheckedGuardClass::Absent => 0,
-        CheckedGuardClass::ConstantTrue => 1,
-        CheckedGuardClass::ConstantFalse => 2,
-        CheckedGuardClass::Dynamic => 3,
-    }
-}
-
-fn unreachable_tag(value: CheckedUnreachableReason) -> u8 {
-    match value {
-        CheckedUnreachableReason::CoveredByPriorUsefulArms => 0,
-        CheckedUnreachableReason::ConstantFalseGuard => 1,
-        CheckedUnreachableReason::CoveredByEarlierOrAlternative => 2,
-        CheckedUnreachableReason::UninhabitedDomain => 3,
-    }
 }
 
 #[cfg(test)]

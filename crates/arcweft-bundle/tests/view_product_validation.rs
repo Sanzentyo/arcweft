@@ -165,6 +165,7 @@ fn complete_product_enforces_exact_candidate_first_limits() {
         source_refs: 1,
         source_ranges: 1,
         validation_work: 2,
+        match_source_bytes: 0,
     };
     validate_with_limits(source_map.clone(), program.clone(), exact)
         .expect("exact source limits accept");

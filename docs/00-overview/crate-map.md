@@ -268,6 +268,9 @@ arcweft-launch
 - View は最初から細かい public crate family に分割せず、当面は
   `arcweft-view` が View registry、generational Entity、retained
   fragment、reactivity、style/layout integration、semantic View nodes を所有する。
+  checked / retained Match の共通定義 grammar と canonical transcript writer は
+  `arcweft-core::pattern` が所有し、View は Core の inert source data を保持する。
+  checked admission の発行権限は sema、product の source/revision 検証は bundle に残す。
   Raw input routing、LayerTree、HitTree、focus、modal、pointer capture は
   `arcweft-presentation` 側の Sans I/O data/model とする。
 - `arcweft-launch` は `arcw.toml` launch profiles を typed data と TOML codec

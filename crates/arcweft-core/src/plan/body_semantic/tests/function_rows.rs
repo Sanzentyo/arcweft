@@ -13,7 +13,6 @@ fn flow_row(
             &mut meter,
             function,
             owner,
-            &mut |_| panic!("no task edge"),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -85,7 +84,6 @@ fn executable_flow_row_rejects_wrong_function_foreign_inventory_and_missing_row(
             &mut meter,
             other,
             &owner,
-            &mut |_| panic!("no task edge"),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -133,7 +131,6 @@ fn executable_flow_row_obeys_exact_shared_limits_and_inherited_poison() {
                 &mut meter,
                 function,
                 &owner,
-                &mut |_| panic!("no task edge"),
                 RuntimeTaskPlanSealLimits::default(),
             )
             .and_then(|producer| producer.executable_flow_row_digest(&context, &mut meter, 0));
@@ -159,7 +156,6 @@ fn executable_flow_row_obeys_exact_shared_limits_and_inherited_poison() {
             &mut meter,
             function,
             &owner,
-            &mut |_| panic!("no task edge"),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -188,7 +184,6 @@ fn executable_function_rows_cover_all_roles_and_commit_body_without_arena_paddin
                     &mut meter,
                     *function,
                     owner,
-                    &mut |_| panic!("no task edge"),
                     RuntimeTaskPlanSealLimits::default(),
                 )
                 .unwrap()
@@ -205,20 +200,16 @@ fn executable_function_row_reuses_actual_body_and_endpoint_paths() {
     let (plan, owner, function) = producer_host_plan(true);
     let context = RuntimeBodySemanticContext::new(&plan);
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
-    let mut resolutions = 0;
     let producer = context
         .producer_function(
             &mut meter,
             function,
             &owner,
-            &mut |_| {
-                resolutions += 1;
-                Ok(owner.resolve(0).unwrap())
-            },
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
-    assert_eq!(resolutions, 1);
+    assert!(producer.endpoint(0).is_some());
+    assert!(producer.endpoint(1).is_none());
     let before = meter.totals();
     let first = producer
         .executable_row_digest(&context, &mut meter)
@@ -230,26 +221,26 @@ fn executable_function_row_reuses_actual_body_and_endpoint_paths() {
     let after = meter.totals();
     assert_eq!(first, second);
     assert_ne!(first.as_bytes(), producer.digest().as_bytes());
-    assert_eq!(resolutions, 1);
     assert_eq!(
         (middle.0 - before.0, middle.1 - before.1),
         (after.0 - middle.0, after.1 - middle.1)
     );
     assert!(middle.0 > before.0 && middle.1 > before.1);
+    assert!(middle.0 - before.0 < before.0);
+    assert!(middle.1 - before.1 < before.1);
 }
 
 #[test]
 fn executable_function_row_commits_endpoint_branch_and_preflights_role_limit() {
     let first = producer_host_plan(true);
     let second = producer_host_plan(false);
-    let hash = |(plan, owner, function): &(RuntimePlan, _, _)| {
+    let hash = |(plan, owner, function): &(RuntimePlanInventory, _, _)| {
         let mut meter = TaskSemanticMeter::new(10_000, 100_000);
         RuntimeBodySemanticContext::new(plan)
             .function_row_digest(
                 &mut meter,
                 *function,
                 owner,
-                &mut |_| Ok(owner.resolve(0).unwrap()),
                 RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -261,7 +252,6 @@ fn executable_function_row_commits_endpoint_branch_and_preflights_role_limit() {
             &mut meter,
             first.2,
             &first.1,
-            &mut |_| panic!("quota precedes resolver"),
             RuntimeTaskPlanSealLimits {
                 max_function_roles: 0,
                 ..Default::default()
@@ -288,7 +278,6 @@ fn producer_and_executable_row_share_exact_pass_work_and_byte_limits() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             RuntimeTaskPlanSealLimits::default(),
         );
         (result, meter.totals())
@@ -319,7 +308,6 @@ fn executable_function_row_rejects_foreign_inventory_and_inherited_poison() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();

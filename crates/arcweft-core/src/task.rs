@@ -39,6 +39,7 @@ impl GenerationId {
 }
 
 mod producer;
+pub(crate) use producer::ExpectedTaskPlanKey;
 pub use producer::*;
 pub(crate) mod semantic;
 
@@ -52,6 +53,7 @@ pub use identity::{
 mod need_handle;
 mod specification;
 pub use need_handle::{RuntimeNeedHandle, RuntimeNeedHandleError, RuntimeNeedHandleSaveSnapshot};
+pub(crate) use specification::{NeedProducerAssertionError, NeedProducerAssertionField};
 pub use specification::{NeedProducerInstance, TaskHandle, TaskSpec};
 mod journal;
 pub use journal::{TaskAdmissionJournal, TaskSubmission};
@@ -64,6 +66,7 @@ pub use failure::{
     BoundedRuntimeDiagnostic, RuntimeNeedOutcome, RuntimeTaskFailure, RuntimeTaskFailureKind,
 };
 mod template;
+pub use semantic::TaskSemanticEncodingError;
 pub use template::{HostCallProducerDefinition, NeedProducerTemplate};
 
 #[cfg(test)]
@@ -804,10 +807,10 @@ impl RuntimeRequestRoleIdentity {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeHostArgumentTemplate {
-    Positional(RuntimeRequestRoleIdentity, RuntimeExpr),
-    Named(RuntimeRequestRoleIdentity, NamedHostArg<RuntimeExpr>),
-    Spread(RuntimeRequestRoleIdentity, RuntimeExpr),
+pub enum RuntimeHostArgumentTemplate<Expression = RuntimeExpr> {
+    Positional(RuntimeRequestRoleIdentity, Expression),
+    Named(RuntimeRequestRoleIdentity, NamedHostArg<Expression>),
+    Spread(RuntimeRequestRoleIdentity, Expression),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1808,7 +1811,41 @@ impl HostTaskRequestTemplate {
     }
 }
 
-impl RuntimeHostArgumentTemplate {
+impl<Expression> RuntimeHostArgumentTemplate<Expression> {
+    /// Projects this original operand's role and path into definition data.
+    /// Only original-function admission can turn that data into a Q proof.
+    #[must_use]
+    pub fn request_definition<Ty>(
+        &self,
+        ordinal: u32,
+        ty: Ty,
+        source: crate::plan::RuntimeRequestValueSource,
+    ) -> crate::plan::RuntimeRequestArgument<Ty> {
+        use crate::plan::{
+            RuntimeRequestArgument, RuntimeRequestArgumentRole as Role,
+            RuntimeRequestPathStep as Path,
+        };
+        let mut path = vec![Path::Operand(ordinal)];
+        let (role, identity) = match self {
+            Self::Positional(..) => (Role::Positional, None),
+            Self::Named(..) => {
+                path.push(Path::NamedArgument(self.identity()));
+                (Role::Named, Some(self.identity()))
+            }
+            Self::Spread(..) => {
+                path.push(Path::SpreadArgument(ordinal));
+                (Role::Spread, None)
+            }
+        };
+        RuntimeRequestArgument {
+            role,
+            identity,
+            ty,
+            source,
+            path: path.into_boxed_slice(),
+        }
+    }
+
     pub const fn identity(&self) -> RuntimeRequestRoleIdentity {
         match self {
             Self::Positional(identity, _)
@@ -1823,14 +1860,14 @@ impl RuntimeHostArgumentTemplate {
             Self::Spread(..) => 2,
         }
     }
-    pub fn positional(identity: RuntimeRequestRoleIdentity, value: RuntimeExpr) -> Self {
+    pub fn positional(identity: RuntimeRequestRoleIdentity, value: Expression) -> Self {
         Self::Positional(identity, value)
     }
 
     pub fn named(
         identity: RuntimeRequestRoleIdentity,
         name: impl Into<String>,
-        value: RuntimeExpr,
+        value: Expression,
     ) -> Self {
         Self::Named(
             identity,
@@ -1841,7 +1878,7 @@ impl RuntimeHostArgumentTemplate {
         )
     }
 
-    pub fn spread(identity: RuntimeRequestRoleIdentity, value: RuntimeExpr) -> Self {
+    pub fn spread(identity: RuntimeRequestRoleIdentity, value: Expression) -> Self {
         Self::Spread(identity, value)
     }
 
@@ -1852,7 +1889,7 @@ impl RuntimeHostArgumentTemplate {
         }
     }
 
-    pub fn value(&self) -> &RuntimeExpr {
+    pub fn value(&self) -> &Expression {
         match self {
             Self::Positional(_, value) | Self::Spread(_, value) => value,
             Self::Named(_, argument) => &argument.value,

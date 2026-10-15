@@ -33,7 +33,7 @@ fn stream_child_preflight_preserves_then_before_else_and_poison() {
             meter: &mut meter,
         };
         assert!(
-            matches!(check.stream(&mut auxiliary, &ops),Err(RuntimeTaskPlanImageError::Children{table:13,ordinal:0,actual,maximum:2}) if actual==then_count)
+            matches!(check.stream(&mut auxiliary, &ops),Err(RuntimeTaskPlanSealError::Children{table:13,ordinal:0,actual,maximum:2}) if actual==then_count)
         );
         assert!(check.stream(&mut auxiliary, &[]).is_err());
         assert_eq!(meter.totals(), (0, 0));
@@ -116,7 +116,7 @@ fn expression_and_pattern_literal_children_precede_invalid_types_and_hash_limits
         };
         assert!(matches!(
             result,
-            Err(RuntimeTaskPlanImageError::Children {
+            Err(RuntimeTaskPlanSealError::Children {
                 table: 4,
                 ordinal: 7,
                 actual: 3,
@@ -165,7 +165,7 @@ fn callable_metadata_counts_reach_expression_row_and_keep_sticky_error() {
             &mut auxiliary,
             RuntimeExpressionNode::Expression(&expression)
         ),
-        Err(RuntimeTaskPlanImageError::Children {
+        Err(RuntimeTaskPlanSealError::Children {
             table: 10,
             ordinal: 2,
             actual: 3,
@@ -190,9 +190,9 @@ fn image_with_types(
     builder.admit_type_batch(seeds, []).unwrap();
     let owner = builder.task_coordinate_owner(0);
     let inventory = builder
-        .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
         .unwrap();
-    UnsealedRuntimePlanImage::new(inventory, owner, Box::new([]), None).unwrap()
+    UnsealedRuntimePlanImage::new_for_test(inventory, owner, Box::new([]), None).unwrap()
 }
 #[test]
 fn common_codec_width_limit_precedes_unbound_default_and_hash_budget() {
@@ -239,7 +239,7 @@ fn common_codec_width_limit_precedes_unbound_default_and_hash_budget() {
             },
             &mut meter
         ),
-        Err(RuntimeTaskPlanImageError::Children {
+        Err(RuntimeTaskPlanSealError::Children {
             table: 0,
             ordinal: 0,
             actual: 3,
@@ -285,7 +285,7 @@ fn lexical_scope_and_function_effect_lists_enter_ordered_type_preflight() {
                 },
                 &mut meter
             ),
-            Err(RuntimeTaskPlanImageError::Children {
+            Err(RuntimeTaskPlanSealError::Children {
                 table: 0,
                 ordinal: 0,
                 actual: 3,

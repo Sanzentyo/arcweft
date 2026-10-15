@@ -11,15 +11,40 @@ use super::{
 };
 use crate::entry::RuntimeValueDigest;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NeedProducerAssertionField {
+    Plan,
+    Contract,
+    PayloadType,
+    Arguments,
+    Key,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum NeedProducerAssertionError {
+    #[error("stored producer differs from its original source in {field:?}")]
+    Mismatch { field: NeedProducerAssertionField },
+    #[error(transparent)]
+    Identity(#[from] TaskIdentityError),
+}
+
 /// Issued producer instance, distinct from its complete derivation input.
 /// The private constructor commits every input through the existing sole key
 /// encoder, then retains exactly the accepted instance contract fields.
+/// Inert assertions retain the same fields and cannot use the live issuer.
+///
+/// ```compile_fail
+/// use arcweft_core::task::{NeedProducerInstance, NeedProducerSpec};
+/// fn untrusted(spec: &NeedProducerSpec<[u8; 32]>) {
+///     let _ = NeedProducerInstance::<[u8; 32]>::try_from(spec);
+/// }
+/// ```
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct NeedProducerInstance {
+pub struct NeedProducerInstance<Plan = TaskPlanSemanticDigest> {
     key: NeedProducerInstanceKey,
     contract: NeedProducerContractDigest,
-    plan: TaskPlanSemanticDigest,
+    plan: Plan,
     payload_type: RuntimeTypeSemanticDigest,
     arguments: RuntimeValueDigest,
 }
@@ -39,6 +64,17 @@ impl TryFrom<&NeedProducerSpec> for NeedProducerInstance {
 }
 
 impl NeedProducerInstance {
+    /// Called after the enclosing source/value batch is admitted. Only scalar
+    /// derivation metadata is copied; the issued key becomes an assertion.
+    pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {
+        NeedProducerInstance {
+            key: self.key,
+            contract: self.contract,
+            plan: super::ExpectedTaskPlanKey::new(*self.plan.as_bytes()),
+            payload_type: self.payload_type,
+            arguments: self.arguments,
+        }
+    }
     pub const fn key(&self) -> NeedProducerInstanceKey {
         self.key
     }
@@ -56,11 +92,52 @@ impl NeedProducerInstance {
     }
 }
 
+impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
+    /// The caller supplies the original producer binding, never a spec rebuilt
+    /// from assertion fields. No assertion bytes are converted into a key.
+    pub(crate) fn admit_original_spec(
+        self,
+        original: &NeedProducerSpec,
+    ) -> Result<NeedProducerInstance, NeedProducerAssertionError> {
+        let mismatch = if self.plan.bytes() != original.plan().as_bytes() {
+            Some(NeedProducerAssertionField::Plan)
+        } else if self.contract != original.contract() {
+            Some(NeedProducerAssertionField::Contract)
+        } else if self.payload_type != original.payload_type() {
+            Some(NeedProducerAssertionField::PayloadType)
+        } else if self.arguments != original.arguments() {
+            Some(NeedProducerAssertionField::Arguments)
+        } else {
+            None
+        };
+        if let Some(field) = mismatch {
+            return Err(NeedProducerAssertionError::Mismatch { field });
+        }
+        let canonical = NeedProducerInstance::try_from(original)?;
+        if self.key != canonical.key {
+            return Err(NeedProducerAssertionError::Mismatch {
+                field: NeedProducerAssertionField::Key,
+            });
+        }
+        Ok(canonical)
+    }
+}
+
+/// The plan role is distinct from payload storage. Decoded plan assertions
+/// cannot derive live correlations before original-program admission.
+///
+/// ```compile_fail
+/// use arcweft_core::task::{TaskLaunchOrdinal, TaskSpec};
+/// use arcweft_core::value::RuntimePayload;
+/// fn untrusted(spec: &TaskSpec<RuntimePayload, [u8; 32]>) {
+///     let _ = spec.correlation(TaskLaunchOrdinal::JOIN);
+/// }
+/// ```
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct TaskSpec<P = crate::value::RuntimePayload> {
+pub struct TaskSpec<P = crate::value::RuntimePayload, Plan = TaskPlanSemanticDigest> {
     pub generation: GenerationId,
-    pub producer: NeedProducerInstance,
+    pub producer: NeedProducerInstance<Plan>,
     pub class: TaskClass,
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,

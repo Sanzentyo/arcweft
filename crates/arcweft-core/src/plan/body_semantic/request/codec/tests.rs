@@ -74,7 +74,7 @@ fn fixture_template() -> RuntimeTaskRequestTemplate {
             path: path(),
         })
         .collect();
-    RuntimeTaskRequestTemplate::new(3, arguments, fields)
+    RuntimeTaskRequestTemplate::at_operation(3, arguments, fields)
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn complete_request_grammar_round_trips_and_preserves_source_order() {
     let bytes = template.encode(limits()).unwrap();
     let decoded = RuntimeTaskRequestTemplate::decode(&bytes, limits()).unwrap();
     assert_eq!(bytes, decoded.encode(limits()).unwrap());
-    assert_eq!(&bytes[..9], &[1, 3, 0, 0, 0, 8, 0, 0, 0]);
+    assert_eq!(&bytes[..10], &[1, 1, 3, 0, 0, 0, 8, 0, 0, 0]);
     let mut reversed = fixture_template();
     reversed.arguments.reverse();
     assert_ne!(bytes, reversed.encode(limits()).unwrap());
@@ -101,7 +101,7 @@ fn request_codec_rejects_all_truncations_and_noncanonical_tags_and_coordinates()
         RuntimeTaskRequestTemplate::decode(&changed, limits()),
         Err(RuntimeTaskRequestCodecError::Trailing)
     ));
-    for (index, value) in [(0, 2), (13, 255), (14, 2), (19, 255), (24, 255)] {
+    for (index, value) in [(0, 2), (1, 255), (14, 255), (15, 2), (20, 255), (25, 255)] {
         let mut changed = bytes.clone();
         changed[index] = value;
         assert!(
@@ -110,7 +110,7 @@ fn request_codec_rejects_all_truncations_and_noncanonical_tags_and_coordinates()
         );
     }
     let mut changed = bytes.clone();
-    changed[9] = 1;
+    changed[10] = 1;
     assert!(matches!(
         RuntimeTaskRequestTemplate::decode(&changed, limits()),
         Err(RuntimeTaskRequestCodecError::Ordinal {
@@ -119,7 +119,7 @@ fn request_codec_rejects_all_truncations_and_noncanonical_tags_and_coordinates()
         })
     ));
     let mut changed = bytes;
-    changed[15..19].fill(0);
+    changed[16..20].fill(0);
     assert!(matches!(
         RuntimeTaskRequestTemplate::decode(&changed, limits()),
         Err(RuntimeTaskRequestCodecError::ZeroType)
@@ -157,7 +157,7 @@ fn request_codec_limits_apply_before_allocation_and_accept_exact_boundaries() {
         ));
     }
     let mut changed = bytes;
-    changed[5..9].copy_from_slice(&u32::MAX.to_le_bytes());
+    changed[6..10].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(matches!(
         RuntimeTaskRequestTemplate::decode(&changed, exact),
         Err(RuntimeTaskRequestCodecError::Limit { kind: "roles", .. })

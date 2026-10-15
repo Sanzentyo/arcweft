@@ -38,23 +38,21 @@ impl RuntimeBodySemanticContext<'_> {
             });
         }
         if !endpoint.belongs_to(self.plan) {
-            return Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint);
+            return Err(RuntimeBodySemanticError::InvalidRequestSource);
         }
-        if template.endpoint != endpoint.ordinal() {
+        if template.source != endpoint.request_source() {
             return Err(RuntimeBodySemanticError::InvalidRequestEndpoint {
-                expected: endpoint.ordinal(),
-                actual: template.endpoint,
+                expected: endpoint.request_source(),
+                actual: template.source,
             });
         }
-        let arguments = endpoint
-            .host_arguments()
-            .ok_or(RuntimeBodySemanticError::InvalidHostRequestEndpoint)?;
         let mismatch = |component, ordinal| RuntimeBodySemanticError::RequestTemplateMismatch {
             endpoint: endpoint.ordinal(),
             component,
             ordinal,
         };
-        if arguments.len() != template.arguments.len() {
+        let expected = self.static_request_template(meter, endpoint, limits)?;
+        if expected.arguments.len() != template.arguments.len() {
             return Err(mismatch("argument count", template.arguments.len()));
         }
         if !template.fields.is_empty() {
@@ -68,7 +66,6 @@ impl RuntimeBodySemanticContext<'_> {
         }
         // The same owning extraction supplies role, type, source and complete
         // path meaning. No second resolver or evaluated payload is consulted.
-        let expected = self.host_request_template(meter, endpoint, limits)?;
         for (ordinal, (actual, expected)) in template
             .arguments
             .iter()

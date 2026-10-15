@@ -53,6 +53,8 @@ where
         admission: &mut RuntimeRetainedValueAdmission,
         _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.source_context
+            .admit_retained(admission, P::admission_origin())?;
         admission.validate_metadata(&self.observed_through)?;
         admission.validate_metadata_collection(self.observers.len())?;
         admission.validate_metadata_collection(self.queued.len())?;
@@ -115,8 +117,11 @@ where
     fn admit_suspended_values(
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
-        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        _binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.source_context
+            .admit_retained(admission, V::admission_origin())?;
+        let binding = self.source_context.instantiation();
         admission.validate_metadata(&(self.target.limit, self.next_index))?;
         admission.validate_metadata_collection(self.captured.len())?;
         admission.validate_metadata_collection(self.items.len())?;
@@ -124,7 +129,7 @@ where
         admission.validate_metadata_collection(self.results.len())?;
         admission.validate_metadata_collection(self.target.base.request.captures().len())?;
         admission.validate_metadata_collection(self.target.child.request.captures().len())?;
-        admission.validate_metadata(&(&self.target.base.outcome, &self.target.child.outcome))?;
+        admission.validate_metadata(&(self.target.base.outcome(), self.target.child.outcome()))?;
         if self.target.limit == 0
             || u32::try_from(self.items.len()).is_err()
             || self.next_index > self.items.len()
@@ -141,7 +146,7 @@ where
         }
         let base = RuntimeNeedView::from(&self.base);
         base.admit_retained(admission)?;
-        if base.outcome() != &self.target.base.outcome {
+        if base.outcome() != &self.target.base.outcome() {
             return Err(invalid(
                 "native AwaitMany base outcome differs from its target",
             ));
@@ -182,7 +187,7 @@ where
                 || !indices.insert(flight.index)
                 || !correlations.insert(handle.correlation())
                 || handle.correlation().generation != base.correlation().generation
-                || handle.outcome() != &self.target.child.outcome
+                || handle.outcome() != &self.target.child.outcome()
             {
                 return Err(invalid(
                     "native AwaitMany in-flight child custody is inconsistent",
@@ -200,7 +205,7 @@ where
             if let Some(value) = result {
                 admission.validate_owned_borrowed(value.borrowed_value())?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
-                    self.target.child.outcome.validate_admitted_value_view(
+                    self.target.child.outcome().validate_admitted_value_view(
                         value.borrowed_view(),
                         owner,
                         resources,

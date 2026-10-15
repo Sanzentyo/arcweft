@@ -76,8 +76,13 @@ fn borrowed_control_pass_counts_only_reachable_rows_and_recomputes_cached_proofs
     let (mut plan, ids) = fixture();
     let expected = plan.control_effect_contracts().digest(ids[1]).unwrap();
     // Integrity/cache data is not an input to the recomputing owner.
-    Arc::make_mut(&mut plan.inventory.control_effect_contracts.rows)[1].digest =
-        ControlEffectContractDigest::from_hasher_output(blake3::hash(b"untrusted cache"));
+    Arc::make_mut(
+        plan.inventory
+            .control_effect_contracts
+            .proofs
+            .as_mut()
+            .unwrap(),
+    )[1] = ControlEffectContractDigest::from_hasher_output(blake3::hash(b"untrusted cache"));
     let limits = RuntimeTaskPlanSealLimits {
         max_control_effect_rows: 1,
         ..RuntimeTaskPlanSealLimits::default()

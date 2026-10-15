@@ -7,13 +7,51 @@ use crate::plan::construction::task_coordinates::{
 use crate::plan::{self, FlowOp};
 use crate::task::semantic::TaskSemanticEncoder;
 
-/// Current producer leaves seen by the private visitor. The final sealer
-/// replaces their caller digest with its owner-issued build coordinate; this
-/// visitor never reads that completed digest as executable body metadata.
+/// Original producer leaves carry the aggregate's opaque source coordinate.
+/// The visitor validates its owner and encodes only its ordinal, independently
+/// of the completed task key.
+#[derive(Clone, Copy)]
 pub(crate) enum RuntimeBodyTaskSource<'a> {
     Producer(&'a crate::task::NeedProducerTemplate),
     Host(&'a plan::RuntimeHostCallTarget),
     Start(&'a plan::RuntimeNeedProducerStartTarget),
+}
+
+impl RuntimeBodyTaskSource<'_> {
+    pub(in crate::plan) fn control_identity(
+        &self,
+        meter: &mut crate::task::semantic::TaskSemanticMeter,
+    ) -> Result<crate::plan::RuntimeControlEffectIdentity, RuntimeBodySemanticError> {
+        let mut encoder = TaskSemanticEncoder::new(b"arcweft.task.source-control.v1\0", meter);
+        encoder.status()?;
+        match self {
+            Self::Host(target) => {
+                encoder.tag(0);
+                target.encode_control_metadata(&mut encoder);
+            }
+            Self::Producer(producer) => {
+                encoder.tag(1);
+                producer.encode_control_metadata(&mut encoder);
+            }
+            Self::Start(target) => {
+                encoder.tag(2);
+                target.plan().encode_control_metadata(&mut encoder);
+            }
+        }
+        Ok(
+            crate::plan::RuntimeControlEffectIdentity::from_checked_digest(
+                *encoder.finish()?.as_bytes(),
+            ),
+        )
+    }
+
+    pub(crate) fn coordinate(&self) -> &RuntimeTaskPlanBuildCoordinate {
+        match self {
+            Self::Producer(producer) => &producer.plan,
+            Self::Host(target) => &target.producer.plan,
+            Self::Start(target) => target.task_plan(),
+        }
+    }
 }
 
 impl RuntimeBodySemanticContext<'_> {
@@ -22,12 +60,6 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         ops: &[FlowOp],
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<(), RuntimeBodySemanticError> {
         use plan::flow_ops::RuntimeFlowTreeEvent as Event;
         plan::flow_ops::try_visit_ops_events(ops, &mut |event| {
@@ -44,7 +76,7 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder.enter_element();
                     encoder.tag(2);
                     encoder.count(ordinal);
-                    self.write_flow_metadata(encoder, op, task_owner, task_reference)?;
+                    self.write_flow_metadata(encoder, op, task_owner)?;
                     op.try_visit_value_roots(&mut |role, node| {
                         encoder.enter_element();
                         role.encode_semantic_path(encoder);
@@ -66,12 +98,6 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         op: &FlowOp,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.tag(op.semantic_tag());
         match op {
@@ -137,7 +163,6 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder,
                     RuntimeBodyTaskSource::Start(target),
                     task_owner,
-                    task_reference,
                 )?;
             }
             FlowOp::HostCall { binding, target } => {
@@ -146,7 +171,6 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder,
                     RuntimeBodyTaskSource::Host(target),
                     task_owner,
-                    task_reference,
                 )?;
                 self.write_type(encoder, target.result)?;
                 self.write_host_arguments_metadata(encoder, &target.args)?;
@@ -159,7 +183,6 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder,
                     RuntimeBodyTaskSource::Producer(producer),
                     task_owner,
-                    task_reference,
                 )?;
                 encoder.count(captures.len());
                 for capture in captures {
@@ -179,13 +202,11 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder,
                     RuntimeBodyTaskSource::Producer(&target.base),
                     task_owner,
-                    task_reference,
                 )?;
                 Self::write_task_reference(
                     encoder,
                     RuntimeBodyTaskSource::Producer(&target.child),
                     task_owner,
-                    task_reference,
                 )?;
                 encoder.count(pending.len());
                 for effect in pending {
@@ -277,23 +298,17 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         source: RuntimeBodyTaskSource<'_>,
         owner: &RuntimeTaskPlanCoordinateOwner,
-        resolver: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        )
-            -> Result<RuntimeTaskPlanBuildCoordinate, RuntimeBodySemanticError>,
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.status()?;
         encoder.enter_element();
         encoder.tag(0);
         encoder.status()?;
-        let ordinal = resolver(source).inspect_err(|_| {
-            encoder.reject_owner();
-        })?;
-        if !owner.contains(&ordinal) {
+        let coordinate = source.coordinate();
+        if !owner.contains(coordinate) {
             encoder.reject_owner();
             return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
         }
-        encoder.ordinal(ordinal.ordinal());
+        encoder.ordinal(coordinate.ordinal());
         encoder.status().map_err(Into::into)
     }
 

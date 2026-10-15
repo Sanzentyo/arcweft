@@ -2,7 +2,7 @@
 
 mod children;
 
-use super::{RuntimeTaskPlanImageError, UnsealedRuntimePlanImage};
+use super::{RuntimeTaskPlanSealError, UnsealedRuntimePlanImage};
 use crate::plan::RuntimeTaskPlanSealLimits;
 use crate::plan::body_semantic::executable_rows::RuntimeExecutableSemanticRows;
 use crate::plan::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
@@ -18,7 +18,7 @@ impl UnsealedRuntimePlanImage {
         meter: &mut TaskSemanticMeter,
     ) -> Result<
         crate::plan::control_effect::semantic::RuntimeControlEffectSemanticPass<'a>,
-        RuntimeTaskPlanImageError,
+        RuntimeTaskPlanSealError,
     > {
         use crate::plan::control_effect::semantic::RuntimeControlEffectPreflight;
         (|| {
@@ -27,7 +27,12 @@ impl UnsealedRuntimePlanImage {
             let control = RuntimeControlEffectPreflight::new(
                 self.inventory.control_effect_contracts(),
                 self.inventory.type_table(),
-                self.task_plans.iter().map(|row| row.control_effect),
+                self.task_plans.iter().map(|row| row.control_effect).chain(
+                    (0..self.inventory.control_effect_contracts().len()).map(|index| {
+                        crate::plan::RuntimeControlEffectContractId::for_index(index)
+                            .expect("the builder admitted version-one control ordinals")
+                    }),
+                ),
                 meter,
             )?;
             control.check_children(limits, meter)?;
@@ -41,7 +46,7 @@ impl UnsealedRuntimePlanImage {
             let views = meter.checked_count_sum(views, 0)?;
             if views > limits.max_view_bindings as usize {
                 meter.reject_owner();
-                return Err(RuntimeTaskPlanImageError::ViewRows {
+                return Err(RuntimeTaskPlanSealError::ViewRows {
                     actual: views,
                     maximum: limits.max_view_bindings,
                 });
@@ -65,7 +70,7 @@ impl UnsealedRuntimePlanImage {
     fn known_transcript_bytes(
         &self,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<u64, RuntimeTaskPlanImageError> {
+    ) -> Result<u64, RuntimeTaskPlanSealError> {
         use crate::task::semantic::TaskSemanticEncodingError::ArithmeticOverflow;
         let mut bytes = b"arcweft.runtime-plan.executable-semantic.v1\0".len() as u64 + 2 + 15 * 5;
         let mut add = |count: u64| {
@@ -73,7 +78,7 @@ impl UnsealedRuntimePlanImage {
                 meter.reject_owner();
                 ArithmeticOverflow
             })?;
-            Ok::<(), RuntimeTaskPlanImageError>(())
+            Ok::<(), RuntimeTaskPlanSealError>(())
         };
         for count in RuntimeExecutableSemanticRows::table_counts(&self.inventory) {
             let count = u64::try_from(count).map_err(|_| ArithmeticOverflow)?;
@@ -103,11 +108,11 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         let tasks = meter.checked_count_sum(self.task_plans.len(), 0)?;
         if tasks > limits.max_task_plan_rows as usize {
             meter.reject_owner();
-            return Err(RuntimeTaskPlanImageError::TaskRows {
+            return Err(RuntimeTaskPlanSealError::TaskRows {
                 actual: tasks,
                 maximum: limits.max_task_plan_rows,
             });
@@ -118,7 +123,7 @@ impl UnsealedRuntimePlanImage {
         }
         if actual > limits.max_executable_rows as usize {
             meter.reject_owner();
-            return Err(RuntimeTaskPlanImageError::Body(
+            return Err(RuntimeTaskPlanSealError::Body(
                 RuntimeBodySemanticError::ExecutableRows {
                     actual,
                     maximum: limits.max_executable_rows,
@@ -135,7 +140,7 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         for function in self.inventory.function_sites().iter() {
             let endpoints = RuntimeBodySemanticContext::endpoint_count(
                 function.body(),
@@ -146,7 +151,7 @@ impl UnsealedRuntimePlanImage {
             let actual = meter.checked_count_sum(function.inputs().len(), endpoints)?;
             if actual > limits.max_function_roles as usize {
                 meter.reject_owner();
-                return Err(RuntimeTaskPlanImageError::Body(
+                return Err(RuntimeTaskPlanSealError::Body(
                     RuntimeBodySemanticError::FunctionRoles {
                         actual,
                         maximum: limits.max_function_roles,
@@ -158,7 +163,7 @@ impl UnsealedRuntimePlanImage {
             let actual = task.request_template.role_count(meter)?;
             if actual > limits.max_request_roles as usize {
                 meter.reject_owner();
-                return Err(RuntimeTaskPlanImageError::Body(
+                return Err(RuntimeTaskPlanSealError::Body(
                     RuntimeBodySemanticError::RequestRoles {
                         actual,
                         maximum: limits.max_request_roles,

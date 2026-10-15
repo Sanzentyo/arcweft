@@ -39,19 +39,29 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
             )],
         )
         .unwrap();
-    let template = |family, payload: crate::pattern::RuntimeSemanticTypeId, identity| {
+    let base_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let child_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let template = |coordinate,
+                    family,
+                    payload: crate::pattern::RuntimeSemanticTypeId,
+                    identity| {
         RuntimeNeedProducerTemplateSeed {
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([identity; 32]),
             family,
             contract: NeedProducerContractDigest::from_bytes([11; 32]),
-            plan: TaskPlanSemanticDigest::from_bytes([12; 32]),
+            plan: coordinate,
             producer_site: NeedProducerSiteDigest::from_bytes([identity; 32]),
             payload_type: RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
             class: TaskClass::Cpu,
             priority: TaskPriority(0),
             cancel_scope: CancelScopeId("native-await-many".into()),
             policy: TaskPolicy::JoinSameKey,
-            outcome: TaskOutcomeContract::program(payload),
             request: RuntimeHostTaskRequestTemplateSeed {
                 capability: HostCapabilityId("fixture".into()),
                 operation: "run".into(),
@@ -90,8 +100,18 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
                         ),
                         item_binding: admitted.local_ids()[0].clone(),
                         limit: 2,
-                        base: template(NeedProducerFamily::AwaitManyBase, sequence, 21),
-                        child: template(NeedProducerFamily::AwaitManyChild, boolean, 22),
+                        base: template(
+                            base_coordinate.clone(),
+                            NeedProducerFamily::AwaitManyBase,
+                            sequence,
+                            21,
+                        ),
+                        child: template(
+                            child_coordinate.clone(),
+                            NeedProducerFamily::AwaitManyChild,
+                            boolean,
+                            22,
+                        ),
                     },
                     pending: vec![],
                 }]
@@ -99,7 +119,17 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
             },
         ))
         .unwrap();
-    (builder.finish().unwrap(), flow)
+    let plan = builder.finish().unwrap();
+    let (base, _) = plan.task_plan(&base_coordinate).unwrap();
+    let (child, _) = plan.task_plan(&child_coordinate).unwrap();
+    assert_eq!(
+        plan.control_effect_contracts()
+            .get(base.control_effect())
+            .unwrap()
+            .children(),
+        &[child.control_effect()]
+    );
+    (plan, flow)
 }
 
 fn suspended_engine() -> Engine {
@@ -132,7 +162,7 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
     let engine = suspended_engine();
     let owner = RuntimeProgramOwner::Plan(engine.program_plan());
     let image = engine.inert_rollback_image().unwrap();
-    for case in 0..8 {
+    for case in 0..9 {
         let mut corrupt = image.clone();
         let state = state(&mut corrupt);
         assert_eq!(state.next_index, 2);
@@ -148,6 +178,14 @@ fn native_fanout_preflight_rejects_corrupt_frontiers_indices_and_results() {
             5 => state.results[2] = Some(AwbcRuntimeValueSnapshot::Bool(true)),
             6 => state.items[0] = AwbcRuntimeValueSnapshot::Unit,
             7 => state.captured.push(AwbcRuntimeValueSnapshot::Bool(true)),
+            8 => {
+                state.source_context = crate::value::RuntimeScopeTypeContext::Function {
+                    site: crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+                        std::num::NonZeroU32::new(u32::MAX).unwrap(),
+                    ),
+                    instantiation: None,
+                };
+            }
             _ => unreachable!(),
         }
         assert!(

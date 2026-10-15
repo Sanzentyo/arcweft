@@ -1,5 +1,8 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+#[path = "view_product/match_source.rs"]
+mod match_source;
+
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
     resource_codec::{
@@ -5974,6 +5977,18 @@ fn view_match_catalog_keeps_stable_sites_exact_admissions_and_current_product_st
                 same.analysis_lease().hir_project().analysis_view().unwrap(),
                 same_row.program_id().clone(),
                 same_row.accepted_revision(),
+                resource
+                    .resource()
+                    .instructions
+                    .iter()
+                    .find_map(|instruction| {
+                        if let ViewProgramInstruction::Match { program, .. } = instruction {
+                            Some(&program.source)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap(),
             )
             .is_err()
     );

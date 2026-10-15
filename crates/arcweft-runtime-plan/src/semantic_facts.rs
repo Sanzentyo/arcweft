@@ -5215,12 +5215,31 @@ impl<'types> RuntimeExpressionTypeView<'types> {
     }
 }
 
+/// Original checked authority for an ordinary program or a retained View Match.
+/// A View Match keeps its one original catalog row, including its checked root.
+#[derive(Clone, Debug)]
+pub enum RuntimePureProgramAdmission {
+    Ordinary(Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>),
+    ViewMatch(Arc<arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>),
+}
+
+impl RuntimePureProgramAdmission {
+    pub fn checked_program(
+        &self,
+    ) -> &arcweft_lang_sema::final_analysis::CheckedDeterministicProgram {
+        match self {
+            Self::Ordinary(program) => program,
+            Self::ViewMatch(source) => source.checked_program(),
+        }
+    }
+}
+
 /// Runtime type projection of one admitted value or body root's complete ABI.
 /// Free bindings and full formal inputs retain the admission's stable order.
 #[derive(Clone, Debug)]
 pub struct RuntimePureProgramFact {
     program: RuntimePureProgramId,
-    admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
+    admission: RuntimePureProgramAdmission,
     input_types: Box<[RuntimeNormalizedType]>,
     result: RuntimeNormalizedType,
     function_type: RuntimeNormalizedType,
@@ -5233,7 +5252,7 @@ impl RuntimePureProgramFact {
     pub fn definition_identity(
         &self,
     ) -> arcweft_lang_sema::final_analysis::CheckedExecutionDefinitionIdentity {
-        self.admission.input_abi().definition_identity()
+        self.admission().input_abi().definition_identity()
     }
 
     /// Retains the accepted lexical body role even when lowering promotes an
@@ -5243,7 +5262,7 @@ impl RuntimePureProgramFact {
         use arcweft_lang_sema::final_analysis::{
             CheckedExecutionBodyOwner, CheckedExecutionSource,
         };
-        match self.admission.input_abi().source() {
+        match self.admission().input_abi().source() {
             CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::CallableValue(_))
             | CheckedExecutionSource::ExportMutation(CheckedExecutionBodyOwner::CallableValue(_)) => {
                 RuntimeFunctionSemanticRole::Closure
@@ -5263,13 +5282,13 @@ impl RuntimePureProgramFact {
 
     pub fn try_new(
         program: RuntimePureProgramId,
-        admission: Arc<arcweft_lang_sema::final_analysis::CheckedDeterministicProgram>,
+        admission: RuntimePureProgramAdmission,
         input_types: Box<[RuntimeNormalizedType]>,
         result: RuntimeNormalizedType,
         function_type: RuntimeNormalizedType,
     ) -> Result<Self, RuntimeSemanticFactsError> {
         use arcweft_lang_sema::final_analysis::CheckedExecutionInputRole;
-        let abi = admission.input_abi();
+        let abi = admission.checked_program().input_abi();
         if !abi
             .function_type()
             .and_then(|ty| ty.semantic_identity_digest().ok())
@@ -5347,15 +5366,24 @@ impl RuntimePureProgramFact {
     }
 
     pub fn admission(&self) -> &arcweft_lang_sema::final_analysis::CheckedDeterministicProgram {
-        &self.admission
+        self.admission.checked_program()
+    }
+
+    pub fn view_match_catalog(
+        &self,
+    ) -> Option<&Arc<arcweft_lang_sema::final_analysis::CompilerLocalViewMatchCatalogRow>> {
+        match &self.admission {
+            RuntimePureProgramAdmission::Ordinary(_) => None,
+            RuntimePureProgramAdmission::ViewMatch(source) => Some(source),
+        }
     }
 
     pub fn source(&self) -> &arcweft_lang_sema::final_analysis::CheckedExecutionSource {
-        self.admission.input_abi().source()
+        self.admission().input_abi().source()
     }
 
     pub fn reachability_owner(&self) -> HirRuntimeExecutableOwner {
-        self.admission.reachability_owner()
+        self.admission().reachability_owner()
     }
 
     pub const fn input_types(&self) -> &[RuntimeNormalizedType] {
@@ -5374,7 +5402,7 @@ impl RuntimePureProgramFact {
             &RuntimeNormalizedType,
         ),
     > {
-        self.admission
+        self.admission()
             .input_abi()
             .inputs()
             .iter()
@@ -5396,7 +5424,7 @@ impl RuntimePureProgramFact {
         ),
     > {
         let free_count = self.free_inputs().count();
-        self.admission
+        self.admission()
             .input_abi()
             .parameters()
             .iter()

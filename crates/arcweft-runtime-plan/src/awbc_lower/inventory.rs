@@ -1,5 +1,4 @@
 use crate::awbc_lower::audio::constant_audio_command;
-use crate::awbc_lower::pattern::intern_runtime_type;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAgentTypeShape, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcBlock,
@@ -9,8 +8,8 @@ use arcweft_core::awbc::schema::{
     AwbcDialogueValueRole, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
     AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
     AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionInputOwnership, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
+    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
     AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
     AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
     AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
@@ -38,8 +37,8 @@ use arcweft_core::runtime_id::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{
-    HostRestartPolicy, HostTaskRequestTemplate, NeedProducerRequestProjection,
-    NeedProducerTaskPlan, RuntimeHostArgumentTemplate, TaskClass, TaskOutcomeContract, TaskPolicy,
+    HostRestartPolicy, NeedProducerRequestProjection, NeedProducerTaskPlan,
+    RuntimeHostArgumentTemplate, TaskClass, TaskPolicy,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_text_model::DialogueContentCatalog;
@@ -1651,6 +1650,7 @@ impl AwbcInventory {
 
     pub fn intern_await_many_task(
         &mut self,
+        plan: &arcweft_core::plan::RuntimePlan,
         target: &arcweft_core::task::AwaitManyTarget,
         captures: Vec<AwbcRegisterId>,
         item_binding: AwbcRegisterId,
@@ -1662,6 +1662,8 @@ impl AwbcInventory {
             ));
             return None;
         }
+        let base_key = self.original_task_plan_key(plan, &target.base.plan)?;
+        let child_key = self.original_task_plan_key(plan, &target.child.plan)?;
         let inputs = target.captures().collect::<Vec<_>>();
         let mut child_inputs = inputs.clone();
         child_inputs.push(target.item_binding);
@@ -1672,7 +1674,7 @@ impl AwbcInventory {
                 family: target.child.family,
                 contract: target.child.contract,
                 site: target.child.producer_site,
-                plan: target.child.plan,
+                plan: child_key,
                 request_function: child_function,
             },
         )?;
@@ -1682,7 +1684,7 @@ impl AwbcInventory {
             AwbcTaskPlanKind::AwaitMany {
                 contract: target.base.contract,
                 site: target.base.producer_site,
-                plan: target.base.plan,
+                plan: base_key,
                 child,
                 captures,
                 request_function,
@@ -1725,18 +1727,15 @@ impl AwbcInventory {
             .collect::<Option<Vec<_>>>()?;
         let signature = self.intern_signature(params, None, AwbcEffectSetId(0));
         let arguments = self.intern_host_arguments(&template.request.args);
-        let payload_type = self.intern_task_outcome_payload(&template.outcome)?;
-        if self.program.runtime_types[payload_type.index()]
-            .semantic_identity()
-            .as_bytes()
-            != template.payload_type.as_bytes()
-        {
+        let Some(payload_type) = self.semantic_type(RuntimeSemanticTypeId::from_bytes(
+            *template.payload_type.as_bytes(),
+        )) else {
             self.diagnostic(AwbcLowerDiagnostic::error(
                 "task.payload",
-                "producer template outcome differs from its payload identity",
+                "producer payload type was not admitted by AWBC type preflight",
             ));
             return None;
-        }
+        };
         let row = AwbcTaskPlan {
             signature,
             request: AwbcTaskRequestProjection::CustomCapability {
@@ -1809,18 +1808,15 @@ impl AwbcInventory {
                 spread: false,
             })
             .collect();
-        let payload_type = match self.semantic_type(plan.payload_type()) {
-            Some(ty) => ty,
-            None => {
-                self.diagnostic(AwbcLowerDiagnostic::error(
-                    "need_producer.payload",
-                    format!(
-                        "selected Need payload type {:?} was not admitted by AWBC type preflight",
-                        plan.payload_type()
-                    ),
-                ));
-                return None;
-            }
+        let Some(payload_type) = self.semantic_type(plan.payload_type()) else {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "need_producer.payload",
+                format!(
+                    "selected Need payload type {:?} was not admitted by AWBC type preflight",
+                    plan.payload_type()
+                ),
+            ));
+            return None;
         };
         let request = match plan.request() {
             NeedProducerRequestProjection::AssetLoad {
@@ -1864,8 +1860,10 @@ impl AwbcInventory {
 
     pub(crate) fn intern_host_call(
         &mut self,
+        plan: &arcweft_core::plan::RuntimePlan,
         target: &RuntimeHostCallTarget,
     ) -> Option<(AwbcHostCallId, AwbcTypeId)> {
+        let key = self.original_task_plan_key(plan, &target.producer.plan)?;
         let Some(result_type) = self.plan_type(target.result) else {
             self.diagnostic(AwbcLowerDiagnostic::error(
                 "host_call.result",
@@ -1900,7 +1898,11 @@ impl AwbcInventory {
         let operation = self.intern_string(&target.operation);
         let arguments = self.intern_host_arguments(&target.args);
         let descriptor = AwbcHostCall {
-            producer: target.producer,
+            producer: arcweft_core::task::HostCallProducerDefinition {
+                contract: target.producer.contract,
+                plan: key,
+                site: target.producer.site,
+            },
             public_id,
             capability,
             operation,
@@ -1919,18 +1921,19 @@ impl AwbcInventory {
         Some((id, result_type))
     }
 
-    fn intern_task_outcome_payload(&mut self, outcome: &TaskOutcomeContract) -> Option<AwbcTypeId> {
-        match outcome {
-            TaskOutcomeContract::Standalone { payload } => Some(intern_runtime_type(self, payload)),
-            TaskOutcomeContract::Program { payload } => {
-                let Some(ty) = self.semantic_type(*payload) else {
-                    self.diagnostic(AwbcLowerDiagnostic::error(
-                        "task.payload",
-                        format!("program task payload type {payload:?} is absent"),
-                    ));
-                    return None;
-                };
-                Some(ty)
+    fn original_task_plan_key(
+        &mut self,
+        plan: &arcweft_core::plan::RuntimePlan,
+        coordinate: &arcweft_core::plan::RuntimeTaskPlanBuildCoordinate,
+    ) -> Option<arcweft_core::task::TaskPlanSemanticDigest> {
+        match plan.task_plan(coordinate) {
+            Some((_, key)) => Some(key),
+            None => {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "task_plan.original_source",
+                    "task coordinate does not belong to the original completed RuntimePlan",
+                ));
+                None
             }
         }
     }

@@ -9,10 +9,26 @@ use crate::value::{RuntimeTupleView, RuntimeValueView};
     Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
 )]
 #[serde(deny_unknown_fields)]
-pub struct HostCallProducerDefinition {
+pub struct HostCallProducerDefinition<Plan = TaskPlanSemanticDigest> {
     pub contract: NeedProducerContractDigest,
-    pub plan: TaskPlanSemanticDigest,
+    pub plan: Plan,
     pub site: NeedProducerSiteDigest,
+}
+
+impl HostCallProducerDefinition<crate::plan::RuntimeTaskPlanBuildCoordinate> {
+    pub(crate) fn sealed_definition(
+        &self,
+    ) -> Result<HostCallProducerDefinition, NeedProducerAdmissionError> {
+        let (_, plan) = self
+            .plan
+            .sealed_plan()
+            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?;
+        Ok(HostCallProducerDefinition {
+            contract: self.contract,
+            plan,
+            site: self.site,
+        })
+    }
 }
 
 impl HostCallProducerDefinition {
@@ -51,23 +67,63 @@ impl HostCallProducerDefinition {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct NeedProducerTemplate {
+pub struct NeedProducerTemplate<
+    Plan = crate::plan::RuntimeTaskPlanBuildCoordinate,
+    Request = HostTaskRequestTemplate,
+> {
     pub definition: crate::plan::RuntimeFunctionDefinitionIdentity,
     pub family: NeedProducerFamily,
     pub contract: NeedProducerContractDigest,
-    pub plan: TaskPlanSemanticDigest,
+    pub plan: Plan,
     pub producer_site: NeedProducerSiteDigest,
+    /// Sole payload declaration, resolved against the original program's types.
+    /// Every launch derives its Program outcome from this same identity.
     pub payload_type: RuntimeTypeSemanticDigest,
     pub class: TaskClass,
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
-    pub outcome: TaskOutcomeContract,
-    pub request: HostTaskRequestTemplate,
+    pub request: Request,
     pub debug_label: String,
 }
 
+impl<Plan, Request> NeedProducerTemplate<Plan, Request> {
+    #[must_use]
+    pub const fn outcome(&self) -> TaskOutcomeContract {
+        TaskOutcomeContract::Program {
+            payload: crate::pattern::RuntimeSemanticTypeId::from_bytes(
+                *self.payload_type.as_bytes(),
+            ),
+        }
+    }
+}
+
 impl NeedProducerTemplate {
+    pub(crate) fn encode_control_metadata(
+        &self,
+        encoder: &mut super::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.digest(self.definition.as_bytes());
+        encoder.tag(self.family.semantic_tag());
+        encoder.digest(self.contract.as_bytes());
+        encoder.digest(self.producer_site.as_bytes());
+        encoder.digest(self.payload_type.as_bytes());
+        encoder.tag(self.class.semantic_tag());
+        encoder.ordinal(self.priority.0.cast_unsigned());
+        encoder.string(&self.cancel_scope.0);
+        encoder.tag(self.policy.semantic_tag());
+        encoder.string(&self.request.capability.0);
+        encoder.string(&self.request.operation);
+        encoder.count(self.request.captures.len());
+        for capture in &self.request.captures {
+            if encoder.status().is_err() {
+                return;
+            }
+            encoder.enter_role();
+            encoder.ordinal(capture.get().get());
+        }
+    }
+
     pub fn instantiate(
         &self,
         generation: GenerationId,
@@ -85,13 +141,17 @@ impl NeedProducerTemplate {
         request: HostTaskRequest,
         max_encoded_bytes: usize,
     ) -> Result<TaskSpec, NeedProducerAdmissionError> {
+        let (_, plan) = self
+            .plan
+            .sealed_plan()
+            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?;
         let digest =
             crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
                 .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
         let input = NeedProducerSpec::new(
             self.family,
             self.contract,
-            self.plan,
+            plan,
             self.producer_site,
             self.payload_type,
             digest,
@@ -103,7 +163,7 @@ impl NeedProducerTemplate {
             priority: self.priority,
             cancel_scope: self.cancel_scope.clone(),
             policy: self.policy,
-            outcome: self.outcome.clone(),
+            outcome: self.outcome(),
             request,
             debug_label: self.debug_label.clone(),
         };

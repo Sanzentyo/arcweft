@@ -7,6 +7,29 @@ macro_rules! runtime_record {
 
 pub(crate) use runtime_record;
 
+pub(crate) fn host_task_control(
+    builder: &mut crate::plan::RuntimePlanBuilder,
+    output: crate::pattern::RuntimeSemanticTypeId,
+) -> crate::plan::RuntimeControlEffectContractSeedId {
+    use crate::plan::*;
+    builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: RuntimeTaskControlMode::MustSuspend,
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: None,
+                inputs: Box::new([]),
+                output: Some(output),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap()
+}
+
 /// A real reusable descriptor whose distinct identity comes from its argument.
 /// The fixture supplies a complete producer/spec rather than a caller-made ID.
 pub(crate) fn reusable_need(argument: &str) -> crate::task::RuntimeNeedHandle {

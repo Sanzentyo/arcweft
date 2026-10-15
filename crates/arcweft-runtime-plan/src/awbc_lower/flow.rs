@@ -1566,10 +1566,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .captures()
                     .map(|local| frame.local(local, self.local_type(local)))
                     .collect();
-                let Some(task) =
-                    self.inventory
-                        .intern_await_many_task(target, captures, item_binding)
-                else {
+                let Some(task) = self.inventory.intern_await_many_task(
+                    self.plan,
+                    target,
+                    captures,
+                    item_binding,
+                ) else {
                     return;
                 };
                 let binding = binding
@@ -1585,7 +1587,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 });
             }
             FlowOp::HostCall { binding, target } => {
-                let Some((call, result_type)) = self.inventory.intern_host_call(target) else {
+                let Some((call, result_type)) = self.inventory.intern_host_call(self.plan, target)
+                else {
                     return;
                 };
                 let args = target

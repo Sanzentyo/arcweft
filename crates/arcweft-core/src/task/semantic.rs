@@ -4,7 +4,7 @@
 //! transcripts borrow one meter; the first error poisons the entire seal.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum TaskSemanticEncodingError {
+pub enum TaskSemanticEncodingError {
     CountOverflow,
     StringLengthOverflow,
     ArithmeticOverflow,
@@ -47,6 +47,19 @@ impl TaskSemanticMeter {
         }
     }
 
+    /// A later owning boundary may tighten limits without resetting usage or
+    /// clearing the first error. It cannot grant a fresh encoding budget.
+    pub(crate) fn constrain(
+        &mut self,
+        max_work: u64,
+        max_bytes: u64,
+    ) -> Result<(), TaskSemanticEncodingError> {
+        self.max_work = self.max_work.min(max_work);
+        self.max_bytes = self.max_bytes.min(max_bytes);
+        self.charge_work(0)?;
+        self.preflight_bytes(0)
+    }
+
     /// Preflight count arithmetic shares the first-error state with encoding.
     pub(crate) fn checked_count_sum(
         &mut self,
@@ -61,6 +74,15 @@ impl TaskSemanticMeter {
         left.checked_add(right)
             .map(|count| count as usize)
             .ok_or_else(|| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))
+    }
+
+    pub(crate) fn checked_ordinal(
+        &mut self,
+        ordinal: usize,
+    ) -> Result<u32, TaskSemanticEncodingError> {
+        self.status()?;
+        u32::try_from(ordinal)
+            .map_err(|_| self.reject(TaskSemanticEncodingError::ArithmeticOverflow))
     }
 
     pub(crate) fn charge_work(&mut self, units: u64) -> Result<(), TaskSemanticEncodingError> {
@@ -101,6 +123,18 @@ impl TaskSemanticMeter {
         Ok(())
     }
 
+    /// A capability finalizer reports the actual BLAKE3 byte count, never a
+    /// caller-supplied cost. Opaque upper-layer bytes share this same meter;
+    /// each started 32-byte chunk is semantic work without projecting fields.
+    pub(crate) fn charge_authority_extension(
+        &mut self,
+        bytes: u64,
+    ) -> Result<(), TaskSemanticEncodingError> {
+        self.charge_work(bytes.div_ceil(32))?;
+        self.bytes = self.checked_byte_total(bytes)?;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) const fn totals(&self) -> (u64, u64) {
         (self.work, self.bytes)
@@ -113,6 +147,9 @@ pub(crate) struct TaskSemanticEncoder<'a> {
 }
 
 impl<'a> TaskSemanticEncoder<'a> {
+    pub(crate) fn encoded_bytes(&self) -> u64 {
+        self.hasher.count()
+    }
     pub(crate) fn new(domain: &'static [u8], meter: &'a mut TaskSemanticMeter) -> Self {
         let mut encoder = Self {
             hasher: blake3::Hasher::new(),
@@ -320,6 +357,25 @@ mod tests {
         );
         assert_eq!(
             meter.checked_count_sum(usize::MAX, 1),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+    }
+
+    #[test]
+    fn tightening_a_parent_meter_preserves_usage_and_first_failure() {
+        let mut meter = TaskSemanticMeter::new(10, 100);
+        meter.charge_work(5).unwrap();
+        assert_eq!(
+            meter.constrain(4, 100),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+        assert_eq!(meter.totals(), (5, 0));
+        assert_eq!(
+            meter.constrain(100, 1_000),
+            Err(TaskSemanticEncodingError::SemanticWork)
+        );
+        assert_eq!(
+            meter.charge_work(0),
             Err(TaskSemanticEncodingError::SemanticWork)
         );
     }

@@ -12,6 +12,49 @@ const REJECTED: &str =
     "fn identity(value: i64) -> i64 { value }\nfn caller() { identity(1i64, 2i64); }\n";
 
 #[test]
+fn view_runtime_facts_keep_the_exact_original_match_catalog_and_checked_root() {
+    let source = format!(
+        "{VALID}\n{}",
+        r#"
+        view Main(enabled: bool = true) {
+            match enabled { true => Text("yes"), false => Text("no") };
+            match enabled { true => Text("again"), false => Text("other") };
+        }
+    "#
+    );
+    let (project, context) = removed_role_project(&source);
+    let (mut session, parsed) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed, &context).unwrap();
+    let view = compiled.view_product();
+    let mut matches = 0;
+    for (program, fact) in compiled.runtime_facts().pure_programs() {
+        let Some(original) = fact.view_match_catalog() else {
+            continue;
+        };
+        matches += 1;
+        let retained = view
+            .match_catalog_rows()
+            .find(|row| row.site() == original.site())
+            .unwrap();
+        assert!(std::ptr::eq(original.as_ref(), retained));
+        let executable = view
+            .runtime_programs()
+            .iter()
+            .find(|row| row.id() == *program)
+            .unwrap();
+        assert!(Arc::ptr_eq(
+            original.checked_program(),
+            executable.admission()
+        ));
+        assert!(std::ptr::eq(
+            fact.admission(),
+            original.checked_program().as_ref()
+        ));
+    }
+    assert_eq!(matches, 2);
+}
+
+#[test]
 fn semantic_lease_is_the_compiled_projects_exact_ancestor() {
     let (project, context) = removed_role_project(VALID);
     let (mut session, parsed) = compilation_state(&project);

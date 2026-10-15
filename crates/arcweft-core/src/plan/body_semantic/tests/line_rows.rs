@@ -17,7 +17,6 @@ fn row(
             &mut meter,
             group(),
             owner,
-            &mut |_| panic!("no task references"),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .and_then(|semantic| semantic.executable_row_digest(&context, &mut meter));
@@ -55,7 +54,6 @@ fn executable_line_row_reuses_its_proof_with_exact_shared_limits() {
             &mut meter,
             group(),
             &owner,
-            &mut |_| panic!("no task references"),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -93,7 +91,6 @@ fn executable_line_proof_rejects_a_foreign_inventory_and_preserves_first_error()
             &mut preparation,
             group(),
             &owner,
-            &mut |_| panic!("no task references"),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -130,7 +127,6 @@ fn line_proof_requires_the_actual_row_before_charging_transcript_bytes() {
             &mut meter,
             missing,
             &owner,
-            &mut |_| panic!("no task references"),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         ),
         Err(RuntimeBodySemanticError::MissingRow {

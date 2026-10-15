@@ -60,6 +60,52 @@ semantic_digest!(TaskPlanSemanticDigest);
 semantic_digest!(RuntimeTypeSemanticDigest);
 semantic_digest!(NeedTimeoutContractDigest);
 
+/// Untrusted codec assertion. Even all-zero bytes are ordinary input data;
+/// only an already sealed original table can supply the corresponding key.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct ExpectedTaskPlanKey([u8; 32]);
+
+impl ExpectedTaskPlanKey {
+    pub(crate) const fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+    pub(crate) const fn bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<[u8; 32]> for TaskPlanSemanticDigest {
+    fn borrow(&self) -> &[u8; 32] {
+        self.as_bytes()
+    }
+}
+
+impl TaskPlanSemanticDigest {
+    /// The version-one domain shared by Core and its upper View authority.
+    pub const DOMAIN: &'static [u8] = b"arcweft.task.plan-semantic.v1\0";
+
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The capability finalizer consumes the completed hash state as part of its one-use contract"
+    )]
+    pub(crate) fn from_view_authority_transcript(
+        request: ViewTaskPlanDigestRequest<'_>,
+        hasher: blake3::Hasher,
+    ) -> Self {
+        let bytes = hasher.count();
+        let key = Self(*hasher.finalize().as_bytes());
+        request.record_completion(key, bytes);
+        key
+    }
+    /// Only the semantic owner turns a completed, checked transcript into a key.
+    pub(crate) fn from_semantic_transcript(
+        transcript: super::semantic::TaskSemanticEncoder<'_>,
+    ) -> Result<Self, super::semantic::TaskSemanticEncodingError> {
+        Ok(Self(*transcript.finish()?.as_bytes()))
+    }
+}
+
 /// Typed operation selected by one callable contract that produces a
 /// `Need<Result<_, _>>` for a host asset.
 ///
@@ -138,11 +184,20 @@ impl NeedProducerFamily {
 /// Complete typed producer contract used as the sole source of its instance
 /// identity.  The individual semantic fields are intentionally not exposed as
 /// an alternate task/Need identity authority.
+/// Live producers and inert plan assertions share this field grammar. Only
+/// the issued-key specialization can derive a producer instance identity.
+///
+/// ```compile_fail
+/// use arcweft_core::task::NeedProducerSpec;
+/// fn untrusted(spec: &NeedProducerSpec<[u8; 32]>) {
+///     let _ = spec.instance_key();
+/// }
+/// ```
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NeedProducerSpec {
+pub struct NeedProducerSpec<Plan = TaskPlanSemanticDigest> {
     family: NeedProducerFamily,
     contract: NeedProducerContractDigest,
-    plan: TaskPlanSemanticDigest,
+    plan: Plan,
     producer_site: NeedProducerSiteDigest,
     payload_type: RuntimeTypeSemanticDigest,
     arguments: RuntimeValueDigest,
@@ -681,16 +736,26 @@ impl NeedProducerTaskPlan {
     /// Recomputes the selected producer plan transcript from its owning fields.
     /// This does not accept or read a stored self-digest. Count conversion remains
     /// checked at the encoder boundary even for constructor-validated plans.
-    pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
-        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
-        let mut meter = super::semantic::TaskSemanticMeter::new(
-            limits.max_semantic_work,
-            limits.max_transcript_bytes,
-        );
-        let mut encoder = super::semantic::TaskSemanticEncoder::new(
-            b"arcweft.need.producer-task-plan.v1\0",
-            &mut meter,
-        );
+    /// Inert endpoint metadata for the original source's control contract.
+    /// This excludes task keys and issues no completed semantic proof.
+    pub(crate) fn encode_control_metadata(
+        &self,
+        encoder: &mut super::semantic::TaskSemanticEncoder<'_>,
+    ) {
+        encoder.digest(self.contract.as_bytes());
+        encoder.digest(self.site.as_bytes());
+        encoder.digest(self.payload_type.as_bytes());
+        encoder.tag(self.class.semantic_tag());
+        encoder.ordinal(self.priority.0.cast_unsigned());
+        encoder.string(&self.cancel_scope.0);
+        encoder.tag(self.policy.semantic_tag());
+        self.encode_request_schema(encoder);
+        if let NeedProducerRequestProjection::ExternCapability { contract, .. } = &self.request {
+            encoder.digest(contract.as_bytes());
+        }
+    }
+
+    fn encode_request_schema(&self, encoder: &mut super::semantic::TaskSemanticEncoder<'_>) {
         match &self.request {
             NeedProducerRequestProjection::AssetLoad {
                 kind,
@@ -714,6 +779,9 @@ impl NeedProducerTaskPlan {
                 encoder.string(operation);
                 encoder.count(argument_names.len());
                 for name in argument_names.iter() {
+                    if encoder.status().is_err() {
+                        return;
+                    }
                     encoder.enter_element();
                     encoder.enter_role();
                     match name {
@@ -730,6 +798,9 @@ impl NeedProducerTaskPlan {
         }
         encoder.count(self.argument_types.len());
         for argument_type in &self.argument_types {
+            if encoder.status().is_err() {
+                return;
+            }
             encoder.enter_element();
             encoder.enter_role();
             encoder.digest(argument_type.as_bytes());
@@ -738,6 +809,19 @@ impl NeedProducerTaskPlan {
             HostRestartPolicy::MustBeQuiescent => 0,
             HostRestartPolicy::Restartable => 1,
         });
+    }
+
+    pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = super::semantic::TaskSemanticMeter::new(
+            limits.max_semantic_work,
+            limits.max_transcript_bytes,
+        );
+        let mut encoder = super::semantic::TaskSemanticEncoder::new(
+            b"arcweft.need.producer-task-plan.v1\0",
+            &mut meter,
+        );
+        self.encode_request_schema(&mut encoder);
         let digest = encoder.finish().map_err(|error| match error {
             super::semantic::TaskSemanticEncodingError::OwnerRejected => {
                 NeedProducerPlanError::OwnerRejected
@@ -763,7 +847,9 @@ impl NeedProducerTaskPlan {
 }
 
 impl TaskClass {
-    pub(crate) const fn semantic_tag(&self) -> u8 {
+    /// Canonical version-one class tag in the shared task-plan transcript.
+    #[must_use]
+    pub const fn semantic_tag(&self) -> u8 {
         match self {
             Self::LocalView => 0,
             Self::Io => 1,
@@ -1185,6 +1271,8 @@ struct NeedProducerLaunchKey {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum NeedProducerAdmissionError {
+    #[error("the original task-plan namespace has not completed sealing")]
+    UnsealedTaskPlan,
     #[error(transparent)]
     TaskEnsure(#[from] TaskEnsureError),
     #[error("producer instance identity could not be issued: {0}")]
@@ -2996,40 +3084,105 @@ fn launch_matches_plan(
         && launch.task_spec == expected_task_spec
 }
 
-/// Sans-I/O protocol implemented by the accepted upper View product owner.
-/// Core validates only the typed request projection and never copies View
-/// catalog rows or depends on `arcweft-view`.
-pub trait ViewTaskPlanAuthority {
-    fn validate_view_task_plan(
-        &self,
-        request: ViewTaskPlanValidation<'_>,
-    ) -> Result<(), ViewTaskPlanValidationError>;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ViewTaskPlanValidation<'a> {
-    pub generation: GenerationId,
-    pub producer: &'a NeedProducerSpec,
-    pub outcome: &'a TaskOutcomeContract,
-    pub request: &'a HostTaskRequest,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum ViewTaskPlanValidationError {
-    #[error("View task-plan validation rejected the generation")]
-    GenerationMismatch,
-    #[error("View task-plan validation rejected the producer")]
-    ProducerMismatch,
-    #[error("View task-plan validation rejected the outcome")]
-    OutcomeMismatch,
-    #[error("View task-plan validation rejected the Host request")]
-    RequestMismatch,
-}
+pub use crate::plan::{
+    RuntimeTaskPlanDigestBase, ViewTaskPlanAuthority, ViewTaskPlanDigestRequest,
+    ViewTaskPlanValidationError,
+};
 
 #[cfg(test)]
 mod identity_tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn source_control_metadata_binds_the_actual_launch_definition() {
+        fn identity(plan: &NeedProducerTaskPlan) -> blake3::Hash {
+            let mut meter = super::super::semantic::TaskSemanticMeter::new(100_000, 1_000_000);
+            let mut encoder = super::super::semantic::TaskSemanticEncoder::new(
+                b"arcweft.task.source-control.v1\0",
+                &mut meter,
+            );
+            plan.encode_control_metadata(&mut encoder);
+            encoder.finish().unwrap()
+        }
+        let base = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::Restartable,
+            TaskClass::AssetDecode,
+        );
+        let changes: [fn(&mut NeedProducerTaskPlan); 10] = [
+            |plan| plan.site = NeedProducerSiteDigest::from_bytes([3; 32]),
+            |plan| {
+                plan.contract = NeedProducerContractDigest::from_bytes([4; 32]);
+                let NeedProducerRequestProjection::ExternCapability { contract, .. } =
+                    &mut plan.request
+                else {
+                    unreachable!()
+                };
+                *contract = crate::step::HostCallContractDigest::from_bytes([4; 32]);
+            },
+            |plan| plan.payload_type = RuntimeSemanticTypeId::from_bytes([5; 32]),
+            |plan| plan.policy = TaskPolicy::AlwaysStart,
+            |plan| plan.restart = HostRestartPolicy::MustBeQuiescent,
+            |plan| plan.class = TaskClass::Io,
+            |plan| plan.priority = TaskPriority(5),
+            |plan| plan.cancel_scope.0.push_str("/child"),
+            |plan| {
+                let NeedProducerRequestProjection::ExternCapability { operation, .. } =
+                    &mut plan.request
+                else {
+                    unreachable!()
+                };
+                operation.push_str("_other");
+            },
+            |plan| {
+                let NeedProducerRequestProjection::ExternCapability { argument_names, .. } =
+                    &mut plan.request
+                else {
+                    unreachable!()
+                };
+                *argument_names = Box::new([Some("path".to_owned())]);
+                plan.argument_types = Box::new([RuntimeSemanticTypeId::from_bytes([6; 32])]);
+            },
+        ];
+        let expected = identity(&base);
+        for (ordinal, mutate) in changes.into_iter().enumerate() {
+            let mut variant = base.clone();
+            mutate(&mut variant);
+            assert_ne!(
+                identity(&variant),
+                expected,
+                "source metadata mutation {ordinal}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_control_metadata_cannot_reset_its_parent_budget() {
+        let plan = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::Restartable,
+            TaskClass::AssetDecode,
+        );
+        let mut meter = super::super::semantic::TaskSemanticMeter::new(0, 1_000_000);
+        let mut encoder = super::super::semantic::TaskSemanticEncoder::new(
+            b"arcweft.task.source-control.v1\0",
+            &mut meter,
+        );
+        plan.encode_control_metadata(&mut encoder);
+        assert_eq!(
+            encoder.finish(),
+            Err(super::super::semantic::TaskSemanticEncodingError::SemanticWork)
+        );
+        assert_eq!(
+            meter.status(),
+            Err(super::super::semantic::TaskSemanticEncodingError::SemanticWork)
+        );
+    }
 
     fn producer_plan(
         site: u8,

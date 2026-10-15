@@ -6,6 +6,8 @@ use arcweft_view::{
 };
 use std::sync::Arc;
 
+mod source;
+
 /// Compiler-local evidence keeps its original accepted execution owner.
 ///
 /// ```compile_fail
@@ -35,15 +37,28 @@ pub enum CompilerLocalViewMatchCatalogError {
     NotMatchSelection,
     #[error("the checked View Match coordinate exceeds its canonical length domain")]
     CoordinateLength,
+    #[error("the retained Match definition differs from its original checked source")]
+    RetainedSourceMismatch,
 }
 
 impl CheckedDeterministicProgram {
+    pub fn view_match_site(&self) -> Result<ViewMatchSiteId, CompilerLocalViewMatchCatalogError> {
+        let selection = self
+            .input_abi()
+            .match_selection()
+            .ok_or(CompilerLocalViewMatchCatalogError::NotMatchSelection)?;
+        Ok(ViewMatchSiteId::for_source_coordinate(
+            selection.checked_match().path(),
+        )?)
+    }
+
     pub fn view_match_catalog_row(
         self: &Arc<Self>,
         analysis: &crate::final_analysis::FinalSemanticAnalysis,
         project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
         program_id: ViewProgramId,
         revision: AcceptedViewProgramRevision,
+        retained: &arcweft_core::pattern::MatchSourceData,
     ) -> Result<CompilerLocalViewMatchCatalogRow, CompilerLocalViewMatchCatalogError> {
         self.input_abi()
             .environment()
@@ -58,14 +73,12 @@ impl CheckedDeterministicProgram {
             .match_selection()
             .ok_or(CompilerLocalViewMatchCatalogError::NotMatchSelection)?;
         let matched = selection.checked_match();
-        let coordinate = matched
-            .path()
-            .canonical_bytes()
-            .map_err(|_| CompilerLocalViewMatchCatalogError::CoordinateLength)?;
+        let site = self.view_match_site()?;
+        source::validate(matched, retained, site)?;
         Ok(CompilerLocalViewMatchCatalogRow {
             program_id,
             revision,
-            site: ViewMatchSiteId::for_semantic_coordinate(&coordinate),
+            site,
             admission: CheckedViewMatchAdmissionDigest::for_match_semantic_transcript(
                 matched.semantic_digest().as_bytes(),
             ),
@@ -75,6 +88,19 @@ impl CheckedDeterministicProgram {
 }
 
 impl CompilerLocalViewMatchCatalogRow {
+    /// Rechecks complete retained data against this row's original checked owner.
+    pub fn validate_retained_source(
+        &self,
+        retained: &arcweft_core::pattern::MatchSourceData,
+    ) -> Result<(), CompilerLocalViewMatchCatalogError> {
+        let selection = self
+            .checked
+            .input_abi()
+            .match_selection()
+            .ok_or(CompilerLocalViewMatchCatalogError::NotMatchSelection)?;
+        let matched = selection.checked_match();
+        source::validate(matched, retained, self.site)
+    }
     pub fn validate_source(
         &self,
         analysis: &crate::final_analysis::FinalSemanticAnalysis,

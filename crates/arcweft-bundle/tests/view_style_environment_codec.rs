@@ -256,6 +256,7 @@ fn environment_complete_product_enforces_missing_source_map_and_aggregate_work()
         source_refs: 1,
         source_ranges: 10,
         validation_work: 23,
+        match_source_bytes: 0,
     };
     promote_with_limits(source_map.clone(), resource.clone(), exact)
         .expect("exact aggregate work budget accepts");

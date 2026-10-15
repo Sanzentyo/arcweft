@@ -18,16 +18,23 @@ mod local_rows;
 mod nominal;
 mod pure_rows;
 mod request;
-mod task_image;
+pub(crate) mod task_image;
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError};
 use crate::value::{
     RuntimeAssignment, RuntimeMutablePlace, RuntimePlaceDisplacement, RuntimePlaceInitialization,
     RuntimeRecordFieldId,
 };
+pub use function::ProducerFunctionSemanticDigest;
+pub use request::{
+    RuntimeRequestArgument, RuntimeRequestArgumentRole, RuntimeRequestField,
+    RuntimeRequestFieldRole, RuntimeRequestPathStep, RuntimeRequestValueSource,
+    RuntimeTaskRequestSource, RuntimeTaskRequestTemplate, RuntimeTaskRequestTemplateSeed,
+    TaskRequestTemplateDigest,
+};
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum RuntimeBodySemanticError {
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum RuntimeBodySemanticError {
     #[error("body references unknown type {ty}")]
     UnknownType { ty: RuntimePlanTypeId },
     #[error("body references unknown local {local}")]
@@ -44,12 +51,25 @@ pub(crate) enum RuntimeBodySemanticError {
     InvalidFunctionInput { input: usize },
     #[error("producer function roles {actual} exceed limit {maximum}")]
     FunctionRoles { actual: usize, maximum: u32 },
-    #[error("request endpoint does not belong to this plan or is not Host-backed")]
-    InvalidHostRequestEndpoint,
+    #[error("request source does not belong to this plan or has no admitted input schema")]
+    InvalidRequestSource,
+    #[error("function {function} has no original endpoint for the task coordinate")]
+    MissingOriginalRequestEndpoint {
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+    },
+    #[error("function {function} has multiple endpoints for the task coordinate")]
+    AmbiguousOriginalRequestEndpoint {
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+    },
     #[error("request template roles {actual} exceed limit {maximum}")]
     RequestRoles { actual: usize, maximum: u32 },
-    #[error("request template endpoint {actual} does not match completed F endpoint {expected}")]
-    InvalidRequestEndpoint { expected: u32, actual: u32 },
+    #[error(
+        "request template endpoint {actual:?} does not match completed F endpoint {expected:?}"
+    )]
+    InvalidRequestEndpoint {
+        expected: RuntimeTaskRequestSource,
+        actual: RuntimeTaskRequestSource,
+    },
     #[error(
         "request template endpoint {endpoint} differs from its original {component} at {ordinal}"
     )]

@@ -2594,8 +2594,9 @@ impl<T> Default for RuntimeScope<T> {
 }
 
 /// Lexical inheritance or the authenticated type environment of a function.
+/// Suspended operations retain this same context independently of later calls.
 #[derive(Clone, Debug, Default, PartialEq)]
-enum RuntimeScopeTypeContext {
+pub(crate) enum RuntimeScopeTypeContext {
     #[default]
     Lexical,
     Function {

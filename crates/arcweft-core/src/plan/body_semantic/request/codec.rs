@@ -4,7 +4,7 @@
 use super::{
     RuntimeRequestArgument, RuntimeRequestArgumentRole, RuntimeRequestField,
     RuntimeRequestFieldRole, RuntimeRequestPathStep, RuntimeRequestRoleIdentity,
-    RuntimeRequestValueSource, RuntimeTaskRequestTemplate,
+    RuntimeRequestValueSource, RuntimeTaskRequestSource, RuntimeTaskRequestTemplate,
 };
 use crate::runtime_id::RuntimePlanTypeId;
 use std::num::NonZeroU32;
@@ -53,7 +53,13 @@ impl RuntimeTaskRequestTemplate {
             limits,
         };
         writer.put(&[1])?;
-        writer.u32(self.endpoint)?;
+        match self.source {
+            RuntimeTaskRequestSource::FunctionRoot => writer.put(&[0])?,
+            RuntimeTaskRequestSource::Operation(ordinal) => {
+                writer.put(&[1])?;
+                writer.u32(ordinal)?;
+            }
+        }
         writer.count(self.arguments.len())?;
         for (ordinal, argument) in self.arguments.iter().enumerate() {
             writer.count(ordinal)?;
@@ -93,7 +99,16 @@ impl RuntimeTaskRequestTemplate {
         if version != 1 {
             return Err(RuntimeTaskRequestCodecError::Version { actual: version });
         }
-        let endpoint = reader.u32()?;
+        let source = match reader.tag()? {
+            0 => RuntimeTaskRequestSource::FunctionRoot,
+            1 => RuntimeTaskRequestSource::Operation(reader.u32()?),
+            tag => {
+                return Err(RuntimeTaskRequestCodecError::Tag {
+                    kind: "request source",
+                    tag,
+                });
+            }
+        };
         let count = reader.count("roles", limits.roles as usize, 15)?;
         let mut arguments = Vec::with_capacity(count);
         for ordinal in 0..count {
@@ -133,11 +148,11 @@ impl RuntimeTaskRequestTemplate {
         if reader.offset != bytes.len() {
             return Err(RuntimeTaskRequestCodecError::Trailing);
         }
-        Ok(Self::new(
-            endpoint,
-            arguments.into_boxed_slice(),
-            fields.into_boxed_slice(),
-        ))
+        Ok(Self {
+            source,
+            arguments: arguments.into_boxed_slice(),
+            fields: fields.into_boxed_slice(),
+        })
     }
 }
 

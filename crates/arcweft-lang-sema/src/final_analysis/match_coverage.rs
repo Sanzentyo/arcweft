@@ -50,49 +50,38 @@ use self::model::{
     DeconstructedPatternKind, ExpandedPattern, Matrix, PatternVector, SequencePartition,
 };
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum CheckedGuardClass {
-    Absent,
-    ConstantTrue,
-    ConstantFalse,
-    Dynamic,
-}
+pub(crate) use arcweft_core::pattern::MatchSourceGuardClass as CheckedGuardClass;
 
 /// Stable accepted-rooted coordinate of one Match arm.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StableMatchArmCoordinate {
-    owner: CheckedSemanticPath,
-    ordinal: u32,
+    definition: arcweft_core::pattern::MatchSourceArmCoordinate<CheckedSemanticPath>,
 }
 
 impl StableMatchArmCoordinate {
     pub(crate) const fn new(owner: CheckedSemanticPath, ordinal: u32) -> Self {
-        Self { owner, ordinal }
+        Self {
+            definition: arcweft_core::pattern::MatchSourceArmCoordinate::new(owner, ordinal),
+        }
     }
 
     pub const fn owner(&self) -> &CheckedSemanticPath {
-        &self.owner
+        self.definition.owner()
     }
 
     pub const fn ordinal(&self) -> u32 {
-        self.ordinal
+        self.definition.ordinal()
     }
 
     pub(crate) fn pattern_coordinate(
         &self,
         pattern: StablePatternCoordinate,
     ) -> StableSemanticCoordinate {
-        StableSemanticCoordinate::pattern(self.owner.clone(), self.ordinal, pattern)
+        StableSemanticCoordinate::pattern(self.owner().clone(), self.ordinal(), pattern)
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedUnreachableReason {
-    CoveredByPriorUsefulArms,
-    CoveredByEarlierOrAlternative,
-    ConstantFalseGuard,
-    UninhabitedDomain,
-}
+pub use arcweft_core::pattern::MatchSourceUnreachableReason as CheckedUnreachableReason;
 
 /// Read-only path step locating an unreachable pattern alternative.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -147,52 +136,51 @@ impl<'a> CheckedPatternCoordinateView<'a> {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedUnreachablePattern {
-    arm: StableMatchArmCoordinate,
-    alternative: Option<StablePatternCoordinate>,
-    reason: CheckedUnreachableReason,
+    definition: arcweft_core::pattern::MatchSourceUnreachable<
+        StableMatchArmCoordinate,
+        StablePatternCoordinate,
+        CheckedUnreachableReason,
+    >,
 }
 
 impl CheckedUnreachablePattern {
     pub const fn arm(&self) -> &StableMatchArmCoordinate {
-        &self.arm
-    }
-
-    pub(crate) const fn alternative(&self) -> Option<&StablePatternCoordinate> {
-        self.alternative.as_ref()
+        self.definition.arm()
     }
 
     pub const fn has_alternative(&self) -> bool {
-        self.alternative.is_some()
+        self.definition.alternative().is_some()
     }
 
     pub const fn alternative_view(&self) -> Option<CheckedPatternCoordinateView<'_>> {
-        match self.alternative.as_ref() {
+        match self.definition.alternative() {
             Some(coordinate) => Some(CheckedPatternCoordinateView(coordinate)),
             None => None,
         }
     }
 
     pub const fn reason(&self) -> CheckedUnreachableReason {
-        self.reason
+        self.definition.reason()
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedMatchCoverage {
-    exhaustive: bool,
-    unreachable: Box<[CheckedUnreachablePattern]>,
+    definition: arcweft_core::pattern::MatchSourceCoverage<
+        CheckedCoverageDomainDigest,
+        CheckedUnreachablePattern,
+    >,
     witness: Option<CheckedCoverageWitness>,
-    domain_digest: CheckedCoverageDomainDigest,
     work: CheckedMatchWork,
 }
 
 impl CheckedMatchCoverage {
     pub const fn exhaustive(&self) -> bool {
-        self.exhaustive
+        self.definition.exhaustive()
     }
 
     pub fn unreachable(&self) -> &[CheckedUnreachablePattern] {
-        self.unreachable.as_ref()
+        self.definition.unreachable()
     }
 
     pub(crate) const fn witness(&self) -> Option<&CheckedCoverageWitness> {
@@ -200,7 +188,7 @@ impl CheckedMatchCoverage {
     }
 
     pub const fn domain_digest(&self) -> CheckedCoverageDomainDigest {
-        self.domain_digest
+        self.definition.domain_digest()
     }
 
     pub const fn observed_work(&self, kind: CheckedMatchLimitKind) -> u64 {
@@ -281,10 +269,12 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
                 )?;
             }
             return Ok(CheckedMatchCoverage {
-                exhaustive: true,
-                unreachable: unreachable.into_boxed_slice(),
+                definition: arcweft_core::pattern::MatchSourceCoverage::new(
+                    true,
+                    domain_digest,
+                    unreachable.into_boxed_slice(),
+                ),
                 witness: None,
-                domain_digest,
                 work: self.budget.work(),
             });
         }
@@ -308,10 +298,12 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
             .and_then(|mut witnesses| (witnesses.len() == 1).then(|| witnesses.remove(0)));
         let exhaustive = witness.is_none();
         Ok(CheckedMatchCoverage {
-            exhaustive,
-            unreachable: unreachable.into_boxed_slice(),
+            definition: arcweft_core::pattern::MatchSourceCoverage::new(
+                exhaustive,
+                domain_digest,
+                unreachable.into_boxed_slice(),
+            ),
             witness,
-            domain_digest,
             work: self.budget.work(),
         })
     }
@@ -376,7 +368,7 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
         if useful_rows.is_empty()
             && unreachable
                 .last()
-                .is_none_or(|row| row.arm != arm.coordinate)
+                .is_none_or(|row| row.arm() != &arm.coordinate)
         {
             self.push_unreachable(
                 unreachable,
@@ -443,9 +435,11 @@ impl<'a, 'control> MatchCoverageAnalyzer<'a, 'control> {
         self.budget
             .charge(CheckedMatchLimitKind::UnreachableRows, 1)?;
         output.push(CheckedUnreachablePattern {
-            arm,
-            alternative,
-            reason,
+            definition: arcweft_core::pattern::MatchSourceUnreachable::new(
+                arm,
+                alternative,
+                reason,
+            ),
         });
         Ok(())
     }
@@ -476,3 +470,37 @@ fn append_record_coordinate(
 #[cfg(test)]
 #[path = "match_coverage/tests.rs"]
 mod tests;
+
+impl arcweft_core::pattern::MatchSourceArmCoordinateOwner for StableMatchArmCoordinate {
+    type Owner = CheckedSemanticPath;
+    fn source_coordinate(&self) -> &arcweft_core::pattern::MatchSourceArmCoordinate<Self::Owner> {
+        &self.definition
+    }
+}
+impl arcweft_core::pattern::MatchSourceUnreachableOwner for CheckedUnreachablePattern {
+    type Arm = StableMatchArmCoordinate;
+    type Alternative = StablePatternCoordinate;
+    fn source_unreachable(
+        &self,
+    ) -> &arcweft_core::pattern::MatchSourceUnreachable<
+        Self::Arm,
+        Self::Alternative,
+        CheckedUnreachableReason,
+    > {
+        &self.definition
+    }
+}
+impl AsRef<[u8; 32]> for CheckedCoverageDomainDigest {
+    fn as_ref(&self) -> &[u8; 32] {
+        self.as_bytes()
+    }
+}
+impl arcweft_core::pattern::MatchSourceCoverageOwner for CheckedMatchCoverage {
+    type Domain = CheckedCoverageDomainDigest;
+    type Unreachable = CheckedUnreachablePattern;
+    fn source_coverage(
+        &self,
+    ) -> &arcweft_core::pattern::MatchSourceCoverage<Self::Domain, Self::Unreachable> {
+        &self.definition
+    }
+}

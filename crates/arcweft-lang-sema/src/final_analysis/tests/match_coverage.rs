@@ -56,12 +56,12 @@ fn root(pair: (bool, bool)) -> i64 {
         .iter()
         .find(|row| row.reason() == CheckedUnreachableReason::CoveredByEarlierOrAlternative)
         .expect("nested duplicate Or alternative");
-    let coordinate = redundant.alternative().expect("precise Or coordinate");
+    let coordinate = redundant.alternative_view().expect("precise Or coordinate");
     assert!(matches!(
-        coordinate.steps(),
+        coordinate.steps().collect::<Vec<_>>().as_slice(),
         [
-            crate::semantic_coordinate::StablePatternCoordinateStep::TupleElement(1),
-            crate::semantic_coordinate::StablePatternCoordinateStep::OrAlternative(1)
+            crate::final_analysis::CheckedPatternCoordinateStep::TupleElement(1),
+            crate::final_analysis::CheckedPatternCoordinateStep::OrAlternative(1)
         ]
     ));
 }
@@ -85,7 +85,7 @@ fn root(flag: bool, ready: bool) -> i64 {
     assert!(product.coverage().unreachable().iter().any(|row| {
         row.reason() == CheckedUnreachableReason::CoveredByEarlierOrAlternative
             && row.arm().ordinal() == 0
-            && row.alternative().is_some()
+            && row.has_alternative()
     }));
     assert!(product.coverage().unreachable().iter().any(|row| {
         row.reason() == CheckedUnreachableReason::ConstantFalseGuard && row.arm().ordinal() == 1

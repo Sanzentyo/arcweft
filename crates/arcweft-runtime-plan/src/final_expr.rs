@@ -56,6 +56,14 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
 
+#[derive(Clone, Copy)]
+pub(crate) struct FinalExprSourceSites<'hir> {
+    pub(crate) functions: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
+    pub(crate) dialogue_effects:
+        &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    pub(crate) tasks: &'hir arcweft_core::plan::RuntimeTaskPlanConstructionContext,
+}
+
 pub(crate) struct FinalExprLowerer<'hir> {
     module: &'hir HirModule,
     facts: &'hir RuntimePlanSemanticFacts,
@@ -65,9 +73,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
     format_attempts: Option<
         &'hir BTreeMap<RuntimeFormatTemplateKey, arcweft_core::plan::RuntimeFormatAttemptSeedId>,
     >,
-    function_sites: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
-    dialogue_effect_sites:
-        &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    source_sites: FinalExprSourceSites<'hir>,
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
     try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
     scope_locals: Option<&'hir BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>>,
@@ -192,11 +198,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         facts: &'hir RuntimePlanSemanticFacts,
         locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
         trait_methods: &'hir BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
-        function_sites: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
-        dialogue_effect_sites: &'hir BTreeMap<
-            RuntimeDialogueEffectProgramKey,
-            RuntimeFunctionSiteSeedId,
-        >,
+        source_sites: FinalExprSourceSites<'hir>,
         control_locals: (
             &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
             &'hir BTreeMap<ExprId, TryLocalSeeds>,
@@ -210,8 +212,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             locals,
             trait_methods,
             format_attempts: None,
-            function_sites,
-            dialogue_effect_sites,
+            source_sites,
             pipe_locals,
             try_locals,
             scope_locals: None,
@@ -475,7 +476,11 @@ impl<'hir> FinalExprLowerer<'hir> {
                                 *contract.as_bytes()
                             }),
                     ),
-                    plan: definition.plan(),
+                    plan: self
+                        .source_sites
+                        .tasks
+                        .reserve_original_source()
+                        .map_err(|error| error.to_string())?,
                     site: definition.site(),
                 }
             },
@@ -564,7 +569,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.expression_source_type(id)?,
                 RuntimeExprSeedKind::Function {
                     site: self
-                        .function_sites
+                        .source_sites
+                        .functions
                         .get(&RuntimeImplicitCallableSiteKey::new(
                             self.semantic_facts.scope(),
                             id,
@@ -938,8 +944,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             locals: self.locals,
             trait_methods: self.trait_methods,
             format_attempts: self.format_attempts,
-            function_sites: self.function_sites,
-            dialogue_effect_sites: self.dialogue_effect_sites,
+            source_sites: self.source_sites,
             pipe_locals: self.pipe_locals,
             try_locals: self.try_locals,
             scope_locals: self.scope_locals,
@@ -2904,7 +2909,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                 let program =
                     RuntimeDialogueEffectProgramKey::new(fragment.template().id(), effect.site());
                 let function = self
-                    .dialogue_effect_sites
+                    .source_sites
+                    .dialogue_effects
                     .get(&program)
                     .cloned()
                     .ok_or_else(|| {

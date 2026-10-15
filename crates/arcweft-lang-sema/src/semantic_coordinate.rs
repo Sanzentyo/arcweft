@@ -5,6 +5,7 @@
 //! analysis state are deliberately outside this lower-level authority.
 
 use crate::record_field::CheckedRecordFieldSemanticId;
+use arcweft_core::pattern::{CanonicalMatchSource, MatchSourceSink, MatchSourceWriter};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChildRole, HirBodyKind},
     dialogue_application::HirDialogueMarkOrdinal,
@@ -131,7 +132,7 @@ impl AcceptedSemanticRoot {
         }
     }
 
-    fn write_canonical(&self, output: &mut Vec<u8>) {
+    fn write_canonical<W: MatchSourceSink>(&self, output: &mut MatchSourceWriter<W>) {
         output.push(self.tag());
         output.extend_from_slice(self.as_bytes());
     }
@@ -155,12 +156,15 @@ impl CheckedNestedPathV1 {
         &self.0
     }
 
-    fn write_transcript(
+    fn write_transcript<W: MatchSourceSink>(
         &self,
-        output: &mut Vec<u8>,
+        output: &mut MatchSourceWriter<W>,
     ) -> Result<(), SemanticCoordinateEncodingError> {
         write_len(output, self.0.len())?;
         for segment in &self.0 {
+            if !output.is_active() {
+                break;
+            }
             segment.write_transcript(output);
         }
         Ok(())
@@ -206,7 +210,7 @@ impl CheckedNestedPathSegmentV1 {
         }
     }
 
-    fn write_transcript(&self, output: &mut Vec<u8>) {
+    fn write_transcript<W: MatchSourceSink>(&self, output: &mut MatchSourceWriter<W>) {
         output.push(self.semantic_tag());
         match self {
             Self::ChoiceBodyItem { ordinal }
@@ -432,9 +436,9 @@ impl CheckedExpressionChildRole {
         }
     }
 
-    pub(crate) fn write_transcript(
+    pub(crate) fn write_transcript<W: MatchSourceSink>(
         &self,
-        output: &mut Vec<u8>,
+        output: &mut MatchSourceWriter<W>,
     ) -> Result<(), SemanticCoordinateEncodingError> {
         output.extend_from_slice(&self.semantic_tag().to_le_bytes());
         match self {
@@ -525,9 +529,9 @@ impl CheckedExpressionChildRole {
     }
 
     pub(crate) fn transcript_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut bytes = Vec::new();
+        let mut bytes = MatchSourceWriter::new(Vec::new());
         self.write_transcript(&mut bytes)?;
-        Ok(bytes)
+        bytes.finish(Ok(()))
     }
 }
 
@@ -585,29 +589,38 @@ impl CheckedLocalInputCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut bytes = self.owner.canonical_bytes()?;
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.owner.write_canonical_to(output)?;
         match &self.role {
-            CheckedLocalInputRole::Expression => bytes.push(0),
-            CheckedLocalInputRole::Place => bytes.push(4),
+            CheckedLocalInputRole::Expression => output.push(0),
+            CheckedLocalInputRole::Place => output.push(4),
             CheckedLocalInputRole::RecordField {
                 source_ordinal,
                 accepted_field,
             } => {
-                bytes.push(1);
-                bytes.extend_from_slice(&source_ordinal.to_le_bytes());
-                bytes.extend_from_slice(accepted_field.as_bytes());
+                output.push(1);
+                output.extend_from_slice(&source_ordinal.to_le_bytes());
+                output.extend_from_slice(accepted_field.as_bytes());
             }
             CheckedLocalInputRole::Capture(origin)
             | CheckedLocalInputRole::StatementCapture(origin) => {
-                bytes.push(if matches!(self.role, CheckedLocalInputRole::Capture(_)) {
+                output.push(if matches!(self.role, CheckedLocalInputRole::Capture(_)) {
                     2
                 } else {
                     3
                 });
-                bytes.extend_from_slice(&origin.canonical_bytes()?);
+                origin.write_canonical_to(output)?;
             }
         }
-        Ok(bytes)
+        Ok(())
     }
 }
 
@@ -675,13 +688,24 @@ impl CheckedSemanticPath {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = Vec::new();
-        self.root.write_canonical(&mut output);
-        write_len(&mut output, self.steps.len())?;
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.root.write_canonical(output);
+        write_len(output, self.steps.len())?;
         for step in &self.steps {
-            write_checked_path_step(&mut output, step)?;
+            if !output.is_active() {
+                break;
+            }
+            write_checked_path_step(output, step)?;
         }
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -785,7 +809,16 @@ impl StableCheckedPatternOwnerCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        self.path.canonical_bytes()
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.path.write_canonical_to(output)
     }
 }
 
@@ -843,7 +876,16 @@ impl StableCheckedStatementCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        self.path.canonical_bytes()
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.path.write_canonical_to(output)
     }
 }
 
@@ -916,15 +958,24 @@ impl StableCheckedBodyCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = self.path.canonical_bytes()?;
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.path.write_canonical_to(output)?;
         output.push(CHECKED_BODY_COORDINATE_SUFFIX_TAG);
-        write_body_owner_role(&mut output, &self.owner)?;
+        write_body_owner_role(output, &self.owner)?;
         output.push(match self.kind {
             HirBodyKind::Expression => 0,
             HirBodyKind::Ordinary => 1,
             HirBodyKind::Thread => 2,
         });
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -956,10 +1007,19 @@ impl StableCheckedOutputTargetCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = self.application.canonical_bytes()?;
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.application.write_canonical_to(output)?;
         output.push(CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG);
         output.push(CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG);
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -995,16 +1055,25 @@ impl StableCheckedDialogueMarkCoordinate {
         reason = "consumed by the version-one statement transcript cut"
     )]
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = self.application.canonical_bytes()?;
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.application.write_canonical_to(output)?;
         output.push(CHECKED_DIALOGUE_MARK_COORDINATE_SUFFIX_TAG);
         output.push(CHECKED_DIALOGUE_CONTENT_MARK_FAMILY_TAG);
         output.extend_from_slice(&self.ordinal.get().to_le_bytes());
-        Ok(output)
+        Ok(())
     }
 }
 
-fn write_body_owner_role(
-    output: &mut Vec<u8>,
+fn write_body_owner_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
     owner: &HirSemanticBodyOwnerRole,
 ) -> Result<(), SemanticCoordinateEncodingError> {
     match owner {
@@ -1654,7 +1723,16 @@ impl StableCheckedBindingCoordinate {
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        self.path.canonical_bytes()
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
+    }
+
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.path.write_canonical_to(output)
     }
 }
 
@@ -1703,7 +1781,8 @@ pub(crate) enum StablePatternCoordinateStep {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct StablePatternCoordinate(Box<[StablePatternCoordinateStep]>);
+/// An original checked pattern position, constructed only by semantic analysis.
+pub struct StablePatternCoordinate(Box<[StablePatternCoordinateStep]>);
 
 impl StablePatternCoordinate {
     pub(crate) fn new(steps: impl Into<Box<[StablePatternCoordinateStep]>>) -> Self {
@@ -1714,10 +1793,15 @@ impl StablePatternCoordinate {
         &self.0
     }
 
-    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = Vec::new();
-        write_len(&mut output, self.0.len())?;
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        write_len(output, self.0.len())?;
         for step in &self.0 {
+            if !output.is_active() {
+                break;
+            }
             match step {
                 StablePatternCoordinateStep::TupleElement(ordinal) => {
                     output.push(0);
@@ -1744,7 +1828,7 @@ impl StablePatternCoordinate {
                 StablePatternCoordinateStep::TypedBindingInner => output.push(6),
             }
         }
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -1761,24 +1845,35 @@ pub enum StableCheckedValueCoordinate {
 
 impl StableCheckedValueCoordinate {
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-        let mut output = Vec::new();
-        self.write_canonical(&mut output)?;
-        Ok(output)
+        let mut output = MatchSourceWriter::new(Vec::new());
+        let encoded = self.write_canonical_to(&mut output);
+        output.finish(encoded)
     }
 
-    fn write_canonical(&self, output: &mut Vec<u8>) -> Result<(), SemanticCoordinateEncodingError> {
+    fn write_canonical_to<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.write_canonical(output)?;
+        Ok(())
+    }
+
+    fn write_canonical<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
         match self {
             Self::Expression(path) => {
                 output.push(0);
-                output.extend_from_slice(&path.canonical_bytes()?);
+                path.write_canonical_to(output)?;
             }
             Self::Binding(binding) => {
                 output.push(1);
-                output.extend_from_slice(&binding.canonical_bytes()?);
+                binding.write_canonical_to(output)?;
             }
             Self::CompactNumericElement { sequence, ordinal } => {
                 output.push(2);
-                output.extend_from_slice(&sequence.canonical_bytes()?);
+                sequence.write_canonical_to(output)?;
                 output.extend_from_slice(&ordinal.to_le_bytes());
             }
         }
@@ -1941,8 +2036,8 @@ pub enum StableCheckedContentFragmentCoordinateError {
     CoordinateEncoding,
 }
 
-fn write_checked_path_step(
-    output: &mut Vec<u8>,
+fn write_checked_path_step<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
     step: &CheckedSemanticPathStep,
 ) -> Result<(), SemanticCoordinateEncodingError> {
     match step {
@@ -2013,7 +2108,10 @@ fn write_checked_path_step(
     Ok(())
 }
 
-fn write_declaration_body_role(output: &mut Vec<u8>, role: HirDeclarationBodyRootRole) {
+fn write_declaration_body_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirDeclarationBodyRootRole,
+) {
     match role {
         HirDeclarationBodyRootRole::FunctionBody => output.push(0),
         HirDeclarationBodyRootRole::PredicateBody => output.push(1),
@@ -2031,7 +2129,10 @@ fn write_declaration_body_role(output: &mut Vec<u8>, role: HirDeclarationBodyRoo
     }
 }
 
-fn write_declaration_contract_role(output: &mut Vec<u8>, role: HirDeclarationContractRootRole) {
+fn write_declaration_contract_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirDeclarationContractRootRole,
+) {
     match role {
         HirDeclarationContractRootRole::Requires { ordinal } => {
             output.push(0);
@@ -2068,8 +2169,8 @@ fn write_declaration_contract_role(output: &mut Vec<u8>, role: HirDeclarationCon
     }
 }
 
-fn write_declaration_item_role(
-    output: &mut Vec<u8>,
+fn write_declaration_item_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
     role: &HirDeclarationItemRootRole,
 ) -> Result<(), SemanticCoordinateEncodingError> {
     match role {
@@ -2125,6 +2226,9 @@ fn write_declaration_item_role(
             output.push(9);
             write_len(output, path.segments().len())?;
             for segment in path.segments() {
+                if !output.is_active() {
+                    break;
+                }
                 match segment {
                     HirStyleRootPathSegment::Token { ordinal } => {
                         output.push(0);
@@ -2173,7 +2277,10 @@ fn write_declaration_item_role(
     Ok(())
 }
 
-fn write_item_attribute_owner(output: &mut Vec<u8>, owner: HirItemAttributeOwner) {
+fn write_item_attribute_owner<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    owner: HirItemAttributeOwner,
+) {
     match owner {
         HirItemAttributeOwner::Item => output.push(0),
         HirItemAttributeOwner::InlineMember { member } => {
@@ -2201,8 +2308,8 @@ const fn flow_contract_family_tag(family: HirFlowContractRootFamily) -> u8 {
     }
 }
 
-fn write_expression_owned_role(
-    output: &mut Vec<u8>,
+fn write_expression_owned_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
     role: &HirExpressionOwnedBodyRole,
 ) -> Result<(), SemanticCoordinateEncodingError> {
     match role {
@@ -2279,12 +2386,15 @@ fn write_expression_owned_role(
 pub(crate) fn expression_owned_role_transcript_bytes(
     role: &HirExpressionOwnedBodyRole,
 ) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-    let mut output = Vec::new();
+    let mut output = MatchSourceWriter::new(Vec::new());
     write_expression_owned_role(&mut output, role)?;
-    Ok(output)
+    output.finish(Ok(()))
 }
 
-fn write_line_plan_statement_role(output: &mut Vec<u8>, role: HirLinePlanStatementRole) {
+fn write_line_plan_statement_role<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirLinePlanStatementRole,
+) {
     match role {
         HirLinePlanStatementRole::Init { statement } => {
             output.push(0);
@@ -2298,12 +2408,15 @@ fn write_line_plan_statement_role(output: &mut Vec<u8>, role: HirLinePlanStateme
     }
 }
 
-fn write_hir_nested_path(
-    output: &mut Vec<u8>,
+fn write_hir_nested_path<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
     path: &HirNestedExpressionPath,
 ) -> Result<(), SemanticCoordinateEncodingError> {
     write_len(output, path.segments().len())?;
     for segment in path.segments() {
+        if !output.is_active() {
+            break;
+        }
         match segment {
             HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal } => {
                 output.push(0);
@@ -2359,7 +2472,10 @@ fn body_role_tag(role: HirBodyChildRole) -> u8 {
     }
 }
 
-fn write_body_role_payload(output: &mut Vec<u8>, role: HirBodyChildRole) {
+fn write_body_role_payload<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirBodyChildRole,
+) {
     match role {
         HirBodyChildRole::Statement { ordinal } | HirBodyChildRole::ThreadItem { ordinal } => {
             output.extend_from_slice(&ordinal.to_le_bytes());
@@ -2407,13 +2523,16 @@ fn statement_role_tag(role: HirStatementChildRole) -> u8 {
 pub(crate) fn statement_child_role_transcript_bytes(
     role: HirStatementChildRole,
 ) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-    let mut output = Vec::new();
+    let mut output = MatchSourceWriter::new(Vec::new());
     output.push(statement_role_tag(role));
     write_statement_role_payload(&mut output, role);
-    Ok(output)
+    output.finish(Ok(()))
 }
 
-fn write_statement_role_payload(output: &mut Vec<u8>, role: HirStatementChildRole) {
+fn write_statement_role_payload<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirStatementChildRole,
+) {
     match role {
         HirStatementChildRole::AssertionCondition { ordinal } => {
             output.extend_from_slice(&ordinal.to_le_bytes());
@@ -2476,13 +2595,16 @@ fn statement_body_tag(role: HirStatementBodyRole) -> u8 {
 pub(crate) fn body_child_role_transcript_bytes(
     role: HirBodyChildRole,
 ) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-    let mut output = Vec::new();
+    let mut output = MatchSourceWriter::new(Vec::new());
     output.push(body_role_tag(role));
     write_body_role_payload(&mut output, role);
-    Ok(output)
+    output.finish(Ok(()))
 }
 
-fn write_statement_body_payload(output: &mut Vec<u8>, role: HirStatementBodyRole) {
+fn write_statement_body_payload<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirStatementBodyRole,
+) {
     match role {
         HirStatementBodyRole::MatchArm { arm } => output.extend_from_slice(&arm.to_le_bytes()),
         HirStatementBodyRole::SelectBranch { branch } => {
@@ -2520,7 +2642,10 @@ fn pattern_role_tag(role: HirPatternChildRole) -> u8 {
     }
 }
 
-fn write_pattern_role_payload(output: &mut Vec<u8>, role: HirPatternChildRole) {
+fn write_pattern_role_payload<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    role: HirPatternChildRole,
+) {
     match role {
         HirPatternChildRole::Element { ordinal }
         | HirPatternChildRole::OrAlternative { ordinal } => {
@@ -2546,29 +2671,56 @@ fn write_pattern_role_payload(output: &mut Vec<u8>, role: HirPatternChildRole) {
 pub(crate) fn pattern_child_role_transcript_bytes(
     role: HirPatternChildRole,
 ) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
-    let mut output = Vec::new();
+    let mut output = MatchSourceWriter::new(Vec::new());
     output.push(pattern_role_tag(role));
     write_pattern_role_payload(&mut output, role);
-    Ok(output)
+    output.finish(Ok(()))
 }
 
-fn write_len(output: &mut Vec<u8>, value: usize) -> Result<(), SemanticCoordinateEncodingError> {
+fn write_len<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    value: usize,
+) -> Result<(), SemanticCoordinateEncodingError> {
     let value =
         u64::try_from(value).map_err(|_| SemanticCoordinateEncodingError::LengthOverflow)?;
     output.extend_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
-fn write_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<(), SemanticCoordinateEncodingError> {
+fn write_bytes<W: MatchSourceSink>(
+    output: &mut MatchSourceWriter<W>,
+    bytes: &[u8],
+) -> Result<(), SemanticCoordinateEncodingError> {
     write_len(output, bytes.len())?;
     output.extend_from_slice(bytes);
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub(crate) enum SemanticCoordinateEncodingError {
-    #[error("semantic coordinate length does not fit the canonical u64 grammar")]
-    LengthOverflow,
+pub(crate) use arcweft_core::pattern::MatchSourceEncodingError as SemanticCoordinateEncodingError;
+
+impl CanonicalMatchSource for CheckedSemanticPath {
+    fn write_source<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.write_canonical_to(output)
+    }
+}
+impl CanonicalMatchSource for StableCheckedValueCoordinate {
+    fn write_source<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.write_canonical_to(output)
+    }
+}
+impl CanonicalMatchSource for StablePatternCoordinate {
+    fn write_source<W: MatchSourceSink>(
+        &self,
+        output: &mut MatchSourceWriter<W>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        self.write_canonical_to(output)
+    }
 }
 
 #[cfg(test)]

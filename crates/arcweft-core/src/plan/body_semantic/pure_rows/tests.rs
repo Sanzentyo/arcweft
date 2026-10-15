@@ -163,7 +163,7 @@ impl Fixture {
             builder.push_pure_helper_seed(seed).unwrap();
         }
         let inventory = builder
-            .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+            .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
             .unwrap();
         inventory.verify().unwrap();
         inventory

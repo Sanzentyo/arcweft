@@ -1355,6 +1355,10 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
         )],
     );
     let flow = flow_id("agent.capture_binding");
+    let task_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
@@ -1380,6 +1384,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                             },
                         ),
                         target: RuntimeNeedProducerStartTargetSeed {
+                            task_plan: task_coordinate.clone(),
                             plan: producer_plan,
                             arguments: producer_arguments,
                         },
@@ -1446,6 +1451,10 @@ fn read_resource_binding_program() -> AwbcProgram {
         )],
     );
     let flow = flow_id("agent.read_resource_binding");
+    let task_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
@@ -1471,6 +1480,7 @@ fn read_resource_binding_program() -> AwbcProgram {
                             },
                         ),
                         target: RuntimeNeedProducerStartTargetSeed {
+                            task_plan: task_coordinate.clone(),
                             plan: producer_plan,
                             arguments: producer_arguments,
                         },
@@ -1546,6 +1556,10 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
     let need_ty = response_need_type(response_result_ty);
     let (producer_plan, producer_arguments) =
         agent_need_producer(response_result_ty, operation.to_owned(), args);
+    let task_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
@@ -1571,6 +1585,7 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
                             },
                         ),
                         target: RuntimeNeedProducerStartTargetSeed {
+                            task_plan: task_coordinate.clone(),
                             plan: producer_plan,
                             arguments: producer_arguments,
                         },
@@ -1631,6 +1646,10 @@ fn direct_observe_program() -> AwbcProgram {
         .expect("controller types admit");
     let observation = locals.local_ids()[0].clone();
     let flow = flow_id("agent.direct_observe");
+    let task_coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
@@ -1659,9 +1678,7 @@ fn direct_observe_program() -> AwbcProgram {
                                     arcweft_core::task::NeedProducerContractDigest::from_bytes(
                                         [1; 32],
                                     ),
-                                plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
-                                    [2; 32],
-                                ),
+                                plan: task_coordinate.clone(),
                                 site: arcweft_core::task::NeedProducerSiteDigest::from_bytes(
                                     [3; 32],
                                 ),

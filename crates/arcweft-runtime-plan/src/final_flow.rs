@@ -11,6 +11,9 @@ mod defer;
 mod format_attempt;
 #[path = "final_flow/line_plan.rs"]
 mod line_plan;
+#[path = "final_flow/preparation.rs"]
+mod preparation;
+pub use preparation::{PreparedRuntimePlanLowering, RuntimeViewMatchTaskPlanSource};
 #[path = "final_flow/rust_defaults.rs"]
 mod rust_defaults;
 #[path = "final_flow/scopes.rs"]
@@ -95,7 +98,7 @@ use crate::assertion_identity::{
     RuntimeAssertionMode, RuntimeAssertionSite,
 };
 use crate::errors::RuntimePlanLowerError;
-use crate::final_expr::FinalExprLowerer;
+use crate::final_expr::{FinalExprLowerer, FinalExprSourceSites};
 use crate::final_pattern::FinalPatternLowerer;
 use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
@@ -508,7 +511,6 @@ enum ClosureLexicalParent {
     Closure(RuntimeClosureInstanceKey),
 }
 
-#[derive(Clone)]
 struct ReservedPureProgramDefinition<'facts> {
     program: &'facts crate::semantic_facts::RuntimePureProgramFact,
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
@@ -516,6 +518,7 @@ struct ReservedPureProgramDefinition<'facts> {
     site: RuntimeFunctionSiteSeedId,
     body_kind: RuntimeFunctionSiteBodyKind,
     iteration_output: Option<RuntimeLocalSeedId>,
+    view_task_plan: Option<RuntimeViewMatchTaskPlanSource>,
 }
 
 #[derive(Clone)]
@@ -569,6 +572,7 @@ struct LoweredControllerCallable {
 }
 
 struct FinalLoweringContext<'project, 'data> {
+    task_plans: &'data arcweft_core::plan::RuntimeTaskPlanConstructionContext,
     project: HirAnalysisProjectView<'project>,
     facts: &'data RuntimePlanSemanticFacts,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
@@ -646,8 +650,11 @@ impl FinalLoweringContext<'_, '_> {
             self.facts,
             self.locals,
             self.trait_methods,
-            self.function_sites,
-            self.dialogue_effect_sites,
+            FinalExprSourceSites {
+                functions: self.function_sites,
+                dialogue_effects: self.dialogue_effect_sites,
+                tasks: self.task_plans,
+            },
             (&self.control.pipes, &self.control.tries),
         )
         .with_scope_locals(&self.control.scopes)
@@ -802,6 +809,18 @@ pub fn lower_runtime_plan_with_stats(
     facts: &RuntimePlanSemanticFacts,
     entry_input: &RuntimeEntryLoweringInput,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    prepare_runtime_plan_with_stats(project, facts, entry_input)?.finish(
+        arcweft_core::plan::RuntimeTaskPlanSealLimits::default(),
+        None,
+    )
+}
+
+/// Lowers original source definitions without publishing a `RuntimePlan` or keys.
+pub fn prepare_runtime_plan_with_stats<'facts>(
+    project: HirAnalysisProjectView<'_>,
+    facts: &'facts RuntimePlanSemanticFacts,
+    entry_input: &RuntimeEntryLoweringInput,
+) -> Result<PreparedRuntimePlanLowering<'facts>, Vec<RuntimePlanLowerError>> {
     facts
         .validate_generation(project)
         .map_err(|error| vec![semantic_fact_error(&error)])?;
@@ -1712,7 +1731,9 @@ pub fn lower_runtime_plan_with_stats(
         &mut builder,
     )
     .map_err(|error| vec![error])?;
+    let task_plans = builder.task_plan_construction();
     let context = FinalLoweringContext {
+        task_plans: &task_plans,
         project,
         facts,
         locals: &locals,
@@ -2179,92 +2200,17 @@ pub fn lower_runtime_plan_with_stats(
             .push_flow_seed(flow)
             .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     }
-    let mut plan = builder
-        .finish()
-        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
-    let mut dialogue_records = Vec::new();
-    facts.visit_dialogue_applications(&mut |_, _, application| {
-        dialogue_records.push(application.content().clone());
-    });
-    dialogue_records
-        .sort_by(|left, right| (left.key(), left.text_key()).cmp(&(right.key(), right.text_key())));
-    let mut dialogue_templates = Vec::new();
-    facts.visit_dialogue_content_fragments(&mut |_, fragment| {
-        dialogue_templates.push(fragment.template().clone());
-    });
-    dialogue_templates.extend(facts.format_templates().map(|fact| fact.template().clone()));
-    if let Some(template) = plain_text_context_template {
-        dialogue_templates.push(template);
-    }
-    dialogue_templates.sort_by_key(|template| template.id());
-    let dialogue_content_catalog = DialogueContentCatalog::try_from_records_and_templates(
-        dialogue_records,
-        dialogue_templates,
-    )
-    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
-    if let Some(identity) = plan.dialogue_content().plain_text_context_template() {
-        let path = format!("dialogue.template.{}", identity.id());
-        let canonical = DialogueContentFragmentTemplate::plain_text_context(identity.id())
-            .map_err(|error| {
-                vec![RuntimePlanLowerError::new(format!(
-                    "plain-text context template factory failed: {error}"
-                ))]
-            })?;
-        let Some(manifest) = plan.dialogue_content().template(identity.id()) else {
-            return Err(vec![RuntimePlanLowerError::new(format!(
-                "{path} context pointer has no RuntimePlan manifest"
-            ))]);
-        };
-        let Some(template) = dialogue_content_catalog.find_template(identity.id()) else {
-            return Err(vec![RuntimePlanLowerError::new(format!(
-                "{path} context pointer has no text-model template"
-            ))]);
-        };
-        if manifest.digest() != identity.digest()
-            || template.digest() != identity.digest()
-            || template != &canonical
-        {
-            return Err(vec![RuntimePlanLowerError::new(format!(
-                "{path} context template disagrees with its canonical text-model identity or body"
-            ))]);
-        }
-        let proof = arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof::
-            try_from_validated_ref(identity, canonical.digest())
-            .map_err(|error| {
-                vec![RuntimePlanLowerError::new(format!(
-                    "{path} context proof is invalid: {error}"
-                ))]
-            })?;
-        plan.accept_plain_text_context_template_proof(proof)
-            .map_err(|error| {
-                vec![RuntimePlanLowerError::new(format!(
-                    "{path} context proof cannot be attached to the RuntimePlan: {error}"
-                ))]
-            })?;
-    }
-    let pure_function_candidate_count = plan.pure_function_candidate_count();
-    let character_dialogue_generation = facts
-        .character_dialogue_generation()
-        .map(|declaration| {
-            declaration
-                .try_map_type_refs(|ty| Ok::<_, std::convert::Infallible>(ty.identity()))
-                .map(Arc::new)
-                .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
-        })
-        .transpose()?;
-    Ok(RuntimePlanLowerReport {
-        plan,
-        stats: RuntimePlanLowerStats {
-            pure_function_candidates: pure_function_candidate_count,
-            pure_candidate_functions_seen: 0,
-            pure_candidate_lower_attempts: 0,
-            ..RuntimePlanLowerStats::default()
-        },
-        dialogue_content_catalog,
-        character_presentation_catalog: facts.character_presentation_catalog().cloned(),
-        character_dialogue_generation,
-        assertion_sites: assertion_sites.into_boxed_slice(),
-    })
+    Ok(PreparedRuntimePlanLowering::new(
+        builder,
+        facts,
+        plain_text_context_template,
+        assertion_sites,
+        pure_program_definitions
+            .into_iter()
+            .filter_map(|definition| definition.view_task_plan)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    ))
 }
 
 fn flow_invocation_schema(
@@ -3555,6 +3501,14 @@ fn reserve_pure_programs<'facts>(
             errors.push(RuntimePlanLowerError::new(error.to_string()));
             continue;
         }
+        let view_task_plan =
+            match preparation::reserve_view_task_plan(builder, program, site.clone()) {
+                Ok(source) => source,
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(error.to_string()));
+                    continue;
+                }
+            };
         let iteration_output = if matches!(
             program.source(),
             arcweft_lang_sema::final_analysis::CheckedExecutionSource::ExportIteration(_)
@@ -3584,6 +3538,7 @@ fn reserve_pure_programs<'facts>(
             site,
             body_kind,
             iteration_output,
+            view_task_plan,
         });
     }
     definitions
@@ -5908,6 +5863,7 @@ impl RuntimeMutationReturn {
 }
 
 struct FinalFlowLowerer<'a> {
+    task_plans: &'a arcweft_core::plan::RuntimeTaskPlanConstructionContext,
     expression_overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     mutation_return: Option<RuntimeMutationReturn>,
     implicit_body_root: Option<ExprId>,
@@ -6244,6 +6200,7 @@ impl<'a> FinalFlowLowerer<'a> {
         assertion_owner: RuntimeAssertionOwner,
     ) -> Self {
         Self {
+            task_plans: context.task_plans,
             module,
             expression_overrides: BTreeMap::new(),
             mutation_return: None,
@@ -6331,8 +6288,11 @@ impl<'a> FinalFlowLowerer<'a> {
             self.facts,
             self.locals,
             self.trait_methods,
-            self.function_sites,
-            self.dialogue_effect_sites,
+            FinalExprSourceSites {
+                functions: self.function_sites,
+                dialogue_effects: self.dialogue_effect_sites,
+                tasks: self.task_plans,
+            },
             (&self.control.pipes, &self.control.tries),
         )
         .with_closure_sites(self.closure_sites)
@@ -6914,7 +6874,10 @@ impl<'a> FinalFlowLowerer<'a> {
                         contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
                             *contract.finalize().as_bytes(),
                         ),
-                        plan: admission.plan(),
+                        plan: self
+                            .task_plans
+                            .reserve_original_source()
+                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                         producer_site: admission.site(),
                         payload_type: arcweft_core::task::RuntimeTypeSemanticDigest::from_bytes(
                             *identity.as_bytes(),
@@ -6923,7 +6886,6 @@ impl<'a> FinalFlowLowerer<'a> {
                         priority: arcweft_core::task::TaskPriority(0),
                         cancel_scope: arcweft_core::task::CancelScopeId("flow".into()),
                         policy: arcweft_core::task::TaskPolicy::AlwaysStart,
-                        outcome: arcweft_core::task::TaskOutcomeContract::new(payload),
                         request: arcweft_core::plan::RuntimeHostTaskRequestTemplateSeed {
                             capability: arcweft_core::task::HostCapabilityId("flow_thread".into()),
                             operation: "run_child".into(),
@@ -7851,7 +7813,14 @@ impl<'a> FinalFlowLowerer<'a> {
             .collect::<Result<Vec<_>, _>>()?;
         let mut ops = vec![RuntimeFlowOpSeed::StartNeedProducer {
             binding: bind_seed(&result_type, local.clone()),
-            target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed { plan, arguments },
+            target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                plan,
+                task_plan: self
+                    .task_plans
+                    .reserve_original_source()
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                arguments,
+            },
         }];
         ops.extend(self.apply_value_continuation(
             local_seed(&result_type, local, RuntimeLocalReadMode::Move),

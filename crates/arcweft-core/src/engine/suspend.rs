@@ -462,7 +462,7 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.value(),
-                            self.fiber.frame.env.function_instantiation(),
+                            state.source_context.instantiation(),
                         ) {
                             Ok(true) => {}
                             Ok(false) => {
@@ -490,7 +490,7 @@ impl Engine {
                             &self.plan,
                             binding,
                             value.into_value(),
-                            self.fiber.frame.env.function_instantiation(),
+                            state.source_context.instantiation(),
                         )
                         .expect("checked external Need binding remains valid")
                         .expect("checked external Need binding matches");
@@ -551,7 +551,7 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.value(),
-                                self.fiber.frame.env.function_instantiation(),
+                                state.source_context.instantiation(),
                             ) {
                                 Ok(true) => {}
                                 Ok(false) => {
@@ -581,7 +581,7 @@ impl Engine {
                                 &self.plan,
                                 binding,
                                 value.into_value(),
-                                self.fiber.frame.env.function_instantiation(),
+                                state.source_context.instantiation(),
                             )
                             .expect("checked await binding remains valid")
                             .expect("checked await binding matches");
@@ -929,6 +929,7 @@ impl Engine {
         });
         let queued = VecDeque::new();
         let state = AwaitState {
+            source_context: self.fiber.frame.env.source_function_context(),
             binding,
             handle: need,
             item_type: AwaitItemType::Plan(item_type),
@@ -948,8 +949,14 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let plan = target.plan().clone();
-        let mut arguments = Vec::with_capacity(target.arguments().len());
+        let plan = target.plan();
+        if self.plan.task_plan(target.task_plan()).is_none() {
+            self.fail_eval(
+                "Need producer start has no task plan in the current source namespace",
+                output,
+            );
+            return;
+        }
         for (index, argument) in target.arguments().iter().enumerate() {
             let expression = argument.value();
             let Some(expected) = plan.argument_types().get(index).copied() else {
@@ -968,6 +975,10 @@ impl Engine {
                 );
                 return;
             }
+        }
+        let mut arguments = Vec::with_capacity(target.arguments().len());
+        for (index, argument) in target.arguments().iter().enumerate() {
+            let expression = argument.value();
             let value = match self.evaluate_expr_with_backend(expression, pure_backend) {
                 Ok(value) => value,
                 Err(error) => {
@@ -987,7 +998,7 @@ impl Engine {
         let proof = match self.need_producers.inspect_start_visit(
             self.generation,
             self.fiber.persistent_id,
-            plan,
+            plan.clone(),
             arguments,
         ) {
             Ok(proof) => proof,
@@ -1122,6 +1133,7 @@ impl Engine {
             crate::task::RuntimeNeedHandle::try_from_accepted_launch(spec, submission.handle())
                 .expect("aggregate base uses its actual accepted journal receipt");
         let mut state = AwaitManyState {
+            source_context: self.fiber.frame.env.source_function_context(),
             binding,
             target,
             base,
@@ -1154,9 +1166,10 @@ impl Engine {
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
-                    if !self
-                        .task_outcome_accepts_live_value(&state.target.child.outcome, value.value())
-                    {
+                    if !self.task_outcome_accepts_live_value(
+                        &state.target.child.outcome(),
+                        value.value(),
+                    ) {
                         let in_flight = &state.in_flight[position];
                         let message = format!(
                             "await task {} at index {} published a payload outside its checked outcome contract",

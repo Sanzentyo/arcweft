@@ -202,6 +202,19 @@ impl RuntimeControlEffectContractId {
 
 /// Issued only by the complete typed contract transcript below; no raw-byte
 /// constructor or deserializer can issue this proof.
+///
+/// ```compile_fail
+/// use arcweft_core::plan::ControlEffectContractDigest;
+/// let _ = ControlEffectContractDigest::from_bytes([0; 32]);
+/// ```
+/// ```compile_fail
+/// fn encode<T: serde::Serialize>() {}
+/// encode::<arcweft_core::plan::ControlEffectContractDigest>();
+/// ```
+/// ```compile_fail
+/// fn decode<T: serde::de::DeserializeOwned>() {}
+/// decode::<arcweft_core::plan::ControlEffectContractDigest>();
+/// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ControlEffectContractDigest([u8; 32]);
 
@@ -249,16 +262,11 @@ impl RuntimeControlEffectContract {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct SealedContract {
-    contract: RuntimeControlEffectContract,
-    digest: ControlEffectContractDigest,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeControlEffectContractTable {
     // Finished rows are immutable and shared by cloned plan leases. Candidate
     // reservations remain exclusively owned by the aggregate builder.
-    rows: Arc<[SealedContract]>,
+    rows: Arc<[RuntimeControlEffectContract]>,
+    proofs: Option<Arc<[ControlEffectContractDigest]>>,
 }
 
 impl RuntimeControlEffectContractTable {
@@ -274,7 +282,7 @@ impl RuntimeControlEffectContractTable {
 
     #[must_use]
     pub fn get(&self, id: RuntimeControlEffectContractId) -> Option<&RuntimeControlEffectContract> {
-        self.rows.get(id.index()).map(|row| &row.contract)
+        self.rows.get(id.index())
     }
 
     #[must_use]
@@ -282,19 +290,42 @@ impl RuntimeControlEffectContractTable {
         &self,
         id: RuntimeControlEffectContractId,
     ) -> Option<ControlEffectContractDigest> {
-        self.rows.get(id.index()).map(|row| row.digest)
+        self.proofs.as_ref()?.get(id.index()).copied()
     }
 
     pub fn iter(
         &self,
     ) -> impl ExactSizeIterator<Item = (&RuntimeControlEffectContract, ControlEffectContractDigest)>
     {
-        self.rows.iter().map(|row| (&row.contract, row.digest))
+        self.rows
+            .iter()
+            .zip(self.proofs.as_deref().unwrap_or(&[]).iter().copied())
+    }
+
+    pub(super) fn from_definitions(rows: Vec<RuntimeControlEffectContract>) -> Self {
+        Self {
+            rows: rows.into(),
+            proofs: None,
+        }
+    }
+
+    pub(super) fn complete(
+        self,
+        proofs: Box<[ControlEffectContractDigest]>,
+    ) -> Result<Self, RuntimeControlEffectContractError> {
+        if self.rows.len() != proofs.len() {
+            return Err(RuntimeControlEffectContractError::OwnerRejected);
+        }
+        Ok(Self {
+            rows: self.rows,
+            proofs: Some(proofs.into()),
+        })
     }
 
     /// Iterative child-first sealing preserves declaration rows and each
     /// parent's child order. Shared children are computed once; every edge is
     /// still charged and written. Reserved forward edges may not form cycles.
+    #[cfg(test)]
     pub(super) fn seal(
         rows: Vec<RuntimeControlEffectContract>,
         types: &RuntimePlanTypeTable,
@@ -312,12 +343,7 @@ impl RuntimeControlEffectContractTable {
             }
             digests
         };
-        let rows = rows
-            .into_iter()
-            .zip(digests)
-            .map(|(contract, digest)| SealedContract { contract, digest })
-            .collect::<Box<[_]>>();
-        Ok(Self { rows: rows.into() })
+        Self::from_definitions(rows).complete(digests.into_boxed_slice())
     }
 }
 

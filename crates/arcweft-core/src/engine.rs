@@ -1481,9 +1481,11 @@ pub enum FlowStatusLabelStyle {
     Compact,
 }
 
-/// Suspended `await ... with` state.
+/// Suspended `await ... with` state, including the original function context
+/// retained while a Pending observer enters another function.
 #[derive(Debug, PartialEq)]
 pub struct AwaitState<H = crate::task::RuntimeNeedHandle, P = RuntimeNeedPublication> {
+    pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
     pub binding: Option<RuntimePattern>,
     pub handle: H,
     pub item_type: AwaitItemType,
@@ -1501,6 +1503,7 @@ type AwaitStateRollbackImage = AwaitState<
 impl Clone for AwaitStateRollbackImage {
     fn clone(&self) -> Self {
         Self {
+            source_context: self.source_context.clone(),
             binding: self.binding.clone(),
             handle: self.handle.clone(),
             item_type: self.item_type,
@@ -1535,6 +1538,7 @@ impl AwaitState {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<AwaitStateRollbackImage, String> {
         Ok(AwaitStateRollbackImage {
+            source_context: self.source_context.clone(),
             binding: self.binding.clone(),
             handle: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
                 &self.handle,
@@ -1558,6 +1562,7 @@ impl AwaitState {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(Self {
+            source_context: image.source_context,
             binding: image.binding,
             handle: image
                 .handle
@@ -1590,6 +1595,7 @@ pub enum AwaitItemType {
 #[derive(Debug, PartialEq)]
 pub struct AwaitManyState<H = crate::task::RuntimeNeedHandle, V = RuntimeValue, P = RuntimePayload>
 {
+    pub(crate) source_context: crate::value::RuntimeScopeTypeContext,
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
     pub base: H,
@@ -1610,6 +1616,7 @@ type AwaitManyStateRollbackImage = AwaitManyState<
 impl Clone for AwaitManyStateRollbackImage {
     fn clone(&self) -> Self {
         Self {
+            source_context: self.source_context.clone(),
             binding: self.binding.clone(),
             target: self.target.clone(),
             base: self.base.clone(),
@@ -1633,6 +1640,7 @@ impl AwaitManyState {
                 .map_err(|error| error.to_string())
         };
         Ok(AwaitManyStateRollbackImage {
+            source_context: self.source_context.clone(),
             binding: self.binding.clone(),
             target: self.target.clone(),
             base: crate::task::RuntimeNeedHandleSaveSnapshot::from_live_admitted(
@@ -1685,6 +1693,7 @@ impl AwaitManyState {
                 .map_err(|error| error.to_string())
         };
         Ok(Self {
+            source_context: image.source_context,
             binding: image.binding,
             target: image.target,
             base: image
@@ -4451,6 +4460,7 @@ impl Engine {
                 }
                 FlowFiberStatus::NeedWaiting(state) => {
                     FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
+                        source_context: state.source_context.clone(),
                         binding: state.binding.clone(),
                         handle: state.handle.clone(),
                         item_type: state.item_type,
@@ -4626,6 +4636,7 @@ mod rollback_tests {
             VecDeque::from([publication(1, affine), publication(2, RuntimeValue::Unit)]),
         );
         engine.fiber.frame.await_observer = Some(Box::new(AwaitState {
+            source_context: crate::value::RuntimeScopeTypeContext::Lexical,
             binding: None,
             handle,
             item_type,
@@ -5178,6 +5189,8 @@ mod dialogue_readiness_tests {
 
     #[test]
     fn native_terminal_root_retains_the_issued_blocked_child_until_resume_and_cleanup() {
+        use crate::plan::*;
+        use crate::task::{NeedProducerFamily, TaskClass};
         let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
         let mut builder = crate::plan::RuntimePlanBuilder::new();
         builder
@@ -5189,30 +5202,77 @@ mod dialogue_readiness_tests {
                 [],
             )
             .expect("unit type admission");
+        let coordinate = builder.reserve_task_plan().unwrap();
+        let function = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]),
+                role: RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs: Box::new([]),
+                result: unit,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap();
+        builder
+            .define_function_site_seed(
+                &function,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::HostCall {
+                        binding: None,
+                        target: RuntimeHostCallTargetSeed {
+                            producer: crate::task::HostCallProducerDefinition {
+                                contract: crate::task::NeedProducerContractDigest::from_bytes(
+                                    [1; 32],
+                                ),
+                                plan: coordinate.clone(),
+                                site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
+                            },
+                            public_id: "readiness.child".to_owned(),
+                            capability: "test".to_owned(),
+                            operation: "read".to_owned(),
+                            contract: None,
+                            args: Vec::new(),
+                            result: unit,
+                            mode: crate::step::RuntimeHostCallMode::Suspend,
+                            deterministic: true,
+                        },
+                    }]),
+                }),
+            )
+            .unwrap();
+        let control = crate::tests::host_task_control(&mut builder, unit);
+        builder
+            .define_task_plan(
+                &coordinate,
+                RuntimeTaskPlanSeed::new(
+                    function.clone(),
+                    NeedProducerFamily::HostAdapterTask,
+                    TaskClass::Io,
+                    RuntimeTaskRequestTemplateSeed::new(
+                        RuntimeTaskRequestSource::Operation(0),
+                        Box::new([]),
+                        Box::new([]),
+                    ),
+                    control,
+                    RuntimeTaskSemanticBinding::Ordinary,
+                ),
+            )
+            .unwrap();
         let plan = builder.finish().expect("unit plan seals");
-        let unit_id = plan
-            .type_table()
-            .id_for_semantic(unit)
-            .expect("admitted unit type");
+        let child_ops = plan
+            .function_sites()
+            .get(function.id())
+            .unwrap()
+            .body()
+            .executable()
+            .unwrap()
+            .ops()
+            .to_vec();
         let mut engine = Engine::new(plan);
         let (child, next_fiber_id) = engine
-            .prepare_child_fiber(
-                vec![FlowOp::HostCall {
-                    binding: None,
-                    target: crate::plan::RuntimeHostCallTarget {
-                        producer: crate::tests::host_producer(),
-                        public_id: "readiness.child".to_owned(),
-                        capability: "test".to_owned(),
-                        operation: "read".to_owned(),
-                        contract: None,
-                        args: Vec::new(),
-                        result: unit_id,
-                        mode: crate::step::RuntimeHostCallMode::Suspend,
-                        deterministic: true,
-                    },
-                }],
-                &[],
-            )
+            .prepare_child_fiber(child_ops, &[])
             .expect("the owning constructor issues the child and lexical scope");
         engine.child_fibers.push_back(child);
         engine.next_fiber_id = next_fiber_id;

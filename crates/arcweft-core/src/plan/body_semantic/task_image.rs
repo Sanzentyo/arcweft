@@ -8,101 +8,56 @@ mod preflight;
 )]
 mod preparation;
 
-use super::request::RuntimeTaskRequestTemplate;
-use crate::plan::{
-    RuntimeControlEffectContractId, RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner,
-};
-use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId};
-use crate::task::{NeedProducerFamily, TaskClass};
+use crate::plan::{RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner};
+use crate::runtime_id::RuntimeLineTaskGroupId;
 
-/// Source definitions only. None of these fields is a completed task key.
-pub(super) struct RuntimeTaskPlan {
-    pub(super) producer_function: RuntimeFunctionSiteId,
-    pub(super) family: NeedProducerFamily,
-    pub(super) class: TaskClass,
-    pub(super) request_template: RuntimeTaskRequestTemplate,
-    pub(super) control_effect: RuntimeControlEffectContractId,
-    pub(super) binding: RuntimeTaskSemanticBinding,
-}
+pub(crate) type RuntimeTaskPlan = crate::plan::RuntimeTaskPlan<RuntimeLineTaskGroupId>;
+type RuntimeTaskSemanticBinding = crate::plan::RuntimeTaskSemanticBinding<RuntimeLineTaskGroupId>;
 
-/// Binding definitions resolve through their actual semantic owner during the
-/// common pass. Line retains a group coordinate, never a supplied digest.
-pub(super) enum RuntimeTaskSemanticBinding {
-    Ordinary,
-    View,
-    AwaitManyBase,
-    AwaitManyChild,
-    Timeout {
-        contract: crate::task::NeedTimeoutContractDigest,
-    },
-    Line {
-        group: RuntimeLineTaskGroupId,
-    },
-}
-
-impl RuntimeTaskSemanticBinding {
-    pub(super) const fn semantic_tag(&self) -> u8 {
-        match self {
-            Self::Ordinary => 0,
-            Self::View => 1,
-            Self::AwaitManyBase => 2,
-            Self::AwaitManyChild => 3,
-            Self::Timeout { .. } => 4,
-            Self::Line { .. } => 5,
-        }
-    }
-}
-
-impl NeedProducerFamily {
-    pub(super) const fn accepts_runtime_task_binding(
-        self,
-        binding: &RuntimeTaskSemanticBinding,
-    ) -> bool {
-        matches!(
-            (self, binding),
-            (
-                Self::StructuredTaskPlan
-                    | Self::HostAdapterTask
-                    | Self::MakeNeedHandle
-                    | Self::SelectedCallable,
-                RuntimeTaskSemanticBinding::Ordinary
-            ) | (
-                Self::ViewMatchSubscription,
-                RuntimeTaskSemanticBinding::View
-            ) | (
-                Self::AwaitManyBase,
-                RuntimeTaskSemanticBinding::AwaitManyBase
-            ) | (
-                Self::AwaitManyChild,
-                RuntimeTaskSemanticBinding::AwaitManyChild
-            ) | (Self::Timeout, RuntimeTaskSemanticBinding::Timeout { .. })
-                | (Self::LineTask, RuntimeTaskSemanticBinding::Line { .. })
-        )
-    }
-}
-
-/// Codec-only integrity assertion, with no conversion into a typed digest.
-pub(super) struct ExpectedTaskPlanKey([u8; 32]);
-impl ExpectedTaskPlanKey {
-    pub(super) const fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-    pub(super) const fn bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
+pub(in crate::plan) use crate::task::ExpectedTaskPlanKey;
 
 /// Owns the sole aggregate storage until every semantic check has succeeded.
 /// No public plan/table is constructed by this preparation shape.
-pub(super) struct UnsealedRuntimePlanImage {
+pub(in crate::plan) struct UnsealedRuntimePlanImage {
     pub(super) inventory: RuntimePlanInventory,
     pub(super) coordinate_owner: RuntimeTaskPlanCoordinateOwner,
     pub(super) task_plans: Box<[RuntimeTaskPlan]>,
     expected_task_plan_keys: Option<Box<[ExpectedTaskPlanKey]>>,
+    preparation_meter: Option<crate::task::semantic::TaskSemanticMeter>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(super) enum RuntimeTaskPlanImageError {
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+pub enum RuntimeTaskPlanSealError {
+    #[error("the original builder has consumed its task construction slots")]
+    ConstructionClosed,
+    #[error("the original task construction namespace is already sealed")]
+    AlreadySealed,
+    #[error("task definition coordinate belongs to another builder")]
+    ForeignCoordinate,
+    #[error("task row {ordinal} is already defined")]
+    DuplicateDefinition { ordinal: u32 },
+    #[error("task row {ordinal} has no source definition")]
+    IncompleteDefinition { ordinal: usize },
+    #[error(transparent)]
+    Construction(Box<crate::plan::RuntimePlanBuildError>),
+    #[error(transparent)]
+    Verification(Box<crate::plan::entry_inventory::RuntimePlanError>),
+    #[error("task completion has {completed_rows} rows for {source_rows} source definitions")]
+    CompletionCount {
+        source_rows: usize,
+        completed_rows: usize,
+    },
+    #[error("View task row {ordinal} requires the original View task-plan authority")]
+    MissingViewAuthority { ordinal: usize },
+    #[error("View task row {ordinal} rejected: {source}")]
+    ViewAuthority {
+        ordinal: usize,
+        source: crate::plan::ViewTaskPlanValidationError,
+    },
+    #[error("task row {ordinal} differs from its expected decoded key")]
+    ExpectedKeyMismatch { ordinal: usize },
+    #[error("task row {ordinal} duplicates completed task key from row {first}")]
+    DuplicateKey { first: usize, ordinal: usize },
     #[error("executable table {table} row {ordinal} has {actual} children; maximum {maximum}")]
     Children {
         table: u8,
@@ -124,36 +79,48 @@ pub(super) enum RuntimeTaskPlanImageError {
     CoordinateCount { rows: usize, coordinates: u32 },
     #[error("task image expected key count {keys} differs from {rows} task rows")]
     ExpectedKeyCount { rows: usize, keys: usize },
-    #[error("task row {ordinal} family {family:?} cannot use binding tag {binding}")]
-    FamilyBinding {
+    #[error("task row {ordinal} definition rejected: {source}")]
+    TaskDefinition {
         ordinal: usize,
-        family: NeedProducerFamily,
-        binding: u8,
+        source: crate::plan::RuntimeTaskPlanValidationError,
     },
 }
 
-impl From<crate::task::semantic::TaskSemanticEncodingError> for RuntimeTaskPlanImageError {
+impl From<crate::task::semantic::TaskSemanticEncodingError> for RuntimeTaskPlanSealError {
     fn from(error: crate::task::semantic::TaskSemanticEncodingError) -> Self {
         Self::Encoding(error)
     }
 }
 
+impl From<crate::plan::RuntimePlanBuildError> for RuntimeTaskPlanSealError {
+    fn from(error: crate::plan::RuntimePlanBuildError) -> Self {
+        Self::Construction(Box::new(error))
+    }
+}
+
+impl From<crate::plan::entry_inventory::RuntimePlanError> for RuntimeTaskPlanSealError {
+    fn from(error: crate::plan::entry_inventory::RuntimePlanError) -> Self {
+        Self::Verification(Box::new(error))
+    }
+}
+
 impl UnsealedRuntimePlanImage {
-    pub(super) fn new(
+    pub(in crate::plan) fn new(
         inventory: RuntimePlanInventory,
         coordinate_owner: RuntimeTaskPlanCoordinateOwner,
         task_plans: Box<[RuntimeTaskPlan]>,
         expected_task_plan_keys: Option<Box<[ExpectedTaskPlanKey]>>,
-    ) -> Result<Self, RuntimeTaskPlanImageError> {
+        preparation_meter: crate::task::semantic::TaskSemanticMeter,
+    ) -> Result<Self, RuntimeTaskPlanSealError> {
         let rows = task_plans.len();
         let coordinates = coordinate_owner.len();
         if rows != coordinates as usize {
-            return Err(RuntimeTaskPlanImageError::CoordinateCount { rows, coordinates });
+            return Err(RuntimeTaskPlanSealError::CoordinateCount { rows, coordinates });
         }
         if let Some(keys) = &expected_task_plan_keys
             && keys.len() != rows
         {
-            return Err(RuntimeTaskPlanImageError::ExpectedKeyCount {
+            return Err(RuntimeTaskPlanSealError::ExpectedKeyCount {
                 rows,
                 keys: keys.len(),
             });
@@ -163,7 +130,28 @@ impl UnsealedRuntimePlanImage {
             coordinate_owner,
             task_plans,
             expected_task_plan_keys,
+            preparation_meter: Some(preparation_meter),
         })
+    }
+
+    #[cfg(test)]
+    pub(in crate::plan) fn new_for_test(
+        inventory: RuntimePlanInventory,
+        coordinate_owner: RuntimeTaskPlanCoordinateOwner,
+        task_plans: Box<[RuntimeTaskPlan]>,
+        expected_task_plan_keys: Option<Box<[ExpectedTaskPlanKey]>>,
+    ) -> Result<Self, RuntimeTaskPlanSealError> {
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        Self::new(
+            inventory,
+            coordinate_owner,
+            task_plans,
+            expected_task_plan_keys,
+            crate::task::semantic::TaskSemanticMeter::new(
+                limits.max_semantic_work,
+                limits.max_transcript_bytes,
+            ),
+        )
     }
 
     pub(super) fn expected_key(&self, ordinal: usize) -> Option<&ExpectedTaskPlanKey> {

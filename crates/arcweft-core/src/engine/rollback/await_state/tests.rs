@@ -47,6 +47,7 @@ fn waiting() -> (
     (
         owner,
         AwaitState {
+            source_context: crate::value::RuntimeScopeTypeContext::Lexical,
             binding: None,
             handle,
             item_type: AwaitItemType::Plan(item_type),
@@ -94,7 +95,7 @@ fn native_waits_share_live_inert_and_parent_node_limits() {
 fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_projection() {
     let (owner, live, wrong_type) = waiting();
     let inert = live.inert_rollback_image(&owner).unwrap();
-    for case in 0..5 {
+    for case in 0..6 {
         let mut corrupt: AwaitStateRollbackImage = inert.clone();
         match case {
             0 => corrupt.item_type = AwaitItemType::Plan(wrong_type),
@@ -118,6 +119,14 @@ fn native_waits_reject_wrong_types_correlations_and_cursor_frontiers_before_proj
                 .queued
                 .push_back(corrupt.queued.front().unwrap().clone()),
             4 => corrupt.observed_through.as_mut().unwrap().sequence = TaskSequence(0),
+            5 => {
+                corrupt.source_context = crate::value::RuntimeScopeTypeContext::Function {
+                    site: crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(
+                        std::num::NonZeroU32::new(1).unwrap(),
+                    ),
+                    instantiation: None,
+                };
+            }
             _ => unreachable!(),
         }
         let before = corrupt.clone();

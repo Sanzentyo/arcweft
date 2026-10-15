@@ -7,15 +7,28 @@ use super::{
     LineTaskGroup, LineTaskNode, LineTaskTrigger, ParallelPolicy, PresentationCleanup,
     RuntimeLineHandleSiteKind,
 };
-use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
+use crate::plan::RuntimeTaskPlanCoordinateOwner;
 use crate::plan::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
-use crate::plan::{RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanCoordinateOwner};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
+/// Proof of the complete original Line graph and cleanup semantics.
+///
+/// ```compile_fail
+/// use arcweft_core::line_task::LinePlanSemanticDigest;
+/// let _ = LinePlanSemanticDigest::from_bytes([0; 32]);
+/// ```
+/// ```compile_fail
+/// fn encode<T: serde::Serialize>() {}
+/// encode::<arcweft_core::line_task::LinePlanSemanticDigest>();
+/// ```
+/// ```compile_fail
+/// fn decode<T: serde::de::DeserializeOwned>() {}
+/// decode::<arcweft_core::line_task::LinePlanSemanticDigest>();
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct LinePlanSemanticDigest([u8; 32]);
+pub struct LinePlanSemanticDigest([u8; 32]);
 impl LinePlanSemanticDigest {
-    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -74,12 +87,6 @@ impl LineTaskGroup {
         meter: &mut TaskSemanticMeter,
         group: crate::runtime_id::RuntimeLineTaskGroupId,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
         limits: crate::plan::RuntimeTaskPlanSealLimits,
     ) -> Result<LinePlanSemanticDigest, RuntimeBodySemanticError> {
         meter.status()?;
@@ -93,7 +100,7 @@ impl LineTaskGroup {
             });
         }
         let mut encoder = TaskSemanticEncoder::new(b"arcweft.runtime-plan.line-plan.v1\0", meter);
-        self.write_semantic(context, &mut encoder, task_owner, task_reference)?;
+        self.write_semantic(context, &mut encoder, task_owner)?;
         Ok(LinePlanSemanticDigest(*encoder.finish()?.as_bytes()))
     }
 
@@ -102,12 +109,6 @@ impl LineTaskGroup {
         context: &RuntimeBodySemanticContext<'_>,
         encoder: &mut TaskSemanticEncoder<'_>,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.digest(self.definition.as_bytes());
         context.write_type(encoder, self.result_type)?;
@@ -119,7 +120,7 @@ impl LineTaskGroup {
                 context.write_local(encoder, *local)?;
             }
         }
-        context.write_flow(encoder, &self.activation_ops, task_owner, task_reference)?;
+        context.write_flow(encoder, &self.activation_ops, task_owner)?;
         encoder.count(self.handle_sites.len());
         for (ordinal, site) in self.handle_sites.iter().enumerate() {
             encoder.enter_element();
@@ -176,7 +177,7 @@ impl LineTaskGroup {
                     encoder.count(scope.index());
                 }
                 LineTaskNode::Action(ops) => {
-                    context.write_flow(encoder, ops, task_owner, task_reference)?;
+                    context.write_flow(encoder, ops, task_owner)?;
                 }
             }
             encoder.status()?;
@@ -186,7 +187,7 @@ impl LineTaskGroup {
             encoder.enter_element();
             encoder.count(ordinal);
             encoder.string(rule.trigger.as_str());
-            context.write_flow(encoder, &rule.action, task_owner, task_reference)?;
+            context.write_flow(encoder, &rule.action, task_owner)?;
         }
         for (ordinal, ops) in [
             &self.cleanup.completed,
@@ -198,7 +199,7 @@ impl LineTaskGroup {
         {
             encoder.enter_element();
             encoder.count(ordinal);
-            context.write_flow(encoder, ops, task_owner, task_reference)?;
+            context.write_flow(encoder, ops, task_owner)?;
         }
         encoder.tag(self.cleanup.policy.child_tasks.semantic_tag());
         encoder.tag(self.cleanup.policy.presentation.semantic_tag());

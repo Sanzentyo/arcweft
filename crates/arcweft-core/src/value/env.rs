@@ -8,6 +8,63 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
 use crate::task::RuntimeProgramOwner;
 
+impl super::RuntimeScopeTypeContext {
+    pub(crate) fn instantiation(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        match self {
+            Self::Lexical => None,
+            Self::Function { instantiation, .. } => instantiation.as_deref(),
+        }
+    }
+
+    fn validate_original(
+        &self,
+        plan: &crate::plan::RuntimePlan,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
+        let Self::Function {
+            site,
+            instantiation,
+        } = self
+        else {
+            return Ok(());
+        };
+        plan.validate_function_instantiation(*site, instantiation.as_deref(), work)
+            .map_err(|error| {
+                work.failure().map_or_else(
+                    || super::AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    },
+                    super::AwbcRuntimeValueSnapshotError::from,
+                )
+            })
+    }
+
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut super::RuntimeRetainedValueAdmission,
+        origin: crate::entry::schema::value_encoding::ValueAdmissionOrigin,
+    ) -> Result<(), super::AwbcRuntimeValueSnapshotError> {
+        let Self::Function {
+            site,
+            instantiation,
+        } = self
+        else {
+            return Ok(());
+        };
+        admission.validate_metadata(&(1_u8, site.get(), instantiation))?;
+        admission.admit_composite(origin, |owner, resources| {
+            let Some(RuntimeProgramOwner::Plan(plan)) = owner else {
+                return Err(super::AwbcRuntimeValueSnapshotError::Message {
+                    message: "suspended native source requires its original plan".into(),
+                });
+            };
+            self.validate_original(plan, &resources.work())
+        })
+    }
+}
+
 /// Non-runnable rollback image of one native lexical environment. Values are
 /// encoded under the exact immutable program lease; spare allocation scopes
 /// are omitted because they contain no bindings and carry no semantics.
@@ -145,6 +202,17 @@ impl RuntimeEnvRollbackImage {
 }
 
 impl<V> RuntimeEnv<V> {
+    pub(crate) fn source_function_context(&self) -> super::RuntimeScopeTypeContext {
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| match &scope.function_context {
+                super::RuntimeScopeTypeContext::Lexical => None,
+                context @ super::RuntimeScopeTypeContext::Function { .. } => Some(context.clone()),
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn function_instantiation(
         &self,
     ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
@@ -215,23 +283,9 @@ impl<V> RuntimeEnv<V> {
         resources.work().collection(scopes.len())?;
         // All function headers precede the complete declaration/place inventory.
         for scope in scopes {
-            if let super::RuntimeScopeTypeContext::Function {
-                site,
-                instantiation,
-            } = &scope.function_context
-            {
-                plan.validate_function_instantiation(
-                    *site,
-                    instantiation.as_deref(),
-                    &resources.work(),
-                )
-                .map_err(|error| {
-                    resources.work().failure().map_or_else(
-                        || invalid(error.to_string()),
-                        super::AwbcRuntimeValueSnapshotError::from,
-                    )
-                })?;
-            }
+            scope
+                .function_context
+                .validate_original(plan, &resources.work())?;
         }
         let mut instantiation = None;
         for scope in scopes {
@@ -1150,8 +1204,20 @@ mod tests {
         let value = RuntimeValue::Tuple(vec![RuntimeValue::Unit]);
         env.set(declaration, value.clone());
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
+        let suspended_source = env.source_function_context();
         env.push_function_scope(sites[1], 0, None);
         assert!(env.function_instantiation().is_none());
+        assert_eq!(suspended_source.instantiation(), Some(binding.as_ref()));
+        let mut retained = super::super::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        suspended_source
+            .admit_retained(
+                &mut retained,
+                crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            )
+            .unwrap();
         env.pop_scope();
         assert_eq!(env.function_instantiation(), Some(binding.as_ref()));
         let image = env.inert_rollback_image(&owner).unwrap();

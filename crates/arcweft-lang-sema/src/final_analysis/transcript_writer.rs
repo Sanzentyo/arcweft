@@ -87,3 +87,14 @@ impl<'a, C: TranscriptByteCounter + ?Sized> TranscriptHasher<'a, C> {
         *self.hasher.finalize().as_bytes()
     }
 }
+
+impl<C: TranscriptByteCounter + ?Sized> arcweft_core::pattern::MatchSourceSink
+    for TranscriptHasher<'_, C>
+where
+    C::Error: From<TranscriptWriteError> + From<arcweft_core::pattern::MatchSourceEncodingError>,
+{
+    type Error = C::Error;
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.update(bytes)
+    }
+}

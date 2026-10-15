@@ -1,7 +1,7 @@
 //! Fixed-table/source-order children, from the actual admitted row owners.
 //! Count traversal uses explicit cursors and does not resolve semantic IDs.
 
-use super::{RuntimeTaskPlanImageError, UnsealedRuntimePlanImage};
+use super::{RuntimeTaskPlanSealError, UnsealedRuntimePlanImage};
 use crate::plan::RuntimeFunctionSiteBody;
 use crate::plan::RuntimeTaskPlanSealLimits;
 use crate::plan::body_semantic::callable::preflight::RuntimeCallableChildPreflight;
@@ -15,11 +15,11 @@ struct Children<'a> {
     meter: &'a mut TaskSemanticMeter,
 }
 impl Children<'_> {
-    fn count(&mut self, count: usize) -> Result<(), RuntimeTaskPlanImageError> {
+    fn count(&mut self, count: usize) -> Result<(), RuntimeTaskPlanSealError> {
         let actual = self.meter.checked_count_sum(count, 0)?;
         if actual > self.maximum as usize {
             self.meter.reject_owner();
-            return Err(RuntimeTaskPlanImageError::Children {
+            return Err(RuntimeTaskPlanSealError::Children {
                 table: self.table,
                 ordinal: self.ordinal,
                 actual,
@@ -32,7 +32,7 @@ impl Children<'_> {
         &mut self,
         auxiliary: &mut RuntimeCallableChildPreflight<'_>,
         root: RuntimeExpressionNode<'_>,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         root.try_visit_owned_events(&mut |event| {
             if let RuntimeExpressionTreeEvent::Enter { node, .. } = event {
                 self.count(node.owned_children().count())?;
@@ -66,7 +66,7 @@ impl Children<'_> {
         &mut self,
         auxiliary: &mut RuntimeCallableChildPreflight<'_>,
         root: &[crate::stream::StreamOp],
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         use crate::stream::StreamOp;
         enum Frame<'a> {
             Body(&'a [StreamOp]),
@@ -140,7 +140,7 @@ impl Children<'_> {
         &mut self,
         auxiliary: &mut RuntimeCallableChildPreflight<'_>,
         ops: &[crate::plan::FlowOp],
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         crate::plan::try_visit_ops_events(ops, &mut |event| {
             match event {
                 crate::plan::RuntimeFlowTreeEvent::EnterBody { ops, .. } => {
@@ -151,7 +151,7 @@ impl Children<'_> {
                     let mut values = 0;
                     op.try_visit_value_roots(&mut |_, _| {
                         values = self.meter.checked_count_sum(values, 1)?;
-                        Ok::<(), RuntimeTaskPlanImageError>(())
+                        Ok::<(), RuntimeTaskPlanSealError>(())
                     })?;
                     self.count(values)?;
                     op.try_visit_value_roots(&mut |_, node| self.node(auxiliary, node))?;
@@ -169,7 +169,7 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         let mut auxiliary = RuntimeCallableChildPreflight::new(&self.inventory);
         self.preflight_layout_children(limits, meter)?;
         self.preflight_execution_children(limits, meter, &mut auxiliary)?;
@@ -180,7 +180,7 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         meter.status()?;
         let plan = &self.inventory;
         for (ordinal, ty) in plan.type_table().declarations().enumerate() {
@@ -251,7 +251,7 @@ impl UnsealedRuntimePlanImage {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
         auxiliary: &mut RuntimeCallableChildPreflight<'_>,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         let plan = &self.inventory;
         for (ordinal, row) in plan.function_sites().iter().enumerate() {
             let mut check = Children {
@@ -347,7 +347,7 @@ impl UnsealedRuntimePlanImage {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
         auxiliary: &mut RuntimeCallableChildPreflight<'_>,
-    ) -> Result<(), RuntimeTaskPlanImageError> {
+    ) -> Result<(), RuntimeTaskPlanSealError> {
         let plan = &self.inventory;
         for (ordinal, row) in plan.pure_helpers().iter().enumerate() {
             let mut check = Children {

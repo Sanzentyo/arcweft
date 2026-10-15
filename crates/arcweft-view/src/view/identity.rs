@@ -1,5 +1,8 @@
 //! Stable semantic identities for authored and public Views.
 
+use arcweft_core::pattern::{
+    CanonicalMatchSource, MatchSourceEncodingError, MatchSourceSink, MatchSourceWriter,
+};
 use arcweft_id::{IdError, PublicId};
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -43,16 +46,30 @@ pub struct AcceptedViewProgramRevision([u8; 32]);
 pub struct ViewMatchSiteId([u8; 32]);
 
 impl ViewMatchSiteId {
-    /// The semantic owner supplies its canonical accepted structural path.
-    pub fn for_semantic_coordinate(coordinate: &[u8]) -> Self {
+    pub const DOMAIN: &'static [u8] = b"arcweft.view.match-site.v1\0";
+    /// Streams the original owner's canonical path without copying it.
+    pub fn for_source_coordinate<C: CanonicalMatchSource>(
+        coordinate: &C,
+    ) -> Result<Self, MatchSourceEncodingError> {
         let mut hash = blake3::Hasher::new();
-        hash.update(b"arcweft.view.match-site.v1\0");
-        hash.update(coordinate);
-        Self(*hash.finalize().as_bytes())
+        hash.update(Self::DOMAIN);
+        let mut writer = MatchSourceWriter::new(MatchSiteTranscript(hash));
+        let encoded = coordinate.write_source(&mut writer);
+        Ok(Self(*writer.finish(encoded)?.0.finalize().as_bytes()))
     }
 
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+struct MatchSiteTranscript(blake3::Hasher);
+
+impl MatchSourceSink for MatchSiteTranscript {
+    type Error = MatchSourceEncodingError;
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        self.0.update(bytes);
+        Ok(())
     }
 }
 
@@ -62,9 +79,10 @@ impl ViewMatchSiteId {
 pub struct CheckedViewMatchAdmissionDigest([u8; 32]);
 
 impl CheckedViewMatchAdmissionDigest {
+    pub const DOMAIN: &'static [u8] = b"arcweft.view.checked-match-admission.v1\0";
     pub fn for_match_semantic_transcript(checked: &[u8; 32]) -> Self {
         let mut hash = blake3::Hasher::new();
-        hash.update(b"arcweft.view.checked-match-admission.v1\0");
+        hash.update(Self::DOMAIN);
         hash.update(checked);
         Self(*hash.finalize().as_bytes())
     }

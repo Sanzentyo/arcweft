@@ -409,16 +409,18 @@ impl Engine {
                     args,
                     named_args,
                 };
-                let request = match RuntimeHostCallRequest::admit(
-                    id.clone(),
-                    target.producer,
-                    self.generation,
-                    request,
-                    result,
-                    target.mode,
-                    target.deterministic,
-                    &mut self.need_producers,
-                ) {
+                let request = match target.producer.sealed_definition().and_then(|producer| {
+                    RuntimeHostCallRequest::admit(
+                        id.clone(),
+                        producer,
+                        self.generation,
+                        request,
+                        result,
+                        target.mode,
+                        target.deterministic,
+                        &mut self.need_producers,
+                    )
+                }) {
                     Ok(request) => request,
                     Err(error) => {
                         self.fail_eval(error, output);

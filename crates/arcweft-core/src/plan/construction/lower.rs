@@ -28,7 +28,6 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
 use crate::task::{
     AwaitManyTarget, HostTaskRequestTemplate, NamedHostArg, RuntimeHostArgumentTemplate,
-    TaskOutcomeContract,
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
@@ -312,25 +311,6 @@ impl RuntimeAgentTypeContext for RuntimePlanBodyConstruction<'_> {
 }
 
 impl RuntimePlanBodyConstruction<'_> {
-    fn validate_task_outcome(
-        &self,
-        outcome: &TaskOutcomeContract,
-        context: &'static str,
-    ) -> Result<(), RuntimePlanBuildError> {
-        match outcome {
-            TaskOutcomeContract::Program { payload } => {
-                self.resolve_seed_type(context, *payload)?;
-                Ok(())
-            }
-            TaskOutcomeContract::Standalone { .. } if outcome.standalone_contract_is_valid() => {
-                Ok(())
-            }
-            TaskOutcomeContract::Standalone { .. } => {
-                Err(RuntimePlanBuildError::InvalidStandaloneTaskOutcome { context })
-            }
-        }
-    }
-
     pub(super) fn lower_pattern_seed(
         &self,
         seed: RuntimePatternSeed,
@@ -3740,8 +3720,11 @@ impl RuntimePlanBodyConstruction<'_> {
                     )?;
                     arguments.push(argument);
                 }
-                let target =
-                    crate::plan::RuntimeNeedProducerStartTarget::try_new(target.plan, arguments)?;
+                let target = crate::plan::RuntimeNeedProducerStartTarget::try_new(
+                    target.plan,
+                    target.task_plan,
+                    arguments,
+                )?;
                 FlowOp::StartNeedProducer { binding, target }
             }
             RuntimeFlowOpSeed::AwaitMany {
@@ -3752,15 +3735,34 @@ impl RuntimePlanBodyConstruction<'_> {
                 if target.limit == 0 {
                     return Err(RuntimePlanBuildError::ZeroAwaitManyLimit);
                 }
-                if target.base.family != crate::task::NeedProducerFamily::AwaitManyBase
-                    || target.child.family != crate::task::NeedProducerFamily::AwaitManyChild
+                for (template, binding, context) in
+                    [
+                        (
+                            &target.base,
+                            crate::plan::RuntimeTaskSemanticBinding::<
+                                super::RuntimeLineTaskGroupSeedId,
+                            >::AwaitManyBase,
+                            "await-many base",
+                        ),
+                        (
+                            &target.child,
+                            crate::plan::RuntimeTaskSemanticBinding::<
+                                super::RuntimeLineTaskGroupSeedId,
+                            >::AwaitManyChild,
+                            "await-many child",
+                        ),
+                    ]
                 {
-                    return Err(RuntimePlanBuildError::InvalidProducerTemplate {
-                        context: "await-many templates",
-                    });
+                    template
+                        .family
+                        .validate_runtime_task_binding(&binding)
+                        .map_err(
+                            |source| RuntimePlanBuildError::InvalidTaskProducerDefinition {
+                                context,
+                                source,
+                            },
+                        )?;
                 }
-                self.validate_task_outcome(&target.base.outcome, "await-many base payload")?;
-                self.validate_task_outcome(&target.child.outcome, "await-many child payload")?;
                 let source = self.lower_expression(target.source)?;
                 let item_ty = self.await_many_item_type(source.ty())?;
                 let (item_binding, binding_ty) = target
@@ -4726,14 +4728,10 @@ impl RuntimePlanBodyConstruction<'_> {
         template: super::RuntimeNeedProducerTemplateSeed,
         bound: &[super::RuntimeLocalSeedId],
     ) -> Result<crate::task::NeedProducerTemplate, RuntimePlanBuildError> {
-        self.validate_task_outcome(&template.outcome, "producer template payload")?;
-        if template.outcome.payload_semantic_identity().as_bytes()
-            != template.payload_type.as_bytes()
-        {
-            return Err(RuntimePlanBuildError::InvalidProducerTemplate {
-                context: "producer template payload",
-            });
-        }
+        self.resolve_seed_type(
+            "producer template payload",
+            crate::pattern::RuntimeSemanticTypeId::from_bytes(*template.payload_type.as_bytes()),
+        )?;
         Ok(crate::task::NeedProducerTemplate {
             definition: template.definition,
             family: template.family,
@@ -4745,7 +4743,6 @@ impl RuntimePlanBodyConstruction<'_> {
             priority: template.priority,
             cancel_scope: template.cancel_scope,
             policy: template.policy,
-            outcome: template.outcome,
             request: self.lower_host_task_request(template.request, bound)?,
             debug_label: template.debug_label,
         })

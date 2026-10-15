@@ -439,6 +439,7 @@ impl AwbcProductStepExecutor {
                     },
                 ..
             } => FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
+                source_context: crate::value::RuntimeScopeTypeContext::Lexical,
                 binding: None,
                 handle: need.clone(),
                 item_type: AwaitItemType::Awbc(*item_type),

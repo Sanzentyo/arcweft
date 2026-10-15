@@ -237,6 +237,14 @@ impl TranscriptByteCounter for CheckedMatchBudget {
     }
 }
 
+impl From<arcweft_core::pattern::MatchSourceEncodingError> for CheckedMatchBuildError {
+    fn from(_: arcweft_core::pattern::MatchSourceEncodingError) -> Self {
+        Self::ArithmeticOverflow {
+            kind: CheckedMatchLimitKind::TranscriptBytes,
+        }
+    }
+}
+
 pub(super) type CoverageTranscriptHasher<'a> = TranscriptHasher<'a, CheckedMatchBudget>;
 
 pub(super) fn checked_len(

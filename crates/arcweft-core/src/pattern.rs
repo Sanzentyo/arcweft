@@ -1,3 +1,16 @@
+mod match_source;
+
+pub use match_source::{
+    CanonicalMatchSource, MatchSourceArm, MatchSourceArmCoordinate, MatchSourceArmCoordinateOwner,
+    MatchSourceArmResult, MatchSourceBinding, MatchSourceCoverage, MatchSourceCoverageOwner,
+    MatchSourceData, MatchSourceDataArm, MatchSourceDataBinding, MatchSourceDataCoordinate,
+    MatchSourceDataCoverage, MatchSourceDataIdentity, MatchSourceDataUnreachable,
+    MatchSourceDefinition, MatchSourceEncodingError, MatchSourceGuard, MatchSourceGuardClass,
+    MatchSourceMaterializationBudget, MatchSourceMaterializationError, MatchSourceSink,
+    MatchSourceUnreachable, MatchSourceUnreachableOwner, MatchSourceUnreachableReason,
+    MatchSourceWriter,
+};
+
 use crate::entry::{RuntimeIdentityError, RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::plan::{
     RuntimeNominalRecordDomain, RuntimePlan, RuntimePlanRecordField, RuntimePlanTypeDeclaration,

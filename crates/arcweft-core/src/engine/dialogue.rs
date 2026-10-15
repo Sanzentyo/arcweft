@@ -1048,27 +1048,30 @@ impl Engine {
                     &assignment_before,
                 )?;
                 return Ok(DialogueActivationStep::HostCall(Box::new(
-                    crate::step::RuntimeHostCallRequest::admit(
-                        id,
-                        target.producer,
-                        self.generation,
-                        crate::task::HostTaskRequest::Custom {
-                            capability: crate::task::HostCapabilityId(target.capability),
-                            operation: target.operation,
-                            manifest_contract: target.contract,
-                            args,
-                            named_args,
-                        },
-                        result,
-                        target.mode,
-                        target.deterministic,
-                        &mut self.need_producers,
-                    )
-                    .map_err(|error| {
-                        DialogueExecutionError::HostCallFailed {
+                    target
+                        .producer
+                        .sealed_definition()
+                        .and_then(|producer| {
+                            crate::step::RuntimeHostCallRequest::admit(
+                                id,
+                                producer,
+                                self.generation,
+                                crate::task::HostTaskRequest::Custom {
+                                    capability: crate::task::HostCapabilityId(target.capability),
+                                    operation: target.operation,
+                                    manifest_contract: target.contract,
+                                    args,
+                                    named_args,
+                                },
+                                result,
+                                target.mode,
+                                target.deterministic,
+                                &mut self.need_producers,
+                            )
+                        })
+                        .map_err(|error| DialogueExecutionError::HostCallFailed {
                             message: error.to_string(),
-                        }
-                    })?,
+                        })?,
                 )));
             }
             FlowOp::LineOperation { binding, operation } => {

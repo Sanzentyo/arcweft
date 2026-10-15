@@ -13,7 +13,7 @@ fn inventory(seeds: impl IntoIterator<Item = RuntimePlanTypeSeed>) -> RuntimePla
     let mut builder = RuntimePlanBuilder::new();
     builder.admit_type_batch(seeds, []).unwrap();
     let inventory = builder
-        .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default())
+        .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 0)
         .unwrap();
     inventory.verify().unwrap();
     inventory
@@ -239,7 +239,7 @@ fn accepted_nominal_identity_and_layout_are_included_without_source_spelling() {
             )
             .unwrap();
         let inventory = builder
-            .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default())
+            .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 0)
             .unwrap();
         inventory.verify().unwrap();
         inventory
@@ -310,7 +310,7 @@ fn codec_default_reference_resolves_the_actual_function_not_binding_address() {
             .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, site })
             .unwrap();
         let inventory = builder
-            .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default())
+            .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 0)
             .unwrap();
         inventory.verify().unwrap();
         let codec = RuntimeCodecUse::Record {

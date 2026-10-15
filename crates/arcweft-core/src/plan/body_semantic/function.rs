@@ -2,16 +2,27 @@
 //! Input transport evidence stays distinct from language capture operations.
 
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
-use crate::plan::construction::task_coordinates::{
-    RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanCoordinateOwner,
-};
+use crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
 use crate::plan::{self, RuntimeFunctionSiteBody};
-use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
+use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, TaskSemanticMeter};
 
 /// Issued only after the complete private producer transcript succeeds.
 /// No byte constructor or decoder exists. Upper publication remains Cut 5.
+///
+/// ```compile_fail
+/// use arcweft_core::plan::ProducerFunctionSemanticDigest;
+/// let _ = ProducerFunctionSemanticDigest::from_bytes([0; 32]);
+/// ```
+/// ```compile_fail
+/// fn encode<T: serde::Serialize>() {}
+/// encode::<arcweft_core::plan::ProducerFunctionSemanticDigest>();
+/// ```
+/// ```compile_fail
+/// fn decode<T: serde::de::DeserializeOwned>() {}
+/// decode::<arcweft_core::plan::ProducerFunctionSemanticDigest>();
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ProducerFunctionSemanticDigest([u8; 32]);
+pub struct ProducerFunctionSemanticDigest([u8; 32]);
 
 pub(crate) struct ProducerFunctionSemantic<'a> {
     digest: ProducerFunctionSemanticDigest,
@@ -25,16 +36,220 @@ pub(crate) struct ProducerFunctionSemantic<'a> {
 #[derive(Clone, Copy)]
 pub(crate) struct ProducerEndpoint<'a> {
     digest: ProducerFunctionSemanticDigest,
-    plan: &'a super::RuntimePlanInventory,
+    request: OriginalRequestEndpoint<'a>,
+}
+
+/// Original source metadata carries no completed F or Q proof.
+#[derive(Clone, Copy)]
+pub(crate) struct OriginalRequestEndpoint<'a> {
+    owner: OriginalRequestOwner<'a>,
     function_id: crate::runtime_id::RuntimeFunctionSiteId,
-    operation: &'a plan::FlowOp,
+    source: ProducerEndpointSource<'a>,
     ordinal: u32,
     kind: EndpointKind,
 }
 
-impl<'a> ProducerEndpoint<'a> {
+#[derive(Clone, Copy)]
+enum OriginalRequestOwner<'a> {
+    Inventory(&'a super::RuntimePlanInventory),
+    Construction(&'a plan::RuntimePlanBuilder),
+}
+
+/// A borrowed, already defined function in its actual aggregate owner.
+#[derive(Clone, Copy)]
+pub(in crate::plan) struct OriginalFunctionSource<'a> {
+    pub(in crate::plan) function: crate::runtime_id::RuntimeFunctionSiteId,
+    pub(in crate::plan) body: &'a RuntimeFunctionSiteBody,
+    pub(in crate::plan) inputs: &'a [plan::RuntimeFunctionInputBinding],
+}
+
+#[derive(Clone, Copy)]
+enum ProducerEndpointSource<'a> {
+    FunctionRoot(&'a [plan::RuntimeFunctionInputBinding]),
+    Operation(&'a plan::FlowOp),
+}
+
+impl ProducerEndpoint<'_> {
     pub(crate) const fn producer_digest(&self) -> ProducerFunctionSemanticDigest {
         self.digest
+    }
+}
+
+impl<'a> std::ops::Deref for ProducerEndpoint<'a> {
+    type Target = OriginalRequestEndpoint<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.request
+    }
+}
+
+impl<'a> From<ProducerEndpoint<'a>> for OriginalRequestEndpoint<'a> {
+    fn from(endpoint: ProducerEndpoint<'a>) -> Self {
+        endpoint.request
+    }
+}
+
+impl<'a> OriginalRequestEndpoint<'a> {
+    pub(in crate::plan) fn from_construction_root(
+        builder: &'a plan::RuntimePlanBuilder,
+        source: OriginalFunctionSource<'a>,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<Self, RuntimeBodySemanticError> {
+        Self::preflight_function_source(&source, meter, limits)?;
+        Ok(Self {
+            owner: OriginalRequestOwner::Construction(builder),
+            function_id: source.function,
+            source: ProducerEndpointSource::FunctionRoot(source.inputs),
+            ordinal: 0,
+            kind: EndpointKind::FunctionRoot,
+        })
+    }
+
+    fn preflight_function_source(
+        source: &OriginalFunctionSource<'_>,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        meter.status()?;
+        let endpoints = RuntimeBodySemanticContext::endpoint_count(
+            source.body,
+            source.inputs.len(),
+            limits.max_function_roles,
+        )?;
+        let roles = meter.checked_count_sum(source.inputs.len(), endpoints)?;
+        if roles > limits.max_function_roles as usize {
+            return Err(RuntimeBodySemanticError::FunctionRoles {
+                actual: roles,
+                maximum: limits.max_function_roles,
+            });
+        }
+        Ok(())
+    }
+
+    pub(in crate::plan) fn visit_construction_tasks(
+        builder: &'a plan::RuntimePlanBuilder,
+        source: OriginalFunctionSource<'a>,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+        visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        Self::visit_task_sources(
+            OriginalRequestOwner::Construction(builder),
+            source,
+            meter,
+            limits,
+            visitor,
+        )
+    }
+
+    fn visit_task_sources(
+        owner: OriginalRequestOwner<'a>,
+        source: OriginalFunctionSource<'a>,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+        visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
+    ) -> Result<(), RuntimeBodySemanticError> {
+        Self::preflight_function_source(&source, meter, limits)?;
+        let RuntimeFunctionSiteBody::Executable(body) = source.body else {
+            return Ok(());
+        };
+        let mut ordinal = 0u32;
+        plan::flow_ops::try_visit_ops_events(body.ops(), &mut |event| {
+            meter.charge_work(1)?;
+            if let plan::flow_ops::RuntimeFlowTreeEvent::EnterOperation { op, .. } = event {
+                for kind in RuntimeBodySemanticContext::endpoint_kinds(op) {
+                    meter.charge_work(1)?;
+                    let endpoint = Self {
+                        owner,
+                        function_id: source.function,
+                        source: ProducerEndpointSource::Operation(op),
+                        ordinal,
+                        kind: *kind,
+                    };
+                    if endpoint.task_source().is_some() {
+                        visitor(endpoint, meter)?;
+                    }
+                    ordinal = ordinal
+                        .checked_add(1)
+                        .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
+                }
+            }
+            Ok(())
+        })
+    }
+
+    pub(in crate::plan) fn task_semantic_binding(
+        &self,
+    ) -> plan::RuntimeTaskSemanticBinding<plan::RuntimeLineTaskGroupSeedId> {
+        use plan::RuntimeTaskSemanticBinding as Binding;
+        match self.kind {
+            EndpointKind::AwaitManyBase => Binding::AwaitManyBase,
+            EndpointKind::AwaitManyChild => Binding::AwaitManyChild,
+            EndpointKind::FunctionRoot
+            | EndpointKind::HostTask
+            | EndpointKind::MakeNeed
+            | EndpointKind::LineTask => Binding::Ordinary,
+        }
+    }
+
+    pub(in crate::plan) fn control_child_coordinate(
+        &self,
+    ) -> Option<&'a plan::RuntimeTaskPlanBuildCoordinate> {
+        match (self.kind, self.source) {
+            (
+                EndpointKind::AwaitManyBase,
+                ProducerEndpointSource::Operation(plan::FlowOp::AwaitMany { target, .. }),
+            ) => Some(&target.child.plan),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn task_source(&self) -> Option<super::flow::RuntimeBodyTaskSource<'a>> {
+        use super::flow::RuntimeBodyTaskSource as Source;
+        let ProducerEndpointSource::Operation(operation) = self.source else {
+            return None;
+        };
+        match self.kind {
+            EndpointKind::HostTask => match operation {
+                plan::FlowOp::HostCall { target, .. } => Some(Source::Host(target)),
+                plan::FlowOp::Thread { producer, .. } => Some(Source::Producer(producer)),
+                _ => None,
+            },
+            EndpointKind::MakeNeed => match operation {
+                plan::FlowOp::StartNeedProducer { target, .. } => Some(Source::Start(target)),
+                _ => None,
+            },
+            EndpointKind::AwaitManyBase | EndpointKind::AwaitManyChild => match operation {
+                plan::FlowOp::AwaitMany { target, .. } => Some(Source::Producer(
+                    if self.kind == EndpointKind::AwaitManyBase {
+                        &target.base
+                    } else {
+                        &target.child
+                    },
+                )),
+                _ => None,
+            },
+            EndpointKind::LineTask | EndpointKind::FunctionRoot => None,
+        }
+    }
+
+    pub(crate) const fn request_source(&self) -> super::request::RuntimeTaskRequestSource {
+        match self.source {
+            ProducerEndpointSource::FunctionRoot(_) => {
+                super::request::RuntimeTaskRequestSource::FunctionRoot
+            }
+            ProducerEndpointSource::Operation(_) => {
+                super::request::RuntimeTaskRequestSource::Operation(self.ordinal)
+            }
+        }
+    }
+
+    pub(crate) fn function_inputs(&self) -> Option<&'a [plan::RuntimeFunctionInputBinding]> {
+        match self.source {
+            ProducerEndpointSource::FunctionRoot(inputs) => Some(inputs),
+            ProducerEndpointSource::Operation(_) => None,
+        }
     }
     pub(crate) const fn ordinal(&self) -> u32 {
         self.ordinal
@@ -43,17 +258,61 @@ impl<'a> ProducerEndpoint<'a> {
         self.kind
     }
     pub(crate) fn belongs_to(&self, plan: &super::RuntimePlanInventory) -> bool {
-        std::ptr::eq(self.plan, plan)
+        matches!(self.owner, OriginalRequestOwner::Inventory(original) if std::ptr::eq(original, plan))
     }
+    pub(super) fn source_type_is_need(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Result<bool, RuntimeBodySemanticError> {
+        match self.owner {
+            OriginalRequestOwner::Inventory(plan) => plan
+                .type_table()
+                .get(ty)
+                .map(|definition| {
+                    matches!(
+                        definition.projection(),
+                        plan::RuntimePlanTypeProjection::Need(_)
+                    )
+                })
+                .ok_or(RuntimeBodySemanticError::UnknownType { ty }),
+            OriginalRequestOwner::Construction(builder) => builder.source_type_is_need(ty),
+        }
+    }
+    pub(super) fn source_local_is_capture(
+        &self,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Result<bool, RuntimeBodySemanticError> {
+        match self.owner {
+            OriginalRequestOwner::Inventory(plan) => plan
+                .local_declarations()
+                .get(local)
+                .map(|declaration| {
+                    declaration
+                        .placement()
+                        .function_capture_position(self.function_id)
+                        .is_some()
+                })
+                .ok_or(RuntimeBodySemanticError::UnknownLocal { local }),
+            OriginalRequestOwner::Construction(builder) => {
+                builder.source_local_is_capture(self.function_id, local)
+            }
+        }
+    }
+    #[cfg(test)]
     pub(crate) fn host_target(&self) -> Option<&'a plan::RuntimeHostCallTarget> {
-        if let plan::FlowOp::HostCall { target, .. } = self.operation {
+        if let ProducerEndpointSource::Operation(plan::FlowOp::HostCall { target, .. }) =
+            self.source
+        {
             Some(target)
         } else {
             None
         }
     }
     pub(crate) fn host_arguments(&self) -> Option<&'a [crate::task::RuntimeHostArgumentTemplate]> {
-        match self.operation {
+        let ProducerEndpointSource::Operation(operation) = self.source else {
+            return None;
+        };
+        match operation {
             plan::FlowOp::HostCall { target, .. } => Some(&target.args),
             plan::FlowOp::StartNeedProducer { target, .. } => Some(target.arguments()),
             plan::FlowOp::Thread { producer, .. } => Some(&producer.request.args),
@@ -168,27 +427,48 @@ impl ProducerFunctionSemantic<'_> {
     pub(crate) const fn digest(&self) -> ProducerFunctionSemanticDigest {
         self.digest
     }
+    pub(crate) fn request_endpoint(
+        &self,
+        source: super::request::RuntimeTaskRequestSource,
+    ) -> Option<ProducerEndpoint<'_>> {
+        match source {
+            super::request::RuntimeTaskRequestSource::Operation(ordinal) => self.endpoint(ordinal),
+            super::request::RuntimeTaskRequestSource::FunctionRoot => Some(ProducerEndpoint {
+                digest: self.digest,
+                request: OriginalRequestEndpoint {
+                    owner: OriginalRequestOwner::Inventory(self.plan),
+                    function_id: self.function_id,
+                    source: ProducerEndpointSource::FunctionRoot(self.function.inputs()),
+                    ordinal: 0,
+                    kind: EndpointKind::FunctionRoot,
+                },
+            }),
+        }
+    }
     pub(crate) fn endpoint(&self, ordinal: u32) -> Option<ProducerEndpoint<'_>> {
         self.endpoints
             .get(ordinal as usize)
             .map(|(kind, _, operation)| ProducerEndpoint {
                 digest: self.digest,
-                plan: self.plan,
-                function_id: self.function_id,
-                operation,
-                ordinal,
-                kind: *kind,
+                request: OriginalRequestEndpoint {
+                    owner: OriginalRequestOwner::Inventory(self.plan),
+                    function_id: self.function_id,
+                    source: ProducerEndpointSource::Operation(operation),
+                    ordinal,
+                    kind: *kind,
+                },
             })
     }
 }
 impl ProducerFunctionSemanticDigest {
-    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EndpointKind {
+    FunctionRoot,
     HostTask,
     MakeNeed,
     AwaitManyBase,
@@ -198,6 +478,7 @@ pub(crate) enum EndpointKind {
 impl EndpointKind {
     pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
+            Self::FunctionRoot => 7,
             Self::HostTask => 0,
             Self::AwaitManyBase => 2,
             Self::AwaitManyChild => 3,
@@ -214,21 +495,110 @@ enum PathStep {
     Endpoint(usize),
 }
 
+impl<'a> OriginalRequestEndpoint<'a> {
+    fn find_source(
+        owner: OriginalRequestOwner<'a>,
+        source: OriginalFunctionSource<'a>,
+        coordinate: &crate::plan::RuntimeTaskPlanBuildCoordinate,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<Self, RuntimeBodySemanticError> {
+        let function = source.function;
+        let result = (|| {
+            meter.status()?;
+            if !task_owner.contains(coordinate) {
+                return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+            }
+            let mut found = None;
+            Self::visit_task_sources(owner, source, meter, limits, &mut |endpoint, _| {
+                if endpoint
+                    .task_source()
+                    .is_some_and(|source| source.coordinate() == coordinate)
+                {
+                    if found.is_some() {
+                        return Err(RuntimeBodySemanticError::AmbiguousOriginalRequestEndpoint {
+                            function,
+                        });
+                    }
+                    found = Some(endpoint);
+                }
+                Ok::<(), RuntimeBodySemanticError>(())
+            })?;
+            found.ok_or(RuntimeBodySemanticError::MissingOriginalRequestEndpoint { function })
+        })();
+        if result.is_err() {
+            meter.reject_owner();
+        }
+        result
+    }
+
+    pub(in crate::plan) fn from_construction(
+        builder: &'a plan::RuntimePlanBuilder,
+        source: OriginalFunctionSource<'a>,
+        coordinate: &crate::plan::RuntimeTaskPlanBuildCoordinate,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<Self, RuntimeBodySemanticError> {
+        Self::find_source(
+            OriginalRequestOwner::Construction(builder),
+            source,
+            coordinate,
+            task_owner,
+            meter,
+            limits,
+        )
+    }
+}
+
 impl<'a> RuntimeBodySemanticContext<'a> {
+    /// Projects metadata from one exact original source reference. This does
+    /// not hash a body or issue a completed F/Q digest.
+    #[cfg(test)]
+    pub(in crate::plan) fn original_task_endpoint(
+        &self,
+        meter: &mut TaskSemanticMeter,
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+        coordinate: &crate::plan::RuntimeTaskPlanBuildCoordinate,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<OriginalRequestEndpoint<'a>, RuntimeBodySemanticError> {
+        meter.status()?;
+        if !task_owner.contains(coordinate) {
+            meter.reject_owner();
+            return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+        }
+        let site = self.plan.function_sites().get(function).ok_or_else(|| {
+            meter.reject_owner();
+            RuntimeBodySemanticError::MissingRow {
+                table: "function sites",
+                ordinal: function.get().get() as usize - 1,
+            }
+        })?;
+        OriginalRequestEndpoint::find_source(
+            OriginalRequestOwner::Inventory(self.plan),
+            OriginalFunctionSource {
+                function,
+                body: site.body(),
+                inputs: site.inputs(),
+            },
+            coordinate,
+            task_owner,
+            meter,
+            limits,
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn producer_function_digest(
         &self,
         meter: &mut TaskSemanticMeter,
         function: crate::runtime_id::RuntimeFunctionSiteId,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
         limits: plan::RuntimeTaskPlanSealLimits,
     ) -> Result<ProducerFunctionSemanticDigest, RuntimeBodySemanticError> {
-        self.producer_function(meter, function, task_owner, task_reference, limits)
+        self.producer_function(meter, function, task_owner, limits)
             .map(|row| row.digest)
     }
 
@@ -237,12 +607,6 @@ impl<'a> RuntimeBodySemanticContext<'a> {
         meter: &mut TaskSemanticMeter,
         function: crate::runtime_id::RuntimeFunctionSiteId,
         task_owner: &RuntimeTaskPlanCoordinateOwner,
-        task_reference: &mut impl FnMut(
-            super::flow::RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
         limits: plan::RuntimeTaskPlanSealLimits,
     ) -> Result<ProducerFunctionSemantic<'a>, RuntimeBodySemanticError> {
         meter.status()?;
@@ -288,7 +652,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
                         encoder.enter_element();
                         encoder.string(effect.as_str());
                     }
-                    self.write_flow(&mut encoder, body.ops(), task_owner, task_reference)?;
+                    self.write_flow(&mut encoder, body.ops(), task_owner)?;
                 }
             }
             encoder.finish()?

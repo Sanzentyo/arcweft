@@ -11,9 +11,8 @@ use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSc
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId,
-    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlan,
+    RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use arcweft_core::task::{
     AssetLoadKind, CancelScopeId, GenerationId, HostRestartPolicy, NeedProducerContractDigest,
@@ -1226,8 +1225,8 @@ fn push_fixture_flow(
     builder: &mut RuntimePlanBuilder,
     flow: FlowRuntimeId,
     ops: Vec<RuntimeFlowOpSeed>,
-) {
-    builder
+) -> arcweft_core::plan::RuntimeFunctionSiteSeedId {
+    let function = builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
@@ -1251,6 +1250,7 @@ fn push_fixture_flow(
             parameters: Vec::new(),
         })
         .expect("fixture flow schema admits");
+    function
 }
 
 fn fixture_string_type() -> arcweft_core::pattern::RuntimeSemanticTypeId {
@@ -1361,6 +1361,7 @@ fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>
 }
 
 fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
+    use arcweft_core::plan::*;
     let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
     let mut builder = fixture_plan_builder();
     let entity_reference_type = RuntimeSemanticTypeId::from_bytes([0x81; 32]);
@@ -1408,7 +1409,27 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         CancelScopeId("flow".to_owned()),
     )
     .expect("selected asset Need producer plan is consistent");
-    push_fixture_flow(
+    let task_class = producer_plan.class().clone();
+    let task_coordinate = builder.reserve_task_plan().unwrap();
+    let task_control = builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: RuntimeTaskControlMode::RuntimeAggregate,
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: Some(RuntimeControlEffectIdentity::from_checked_digest(
+                    *producer_plan.contract().as_bytes(),
+                )),
+                inputs: Box::new([entity_reference_type]),
+                output: Some(producer_plan.payload_type()),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap();
+    let function = push_fixture_flow(
         &mut builder,
         main.clone(),
         vec![
@@ -1422,6 +1443,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                 ),
                 target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
                     plan: producer_plan,
+                    task_plan: task_coordinate.clone(),
                     arguments: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
                         arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity(
                             [42; 32],
@@ -1454,6 +1476,29 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             )),
         ],
     );
+    builder
+        .define_task_plan(
+            &task_coordinate,
+            RuntimeTaskPlanSeed::new(
+                function,
+                arcweft_core::task::NeedProducerFamily::SelectedCallable,
+                task_class,
+                RuntimeTaskRequestTemplateSeed::new(
+                    RuntimeTaskRequestSource::Operation(0),
+                    Box::new([RuntimeRequestArgument {
+                        role: RuntimeRequestArgumentRole::Positional,
+                        identity: None,
+                        ty: entity_reference_type,
+                        source: RuntimeRequestValueSource::Literal,
+                        path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+                    }]),
+                    Box::new([]),
+                ),
+                task_control,
+                RuntimeTaskSemanticBinding::Ordinary,
+            ),
+        )
+        .unwrap();
     builder
         .push_flow_executable(RuntimeFlowExecutable {
             flow: main,

@@ -10,25 +10,7 @@ use super::{
 use crate::task::semantic::TaskSemanticMeter;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Copy)]
-enum Rows<'a> {
-    Construction(&'a [RuntimeControlEffectContract]),
-    Admitted(&'a RuntimeControlEffectContractTable),
-}
-impl<'a> Rows<'a> {
-    fn len(self) -> usize {
-        match self {
-            Self::Construction(rows) => rows.len(),
-            Self::Admitted(table) => table.len(),
-        }
-    }
-    fn get(self, index: usize) -> Option<&'a RuntimeControlEffectContract> {
-        match self {
-            Self::Construction(rows) => rows.get(index),
-            Self::Admitted(table) => table.rows.get(index).map(|row| &row.contract),
-        }
-    }
-}
+type Rows<'a> = &'a [RuntimeControlEffectContract];
 
 #[derive(Clone, Copy)]
 enum State {
@@ -66,7 +48,7 @@ impl<'a> RuntimeControlEffectPreflight<'a> {
     ) -> Result<Self, RuntimeControlEffectContractError> {
         meter.status()?;
         meter.checked_count_sum(table.len(), 0)?;
-        let rows = Rows::Admitted(table);
+        let rows = table.rows.as_ref();
         let admitted = RuntimeControlEffectSemanticPass::reachable(
             rows,
             roots.into_iter().map(RuntimeControlEffectContractId::index),
@@ -134,6 +116,7 @@ impl<'a> RuntimeControlEffectPreflight<'a> {
     }
 }
 
+#[cfg(test)]
 impl<'a> RuntimeControlEffectSemanticPass<'a> {
     pub(super) fn from_rows(
         rows: &'a [RuntimeControlEffectContract],
@@ -141,13 +124,7 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<Self, RuntimeControlEffectContractError> {
-        Self::new(
-            Rows::Construction(rows),
-            types,
-            0..rows.len(),
-            limits,
-            meter,
-        )
+        Self::new(rows, types, 0..rows.len(), limits, meter)
     }
     pub(crate) fn from_table(
         table: &'a RuntimeControlEffectContractTable,
@@ -157,7 +134,7 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
         meter: &mut TaskSemanticMeter,
     ) -> Result<Self, RuntimeControlEffectContractError> {
         Self::new(
-            Rows::Admitted(table),
+            table.rows.as_ref(),
             types,
             roots.iter().map(|id| id.index()),
             limits,
@@ -182,6 +159,9 @@ impl<'a> RuntimeControlEffectSemanticPass<'a> {
             state: BTreeMap::new(),
         })
     }
+}
+
+impl RuntimeControlEffectSemanticPass<'_> {
     /// Counting does not complete semantic children or reject bad references
     /// or cycles ahead of the owned limit fields. Missing definitions add no
     /// rows; completion still rejects their exact source-order reference.

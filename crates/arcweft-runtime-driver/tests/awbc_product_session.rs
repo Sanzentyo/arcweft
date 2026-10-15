@@ -35,8 +35,7 @@ use arcweft_core::{
         RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeEntryKind,
         RuntimeEntrySpec, RuntimeEntryTarget, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionTypeContract,
-        RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed,
-        RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     runtime_id::RuntimeCallableStateId,
     task::{
@@ -1794,6 +1793,7 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
 }
 
 fn restartable_need_awfb_bytes() -> Vec<u8> {
+    use arcweft_core::plan::*;
     let flow = FlowRuntimeId::from_runtime_target_value("flow.restartable_need")
         .expect("fixture flow ID is valid");
     let string_ty = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
@@ -1839,7 +1839,27 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
         CancelScopeId("flow".to_owned()),
     )
     .expect("producer plan admits");
-    builder
+    let task_class = plan.class().clone();
+    let task_coordinate = builder.reserve_task_plan().unwrap();
+    let task_control = builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: RuntimeTaskControlMode::RuntimeAggregate,
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: Some(RuntimeControlEffectIdentity::from_checked_digest(
+                    *plan.contract().as_bytes(),
+                )),
+                inputs: Box::new([asset_ty]),
+                output: Some(plan.payload_type()),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap();
+    let function = builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
@@ -1863,6 +1883,7 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
                             },
                         ),
                         target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                            task_plan: task_coordinate.clone(),
                             plan,
                             arguments:
                                 vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
@@ -1898,6 +1919,29 @@ fn restartable_need_awfb_bytes() -> Vec<u8> {
             },
         ))
         .expect("Need flow admits");
+    builder
+        .define_task_plan(
+            &task_coordinate,
+            RuntimeTaskPlanSeed::new(
+                function,
+                arcweft_core::task::NeedProducerFamily::SelectedCallable,
+                task_class,
+                RuntimeTaskRequestTemplateSeed::new(
+                    RuntimeTaskRequestSource::Operation(0),
+                    Box::new([RuntimeRequestArgument {
+                        role: RuntimeRequestArgumentRole::Positional,
+                        identity: None,
+                        ty: asset_ty,
+                        source: RuntimeRequestValueSource::Literal,
+                        path: Box::new([RuntimeRequestPathStep::Operand(0)]),
+                    }]),
+                    Box::new([]),
+                ),
+                task_control,
+                RuntimeTaskSemanticBinding::Ordinary,
+            ),
+        )
+        .unwrap();
     builder
         .push_flow_schema(RuntimeFlowSchema {
             flow: flow.clone(),

@@ -10,7 +10,8 @@ use arcweft_lang_sema::{
     final_analysis::FinalSemanticAnalysis, registration::RegisteredSemanticWorld,
 };
 use arcweft_runtime_plan::semantic_facts::{
-    RuntimeProjectFunctionInstanceSemanticFacts, RuntimePureProgramFact,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimePureProgramAdmission,
+    RuntimePureProgramFact,
 };
 
 use super::{
@@ -83,7 +84,38 @@ pub(crate) fn project(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimePureProgramFact, RuntimeSemanticProjectionError> {
-    let abi = admission.input_abi();
+    project_admission(
+        program,
+        RuntimePureProgramAdmission::Ordinary(admission),
+        symbols,
+        world,
+        analysis,
+    )
+}
+
+pub(crate) fn project_view(
+    program: &crate::view::CheckedViewRuntimeProgram,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimePureProgramFact, RuntimeSemanticProjectionError> {
+    project_admission(
+        program.id(),
+        program.runtime_admission(),
+        symbols,
+        world,
+        analysis,
+    )
+}
+
+fn project_admission(
+    program: arcweft_id::runtime_program::RuntimePureProgramId,
+    admission: RuntimePureProgramAdmission,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimePureProgramFact, RuntimeSemanticProjectionError> {
+    let abi = admission.checked_program().input_abi();
     abi.validate_analysis(analysis).map_err(Box::new)?;
     let inputs = abi
         .inputs()
@@ -120,20 +152,21 @@ pub(crate) fn project(
         &super::RuntimeTypeProjectionPath::root(),
         &abi.environment().type_scope(),
     )?;
+    let function_type = super::runtime_type(
+        &abi.function_type()
+            .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                reason: "program ABI has no function contract".to_owned(),
+            })?,
+        symbols,
+        world,
+        analysis,
+    )?;
     Ok(RuntimePureProgramFact::try_new(
         program,
-        Arc::clone(&admission),
+        admission,
         inputs,
         result,
-        super::runtime_type(
-            &abi.function_type()
-                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                    reason: "program ABI has no function contract".to_owned(),
-                })?,
-            symbols,
-            world,
-            analysis,
-        )?,
+        function_type,
     )?)
 }
 
@@ -317,7 +350,7 @@ mod tests {
     use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeValue};
     use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
     use arcweft_lang_sema::{final_analysis::CheckedExpressionResolution, types::TypeKind};
-    use arcweft_runtime_plan::semantic_facts::RuntimeTypeShape;
+    use arcweft_runtime_plan::semantic_facts::{RuntimePureProgramAdmission, RuntimeTypeShape};
     use std::sync::Arc;
 
     fn id() -> arcweft_id::runtime_program::RuntimePureProgramId {
@@ -845,7 +878,7 @@ mod tests {
         assert!(
             RuntimePureProgramFact::try_new(
                 id(),
-                Arc::clone(&admission),
+                RuntimePureProgramAdmission::Ordinary(Arc::clone(&admission)),
                 Box::new([fact.input_types()[0].clone()]),
                 fact.result().clone(),
                 fact.function_type().clone()
@@ -862,7 +895,7 @@ mod tests {
         assert!(
             RuntimePureProgramFact::try_new(
                 id(),
-                admission,
+                RuntimePureProgramAdmission::Ordinary(admission),
                 fact.input_types().to_vec().into_boxed_slice(),
                 boolean,
                 fact.function_type().clone()

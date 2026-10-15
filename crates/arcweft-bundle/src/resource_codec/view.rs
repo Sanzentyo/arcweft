@@ -15,7 +15,9 @@ mod model;
 mod runtime_control_style;
 mod semantic;
 mod style_contract;
+mod task_plans;
 mod validated;
+pub use task_plans::{ValidatedViewTaskPlanBinding, ViewTaskPlanBindingSource};
 
 pub use codec::{
     ViewExportValidationError, ViewResourceBudget, ViewResourceExport,

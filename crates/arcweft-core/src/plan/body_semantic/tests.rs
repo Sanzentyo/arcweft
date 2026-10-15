@@ -555,12 +555,7 @@ fn flow_body_operation_order_empty_branch_and_static_literal_are_committed() {
         let mut meter = TaskSemanticMeter::new(1000, 10000);
         let mut encoder = TaskSemanticEncoder::new(b"flow-body.v1\0", &mut meter);
         RuntimeBodySemanticContext::new(plan)
-            .write_flow(
-                &mut encoder,
-                plan.flows()[0].body().ops(),
-                &owner,
-                &mut |_| panic!("no task edge in this body"),
-            )
+            .write_flow(&mut encoder, plan.flows()[0].body().ops(), &owner)
             .unwrap();
         encoder.finish().unwrap()
     };
@@ -581,8 +576,7 @@ fn engine_only_flow_continuation_is_rejected_and_poisoned() {
         RuntimeBodySemanticContext::new(&plan).write_flow(
             &mut encoder,
             &[crate::plan::FlowOp::Bind(vec![])],
-            &owner,
-            &mut |_| panic!("no task edge")
+            &owner
         ),
         Err(RuntimeBodySemanticError::RuntimeFlowContinuation)
     ));
@@ -623,7 +617,6 @@ fn flow_effect_metadata_changes_the_body_transcript() {
                     ),
                 )],
                 &owner,
-                &mut |_| panic!("no task edge"),
             )
             .unwrap();
         encoder.finish().unwrap()
@@ -632,16 +625,15 @@ fn flow_effect_metadata_changes_the_body_transcript() {
 }
 
 #[test]
-fn flow_host_edge_rejects_foreign_coordinate_and_never_reads_completed_plan_digest() {
-    use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
+fn flow_host_edge_encodes_its_original_coordinate_and_rejects_foreign_namespaces() {
     let (plan, _) = plan(false);
     let ty = crate::runtime_id::RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
-    let owner = RuntimePlanBuilder::new().task_coordinate_owner(1);
-    let foreign = RuntimePlanBuilder::new().task_coordinate_owner(1);
-    let target = |digest| crate::plan::RuntimeHostCallTarget {
+    let owner = RuntimePlanBuilder::new().task_coordinate_owner(2);
+    let foreign = RuntimePlanBuilder::new().task_coordinate_owner(2);
+    let target = |coordinate| crate::plan::RuntimeHostCallTarget {
         producer: crate::task::HostCallProducerDefinition {
             contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
-            plan: crate::task::TaskPlanSemanticDigest::from_bytes([digest; 32]),
+            plan: coordinate,
             site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
         },
         public_id: "test.notify".to_owned(),
@@ -653,7 +645,7 @@ fn flow_host_edge_rejects_foreign_coordinate_and_never_reads_completed_plan_dige
         mode: crate::step::RuntimeHostCallMode::Suspend,
         deterministic: false,
     };
-    let hash = |digest| {
+    let hash = |coordinate| {
         let mut meter = TaskSemanticMeter::new(1000, 10000);
         let mut encoder = TaskSemanticEncoder::new(b"host-coordinate.v1\0", &mut meter);
         RuntimeBodySemanticContext::new(&plan)
@@ -661,18 +653,21 @@ fn flow_host_edge_rejects_foreign_coordinate_and_never_reads_completed_plan_dige
                 &mut encoder,
                 &[crate::plan::FlowOp::HostCall {
                     binding: None,
-                    target: target(digest),
+                    target: target(coordinate),
                 }],
                 &owner,
-                &mut |source| {
-                    assert!(matches!(source, RuntimeBodyTaskSource::Host(_)));
-                    Ok(owner.resolve(0).unwrap())
-                },
             )
             .unwrap();
         encoder.finish().unwrap()
     };
-    assert_eq!(hash(2), hash(9));
+    assert_eq!(
+        hash(owner.resolve(0).unwrap()),
+        hash(owner.resolve(0).unwrap())
+    );
+    assert_ne!(
+        hash(owner.resolve(0).unwrap()),
+        hash(owner.resolve(1).unwrap())
+    );
     let mut meter = TaskSemanticMeter::new(1000, 10000);
     let mut encoder = TaskSemanticEncoder::new(b"host-coordinate.v1\0", &mut meter);
     assert!(matches!(
@@ -680,10 +675,9 @@ fn flow_host_edge_rejects_foreign_coordinate_and_never_reads_completed_plan_dige
             &mut encoder,
             &[crate::plan::FlowOp::HostCall {
                 binding: None,
-                target: target(2)
+                target: target(foreign.resolve(0).unwrap())
             }],
             &owner,
-            &mut |_| Ok(foreign.resolve(0).unwrap())
         ),
         Err(RuntimeBodySemanticError::ForeignTaskCoordinate)
     ));
@@ -797,7 +791,6 @@ fn actual_function_row_commits_body_value_but_ignores_function_arena_padding() {
                 &mut meter,
                 *id,
                 owner,
-                &mut |_| panic!("no task edge"),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -927,7 +920,6 @@ fn producer_function_digest_commits_actual_body_for_every_function_role() {
                     &mut meter,
                     *function,
                     owner,
-                    &mut |_| panic!("no task edge"),
                     crate::plan::RuntimeTaskPlanSealLimits::default(),
                 )
                 .unwrap()
@@ -970,7 +962,6 @@ fn producer_digest_meter_is_shared_and_poisoned_on_body_failure() {
             &mut meter,
             function,
             &owner,
-            &mut |_| panic!("no task edge"),
             crate::plan::RuntimeTaskPlanSealLimits::default()
         ),
         Err(RuntimeBodySemanticError::Encoding(
@@ -987,7 +978,7 @@ fn producer_digest_meter_is_shared_and_poisoned_on_body_failure() {
 pub(super) fn producer_host_plan(
     in_then: bool,
 ) -> (
-    RuntimePlan,
+    crate::plan::RuntimePlanInventory,
     crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
     crate::runtime_id::RuntimeFunctionSiteId,
 ) {
@@ -998,7 +989,7 @@ fn producer_host_plan_with_arguments(
     in_then: bool,
     args: Vec<crate::plan::RuntimeHostArgumentSeed>,
 ) -> (
-    RuntimePlan,
+    crate::plan::RuntimePlanInventory,
     crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
     crate::runtime_id::RuntimeFunctionSiteId,
 ) {
@@ -1014,7 +1005,7 @@ pub(super) fn producer_host_plan_with_setup(
         Box<[crate::plan::RuntimeFunctionInputBindingSeed]>,
     ),
 ) -> (
-    RuntimePlan,
+    crate::plan::RuntimePlanInventory,
     crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
     crate::runtime_id::RuntimeFunctionSiteId,
 ) {
@@ -1032,11 +1023,34 @@ fn try_producer_request_plan_with_setup(
     ),
 ) -> Result<
     (
-        RuntimePlan,
+        crate::plan::RuntimePlanInventory,
         crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner,
         crate::runtime_id::RuntimeFunctionSiteId,
     ),
     crate::plan::RuntimePlanBuildError,
+> {
+    let (builder, function) = try_producer_request_builder_with_setup(in_then, start_plan, setup)
+        .map_err(|error| *error)?;
+    let owner = builder.task_coordinate_owner(1);
+    Ok((
+        builder.prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 1)?,
+        owner,
+        function.id(),
+    ))
+}
+
+pub(super) fn try_producer_request_builder_with_setup(
+    in_then: bool,
+    start_plan: Option<crate::task::NeedProducerTaskPlan>,
+    setup: impl FnOnce(
+        &mut RuntimePlanBuilder,
+    ) -> (
+        Vec<crate::plan::RuntimeHostArgumentSeed>,
+        Box<[crate::plan::RuntimeFunctionInputBindingSeed]>,
+    ),
+) -> Result<
+    (RuntimePlanBuilder, crate::plan::RuntimeFunctionSiteSeedId),
+    Box<crate::plan::RuntimePlanBuildError>,
 > {
     use crate::plan::*;
     let mut builder = RuntimePlanBuilder::new();
@@ -1081,6 +1095,7 @@ fn try_producer_request_plan_with_setup(
             binding: RuntimePatternSeed::new(need, RuntimePatternSeedKind::Discard),
             target: RuntimeNeedProducerStartTargetSeed {
                 plan,
+                task_plan: builder.task_coordinate_owner(1).resolve(0).unwrap(),
                 arguments: args,
             },
         }
@@ -1090,7 +1105,7 @@ fn try_producer_request_plan_with_setup(
             target: RuntimeHostCallTargetSeed {
                 producer: crate::task::HostCallProducerDefinition {
                     contract: crate::task::NeedProducerContractDigest::from_bytes([1; 32]),
-                    plan: crate::task::TaskPlanSemanticDigest::from_bytes([2; 32]),
+                    plan: builder.task_coordinate_owner(1).resolve(0).unwrap(),
                     site: crate::task::NeedProducerSiteDigest::from_bytes([3; 32]),
                 },
                 public_id: "test.notify".to_owned(),
@@ -1124,26 +1139,20 @@ fn try_producer_request_plan_with_setup(
             ]),
         }),
     )?;
-    let owner = builder.task_coordinate_owner(1);
-    Ok((
-        builder.finish()?,
-        owner,
-        crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(NonZeroU32::MIN),
-    ))
+    Ok((builder, site))
 }
 
 #[test]
 fn producer_endpoint_branch_path_and_role_quota_enter_the_same_transcript() {
     let first = producer_host_plan(true);
     let second = producer_host_plan(false);
-    let hash = |(plan, owner, function): &(RuntimePlan, _, _)| {
+    let hash = |(plan, owner, function): &(crate::plan::RuntimePlanInventory, _, _)| {
         let mut meter = TaskSemanticMeter::new(10_000, 100_000);
         RuntimeBodySemanticContext::new(plan)
             .producer_function_digest(
                 &mut meter,
                 *function,
                 owner,
-                &mut |_| Ok(owner.resolve(0).unwrap()),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -1155,7 +1164,6 @@ fn producer_endpoint_branch_path_and_role_quota_enter_the_same_transcript() {
             &mut meter,
             first.2,
             &first.1,
-            &mut |_| panic!("quota must precede resolver"),
             crate::plan::RuntimeTaskPlanSealLimits {
                 max_function_roles: 0,
                 ..Default::default()
@@ -1178,7 +1186,6 @@ fn request_definition_encoding_commits_static_role_order_and_paths() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -1202,7 +1209,7 @@ fn request_definition_encoding_commits_static_role_order_and_paths() {
             .encode_request_template(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
-                &RuntimeTaskRequestTemplate::new(0, Box::new(arguments), Box::new([])),
+                &RuntimeTaskRequestTemplate::at_operation(0, Box::new(arguments), Box::new([])),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -1221,7 +1228,6 @@ fn request_role_quota_poison_precedes_type_resolution() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -1239,7 +1245,7 @@ fn request_role_quota_poison_precedes_type_resolution() {
         RuntimeBodySemanticContext::new(&plan).request_template_digest(
             &mut meter,
             producer.endpoint(0).unwrap(),
-            &RuntimeTaskRequestTemplate::new(0, Box::new(args), Box::new([])),
+            &RuntimeTaskRequestTemplate::at_operation(0, Box::new(args), Box::new([])),
             crate::plan::RuntimeTaskPlanSealLimits {
                 max_request_roles: 0,
                 ..Default::default()
@@ -1266,7 +1272,6 @@ fn request_definition_encoding_commits_fields_and_obeys_the_shared_budget() {
             &mut meter,
             function,
             &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
             crate::plan::RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
@@ -1283,7 +1288,7 @@ fn request_definition_encoding_commits_fields_and_obeys_the_shared_budget() {
             .encode_request_template(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
-                &RuntimeTaskRequestTemplate::new(
+                &RuntimeTaskRequestTemplate::at_operation(
                     0,
                     Box::new([]),
                     Box::new([field(identity, role)]),
@@ -1305,7 +1310,7 @@ fn request_definition_encoding_commits_fields_and_obeys_the_shared_budget() {
         RuntimeBodySemanticContext::new(&plan).encode_request_template(
             &mut meter,
             producer.endpoint(0).unwrap(),
-            &RuntimeTaskRequestTemplate::new(
+            &RuntimeTaskRequestTemplate::at_operation(
                 0,
                 Box::new([]),
                 Box::new([field(1, RuntimeRequestFieldRole::Required)])
@@ -1350,17 +1355,16 @@ fn actual_host_request_uses_admitted_roles_and_excludes_display_names() {
                 &mut meter,
                 function,
                 &owner,
-                &mut |_| Ok(owner.resolve(0).unwrap()),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap();
         let target = producer.endpoint(0).unwrap().host_target().unwrap();
         assert_eq!(target.args[0].identity().as_bytes(), &[identity; 32]);
         context
-            .host_request_template_digest(
+            .static_request_template_digest(
                 &mut meter,
                 producer.endpoint(0).unwrap(),
-                Default::default(),
+                crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
     };
@@ -1372,21 +1376,15 @@ fn actual_host_request_uses_admitted_roles_and_excludes_display_names() {
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     let context = RuntimeBodySemanticContext::new(&plan);
     let producer = context
-        .producer_function(
-            &mut meter,
-            function,
-            &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
-            Default::default(),
-        )
+        .producer_function(&mut meter, function, &owner, Default::default())
         .unwrap();
     assert!(matches!(
-        RuntimeBodySemanticContext::new(&clone).host_request_template_digest(
+        RuntimeBodySemanticContext::new(&clone).static_request_template_digest(
             &mut meter,
             producer.endpoint(0).unwrap(),
             Default::default()
         ),
-        Err(RuntimeBodySemanticError::InvalidHostRequestEndpoint)
+        Err(RuntimeBodySemanticError::InvalidRequestSource)
     ));
     assert_eq!(
         TaskSemanticEncoder::new(b"later", &mut meter).finish(),
@@ -1410,17 +1408,11 @@ fn actual_host_request_quota_precedes_source_projection() {
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     let context = RuntimeBodySemanticContext::new(&plan);
     let producer = context
-        .producer_function(
-            &mut meter,
-            function,
-            &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
-            Default::default(),
-        )
+        .producer_function(&mut meter, function, &owner, Default::default())
         .unwrap();
     let mut meter = TaskSemanticMeter::new(0, 0);
     assert!(matches!(
-        context.host_request_template_digest(
+        context.static_request_template_digest(
             &mut meter,
             producer.endpoint(0).unwrap(),
             crate::plan::RuntimeTaskPlanSealLimits {
@@ -1490,13 +1482,7 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     let context = RuntimeBodySemanticContext::new(&plan);
     let producer = context
-        .producer_function(
-            &mut meter,
-            function,
-            &owner,
-            &mut |_| Ok(owner.resolve(0).unwrap()),
-            Default::default(),
-        )
+        .producer_function(&mut meter, function, &owner, Default::default())
         .unwrap();
     let endpoint = producer.endpoint(0).unwrap();
     let argument = |source| RuntimeRequestArgument {
@@ -1507,13 +1493,13 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
         path: Box::new([RuntimeRequestPathStep::Operand(0)]),
     };
     let actual = context
-        .host_request_template_digest(&mut meter, endpoint, Default::default())
+        .static_request_template_digest(&mut meter, endpoint, Default::default())
         .unwrap();
     let expected = context
         .request_template_digest(
             &mut meter,
             endpoint,
-            &RuntimeTaskRequestTemplate::new(
+            &RuntimeTaskRequestTemplate::at_operation(
                 0,
                 Box::new([argument(RuntimeRequestValueSource::Capture)]),
                 Box::new([]),
@@ -1524,7 +1510,7 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
     let wrong = context.request_template_digest(
         &mut meter,
         endpoint,
-        &RuntimeTaskRequestTemplate::new(
+        &RuntimeTaskRequestTemplate::at_operation(
             0,
             Box::new([argument(RuntimeRequestValueSource::Local)]),
             Box::new([]),
@@ -1745,7 +1731,6 @@ fn actual_line_digest_commits_action_cancel_cleanup_and_order_but_not_mark_spell
                 &mut meter,
                 crate::runtime_id::RuntimeLineTaskGroupId::from_zero_based(0).unwrap(),
                 owner,
-                &mut |_| panic!("no task references"),
                 RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap()
@@ -1824,7 +1809,6 @@ fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
             &mut meter,
             group,
             &owner,
-            &mut |_| panic!("no task refs"),
             crate::plan::RuntimeTaskPlanSealLimits {
                 max_children_per_row: 0,
                 ..Default::default()
@@ -1843,7 +1827,6 @@ fn actual_line_digest_preflights_children_and_uses_one_exact_meter() {
                 &mut meter,
                 group,
                 &owner,
-                &mut |_| panic!("no task refs"),
                 crate::plan::RuntimeTaskPlanSealLimits::default(),
             )
             .map(|semantic| semantic.digest());
@@ -1919,7 +1902,6 @@ fn make_need_request_uses_actual_endpoint_and_keeps_checked_role_identity() {
                 &mut meter,
                 function,
                 &owner,
-                &mut |_| Ok(owner.resolve(0).unwrap()),
                 RuntimeTaskPlanSealLimits::default(),
             )
             .unwrap();
@@ -1930,7 +1912,7 @@ fn make_need_request_uses_actual_endpoint_and_keeps_checked_role_identity() {
             &[identity; 32]
         );
         context
-            .host_request_template_digest(
+            .static_request_template_digest(
                 &mut meter,
                 endpoint,
                 RuntimeTaskPlanSealLimits::default(),
@@ -1970,7 +1952,7 @@ fn make_need_target_rejects_binding_mismatch_and_spread() {
     use crate::task::{
         NamedHostArg, RuntimeHostArgumentTemplate as Argument, RuntimeRequestRoleIdentity,
     };
-    let (plan, _, _) =
+    let (plan, owner, _) =
         try_producer_request_plan_with_setup(true, Some(make_need_request_plan(None)), |_| {
             (
                 vec![crate::plan::RuntimeHostArgumentSeed::Positional(
@@ -2007,6 +1989,7 @@ fn make_need_target_rejects_binding_mismatch_and_spread() {
         assert!(matches!(
             crate::plan::RuntimeNeedProducerStartTarget::try_new(
                 make_need_request_plan(Some("field")),
+                owner.resolve(0).unwrap(),
                 vec![argument]
             ),
             Err(
@@ -2072,7 +2055,8 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
     builder
         .declare_test_input_locals(admission.local_ids())
         .unwrap();
-    let inventory = builder.prepare_inventory(Default::default()).unwrap();
+    let owner = builder.task_coordinate_owner(0);
+    let inventory = builder.prepare_inventory(Default::default(), 0).unwrap();
     inventory.verify().unwrap();
     let types = crate::program_types::RuntimeProgramTypes::Plan(&inventory);
     types.require_type(semantic).unwrap();
@@ -2092,10 +2076,16 @@ fn private_inventory_resolves_body_and_type_authority_before_plan_publication() 
         encoder.finish().unwrap()
     };
     let prepared = digest(&inventory);
-    let plan = RuntimePlan {
-        artifact: None,
+    let plan = super::task_image::UnsealedRuntimePlanImage::new_for_test(
         inventory,
-    };
+        owner,
+        Box::new([]),
+        None,
+    )
+    .unwrap()
+    .seal(Default::default(), None)
+    .unwrap()
+    .into_plan();
     assert_eq!(plan.artifact(), None);
     assert_eq!(prepared, digest(&plan));
     assert!(std::ptr::eq(plan.type_table(), plan.inventory.type_table()));

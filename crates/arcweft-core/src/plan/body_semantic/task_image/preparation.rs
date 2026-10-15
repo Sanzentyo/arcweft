@@ -3,25 +3,22 @@
 //! behind the final task/View ownership and codec switch.
 
 use super::{
-    RuntimeTaskPlan, RuntimeTaskPlanImageError, RuntimeTaskSemanticBinding,
-    UnsealedRuntimePlanImage,
+    RuntimeTaskPlan, RuntimeTaskPlanSealError, RuntimeTaskSemanticBinding, UnsealedRuntimePlanImage,
 };
 use crate::line_task::semantic::LinePlanSemanticDigest;
 use crate::plan::body_semantic::executable_rows::RuntimeExecutableSemanticRows;
-use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
 use crate::plan::body_semantic::function::ProducerFunctionSemanticDigest;
 use crate::plan::body_semantic::request::TaskRequestTemplateDigest;
 use crate::plan::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::plan::{
-    ControlEffectContractDigest, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealLimits,
+    ControlEffectContractDigest, RuntimeExecutableSemanticDigest, RuntimeTaskPlanSealLimits,
+    ViewTaskPlanAuthority,
 };
-use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RuntimeExecutableSemanticDigest([u8; 32]);
+use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, TaskSemanticMeter};
 
 /// Completed binding evidence is derived from the same source row. Line
 /// retains its actual group proof; no raw digest can issue this evidence.
+#[derive(Clone, Copy)]
 enum TaskBindingSemantic<'a> {
     Marker(&'a RuntimeTaskSemanticBinding),
     Line(LinePlanSemanticDigest),
@@ -68,14 +65,197 @@ impl TaskSemanticChildren<'_> {
 /// a plan/table, a View capability, or a live runtime value.
 pub(super) struct PreparedRuntimePlanSemantic<'a, 'meter> {
     image: &'a UnsealedRuntimePlanImage,
-    executable: RuntimeExecutableSemanticDigest,
-    tasks: Box<[TaskSemanticChildren<'a>]>,
+    rows: PreparedRuntimePlanRows<'a>,
     meter: &'meter mut TaskSemanticMeter,
 }
 
-impl PreparedRuntimePlanSemantic<'_, '_> {
+struct PreparedRuntimePlanRows<'a> {
+    executable: RuntimeExecutableSemanticDigest,
+    tasks: Box<[TaskSemanticChildren<'a>]>,
+    control_proofs: Box<[ControlEffectContractDigest]>,
+}
+
+/// Candidate-local completion proof. Final publication consumes these keys
+/// together with the same image's rows; this is never a second public table.
+pub(super) struct CompletedRuntimeTaskPlanSemantics {
+    executable: RuntimeExecutableSemanticDigest,
+    control_proofs: Box<[ControlEffectContractDigest]>,
+    rows: Box<
+        [(
+            crate::task::TaskPlanSemanticDigest,
+            crate::plan::RuntimeTaskSemanticBinding,
+        )],
+    >,
+    by_digest: std::collections::BTreeMap<
+        crate::task::TaskPlanSemanticDigest,
+        crate::plan::RuntimeTaskPlanIndex,
+    >,
+}
+
+impl CompletedRuntimeTaskPlanSemantics {
     pub(super) const fn executable_bytes(&self) -> &[u8; 32] {
-        &self.executable.0
+        self.executable.as_bytes()
+    }
+
+    pub(super) fn keys(
+        &self,
+    ) -> impl ExactSizeIterator<Item = crate::task::TaskPlanSemanticDigest> + '_ {
+        self.rows.iter().map(|(key, _)| *key)
+    }
+
+    fn into_table(
+        self,
+        source_rows: Box<[RuntimeTaskPlan]>,
+    ) -> Result<
+        (
+            crate::plan::RuntimeTaskPlanTable,
+            Box<[ControlEffectContractDigest]>,
+        ),
+        RuntimeTaskPlanSealError,
+    > {
+        if source_rows.len() != self.rows.len() {
+            return Err(RuntimeTaskPlanSealError::CompletionCount {
+                source_rows: source_rows.len(),
+                completed_rows: self.rows.len(),
+            });
+        }
+        let rows = source_rows
+            .into_vec()
+            .into_iter()
+            .zip(self.rows.into_vec())
+            .map(|(source, (digest, binding))| {
+                crate::plan::task_semantic::SealedRuntimeTaskPlanRow {
+                    plan: crate::plan::RuntimeTaskPlan {
+                        producer_function: source.producer_function,
+                        family: source.family,
+                        class: source.class,
+                        request_template: source.request_template,
+                        control_effect: source.control_effect,
+                        binding,
+                    },
+                    digest,
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Ok((
+            crate::plan::RuntimeTaskPlanTable {
+                rows,
+                by_digest: self.by_digest,
+            },
+            self.control_proofs,
+        ))
+    }
+}
+
+impl PreparedRuntimePlanSemantic<'_, '_> {
+    /// One completion path owns ordinary and capability-gated View keys, then
+    /// expected assertions and global duplicate collection in that order.
+    pub(super) fn complete_tasks(
+        mut self,
+        authority: Option<&dyn ViewTaskPlanAuthority>,
+    ) -> Result<CompletedRuntimeTaskPlanSemantics, RuntimeTaskPlanSealError> {
+        self.meter.status()?;
+        let mut rows = Vec::with_capacity(self.rows.tasks.len());
+        let mut unique = std::collections::BTreeMap::new();
+        for ordinal in 0..self.rows.tasks.len() {
+            let source_ordinal = self.meter.checked_ordinal(ordinal)?;
+            self.meter.charge_work(1)?;
+            let binding = self.rows.tasks[ordinal].binding;
+            let key = if matches!(
+                binding,
+                TaskBindingSemantic::Marker(RuntimeTaskSemanticBinding::View)
+            ) {
+                let Some(authority) = authority else {
+                    self.meter.reject_owner();
+                    return Err(RuntimeTaskPlanSealError::MissingViewAuthority { ordinal });
+                };
+                // Charge and validate the original core prefix before issuing
+                // the capability; the upper owner writes these exact fields.
+                let core_prefix_bytes = {
+                    let prefix = self.task_prefix(ordinal)?;
+                    let bytes = prefix.encoded_bytes();
+                    prefix.finish()?;
+                    bytes
+                };
+                let coordinate = self
+                    .image
+                    .coordinate_owner
+                    .resolve(source_ordinal)
+                    .ok_or_else(|| {
+                        self.meter.reject_owner();
+                        RuntimeBodySemanticError::MissingRow {
+                            table: "task coordinates",
+                            ordinal,
+                        }
+                    })?;
+                let invocation =
+                    crate::plan::task_semantic::ViewTaskPlanSealInvocation::new(coordinate);
+                let children = &self.rows.tasks[ordinal];
+                let request = invocation.request(
+                    children.row,
+                    self.rows.executable,
+                    children.function,
+                    children.request,
+                    children.control,
+                );
+                let (key, extension_bytes) = authority
+                    .task_plan_semantic_digest(request)
+                    .and_then(|key| {
+                        let bytes = invocation.verify(key, core_prefix_bytes)?;
+                        Ok((key, bytes))
+                    })
+                    .map_err(|source| {
+                        self.meter.reject_owner();
+                        RuntimeTaskPlanSealError::ViewAuthority { ordinal, source }
+                    })?;
+                self.meter.charge_authority_extension(extension_bytes)?;
+                key
+            } else {
+                let mut transcript = self.task_prefix(ordinal)?;
+                binding.write(&mut transcript);
+                crate::task::TaskPlanSemanticDigest::from_semantic_transcript(transcript)?
+            };
+            if self
+                .image
+                .expected_key(ordinal)
+                .is_some_and(|expected| expected.bytes() != key.as_bytes())
+            {
+                self.meter.reject_owner();
+                return Err(RuntimeTaskPlanSealError::ExpectedKeyMismatch { ordinal });
+            }
+            let index = crate::plan::RuntimeTaskPlanIndex(source_ordinal);
+            if let Some(first) = unique.insert(key, index) {
+                self.meter.reject_owner();
+                return Err(RuntimeTaskPlanSealError::DuplicateKey {
+                    first: first.0 as usize,
+                    ordinal,
+                });
+            }
+            let completed_binding = self.rows.tasks[ordinal]
+                .row
+                .binding
+                .try_complete_line(|_| {
+                    if let TaskBindingSemantic::Line(proof) = binding {
+                        Ok(proof)
+                    } else {
+                        Err(TaskSemanticEncodingError::OwnerRejected)
+                    }
+                })
+                .inspect_err(|_| self.meter.reject_owner())?;
+            rows.push((key, completed_binding));
+        }
+        self.meter.status()?;
+        Ok(CompletedRuntimeTaskPlanSemantics {
+            executable: self.rows.executable,
+            control_proofs: self.rows.control_proofs,
+            rows: rows.into_boxed_slice(),
+            by_digest: unique,
+        })
+    }
+
+    pub(super) const fn executable_bytes(&self) -> &[u8; 32] {
+        self.rows.executable.as_bytes()
     }
 
     /// Stages the exact core prefix under the caller's same sticky meter.
@@ -84,19 +264,20 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
     pub(super) fn task_prefix(
         &mut self,
         ordinal: usize,
-    ) -> Result<TaskSemanticEncoder<'_>, RuntimeTaskPlanImageError> {
+    ) -> Result<TaskSemanticEncoder<'_>, RuntimeTaskPlanSealError> {
         let meter = &mut *self.meter;
         meter.status()?;
-        let children = self.tasks.get(ordinal).ok_or_else(|| {
+        let children = self.rows.tasks.get(ordinal).ok_or_else(|| {
             meter.reject_owner();
             RuntimeBodySemanticError::MissingRow {
                 table: "task plans",
                 ordinal,
             }
         })?;
-        let mut encoder = TaskSemanticEncoder::new(b"arcweft.task.plan-semantic.v1\0", meter);
+        let mut encoder =
+            TaskSemanticEncoder::new(crate::task::TaskPlanSemanticDigest::DOMAIN, meter);
         encoder.tag(0);
-        encoder.digest(&self.executable.0);
+        encoder.digest(self.rows.executable.as_bytes());
         children.write_base(&mut encoder);
         encoder.status()?;
         Ok(encoder)
@@ -104,24 +285,53 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
 }
 
 impl UnsealedRuntimePlanImage {
+    /// The sole consuming completion boundary. No plan or table is exposed
+    /// while source definitions, View capabilities or assertions can still fail.
+    pub(in crate::plan) fn seal(
+        mut self,
+        limits: RuntimeTaskPlanSealLimits,
+        authority: Option<&dyn ViewTaskPlanAuthority>,
+    ) -> Result<SealedRuntimePlanImage, RuntimeTaskPlanSealError> {
+        self.coordinate_owner.ensure_unsealed()?;
+        let mut meter = self
+            .preparation_meter
+            .take()
+            .expect("every image owns its original preparation meter");
+        meter.constrain(limits.max_semantic_work, limits.max_transcript_bytes)?;
+        let completed = self
+            .prepare_semantics(limits, &mut meter)?
+            .complete_tasks(authority)?;
+        meter.status()?;
+        let executable = completed.executable;
+        let (task_plans, control_proofs) = completed.into_table(self.task_plans)?;
+        let mut inventory = self.inventory;
+        inventory.control_effect_contracts = inventory
+            .control_effect_contracts
+            .complete(control_proofs)?;
+        let semantics =
+            std::sync::Arc::new(crate::plan::task_semantic::RuntimeTaskProgramSemantics {
+                executable,
+                task_plans,
+            });
+        self.coordinate_owner
+            .publish(std::sync::Arc::clone(&semantics))?;
+        Ok(SealedRuntimePlanImage {
+            inventory,
+            semantics,
+        })
+    }
+
     pub(super) fn prepare_semantics<'image, 'meter>(
         &'image self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &'meter mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
-    ) -> Result<PreparedRuntimePlanSemantic<'image, 'meter>, RuntimeTaskPlanImageError> {
-        let (executable, tasks) = self
-            .prepare_complete(limits, meter, task_reference)
+    ) -> Result<PreparedRuntimePlanSemantic<'image, 'meter>, RuntimeTaskPlanSealError> {
+        let rows = self
+            .prepare_complete(limits, meter)
             .inspect_err(|_| meter.reject_owner())?;
         Ok(PreparedRuntimePlanSemantic {
             image: self,
-            executable,
-            tasks,
+            rows,
             meter,
         })
     }
@@ -130,28 +340,12 @@ impl UnsealedRuntimePlanImage {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-        task_reference: &mut impl FnMut(
-            RuntimeBodyTaskSource<'_>,
-        ) -> Result<
-            RuntimeTaskPlanBuildCoordinate,
-            RuntimeBodySemanticError,
-        >,
-    ) -> Result<
-        (
-            RuntimeExecutableSemanticDigest,
-            Box<[TaskSemanticChildren<'_>]>,
-        ),
-        RuntimeTaskPlanImageError,
-    > {
+    ) -> Result<PreparedRuntimePlanRows<'_>, RuntimeTaskPlanSealError> {
         let mut control = self.preflight(limits, meter)?;
         for (ordinal, row) in self.task_plans.iter().enumerate() {
-            if !row.family.accepts_runtime_task_binding(&row.binding) {
-                return Err(RuntimeTaskPlanImageError::FamilyBinding {
-                    ordinal,
-                    family: row.family,
-                    binding: row.binding.semantic_tag(),
-                });
-            }
+            row.family
+                .validate_runtime_task_binding(&row.binding)
+                .map_err(|source| RuntimeTaskPlanSealError::TaskDefinition { ordinal, source })?;
         }
         let context = RuntimeBodySemanticContext::new(&self.inventory);
         let mut executable = RuntimeExecutableSemanticRows::new(
@@ -163,21 +357,18 @@ impl UnsealedRuntimePlanImage {
         let mut tasks = Vec::with_capacity(self.task_plans.len());
         for row in &self.task_plans {
             meter.charge_work(1)?;
-            let function =
-                executable.prepare_function(row.producer_function, meter, task_reference)?;
+            let function = executable.prepare_function(row.producer_function, meter)?;
             let endpoint = function
-                .endpoint(row.request_template.endpoint())
-                .ok_or(RuntimeBodySemanticError::InvalidHostRequestEndpoint)?;
+                .request_endpoint(row.request_template.source())
+                .ok_or(RuntimeBodySemanticError::InvalidRequestSource)?;
             let request =
                 context.request_template_digest(meter, endpoint, &row.request_template, limits)?;
             let function = function.digest();
             let control = control.complete(row.control_effect, meter)?;
             let binding = match &row.binding {
-                RuntimeTaskSemanticBinding::Line { group } => TaskBindingSemantic::Line(
-                    executable
-                        .prepare_line(*group, meter, task_reference)?
-                        .digest(),
-                ),
+                RuntimeTaskSemanticBinding::Line { plan: group } => {
+                    TaskBindingSemantic::Line(executable.prepare_line(*group, meter)?.digest())
+                }
                 binding => TaskBindingSemantic::Marker(binding),
             };
             tasks.push(TaskSemanticChildren {
@@ -188,11 +379,18 @@ impl UnsealedRuntimePlanImage {
                 binding,
             });
         }
+        let mut control_proofs =
+            Vec::with_capacity(self.inventory.control_effect_contracts().len());
+        for index in 0..self.inventory.control_effect_contracts().len() {
+            let id = crate::plan::RuntimeControlEffectContractId::for_index(index)
+                .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
+            control_proofs.push(control.complete(id, meter)?);
+        }
         let mut encoder =
             TaskSemanticEncoder::new(b"arcweft.runtime-plan.executable-semantic.v1\0", meter);
         encoder.tag(0);
         encoder.tag(15);
-        executable.write_tables(&mut encoder, task_reference)?;
+        executable.write_tables(&mut encoder)?;
         encoder.enter_role();
         encoder.tag(14);
         encoder.count(tasks.len());
@@ -204,8 +402,34 @@ impl UnsealedRuntimePlanImage {
             children.write_base(&mut encoder);
             children.binding.write(&mut encoder);
         }
-        let executable = RuntimeExecutableSemanticDigest(*encoder.finish()?.as_bytes());
-        Ok((executable, tasks.into_boxed_slice()))
+        let executable = RuntimeExecutableSemanticDigest::from_semantic_transcript(encoder)?;
+        Ok(PreparedRuntimePlanRows {
+            executable,
+            tasks: tasks.into_boxed_slice(),
+            control_proofs: control_proofs.into_boxed_slice(),
+        })
+    }
+}
+
+pub(in crate::plan) struct SealedRuntimePlanImage {
+    pub(super) inventory: crate::plan::RuntimePlanInventory,
+    semantics: std::sync::Arc<crate::plan::task_semantic::RuntimeTaskProgramSemantics>,
+}
+
+impl std::ops::Deref for SealedRuntimePlanImage {
+    type Target = crate::plan::task_semantic::RuntimeTaskProgramSemantics;
+    fn deref(&self) -> &Self::Target {
+        &self.semantics
+    }
+}
+
+impl SealedRuntimePlanImage {
+    pub(in crate::plan) fn into_plan(self) -> crate::plan::RuntimePlan {
+        crate::plan::RuntimePlan {
+            artifact: None,
+            inventory: self.inventory,
+            semantics: self.semantics,
+        }
     }
 }
 

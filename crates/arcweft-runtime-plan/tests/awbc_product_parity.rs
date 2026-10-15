@@ -16,9 +16,8 @@ use arcweft_core::entry::{
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowEvent, FlowRuntimeId, RuntimeAwaitPendingObserverSeed,
-    RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    EntryRuntimeId, FlowEvent, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId,
     RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
@@ -31,7 +30,7 @@ use arcweft_core::step::{
 use arcweft_core::task::{
     GenerationId, HostRestartPolicy, LogicalEpoch, NeedProducerContractDigest,
     NeedProducerRequestProjection, NeedProducerSiteDigest, NeedProducerTaskPlan, TaskEvent,
-    TaskEventKind, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,
+    TaskEventKind, TaskPolicy, TaskPriority, TaskSequence,
 };
 use arcweft_core::value::{
     Progress, RuntimeBinaryOp, RuntimeLocalReadMode, RuntimeSeq, RuntimeSignedIntWidth,
@@ -486,6 +485,7 @@ fn plan_with_return_and_entry(value: &str, include_entry: bool) -> RuntimePlan {
 }
 
 fn plan_with_await_observer() -> RuntimePlan {
+    use arcweft_core::plan::*;
     let flow = flow_id("parity.await_observer");
     let progress_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
     let need_type = RuntimeSemanticTypeId::from_bytes([5; 32]);
@@ -526,7 +526,26 @@ fn plan_with_await_observer() -> RuntimePlan {
         .expect("Await observer facts admit");
     let need_local = admitted.local_ids()[0].clone();
     admit_flow_authority(&mut builder, &flow);
-    builder
+    let coordinate = builder.reserve_task_plan().unwrap();
+    let control = builder
+        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
+            mode: RuntimeTaskControlMode::RuntimeAggregate,
+            effects: Box::new([RuntimeControlEffectRow {
+                kind: RuntimeControlEffectKind::HostOperation,
+                identity: Some(RuntimeControlEffectIdentity::from_checked_digest(
+                    *contract.as_bytes(),
+                )),
+                inputs: Box::new([]),
+                output: Some(STRING_TYPE),
+                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
+                ordering: RuntimeControlEffectOrdering::SingleTerminal,
+                cancellation: RuntimeControlEffectCancellation::NotObserved,
+                terminal: RuntimeControlEffectTerminalBehavior::Value,
+            }]),
+            children: Box::new([]),
+        })
+        .unwrap();
+    let function = builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
@@ -551,6 +570,7 @@ fn plan_with_await_observer() -> RuntimePlan {
                         ),
                         target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
                             plan: producer_plan,
+                            task_plan: coordinate.clone(),
                             arguments: Vec::new(),
                         },
                     },
@@ -587,6 +607,23 @@ fn plan_with_await_observer() -> RuntimePlan {
             },
         ))
         .expect("Await observer flow admits");
+    builder
+        .define_task_plan(
+            &coordinate,
+            RuntimeTaskPlanSeed::new(
+                function,
+                arcweft_core::task::NeedProducerFamily::SelectedCallable,
+                arcweft_core::task::TaskClass::Io,
+                RuntimeTaskRequestTemplateSeed::new(
+                    RuntimeTaskRequestSource::Operation(0),
+                    Box::new([]),
+                    Box::new([]),
+                ),
+                control,
+                RuntimeTaskSemanticBinding::Ordinary,
+            ),
+        )
+        .unwrap();
     builder
         .push_entry(RuntimeEntrySpec {
             id: entry_id(),

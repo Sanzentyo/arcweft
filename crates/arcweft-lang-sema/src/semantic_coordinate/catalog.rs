@@ -841,7 +841,7 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
                 })
                 .position(|child| *child == scope)
                 .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
-            let mut bytes = Vec::new();
+            let mut bytes = arcweft_core::pattern::MatchSourceWriter::new(Vec::new());
             super::write_len(&mut bytes, path.steps().len())
                 .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
             for step in path.steps() {
@@ -850,10 +850,14 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             }
             super::write_len(&mut bytes, ordinal)
                 .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
-            nested.push(bytes);
+            nested.push(
+                bytes
+                    .finish(Ok(()))
+                    .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?,
+            );
             scope = parent;
         };
-        let mut bytes = Vec::new();
+        let mut bytes = arcweft_core::pattern::MatchSourceWriter::new(Vec::new());
         super::write_bytes(&mut bytes, public_id.as_bytes())
             .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
         super::write_len(&mut bytes, nested.len())
@@ -865,6 +869,9 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         super::write_bytes(&mut bytes, binding.name().as_str().as_bytes())
             .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
         bytes.extend_from_slice(&binding.generation().get().to_le_bytes());
+        let bytes = bytes
+            .finish(Ok(()))
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft.lang.retained-state-field.v1\0");
         hasher.update(&bytes);
@@ -1342,9 +1349,9 @@ mod tests {
         let bytes = path.canonical_bytes().unwrap();
         assert_eq!(&bytes[33..41], &1_u64.to_le_bytes());
 
-        let mut raw = Vec::new();
+        let mut raw = arcweft_core::pattern::MatchSourceWriter::new(Vec::new());
         write_len(&mut raw, usize::from(0x2a_u8)).unwrap();
-        assert_eq!(raw, 42_u64.to_le_bytes());
+        assert_eq!(raw.finish(Ok(())).unwrap(), 42_u64.to_le_bytes());
     }
 
     #[test]

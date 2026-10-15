@@ -63,7 +63,7 @@ fn staged_callable(
     let owner = builder.task_coordinate_owner(0);
     (
         builder
-            .prepare_inventory(RuntimeTaskPlanSealLimits::default())
+            .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
             .unwrap(),
         owner,
     )
@@ -90,13 +90,7 @@ fn staged_row(
         }
         RuntimeCallableExecutableCode::FunctionSite(id) => {
             let proof = context
-                .producer_function(
-                    &mut meter,
-                    id,
-                    owner,
-                    &mut |_| panic!("no task reference"),
-                    RuntimeTaskPlanSealLimits::default(),
-                )
+                .producer_function(&mut meter, id, owner, RuntimeTaskPlanSealLimits::default())
                 .unwrap();
             context
                 .callable_executable_row_digest(
@@ -168,7 +162,6 @@ fn controller_rows(
             &mut meter,
             function,
             owner,
-            &mut |_| panic!("no task reference"),
             RuntimeTaskPlanSealLimits::default(),
         )
         .and_then(|producer| {
@@ -286,7 +279,6 @@ fn executable_roles_use_one_meter_and_reject_foreign_missing_or_wrong_code_proof
             &mut preparation,
             function,
             &owner,
-            &mut |_| panic!("no task reference"),
             RuntimeTaskPlanSealLimits::default(),
         )
         .unwrap();
