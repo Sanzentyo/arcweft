@@ -36,6 +36,16 @@ impl RuntimeStoredValue for RuntimeValue {
     }
 }
 
+impl RuntimeStoredValue for super::RuntimePayload {
+    fn borrowed_view(&self) -> RuntimeValueView<'_> {
+        self.value().view()
+    }
+
+    fn admission_origin() -> ValueAdmissionOrigin {
+        ValueAdmissionOrigin::Live
+    }
+}
+
 impl RuntimeStoredValue for AwbcRuntimeValueSnapshot {
     fn borrowed_view(&self) -> RuntimeValueView<'_> {
         self.view()

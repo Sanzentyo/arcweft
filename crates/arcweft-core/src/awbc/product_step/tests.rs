@@ -2024,7 +2024,12 @@ fn save_snapshot_preserves_queued_progress_publications() {
         kind: TaskEventKind::Progress(Progress::new(0.25).expect("fixture Progress is valid")),
     };
     let mut output = crate::step::RuntimeStepOutput::default();
-    executor.latch_task_events(vec![event.clone()], &mut output);
+    let expected: super::AwbcProductTaskEventSaveSnapshot = TaskEvent {
+        correlation: event.correlation,
+        cursor: event.cursor,
+        kind: TaskEventKind::Progress(Progress::new(0.25).unwrap()),
+    };
+    executor.latch_task_events(vec![event], &mut output);
     assert!(output.diagnostics.is_empty());
 
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
@@ -2040,7 +2045,7 @@ fn save_snapshot_preserves_queued_progress_publications() {
 
     assert_eq!(
         restored.queued_task_events,
-        std::collections::VecDeque::from([event])
+        std::collections::VecDeque::from([expected])
     );
 }
 
@@ -2063,8 +2068,15 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
         },
         kind: TaskEventKind::Ready(RuntimeValue::String("retained".to_owned()).into()),
     };
+    let expected = super::AwbcProductTaskEventSaveSnapshot {
+        correlation: event.correlation,
+        cursor: event.cursor,
+        kind: TaskEventKind::Ready(crate::value::AwbcRuntimeValueSnapshot::String(
+            "retained".into(),
+        )),
+    };
     let mut output = crate::step::RuntimeStepOutput::default();
-    executor.latch_task_events(vec![event.clone()], &mut output);
+    executor.latch_task_events(vec![event], &mut output);
     assert!(output.diagnostics.is_empty());
     let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     let saved = AwbcProductExecutorSaveSnapshot::from_live(&product_snapshot(&executor), &owner)
@@ -2083,7 +2095,7 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
     let restored = saved.clone().into_live_for_program(&owner).unwrap();
     assert_eq!(
         restored.queued_task_events,
-        std::collections::VecDeque::from([event])
+        std::collections::VecDeque::from([expected])
     );
 
     for edit in 0..4 {
@@ -4712,16 +4724,21 @@ fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
         },
     );
     let mut forged = product_snapshot(&accepted);
-    forged.need_producers.launches[0].state =
-        crate::task::RuntimeNeedProducerState::Ready(RuntimePayload(RuntimeValue::Bool(true)));
+    forged.need_producers.launches[0].state = crate::task::RuntimeNeedProducerState::Ready(
+        crate::value::AwbcRuntimeValueSnapshot::Bool(true),
+    );
     let error = accepted
         .restore_snapshot(forged)
         .expect_err("restored Ready payload must match its selected Need<T>");
-    assert!(matches!(
-        error,
-        AwbcProductStepBuildError::RestoreSnapshot { ref message }
-            if message.contains("saved Need producer Ready payload is outside its checked item type")
-    ));
+    assert!(
+        matches!(
+            error,
+            AwbcProductStepBuildError::RestoreSnapshot { ref message }
+                if message.contains("invalid Need producer registry snapshot")
+                    && message.contains("has type `bool`, expected")
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -6567,15 +6584,15 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     assert!(blocked.output.requests.host_calls.is_empty());
     assert_eq!(product_snapshot(&executor).child_fibers, [blocked_child]);
 
-    let resume = RuntimeStepInput {
+    let resume = || RuntimeStepInput {
         host_call_results: vec![RuntimeHostCallResult {
-            id: request_id,
+            id: request_id.clone(),
             outcome: Ok(RuntimePayload(RuntimeValue::Unit)),
         }],
         ..RuntimeStepInput::default()
     };
-    let completed = executor.step(resume.clone(), drain);
-    let completed_replay = restored.step(resume, drain);
+    let completed = executor.step(resume(), drain);
+    let completed_replay = restored.step(resume(), drain);
     assert_eq!(completed, completed_replay);
     assert!(completed.stats.executed_ops > 0 && completed.stats.executed_ops <= 64);
     assert_eq!(completed.stop_reason, RuntimeStepStopReason::Done);

@@ -256,10 +256,17 @@ pub enum NeedProducerRequestProjection {
 /// One checked, source-ordered argument evaluated for a Need producer call.
 /// Names are retained because extern requests preserve manifest argument
 /// bindings; spreads are not representable in this closed runtime row.
-#[derive(Clone, Debug, PartialEq)]
-pub struct NeedProducerRuntimeArgument {
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "V: crate::value::InertRuntimeValueStorage",
+        deserialize = "V: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub struct NeedProducerRuntimeArgument<V = RuntimeValue> {
     pub name: Option<String>,
-    pub value: RuntimeValue,
+    pub value: V,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -303,6 +310,40 @@ pub struct NeedProducerTaskPlan {
 }
 
 impl NeedProducerTaskPlan {
+    fn admit_retained_metadata(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata(&(
+            self.contract,
+            self.site,
+            self.payload_type,
+            self.policy,
+            self.restart,
+            &self.class,
+            self.priority,
+            &self.cancel_scope,
+        ))?;
+        admission.validate_metadata(&self.argument_types)?;
+        match &self.request {
+            NeedProducerRequestProjection::AssetLoad {
+                kind,
+                argument_name,
+            } => {
+                admission.validate_metadata(&(kind.as_str(), argument_name))?;
+            }
+            NeedProducerRequestProjection::ExternCapability {
+                capability,
+                operation,
+                contract,
+                argument_names,
+            } => {
+                admission.validate_metadata(&(capability, operation, contract, argument_names))?;
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         contract: NeedProducerContractDigest,
@@ -440,6 +481,13 @@ impl NeedProducerTaskPlan {
         &self,
         arguments: &[NeedProducerRuntimeArgument],
     ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
+        self.borrowed_producer_spec(arguments)
+    }
+
+    fn borrowed_producer_spec<V: crate::value::RuntimeStoredValue>(
+        &self,
+        arguments: &[NeedProducerRuntimeArgument<V>],
+    ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
         let digest = need_producer_arguments_digest(arguments)?;
         Ok(NeedProducerSpec::new(
             NeedProducerFamily::SelectedCallable,
@@ -535,10 +583,10 @@ impl NeedProducerTaskPlan {
 
     /// Checks a saved host request against the selected arguments without
     /// constructing a second RuntimeValue owner during snapshot validation.
-    fn request_matches(
+    fn request_matches<V: crate::value::RuntimeStoredValue, P: crate::value::RuntimeStoredValue>(
         &self,
-        arguments: &[NeedProducerRuntimeArgument],
-        actual: &HostTaskRequest,
+        arguments: &[NeedProducerRuntimeArgument<V>],
+        actual: &HostTaskRequest<P>,
     ) -> Result<bool, NeedProducerRequestError> {
         match (&self.request, actual) {
             (
@@ -556,7 +604,10 @@ impl NeedProducerTaskPlan {
                 {
                     return Err(NeedProducerRequestError::ArgumentBindingMismatch);
                 }
-                let RuntimeValue::EntityRef(reference) = &arguments[0].value else {
+                let crate::value::RuntimeValueView::Scalar(
+                    crate::value::RuntimeScalarView::EntityRef(reference),
+                ) = arguments[0].value.borrowed_view()
+                else {
                     return Err(NeedProducerRequestError::ExpectedEntityReference);
                 };
                 Ok(saved.id == reference.runtime_label() && saved.kind == kind.as_str())
@@ -594,12 +645,18 @@ impl NeedProducerTaskPlan {
                     && *manifest_contract == Some(*contract)
                     && args.len() == positional.clone().count()
                     && named_args.len() == named.clone().count()
-                    && positional
-                        .zip(args)
-                        .all(|(argument, saved)| argument.value == *saved.value())
+                    && positional.zip(args).all(|(argument, saved)| {
+                        crate::value::runtime_value_views_equal(
+                            argument.value.borrowed_view(),
+                            saved.borrowed_view(),
+                        )
+                    })
                     && named.zip(named_args).all(|(argument, saved)| {
                         argument.name.as_deref() == Some(saved.name.as_str())
-                            && argument.value == *saved.value.value()
+                            && crate::value::runtime_value_views_equal(
+                                argument.value.borrowed_view(),
+                                saved.value.borrowed_view(),
+                            )
                     }))
             }
             _ => Ok(false),
@@ -725,13 +782,19 @@ impl TaskClass {
     }
 }
 
-fn need_producer_arguments_digest(
-    arguments: &[NeedProducerRuntimeArgument],
+fn need_producer_arguments_digest<V: crate::value::RuntimeStoredValue>(
+    arguments: &[NeedProducerRuntimeArgument<V>],
 ) -> Result<RuntimeValueDigest, NeedProducerAdmissionError> {
     const MAX_ARGUMENT_BYTES: usize = 16 * 1024 * 1024;
-    let values: Vec<_> = arguments.iter().map(|argument| &argument.value).collect();
-    crate::entry::schema::canonical_runtime_tuple_digest(&values, MAX_ARGUMENT_BYTES)
-        .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)
+    let values: Vec<_> = arguments
+        .iter()
+        .map(|argument| argument.value.borrowed_view())
+        .collect();
+    crate::entry::schema::canonical_runtime_value_view_digest(
+        crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Views(&values)),
+        MAX_ARGUMENT_BYTES,
+    )
+    .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)
 }
 
 /// Opaque, registry-issued identity of one accepted producer-start
@@ -772,7 +835,7 @@ impl NeedProducerInvocationToken {
 /// derived together from the generation, the complete producer instance key,
 /// and one launch ordinal. The exact task specification is retained so native
 /// and Product execution share the same request and outcome authority.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RuntimeNeedProducerLaunch {
     correlation: TaskCorrelation,
     invocation: NeedProducerInvocationToken,
@@ -877,17 +940,71 @@ impl RuntimeNeedProducerLaunch {
 /// The producer's terminal Ready metadata remains after an AlwaysStart
 /// payload moves to its one Await consumer. JoinSameKey retains a checked
 /// unrestricted Ready payload for later joiners.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeNeedProducerState {
+/// Retained Ready owns its payload until it moves to the selected waiter.
+/// Only the inert storage specialization supports cloning and decoding.
+///
+/// ```compile_fail
+/// use arcweft_core::task::RuntimeNeedProducerState;
+/// fn clone_live(value: &RuntimeNeedProducerState) -> RuntimeNeedProducerState {
+///     value.clone()
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::task::RuntimeNeedProducerState;
+/// fn decode_live<'a, D: serde::Deserializer<'a>>(decoder: D) {
+///     let _ = <RuntimeNeedProducerState as serde::Deserialize>::deserialize(decoder);
+/// }
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "P: Serialize",
+        deserialize = "P: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub enum RuntimeNeedProducerState<P = RuntimePayload> {
     NotStarted,
     Pending(Progress),
-    Ready(RuntimePayload),
+    Ready(P),
     ReadyTransferred,
     InfrastructureFailure(super::RuntimeTaskFailure),
     Cancelled,
 }
 
-impl RuntimeNeedProducerState {
+impl<P> RuntimeNeedProducerState<P> {
+    pub(crate) fn admit_retained(
+        &self,
+        outcome: &super::TaskOutcomeContract,
+        policy: TaskPolicy,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        match self {
+            Self::Ready(value) => {
+                admission.admit_composite(P::admission_origin(), |owner, resources| {
+                    let view = value.borrowed_view();
+                    if policy == TaskPolicy::JoinSameKey {
+                        view.admit_unrestricted(resources)?;
+                    } else {
+                        resources.validate_view(view, 0, None)?;
+                    }
+                    crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                        view, owner, resources,
+                    )?;
+                    outcome.validate_admitted_value_view(view, owner, resources)?;
+                    Ok(())
+                })
+            }
+            Self::Pending(progress) => admission.validate_metadata(progress),
+            Self::InfrastructureFailure(failure) => admission.validate_metadata(failure),
+            Self::NotStarted | Self::ReadyTransferred | Self::Cancelled => Ok(()),
+        }
+    }
+
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
         matches!(
@@ -897,6 +1014,60 @@ impl RuntimeNeedProducerState {
                 | Self::InfrastructureFailure(_)
                 | Self::Cancelled
         )
+    }
+}
+
+impl Clone for RuntimeNeedProducerState<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::NotStarted => Self::NotStarted,
+            Self::Pending(progress) => Self::Pending(progress.clone()),
+            Self::Ready(value) => Self::Ready(value.clone()),
+            Self::ReadyTransferred => Self::ReadyTransferred,
+            Self::InfrastructureFailure(failure) => Self::InfrastructureFailure(failure.clone()),
+            Self::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+impl RuntimeNeedProducerState<crate::value::AwbcRuntimeValueSnapshot> {
+    fn from_admitted_live(
+        state: &RuntimeNeedProducerState,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
+        Ok(match state {
+            RuntimeNeedProducerState::NotStarted => Self::NotStarted,
+            RuntimeNeedProducerState::Pending(progress) => Self::Pending(progress.clone()),
+            RuntimeNeedProducerState::Ready(value) => Self::Ready(
+                crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+                    value.value(),
+                    owner,
+                )?,
+            ),
+            RuntimeNeedProducerState::ReadyTransferred => Self::ReadyTransferred,
+            RuntimeNeedProducerState::InfrastructureFailure(failure) => {
+                Self::InfrastructureFailure(failure.clone())
+            }
+            RuntimeNeedProducerState::Cancelled => Self::Cancelled,
+        })
+    }
+
+    fn into_admitted_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<RuntimeNeedProducerState, crate::value::AwbcRuntimeValueSnapshotError> {
+        Ok(match self {
+            Self::NotStarted => RuntimeNeedProducerState::NotStarted,
+            Self::Pending(progress) => RuntimeNeedProducerState::Pending(progress),
+            Self::Ready(value) => RuntimeNeedProducerState::Ready(RuntimePayload(
+                value.into_admitted_runtime_value(owner)?,
+            )),
+            Self::ReadyTransferred => RuntimeNeedProducerState::ReadyTransferred,
+            Self::InfrastructureFailure(failure) => {
+                RuntimeNeedProducerState::InfrastructureFailure(failure)
+            }
+            Self::Cancelled => RuntimeNeedProducerState::Cancelled,
+        })
     }
 }
 
@@ -981,7 +1152,7 @@ enum NeedProducerStartDecision {
     },
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct NeedProducerRegistry {
     launches: BTreeMap<NeedProducerLaunchKey, RuntimeNeedProducerLaunch>,
     joined: BTreeMap<(GenerationId, NeedProducerInstanceKey), NeedProducerLaunchKey>,
@@ -1054,8 +1225,6 @@ pub enum NeedProducerAdmissionError {
     StaleTaskPublication,
     #[error("task publication revision was reused with a conflicting payload")]
     ConflictingTaskPublication,
-    #[error("borrowed task Ready publication requires a recursively unrestricted payload")]
-    AffineBorrowedTaskPublication,
     #[error(transparent)]
     HostReadyOwnership(#[from] RuntimeHostPayloadOwnershipError),
 }
@@ -1125,17 +1294,38 @@ impl NeedProducerOwnedTaskEventError {
 /// embedded runtime values through its owner-aware save-value schema before
 /// constructing this value. The registry rebuilds all IDs and the canonical
 /// TaskSpec, then compares the saved TaskSpec before accepting it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct NeedProducerLaunchRestore {
+#[derive(Debug, PartialEq)]
+pub struct NeedProducerLaunchRestore<V = RuntimeValue, P = RuntimePayload> {
     pub invocation: NeedProducerInvocationToken,
     pub plan: NeedProducerTaskPlan,
-    pub arguments: Vec<NeedProducerRuntimeArgument>,
+    pub arguments: Vec<NeedProducerRuntimeArgument<V>>,
     pub correlation: TaskCorrelation,
-    pub task_spec: TaskSpec,
-    pub state: RuntimeNeedProducerState,
+    pub task_spec: TaskSpec<P>,
+    pub state: RuntimeNeedProducerState<P>,
     pub publication: Option<TaskPublicationCursor>,
     pub task_submitted: bool,
     pub task_terminal: bool,
+}
+
+pub(crate) type NeedProducerLaunchSaveSnapshot = NeedProducerLaunchRestore<
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+>;
+
+impl Clone for NeedProducerLaunchSaveSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            invocation: self.invocation,
+            plan: self.plan.clone(),
+            arguments: self.arguments.clone(),
+            correlation: self.correlation,
+            task_spec: self.task_spec.clone(),
+            state: self.state.clone(),
+            publication: self.publication,
+            task_submitted: self.task_submitted,
+            task_terminal: self.task_terminal,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1164,16 +1354,89 @@ pub struct RuntimeNeedProducerDispatch {
     pub needs_reensure: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct NeedProducerRegistryRestore {
-    pub task_admissions: Vec<TaskSubmission>,
-    pub launches: Vec<NeedProducerLaunchRestore>,
+#[derive(Debug, PartialEq)]
+pub struct NeedProducerRegistryRestore<V = RuntimeValue, P = RuntimePayload> {
+    pub task_admissions: Vec<TaskSubmission<P>>,
+    pub launches: Vec<NeedProducerLaunchRestore<V, P>>,
     pub invocations: Vec<(NeedProducerInvocationToken, TaskCorrelation)>,
     pub invocation_frontiers: Vec<NeedProducerInvocationFrontier>,
     pub launch_frontiers: Vec<NeedProducerLaunchFrontier>,
 }
 
-impl NeedProducerRegistryRestore {
+impl<V, P> Default for NeedProducerRegistryRestore<V, P> {
+    fn default() -> Self {
+        Self {
+            task_admissions: Vec::new(),
+            launches: Vec::new(),
+            invocations: Vec::new(),
+            invocation_frontiers: Vec::new(),
+            launch_frontiers: Vec::new(),
+        }
+    }
+}
+
+pub(crate) type NeedProducerRegistrySaveSnapshot = NeedProducerRegistryRestore<
+    crate::value::AwbcRuntimeValueSnapshot,
+    crate::value::AwbcRuntimeValueSnapshot,
+>;
+
+impl Clone for NeedProducerRegistrySaveSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            task_admissions: self.task_admissions.clone(),
+            launches: self.launches.clone(),
+            invocations: self.invocations.clone(),
+            invocation_frontiers: self.invocation_frontiers.clone(),
+            launch_frontiers: self.launch_frontiers.clone(),
+        }
+    }
+}
+
+impl<V, P> NeedProducerRegistryRestore<V, P> {
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+        P: crate::value::RuntimeStoredValue + PartialEq,
+    {
+        admission.validate_metadata_collection(self.task_admissions.len())?;
+        admission.validate_metadata_collection(self.launches.len())?;
+        for row in &self.task_admissions {
+            row.admit_retained(admission)?;
+        }
+        for launch in &self.launches {
+            launch.admit_retained(admission)?;
+        }
+        admission.validate_metadata(&self.invocations)?;
+        admission.validate_metadata_collection(self.invocation_frontiers.len())?;
+        for frontier in &self.invocation_frontiers {
+            admission.validate_metadata(&(
+                frontier.generation,
+                frontier.fiber,
+                frontier.producer_site,
+                frontier.next_sequence,
+            ))?;
+        }
+        admission.validate_metadata_collection(self.launch_frontiers.len())?;
+        for frontier in &self.launch_frontiers {
+            admission.validate_metadata(&(
+                frontier.generation,
+                frontier.instance_key,
+                frontier.next_ordinal,
+            ))?;
+        }
+        if let Err(error) = NeedProducerRegistry::validate_restore_journal(self) {
+            let error = crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: error.to_string(),
+            };
+            admission.retain_failure(error.clone());
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub(crate) fn task_outcome(
         &self,
         correlation: TaskCorrelation,
@@ -1188,38 +1451,107 @@ impl NeedProducerRegistryRestore {
     }
 }
 
-/// In-memory rollback representation of a producer registry. Every runtime
-/// argument and Ready payload is inert until the prior live owner is gone.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct NeedProducerRegistryRollbackImage {
-    task_admissions: Vec<super::TaskSubmissionSaveSnapshot>,
-    launches: Vec<NeedProducerLaunchRollbackImage>,
-    invocations: Vec<(NeedProducerInvocationToken, TaskCorrelation)>,
-    invocation_frontiers: Vec<NeedProducerInvocationFrontier>,
-    launch_frontiers: Vec<NeedProducerLaunchFrontier>,
+impl<V, P> NeedProducerLaunchRestore<V, P> {
+    fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        V: crate::value::RuntimeStoredValue,
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata(&(
+            self.invocation,
+            self.correlation,
+            self.publication,
+            self.task_submitted,
+            self.task_terminal,
+        ))?;
+        self.plan.admit_retained_metadata(admission)?;
+        admission.validate_metadata_collection(self.arguments.len())?;
+        if self.arguments.len() != self.plan.argument_types.len() {
+            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                message: "Need producer argument arity differs from its original signature".into(),
+            });
+        }
+        for (argument, expected) in self.arguments.iter().zip(&self.plan.argument_types) {
+            admission.validate_metadata(&argument.name)?;
+            admission.admit_composite(V::admission_origin(), |owner, resources| {
+                let view = argument.value.borrowed_view();
+                view.admit_unrestricted(resources)?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    view, owner, resources,
+                )?;
+                let owner = owner.ok_or(
+                    crate::value::AwbcRuntimeValueSnapshotError::ProgramOwnerRequired {
+                        expected: *expected,
+                    },
+                )?;
+                owner
+                    .types()
+                    .value_type(*expected)?
+                    .validate_snapshot_storage(view, &resources.work(), V::admission_origin())?;
+                Ok(())
+            })?;
+        }
+        self.task_spec.admit_retained(admission)?;
+        self.state
+            .admit_retained(&self.task_spec.outcome, self.task_spec.policy, admission)
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct NeedProducerLaunchRollbackImage {
-    invocation: NeedProducerInvocationToken,
-    plan: NeedProducerTaskPlan,
-    arguments: Vec<(Option<String>, crate::value::AwbcRuntimeValueSnapshot)>,
-    correlation: TaskCorrelation,
-    state: NeedProducerStateRollbackImage,
-    publication: Option<TaskPublicationCursor>,
-    task_submitted: bool,
-    task_terminal: bool,
+impl NeedProducerRegistrySaveSnapshot {
+    pub(crate) fn into_admitted_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<NeedProducerRegistryRestore, crate::value::AwbcRuntimeValueSnapshotError> {
+        Ok(NeedProducerRegistryRestore {
+            task_admissions: self
+                .task_admissions
+                .into_iter()
+                .map(|row| {
+                    let (spec, handle) = row.into_parts();
+                    Ok(TaskSubmission {
+                        spec: spec.into_admitted_live(owner)?,
+                        handle,
+                    })
+                })
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            launches: self
+                .launches
+                .into_iter()
+                .map(|launch| {
+                    Ok(NeedProducerLaunchRestore {
+                        invocation: launch.invocation,
+                        plan: launch.plan,
+                        arguments: launch
+                            .arguments
+                            .into_iter()
+                            .map(|argument| {
+                                Ok(NeedProducerRuntimeArgument {
+                                    name: argument.name,
+                                    value: argument.value.into_admitted_runtime_value(owner)?,
+                                })
+                            })
+                            .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+                        correlation: launch.correlation,
+                        task_spec: launch.task_spec.into_admitted_live(owner)?,
+                        state: launch.state.into_admitted_live(owner)?,
+                        publication: launch.publication,
+                        task_submitted: launch.task_submitted,
+                        task_terminal: launch.task_terminal,
+                    })
+                })
+                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            invocations: self.invocations,
+            invocation_frontiers: self.invocation_frontiers,
+            launch_frontiers: self.launch_frontiers,
+        })
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum NeedProducerStateRollbackImage {
-    NotStarted,
-    Pending(Progress),
-    Ready(crate::value::AwbcRuntimeValueSnapshot),
-    ReadyTransferred,
-    InfrastructureFailure(super::RuntimeTaskFailure),
-    Cancelled,
-}
+/// Inert rollback and Product persistence share the owning registry grammar.
+pub(crate) type NeedProducerRegistryRollbackImage = NeedProducerRegistrySaveSnapshot;
 
 struct ValidatedRestoreLaunch {
     producer: NeedProducerSpec,
@@ -1234,18 +1566,14 @@ struct ValidatedRestoreLaunch {
     launch_next: Option<((GenerationId, NeedProducerInstanceKey), u64)>,
 }
 
-fn validate_restore_launch(
-    restore: &NeedProducerLaunchRestore,
+fn validate_restore_launch<
+    V: crate::value::RuntimeStoredValue,
+    P: crate::value::RuntimeStoredValue,
+>(
+    restore: &NeedProducerLaunchRestore<V, P>,
 ) -> Result<ValidatedRestoreLaunch, NeedProducerAdmissionError> {
-    if restore
-        .arguments
-        .iter()
-        .any(|argument| !argument.value.ownership().permits_copy())
-    {
-        return Err(NeedProducerAdmissionError::AffineHostProducerArgument);
-    }
     let generation = restore.invocation.generation;
-    let producer = restore.plan.producer_spec(&restore.arguments)?;
+    let producer = restore.plan.borrowed_producer_spec(&restore.arguments)?;
     let instance_key = producer.instance_key()?;
     let saved_spec = &restore.task_spec;
     let correlation = saved_spec.correlation(restore.correlation.launch_ordinal)?;
@@ -1314,190 +1642,101 @@ fn validate_restore_launch(
 }
 
 impl NeedProducerRegistry {
+    pub(crate) fn snapshot_retained(
+        &self,
+        owner: &RuntimeProgramOwner,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
+        admission.validate_metadata_collection(self.task_journal.accepted_len())?;
+        admission.validate_metadata_collection(self.launches.len())?;
+        for (spec, handle) in self.task_journal.borrowed_submissions() {
+            spec.admit_retained(admission)?;
+            admission.validate_metadata(&handle)?;
+        }
+        for launch in self.launches.values() {
+            launch.plan.admit_retained_metadata(admission)?;
+            admission.validate_metadata(&(
+                launch.invocation,
+                launch.correlation,
+                launch.publication,
+                launch.task_submitted,
+                launch.task_terminal,
+            ))?;
+            admission.validate_metadata_collection(launch.arguments.len())?;
+            if launch.arguments.len() != launch.plan.argument_types.len() {
+                return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: "Need producer argument arity differs from its original signature"
+                        .into(),
+                });
+            }
+            for (argument, expected) in launch.arguments.iter().zip(&launch.plan.argument_types) {
+                admission.validate_metadata(&argument.name)?;
+                admission.validate_typed(&argument.value, *expected)?;
+            }
+            launch.task_spec.admit_retained(admission)?;
+            launch.state.admit_retained(
+                &launch.task_spec.outcome,
+                launch.task_spec.policy,
+                admission,
+            )?;
+        }
+        admission.validate_metadata_collection(self.invocation_launches.len())?;
+        for (invocation, launch) in self.invocations() {
+            admission.validate_metadata(&(invocation, launch.correlation))?;
+        }
+        admission.validate_metadata(&self.next_invocation_sequence)?;
+        Ok(NeedProducerRegistrySaveSnapshot {
+            task_admissions: self.task_journal.borrowed_submissions().map(|(spec, handle)| {
+                Ok(TaskSubmission { spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(spec, owner)?, handle })
+            }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            launches: self.launches.values().map(|launch| {
+                Ok(NeedProducerLaunchSaveSnapshot {
+                    invocation: launch.invocation, plan: launch.plan.clone(),
+                    arguments: launch.arguments.iter().map(|argument| {
+                        Ok(NeedProducerRuntimeArgument { name: argument.name.clone(), value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(&argument.value, owner)? })
+                    }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+                    correlation: launch.correlation, task_spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(&launch.task_spec, owner)?,
+                    state: RuntimeNeedProducerState::from_admitted_live(&launch.state, owner)?, publication: launch.publication,
+                    task_submitted: launch.task_submitted, task_terminal: launch.task_terminal,
+                })
+            }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            invocations: self.invocations().map(|(invocation, launch)| (invocation, launch.correlation())).collect(),
+            invocation_frontiers: self.invocation_frontiers(), launch_frontiers: self.launch_frontiers(),
+        })
+    }
+
     pub(crate) fn inert_rollback_image(
         &self,
         owner: &RuntimeProgramOwner,
     ) -> Result<NeedProducerRegistryRollbackImage, String> {
-        let image = |value: &RuntimeValue| {
-            crate::value::AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value, owner)
-                .map_err(|error| error.to_string())
-        };
-        Ok(NeedProducerRegistryRollbackImage {
-            task_admissions: self
-                .task_journal
-                .submissions()
-                .map(|row| {
-                    super::TaskSubmissionSaveSnapshot::from_live(&row, Some(owner))
-                        .map_err(|error| error.to_string())
-                })
-                .collect::<Result<_, _>>()?,
-            launches: self
-                .launches
-                .values()
-                .map(|launch| {
-                    Ok(NeedProducerLaunchRollbackImage {
-                        invocation: launch.invocation,
-                        plan: launch.plan.clone(),
-                        arguments: launch
-                            .arguments
-                            .iter()
-                            .map(|argument| Ok((argument.name.clone(), image(&argument.value)?)))
-                            .collect::<Result<_, String>>()?,
-                        correlation: launch.correlation,
-                        state: match &launch.state {
-                            RuntimeNeedProducerState::NotStarted => {
-                                NeedProducerStateRollbackImage::NotStarted
-                            }
-                            RuntimeNeedProducerState::Pending(progress) => {
-                                NeedProducerStateRollbackImage::Pending(progress.clone())
-                            }
-                            RuntimeNeedProducerState::Ready(value) => {
-                                NeedProducerStateRollbackImage::Ready(image(value.value())?)
-                            }
-                            RuntimeNeedProducerState::ReadyTransferred => {
-                                NeedProducerStateRollbackImage::ReadyTransferred
-                            }
-                            RuntimeNeedProducerState::InfrastructureFailure(failure) => {
-                                NeedProducerStateRollbackImage::InfrastructureFailure(
-                                    failure.clone(),
-                                )
-                            }
-                            RuntimeNeedProducerState::Cancelled => {
-                                NeedProducerStateRollbackImage::Cancelled
-                            }
-                        },
-                        publication: launch.publication,
-                        task_submitted: launch.task_submitted,
-                        task_terminal: launch.task_terminal,
-                    })
-                })
-                .collect::<Result<_, String>>()?,
-            invocations: self
-                .invocation_launches
-                .iter()
-                .map(|(invocation, key)| (*invocation, self.launches[key].correlation))
-                .collect(),
-            invocation_frontiers: self
-                .next_invocation_sequence
-                .iter()
-                .map(|((generation, fiber, producer_site), next_sequence)| {
-                    NeedProducerInvocationFrontier {
-                        generation: *generation,
-                        fiber: *fiber,
-                        producer_site: *producer_site,
-                        next_sequence: *next_sequence,
-                    }
-                })
-                .collect(),
-            launch_frontiers: self
-                .task_journal
-                .frontiers()
-                .map(
-                    |((generation, instance_key), next_ordinal)| NeedProducerLaunchFrontier {
-                        generation,
-                        instance_key,
-                        next_ordinal,
-                    },
-                )
-                .collect(),
-        })
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.snapshot_retained(owner, &mut admission)
+            .map_err(|error| error.to_string())
     }
 
     pub(crate) fn from_rollback_image(
         image: NeedProducerRegistryRollbackImage,
         owner: &RuntimeProgramOwner,
     ) -> Result<Self, String> {
-        let value = |image: crate::value::AwbcRuntimeValueSnapshot| {
-            image
-                .into_runtime_value_for_program(owner)
-                .map_err(|error| error.to_string())
-        };
-        let launches = image
-            .launches
-            .into_iter()
-            .map(|launch| {
-                let arguments = launch
-                    .arguments
-                    .into_iter()
-                    .map(|(name, saved)| {
-                        Ok(NeedProducerRuntimeArgument {
-                            name,
-                            value: value(saved)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, String>>()?;
-                if arguments
-                    .iter()
-                    .any(|argument| !argument.value.ownership().permits_copy())
-                {
-                    return Err(NeedProducerAdmissionError::AffineHostProducerArgument.to_string());
-                }
-                let producer = launch
-                    .plan
-                    .producer_spec(&arguments)
-                    .map_err(|error| error.to_string())?;
-                let instance_key = producer.instance_key().map_err(|error| error.to_string())?;
-                let request = launch
-                    .plan
-                    .project_request(&arguments)
-                    .map_err(|error| error.to_string())?;
-                let task_spec = launch
-                    .plan
-                    .task_spec(launch.invocation.generation, &producer, request)
-                    .map_err(|error| error.to_string())?;
-                let state = match launch.state {
-                    NeedProducerStateRollbackImage::NotStarted => {
-                        RuntimeNeedProducerState::NotStarted
-                    }
-                    NeedProducerStateRollbackImage::Pending(progress) => {
-                        RuntimeNeedProducerState::Pending(progress)
-                    }
-                    NeedProducerStateRollbackImage::Ready(saved) => {
-                        RuntimeNeedProducerState::Ready(RuntimePayload(value(saved)?))
-                    }
-                    NeedProducerStateRollbackImage::ReadyTransferred => {
-                        RuntimeNeedProducerState::ReadyTransferred
-                    }
-                    NeedProducerStateRollbackImage::InfrastructureFailure(failure) => {
-                        RuntimeNeedProducerState::InfrastructureFailure(failure)
-                    }
-                    NeedProducerStateRollbackImage::Cancelled => {
-                        RuntimeNeedProducerState::Cancelled
-                    }
-                };
-                Ok(NeedProducerLaunchRestore {
-                    invocation: launch.invocation,
-                    plan: launch.plan,
-                    arguments,
-                    correlation: launch.correlation,
-                    task_spec,
-                    state,
-                    publication: launch.publication,
-                    task_submitted: launch.task_submitted,
-                    task_terminal: launch.task_terminal,
-                })
-            })
-            .collect::<Result<_, String>>()?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        image
+            .admit_retained(&mut admission)
+            .map_err(|error| error.to_string())?;
+        let restore = image
+            .into_admitted_live(owner)
+            .map_err(|error| error.to_string())?;
         let mut registry = Self::default();
         registry
-            .restore_registry_with_policy(
-                NeedProducerRegistryRestore {
-                    task_admissions: image
-                        .task_admissions
-                        .into_iter()
-                        .map(|row| row.into_live(owner).map_err(|error| error.to_string()))
-                        .collect::<Result<_, _>>()?,
-                    launches,
-                    invocations: image.invocations,
-                    invocation_frontiers: image.invocation_frontiers,
-                    launch_frontiers: image.launch_frontiers,
-                },
-                NeedProducerRestorePolicy::Rollback,
-            )
+            .restore_registry_with_policy(restore, NeedProducerRestorePolicy::Rollback)
             .map_err(|error| error.to_string())?;
         Ok(registry)
     }
-
     /// Begins one checked producer-site visit. Call this inside the same
     /// candidate transaction that admits the start and advances its cursor.
     /// An uncommitted candidate therefore reissues the same token on retry.
@@ -2095,11 +2334,47 @@ impl NeedProducerRegistry {
     pub fn validate_restore(
         restore: &NeedProducerRegistryRestore,
     ) -> Result<(), NeedProducerAdmissionError> {
+        super::TaskAdmissionJournal::validate_submissions(&restore.task_admissions)?;
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        for launch in &restore.launches {
+            for argument in &launch.arguments {
+                argument
+                    .value
+                    .view()
+                    .admit_unrestricted(&mut resources)
+                    .map_err(|error| match error {
+                        crate::value::AwbcRuntimeValueSnapshotError::AffineValue => {
+                            NeedProducerAdmissionError::AffineHostProducerArgument
+                        }
+                        _ => NeedProducerAdmissionError::InvalidProducerArguments,
+                    })?;
+            }
+            if launch.plan.policy == TaskPolicy::JoinSameKey
+                && let RuntimeNeedProducerState::Ready(value) = &launch.state
+            {
+                value
+                    .value()
+                    .view()
+                    .admit_unrestricted(&mut resources)
+                    .map_err(|_| NeedProducerAdmissionError::InvalidRestoredLaunch)?;
+            }
+        }
+        Self::validate_restore_journal(restore)
+    }
+
+    fn validate_restore_journal<
+        V: crate::value::RuntimeStoredValue,
+        P: crate::value::RuntimeStoredValue + PartialEq,
+    >(
+        restore: &NeedProducerRegistryRestore<V, P>,
+    ) -> Result<(), NeedProducerAdmissionError> {
         let mut launches = BTreeMap::new();
         let mut joined = BTreeSet::new();
         let mut invocations = BTreeMap::new();
         let mut next_launch_ordinal =
-            super::TaskAdmissionJournal::validate_submissions(&restore.task_admissions)?;
+            super::TaskAdmissionJournal::validate_submission_journal(&restore.task_admissions)?;
         let mut next_invocation_sequence = BTreeMap::new();
         for launch in &restore.launches {
             let checked = validate_restore_launch(launch)?;
@@ -2202,28 +2477,6 @@ impl NeedProducerRegistry {
             return Err(NeedProducerAdmissionError::InvalidPublicationSource);
         }
         Ok(false)
-    }
-
-    /// Projects one host TaskEvent into the launch's Need state. A failed task
-    /// remains an infrastructure fault and is deliberately not represented as
-    /// a typed `Ready(T)` value.
-    pub fn publish_task_event(
-        &mut self,
-        event: &TaskEvent,
-    ) -> Result<bool, NeedProducerAdmissionError> {
-        if let TaskEventKind::Ready(value) = &event.kind
-            && !value.value().ownership().permits_copy()
-        {
-            return Err(NeedProducerAdmissionError::AffineBorrowedTaskPublication);
-        }
-        match self.publish_task_event_owned(event.clone()) {
-            Ok(NeedProducerOwnedTaskEventDisposition::Published) => Ok(true),
-            Ok(
-                NeedProducerOwnedTaskEventDisposition::Duplicate(_)
-                | NeedProducerOwnedTaskEventDisposition::NotLocal(_),
-            ) => Ok(false),
-            Err(error) => Err(error.into_parts().0),
-        }
     }
 
     /// Transfers a Ready payload into its producer launch after all cursor and
@@ -2669,8 +2922,8 @@ fn task_event_matches_launch(launch: &RuntimeNeedProducerLaunch, event: &TaskEve
     }
 }
 
-fn restored_need_state_is_valid(
-    state: &RuntimeNeedProducerState,
+fn restored_need_state_is_valid<P: crate::value::RuntimeStoredValue>(
+    state: &RuntimeNeedProducerState<P>,
     publication: Option<TaskPublicationCursor>,
     task_submitted: bool,
     task_terminal: bool,
@@ -2688,7 +2941,6 @@ fn restored_need_state_is_valid(
     cursor_matches_state
         && (!matches!(state, RuntimeNeedProducerState::ReadyTransferred)
             || policy == TaskPolicy::AlwaysStart)
-        && (!matches!(state, RuntimeNeedProducerState::Ready(value) if policy == TaskPolicy::JoinSameKey && !value.value().ownership().permits_copy()))
         && (task_submitted || (!task_terminal && restart == HostRestartPolicy::Restartable))
         && (restart != HostRestartPolicy::MustBeQuiescent || task_terminal)
 }
@@ -2781,24 +3033,28 @@ mod identity_tests {
         .expect("typed producer plan")
     }
 
+    #[test]
+    fn generation_zero_and_join_ordinal_are_valid_values() {
+        assert_eq!(GenerationId::new(0).get(), 0);
+        assert_eq!(TaskLaunchOrdinal::JOIN.get(), 0);
+    }
+
     fn restore_launch(launch: &RuntimeNeedProducerLaunch) -> NeedProducerLaunchRestore {
+        assert!(matches!(
+            launch.state(),
+            RuntimeNeedProducerState::NotStarted
+        ));
         NeedProducerLaunchRestore {
             invocation: launch.invocation(),
             plan: launch.plan().clone(),
             arguments: launch.arguments().to_vec(),
             correlation: launch.correlation(),
             task_spec: launch.task_spec().clone(),
-            state: launch.state().clone(),
+            state: RuntimeNeedProducerState::NotStarted,
             publication: launch.publication(),
             task_submitted: launch.task_submitted(),
             task_terminal: launch.task_terminal(),
         }
-    }
-
-    #[test]
-    fn generation_zero_and_join_ordinal_are_valid_values() {
-        assert_eq!(GenerationId::new(0).get(), 0);
-        assert_eq!(TaskLaunchOrdinal::JOIN.get(), 0);
     }
 
     #[test]
@@ -3037,11 +3293,13 @@ mod identity_tests {
         let reversed: Vec<_> = positional.into_iter().rev().collect();
         assert_ne!(digest, need_producer_arguments_digest(&reversed).unwrap());
         assert_eq!(
-            need_producer_arguments_digest(&[]).unwrap(),
+            need_producer_arguments_digest::<RuntimeValue>(&[]).unwrap(),
             RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap()
         );
         assert_ne!(
-            need_producer_arguments_digest(&[]).unwrap().as_bytes(),
+            need_producer_arguments_digest::<RuntimeValue>(&[])
+                .unwrap()
+                .as_bytes(),
             &[0; 32]
         );
     }
@@ -3117,7 +3375,13 @@ mod identity_tests {
             .inspect_task_ensured(&need)
             .expect("task ensured preflight");
         registry.mark_task_ensured_prepared(ensured);
-        let ready = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.inner.affine"));
+        let inner = || {
+            crate::tests::reusable_need_with_outcome(
+                "need.inner.affine",
+                super::super::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Bool),
+            )
+        };
+        let ready = RuntimeValue::NeedHandle(inner());
         assert!(!ready.ownership().permits_copy());
         let event = TaskEvent {
             correlation,
@@ -3143,7 +3407,7 @@ mod identity_tests {
                 .take_ready_for_correlation(&correlation)
                 .unwrap()
                 .into_value(),
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.inner.affine"))
+            RuntimeValue::NeedHandle(inner())
         );
         assert!(matches!(
             restored.launch_for_need(&need).unwrap().state(),

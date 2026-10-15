@@ -55,6 +55,14 @@ pub enum TaskOutcomeBindingError {
 /// Failure to admit a task outcome value through its bound type authority.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum TaskOutcomeValueError {
+    #[error("task outcome resource admission failed: {0}")]
+    Resource(Box<crate::entry::RuntimeSchemaError>),
+    #[error(
+        "task outcome type {semantic_type:?} does not belong to the enclosing original program"
+    )]
+    WrongProgramOwner {
+        semantic_type: RuntimeSemanticTypeId,
+    },
     #[error("standalone task outcome rejected its value: {0}")]
     Standalone(String),
     #[error("program task outcome rejected its value: {0}")]
@@ -65,6 +73,12 @@ pub enum TaskOutcomeValueError {
     },
 }
 
+impl From<crate::entry::RuntimeSchemaError> for TaskOutcomeValueError {
+    fn from(error: crate::entry::RuntimeSchemaError) -> Self {
+        Self::Resource(Box::new(error))
+    }
+}
+
 #[derive(Clone, Debug)]
 enum BoundTaskOutcomeType {
     Standalone(RuntimeCheckedType),
@@ -73,6 +87,44 @@ enum BoundTaskOutcomeType {
         owner: RuntimeProgramOwner,
         limits: RuntimeSchemaLimits,
     },
+}
+
+/// Borrows either the original descriptor or its already bound authority.
+/// It owns no type graph, value, or executable lease.
+enum TaskOutcomeTypeView<'a> {
+    Standalone(&'a RuntimeCheckedType),
+    Program {
+        payload: RuntimeSemanticTypeId,
+        owner: &'a RuntimeProgramOwner,
+    },
+}
+
+impl TaskOutcomeTypeView<'_> {
+    fn validate_admitted(
+        self,
+        value: crate::value::RuntimeValueView<'_>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), TaskOutcomeValueError> {
+        match self {
+            Self::Standalone(payload) => {
+                resources.validate_standalone_outcome_type(payload)?;
+                if payload.accepts_admitted_value_view(value, &resources.work())? {
+                    Ok(())
+                } else {
+                    Err(TaskOutcomeValueError::Standalone(
+                        "runtime payload does not satisfy its checked type".to_owned(),
+                    ))
+                }
+            }
+            Self::Program { payload, owner } => {
+                owner
+                    .types()
+                    .value_type(payload)?
+                    .validate_snapshot_storage(value, &resources.work(), resources.origin())?;
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Owned outcome contract bound to one exact standalone predicate or program.
@@ -157,6 +209,24 @@ impl PartialEq for BoundTaskSpec {
 }
 
 impl TaskOutcomeContract {
+    pub(crate) fn validate_admitted_value_view(
+        &self,
+        value: crate::value::RuntimeValueView<'_>,
+        owner: Option<&RuntimeProgramOwner>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), TaskOutcomeValueError> {
+        let expected = match self {
+            Self::Standalone { payload } => TaskOutcomeTypeView::Standalone(payload),
+            Self::Program { payload } => TaskOutcomeTypeView::Program {
+                payload: *payload,
+                owner: owner.ok_or(TaskOutcomeValueError::WrongProgramOwner {
+                    semantic_type: *payload,
+                })?,
+            },
+        };
+        expected.validate_admitted(value, resources)
+    }
+
     /// Checks the original executable coordinate before any retained payload
     /// is projected or restored. Standalone predicates have no program row.
     pub(crate) fn validate_storage_owner(
@@ -170,20 +240,6 @@ impl TaskOutcomeContract {
                 .require_type(*payload)?;
         }
         Ok(())
-    }
-
-    /// Bind the exact retained outcome for value persistence. A standalone
-    /// predicate stays standalone; a program coordinate keeps the selected lease.
-    pub(crate) fn bind_for_value(
-        &self,
-        owner: &RuntimeProgramOwner,
-    ) -> Result<BoundTaskOutcome, TaskOutcomeBindingError> {
-        match self {
-            Self::Standalone { .. } => self.bind_standalone(),
-            Self::Program { .. } => {
-                self.bind_program(owner.clone(), RuntimeSchemaLimits::engine_default())
-            }
-        }
     }
 
     pub(crate) fn standalone_contract_is_valid(&self) -> bool {
@@ -230,6 +286,31 @@ impl TaskOutcomeContract {
 }
 
 impl BoundTaskOutcome {
+    /// Resolves the original outcome while a retained candidate is borrowed.
+    /// Its value graph must already belong to this resource allowance.
+    pub(crate) fn validate_admitted_value_view(
+        &self,
+        value: crate::value::RuntimeValueView<'_>,
+        original_owner: Option<&RuntimeProgramOwner>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), TaskOutcomeValueError> {
+        let expected = match &self.ty {
+            BoundTaskOutcomeType::Standalone(payload) => TaskOutcomeTypeView::Standalone(payload),
+            BoundTaskOutcomeType::Program { payload, owner, .. } => {
+                if original_owner.is_none_or(|original| !owner.same_program(original)) {
+                    return Err(TaskOutcomeValueError::WrongProgramOwner {
+                        semantic_type: *payload,
+                    });
+                }
+                TaskOutcomeTypeView::Program {
+                    payload: *payload,
+                    owner,
+                }
+            }
+        };
+        expected.validate_admitted(value, resources)
+    }
+
     /// Whether two waiters can share one published result under the same
     /// executable, result row and admission budget.
     #[must_use]
@@ -281,27 +362,14 @@ impl BoundTaskOutcome {
 
     /// Checks the borrowed value without duplicating an affine payload.
     pub fn validate_value(&self, value: &RuntimeValue) -> Result<(), TaskOutcomeValueError> {
-        match &self.ty {
-            BoundTaskOutcomeType::Standalone(payload) => {
-                if payload.accepts_value(value) {
-                    Ok(())
-                } else {
-                    Err(TaskOutcomeValueError::Standalone(
-                        "runtime payload does not satisfy its checked type".to_owned(),
-                    ))
-                }
-            }
-            BoundTaskOutcomeType::Program {
-                payload,
-                owner,
-                limits,
-            } => {
-                owner
-                    .types()
-                    .validate_live_value(*payload, value, *limits)?;
-                Ok(())
-            }
-        }
+        let (owner, limits) = match &self.ty {
+            BoundTaskOutcomeType::Standalone(_) => (None, RuntimeSchemaLimits::engine_default()),
+            BoundTaskOutcomeType::Program { owner, limits, .. } => (Some(owner), *limits),
+        };
+        let mut resources =
+            crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits);
+        resources.validate_view(value.view(), 0, None)?;
+        self.validate_admitted_value_view(value.view(), owner, &mut resources)
     }
 
     /// Constructs and admits the canonical Result::Ok carrier.

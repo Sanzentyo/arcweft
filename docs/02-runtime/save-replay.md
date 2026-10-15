@@ -282,6 +282,22 @@ TaskSpec<P> と HostTaskRequest<P> は live payload と inert payload の共通 
 request enum と reader は持たない。Custom の optional named arguments と manifest
 contract は、この共通 request grammar の default／omission 規則に揃える。
 
+TaskSubmission<P>、TaskEvent<P>、RuntimeNeedProducerState<P> と producer registry の
+argument／launch は同じ storage-parameterized owner を使う。live event と Ready
+state に Clone や serde reader は与えず、保存用 specialization だけが inert 値を
+保持する。Native rollback と AWBC Product の in-memory Need registry は同じ inert
+grammar を使い、wire の site／plan digest は verified program の元の plan 行を選ぶ
+locator とする。argument の型・Copy 条件、元 TaskSpec、Ready の outcome、正確な
+correlation、join／ordinal／invocation frontier を live 投影より前に検証する。
+JoinSameKey の Ready は再帰的に Copy を満たし、AlwaysStart の affine Ready は
+その値を借用して検証し、復元後も一度だけ waiter に移動する。
+
+queued event と Need state の outcome 照合は enclosing retained admission の
+node／byte／relation-work bank を共有する。有限 standalone 型は同じ descriptor
+visitor と RuntimeCheckedType の既存 matcher で検証し、Choice の次の候補に進んでも
+最初の work failure を保持する。program outcome は元の executable lease と型行を
+借用し、同じ scalar 型を宣言する別 program を authority として受け入れない。
+
 Need の resource traversal は要求値だけでなく correlation／origin、producer の
 retained fields、generation、class、priority、cancel scope、outcome、debug label と
 全14 Host request family の metadata を計上する。path／text／id／operation／header／

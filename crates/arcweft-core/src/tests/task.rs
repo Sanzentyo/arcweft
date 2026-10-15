@@ -90,7 +90,9 @@ fn normalizes_task_events_by_replay_stable_keys() {
             logical_epoch: LogicalEpoch(0),
             sequence: TaskSequence(9),
         },
-        kind: TaskEventKind::Ready(RuntimePayload::from("early")),
+        kind: TaskEventKind::Ready(crate::value::AwbcRuntimeValueSnapshot::String(
+            "early".into(),
+        )),
     };
     let pending = TaskEvent {
         correlation,
@@ -106,7 +108,9 @@ fn normalizes_task_events_by_replay_stable_keys() {
             logical_epoch: LogicalEpoch(1),
             sequence: TaskSequence(2),
         },
-        kind: TaskEventKind::Ready(RuntimePayload::from("ready")),
+        kind: TaskEventKind::Ready(crate::value::AwbcRuntimeValueSnapshot::String(
+            "ready".into(),
+        )),
     };
     assert_eq!(
         normalize_task_events(vec![ready.clone(), pending.clone(), early.clone()]),
@@ -132,7 +136,9 @@ fn detects_already_normalized_task_events_without_reordering() {
                 logical_epoch: LogicalEpoch(0),
                 sequence: TaskSequence(2),
             },
-            kind: TaskEventKind::Ready(RuntimePayload::from("ready")),
+            kind: TaskEventKind::Ready(crate::value::AwbcRuntimeValueSnapshot::String(
+                "ready".into(),
+            )),
         },
     ];
     assert!(task_events_are_normalized(&events));

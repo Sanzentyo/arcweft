@@ -58,6 +58,18 @@ impl From<crate::program_types::RuntimeProgramTypeError> for AwbcRuntimeValueSna
     }
 }
 
+impl From<crate::task::TaskOutcomeValueError> for AwbcRuntimeValueSnapshotError {
+    fn from(error: crate::task::TaskOutcomeValueError) -> Self {
+        match error {
+            crate::task::TaskOutcomeValueError::Resource(error) => (*error).into(),
+            crate::task::TaskOutcomeValueError::Program(error) => error.into(),
+            error => Self::Message {
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
 impl From<super::RuntimeCallableValueError> for AwbcRuntimeValueSnapshotError {
     fn from(error: super::RuntimeCallableValueError) -> Self {
         match error {

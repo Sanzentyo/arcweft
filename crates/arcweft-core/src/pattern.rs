@@ -1131,10 +1131,29 @@ impl RuntimeCheckedType {
     }
 
     fn accepts_value_at_depth(&self, value: &RuntimeValue, depth: usize) -> bool {
-        self.accepts_value_view(value.view(), depth)
+        self.accepts_value_view(value.view(), depth, None)
     }
 
-    fn accepts_value_view(&self, value: RuntimeValueView<'_>, depth: usize) -> bool {
+    /// Matches borrowed admitted storage through the same closed predicate,
+    /// retaining the enclosing allowance's first hard relation failure.
+    pub(crate) fn accepts_admitted_value_view(
+        &self,
+        value: RuntimeValueView<'_>,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<bool, crate::entry::RuntimeSchemaError> {
+        let accepted = self.accepts_value_view(value, 0, Some(work));
+        work.failure().map_or(Ok(accepted), Err)
+    }
+
+    fn accepts_value_view(
+        &self,
+        value: RuntimeValueView<'_>,
+        depth: usize,
+        work: Option<&crate::entry::schema::value_budget::ValidationWork>,
+    ) -> bool {
+        if work.is_some_and(|work| work.clone().charge(depth).is_err()) {
+            return false;
+        }
         if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
             return false;
         }
@@ -1150,34 +1169,38 @@ impl RuntimeCheckedType {
             | (RuntimeValueView::Scalar(RuntimeScalarView::Duration(_)), Self::Duration)
             | (RuntimeValueView::Scalar(RuntimeScalarView::Progress { .. }), Self::Progress)
             | (RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(_)), Self::EntityReference) => true,
-            (value, Self::AgentValue) => runtime_value_view_is_agent_value(value, depth),
+            (value, Self::AgentValue) => runtime_value_view_is_agent_value(value, depth, work),
             (RuntimeValueView::Scalar(RuntimeScalarView::Int(value)), Self::Signed(width)) => value.width() == *width,
             (RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)), Self::Unsigned(width)) => value.width() == *width,
-            (RuntimeValueView::Sequence(sequence), Self::Bytes) => sequence.all(|value| matches!(value, RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)) if value.width() == RuntimeUnsignedIntWidth::U8)),
-            (RuntimeValueView::Sequence(sequence), Self::Sequence(item)) => sequence.all(|value| item.accepts_value_view(value, depth + 1)),
+            (RuntimeValueView::Sequence(sequence), Self::Bytes) => sequence.all(|value| {
+                work.is_none_or(|work| work.clone().charge(depth + 1).is_ok())
+                    && matches!(value, RuntimeValueView::Scalar(RuntimeScalarView::UInt(value)) if value.width() == RuntimeUnsignedIntWidth::U8)
+            }),
+            (RuntimeValueView::Sequence(sequence), Self::Sequence(item)) => sequence.all(|value| item.accepts_value_view(value, depth + 1, work)),
             (RuntimeValueView::Sequence(sequence), Self::Map { key, value, .. }) => sequence.all(|actual| {
                 let RuntimeValueView::Tuple(pair) = actual else { return false; };
-                pair.len() == 2
-                    && pair.get(0).is_some_and(|actual| key.accepts_value_view(actual, depth + 1))
-                    && pair.get(1).is_some_and(|actual| value.accepts_value_view(actual, depth + 1))
+                work.is_none_or(|work| work.clone().charge(depth + 1).is_ok())
+                    && pair.len() == 2
+                    && pair.get(0).is_some_and(|actual| key.accepts_value_view(actual, depth + 1, work))
+                    && pair.get(1).is_some_and(|actual| value.accepts_value_view(actual, depth + 1, work))
             }),
             (RuntimeValueView::Sequence(sequence), Self::Array { item, length }) => {
                 sequence.len().ok().and_then(|length| u64::try_from(length).ok()) == Some(*length)
-                    && sequence.all(|value| item.accepts_value_view(value, depth + 1))
+                    && sequence.all(|value| item.accepts_value_view(value, depth + 1, work))
             }
             (RuntimeValueView::Tuple(values), Self::Tuple(items)) => {
                 values.len() == items.len()
-                    && items.iter().enumerate().all(|(index, item)| values.get(index).is_some_and(|value| item.accepts_value_view(value, depth + 1)))
+                    && items.iter().enumerate().all(|(index, item)| values.get(index).is_some_and(|value| item.accepts_value_view(value, depth + 1, work)))
             }
             (RuntimeValueView::Record(values), Self::Record(fields)) => {
                 values.len() == fields.len()
                     && fields.iter().enumerate().all(|(index, field)| values.get(index).is_some_and(|(id, name, value)| {
-                        id == field.field && name == field.diagnostic_name && field.ty.accepts_value_view(value, depth + 1)
+                        id == field.field && name == field.diagnostic_name && field.ty.accepts_value_view(value, depth + 1, work)
                     }))
             }
             (value, Self::Choice(alternatives)) => alternatives
                 .iter()
-                .any(|alternative| alternative.accepts_value_view(value, depth + 1)),
+                .any(|alternative| alternative.accepts_value_view(value, depth + 1, work)),
             (RuntimeValueView::Opaque(value), Self::Opaque { owner }) => {
                 owner.accepts_opaque_view(value)
             }
@@ -1201,11 +1224,12 @@ impl RuntimeCheckedType {
                 variant.name(),
                 variant.payload(),
                 depth,
+                work,
             ),
             (
                 RuntimeValueView::Variant(variant),
                 Self::Result { .. } | Self::Option(_),
-            ) => self.accepts_builtin_variant_parts_at_depth(variant.owner(), variant.ordinal(), variant.name(), variant.payload(), depth),
+            ) => self.accepts_builtin_variant_parts_at_depth(variant.owner(), variant.ordinal(), variant.name(), variant.payload(), depth, work),
             (RuntimeValueView::Agent(value), Self::Agent(expected)) => {
                 !matches!(expected, crate::plan::RuntimeAgentTypeProjection::DataShape(_))
                     && value.operational_type() == expected.operational_type()
@@ -1224,6 +1248,7 @@ impl RuntimeCheckedType {
         name: &str,
         payload: Option<RuntimeValueView<'_>>,
         depth: usize,
+        work: Option<&crate::entry::schema::value_budget::ValidationWork>,
     ) -> bool {
         let Some(expected_owner) = self.variant_identity() else {
             return false;
@@ -1235,7 +1260,7 @@ impl RuntimeCheckedType {
             case.name == name
                 && match (case.payload.as_deref(), payload) {
                     (Some(expected), Some(actual)) => {
-                        expected.accepts_value_view(actual, depth + 1)
+                        expected.accepts_value_view(actual, depth + 1, work)
                     }
                     (None, None) => true,
                     _ => false,
@@ -1250,6 +1275,7 @@ impl RuntimeCheckedType {
         name: &str,
         payload: Option<RuntimeValueView<'_>>,
         depth: usize,
+        work: Option<&crate::entry::schema::value_budget::ValidationWork>,
     ) -> bool {
         let Self::Variant {
             owner: expected_owner,
@@ -1270,7 +1296,7 @@ impl RuntimeCheckedType {
                     && match (case.payload.as_deref(), payload) {
                         (None, None) => true,
                         (Some(expected), Some(actual)) => {
-                            expected.accepts_value_view(actual, depth + 1)
+                            expected.accepts_value_view(actual, depth + 1, work)
                         }
                         (None, Some(_)) | (Some(_), None) => false,
                     }
@@ -1436,18 +1462,25 @@ fn write_checked_type_identity(
     }
 }
 
-fn runtime_value_view_is_agent_value(value: RuntimeValueView<'_>, depth: usize) -> bool {
+fn runtime_value_view_is_agent_value(
+    value: RuntimeValueView<'_>,
+    depth: usize,
+    work: Option<&crate::entry::schema::value_budget::ValidationWork>,
+) -> bool {
+    if work.is_some_and(|work| work.clone().charge(depth).is_err()) {
+        return false;
+    }
     if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH || !value.is_agent_value_node() {
         return false;
     }
     match value {
         RuntimeValueView::Sequence(values) => {
-            values.all(|value| runtime_value_view_is_agent_value(value, depth + 1))
+            values.all(|value| runtime_value_view_is_agent_value(value, depth + 1, work))
         }
         RuntimeValueView::Record(fields) => (0..fields.len()).all(|index| {
-            fields
-                .get(index)
-                .is_some_and(|(_, _, value)| runtime_value_view_is_agent_value(value, depth + 1))
+            fields.get(index).is_some_and(|(_, _, value)| {
+                runtime_value_view_is_agent_value(value, depth + 1, work)
+            })
         }),
         _ => true,
     }

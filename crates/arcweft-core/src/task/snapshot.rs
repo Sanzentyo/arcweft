@@ -1,52 +1,54 @@
 //! Inert task persistence through the common specification/request grammar.
 
-use super::{RuntimeProgramOwner, TaskHandle, TaskSpec, TaskSubmission};
+use super::{RuntimeProgramOwner, TaskSpec, TaskSubmission};
 use crate::value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimePayload};
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct TaskSubmissionSaveSnapshot {
-    spec: TaskSpec<AwbcRuntimeValueSnapshot>,
-    handle: TaskHandle,
-}
+pub type TaskSubmissionSaveSnapshot = TaskSubmission<AwbcRuntimeValueSnapshot>;
 
 impl TaskSubmissionSaveSnapshot {
-    pub(crate) fn from_live(
-        submission: &TaskSubmission,
-        owner: Option<&RuntimeProgramOwner>,
-    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Ok(Self {
-            spec: TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(submission.spec(), owner)?,
-            handle: submission.handle(),
-        })
-    }
-    pub(crate) fn into_live(
-        self,
-        owner: &RuntimeProgramOwner,
-    ) -> Result<TaskSubmission, AwbcRuntimeValueSnapshotError> {
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
-        );
-        resources.validate_task_descriptor(&self.spec, 0)?;
-        self.spec.validate_handle(self.handle).map_err(|error| {
-            AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            }
-        })?;
-        let spec = self.spec.into_live(owner)?;
-        TaskSubmission::try_from_accepted(spec, self.handle).map_err(|error| {
-            AwbcRuntimeValueSnapshotError::Message {
-                message: error.to_string(),
-            }
-        })
-    }
     pub(crate) fn request_values(&self) -> impl Iterator<Item = &AwbcRuntimeValueSnapshot> {
         self.spec.request.payloads()
     }
 }
 
 impl TaskSpec<AwbcRuntimeValueSnapshot> {
+    pub(crate) fn from_admitted_live(
+        spec: &TaskSpec,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
+        Ok(Self {
+            generation: spec.generation,
+            producer: spec.producer.clone(),
+            class: spec.class.clone(),
+            priority: spec.priority,
+            cancel_scope: spec.cancel_scope.clone(),
+            policy: spec.policy,
+            outcome: spec.outcome.clone(),
+            debug_label: spec.debug_label.clone(),
+            request: spec.request.map_admitted(|value| {
+                AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value.value(), owner)
+            })?,
+        })
+    }
+
+    pub(crate) fn into_admitted_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<TaskSpec, AwbcRuntimeValueSnapshotError> {
+        Ok(TaskSpec {
+            generation: self.generation,
+            producer: self.producer,
+            class: self.class,
+            priority: self.priority,
+            cancel_scope: self.cancel_scope,
+            policy: self.policy,
+            outcome: self.outcome,
+            debug_label: self.debug_label,
+            request: self.request.into_mapped_admitted(|value| {
+                value.into_admitted_runtime_value(owner).map(RuntimePayload)
+            })?,
+        })
+    }
     pub(crate) fn from_live(
         spec: &TaskSpec,
         owner: Option<&RuntimeProgramOwner>,

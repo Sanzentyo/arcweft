@@ -1,42 +1,20 @@
-use crate::task::{
-    RuntimeTaskFailure, TaskCorrelation, TaskEvent, TaskEventKind, TaskOutcomeContract,
-    TaskPublicationCursor,
-};
+use crate::task::{TaskEvent, TaskEventKind};
 use crate::value::AwbcRuntimeValueSnapshot;
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProductTaskEventSaveSnapshot {
-    pub correlation: TaskCorrelation,
-    pub cursor: TaskPublicationCursor,
-    pub kind: AwbcProductTaskEventKindSaveSnapshot,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
-pub enum AwbcProductTaskEventKindSaveSnapshot {
-    Ready(AwbcRuntimeValueSnapshot),
-    InfrastructureFailure(RuntimeTaskFailure),
-    Cancelled,
-    Progress(arcweft_need::Progress),
-}
+pub type AwbcProductTaskEventSaveSnapshot = TaskEvent<AwbcRuntimeValueSnapshot>;
+pub type AwbcProductTaskEventKindSaveSnapshot = TaskEventKind<AwbcRuntimeValueSnapshot>;
 
 impl AwbcProductTaskEventSaveSnapshot {
-    pub(super) fn from_live(
+    pub(super) fn from_admitted_live(
         event: &TaskEvent,
         owner: &crate::task::RuntimeProgramOwner,
-        outcome: Option<&TaskOutcomeContract>,
     ) -> Result<Self, String> {
-        if let TaskEventKind::Ready(value) = &event.kind {
-            require_outcome(outcome, owner)?
-                .validate_value(value.value())
-                .map_err(|error| error.to_string())?;
-        }
         Ok(Self {
             correlation: event.correlation,
             cursor: event.cursor,
             kind: match &event.kind {
                 TaskEventKind::Ready(value) => AwbcProductTaskEventKindSaveSnapshot::Ready(
-                    AwbcRuntimeValueSnapshot::from_runtime_value_for_program(value.value(), owner)
+                    AwbcRuntimeValueSnapshot::from_admitted_runtime_value(value.value(), owner)
                         .map_err(|error| error.to_string())?,
                 ),
                 TaskEventKind::InfrastructureFailure(error) => {
@@ -50,25 +28,19 @@ impl AwbcProductTaskEventSaveSnapshot {
         })
     }
 
-    pub(super) fn into_live(
+    pub(super) fn into_admitted_live(
         self,
         owner: &crate::task::RuntimeProgramOwner,
-        outcome: Option<&TaskOutcomeContract>,
     ) -> Result<TaskEvent, String> {
         Ok(TaskEvent {
             correlation: self.correlation,
             cursor: self.cursor,
             kind: match self.kind {
                 AwbcProductTaskEventKindSaveSnapshot::Ready(value) => {
-                    let outcome = require_outcome(outcome, owner)?;
                     let value = value
-                        .into_runtime_value_for_program(owner)
+                        .into_admitted_runtime_value(owner)
                         .map_err(|error| error.to_string())?;
-                    TaskEventKind::Ready(
-                        outcome
-                            .try_payload(value)
-                            .map_err(|error| error.to_string())?,
-                    )
+                    TaskEventKind::Ready(value.into())
                 }
                 AwbcProductTaskEventKindSaveSnapshot::InfrastructureFailure(error) => {
                     TaskEventKind::InfrastructureFailure(error)
@@ -80,16 +52,6 @@ impl AwbcProductTaskEventSaveSnapshot {
             },
         })
     }
-}
-
-fn require_outcome(
-    outcome: Option<&TaskOutcomeContract>,
-    owner: &crate::task::RuntimeProgramOwner,
-) -> Result<crate::task::BoundTaskOutcome, String> {
-    outcome
-        .ok_or_else(|| "queued Ready has no exact admitted task correlation".to_owned())?
-        .bind_for_value(owner)
-        .map_err(|error| error.to_string())
 }
 
 /// Fixed `TaskId` atoms cannot be JSON object keys. Version-one persistence uses

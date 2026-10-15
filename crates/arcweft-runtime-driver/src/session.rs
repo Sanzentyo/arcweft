@@ -160,7 +160,7 @@ impl Default for BundleSessionOptions {
 }
 
 /// Host data supplied to one portable runtime step, excluding logical time.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct BundleStepInput {
     pub view_bindings: Vec<RuntimeBinding>,
     pub root_events: Vec<RootEventInput>,

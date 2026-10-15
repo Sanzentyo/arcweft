@@ -650,17 +650,20 @@ mod tests {
         let a = task("a", TaskPolicy::AlwaysStart, 0);
         let b = task("b", TaskPolicy::AlwaysStart, 0);
         scheduler.submit([a.clone(), b.clone()]).unwrap();
-        let fault = event(
-            &b,
-            2,
-            TaskEventKind::InfrastructureFailure(RuntimeTaskFailure::new(
-                RuntimeTaskFailureKind::WorkerFailure,
-                "failed",
-            )),
-        );
-        let mut expected = vec![fault.clone(), ready(&a, 1)];
+        let fault = || {
+            event(
+                &b,
+                2,
+                TaskEventKind::InfrastructureFailure(RuntimeTaskFailure::new(
+                    RuntimeTaskFailureKind::WorkerFailure,
+                    "failed",
+                )),
+            )
+        };
+        let mut expected = vec![fault(), ready(&a, 1)];
         expected.sort_by(compare_task_events);
-        let mut shuffled = expected.clone();
+        let mut shuffled = vec![fault(), ready(&a, 1)];
+        shuffled.sort_by(compare_task_events);
         shuffled.reverse();
         assert_eq!(scheduler.complete(shuffled).unwrap(), expected);
         assert_eq!(scheduler.stats().completed, 1);

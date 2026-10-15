@@ -9,10 +9,17 @@ use std::collections::BTreeMap;
 
 /// Accepted work transported to an executor. The receipt is validated against
 /// the exact start specification before either is exposed to the backend.
-#[derive(Clone, Debug, PartialEq)]
-pub struct TaskSubmission {
-    spec: TaskSpec,
-    handle: TaskHandle,
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "TaskSpec<P>: serde::Serialize",
+        deserialize = "P: crate::value::InertRuntimeValueStorage, TaskSpec<P>: serde::Deserialize<'de>"
+    )
+)]
+pub struct TaskSubmission<P = crate::value::RuntimePayload> {
+    pub(super) spec: TaskSpec<P>,
+    pub(super) handle: TaskHandle,
 }
 
 impl TaskSubmission {
@@ -24,8 +31,21 @@ impl TaskSubmission {
         spec.validate_handle(handle)?;
         Ok(Self { spec, handle })
     }
+}
 
-    pub const fn spec(&self) -> &TaskSpec {
+impl<P> TaskSubmission<P> {
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata(&self.handle)?;
+        self.spec
+            .admit_retained_with_handle(Some(self.handle), admission)
+    }
+    pub const fn spec(&self) -> &TaskSpec<P> {
         &self.spec
     }
     pub const fn handle(&self) -> TaskHandle {
@@ -37,7 +57,7 @@ impl TaskSubmission {
     pub const fn task_key(&self) -> TaskKey {
         self.handle.correlation.task_key
     }
-    pub fn into_parts(self) -> (TaskSpec, TaskHandle) {
+    pub fn into_parts(self) -> (TaskSpec<P>, TaskHandle) {
         (self.spec, self.handle)
     }
 }
@@ -101,6 +121,9 @@ pub struct TaskAdmissionJournal {
 }
 
 impl TaskAdmissionJournal {
+    pub(super) fn accepted_len(&self) -> usize {
+        self.accepted.len()
+    }
     pub(super) fn submissions(&self) -> impl Iterator<Item = TaskSubmission> + '_ {
         self.accepted.values().map(|row| TaskSubmission {
             spec: row.spec.clone(),
@@ -108,8 +131,23 @@ impl TaskAdmissionJournal {
         })
     }
 
-    pub(super) fn validate_submissions(
-        submissions: &[TaskSubmission],
+    pub(super) fn borrowed_submissions(
+        &self,
+    ) -> impl Iterator<Item = (&TaskSpec, TaskHandle)> + '_ {
+        self.accepted.values().map(|row| (&row.spec, row.handle))
+    }
+
+    pub(super) fn validate_submissions<P: crate::value::RuntimeStoredValue>(
+        submissions: &[TaskSubmission<P>],
+    ) -> Result<BTreeMap<(GenerationId, NeedProducerInstanceKey), u64>, TaskEnsureError> {
+        for submission in submissions {
+            submission.spec().validate_task_descriptor()?;
+        }
+        Self::validate_submission_journal(submissions)
+    }
+
+    pub(super) fn validate_submission_journal<P>(
+        submissions: &[TaskSubmission<P>],
     ) -> Result<BTreeMap<(GenerationId, NeedProducerInstanceKey), u64>, TaskEnsureError> {
         let mut tasks = std::collections::BTreeSet::new();
         let mut joins = std::collections::BTreeSet::new();
@@ -117,7 +155,6 @@ impl TaskAdmissionJournal {
         for submission in submissions {
             let spec = submission.spec();
             let correlation = submission.handle().correlation;
-            spec.validate_task_descriptor()?;
             spec.validate_handle(submission.handle())?;
             if !tasks.insert(correlation.task_id) {
                 return Err(TaskEnsureError::TaskIdSpecificationConflict {

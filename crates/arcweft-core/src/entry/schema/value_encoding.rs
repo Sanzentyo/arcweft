@@ -491,6 +491,22 @@ impl ValueResourceAdmission {
         spec: &crate::task::TaskSpec<P>,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
+        self.admit_descriptor(|visitor| spec.visit_descriptor(visitor, depth))
+    }
+
+    pub(crate) fn validate_standalone_outcome_type(
+        &mut self,
+        ty: &crate::pattern::RuntimeCheckedType,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.admit_descriptor(|visitor| ty.visit_standalone_descriptor(visitor, 0))
+    }
+
+    fn admit_descriptor(
+        &mut self,
+        visit: impl FnOnce(
+            &mut DescriptorAdmission<'_, '_, super::CanonicalCountingSink, NoSchemaValidation<'_>>,
+        ) -> Result<(), RuntimeSchemaError>,
+    ) -> Result<(), RuntimeSchemaError> {
         let limits = self.work.limits();
         let mut writer = CanonicalWriter {
             sink: &mut self.sink,
@@ -502,20 +518,16 @@ impl ValueResourceAdmission {
             depth: 0,
             observer: None,
         };
-        let result = spec.visit_descriptor(
-            &mut DescriptorAdmission {
-                writer: &mut writer,
-                budget: Some(&mut self.budget),
-                validation: &mut validation,
-            },
-            depth,
-        );
+        let result = visit(&mut DescriptorAdmission {
+            writer: &mut writer,
+            budget: Some(&mut self.budget),
+            validation: &mut validation,
+        });
         if let Err(error) = &result {
             self.work.retain_failure(error.clone());
         }
         result
     }
-
     pub(crate) fn validate_view<'a>(
         &mut self,
         value: RuntimeValueView<'_>,

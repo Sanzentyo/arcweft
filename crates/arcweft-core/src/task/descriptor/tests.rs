@@ -305,7 +305,10 @@ fn submission_identity_is_admitted_before_request_callable_construction() {
         .ensure_task(specification(HostTaskRequest::custom("h", "f", [])))
         .unwrap();
     let submission = journal.submission(handle).unwrap();
-    let saved = TaskSubmissionSaveSnapshot::from_live(&submission, None).unwrap();
+    let saved = TaskSubmissionSaveSnapshot {
+        spec: TaskSpec::<AwbcRuntimeValueSnapshot>::from_live(submission.spec(), None).unwrap(),
+        handle: submission.handle(),
+    };
     let mut wire = serde_json::to_value(saved).unwrap();
     let mut forged = handle;
     forged.correlation.task_id = TaskId::try_from_bytes([9; 32]).unwrap();
@@ -323,7 +326,14 @@ fn submission_identity_is_admitted_before_request_callable_construction() {
         crate::awbc::schema::AwbcProgram::default(),
     ));
     assert_eq!(
-        decoded.into_live(&owner).unwrap_err(),
+        decoded
+            .admit_retained(
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner,
+                    RuntimeSchemaLimits::engine_default(),
+                )
+            )
+            .unwrap_err(),
         AwbcRuntimeValueSnapshotError::Message {
             message: TaskEnsureError::TaskIdSpecificationConflict {
                 task_id: forged.correlation.task_id

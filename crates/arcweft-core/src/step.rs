@@ -16,7 +16,7 @@ use arcweft_interaction_model::{
 };
 pub use arcweft_manifest_model::HostCallContractDigest;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,

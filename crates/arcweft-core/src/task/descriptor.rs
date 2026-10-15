@@ -14,21 +14,80 @@ pub(crate) trait TaskDescriptorVisitor {
     fn blob(&mut self, bytes: &[u8], depth: usize) -> Result<(), RuntimeSchemaError>;
 }
 
-impl TaskSpec {
-    pub(super) fn validate_task_descriptor(&self) -> Result<(), super::TaskEnsureError> {
+impl<P> TaskSpec<P> {
+    pub(crate) fn admit_retained(
+        &self,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        self.admit_retained_with_handle(None, admission)
+    }
+
+    pub(super) fn admit_retained_with_handle(
+        &self,
+        handle: Option<super::TaskHandle>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.admit_composite(P::admission_origin(), |owner, resources| {
+            self.validate_descriptor_inputs(resources, 0, P::borrowed_view)?;
+            self.validate_outcome().map_err(|error| {
+                crate::value::AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                }
+            })?;
+            if let Some(handle) = handle {
+                self.validate_handle(handle).map_err(|error| {
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    }
+                })?;
+            }
+            self.outcome.validate_storage_owner(owner)?;
+            for payload in self.request.payloads() {
+                let view = payload.borrowed_view();
+                crate::entry::schema::value_encoding::visit_admitted_storage(
+                    view,
+                    &resources.work(),
+                    |node| {
+                        if node.intrinsic_ownership().permits_copy() {
+                            Ok(())
+                        } else {
+                            Err(crate::value::AwbcRuntimeValueSnapshotError::AffineValue)
+                        }
+                    },
+                )?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    view, owner, resources,
+                )?;
+            }
+            Ok(())
+        })
+    }
+    pub(super) fn validate_task_descriptor(&self) -> Result<(), super::TaskEnsureError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
         let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            P::admission_origin(),
         );
-        self.validate_descriptor_inputs(&mut resources, 0, |payload| payload.value().view())
+        self.validate_descriptor_inputs(&mut resources, 0, P::borrowed_view)
             .map_err(|error| super::TaskEnsureError::Descriptor(Box::new(error)))
     }
-    pub(super) fn validate_need_descriptor(&self) -> Result<(), RuntimeNeedHandleError> {
+    pub(super) fn validate_need_descriptor(&self) -> Result<(), RuntimeNeedHandleError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
         let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
             crate::entry::RuntimeSchemaLimits::engine_default(),
-            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            P::admission_origin(),
         );
-        self.validate_descriptor_inputs(&mut resources, 0, |payload| payload.value().view())
+        self.validate_descriptor_inputs(&mut resources, 0, P::borrowed_view)
             .map_err(|error| RuntimeNeedHandleError::Descriptor(Box::new(error)))
     }
 }

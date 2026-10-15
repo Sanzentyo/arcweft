@@ -943,7 +943,7 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
         native_dispatch.submission.handle().correlation,
         product_dispatch.submission.handle().correlation
     );
-    let publication = TaskEvent {
+    let publication = || TaskEvent {
         correlation: task.handle().correlation,
         cursor: arcweft_core::task::TaskPublicationCursor {
             logical_epoch: LogicalEpoch(1),
@@ -954,14 +954,14 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
 
     let native_result = native.step(
         RuntimeStepInput {
-            task_events: vec![publication.clone()],
+            task_events: vec![publication()],
             ..RuntimeStepInput::default()
         },
         options(),
     );
     let product_result = product.step(
         RuntimeStepInput {
-            task_events: vec![publication.clone()],
+            task_events: vec![publication()],
             ..RuntimeStepInput::default()
         },
         options(),
@@ -991,14 +991,14 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
 
     let duplicate_native = native.step(
         RuntimeStepInput {
-            task_events: vec![publication.clone()],
+            task_events: vec![publication()],
             ..RuntimeStepInput::default()
         },
         options(),
     );
     let duplicate_product = product.step(
         RuntimeStepInput {
-            task_events: vec![publication],
+            task_events: vec![publication()],
             ..RuntimeStepInput::default()
         },
         options(),

@@ -106,7 +106,7 @@ pub trait RuntimeTaskOwner {
 }
 
 /// Driver projection indexed by accepted task identity, never publication sequence.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RuntimeTaskRegistry {
     records: BTreeMap<TaskId, RuntimeTaskRecord>,
     pending_events: Vec<TaskEvent>,
@@ -568,7 +568,7 @@ mod tests {
             RuntimeTaskStatus::Pending
         );
         let valid = dispatch.clone().ready(unit_payload());
-        let mut invalid = valid.clone();
+        let mut invalid = dispatch.clone().ready(unit_payload());
         invalid.correlation.generation = GenerationId::new(5);
         assert!(registry.apply_task_events(vec![valid, invalid]).is_empty());
         assert_eq!(
@@ -647,11 +647,12 @@ mod tests {
             TaskPublicationRevision::new(NonZeroU64::new(2).unwrap()),
             TaskEventKind::Progress(arcweft_core::value::Progress::new(0.5).unwrap()),
         );
-        assert_eq!(registry.apply_task_events(vec![progress.clone()]).len(), 1);
+        let publication = TaskPublicationCursor::from_event(&progress);
+        assert_eq!(registry.apply_task_events(vec![progress]).len(), 1);
         let mut launch = RuntimeNeedProducerDispatch {
             submission: dispatch.task.clone(),
             restart: HostRestartPolicy::Restartable,
-            publication: Some(TaskPublicationCursor::from_event(&progress)),
+            publication: Some(publication),
             needs_reensure: false,
         };
         let saved = registry.snapshot_restartable(&[launch.clone()], 8).unwrap();

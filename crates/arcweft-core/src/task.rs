@@ -249,7 +249,7 @@ pub struct TaskPublicationCursor {
 }
 
 impl TaskPublicationCursor {
-    pub const fn from_event(event: &TaskEvent) -> Self {
+    pub const fn from_event<P>(event: &TaskEvent<P>) -> Self {
         event.cursor
     }
     pub fn compare_same_source(self, other: Self) -> Option<Ordering> {
@@ -1374,11 +1374,76 @@ pub enum SystemInfoKind {
     AvailableParallelism,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TaskEvent {
+/// One owning task publication. Only inert payload storage can clone or decode.
+///
+/// ```compile_fail
+/// use arcweft_core::task::TaskEvent;
+/// fn duplicate(event: &TaskEvent) { let _: TaskEvent = event.clone(); }
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::task::TaskEvent;
+/// let _: TaskEvent = serde_json::from_str("{}").unwrap();
+/// ```
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "P: Serialize",
+        deserialize = "P: crate::value::InertRuntimeValueStorage"
+    )
+)]
+pub struct TaskEvent<P = RuntimePayload> {
     pub correlation: TaskCorrelation,
     pub cursor: TaskPublicationCursor,
-    pub kind: TaskEventKind,
+    pub kind: TaskEventKind<P>,
+}
+
+impl Clone for TaskEvent<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        Self {
+            correlation: self.correlation,
+            cursor: self.cursor,
+            kind: self.kind.clone(),
+        }
+    }
+}
+
+impl<P> TaskEvent<P> {
+    /// Preflights retained metadata and the exact outcome while the payload
+    /// still belongs to its original live or inert owner.
+    pub(crate) fn admit_retained(
+        &self,
+        outcome: Option<&TaskOutcomeContract>,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
+    where
+        P: crate::value::RuntimeStoredValue,
+    {
+        admission.validate_metadata(&(self.correlation, self.cursor))?;
+        match &self.kind {
+            TaskEventKind::Ready(value) => {
+                let outcome = outcome.ok_or_else(|| {
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "queued Ready has no exact admitted task correlation".into(),
+                    }
+                })?;
+                admission.validate_metadata(outcome)?;
+                admission.admit_composite(P::admission_origin(), |owner, resources| {
+                    let view = value.borrowed_view();
+                    resources.validate_view(view, 0, None)?;
+                    crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                        view, owner, resources,
+                    )?;
+                    outcome.validate_admitted_value_view(view, owner, resources)?;
+                    Ok(())
+                })
+            }
+            TaskEventKind::InfrastructureFailure(failure) => admission.validate_metadata(failure),
+            TaskEventKind::Progress(progress) => admission.validate_metadata(progress),
+            TaskEventKind::Cancelled => Ok(()),
+        }
+    }
 }
 
 impl TaskEvent {
@@ -1506,12 +1571,27 @@ pub enum TaskCompletionError {
     EventAfterTerminal { task_id: TaskId },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum TaskEventKind {
-    Ready(RuntimePayload),
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(bound(
+    serialize = "P: Serialize",
+    deserialize = "P: crate::value::InertRuntimeValueStorage"
+))]
+pub enum TaskEventKind<P = RuntimePayload> {
+    Ready(P),
     InfrastructureFailure(RuntimeTaskFailure),
     Cancelled,
     Progress(Progress),
+}
+
+impl Clone for TaskEventKind<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Ready(value) => Self::Ready(value.clone()),
+            Self::InfrastructureFailure(failure) => Self::InfrastructureFailure(failure.clone()),
+            Self::Cancelled => Self::Cancelled,
+            Self::Progress(progress) => Self::Progress(progress.clone()),
+        }
+    }
 }
 
 pub trait TaskHost {
@@ -1661,7 +1741,9 @@ impl HostTaskRequest {
         }
         request
     }
+}
 
+impl<P> HostTaskRequest<P> {
     pub fn debug_label(&self) -> String {
         match self {
             Self::FileReadText(request) => format!("file.read_text {}", request.path),
@@ -1693,7 +1775,9 @@ impl HostTaskRequest {
             } => format!("{}.{}", capability.0, operation),
         }
     }
+}
 
+impl HostTaskRequest {
     pub fn host_call_id(&self) -> String {
         match self {
             Self::FileReadText(_) => "fs.read_text".to_owned(),
@@ -1760,7 +1844,7 @@ impl From<String> for HostCapabilityId {
 }
 
 /// Returns task events in replay-stable completion order.
-pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
+pub fn normalize_task_events<P>(mut events: Vec<TaskEvent<P>>) -> Vec<TaskEvent<P>> {
     if events.len() > 1 && !task_events_are_normalized(&events) {
         events.sort_by(compare_task_events);
     }
@@ -1768,14 +1852,14 @@ pub fn normalize_task_events(mut events: Vec<TaskEvent>) -> Vec<TaskEvent> {
 }
 
 /// Returns true when task events are already in replay-stable completion order.
-pub fn task_events_are_normalized(events: &[TaskEvent]) -> bool {
+pub fn task_events_are_normalized<P>(events: &[TaskEvent<P>]) -> bool {
     events
         .windows(2)
         .all(|pair| compare_task_events(&pair[0], &pair[1]).is_le())
 }
 
 /// Compares task events by replay-stable completion order.
-pub fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
+pub fn compare_task_events<P>(left: &TaskEvent<P>, right: &TaskEvent<P>) -> std::cmp::Ordering {
     left.cursor
         .logical_epoch
         .cmp(&right.cursor.logical_epoch)

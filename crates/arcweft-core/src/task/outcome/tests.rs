@@ -23,6 +23,169 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }
 
+#[test]
+fn borrowed_standalone_choice_retains_work_failure_before_a_later_match() {
+    use crate::entry::RuntimeSchemaError;
+    use crate::entry::schema::value_budget::ValidationWork;
+    let expected =
+        RuntimeCheckedType::Choice(vec![RuntimeCheckedType::String, RuntimeCheckedType::Bool]);
+    let value = crate::value::AwbcRuntimeValueSnapshot::Bool(true);
+    let small = ValidationWork::new(RuntimeSchemaLimits {
+        max_validation_work: 2,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    let failure = expected
+        .accepts_admitted_value_view(value.view(), &small)
+        .unwrap_err();
+    assert!(matches!(
+        failure,
+        RuntimeSchemaError::ValidationWork {
+            limit: 2,
+            consumed: 3,
+            ..
+        }
+    ));
+    assert_eq!(
+        RuntimeCheckedType::Bool
+            .accepts_admitted_value_view(value.view(), &small)
+            .unwrap_err(),
+        failure
+    );
+    let exact = ValidationWork::new(RuntimeSchemaLimits {
+        max_validation_work: 3,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    assert_eq!(
+        expected.accepts_admitted_value_view(value.view(), &exact),
+        Ok(true)
+    );
+    assert!(expected.accepts_value(&RuntimeValue::Bool(true)));
+}
+
+#[test]
+fn borrowed_outcome_uses_the_original_lease_even_for_equal_scalar_rows() {
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    let original = RuntimeProgramOwner::Plan(Arc::new(result_plan()));
+    let other = RuntimeProgramOwner::Plan(Arc::new(result_plan()));
+    let bound = TaskOutcomeContract::program(semantic(1))
+        .bind_program(original.clone(), RuntimeSchemaLimits::engine_default())
+        .unwrap();
+    let value = crate::value::AwbcRuntimeValueSnapshot::Bool(true);
+    let mut resources = ValueResourceAdmission::snapshot(
+        RuntimeSchemaLimits::engine_default(),
+        ValueAdmissionOrigin::InertSnapshot,
+    );
+    resources.validate_view(value.view(), 0, None).unwrap();
+    assert!(
+        matches!(bound.validate_admitted_value_view(value.view(), Some(&other), &mut resources),
+        Err(TaskOutcomeValueError::WrongProgramOwner { semantic_type }) if semantic_type == semantic(1))
+    );
+    bound
+        .validate_admitted_value_view(value.view(), Some(&original), &mut resources)
+        .unwrap();
+    assert_eq!(value, crate::value::AwbcRuntimeValueSnapshot::Bool(true));
+}
+
+#[test]
+fn queued_inert_outcomes_share_nodes_and_keep_the_first_error() {
+    use crate::entry::RuntimeSchemaError;
+    use crate::task::{TaskEvent, TaskEventKind, TaskPublicationCursor};
+    use crate::value::{
+        AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission,
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::String);
+    let correlation = crate::tests::reusable_need("queued outcomes").correlation();
+    let events: Vec<TaskEvent<AwbcRuntimeValueSnapshot>> = ["first", "second"]
+        .into_iter()
+        .map(|value| TaskEvent {
+            correlation,
+            cursor: TaskPublicationCursor {
+                logical_epoch: crate::task::LogicalEpoch(1),
+                sequence: crate::task::TaskSequence(1),
+            },
+            kind: TaskEventKind::Ready(AwbcRuntimeValueSnapshot::String(value.into())),
+        })
+        .collect();
+    let bytes = serde_json::to_vec(&events).unwrap();
+    let mut limited = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_nodes: 3,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    events[0]
+        .admit_retained(Some(&outcome), &mut limited)
+        .unwrap();
+    let first = events[1]
+        .admit_retained(Some(&outcome), &mut limited)
+        .unwrap_err();
+    assert!(matches!(
+        first,
+        AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+            budget: "nodes"
+        })
+    ));
+    assert_eq!(
+        events[0]
+            .admit_retained(Some(&outcome), &mut limited)
+            .unwrap_err(),
+        first
+    );
+    assert_eq!(serde_json::to_vec(&events).unwrap(), bytes);
+    let mut exact = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_nodes: 4,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    for event in &events {
+        event.admit_retained(Some(&outcome), &mut exact).unwrap();
+    }
+}
+
+#[test]
+fn retained_need_ready_states_share_one_sticky_outcome_allowance() {
+    use crate::entry::RuntimeSchemaError;
+    use crate::task::{RuntimeNeedProducerState, TaskPolicy};
+    use crate::value::{
+        AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission,
+    };
+    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Bool);
+    let states = [
+        RuntimeNeedProducerState::Ready(AwbcRuntimeValueSnapshot::Bool(true)),
+        RuntimeNeedProducerState::Ready(AwbcRuntimeValueSnapshot::Bool(false)),
+    ];
+    let before = serde_json::to_vec(&states).unwrap();
+    let mut limited = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_nodes: 3,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    states[0]
+        .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut limited)
+        .unwrap();
+    let error = states[1]
+        .admit_retained(&outcome, TaskPolicy::AlwaysStart, &mut limited)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+            budget: "nodes"
+        })
+    ));
+    assert_eq!(
+        states[0]
+            .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut limited)
+            .unwrap_err(),
+        error
+    );
+    assert_eq!(serde_json::to_vec(&states).unwrap(), before);
+    let mut exact = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_nodes: 4,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    for state in &states {
+        state
+            .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut exact)
+            .unwrap();
+    }
+}
+
 fn result_plan() -> RuntimePlan {
     let producer = RuntimeOpaqueTypeProducerId::try_new("fixture.task-error").unwrap();
     let mut builder = RuntimePlanBuilder::new();

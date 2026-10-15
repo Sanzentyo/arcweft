@@ -17,7 +17,7 @@ use thiserror::Error;
 ///
 /// Fetch, `IndexedDB`, `WebAudio`, and nested Wasm are explicit post-MVP adapters.
 /// Unsupported calls produce deterministic task errors instead of being ignored.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct BrowserTaskBroker {
     allowed_calls: BTreeSet<String>,
     files: BTreeMap<String, Vec<u8>>,
@@ -354,11 +354,11 @@ mod tests {
         assert_eq!(events.len(), 2);
 
         let image = ready_result_payload(
-            event_for(0).kind.clone(),
+            &event_for(0).kind,
             RuntimeBuiltinVariantCaseIdentity::ResultOk,
         )
         .expect("image load succeeds");
-        let image = RuntimeImageHandleValue::try_from_runtime_value(&image)
+        let image = RuntimeImageHandleValue::try_from_runtime_value(image)
             .expect("image success carries the standard ImageHandle");
         assert_eq!(
             broker
@@ -370,11 +370,11 @@ mod tests {
         );
 
         let voice = ready_result_payload(
-            event_for(1).kind.clone(),
+            &event_for(1).kind,
             RuntimeBuiltinVariantCaseIdentity::ResultOk,
         )
         .expect("voice load succeeds");
-        let voice = RuntimeAudioHandleValue::try_from_runtime_value(&voice)
+        let voice = RuntimeAudioHandleValue::try_from_runtime_value(voice)
             .expect("voice success carries the standard AudioHandle");
         assert_eq!(
             broker
@@ -419,12 +419,12 @@ mod tests {
         assert_eq!(events.len(), 4);
 
         let image_missing = ready_result_payload(
-            event_for(0).kind.clone(),
+            &event_for(0).kind,
             RuntimeBuiltinVariantCaseIdentity::ResultErr,
         )
         .expect("missing image is a completed domain result");
         assert_eq!(
-            RuntimeAssetErrorValue::try_from_runtime_value(&image_missing)
+            RuntimeAssetErrorValue::try_from_runtime_value(image_missing)
                 .expect("image failure uses AssetError")
                 .failure()
                 .reason(),
@@ -432,12 +432,12 @@ mod tests {
         );
 
         let voice_missing = ready_result_payload(
-            event_for(1).kind.clone(),
+            &event_for(1).kind,
             RuntimeBuiltinVariantCaseIdentity::ResultErr,
         )
         .expect("missing voice is a completed domain result");
         assert_eq!(
-            RuntimeVoiceErrorValue::try_from_runtime_value(&voice_missing)
+            RuntimeVoiceErrorValue::try_from_runtime_value(voice_missing)
                 .expect("voice failure uses VoiceError")
                 .failure()
                 .reason(),
@@ -446,8 +446,8 @@ mod tests {
 
         assert_eq!(
             RuntimeAssetErrorValue::try_from_runtime_value(
-                &ready_result_payload(
-                    event_for(2).kind.clone(),
+                ready_result_payload(
+                    &event_for(2).kind,
                     RuntimeBuiltinVariantCaseIdentity::ResultErr,
                 )
                 .expect("malformed image has Result::Err")
@@ -459,8 +459,8 @@ mod tests {
         );
         assert_eq!(
             RuntimeVoiceErrorValue::try_from_runtime_value(
-                &ready_result_payload(
-                    event_for(3).kind.clone(),
+                ready_result_payload(
+                    &event_for(3).kind,
                     RuntimeBuiltinVariantCaseIdentity::ResultErr,
                 )
                 .expect("malformed voice has Result::Err")
@@ -850,16 +850,16 @@ mod tests {
     }
 
     fn ready_result_payload(
-        kind: TaskEventKind,
+        kind: &TaskEventKind,
         expected_case: RuntimeBuiltinVariantCaseIdentity,
-    ) -> Result<RuntimeValue, String> {
+    ) -> Result<&RuntimeValue, String> {
         let TaskEventKind::Ready(payload) = kind else {
             return Err(format!("asset task outcome was not Ready: {kind:?}"));
         };
         let (actual_case, payload) = payload
-            .into_value()
-            .try_into_builtin_variant_case()
-            .map_err(|_| "asset result is not a canonical builtin Result".to_owned())?;
+            .value()
+            .builtin_variant_case()
+            .ok_or_else(|| "asset result is not a canonical builtin Result".to_owned())?;
         if actual_case != expected_case {
             return Err(format!(
                 "asset result case was {actual_case:?}; expected {expected_case:?}"
