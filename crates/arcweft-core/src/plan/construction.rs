@@ -869,12 +869,15 @@ impl RuntimePlanBuilder {
     /// Checks a complete local-request inventory before its declarations are
     /// materialized. This does not reserve identities or mutate the builder;
     /// admission rechecks the same issuer when it commits the complete batch.
+    /// Symbolic counts are checked independently of the target pointer width.
     ///
     /// # Panics
     ///
     /// Panics if an earlier panic poisoned the private local request table.
-    pub fn check_local_request_capacity(&self, count: usize) -> Result<(), RuntimePlanBuildError> {
+    pub fn check_local_request_capacity(&self, count: u64) -> Result<(), RuntimePlanBuildError> {
         self.ensure_usable()?;
+        let count = usize::try_from(count)
+            .map_err(|_| RuntimeLocalDeclarationTableError::IdentityExhausted)?;
         self.locals
             .lock()
             .expect("local request table only runs checked, callback-free transitions")
@@ -3719,7 +3722,13 @@ mod tests {
     #[test]
     fn local_request_capacity_preflights_without_spending_or_publishing_rows() {
         let mut builder = RuntimePlanBuilder::new();
-        let maximum = usize::try_from(u32::MAX).unwrap();
+        let maximum = u64::from(u32::MAX);
+        assert!(matches!(
+            builder.check_local_request_capacity(maximum + 1),
+            Err(RuntimePlanBuildError::LocalDeclarations(
+                RuntimeLocalDeclarationTableError::IdentityExhausted
+            ))
+        ));
         builder.check_local_request_capacity(maximum).unwrap();
         let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
         builder

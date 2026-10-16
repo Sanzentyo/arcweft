@@ -78,7 +78,8 @@ instantiations retain the same authored origin while their runtime types differ.
 
 Generated declarations are first described by one borrowed inventory for the
 complete executable view. Array Map row multiplicities remain symbolic while
-that inventory counts locals and rejects duplicate semantic roles. The Core
+that inventory counts locals in a fixed-width domain and rejects duplicate
+semantic roles. Allocation sizes are derived only after admission. The Core
 construction issuer checks the remaining local namespace before repeated
 declarations are materialized. Expression and lexical Scope requests then enter
 one atomic type/local admission; an invalid suffix cannot publish a prefix.

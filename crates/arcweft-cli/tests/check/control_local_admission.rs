@@ -13,7 +13,7 @@ mod control_local_admission {
             .hir_topology()
             .modules()
             .iter()
-            .flat_map(|module| module.entries())
+            .flat_map(arcweft_lang_hir::project::HirModuleEvaluationTopology::entries)
             .filter_map(|entry| entry.body())
             .find(|body| body.declaration().name() == "root")
             .unwrap()

@@ -3,7 +3,8 @@
 use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
 use crate::errors::RuntimePlanLowerError;
 use crate::semantic_facts::{
-    RuntimeExecutableSemanticFactView, RuntimeNormalizedType, RuntimeScopeOwner,
+    RuntimeBuiltinIteratorFact, RuntimeExecutableSemanticFactView, RuntimeNormalizedType,
+    RuntimeScopeOwner,
 };
 use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlanBuilder};
 use arcweft_lang_hir::identity::ExprId;
@@ -99,25 +100,21 @@ impl LocalRequest<'_> {
             RequestKind::Scope { .. } => Role::ScopeCarrier,
         }
     }
-    fn count(&self) -> Result<usize, RuntimePlanLowerError> {
+    fn count(&self) -> u64 {
         match &self.kind {
-            RequestKind::Value { .. } => Ok(1),
-            RequestKind::Try { residual, .. } => Ok(1 + usize::from(residual.is_some())),
-            RequestKind::Scope { residual, .. } => Ok(2 + usize::from(residual.is_some())),
+            RequestKind::Value { .. } => 1,
+            RequestKind::Try { residual, .. } => 1 + u64::from(residual.is_some()),
+            RequestKind::Scope { residual, .. } => 2 + u64::from(residual.is_some()),
             RequestKind::Map {
                 rows,
                 iterator,
                 residual,
                 ..
-            } => usize::try_from(*rows)
-                .ok()
-                .and_then(|rows| rows.checked_mul(2))
-                .and_then(|rows| {
-                    rows.checked_add(
-                        1 + 2 * usize::from(iterator.is_some()) + usize::from(residual.is_some()),
-                    )
-                })
-                .ok_or_else(|| RuntimePlanLowerError::new("Map generated local count overflow")),
+            } => {
+                1 + u64::from(*rows) * 2
+                    + 2 * u64::from(iterator.is_some())
+                    + u64::from(residual.is_some())
+            }
         }
     }
     fn visit_declarations(
@@ -256,7 +253,7 @@ impl LocalRequest<'_> {
 /// A compact, unique inventory; only admitted requests may expand into seeds.
 struct ControlLocalInventory<'a> {
     requests: Vec<LocalRequest<'a>>,
-    count: usize,
+    count: u64,
 }
 impl<'a> ControlLocalInventory<'a> {
     fn from_facts(
@@ -329,7 +326,7 @@ impl<'a> ControlLocalInventory<'a> {
             roles.push(role);
             inventory.count = inventory
                 .count
-                .checked_add(request.count()?)
+                .checked_add(request.count())
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("control temporary inventory count overflow")
                 })?;
@@ -434,7 +431,7 @@ impl<'a> ControlLocalInventory<'a> {
                     input,
                     output,
                     rows,
-                    iterator: map.iteration().map(|iteration| iteration.iterator()),
+                    iterator: map.iteration().map(RuntimeBuiltinIteratorFact::iterator),
                     residual,
                 },
             });
@@ -446,7 +443,12 @@ impl<'a> ControlLocalInventory<'a> {
         function: Option<&RuntimeNormalizedType>,
     ) -> Result<Vec<RuntimeLocalDeclarationSeed>, RuntimePlanLowerError> {
         let mut seeds = Vec::new();
-        seeds.try_reserve_exact(self.count).map_err(|error| {
+        let count = usize::try_from(self.count).map_err(|_| {
+            RuntimePlanLowerError::new(
+                "admitted control temporary count does not fit allocation sizes",
+            )
+        })?;
+        seeds.try_reserve_exact(count).map_err(|error| {
             RuntimePlanLowerError::new(format!(
                 "control temporary storage admission failed: {error}"
             ))
@@ -468,7 +470,7 @@ impl<'a> ControlLocalInventory<'a> {
                 Ok(())
             })?;
         }
-        if seeds.len() != self.count {
+        if seeds.len() != count {
             return Err(RuntimePlanLowerError::new(
                 "control temporary declaration count disagrees with its inventory",
             ));
