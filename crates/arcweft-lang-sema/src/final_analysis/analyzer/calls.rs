@@ -4077,6 +4077,7 @@ impl Analyzer<'_, '_, '_> {
                                 *value,
                                 AnalyzerExpressionExpectation::ApplicationCallee(
                                     super::expressions::AnalyzerApplicationCalleeExpectation {
+                                        purpose: super::expressions::AnalyzerApplicationCalleePurpose::Invocation,
                                         parameters: &parameters,
                                         result: expected,
                                         scope_lease: expectation.nested_call_scope_lease(),

@@ -111,10 +111,21 @@ fn curried_map_admission_keeps_retained_callback_await() {
             None,
         )
         .unwrap();
-    assert!(matches!(
-        context.checked_deterministic_program(source),
-        Err(crate::final_analysis::CheckedProgramAdmissionError::Suspension)
-    ));
+    let inputs = context.checked_execution_input_abi(source.clone()).unwrap();
+    assert_eq!(
+        inputs.suspension(),
+        crate::final_analysis::CheckedSuspensionRole::MaySuspend
+    );
+    let mut expected = crate::effects::EffectSet::new();
+    expected.insert(crate::effects::EffectId::control_suspend());
+    assert_eq!(inputs.effects(), &expected);
+    let admission = context.checked_deterministic_program(source);
+    // Effect admission runs before the independent suspension check.
+    let Err(crate::final_analysis::CheckedProgramAdmissionError::Effects { effects }) = admission
+    else {
+        panic!("expected the complete suspend effect before extraction: {admission:?}");
+    };
+    assert_eq!(effects, expected);
 }
 
 #[test]

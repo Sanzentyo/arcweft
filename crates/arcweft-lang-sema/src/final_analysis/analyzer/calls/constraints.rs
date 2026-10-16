@@ -5073,7 +5073,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 return_type,
                 binder,
                 ..
-            } = pattern
+            } = &pattern
             else {
                 return Err(CallAnalysisFailure::Invariant(
                     CallAnalysisInvariant::Constraint(
@@ -5081,7 +5081,11 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     ),
                 ));
             };
-            if !binder.is_empty() {
+            let invocation = matches!(
+                next.purpose,
+                super::super::expressions::AnalyzerApplicationCalleePurpose::Invocation
+            );
+            if invocation && !binder.is_empty() {
                 return Err(CallAnalysisFailure::Invariant(
                     CallAnalysisInvariant::Constraint(
                         CallConstraintInvariant::PreparedFunctionTypeMismatch,
@@ -5092,16 +5096,25 @@ pub(crate) fn validate_and_prepare_call_constraints(
             // parameters. Its optional result has the opposite direction.
             // Both use this candidate's existing application scope; schema
             // variables never escape into an enclosing actual-type scope.
-            next_application_constraints.push(PreparedCallTypeConstraint {
-                source: AnalyzerCallConstraintSource::Result {
-                    source: result_source,
-                },
-                pattern: TypeKind::Tuple(params),
-                actual: TypeKind::Tuple(next.parameters.to_vec()),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
-            });
-            pattern = *return_type;
-            next.result
+            if binder.is_empty() {
+                next_application_constraints.push(PreparedCallTypeConstraint {
+                    source: AnalyzerCallConstraintSource::Result {
+                        source: result_source,
+                    },
+                    pattern: TypeKind::Tuple(params.clone()),
+                    actual: TypeKind::Tuple(next.parameters.to_vec()),
+                    acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                });
+            }
+            if invocation {
+                pattern = return_type.as_ref().clone();
+                next.result
+            } else {
+                // A contextual function value constrains the whole remaining
+                // function, including future binders. It has not consumed a
+                // group; only an actual next invocation peels that group.
+                expected_result
+            }
         } else {
             expected_result
         };

@@ -102,7 +102,14 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
 /// The next application constrains input and result types, but contributes
 /// no new effect bound to the callable being selected.
 #[derive(Clone, Copy, Debug)]
+pub(super) enum AnalyzerApplicationCalleePurpose {
+    Invocation,
+    FunctionValue,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub(super) struct AnalyzerApplicationCalleeExpectation<'a> {
+    pub(super) purpose: AnalyzerApplicationCalleePurpose,
     pub(super) parameters: &'a [TypeKind],
     pub(super) result: Option<&'a TypeKind>,
     pub(super) scope_lease:
@@ -142,6 +149,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                     return None;
                 };
                 Some(AnalyzerApplicationCalleeExpectation {
+                    purpose: AnalyzerApplicationCalleePurpose::FunctionValue,
                     parameters: params,
                     result: Some(return_type),
                     scope_lease: self.nested_call_scope_lease(),

@@ -224,17 +224,6 @@ flow main() -> i64 {{ {body} }}
         panic!("one flow");
     };
     let mut native = Engine::for_flow(compiled.plan.clone(), &flow.id).unwrap();
-    let lowered = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "map-order.arcw")
-        .lower()
-        .unwrap()
-        .program;
-    let bytes = lowered.encode_canonical().unwrap();
-    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
-    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
-        decoded,
-        arcweft_core::awbc::schema::AwbcEntryId(0),
-    )
-    .unwrap();
     let options = RuntimeStepOptions {
         mode: RuntimeStepMode::OneOp,
         budget: RuntimeStepBudget { max_ops: 1 },
@@ -279,6 +268,17 @@ flow main() -> i64 {{ {body} }}
         messages
     );
     assert_eq!(native_backend.stats().pure_calls, pure_calls);
+    let lowered = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "map-order.arcw")
+        .lower()
+        .unwrap()
+        .program;
+    let bytes = lowered.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default()).unwrap();
+    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .unwrap();
     assert_eq!(
         run(&mut || awbc.step_with_pure_backend(Default::default(), options, &mut awbc_backend)),
         messages
