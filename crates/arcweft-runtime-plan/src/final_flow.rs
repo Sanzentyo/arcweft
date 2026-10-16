@@ -658,6 +658,7 @@ impl FinalLoweringContext<'_, '_> {
             (&self.control.pipes, &self.control.tries),
         )
         .with_scope_locals(&self.control.scopes)
+        .with_map_functions(&self.control.map_functions)
         .with_specialized_operand_locals(self.specialized_operand_locals)
         .with_closure_sites(self.closure_sites)
         .with_format_attempts(self.format_attempts)
@@ -675,7 +676,7 @@ impl FinalLoweringContext<'_, '_> {
         Ok(self
             .expr_lowerer(module)
             .with_locals(self.executable_locals(scope.scope())?)
-            .with_control_locals(&control.pipes, &control.tries)
+            .with_control_locals(&control.pipes, &control.tries, &control.map_functions)
             .with_scope_locals(&control.scopes)
             .with_specialized_operand_locals(
                 self.executable_specialized_operand_locals(scope.scope())?,
@@ -3561,6 +3562,7 @@ fn define_function_sites(
                 .with_control_locals(
                     &definition.locals.control.pipes,
                     &definition.locals.control.tries,
+                    &definition.locals.control.map_functions,
                 )
                 .with_scope_locals(&definition.locals.control.scopes)
                 .with_specialized_operand_locals(&definition.locals.specialized_operands),
@@ -3669,7 +3671,11 @@ fn define_closure_sites(
                 context
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
-                    .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_control_locals(
+                        &locals.control.pipes,
+                        &locals.control.tries,
+                        &locals.control.map_functions,
+                    )
                     .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(RuntimeScopedExecutableSemanticFactView::closure(
@@ -3747,7 +3753,11 @@ fn define_project_function_sites(
                 context
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
-                    .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_control_locals(
+                        &locals.control.pipes,
+                        &locals.control.tries,
+                        &locals.control.map_functions,
+                    )
                     .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(
@@ -3853,7 +3863,11 @@ fn define_project_default_function_sites(
                 context
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
-                    .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_control_locals(
+                        &locals.control.pipes,
+                        &locals.control.tries,
+                        &locals.control.map_functions,
+                    )
                     .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(
@@ -4948,6 +4962,7 @@ fn define_dialogue_effect_sites<'facts>(
                         .with_control_locals(
                             &definition.locals.control.pipes,
                             &definition.locals.control.tries,
+                            &definition.locals.control.map_functions,
                         )
                         .with_scope_locals(&definition.locals.control.scopes)
                         .with_specialized_operand_locals(&definition.locals.specialized_operands),
@@ -6318,6 +6333,7 @@ impl<'a> FinalFlowLowerer<'a> {
             (&self.control.pipes, &self.control.tries),
         )
         .with_closure_sites(self.closure_sites)
+        .with_map_functions(&self.control.map_functions)
         .with_format_attempts(self.format_attempts)
         .with_project_callable_states(self.project_callable_states)
         .with_callable_sources(self.callable_sources)

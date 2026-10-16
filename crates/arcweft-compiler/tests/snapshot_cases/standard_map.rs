@@ -2,7 +2,16 @@ use super::*;
 
 #[test]
 fn captured_map_restores_its_original_callback_and_continues_remaining_rows() {
-    let source = r#"
+    assert_captured_map_snapshot(false);
+}
+
+#[test]
+fn retained_map_prefix_restores_its_mapping_and_original_captured_callback() {
+    assert_captured_map_snapshot(true);
+}
+
+fn assert_captured_map_snapshot(retained: bool) {
+    let original = r#"
 entry cli @entry.main { goto @flow.main }
 fn score(base: i64, bonus: i64) -> i64 { base * (bonus + 2i64) }
 fn mapped(values: Array<i64, 3>, bonus: i64) -> i64 {
@@ -10,12 +19,44 @@ fn mapped(values: Array<i64, 3>, bonus: i64) -> i64 {
 }
 flow main() -> i64 { return mapped([1i64, 2i64, 3i64], 2i64) }
 "#;
-    let compiled = compile_source(source).unwrap();
+    let source = if retained {
+        original.replace("values.map(|item| score(item, bonus)).sum()", "let mapper: Array<i64, 3> -> Array<i64, 3> effects {} = map(|item| score(item, bonus)); mapper(values).sum()")
+    } else {
+        original.to_owned()
+    };
+    let compiled = compile_source(&source).unwrap();
+    assert_eq!(
+        compiled
+            .plan
+            .function_sites()
+            .iter()
+            .filter(|site| site.capture_inputs().next().is_some())
+            .count(),
+        if retained { 2 } else { 1 }
+    );
     let callbacks = compiled
         .plan
         .function_sites()
         .iter()
-        .filter(|site| site.capture_inputs().next().is_some())
+        .filter(|site| {
+            site.capture_inputs().any(|input| {
+                let local = compiled
+                    .plan
+                    .local_declarations()
+                    .get(input.input_local())
+                    .unwrap();
+                compiled
+                    .plan
+                    .type_table()
+                    .get(local.ty())
+                    .unwrap()
+                    .semantic_identity()
+                    == arcweft_core::pattern::RuntimeCheckedType::Signed(
+                        arcweft_core::value::RuntimeSignedIntWidth::I64,
+                    )
+                    .semantic_identity_digest()
+            })
+        })
         .map(|site| site.definition())
         .collect::<Vec<_>>();
     let [callback] = callbacks.as_slice() else {
@@ -46,7 +87,7 @@ flow main() -> i64 { return mapped([1i64, 2i64, 3i64], 2i64) }
         FlowFiberStatus::Done(FlowExit::Return("24".to_owned()))
     );
 
-    let bytes = awfb_bytes_from_source(source, [0x36; 32]);
+    let bytes = awfb_bytes_from_source(&source, [0x36; 32]);
     let mut session = session_from_bytes(&bytes);
     let RuntimeProgramOwner::Awbc(program) = session.program_owner() else {
         panic!("canonical AWBC owner")

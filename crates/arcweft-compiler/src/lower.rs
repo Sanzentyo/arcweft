@@ -237,10 +237,10 @@ use arcweft_runtime_plan::{
         RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
         RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
         RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey,
-        RuntimeTraitMethodInstanceUse, RuntimeTraitMethodUseScope, RuntimeTriggerAdmission,
-        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
-        RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeStandardMapPrefix, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+        RuntimeTraitMethodInstanceKey, RuntimeTraitMethodInstanceUse, RuntimeTraitMethodUseScope,
+        RuntimeTriggerAdmission, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
+        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -9275,7 +9275,7 @@ fn checked_call_receiver_expression(
     Ok(source)
 }
 
-fn runtime_standard_map_call(
+fn runtime_standard_map_target(
     owner: ExprId,
     application: &CheckedCallApplication,
     family: StandardMapFamily,
@@ -9283,34 +9283,8 @@ fn runtime_standard_map_call(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     lexical: RuntimeExecutableInstantiation<'_>,
-) -> Result<RuntimeStandardMapCall, RuntimeSemanticProjectionError> {
-    if !matches!(
-        application.result(),
-        arcweft_lang_sema::callable::CheckedCallResult::Value(_)
-    ) {
-        return Err(RuntimeSemanticProjectionError::Call {
-            owner,
-            reason: "a standard map runtime target must be fully applied".to_owned(),
-        });
-    }
+) -> Result<RuntimeResolvedStaticCallTarget, RuntimeSemanticProjectionError> {
     let mapping = checked_call_parameter_expression(owner, application, 0, 0)?;
-    let (receiver, order) = match application.core().execution().receiver() {
-        CheckedCallReceiverProjection::Operand { .. } => (
-            checked_call_receiver_expression(owner, application)?,
-            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
-        ),
-        CheckedCallReceiverProjection::None => (
-            checked_call_parameter_expression(owner, application, 1, 0)?,
-            RuntimeStandardMapOperandOrder::MappingThenReceiver,
-        ),
-        CheckedCallReceiverProjection::SemanticOnly { .. }
-        | CheckedCallReceiverProjection::Contextual { .. } => {
-            return Err(RuntimeSemanticProjectionError::Call {
-                owner,
-                reason: "standard map requires one value receiver operand".to_owned(),
-            });
-        }
-    };
     let family = match family {
         StandardMapFamily::Vec => RuntimeStandardMapFamily::Vec,
         StandardMapFamily::Seq => RuntimeStandardMapFamily::Seq,
@@ -9388,8 +9362,33 @@ fn runtime_standard_map_call(
         | RuntimeStandardMapFamily::Option
         | RuntimeStandardMapFamily::Result => None,
     };
-    Ok(RuntimeStandardMapCall::new(
-        family, mapping, receiver, order, iteration,
+    if matches!(
+        application.result(),
+        arcweft_lang_sema::callable::CheckedCallResult::Continuation(_)
+    ) {
+        return Ok(RuntimeResolvedStaticCallTarget::StandardMapPrefix(
+            RuntimeStandardMapPrefix::new(family, mapping, iteration),
+        ));
+    }
+    let (receiver, order) = match application.core().execution().receiver() {
+        CheckedCallReceiverProjection::Operand { .. } => (
+            checked_call_receiver_expression(owner, application)?,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+        ),
+        CheckedCallReceiverProjection::None => (
+            checked_call_parameter_expression(owner, application, 1, 0)?,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+        ),
+        CheckedCallReceiverProjection::SemanticOnly { .. }
+        | CheckedCallReceiverProjection::Contextual { .. } => {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "standard map requires one value receiver operand".to_owned(),
+            });
+        }
+    };
+    Ok(RuntimeResolvedStaticCallTarget::StandardMap(
+        RuntimeStandardMapCall::new(family, mapping, receiver, order, iteration),
     ))
 }
 
@@ -9599,7 +9598,7 @@ fn runtime_call_target(
         ));
     }
     if let CallableValidator::StandardMap(family) = selected.schema().validator() {
-        return runtime_standard_map_call(
+        return runtime_standard_map_target(
             owner,
             application,
             *family,
@@ -9607,8 +9606,7 @@ fn runtime_call_target(
             world,
             analysis,
             lexical,
-        )
-        .map(RuntimeResolvedStaticCallTarget::StandardMap);
+        );
     }
     if matches!(selected.schema().validator(), CallableValidator::Format) {
         let checked =

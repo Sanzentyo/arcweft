@@ -129,12 +129,24 @@ impl AnalyzerApplicationCalleeExpectation<'_> {
 }
 
 impl<'a> AnalyzerExpressionExpectation<'a> {
-    pub(super) const fn application_callee(
-        &self,
-    ) -> Option<AnalyzerApplicationCalleeExpectation<'a>> {
+    pub(super) fn application_callee(&self) -> Option<AnalyzerApplicationCalleeExpectation<'_>> {
         match self {
             Self::ApplicationCallee(expected) => Some(*expected),
-            _ => None,
+            _ => {
+                let TypeKind::Function {
+                    params,
+                    return_type,
+                    ..
+                } = self.function_value_target()?
+                else {
+                    return None;
+                };
+                Some(AnalyzerApplicationCalleeExpectation {
+                    parameters: params,
+                    result: Some(return_type),
+                    scope_lease: self.nested_call_scope_lease(),
+                })
+            }
         }
     }
     pub(super) fn function_value_source(self) -> Self {

@@ -2707,6 +2707,24 @@ impl CallableSignatureSchema {
         self.core.evaluated_effect = Some(effect);
         Self::seal(self.core)
     }
+
+    /// An eager higher-order operation invokes this already sealed input
+    /// function. Its row stays owned by the signature's parameter issuer.
+    fn with_invoked_parameter_effects(
+        mut self,
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    ) -> Result<Self, CallableSchemaError> {
+        let function = self
+            .group(group)
+            .and_then(|group| group.parameters().get(parameter.get()))
+            .and_then(CallableParameter::declared_type);
+        let Some(TypeKind::Function { effects, .. }) = function else {
+            return Err(CallableSchemaError::InvokedParameterNotFunction { group, parameter });
+        };
+        self.core.effects = CallableEffectSchema::fixed(effects.clone());
+        Self::seal(self.core)
+    }
     pub fn groups(&self) -> &[CallableParameterGroup] {
         &self.core.groups
     }

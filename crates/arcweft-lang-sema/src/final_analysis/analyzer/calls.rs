@@ -5622,6 +5622,10 @@ impl Analyzer<'_, '_, '_> {
             match selected.instantiation() {
                 CallableInstantiation::Receiver {
                     receiver: selected_receiver,
+                }
+                | CallableInstantiation::Extension {
+                    receiver: selected_receiver,
+                    ..
                 } if self
                     .facts
                     .expressions()

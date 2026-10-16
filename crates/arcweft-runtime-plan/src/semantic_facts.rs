@@ -4264,6 +4264,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Line(_),
@@ -4323,6 +4324,9 @@ pub enum RuntimeResolvedStaticCallTarget {
     /// semantic analysis; this projection selects its closed executable
     /// constructor family without falling through to a registered backend.
     StandardMap(RuntimeStandardMapCall),
+    /// Captures the first group's evaluated mapping into an ordinary
+    /// executable function site for the remaining receiver group.
+    StandardMapPrefix(RuntimeStandardMapPrefix),
     TraitMethod {
         method: ImplMethodDeclarationId,
         receiver: RuntimeReceiverMode,
@@ -4370,6 +4374,36 @@ pub struct RuntimeStandardMapCall {
     receiver: ExprId,
     order: RuntimeStandardMapOperandOrder,
     iteration: Option<Box<RuntimeBuiltinIteratorFact>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeStandardMapPrefix {
+    family: RuntimeStandardMapFamily,
+    mapping: ExprId,
+    iteration: Option<Box<RuntimeBuiltinIteratorFact>>,
+}
+
+impl RuntimeStandardMapPrefix {
+    pub fn new(
+        family: RuntimeStandardMapFamily,
+        mapping: ExprId,
+        iteration: Option<RuntimeBuiltinIteratorFact>,
+    ) -> Self {
+        Self {
+            family,
+            mapping,
+            iteration: iteration.map(Box::new),
+        }
+    }
+    pub const fn family(&self) -> RuntimeStandardMapFamily {
+        self.family
+    }
+    pub const fn mapping(&self) -> ExprId {
+        self.mapping
+    }
+    pub fn iteration(&self) -> Option<&RuntimeBuiltinIteratorFact> {
+        self.iteration.as_deref()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -8142,6 +8176,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                    | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                     | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -11848,6 +11883,15 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
         ) => {}
+        RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::StandardMapPrefix(map),
+        ) => {
+            if !runtime_standard_map_prefix_matches_operands(call, map, expression_source_type) {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(map)) => {
             if !runtime_standard_map_matches_operands(call, map, expression_source_type) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -12221,27 +12265,81 @@ fn runtime_standard_map_matches_operands(
     let Some(result) = result else {
         return false;
     };
+    runtime_standard_map_types_match(
+        map.family(),
+        map.iteration(),
+        mapping.ty(),
+        receiver.ty(),
+        result,
+    )
+}
+
+fn runtime_standard_map_prefix_matches_operands(
+    call: &RuntimeResolvedCall,
+    map: &RuntimeStandardMapPrefix,
+    function: Option<&RuntimeNormalizedType>,
+) -> bool {
+    if call.result() != RuntimeCallResultShape::PartialFunction {
+        return false;
+    }
+    let [mapping] = call.operands() else {
+        return false;
+    };
+    if mapping.parameter() != Some(RuntimeCallParameterCoordinate::new(0, 0))
+        || mapping.source() != RuntimeResolvedCallOperandSource::Expression(map.mapping())
+        || !matches!(
+            mapping.projection(),
+            RuntimeResolvedCallOperandProjection::Scalar
+        )
+    {
+        return false;
+    }
+    let Some(RuntimeTypeShape::Function {
+        parameters, result, ..
+    }) = function.map(RuntimeNormalizedType::shape)
+    else {
+        return false;
+    };
+    let [receiver] = parameters.as_ref() else {
+        return false;
+    };
+    runtime_standard_map_types_match(
+        map.family(),
+        map.iteration(),
+        mapping.ty(),
+        receiver,
+        result,
+    )
+}
+
+fn runtime_standard_map_types_match(
+    family: RuntimeStandardMapFamily,
+    iteration: Option<&RuntimeBuiltinIteratorFact>,
+    mapping: &RuntimeNormalizedType,
+    receiver: &RuntimeNormalizedType,
+    result: &RuntimeNormalizedType,
+) -> bool {
     let RuntimeTypeShape::Function {
         parameters,
         result: mapping_result,
         ..
-    } = mapping.ty().shape()
+    } = mapping.shape()
     else {
         return false;
     };
     let [mapping_input] = parameters.as_ref() else {
         return false;
     };
-    let Some((receiver_input, result_output)) = map.item_types(receiver.ty(), result) else {
+    let Some((receiver_input, result_output)) = family.item_types(receiver, result) else {
         return false;
     };
-    let iteration_matches = match map.family() {
+    let iteration_matches = match family {
         RuntimeStandardMapFamily::Vec
         | RuntimeStandardMapFamily::Seq
-        | RuntimeStandardMapFamily::Slice => map.iteration().is_some_and(|iteration| {
+        | RuntimeStandardMapFamily::Slice => iteration.is_some_and(|iteration| {
             iteration.item() == receiver_input
                 && matches!(
-                    (map.family(), iteration.family()),
+                    (family, iteration.family()),
                     (
                         RuntimeStandardMapFamily::Vec,
                         arcweft_core::plan::RuntimeBuiltinIteratorFamily::Vec
@@ -12256,7 +12354,7 @@ fn runtime_standard_map_matches_operands(
         }),
         RuntimeStandardMapFamily::Array
         | RuntimeStandardMapFamily::Option
-        | RuntimeStandardMapFamily::Result => map.iteration().is_none(),
+        | RuntimeStandardMapFamily::Result => iteration.is_none(),
     };
     mapping_input == receiver_input && mapping_result.as_ref() == result_output && iteration_matches
 }
@@ -12267,7 +12365,17 @@ impl RuntimeStandardMapCall {
         receiver: &'a RuntimeNormalizedType,
         result: &'a RuntimeNormalizedType,
     ) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
-        match (self.family(), receiver.shape(), result.shape()) {
+        self.family().item_types(receiver, result)
+    }
+}
+
+impl RuntimeStandardMapFamily {
+    pub(crate) fn item_types<'a>(
+        self,
+        receiver: &'a RuntimeNormalizedType,
+        result: &'a RuntimeNormalizedType,
+    ) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
+        match (self, receiver.shape(), result.shape()) {
             (
                 RuntimeStandardMapFamily::Vec,
                 RuntimeTypeShape::Sequence {
@@ -12754,6 +12862,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::Variant(_)
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                | RuntimeResolvedStaticCallTarget::StandardMapPrefix(_)
                 | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)

@@ -1005,6 +1005,17 @@ impl StandardMapFamily {
                     .expect("standard map receiver parameter is representable"),
             ))
         })
+        .and_then(|schema| {
+            if self.callback_is_immediate() {
+                schema.with_invoked_parameter_effects(
+                    crate::callable::CallableGroupIndex::ZERO,
+                    CallableParameterIndex::try_from_usize(0)
+                        .expect("the callback has one canonical coordinate"),
+                )
+            } else {
+                Ok(schema)
+            }
+        })
         .expect("standard map schema has one canonical explicit receiver")
     }
 }

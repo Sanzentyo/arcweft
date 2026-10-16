@@ -172,3 +172,89 @@ flow map_control() -> String {
         assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= 64);
     }
 }
+
+#[test]
+fn source_map_dense_u32_program_keeps_typed_callbacks_under_the_default_budget() {
+    use arcweft_core::engine::{Engine, FlowFiberStatus};
+    use arcweft_core::pure::RuntimePureCallBackend;
+    use arcweft_lang_sema::final_analysis::{CheckedExecutionBodyOwner, CheckedExecutionSource};
+    use arcweft_runtime_accelerator::{
+        RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
+        RuntimePureWorkerCount,
+    };
+    use std::sync::Arc;
+    let compiled = arcweft_compiler::source::compile_source(
+        r#"
+#[pure]
+fn increment(value: u32) -> u32 { return value + 1u32 }
+pub fn root(values: Seq<u32>) -> i64 { values.map(increment).sum() }
+flow main() -> String { return "unused" }
+"#,
+    )
+    .unwrap();
+    let declaration = compiled
+        .analysis
+        .final_analysis()
+        .hir_topology()
+        .modules()
+        .iter()
+        .flat_map(|module| module.entries())
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == "root")
+        .unwrap()
+        .declaration()
+        .clone();
+    let selected = compiled
+        .analysis
+        .compile_deterministic_program(
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                declaration,
+                role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+            }),
+            None,
+            &Default::default(),
+        )
+        .unwrap();
+    let mut engine = Engine::for_program_invocation(
+        Arc::clone(selected.plan()),
+        selected.program(),
+        vec![arcweft_core::value::runtime_sequence_dense_u32(
+            (0..128).collect(),
+        )],
+    )
+    .unwrap();
+    let mut accelerator = RuntimePureAccelerator::with_config(
+        RuntimePureAcceleratorConfig {
+            backend: RuntimePureBackendMode::Auto,
+            workers: RuntimePureWorkerCount::Fixed(1),
+            batch_min_len: 1024,
+            ..RuntimePureAcceleratorConfig::default()
+        },
+        selected.plan(),
+    );
+    let options = arcweft_core::step::RuntimeStepOptions::default();
+    let mut steps = 0;
+    for _ in 0..4096 {
+        let step = engine.step_with_pure_backend(Default::default(), options, &mut accelerator);
+        steps += 1;
+        assert!(step.stats.executed_ops <= options.budget.max_ops);
+        assert!(
+            step.output.diagnostics.is_empty(),
+            "{:?}",
+            step.output.diagnostics
+        );
+        assert!(!matches!(step.fiber_status, FlowFiberStatus::Failed(_)));
+        if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+    }
+    assert!(
+        steps > 1,
+        "default budget must preserve the ordinary Map continuation"
+    );
+    assert_eq!(
+        engine.take_program_result().unwrap().unwrap().1,
+        arcweft_core::value::RuntimeValue::i64(8256)
+    );
+    assert_eq!(accelerator.stats().pure_calls, 128);
+}

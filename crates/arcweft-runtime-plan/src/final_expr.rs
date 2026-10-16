@@ -76,6 +76,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
     try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
     scope_locals: Option<&'hir BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>>,
+    map_functions: Option<&'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>>,
     scope_continuations: Vec<RuntimeScopeContinuation>,
     /// Synthetic destinations for specialized call operands.  Structural
     /// payloads are allowed to consume these locals in ABI/role order only
@@ -215,6 +216,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             pipe_locals,
             try_locals,
             scope_locals: None,
+            map_functions: None,
             scope_continuations: Vec::new(),
             specialized_operand_locals: None,
             closure_sites: None,
@@ -246,9 +248,11 @@ impl<'hir> FinalExprLowerer<'hir> {
         mut self,
         pipes: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
         tries: &'hir BTreeMap<ExprId, TryLocalSeeds>,
+        map_functions: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     ) -> Self {
         self.pipe_locals = pipes;
         self.try_locals = tries;
+        self.map_functions = Some(map_functions);
         self
     }
 
@@ -257,6 +261,14 @@ impl<'hir> FinalExprLowerer<'hir> {
         scopes: &'hir BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
     ) -> Self {
         self.scope_locals = Some(scopes);
+        self
+    }
+
+    pub(crate) fn with_map_functions(
+        mut self,
+        sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    ) -> Self {
+        self.map_functions = Some(sites);
         self
     }
 
@@ -947,6 +959,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             pipe_locals: self.pipe_locals,
             try_locals: self.try_locals,
             scope_locals: self.scope_locals,
+            map_functions: self.map_functions,
             scope_continuations: self.scope_continuations.clone(),
             specialized_operand_locals: self.specialized_operand_locals,
             closure_sites: self.closure_sites,
@@ -2004,6 +2017,21 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
+        if let RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::StandardMapPrefix(map),
+        ) = selected.dispatch()
+        {
+            let site = self
+                .map_functions
+                .and_then(|sites| sites.get(&id))
+                .ok_or_else(|| {
+                    format!("Map prefix {id:?} has no admitted executable function site")
+                })?;
+            return Ok(RuntimeExprSeedKind::Function {
+                site: site.clone(),
+                captures: Box::new([self.lower(map.mapping())?]),
+            });
+        }
         if let Some(mutation) = selected.mutation() {
             let (source, place) = match mutation {
                 RuntimeResolvedCallMutation::VecPopFront { source, place }
@@ -2111,6 +2139,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
                 _,
             )) => unreachable!("standard map is lowered before generic call operands"),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::StandardMapPrefix(_),
+            ) => unreachable!("Map prefix is lowered before generic call operands"),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(
                 registered,
             )) => Ok(RuntimeExprSeedKind::Call {

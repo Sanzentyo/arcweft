@@ -284,6 +284,7 @@ pub(super) fn define_trait_methods(
                     .with_control_locals(
                         &definition.locals.control.pipes,
                         &definition.locals.control.tries,
+                        &definition.locals.control.map_functions,
                     )
                     .with_scope_locals(&definition.locals.control.scopes)
                     .with_specialized_operand_locals(&definition.locals.specialized_operands)

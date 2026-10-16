@@ -23,6 +23,13 @@ pub(super) struct ControlLocals {
     pub(super) expression_final_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
     pub(super) maps: BTreeMap<ExprId, MapLocalSeeds>,
+    pub(super) map_frames: BTreeMap<ExprId, MapFrameLocalSeeds>,
+    pub(super) map_functions: BTreeMap<ExprId, arcweft_core::plan::RuntimeFunctionSiteSeedId>,
+}
+#[derive(Clone)]
+pub(super) struct MapFrameLocalSeeds {
+    pub(super) source: RuntimeLocalSeedId,
+    pub(super) result: RuntimeLocalSeedId,
 }
 #[derive(Clone, Default)]
 pub(super) struct MapLocalSeeds {
@@ -53,6 +60,11 @@ impl ValueRole {
     }
 }
 enum RequestKind<'a> {
+    MapFrame {
+        owner: ExprId,
+        receiver: &'a RuntimeNormalizedType,
+        result: &'a RuntimeNormalizedType,
+    },
     Value {
         owner: ExprId,
         role: ValueRole,
@@ -89,6 +101,7 @@ impl LocalRequest<'_> {
             RequestKind::Value { owner, .. }
             | RequestKind::Try { owner, .. }
             | RequestKind::Map { owner, .. } => RuntimeScopeOwner::Expression(*owner),
+            RequestKind::MapFrame { owner, .. } => RuntimeScopeOwner::Expression(*owner),
             RequestKind::Scope { owner, .. } => *owner,
         }
     }
@@ -97,12 +110,14 @@ impl LocalRequest<'_> {
             RequestKind::Value { role, .. } => role.semantic_role(),
             RequestKind::Try { .. } => Role::TrySuccess,
             RequestKind::Map { .. } => Role::MapCallable,
+            RequestKind::MapFrame { .. } => Role::MapOutput,
             RequestKind::Scope { .. } => Role::ScopeCarrier,
         }
     }
     fn count(&self) -> u64 {
         match &self.kind {
             RequestKind::Value { .. } => 1,
+            RequestKind::MapFrame { .. } => 2,
             RequestKind::Try { residual, .. } => 1 + u64::from(residual.is_some()),
             RequestKind::Scope { residual, .. } => 2 + u64::from(residual.is_some()),
             RequestKind::Map {
@@ -119,9 +134,46 @@ impl LocalRequest<'_> {
     }
     fn visit_declarations(
         &self,
-        visit: &mut impl FnMut(&RuntimeNormalizedType, Role) -> Result<(), RuntimePlanLowerError>,
+        visit: &mut impl FnMut(
+            &RuntimeNormalizedType,
+            arcweft_core::plan::RuntimeLocalDeclarationSource,
+        ) -> Result<(), RuntimePlanLowerError>,
     ) -> Result<(), RuntimePlanLowerError> {
+        if let RequestKind::MapFrame {
+            receiver, result, ..
+        } = &self.kind
+        {
+            let definition = self
+                .coordinate
+                .runtime_function_definition()
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                .generated_child(
+                    arcweft_core::plan::RuntimeGeneratedFunctionRole::StandardMapContinuation,
+                );
+            visit(
+                receiver,
+                arcweft_core::plan::RuntimeLocalDeclarationSource::Parameter(
+                    definition.generated_parameter(0),
+                ),
+            )?;
+            visit(
+                result,
+                self.coordinate
+                    .runtime_generated_local_source(Role::MapOutput)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+            )?;
+            return Ok(());
+        }
+        let mut visit = |ty: &RuntimeNormalizedType, role| {
+            visit(
+                ty,
+                self.coordinate
+                    .runtime_generated_local_source(role)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+            )
+        };
         match &self.kind {
+            RequestKind::MapFrame { .. } => unreachable!("frame declarations were emitted above"),
             RequestKind::Value { role, ty, .. } => visit(ty, role.semantic_role())?,
             RequestKind::Try {
                 success, residual, ..
@@ -179,6 +231,15 @@ impl LocalRequest<'_> {
             })
         };
         match &self.kind {
+            RequestKind::MapFrame { owner, .. } => {
+                result.map_frames.insert(
+                    *owner,
+                    MapFrameLocalSeeds {
+                        source: next()?,
+                        result: next()?,
+                    },
+                );
+            }
             RequestKind::Value { owner, role, .. } => {
                 let local = next()?;
                 match role {
@@ -391,6 +452,45 @@ impl<'a> ControlLocalInventory<'a> {
         }
         if let Some(call) = facts.call(owner)
             && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(
+                crate::semantic_facts::RuntimeResolvedStaticCallTarget::StandardMapPrefix(map),
+            ) = call.dispatch()
+        {
+            let crate::semantic_facts::RuntimeTypeShape::Function {
+                parameters, result, ..
+            } = ty.shape()
+            else {
+                return Err(RuntimePlanLowerError::new(
+                    "Map prefix has no function signature",
+                ));
+            };
+            let [receiver] = parameters.as_ref() else {
+                return Err(RuntimePlanLowerError::new(
+                    "Map prefix must retain one receiver formal",
+                ));
+            };
+            let callable = facts
+                .expression_type(map.mapping())
+                .ok_or_else(|| RuntimePlanLowerError::new("Map prefix mapping type is absent"))?;
+            self.requests.push(LocalRequest {
+                coordinate,
+                kind: RequestKind::MapFrame {
+                    owner,
+                    receiver,
+                    result,
+                },
+            });
+            self.map_request(
+                coordinate,
+                owner,
+                map.family(),
+                callable,
+                receiver,
+                result,
+                map.iteration(),
+            )?;
+        }
+        if let Some(call) = facts.call(owner)
+            && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(
                 crate::semantic_facts::RuntimeResolvedStaticCallTarget::StandardMap(map),
             ) = call.dispatch()
         {
@@ -400,42 +500,61 @@ impl<'a> ControlLocalInventory<'a> {
             let callable = facts
                 .expression_source_type(map.mapping())
                 .ok_or_else(|| RuntimePlanLowerError::new("Map callback has no checked type"))?;
-            let (input, output) = map.item_types(receiver, source).ok_or_else(|| {
-                RuntimePlanLowerError::new("Map family has inconsistent checked types")
-            })?;
-            let rows = if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
-                receiver.shape()
-            {
-                length
-                    .constant()
-                    .and_then(|length| u32::try_from(length).ok())
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(
-                            "Map Array length does not fit its generated local inventory",
-                        )
-                    })?
-            } else {
-                1
-            };
-            let residual = match receiver.shape() {
-                crate::semantic_facts::RuntimeTypeShape::Result { error, .. } => {
-                    Some(error.as_ref())
-                }
-                _ => None,
-            };
-            self.requests.push(LocalRequest {
+            self.map_request(
                 coordinate,
-                kind: RequestKind::Map {
-                    owner,
-                    callable,
-                    input,
-                    output,
-                    rows,
-                    iterator: map.iteration().map(RuntimeBuiltinIteratorFact::iterator),
-                    residual,
-                },
-            });
+                owner,
+                map.family(),
+                callable,
+                receiver,
+                source,
+                map.iteration(),
+            )?;
         }
+        Ok(())
+    }
+    fn map_request(
+        &mut self,
+        coordinate: &'a CheckedSemanticPath,
+        owner: ExprId,
+        family: crate::semantic_facts::RuntimeStandardMapFamily,
+        callable: &'a RuntimeNormalizedType,
+        receiver: &'a RuntimeNormalizedType,
+        result: &'a RuntimeNormalizedType,
+        iteration: Option<&'a RuntimeBuiltinIteratorFact>,
+    ) -> Result<(), RuntimePlanLowerError> {
+        let (input, output) = family.item_types(receiver, result).ok_or_else(|| {
+            RuntimePlanLowerError::new("Map family has inconsistent checked types")
+        })?;
+        let rows = if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
+            receiver.shape()
+        {
+            length
+                .constant()
+                .and_then(|length| u32::try_from(length).ok())
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(
+                        "Map Array length does not fit its generated local inventory",
+                    )
+                })?
+        } else {
+            1
+        };
+        let residual = match receiver.shape() {
+            crate::semantic_facts::RuntimeTypeShape::Result { error, .. } => Some(error.as_ref()),
+            _ => None,
+        };
+        self.requests.push(LocalRequest {
+            coordinate,
+            kind: RequestKind::Map {
+                owner,
+                callable,
+                input,
+                output,
+                rows,
+                iterator: iteration.map(RuntimeBuiltinIteratorFact::iterator),
+                residual,
+            },
+        });
         Ok(())
     }
     fn declarations(
@@ -454,11 +573,7 @@ impl<'a> ControlLocalInventory<'a> {
             ))
         })?;
         for request in &self.requests {
-            request.visit_declarations(&mut |ty, role| {
-                let origin = request
-                    .coordinate
-                    .runtime_generated_local_source(role)
-                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+            request.visit_declarations(&mut |ty, origin| {
                 seeds.push(match function.filter(|_| !ty.scope().is_root()) {
                     Some(function) => RuntimeLocalDeclarationSeed::in_function(
                         origin,
@@ -508,6 +623,8 @@ impl ControlLocals {
                 "control temporary admission retained an extra local",
             ));
         }
+        result.map_functions =
+            super::standard_map::admit_prefix_functions(facts, &result, builder)?;
         Ok(result)
     }
 }

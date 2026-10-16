@@ -107,6 +107,11 @@ pub enum CallableSchemaError {
     GenericUse(#[from] TypeGenericUseError),
     #[error("evaluated-effect schemas require a fixed effect row")]
     EvaluatedEffectRequiresFixedRow,
+    #[error("invoked parameter ({group:?}, {parameter:?}) has no declared function effect row")]
+    InvokedParameterNotFunction {
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    },
     #[error("callable schema candidate type parameter {parameter:?} does not occur in the schema")]
     MissingCandidateType { parameter: GenericTypeReference },
     #[error("callable schema candidate const parameter {parameter:?} does not occur in the schema")]

@@ -1463,6 +1463,7 @@ pub enum CheckedGeneratedLocalRole {
     MapIterator,
     MapNextIterator,
     MapResidual,
+    MapOutput,
 }
 
 impl CheckedGeneratedLocalRole {
@@ -1487,6 +1488,7 @@ impl CheckedGeneratedLocalRole {
             Self::MapIterator => 16,
             Self::MapNextIterator => 17,
             Self::MapResidual => 18,
+            Self::MapOutput => 19,
         };
         hasher.update(&[tag]);
         match self {

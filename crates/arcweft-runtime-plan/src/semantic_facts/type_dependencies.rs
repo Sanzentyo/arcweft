@@ -111,6 +111,16 @@ impl RuntimeResolvedCallDispatch {
 impl RuntimeResolvedStaticCallTarget {
     fn append_normalized_types<'a>(&'a self, roots: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
+            Self::StandardMapPrefix(map) => {
+                if let Some(iteration) = map.iteration() {
+                    roots.extend([
+                        iteration.item(),
+                        iteration.iterator(),
+                        iteration.next_value(),
+                        iteration.step(),
+                    ]);
+                }
+            }
             Self::StandardMap(map) => {
                 if let Some(iteration) = map.iteration() {
                     roots.extend([

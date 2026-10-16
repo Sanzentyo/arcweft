@@ -63,14 +63,29 @@ impl RuntimeFunctionDefinitionIdentity {
                 };
                 hash.update(&[5, exit]);
             }
+            RuntimeGeneratedFunctionRole::StandardMapContinuation => {
+                hash.update(&[6]);
+            }
         }
         Self(*hash.finalize().as_bytes())
+    }
+
+    /// Whole formal of a generated definition. Its stable identity belongs to
+    /// the definition and position, independently of frame-local allocation.
+    #[must_use]
+    pub fn generated_parameter(self, position: u32) -> RuntimeFunctionParameterIdentity {
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"arcweft.runtime.generated-function-parameter.v1\0");
+        hash.update(self.as_bytes());
+        hash.update(&position.to_le_bytes());
+        RuntimeFunctionParameterIdentity(*hash.finalize().as_bytes())
     }
 }
 
 /// Closed semantic purposes of generated executable functions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeGeneratedFunctionRole {
+    StandardMapContinuation,
     TaskRequest,
     FormatOperand {
         parameter: crate::value::RuntimeFmtParameterId,

@@ -1431,11 +1431,36 @@ impl<'a> LocalUseChecker<'a> {
                 }
             }
         }
+        // A direct continuation retains its evaluated inputs. Its static
+        // callee reference is not a captured runtime value. Value callees
+        // remain part of the footprint and must prove their own deep Copy.
+        let static_continuation = self
+            .analysis
+            .call(owner)
+            .and_then(|facts| facts.selected_application())
+            .is_some_and(|application| {
+                matches!(
+                    application.result(),
+                    crate::callable::CheckedCallResult::Continuation(_)
+                ) && matches!(
+                    application.core().callee(),
+                    crate::callable::CheckedCallCalleeExecution::Direct
+                )
+            });
         let children = self
             .analysis
             .checked_expression_edge_fact(owner)
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?
-            .child_expressions()
+            .edges()
+            .iter()
+            .filter(|edge| {
+                !static_continuation
+                    || !matches!(
+                        edge.role(),
+                        crate::semantic_coordinate::CheckedExpressionChildRole::Callee
+                    )
+            })
+            .map(|edge| edge.child())
             .collect::<Vec<_>>();
         for child in children {
             if !self.expression_is_copy(child, visiting)? {
