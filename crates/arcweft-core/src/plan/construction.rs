@@ -866,6 +866,22 @@ impl RuntimePlanBuilder {
         }
     }
 
+    /// Checks a complete local-request inventory before its declarations are
+    /// materialized. This does not reserve identities or mutate the builder;
+    /// admission rechecks the same issuer when it commits the complete batch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an earlier panic poisoned the private local request table.
+    pub fn check_local_request_capacity(&self, count: usize) -> Result<(), RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        self.locals
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .prepare_request_count(count)?;
+        Ok(())
+    }
+
     /// Atomically admits semantic types, checked local requests, and nominal
     /// domains against the complete source nominal schema graph for this batch.
     /// Local coordinates are materialized when a Core consumer uses a request.
@@ -3697,6 +3713,51 @@ mod tests {
         assert_eq!(
             checked.semantic_identity_digest(),
             other_layout.semantic_identity_digest()
+        );
+    }
+
+    #[test]
+    fn local_request_capacity_preflights_without_spending_or_publishing_rows() {
+        let mut builder = RuntimePlanBuilder::new();
+        let maximum = usize::try_from(u32::MAX).unwrap();
+        builder.check_local_request_capacity(maximum).unwrap();
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [RuntimeLocalDeclarationSeed::new(
+                    manual_local_source("first"),
+                    unit,
+                )],
+            )
+            .unwrap();
+        builder.check_local_request_capacity(maximum - 1).unwrap();
+        assert!(matches!(
+            builder.check_local_request_capacity(maximum),
+            Err(RuntimePlanBuildError::LocalDeclarations(
+                RuntimeLocalDeclarationTableError::IdentityExhausted
+            ))
+        ));
+        builder.check_local_request_capacity(maximum - 1).unwrap();
+        let admitted = builder
+            .admit_type_batch(
+                [],
+                [RuntimeLocalDeclarationSeed::new(
+                    manual_local_source("second"),
+                    unit,
+                )],
+            )
+            .unwrap();
+        assert_eq!(admitted.local_ids().len(), 1);
+        builder.check_local_request_capacity(maximum - 2).unwrap();
+        assert!(builder.check_local_request_capacity(maximum - 1).is_err());
+        assert_eq!(
+            builder.locals.lock().unwrap().len(),
+            0,
+            "capacity queries do not mint local slots"
         );
     }
 

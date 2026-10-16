@@ -76,6 +76,16 @@ authored operand position. Closed types, HIR allocation IDs, table ordinals,
 runtime values, and debug labels do not enter that coordinate. Distinct generic
 instantiations retain the same authored origin while their runtime types differ.
 
+Generated declarations are first described by one borrowed inventory for the
+complete executable view. Array Map row multiplicities remain symbolic while
+that inventory counts locals and rejects duplicate semantic roles. The Core
+construction issuer checks the remaining local namespace before repeated
+declarations are materialized. Expression and lexical Scope requests then enter
+one atomic type/local admission; an invalid suffix cannot publish a prefix.
+The capacity query does not reserve identities, and final admission rechecks the
+same issuer. Local namespace capacity, per-function frame limits, and executable
+image seal budgets remain distinct checks.
+
 Runtime semantic facts retain an accepted origin for every selected expression,
 including an effect carrier that owns no runtime value type. A static callee's
 namespace spelling is omitted according to the selected call inventory.

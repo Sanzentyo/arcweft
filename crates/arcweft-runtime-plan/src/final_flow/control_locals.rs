@@ -1,19 +1,16 @@
-//! Control temporaries admitted from one closed executable semantic view.
-
-use std::collections::BTreeMap;
-
-use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlanBuilder};
-use arcweft_lang_hir::identity::ExprId;
-
+//! Generated locals for one closed executable view. Repeated Map rows remain
+//! borrowed requests until their complete inventory passes the Core issuer.
+use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
 use crate::errors::RuntimePlanLowerError;
 use crate::semantic_facts::{
     RuntimeExecutableSemanticFactView, RuntimeNormalizedType, RuntimeScopeOwner,
 };
-
-use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
+use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlanBuilder};
+use arcweft_lang_hir::identity::ExprId;
 use arcweft_lang_sema::semantic_coordinate::{
     CheckedGeneratedLocalRole as Role, CheckedSemanticPath,
 };
+use std::collections::BTreeMap;
 
 #[derive(Clone, Default)]
 pub(super) struct ControlLocals {
@@ -26,7 +23,6 @@ pub(super) struct ControlLocals {
     pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
     pub(super) maps: BTreeMap<ExprId, MapLocalSeeds>,
 }
-
 #[derive(Clone, Default)]
 pub(super) struct MapLocalSeeds {
     pub(super) callable: Option<RuntimeLocalSeedId>,
@@ -36,347 +32,478 @@ pub(super) struct MapLocalSeeds {
     pub(super) next_iterator: Option<RuntimeLocalSeedId>,
     pub(super) residual: Option<RuntimeLocalSeedId>,
 }
-
-enum ControlLocal {
+#[derive(Clone, Copy)]
+enum ValueRole {
     Await,
-    Try { residual: bool },
     Pipe,
-    ExpressionValue,
-    ExpressionFinalValue,
-    GuardValue,
-    MapCallable,
-    MapItem,
-    MapResult,
-    MapIterator,
-    MapNextIterator,
-    MapResidual,
+    Expression,
+    FinalExpression,
+    Guard,
 }
-
-impl ControlLocals {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one control-local owner allocates and checks its complete typed temporary inventory"
-    )]
-    pub(super) fn admit(
-        facts: RuntimeExecutableSemanticFactView<'_>,
-        function: Option<&RuntimeNormalizedType>,
-        builder: &mut RuntimePlanBuilder,
+impl ValueRole {
+    const fn semantic_role(self) -> Role {
+        match self {
+            Self::Await => Role::AwaitPayload,
+            Self::Pipe => Role::PipeOperand,
+            Self::Expression => Role::ExpressionSource,
+            Self::FinalExpression => Role::ExpressionResult,
+            Self::Guard => Role::GuardValue,
+        }
+    }
+}
+enum RequestKind<'a> {
+    Value {
+        owner: ExprId,
+        role: ValueRole,
+        ty: &'a RuntimeNormalizedType,
+    },
+    Try {
+        owner: ExprId,
+        success: &'a RuntimeNormalizedType,
+        residual: Option<&'a RuntimeNormalizedType>,
+    },
+    Map {
+        owner: ExprId,
+        callable: &'a RuntimeNormalizedType,
+        input: &'a RuntimeNormalizedType,
+        output: &'a RuntimeNormalizedType,
+        rows: u32,
+        iterator: Option<&'a RuntimeNormalizedType>,
+        residual: Option<&'a RuntimeNormalizedType>,
+    },
+    Scope {
+        owner: RuntimeScopeOwner,
+        carrier: &'a RuntimeNormalizedType,
+        success: &'a RuntimeNormalizedType,
+        residual: Option<&'a RuntimeNormalizedType>,
+    },
+}
+struct LocalRequest<'a> {
+    coordinate: &'a CheckedSemanticPath,
+    kind: RequestKind<'a>,
+}
+impl LocalRequest<'_> {
+    const fn owner(&self) -> RuntimeScopeOwner {
+        match &self.kind {
+            RequestKind::Value { owner, .. }
+            | RequestKind::Try { owner, .. }
+            | RequestKind::Map { owner, .. } => RuntimeScopeOwner::Expression(*owner),
+            RequestKind::Scope { owner, .. } => *owner,
+        }
+    }
+    const fn first_role(&self) -> Role {
+        match &self.kind {
+            RequestKind::Value { role, .. } => role.semantic_role(),
+            RequestKind::Try { .. } => Role::TrySuccess,
+            RequestKind::Map { .. } => Role::MapCallable,
+            RequestKind::Scope { .. } => Role::ScopeCarrier,
+        }
+    }
+    fn count(&self) -> Result<usize, RuntimePlanLowerError> {
+        match &self.kind {
+            RequestKind::Value { .. } => Ok(1),
+            RequestKind::Try { residual, .. } => Ok(1 + usize::from(residual.is_some())),
+            RequestKind::Scope { residual, .. } => Ok(2 + usize::from(residual.is_some())),
+            RequestKind::Map {
+                rows,
+                iterator,
+                residual,
+                ..
+            } => usize::try_from(*rows)
+                .ok()
+                .and_then(|rows| rows.checked_mul(2))
+                .and_then(|rows| {
+                    rows.checked_add(
+                        1 + 2 * usize::from(iterator.is_some()) + usize::from(residual.is_some()),
+                    )
+                })
+                .ok_or_else(|| RuntimePlanLowerError::new("Map generated local count overflow")),
+        }
+    }
+    fn visit_declarations(
+        &self,
+        visit: &mut impl FnMut(&RuntimeNormalizedType, Role) -> Result<(), RuntimePlanLowerError>,
+    ) -> Result<(), RuntimePlanLowerError> {
+        match &self.kind {
+            RequestKind::Value { role, ty, .. } => visit(ty, role.semantic_role())?,
+            RequestKind::Try {
+                success, residual, ..
+            } => {
+                visit(success, Role::TrySuccess)?;
+                if let Some(ty) = residual {
+                    visit(ty, Role::TryResidual)?;
+                }
+            }
+            RequestKind::Map {
+                callable,
+                input,
+                output,
+                rows,
+                iterator,
+                residual,
+                ..
+            } => {
+                visit(callable, Role::MapCallable)?;
+                for ordinal in 0..*rows {
+                    visit(input, Role::MapItem { ordinal })?;
+                    visit(output, Role::MapResult { ordinal })?;
+                }
+                if let Some(ty) = iterator {
+                    visit(ty, Role::MapIterator)?;
+                    visit(ty, Role::MapNextIterator)?;
+                }
+                if let Some(ty) = residual {
+                    visit(ty, Role::MapResidual)?;
+                }
+            }
+            RequestKind::Scope {
+                carrier,
+                success,
+                residual,
+                ..
+            } => {
+                visit(carrier, Role::ScopeCarrier)?;
+                visit(success, Role::ScopeSuccess)?;
+                if let Some(ty) = residual {
+                    visit(ty, Role::ScopeResidual)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn bind(
+        &self,
+        result: &mut ControlLocals,
+        admitted: &mut impl Iterator<Item = RuntimeLocalSeedId>,
+    ) -> Result<(), RuntimePlanLowerError> {
+        let mut next = || {
+            admitted.next().ok_or_else(|| {
+                RuntimePlanLowerError::new("control temporary admission omitted a local")
+            })
+        };
+        match &self.kind {
+            RequestKind::Value { owner, role, .. } => {
+                let local = next()?;
+                match role {
+                    ValueRole::Await => {
+                        result
+                            .awaits
+                            .insert(*owner, AwaitLocalSeeds { payload: local });
+                    }
+                    ValueRole::Pipe => {
+                        result.pipes.insert(*owner, local);
+                    }
+                    ValueRole::Expression => {
+                        result.expression_values.insert(*owner, local);
+                    }
+                    ValueRole::FinalExpression => {
+                        result.expression_final_values.insert(*owner, local);
+                    }
+                    ValueRole::Guard => {
+                        result.guard_values.insert(*owner, local);
+                    }
+                }
+            }
+            RequestKind::Try {
+                owner, residual, ..
+            } => {
+                result.tries.insert(
+                    *owner,
+                    TryLocalSeeds {
+                        success: next()?,
+                        residual: residual.is_some().then(&mut next).transpose()?,
+                    },
+                );
+            }
+            RequestKind::Map {
+                owner,
+                rows,
+                iterator,
+                residual,
+                ..
+            } => {
+                let mut map = MapLocalSeeds {
+                    callable: Some(next()?),
+                    ..MapLocalSeeds::default()
+                };
+                for _ in 0..*rows {
+                    map.items.push(next()?);
+                    map.results.push(next()?);
+                }
+                if iterator.is_some() {
+                    map.iterator = Some(next()?);
+                    map.next_iterator = Some(next()?);
+                }
+                map.residual = residual.is_some().then(&mut next).transpose()?;
+                result.maps.insert(*owner, map);
+            }
+            RequestKind::Scope {
+                owner, residual, ..
+            } => {
+                result.scopes.insert(
+                    *owner,
+                    ScopeLocalSeeds {
+                        carrier: next()?,
+                        success: next()?,
+                        residual: residual.is_some().then(&mut next).transpose()?,
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+}
+/// A compact, unique inventory; only admitted requests may expand into seeds.
+struct ControlLocalInventory<'a> {
+    requests: Vec<LocalRequest<'a>>,
+    count: usize,
+}
+impl<'a> ControlLocalInventory<'a> {
+    fn from_facts(
+        facts: RuntimeExecutableSemanticFactView<'a>,
     ) -> Result<Self, RuntimePlanLowerError> {
-        let declaration =
-            |ty: &RuntimeNormalizedType, coordinate: Option<&CheckedSemanticPath>, role: Role| {
-                let origin = coordinate
+        let mut inventory = Self {
+            requests: Vec::new(),
+            count: 0,
+        };
+        let mut checked = Ok(());
+        facts.visit_runtime_expression_types(&mut |owner, ty| {
+            if checked.is_ok() {
+                checked = inventory.expression(facts, owner, ty);
+            }
+        });
+        checked?;
+        let mut checked = Ok(());
+        facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
+            if checked.is_err() {
+                return;
+            }
+            checked = (|| {
+                let left = facts.expression_type(pipe.left()).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "pipe {owner:?} has no closed left operand type"
+                    ))
+                })?;
+                inventory.value(facts, owner, left, ValueRole::Pipe)
+            })();
+        });
+        checked?;
+        let mut checked = Ok(());
+        facts.visit_scope_continuations(&mut |owner, continuation| {
+            if checked.is_err() {
+                return;
+            }
+            checked = (|| {
+                let coordinate = match owner {
+                    RuntimeScopeOwner::Expression(owner) => facts.expression_scope(owner),
+                    RuntimeScopeOwner::Statement(owner) => facts.statement_scope(owner),
+                }
+                .map(|fact| fact.origin().coordinate())
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(
+                        "scope continuation has no accepted structural coordinate",
+                    )
+                })?;
+                inventory.requests.push(LocalRequest {
+                    coordinate,
+                    kind: RequestKind::Scope {
+                        owner,
+                        carrier: continuation.carrier_type(),
+                        success: continuation.value_type(),
+                        residual: continuation.residual_type(),
+                    },
+                });
+                Ok(())
+            })();
+        });
+        checked?;
+        let mut owners = BTreeMap::<RuntimeScopeOwner, Vec<Role>>::new();
+        for request in &inventory.requests {
+            let roles = owners.entry(request.owner()).or_default();
+            let role = request.first_role();
+            if roles.contains(&role) {
+                return Err(RuntimePlanLowerError::new(
+                    "control temporary has more than one owner",
+                ));
+            }
+            roles.push(role);
+            inventory.count = inventory
+                .count
+                .checked_add(request.count()?)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("control temporary inventory count overflow")
+                })?;
+        }
+        Ok(inventory)
+    }
+    fn value(
+        &mut self,
+        facts: RuntimeExecutableSemanticFactView<'a>,
+        owner: ExprId,
+        ty: &'a RuntimeNormalizedType,
+        role: ValueRole,
+    ) -> Result<(), RuntimePlanLowerError> {
+        let coordinate = facts.expression_coordinate(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new("generated local has no accepted structural coordinate")
+        })?;
+        self.requests.push(LocalRequest {
+            coordinate,
+            kind: RequestKind::Value { owner, role, ty },
+        });
+        Ok(())
+    }
+    fn expression(
+        &mut self,
+        facts: RuntimeExecutableSemanticFactView<'a>,
+        owner: ExprId,
+        ty: &'a RuntimeNormalizedType,
+    ) -> Result<(), RuntimePlanLowerError> {
+        let source = facts.expression_source_type(owner).unwrap_or(ty);
+        self.value(facts, owner, source, ValueRole::Expression)?;
+        if source.identity() != ty.identity() {
+            self.value(facts, owner, ty, ValueRole::FinalExpression)?;
+        }
+        if facts.is_pattern_guard(owner)
+            && !matches!(ty.shape(), crate::semantic_facts::RuntimeTypeShape::Never)
+        {
+            self.value(facts, owner, ty, ValueRole::Guard)?;
+        }
+        if facts.awaited(owner).is_some() {
+            self.value(facts, owner, ty, ValueRole::Await)?;
+        }
+        let coordinate = facts.expression_coordinate(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new("generated local has no accepted structural coordinate")
+        })?;
+        if let Some(tried) = facts.tried(owner) {
+            self.requests.push(LocalRequest {
+                coordinate,
+                kind: RequestKind::Try {
+                    owner,
+                    success: tried.carrier().success(),
+                    residual: tried.carrier().residual(),
+                },
+            });
+        }
+        if let Some(pipe) = facts.pipe(owner) {
+            let left = facts.expression_type(pipe.left()).ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "pipe {owner:?} has no closed left operand type"
+                ))
+            })?;
+            self.value(facts, owner, left, ValueRole::Pipe)?;
+        }
+        if let Some(call) = facts.call(owner)
+            && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(
+                crate::semantic_facts::RuntimeResolvedStaticCallTarget::StandardMap(map),
+            ) = call.dispatch()
+        {
+            let receiver = facts
+                .expression_source_type(map.receiver())
+                .ok_or_else(|| RuntimePlanLowerError::new("Map receiver has no checked type"))?;
+            let callable = facts
+                .expression_source_type(map.mapping())
+                .ok_or_else(|| RuntimePlanLowerError::new("Map callback has no checked type"))?;
+            let (input, output) = map.item_types(receiver, source).ok_or_else(|| {
+                RuntimePlanLowerError::new("Map family has inconsistent checked types")
+            })?;
+            let rows = if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
+                receiver.shape()
+            {
+                length
+                    .constant()
+                    .and_then(|length| u32::try_from(length).ok())
                     .ok_or_else(|| {
                         RuntimePlanLowerError::new(
-                            "generated local has no accepted structural coordinate",
+                            "Map Array length does not fit its generated local inventory",
                         )
                     })?
+            } else {
+                1
+            };
+            let residual = match receiver.shape() {
+                crate::semantic_facts::RuntimeTypeShape::Result { error, .. } => {
+                    Some(error.as_ref())
+                }
+                _ => None,
+            };
+            self.requests.push(LocalRequest {
+                coordinate,
+                kind: RequestKind::Map {
+                    owner,
+                    callable,
+                    input,
+                    output,
+                    rows,
+                    iterator: map.iteration().map(|iteration| iteration.iterator()),
+                    residual,
+                },
+            });
+        }
+        Ok(())
+    }
+    fn declarations(
+        &self,
+        function: Option<&RuntimeNormalizedType>,
+    ) -> Result<Vec<RuntimeLocalDeclarationSeed>, RuntimePlanLowerError> {
+        let mut seeds = Vec::new();
+        seeds.try_reserve_exact(self.count).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "control temporary storage admission failed: {error}"
+            ))
+        })?;
+        for request in &self.requests {
+            request.visit_declarations(&mut |ty, role| {
+                let origin = request
+                    .coordinate
                     .runtime_generated_local_source(role)
                     .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-                Ok::<_, RuntimePlanLowerError>(match function.filter(|_| !ty.scope().is_root()) {
+                seeds.push(match function.filter(|_| !ty.scope().is_root()) {
                     Some(function) => RuntimeLocalDeclarationSeed::in_function(
                         origin,
                         ty.identity(),
                         function.identity(),
                     ),
                     None => RuntimeLocalDeclarationSeed::new(origin, ty.identity()),
-                })
-            };
-        let mut owners = Vec::new();
-        let mut seeds = Vec::new();
-        let mut error = None;
-        facts.visit_runtime_expression_types(&mut |owner, ty| {
-            let coordinate = facts.expression_coordinate(owner);
-            let expression_value_type = facts.expression_source_type(owner).unwrap_or(ty);
-            owners.push((owner, ControlLocal::ExpressionValue));
-            seeds.push(declaration(
-                expression_value_type,
-                coordinate,
-                Role::ExpressionSource,
-            ));
-            if expression_value_type.identity() != ty.identity() {
-                owners.push((owner, ControlLocal::ExpressionFinalValue));
-                seeds.push(declaration(ty, coordinate, Role::ExpressionResult));
-            }
-            if facts.is_pattern_guard(owner)
-                && !matches!(ty.shape(), crate::semantic_facts::RuntimeTypeShape::Never)
-            {
-                owners.push((owner, ControlLocal::GuardValue));
-                seeds.push(declaration(ty, coordinate, Role::GuardValue));
-            }
-            if facts.awaited(owner).is_some() {
-                owners.push((owner, ControlLocal::Await));
-                seeds.push(declaration(ty, coordinate, Role::AwaitPayload));
-            }
-            if let Some(tried) = facts.tried(owner) {
-                let residual = tried.carrier().residual();
-                owners.push((
-                    owner,
-                    ControlLocal::Try {
-                        residual: residual.is_some(),
-                    },
-                ));
-                seeds.push(declaration(
-                    tried.carrier().success(),
-                    coordinate,
-                    Role::TrySuccess,
-                ));
-                seeds.extend(residual.map(|ty| declaration(ty, coordinate, Role::TryResidual)));
-            }
-            if let Some(pipe) = facts.pipe(owner) {
-                if let Some(left) = facts.expression_type(pipe.left()) {
-                    owners.push((owner, ControlLocal::Pipe));
-                    seeds.push(declaration(left, coordinate, Role::PipeOperand));
-                } else {
-                    error.get_or_insert_with(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "pipe {owner:?} has no closed left operand type"
-                        ))
-                    });
-                }
-            }
-            if let Some(call) = facts.call(owner)
-                && let crate::semantic_facts::RuntimeResolvedCallDispatch::Static(
-                    crate::semantic_facts::RuntimeResolvedStaticCallTarget::StandardMap(map),
-                ) = call.dispatch()
-            {
-                let result = expression_value_type;
-                let Some(receiver) = facts.expression_source_type(map.receiver()) else {
-                    error.get_or_insert_with(|| {
-                        RuntimePlanLowerError::new("Map receiver has no checked type")
-                    });
-                    return;
-                };
-                let Some(mapping) = facts.expression_source_type(map.mapping()) else {
-                    error.get_or_insert_with(|| {
-                        RuntimePlanLowerError::new("Map callback has no checked type")
-                    });
-                    return;
-                };
-                let Some((input, output)) = map.item_types(receiver, result) else {
-                    error.get_or_insert_with(|| {
-                        RuntimePlanLowerError::new("Map family has inconsistent checked types")
-                    });
-                    return;
-                };
-                owners.push((owner, ControlLocal::MapCallable));
-                seeds.push(declaration(mapping, coordinate, Role::MapCallable));
-                let count =
-                    if let crate::semantic_facts::RuntimeTypeShape::Array { length, .. } =
-                        receiver.shape()
-                    {
-                        match length
-                            .constant()
-                            .and_then(|length| u32::try_from(length).ok())
-                        {
-                            Some(length) => length,
-                            None => {
-                                error.get_or_insert_with(|| {
-                                RuntimePlanLowerError::new(
-                                    "Map Array length does not fit its generated local inventory",
-                                )
-                            });
-                                return;
-                            }
-                        }
-                    } else {
-                        1
-                    };
-                for ordinal in 0..count {
-                    owners.push((owner, ControlLocal::MapItem));
-                    seeds.push(declaration(input, coordinate, Role::MapItem { ordinal }));
-                    owners.push((owner, ControlLocal::MapResult));
-                    seeds.push(declaration(output, coordinate, Role::MapResult { ordinal }));
-                }
-                if let Some(iteration) = map.iteration() {
-                    owners.push((owner, ControlLocal::MapIterator));
-                    seeds.push(declaration(
-                        iteration.iterator(),
-                        coordinate,
-                        Role::MapIterator,
-                    ));
-                    owners.push((owner, ControlLocal::MapNextIterator));
-                    seeds.push(declaration(
-                        iteration.iterator(),
-                        coordinate,
-                        Role::MapNextIterator,
-                    ));
-                }
-                if let crate::semantic_facts::RuntimeTypeShape::Result {
-                    error: residual, ..
-                } = receiver.shape()
-                {
-                    owners.push((owner, ControlLocal::MapResidual));
-                    seeds.push(declaration(residual, coordinate, Role::MapResidual));
-                }
-            }
-        });
-        facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
-            if let Some(left) = facts.expression_type(pipe.left()) {
-                owners.push((owner, ControlLocal::Pipe));
-                seeds.push(declaration(
-                    left,
-                    facts.expression_coordinate(owner),
-                    Role::PipeOperand,
-                ));
-            } else {
-                error.get_or_insert_with(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "pipe {owner:?} has no closed left operand type"
-                    ))
                 });
-            }
-        });
-        if let Some(error) = error {
-            return Err(error);
+                Ok(())
+            })?;
         }
+        if seeds.len() != self.count {
+            return Err(RuntimePlanLowerError::new(
+                "control temporary declaration count disagrees with its inventory",
+            ));
+        }
+        Ok(seeds)
+    }
+}
+impl ControlLocals {
+    pub(super) fn admit(
+        facts: RuntimeExecutableSemanticFactView<'_>,
+        function: Option<&RuntimeNormalizedType>,
+        builder: &mut RuntimePlanBuilder,
+    ) -> Result<Self, RuntimePlanLowerError> {
+        let inventory = ControlLocalInventory::from_facts(facts)?;
+        builder
+            .check_local_request_capacity(inventory.count)
+            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+        let declarations = inventory.declarations(function)?;
         let admission = builder
             .admit_type_batch(
                 [arcweft_core::plan::RuntimePlanTypeSeed::new(
                     arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
                     arcweft_core::plan::RuntimePlanTypeProjection::Unit,
                 )],
-                seeds.into_iter().collect::<Result<Vec<_>, _>>()?,
+                declarations,
             )
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut admitted = admission.local_ids().iter().cloned();
         let mut result = Self::default();
-        for (owner, kind) in owners {
-            let local = admitted.next().ok_or_else(|| {
-                RuntimePlanLowerError::new("control temporary admission omitted a local")
-            })?;
-            let duplicate = match kind {
-                ControlLocal::Await => result
-                    .awaits
-                    .insert(owner, AwaitLocalSeeds { payload: local })
-                    .is_some(),
-                ControlLocal::Try { residual } => {
-                    let residual = if residual {
-                        Some(admitted.next().ok_or_else(|| {
-                            RuntimePlanLowerError::new(
-                                "Try temporary admission omitted its residual local",
-                            )
-                        })?)
-                    } else {
-                        None
-                    };
-                    result
-                        .tries
-                        .insert(
-                            owner,
-                            TryLocalSeeds {
-                                success: local,
-                                residual,
-                            },
-                        )
-                        .is_some()
-                }
-                ControlLocal::Pipe => result.pipes.insert(owner, local).is_some(),
-                ControlLocal::GuardValue => result.guard_values.insert(owner, local).is_some(),
-                ControlLocal::ExpressionValue => {
-                    result.expression_values.insert(owner, local).is_some()
-                }
-                ControlLocal::ExpressionFinalValue => result
-                    .expression_final_values
-                    .insert(owner, local)
-                    .is_some(),
-                ControlLocal::MapCallable => result
-                    .maps
-                    .entry(owner)
-                    .or_default()
-                    .callable
-                    .replace(local)
-                    .is_some(),
-                ControlLocal::MapItem => {
-                    result.maps.entry(owner).or_default().items.push(local);
-                    false
-                }
-                ControlLocal::MapResult => {
-                    result.maps.entry(owner).or_default().results.push(local);
-                    false
-                }
-                ControlLocal::MapIterator => result
-                    .maps
-                    .entry(owner)
-                    .or_default()
-                    .iterator
-                    .replace(local)
-                    .is_some(),
-                ControlLocal::MapNextIterator => result
-                    .maps
-                    .entry(owner)
-                    .or_default()
-                    .next_iterator
-                    .replace(local)
-                    .is_some(),
-                ControlLocal::MapResidual => result
-                    .maps
-                    .entry(owner)
-                    .or_default()
-                    .residual
-                    .replace(local)
-                    .is_some(),
-            };
-            if duplicate {
-                return Err(RuntimePlanLowerError::new(
-                    "control temporary has more than one owner",
-                ));
-            }
+        for request in &inventory.requests {
+            request.bind(&mut result, &mut admitted)?;
         }
         if admitted.next().is_some() {
             return Err(RuntimePlanLowerError::new(
                 "control temporary admission retained an extra local",
-            ));
-        }
-        let mut scope_owners = Vec::new();
-        let mut scope_seeds = Vec::new();
-        facts.visit_scope_continuations(&mut |owner, continuation| {
-            let coordinate = match owner {
-                RuntimeScopeOwner::Expression(owner) => facts.expression_scope(owner),
-                RuntimeScopeOwner::Statement(owner) => facts.statement_scope(owner),
-            }
-            .map(|fact| fact.origin().coordinate());
-            scope_owners.push((owner, continuation.residual_type().is_some()));
-            scope_seeds.extend([
-                declaration(continuation.carrier_type(), coordinate, Role::ScopeCarrier),
-                declaration(continuation.value_type(), coordinate, Role::ScopeSuccess),
-            ]);
-            scope_seeds.extend(
-                continuation
-                    .residual_type()
-                    .map(|ty| declaration(ty, coordinate, Role::ScopeResidual)),
-            );
-        });
-        let admission = builder
-            .admit_type_batch([], scope_seeds.into_iter().collect::<Result<Vec<_>, _>>()?)
-            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-        let mut admitted = admission.local_ids().iter().cloned();
-        let missing = || RuntimePlanLowerError::new("scope continuation admission omitted a local");
-        for (owner, has_residual) in scope_owners {
-            let carrier = admitted.next().ok_or_else(missing)?;
-            let success = admitted.next().ok_or_else(missing)?;
-            let residual = has_residual
-                .then(|| admitted.next().ok_or_else(missing))
-                .transpose()?;
-            if result
-                .scopes
-                .insert(
-                    owner,
-                    ScopeLocalSeeds {
-                        carrier,
-                        success,
-                        residual,
-                    },
-                )
-                .is_some()
-            {
-                return Err(RuntimePlanLowerError::new(
-                    "scope continuation has duplicate local ownership",
-                ));
-            }
-        }
-        if admitted.next().is_some() {
-            return Err(RuntimePlanLowerError::new(
-                "scope continuation admission retained an extra local",
             ));
         }
         Ok(result)
