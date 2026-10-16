@@ -224,12 +224,6 @@ impl Engine {
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_pure_call_expr(*helper, args, pure_backend)
             }
-            RuntimeExprKind::StandardMap {
-                family,
-                order,
-                mapping,
-                source,
-            } => self.evaluate_standard_map_expr(*family, *order, mapping, source, pure_backend),
             RuntimeExprKind::Sum { source } => self.evaluate_sum_expr(source, pure_backend),
             RuntimeExprKind::Unary { op, expr } => {
                 self.evaluate_unary_expr(*op, expr, pure_backend)

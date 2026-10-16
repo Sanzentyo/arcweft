@@ -1228,28 +1228,6 @@ impl RuntimePlanBodyConstruction<'_> {
                 require_same("pure-call result", result, ty)?;
                 RuntimeExprKind::PureCall { helper, args }
             }
-            RuntimeExprSeedKind::StandardMap {
-                family,
-                order,
-                mapping,
-                source,
-            } => {
-                let mapping = self.lower_expression(*mapping)?;
-                let source = self.lower_expression(*source)?;
-                let (input, output) = self.standard_map_item_projection(family, source.ty(), ty)?;
-                match self.projection(mapping.ty())? {
-                    RuntimePlanTypeProjection::Function {
-                        parameters, result, ..
-                    } if parameters.as_ref() == [input] && *result == output => {}
-                    _ => return invalid_projection("standard map callback", mapping.ty()),
-                }
-                RuntimeExprKind::StandardMap {
-                    family,
-                    order,
-                    mapping: Box::new(mapping),
-                    source: Box::new(source),
-                }
-            }
             RuntimeExprSeedKind::Sum { source } => {
                 let source = self.lower_expression(*source)?;
                 let (item, _) = self.sequence_projection(source.ty(), "sum source expression")?;
@@ -3086,12 +3064,6 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeExprKind::TraitCall { receiver, args, .. } => {
                 self.validate_expression_locals(receiver, scope, used)?;
                 self.validate_argument_locals(args, scope, used)
-            }
-            RuntimeExprKind::StandardMap {
-                mapping, source, ..
-            } => {
-                self.validate_expression_locals(mapping, scope, used)?;
-                self.validate_expression_locals(source, scope, used)
             }
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 self.validate_expression_locals(lhs, scope, used)?;

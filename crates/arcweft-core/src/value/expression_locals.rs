@@ -2,7 +2,6 @@
 
 use super::{
     RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeLocalReadMode, RuntimeMutablePlace,
-    RuntimeStandardMapOperandOrder,
 };
 use crate::pattern::RuntimePatternBindingDeclaration;
 use crate::plan::RuntimePlan;
@@ -199,21 +198,6 @@ impl RuntimeExpr {
                 receiver.collect_evaluation_free_locals(plan, bound, locals)?;
                 collect_argument_free_locals(plan, args, bound, locals)?;
             }
-            RuntimeExprKind::StandardMap {
-                order,
-                mapping,
-                source,
-                ..
-            } => match order {
-                RuntimeStandardMapOperandOrder::MappingThenReceiver => {
-                    mapping.collect_evaluation_free_locals(plan, bound, locals)?;
-                    source.collect_evaluation_free_locals(plan, bound, locals)?;
-                }
-                RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
-                    source.collect_evaluation_free_locals(plan, bound, locals)?;
-                    mapping.collect_evaluation_free_locals(plan, bound, locals)?;
-                }
-            },
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 lhs.collect_evaluation_free_locals(plan, bound, locals)?;
                 rhs.collect_evaluation_free_locals(plan, bound, locals)?;

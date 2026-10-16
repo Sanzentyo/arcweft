@@ -4,7 +4,7 @@
 //! literals and callback captures. It neither follows referenced definition
 //! tables nor creates a second executable representation or a semantic digest.
 
-use super::{RuntimeExpr, RuntimeExprKind, RuntimeStandardMapOperandOrder};
+use super::{RuntimeExpr, RuntimeExprKind};
 use crate::pattern::{RuntimePattern, RuntimePatternKind};
 
 /// The structural edge from an admitted node to one of its owned children.
@@ -32,7 +32,6 @@ pub enum RuntimeExpressionChildRole {
     CallableValue,
     Callee,
     Receiver,
-    Mapping,
     Source,
     UnaryOperand,
     Left,
@@ -133,9 +132,6 @@ impl RuntimeExpressionChildRole {
             }
             Self::Receiver => {
                 encoder.tag(20);
-            }
-            Self::Mapping => {
-                encoder.tag(21);
             }
             Self::Source => {
                 encoder.tag(22);
@@ -455,22 +451,6 @@ impl<'a> Iterator for RuntimeExpressionChildren<'a> {
                             .and_then(|arg| expr(R::Argument { ordinal: index - 1 }, arg.value()))
                     }
                 }
-                RuntimeExprKind::StandardMap {
-                    order,
-                    mapping,
-                    source,
-                    ..
-                } => match (order, index) {
-                    (RuntimeStandardMapOperandOrder::MappingThenReceiver, 0)
-                    | (RuntimeStandardMapOperandOrder::ReceiverThenMapping, 1) => {
-                        expr(R::Mapping, mapping)
-                    }
-                    (RuntimeStandardMapOperandOrder::MappingThenReceiver, 1)
-                    | (RuntimeStandardMapOperandOrder::ReceiverThenMapping, 0) => {
-                        expr(R::Source, source)
-                    }
-                    (_, _) => None,
-                },
                 RuntimeExprKind::Sum { source } => {
                     (index == 0).then_some((R::Source, N::Expression(source)))
                 }

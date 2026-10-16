@@ -2185,15 +2185,6 @@ pub enum RuntimeExprKind {
         helper: RuntimePureHelperId,
         args: Vec<RuntimeCallArgument>,
     },
-    /// Fully applied standard `map` with its callback and receiver evaluated
-    /// exactly once. The family is compiler-selected typed evidence, not a
-    /// callable label interpreted by the runtime.
-    StandardMap {
-        family: RuntimeStandardMapFamily,
-        order: RuntimeStandardMapOperandOrder,
-        mapping: Box<RuntimeExpr>,
-        source: Box<RuntimeExpr>,
-    },
     Sum {
         source: Box<RuntimeExpr>,
     },
@@ -2246,12 +2237,6 @@ pub enum RuntimeStandardMapFamily {
     Slice,
     Option,
     Result,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeStandardMapOperandOrder {
-    MappingThenReceiver,
-    ReceiverThenMapping,
 }
 
 /// One call operand in resolved runtime order.
@@ -2352,7 +2337,6 @@ impl RuntimeExpr {
             | RuntimeExprKind::ApplyGroup { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
-            | RuntimeExprKind::StandardMap { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::SequencePopFront { .. }
             | RuntimeExprKind::SequencePush { .. }
@@ -2468,7 +2452,6 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::ApplyGroup { .. } => f.write_str("apply"),
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
-            RuntimeExprKind::StandardMap { family, .. } => write!(f, "map/{family:?}"),
             RuntimeExprKind::Sum { .. } => f.write_str("sum"),
             RuntimeExprKind::Unary { op, .. } => f.write_str(op.as_label()),
             RuntimeExprKind::Binary { op, .. } => f.write_str(op.as_label()),
@@ -2815,8 +2798,6 @@ pub enum RuntimeEvalError {
     ExpectedBracketSeq(String),
     #[error("expected a mutable runtime sequence, found {0}")]
     ExpectedSequence(String),
-    #[error("standard map received a value outside its selected {family:?} family")]
-    InvalidStandardMapSource { family: RuntimeStandardMapFamily },
     #[error("runtime range is invalid: {reason}")]
     InvalidRange { reason: String },
     #[error("field `{field}` does not exist on {value}")]
@@ -4263,15 +4244,6 @@ impl RuntimeStandardMapFamily {
     }
 }
 
-impl RuntimeStandardMapOperandOrder {
-    pub(crate) const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::MappingThenReceiver => 0,
-            Self::ReceiverThenMapping => 1,
-        }
-    }
-}
-
 impl RuntimeUnaryOp {
     pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
@@ -4331,7 +4303,6 @@ impl RuntimeExprKind {
             Self::ApplyGroup { .. } => 25,
             Self::TraitCall { .. } => 26,
             Self::PureCall { .. } => 27,
-            Self::StandardMap { .. } => 28,
             Self::Sum { .. } => 29,
             Self::Unary { .. } => 30,
             Self::Binary { .. } => 31,

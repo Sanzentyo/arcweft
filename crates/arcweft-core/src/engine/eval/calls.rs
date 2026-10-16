@@ -5,13 +5,10 @@ use super::{
     evaluate_runtime_call, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
-use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{RuntimePlanTypeProjection, RuntimeReceiverMode, RuntimeTraitMethodId};
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableValue, RuntimeIntrinsic,
-    RuntimeIterator, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-    runtime_sequence_values,
+    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeIntrinsic, RuntimeIterator,
 };
 use crate::{
     entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId, pure::RuntimeExternalCallContext,
@@ -34,84 +31,6 @@ pub(crate) struct TraitMethodCallOutcome {
 }
 
 impl Engine {
-    pub(super) fn evaluate_standard_map_expr(
-        &mut self,
-        family: RuntimeStandardMapFamily,
-        order: RuntimeStandardMapOperandOrder,
-        mapping: &RuntimeExpr,
-        source: &RuntimeExpr,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let (mapping, source) = match order {
-            RuntimeStandardMapOperandOrder::MappingThenReceiver => (
-                self.evaluate_expr_with_backend(mapping, pure_backend)?,
-                self.evaluate_expr_with_backend(source, pure_backend)?,
-            ),
-            RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
-                let source = self.evaluate_expr_with_backend(source, pure_backend)?;
-                let mapping = self.evaluate_expr_with_backend(mapping, pure_backend)?;
-                (mapping, source)
-            }
-        };
-        let RuntimeValue::Callable(mapping) = mapping else {
-            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
-                &mapping,
-            )));
-        };
-        match family {
-            RuntimeStandardMapFamily::Vec
-            | RuntimeStandardMapFamily::Seq
-            | RuntimeStandardMapFamily::Array
-            | RuntimeStandardMapFamily::Slice => {
-                self.evaluate_standard_sequence_map(&mapping, source, pure_backend)
-            }
-            RuntimeStandardMapFamily::Option => {
-                let (case, payload) = source
-                    .try_into_builtin_variant_case()
-                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
-                match (case, payload) {
-                    (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
-                        .apply_runtime_function(mapping, vec![value], pure_backend)
-                        .map(RuntimeValue::option_some),
-                    (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
-                        Ok(RuntimeValue::option_none())
-                    }
-                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
-                }
-            }
-            RuntimeStandardMapFamily::Result => {
-                let (case, payload) = source
-                    .try_into_builtin_variant_case()
-                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
-                match (case, payload) {
-                    (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
-                        .apply_runtime_function(mapping, vec![value], pure_backend)
-                        .map(RuntimeValue::result_ok),
-                    (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
-                        Ok(RuntimeValue::result_err(error))
-                    }
-                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
-                }
-            }
-        }
-    }
-
-    fn evaluate_standard_sequence_map(
-        &mut self,
-        mapping: &RuntimeCallableValue,
-        source: RuntimeValue,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let iterator = RuntimeIterator::from_value(source)
-            .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))?;
-        let mut mapped = Vec::new();
-        for item in iterator {
-            let use_value = mapping.try_duplicate_unrestricted()?;
-            mapped.push(self.apply_runtime_function(use_value, vec![item], pure_backend)?);
-        }
-        Ok(runtime_sequence_values(mapped))
-    }
-
     pub(super) fn evaluate_call_expr(
         &mut self,
         callee: &RuntimeCallTarget,

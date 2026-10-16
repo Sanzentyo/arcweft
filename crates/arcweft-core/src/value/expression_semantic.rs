@@ -171,10 +171,6 @@ impl RuntimeExpr {
             RuntimeExprKind::ApplyGroup { args, .. } => {
                 context.write_call_arguments(encoder, args)?;
             }
-            RuntimeExprKind::StandardMap { family, order, .. } => {
-                encoder.tag(family.semantic_tag());
-                encoder.tag(order.semantic_tag());
-            }
             RuntimeExprKind::Unary { op, .. } => encoder.tag(op.semantic_tag()),
             RuntimeExprKind::Binary { op, .. } => encoder.tag(op.semantic_tag()),
             RuntimeExprKind::IfLet { guard, .. } => encoder.tag(u8::from(guard.is_some())),

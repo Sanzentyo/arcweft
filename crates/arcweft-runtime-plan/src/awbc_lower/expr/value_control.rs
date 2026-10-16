@@ -8,37 +8,6 @@ impl AwbcExprLowerer<'_, '_, '_> {
         let result = self.frame.temp(ty);
         let mut joins = Vec::new();
         match expression.kind() {
-            RuntimeExprKind::StandardMap {
-                family,
-                order,
-                mapping,
-                source,
-            } => {
-                let scope = self.frame.enter_scope();
-                self.inventory
-                    .push_instruction(AwbcInstruction::EnterScope { scope });
-                let value = lower_standard_map_value(
-                    self.inventory,
-                    self.frame,
-                    self.plan,
-                    StandardMapValueExprInput {
-                        family: *family,
-                        order: *order,
-                        mapping,
-                        source,
-                        result: expression,
-                        path: &self.path,
-                    },
-                );
-                self.inventory.push_instruction(AwbcInstruction::Move {
-                    dst: result,
-                    src: value,
-                });
-                self.inventory
-                    .push_instruction(AwbcInstruction::ExitScope { scope });
-                self.frame.exit_scope();
-                return result;
-            }
             RuntimeExprKind::If {
                 condition,
                 then_expr,

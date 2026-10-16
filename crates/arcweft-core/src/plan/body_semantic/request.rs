@@ -505,7 +505,6 @@ impl OriginalRequestEndpoint<'_> {
                 | Expr::ApplyGroup { .. }
                 | Expr::TraitCall { .. }
                 | Expr::PureCall { .. }
-                | Expr::StandardMap { .. }
                 | Expr::Sum { .. }
                 | Expr::Unary { .. }
                 | Expr::Binary { .. }

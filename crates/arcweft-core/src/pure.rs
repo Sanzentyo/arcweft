@@ -31,11 +31,10 @@ use crate::value::{
     RuntimeExactInteger, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
     RuntimeFunctionApplyError, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator,
     RuntimeLocalBinding, RuntimeLocalRead, RuntimeLocalReadMode, RuntimeNominalRecordExpr,
-    RuntimeReductionValue, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
-    RuntimeStandardMapOperandOrder, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
-    RuntimeValue, evaluate_binary, evaluate_capacity_intrinsic, evaluate_core_iterator_intrinsic,
-    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
+    RuntimeReductionValue, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnaryOp,
+    RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary, evaluate_capacity_intrinsic,
+    evaluate_core_iterator_intrinsic, evaluate_core_range_intrinsic, evaluate_index_intrinsic,
+    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
@@ -2016,12 +2015,6 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_nested_pure_call(*helper, args)
             }
-            RuntimeExprKind::StandardMap {
-                family,
-                order,
-                mapping,
-                source,
-            } => self.evaluate_standard_map_expr(*family, *order, mapping, source),
             RuntimeExprKind::Sum { source } => self.evaluate_sum_expr(source),
             RuntimeExprKind::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
@@ -2922,75 +2915,6 @@ impl<'a> PureEvaluator<'a> {
         match self.evaluate_scalar_expr(expr)? {
             RuntimePureScalar::Bool(value) => Ok(value),
             value => Err(RuntimeEvalError::ExpectedBool(value.label())),
-        }
-    }
-
-    fn evaluate_standard_map_expr(
-        &mut self,
-        family: RuntimeStandardMapFamily,
-        order: RuntimeStandardMapOperandOrder,
-        mapping: &RuntimeExpr,
-        source: &RuntimeExpr,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let (mapping, source) = match order {
-            RuntimeStandardMapOperandOrder::MappingThenReceiver => {
-                (self.evaluate_expr(mapping)?, self.evaluate_expr(source)?)
-            }
-            RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
-                let source = self.evaluate_expr(source)?;
-                let mapping = self.evaluate_expr(mapping)?;
-                (mapping, source)
-            }
-        };
-        let RuntimeValue::Callable(mapping) = mapping else {
-            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
-                &mapping,
-            )));
-        };
-        match family {
-            RuntimeStandardMapFamily::Vec
-            | RuntimeStandardMapFamily::Seq
-            | RuntimeStandardMapFamily::Array
-            | RuntimeStandardMapFamily::Slice => {
-                let iterator = RuntimeIterator::from_value(source).map_err(|value| {
-                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value))
-                })?;
-                iterator
-                    .map(|item| {
-                        let use_value = mapping.try_duplicate_unrestricted()?;
-                        self.apply_runtime_function(use_value, vec![item])
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(runtime_sequence_values)
-            }
-            RuntimeStandardMapFamily::Option => {
-                let (case, payload) = source
-                    .try_into_builtin_variant_case()
-                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
-                match (case, payload) {
-                    (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
-                        .apply_runtime_function(mapping, vec![value])
-                        .map(RuntimeValue::option_some),
-                    (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
-                        Ok(RuntimeValue::option_none())
-                    }
-                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
-                }
-            }
-            RuntimeStandardMapFamily::Result => {
-                let (case, payload) = source
-                    .try_into_builtin_variant_case()
-                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
-                match (case, payload) {
-                    (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
-                        .apply_runtime_function(mapping, vec![value])
-                        .map(RuntimeValue::result_ok),
-                    (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
-                        Ok(RuntimeValue::result_err(error))
-                    }
-                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
-                }
-            }
         }
     }
 

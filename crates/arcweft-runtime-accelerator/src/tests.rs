@@ -9,14 +9,11 @@ use arcweft_core::entry::{
     RuntimeCodecUse, RuntimeEnumTagStyle, RuntimeFieldCodecUse, RuntimeVariantCodecUse,
 };
 use arcweft_core::value::runtime_sequence_dense_bytes;
-#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
-use arcweft_core::value::runtime_sequence_dense_u32;
 use arcweft_core::{
     awbc::schema::{
         AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
         AwbcStringId, AwbcTypeId, AwbcVariantCase, AwbcVariantIdentity,
     },
-    engine::{Engine, FlowExit, FlowFiberStatus},
     entry::{
         RuntimeBytesFormat, RuntimeNominalRecordShape, RuntimeNominalTypeId, RuntimeSchemaLimits,
     },
@@ -25,17 +22,15 @@ use arcweft_core::{
         RuntimeVariantIdentity,
     },
     plan::{
-        FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeCallArgumentSeed, RuntimeExprSeed,
-        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
+        RuntimeAgentTypeProjection, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
         RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOwnershipRequirement,
         RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
         RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-        RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     program_types::RuntimeProgramTypes,
-    pure::{PureFunctionBackend, PureFunctionRequest, RuntimePureFunctionRef},
-    step::{RuntimeStepInput, RuntimeStepOptions},
+    pure::{PureFunctionRequest, RuntimePureFunctionRef},
     task::RuntimeProgramOwner,
     value::RuntimeRecordFieldId,
 };
@@ -43,16 +38,11 @@ use arcweft_core::{
     entry::RuntimeCallableId,
     plan::RuntimePureHelperId,
     value::{
-        RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeISizeValue,
-        RuntimeLocalReadMode, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
-        RuntimeStandardMapOperandOrder, RuntimeUSizeValue, RuntimeUnsignedIntWidth,
+        RuntimeBinaryOp, RuntimeCallTarget, RuntimeISizeValue, RuntimeLocalReadMode, RuntimeSeq,
+        RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnsignedIntWidth,
     },
 };
 use arcweft_data::DataFormat;
-
-fn flow_id(value: &str) -> FlowRuntimeId {
-    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
-}
 
 fn callable_target(value: &str) -> RuntimeCallTarget {
     RuntimeCallTarget::callable(
@@ -2232,202 +2222,6 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
     assert_eq!(accelerator.stats().aot_calls, 0);
     assert_eq!(accelerator.compile_stats().auto_jit_deferred, 1);
     assert_eq!(accelerator.compile_stats().auto_jit_promotions, 1);
-}
-
-#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
-fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
-    let u32_ty = helper_type_identity(RuntimePureInputType::U32);
-    let i64_ty = helper_type_identity(RuntimePureInputType::I64);
-    let u32_seq_ty = RuntimeSemanticTypeId::from_bytes([17; 32]);
-    let u32_mapping_ty = RuntimeSemanticTypeId::from_bytes([18; 32]);
-    let mut builder = RuntimePlanBuilder::new();
-    let admission = builder
-        .admit_type_batch(
-            [
-                helper_type_seed(RuntimePureInputType::U32),
-                helper_type_seed(RuntimePureInputType::I64),
-                RuntimePlanTypeSeed::new(
-                    u32_seq_ty,
-                    RuntimePlanTypeProjection::Sequence {
-                        kind: RuntimePlanSequenceKind::Seq,
-                        item: u32_ty,
-                    },
-                ),
-                RuntimePlanTypeSeed::new(
-                    u32_mapping_ty,
-                    RuntimePlanTypeProjection::Function {
-                        contract: arcweft_core::plan::RuntimeFunctionTypeContract::default(),
-                        parameters: Box::new([u32_ty]),
-                        result: u32_ty,
-                    },
-                ),
-            ],
-            (0..3).map(|source_ordinal| {
-                RuntimeLocalDeclarationSeed::new(
-                    manual_local_source(&format!(
-                        "arcweft-runtime-accelerator.fixture.tests.dense-map.input[{source_ordinal}]"
-                    )),
-                    u32_ty,
-                )
-            }),
-        )
-        .expect("u32 flow semantic inputs are admitted");
-    let locals = admission.local_ids();
-    let helper = builder
-        .push_pure_helper_seed(RuntimePureHelperSeed {
-            definition:
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [51; 32],
-                ),
-            name: "u32_flow_score".to_owned(),
-            inputs: vec![locals[1].clone(), locals[2].clone()]
-                .into_boxed_slice()
-                .into_iter()
-                .zip(vec![RuntimePureInputType::U32, RuntimePureInputType::U32])
-                .map(
-                    |(local, abi)| arcweft_core::plan::RuntimeCallableParameterSeed {
-                        identity: arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity([91; 32]),
-                        local,
-                        passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
-                        abi,
-                    },
-                )
-                .collect(),
-            output_abi: RuntimePureOutputType::U32,
-            body: binary_expr(
-                u32_ty,
-                local_expr(u32_ty, locals[1].clone(), RuntimeLocalReadMode::Copy),
-                RuntimeBinaryOp::Add,
-                local_expr(u32_ty, locals[2].clone(), RuntimeLocalReadMode::Copy),
-            ),
-            scalar_eval_supported: true,
-            origin: RuntimePureHelperOrigin::Annotated,
-        })
-        .expect("u32 flow helper is admitted");
-    let mapping = builder
-        .push_function_site_seed(
-            arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([41; 32]),
-            arcweft_core::plan::RuntimeFunctionSemanticRole::Closure,
-            [RuntimeFunctionInputBindingSeed {
-                transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
-                origin: arcweft_core::plan::RuntimeFunctionInputOrigin::Parameter(
-                    arcweft_core::plan::RuntimeFunctionParameterIdentity::from_accepted_identity(
-                        [81; 32],
-                    ),
-                ),
-                source: RuntimeFunctionInputSource::Parameter {
-                    position: 0,
-                    passing: arcweft_core::plan::RuntimeFunctionParameterPassing::Value,
-                },
-                input_local: locals[0].clone(),
-                pattern: RuntimePatternSeed::new(
-                    u32_ty,
-                    RuntimePatternSeedKind::Bind {
-                        mutable: false,
-                        local: locals[0].clone(),
-                    },
-                ),
-                ownership: Default::default(),
-                unrestricted_bindings: Box::new([]),
-            }],
-            RuntimeExprSeed::new(
-                u32_ty,
-                RuntimeExprSeedKind::PureCall {
-                    helper,
-                    args: Box::new([
-                        RuntimeCallArgumentSeed::new(
-                            local_expr(u32_ty, locals[0].clone(), RuntimeLocalReadMode::Copy),
-                            RuntimeCallArgumentMode::Value,
-                            0,
-                        ),
-                        RuntimeCallArgumentSeed::new(
-                            value_expr(u32_ty, RuntimeValue::u32(1)),
-                            RuntimeCallArgumentMode::Value,
-                            1,
-                        ),
-                    ]),
-                },
-            ),
-        )
-        .expect("u32 map callback is admitted");
-    let flow = flow_id("flow.u32");
-    builder
-        .push_flow_schema(RuntimeFlowSchema {
-            flow: flow.clone(),
-            parameters: Vec::new(),
-        })
-        .expect("u32 flow schema is admitted");
-    builder
-        .push_flow_seed(RuntimeFlowSeed::new(
-            flow,
-            arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
-                arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                    [61; 32],
-                ),
-                None,
-                Box::new([]),
-                i64_ty,
-                arcweft_core::plan::RuntimeEffectSet::empty(),
-            ),
-            arcweft_core::plan::RuntimeExecutableBodySeed {
-                effects: arcweft_core::plan::RuntimeEffectSet::empty(),
-                ops: (vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
-                    i64_ty,
-                    RuntimeExprSeedKind::Sum {
-                        source: Box::new(RuntimeExprSeed::new(
-                            u32_seq_ty,
-                            RuntimeExprSeedKind::StandardMap {
-                                family: RuntimeStandardMapFamily::Seq,
-                                order: RuntimeStandardMapOperandOrder::MappingThenReceiver,
-                                mapping: Box::new(RuntimeExprSeed::new(
-                                    u32_mapping_ty,
-                                    RuntimeExprSeedKind::Function {
-                                        site: mapping,
-                                        captures: Box::new([]),
-                                    },
-                                )),
-                                source: Box::new(value_expr(
-                                    u32_seq_ty,
-                                    runtime_sequence_dense_u32((0..128).collect()),
-                                )),
-                            },
-                        )),
-                    },
-                ))])
-                .into_boxed_slice(),
-            },
-        ))
-        .expect("u32 flow is admitted");
-    Arc::new(builder.finish().expect("u32 flow plan is sealed"))
-}
-
-#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
-#[test]
-fn runtime_flow_dense_u32_standard_map_applies_typed_callback() {
-    let plan = dense_u32_map_sum_plan();
-    let mut engine = Engine::for_flow(plan.as_ref().clone(), &flow_id("flow.u32"))
-        .expect("test flow starts explicitly");
-    let mut accelerator = RuntimePureAccelerator::with_config(
-        RuntimePureAcceleratorConfig {
-            backend: RuntimePureBackendMode::Auto,
-            workers: RuntimePureWorkerCount::Fixed(1),
-            batch_min_len: 1024,
-            ..RuntimePureAcceleratorConfig::default()
-        },
-        &plan,
-    );
-
-    let result = engine.step_with_pure_backend(
-        RuntimeStepInput::default(),
-        RuntimeStepOptions::default(),
-        &mut accelerator,
-    );
-
-    assert!(matches!(
-        result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(ref value)) if value == "8256"
-    ));
-    assert_eq!(result.stats.pure.pure_calls, 128);
 }
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]

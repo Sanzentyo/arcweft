@@ -123,33 +123,6 @@ fn sparse_match_guards_and_optional_range_end_keep_distinct_roles() {
 }
 
 #[test]
-fn standard_map_retains_selected_operand_order_and_roles() {
-    for (order, roles) in [
-        (
-            RuntimeStandardMapOperandOrder::MappingThenReceiver,
-            [R::Mapping, R::Source],
-        ),
-        (
-            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
-            [R::Source, R::Mapping],
-        ),
-    ] {
-        let root = expression(RuntimeExprKind::StandardMap {
-            family: crate::value::RuntimeStandardMapFamily::Vec,
-            order,
-            mapping: Box::new(literal("mapping")),
-            source: Box::new(literal("source")),
-        });
-        assert_eq!(
-            root.owned_children()
-                .map(|(role, _)| role)
-                .collect::<Vec<_>>(),
-            roles
-        );
-    }
-}
-
-#[test]
 fn sparse_dialogue_clear_fields_do_not_renumber_set_children() {
     use arcweft_interaction_model::dialogue::{
         CharacterDialogueFieldCoordinate as Field, CharacterDialogueOperation,

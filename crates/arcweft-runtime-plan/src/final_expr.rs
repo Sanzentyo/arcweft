@@ -17,7 +17,7 @@ use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
     RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeLocalReadMode,
-    RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
@@ -48,7 +48,7 @@ use crate::semantic_facts::{
     RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedPlace,
     RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
     RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
-    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall, RuntimeTraitMethodInstanceKey,
+    RuntimeScopedExecutableSemanticFactView, RuntimeTraitMethodInstanceKey,
     RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_interaction_model::dialogue::{
@@ -2064,10 +2064,12 @@ impl<'hir> FinalExprLowerer<'hir> {
             };
         }
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
-            map,
+            _,
         )) = selected.dispatch()
         {
-            return self.lower_standard_map(id, map);
+            return Err(format!(
+                "Map call {id:?} requires its admitted control context"
+            ));
         }
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(
             formatted,
@@ -2740,37 +2742,6 @@ impl<'hir> FinalExprLowerer<'hir> {
             ));
         }
         Ok(fallback)
-    }
-
-    fn lower_standard_map(
-        &self,
-        owner: ExprId,
-        map: &RuntimeStandardMapCall,
-    ) -> Result<RuntimeExprSeedKind, String> {
-        let mapping = self.lower(map.mapping())?;
-        let source = self.lower(map.receiver())?;
-        let family = map.family().into();
-        let order = match map.order() {
-            crate::semantic_facts::RuntimeStandardMapOperandOrder::MappingThenReceiver => {
-                RuntimeStandardMapOperandOrder::MappingThenReceiver
-            }
-            crate::semantic_facts::RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
-                RuntimeStandardMapOperandOrder::ReceiverThenMapping
-            }
-        };
-        if mapping.ty() != self.expression_type(map.mapping())?
-            || source.ty() != self.expression_type(map.receiver())?
-        {
-            return Err(format!(
-                "standard map {owner:?} operand type changed during runtime expression projection"
-            ));
-        }
-        Ok(RuntimeExprSeedKind::StandardMap {
-            family,
-            order,
-            mapping: Box::new(mapping),
-            source: Box::new(source),
-        })
     }
 
     fn lower_function_arguments(

@@ -122,7 +122,6 @@ impl<'a> RuntimeCallableChildPreflight<'a> {
             | RuntimeExprKind::ApplyGroup { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
-            | RuntimeExprKind::StandardMap { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::Unary { .. }
             | RuntimeExprKind::Binary { .. }

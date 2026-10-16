@@ -493,7 +493,7 @@ let choices =
 
 `Seq<T>` は lazy。必要時に `collect<Vec<T>>()` で materialize。
 
-## effectful map は `traverse`
+## Need の並行合成は `traverse`
 
 ```arcw
 let images = try await image_paths.traverse(asset.image).parallel(limit = 4) with {
@@ -501,7 +501,9 @@ let images = try await image_paths.traverse(asset.image).parallel(limit = 4) wit
 }
 ```
 
-- `map`: pure / synchronous。
+- `map`: callback を通常の関数として適用し、その effect row と停止可能性を
+  呼び出しへ引き継ぐ。`map(callback)` の部分適用を作るだけでは、callback の
+  潜在効果を実行しない。
 - `traverse`: `Task` / `Need` を返す。
 - `.parallel(limit = N)`: bounded fanout。VM は一度に最大 `N` 件の
   `TaskSpec` を出し、結果を入力順の `Vec` として返す。

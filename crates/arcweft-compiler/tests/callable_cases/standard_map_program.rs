@@ -293,17 +293,94 @@ fn map_callback_effects_cannot_enter_a_pure_invocation() {
         "{ let mapper: Vec<i64> -> Vec<i64> effects { log.write } = map(logging_increment); mapper(values) }",
     ] {
         let source = format!(
-            "fn logging_increment(item: i64) -> i64 {{ log.info(item); item + 1i64 }}\n#[pure]\npub fn root(values: Vec<i64>) -> Vec<i64> {{ {expression} }}"
+            "fn logging_increment(item: i64) -> i64 {{ log.info(item); item + 1i64 }}\npub fn root(values: Vec<i64>) -> Vec<i64> effects {{}} {{ {expression} }}"
         );
-        let error = compile_source(&source).expect_err("Map must retain its callback effects");
+        let Err(error) = compile_source(&source) else {
+            panic!("{expression}: Map must retain its callback effects");
+        };
         assert!(
-            error.project().diagnostics().iter().any(|diagnostic| {
-                diagnostic
-                    .diagnostic()
-                    .code()
-                    .is_some_and(|code| code.as_str() == "AWF-EFX-003")
-            }),
+            matches!(error.project().semantic_error(), Some(
+                arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::EffectUpperBoundExceeded { missing, .. }
+            ) if missing.contains(&arcweft_lang_sema::effects::EffectId::log_write())),
             "{expression}: {error:?}"
         );
     }
+}
+
+#[test]
+fn creating_a_map_prefix_keeps_its_callback_effects_latent() {
+    let compiled = compile_source(
+        "fn logging_increment(item: i64) -> i64 { log.info(item); item + 1i64 }\npub fn root() -> (Vec<i64> -> Vec<i64> effects { log.write }) effects {} { map(logging_increment) }",
+    ).unwrap();
+    let declaration = compiled
+        .analysis
+        .final_analysis()
+        .hir_topology()
+        .modules()
+        .iter()
+        .flat_map(|module| module.entries())
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == "root")
+        .unwrap()
+        .declaration()
+        .clone();
+    let selected = compiled
+        .analysis
+        .compile_deterministic_program(
+            CheckedExecutionSource::InvokeBody(CheckedExecutionBodyOwner::Declaration {
+                declaration,
+                role: arcweft_lang_hir::project::HirDeclarationBodyRootRole::FunctionBody,
+            }),
+            None,
+            &Default::default(),
+        )
+        .expect("creating a function does not invoke its callback");
+    let mut engine =
+        Engine::for_program_invocation(Arc::clone(selected.plan()), selected.program(), vec![])
+            .unwrap();
+    for _ in 0..512 {
+        let step = engine.step(
+            Default::default(),
+            RuntimeStepOptions {
+                mode: RuntimeStepMode::OneOp,
+                budget: RuntimeStepBudget { max_ops: 1 },
+                ..Default::default()
+            },
+        );
+        assert!(step.stats.executed_ops <= 1);
+        assert!(step.output.effects.line.is_empty());
+        assert!(step.output.diagnostics.is_empty());
+        if matches!(step.fiber_status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+        assert!(!matches!(step.fiber_status, FlowFiberStatus::Failed(_)));
+    }
+    assert!(matches!(
+        engine.take_program_result().unwrap().unwrap().1,
+        RuntimeValue::Callable(_)
+    ));
+    let lowered = AwbcLowerer::new(
+        selected.plan(),
+        &compiled.dialogue_content,
+        "latent-map.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let decoded = AwbcProgram::decode_canonical(
+        &lowered.encode_canonical().unwrap(),
+        AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let mut backend = VmRuntimePureCallBackend::default();
+    let value = arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
+        &Arc::new(decoded),
+        selected.program(),
+        &[],
+        &mut backend,
+    )
+    .unwrap();
+    assert!(matches!(value, RuntimeValue::Callable(_)));
+    assert_eq!(backend.stats().awbc_pure_program_calls, 1);
+    assert_eq!(backend.stats().pure_calls, 0);
 }

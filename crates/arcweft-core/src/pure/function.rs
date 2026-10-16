@@ -851,7 +851,6 @@ fn scalar_completion_expr_is_total(plan: &RuntimePlan, value: &RuntimeExpr, dept
         | RuntimeExprKind::ApplyGroup { .. }
         | RuntimeExprKind::TraitCall { .. }
         | RuntimeExprKind::PureCall { .. }
-        | RuntimeExprKind::StandardMap { .. }
         | RuntimeExprKind::Sum { .. }
         | RuntimeExprKind::IfLet { .. }
         | RuntimeExprKind::Match { .. }
