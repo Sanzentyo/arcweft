@@ -117,6 +117,19 @@ that requires dense input materializes that representation only from the admitte
 packet. i64 repeated reductions borrow the retained row directly. These storage
 choices preserve the existing complete source-span budget and totality admission.
 
+A first-class source Map also owns a closed kernel boundary. In Drain mode a
+capture-free, fully applied callback may execute that Map as one control
+operation when its entire ordinary body matches the selected collection family
+and the original target has total numeric completion proof. Every row still
+evaluates the original function with every whole formal. Kernel admission checks
+the exact source/result layouts, source ownership, complete physical packet and
+backend capability before consuming the prepared source. It cannot suspend or
+publish a partial result. Captured callbacks and OneOp retain the ordinary body
+and its original per-application budget. The separate optimizer for an already
+expanded ApplyGroup/iterator span still requires its full scheduled cost to fit.
+A consuming Sum may fuse only with its existing totality and later-observer
+proof; its actual continuation operations also have to fit the remaining budget.
+
 ## Interpreter / compiled modes
 
 ```text

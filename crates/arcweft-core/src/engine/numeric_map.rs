@@ -17,6 +17,8 @@ use crate::value::{
 };
 use std::sync::Arc;
 
+mod control;
+
 struct LoopProjection<'a> {
     iterator: Local,
     callable: Local,
@@ -381,6 +383,8 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
             FlowOp::Assign { place, .. } if elided.contains(&place.place().local()) => {
                 return false;
             }
+            FlowOp::EvaluatedEffect(crate::effect::RuntimeEffectExpr::Log { .. })
+            | FlowOp::Effect(crate::effect::LineEffectRequest::Log(_)) => {}
             FlowOp::ProjectCall { site } => {
                 let Some(site) = plan.project_call_sites().get(*site) else {
                     return false;
@@ -444,6 +448,17 @@ fn operations_avoid_locals(plan: &RuntimePlan, ops: &[&FlowOp], elided: &[Local]
     true
 }
 impl Engine {
+    fn consume_projected_ops(&mut self, count: usize) {
+        if self.fiber.frame.pending_ops.is_empty() {
+            if let Some(cursor) = self.fiber.frame.cursor.as_mut() {
+                cursor.op_index += count;
+            }
+        } else {
+            for _ in 0..count {
+                self.fiber.frame.pending_ops.pop_front();
+            }
+        }
+    }
     fn numeric_elision_has_no_later_observer(
         &self,
         plan: &RuntimePlan,
@@ -764,15 +779,7 @@ impl Engine {
                                     sum_result = Some(RuntimeValue::i64(value));
                                 }
                             }
-                            if candidate.fiber.frame.pending_ops.is_empty() {
-                                if let Some(cursor) = candidate.fiber.frame.cursor.as_mut() {
-                                    cursor.op_index += commit.consumed_ops;
-                                }
-                            } else {
-                                for _ in 0..commit.consumed_ops {
-                                    candidate.fiber.frame.pending_ops.pop_front();
-                                }
-                            }
+                            candidate.consume_projected_ops(commit.consumed_ops);
                             candidate.run_child_next = true;
                             if let Some(value) = sum_result {
                                 match commit

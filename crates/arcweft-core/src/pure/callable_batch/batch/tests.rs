@@ -233,6 +233,26 @@ fn all_numeric_widths_keep_complete_uniform_and_dense_rows() {
             assert_eq!(result, values, "{input:?}");
             assert_eq!(vm.stats().pure_calls, 3);
             assert_eq!(vm.stats().batch_calls, 1);
+            let RuntimeValue::Seq(dense) =
+                crate::value::runtime_sequence_from_literal_values(values.clone())
+            else {
+                panic!("scalar source sequence")
+            };
+            assert!(matches!(dense, RuntimeSeq::Dense(_)), "{input:?}");
+            for sequence in [RuntimeSeq::Values(values.clone()), dense] {
+                let batch = projection.batch_sequence(&sequence, false).unwrap();
+                assert_eq!(storage(&batch), expected_storage, "{input:?}");
+                assert_eq!(batch.rows(), 3);
+                assert!(Arc::ptr_eq(batch.function().plan(), &plan));
+                let mut vm = VmRuntimePureCallBackend::default();
+                let RuntimeNumericMapBatchResult::Values(result) = batch.execute(&mut vm).unwrap()
+                else {
+                    panic!("sequence collect mode")
+                };
+                assert_eq!(result, values, "{input:?}");
+                assert_eq!(vm.stats().pure_calls, 3);
+                assert_eq!(vm.stats().batch_calls, 1);
+            }
         }
     }
 }

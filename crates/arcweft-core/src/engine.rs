@@ -2918,12 +2918,20 @@ impl Engine {
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
             let consumed = self
-                .try_step_numeric_map_span(
+                .try_step_numeric_map_control(
                     options.budget.max_ops - executed_ops,
                     options.mode,
                     &mut output,
                     pure_backend,
                 )
+                .or_else(|| {
+                    self.try_step_numeric_map_span(
+                        options.budget.max_ops - executed_ops,
+                        options.mode,
+                        &mut output,
+                        pure_backend,
+                    )
+                })
                 .unwrap_or_else(|| {
                     let (_, control_ops) = self.with_scalar_operation_budget(
                         options.mode,

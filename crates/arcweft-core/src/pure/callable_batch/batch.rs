@@ -4,7 +4,8 @@ use super::{
     RuntimeNumericMapInput, RuntimeNumericMapProjection, RuntimePureFunctionRef, RuntimePureScalar,
     runtime_value_as_scalar,
 };
-use crate::value::{RuntimeEvalError, RuntimeExactInteger, RuntimeValue};
+use crate::value::{RuntimeEvalError, RuntimeExactInteger, RuntimeSeq, RuntimeValue};
+use std::borrow::Cow;
 
 #[cfg(test)]
 mod tests;
@@ -63,6 +64,61 @@ pub(crate) enum RuntimeNumericMapBatchResult {
     Sum(i64),
 }
 
+enum Source<'a> {
+    Bound(&'a [&'a RuntimeValue]),
+    Sequence(&'a RuntimeSeq),
+}
+
+impl Source<'_> {
+    fn permits_copy(&self) -> bool {
+        match self {
+            Self::Bound(items) => items.iter().all(|item| item.ownership().permits_copy()),
+            Self::Sequence(items) => items.ownership().permits_copy(),
+        }
+    }
+    fn len(&self) -> usize {
+        match self {
+            Self::Bound(items) => items.len(),
+            Self::Sequence(items) => items.len(),
+        }
+    }
+    fn get(&self, index: usize) -> Option<Cow<'_, RuntimeValue>> {
+        match self {
+            Self::Bound(items) => items.get(index).map(|item| Cow::Borrowed(*item)),
+            Self::Sequence(RuntimeSeq::Values(items)) => items.get(index).map(Cow::Borrowed),
+            Self::Sequence(items @ RuntimeSeq::Dense(dense)) if index < items.len() => {
+                use crate::value::DenseSeq;
+                match dense {
+                    DenseSeq::Units(_)
+                    | DenseSeq::I8(_)
+                    | DenseSeq::I16(_)
+                    | DenseSeq::I32(_)
+                    | DenseSeq::I64(_)
+                    | DenseSeq::I128(_)
+                    | DenseSeq::ISize(_)
+                    | DenseSeq::U8(_)
+                    | DenseSeq::U16(_)
+                    | DenseSeq::U32(_)
+                    | DenseSeq::U64(_)
+                    | DenseSeq::U128(_)
+                    | DenseSeq::USize(_)
+                    | DenseSeq::F32(_)
+                    | DenseSeq::F64(_)
+                    | DenseSeq::Bool(_)
+                    | DenseSeq::Bytes(_)
+                    | DenseSeq::Chars(_)
+                    | DenseSeq::Durations(_) => {
+                        // These rows are scalar copies, never capture/object graphs.
+                        Some(Cow::Owned(items.value_at(index)))
+                    }
+                    DenseSeq::Strings(_) | DenseSeq::EntityRefs(_) => None,
+                }
+            }
+            Self::Sequence(_) => None,
+        }
+    }
+}
+
 impl<'plan> RuntimeNumericMapProjection<'plan> {
     /// Validates every original input and item before allocating or copying
     /// numeric arguments. Equal physical rows are retained only once.
@@ -71,11 +127,28 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
         items: &[&RuntimeValue],
         fused: bool,
     ) -> Option<RuntimeNumericMapBatch<'plan>> {
+        self.batch_source(Source::Bound(items), fused)
+    }
+
+    pub(crate) fn batch_sequence(
+        &self,
+        items: &RuntimeSeq,
+        fused: bool,
+    ) -> Option<RuntimeNumericMapBatch<'plan>> {
+        self.batch_source(Source::Sequence(items), fused)
+    }
+
+    fn batch_source(
+        &self,
+        items: Source<'_>,
+        fused: bool,
+    ) -> Option<RuntimeNumericMapBatch<'plan>> {
         use crate::plan::{RuntimePureInputType as I, RuntimePureOutputType as O};
         let arity = self.function.inputs.len();
         if arity != self.inputs.len()
             || arity > super::super::RuntimeI64Args::MAX
             || (fused && !self.supports_total_sum())
+            || !items.permits_copy()
         {
             return None;
         }
@@ -125,12 +198,10 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
                 }
                 let mut first: Option<RuntimePureScalar> = None;
                 let mut repeated = true;
-                for item in items {
-                    if !item.ownership().permits_copy() {
-                        return None;
-                    }
+                for index in 0..rows {
                     if has_item {
-                        let scalar = runtime_value_as_scalar(item)?;
+                        let item = items.get(index)?;
+                        let scalar = runtime_value_as_scalar(&item)?;
                         convert(scalar)?;
                         if let Some(previous) = first {
                             repeated &= previous.same_physical_representation(scalar);
@@ -143,10 +214,12 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
                 // the complete function signature have still been checked.
                 let repeated = repeated && rows != 0;
                 let mut values = Vec::<$ty>::with_capacity(if repeated { arity } else { flat_len });
-                for item in items.iter().take(if repeated { 1 } else { rows }) {
+                for index in 0..if repeated { 1 } else { rows } {
                     for input in &self.inputs {
                         let scalar = match input {
-                            RuntimeNumericMapInput::Item => runtime_value_as_scalar(item)?,
+                            RuntimeNumericMapInput::Item => {
+                                runtime_value_as_scalar(items.get(index)?.as_ref())?
+                            }
                             RuntimeNumericMapInput::Constant(value) => *value,
                         };
                         values.push(convert(scalar)?);

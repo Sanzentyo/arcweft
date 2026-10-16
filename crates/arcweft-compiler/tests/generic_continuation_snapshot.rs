@@ -21,6 +21,9 @@ use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, Bundl
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
+#[path = "snapshot_cases/standard_map.rs"]
+mod standard_map;
+
 const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }
 fn choose<A, B>(first: A)(second: B) -> B { second }
