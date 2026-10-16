@@ -800,6 +800,21 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    contextual_prefix_keeps_its_fixed_later_type_through_the_middle_group,
+    r#"
+#[pure]
+fn choose<A, B>(first: A)(middle: i64)(last: B) -> B { last }
+flow main() -> i64 {
+    let prefix: i64 -> (i64 -> i64 effects {}) effects {} = choose("captured")
+    let next = prefix(2i64)
+    return next(42i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     generic_prefix_as_monomorphic_callback,
     r#"
 fn choose<A, B>(first: A)(second: B) -> B { second }

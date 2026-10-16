@@ -76,6 +76,7 @@ use super::entities::EntityReferenceResolutionError;
 pub(super) enum AnalyzerExpressionExpectation<'a> {
     Unconstrained,
     Complete(&'a TypeKind),
+    ApplicationCallee(AnalyzerApplicationCalleeExpectation<'a>),
     /// A compile-time PublicId accepts a normalized HIR entity-reference token.
     /// This is deliberately narrower than ordinary
     /// `String` expectation: entity references elsewhere still resolve to
@@ -98,7 +99,44 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
     },
 }
 
+/// The next application constrains input and result types, but contributes
+/// no new effect bound to the callable being selected.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AnalyzerApplicationCalleeExpectation<'a> {
+    pub(super) parameters: &'a [TypeKind],
+    pub(super) result: Option<&'a TypeKind>,
+    pub(super) scope_lease:
+        Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
+}
+
+impl AnalyzerApplicationCalleeExpectation<'_> {
+    pub(super) fn for_candidate(self, candidate: &TypeKind) -> Option<TypeKind> {
+        let mut expected = candidate.clone();
+        let TypeKind::Function {
+            params,
+            return_type,
+            ..
+        } = &mut expected
+        else {
+            return None;
+        };
+        *params = self.parameters.to_vec();
+        if let Some(result) = self.result {
+            *return_type = Box::new(result.clone());
+        }
+        Some(expected)
+    }
+}
+
 impl<'a> AnalyzerExpressionExpectation<'a> {
+    pub(super) const fn application_callee(
+        &self,
+    ) -> Option<AnalyzerApplicationCalleeExpectation<'a>> {
+        match self {
+            Self::ApplicationCallee(expected) => Some(*expected),
+            _ => None,
+        }
+    }
     pub(super) fn function_value_source(self) -> Self {
         if matches!(self, Self::FunctionValueSource(_)) {
             return self;
@@ -174,7 +212,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
         match self {
-            Self::Unconstrained => None,
+            Self::Unconstrained | Self::ApplicationCallee(_) => None,
             Self::FunctionValueSource(expected) | Self::PublicIdReference { expected, .. } => {
                 expected.contextual_shape()
             }
@@ -215,7 +253,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
-            Self::Unconstrained | Self::Parametric { .. } => None,
+            Self::Unconstrained | Self::ApplicationCallee(_) | Self::Parametric { .. } => None,
         }
     }
 
@@ -243,7 +281,10 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                 scope_lease: Some(_),
                 ..
             } => Some(expected),
-            Self::Unconstrained | Self::Parametric { .. } | Self::FunctionValueSource(_) => None,
+            Self::Unconstrained
+            | Self::ApplicationCallee(_)
+            | Self::Parametric { .. }
+            | Self::FunctionValueSource(_) => None,
         }
     }
 
@@ -251,6 +292,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         &self,
     ) -> Option<&crate::types::constraints::ImportedGenericParameterScopeLease> {
         match self {
+            Self::ApplicationCallee(expected) => expected.scope_lease,
             Self::PublicIdReference { expected, .. } => expected.nested_call_scope_lease(),
             Self::Parametric {
                 scope_lease: Some(scope_lease),
@@ -262,6 +304,11 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     fn accepts_cached(&self, checked: &super::PreparedExpressionFact) -> bool {
         match self {
+            Self::ApplicationCallee(expected) => checked.value_type().is_some_and(|actual| {
+                expected
+                    .for_candidate(actual)
+                    .is_some_and(|expected| expected.accepts(actual))
+            }),
             Self::PublicIdReference { expected, .. } => expected.accepts_cached(checked),
             Self::FunctionValueSource(expected) => {
                 matches!(checked.value_type(), Some(TypeKind::Function { binder, .. }) if !binder.is_empty())

@@ -30,6 +30,117 @@ fn declaration_body(report: &FinalSemanticAnalysis, name: &str) -> CheckedExecut
 }
 
 #[test]
+fn curried_map_admission_retains_each_family_and_the_original_callback_body() {
+    for (input, output) in [
+        ("Vec<i64>", "Vec<i64>"),
+        ("Seq<i64>", "Seq<i64>"),
+        ("Array<i64, 3>", "Array<i64, 3>"),
+        ("Slice<i64>", "Vec<i64>"),
+        ("Option<i64>", "Option<i64>"),
+        ("Result<i64, String>", "Result<i64, String>"),
+    ] {
+        for expression in [
+            "values.map(increment)",
+            "map(increment)(values)",
+            "{ let mapped = map(increment)(values); mapped }",
+        ] {
+            let source = format!(
+                "#[pure]\nfn increment(value: i64) -> i64 {{ value + 1i64 }}\n#[pure]\nfn root(values: {input}) -> {output} {{ {expression} }}"
+            );
+            let world = fixture(&source, None);
+            let report = analyze(&world).unwrap_or_else(|error| panic!("{source}: {error:?}"));
+            let source = declaration_body(&report, "root");
+            let context = report
+                .checked_execution_context(
+                    world.project.analysis_view().unwrap(),
+                    &world.symbols,
+                    source.clone(),
+                    None,
+                )
+                .unwrap();
+            let admitted = context.checked_deterministic_program(source).unwrap();
+            assert_eq!(
+                admitted.input_abi().control(),
+                crate::final_analysis::CheckedExecutableControlRole::FlowRequired,
+                "{input}: {expression}"
+            );
+            assert_eq!(
+                admitted.input_abi().suspension(),
+                crate::final_analysis::CheckedSuspensionRole::NonSuspending,
+                "{input}: {expression}"
+            );
+        }
+    }
+}
+
+#[test]
+fn curried_map_admission_keeps_unknown_callback_suspension() {
+    let world = fixture(
+        "fn root(values: Vec<i64>, callback: i64 -> i64 effects {}) -> Vec<i64> { map(callback)(values) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        context.checked_deterministic_program(source),
+        Err(crate::final_analysis::CheckedProgramAdmissionError::Suspension)
+    ));
+}
+
+#[test]
+fn curried_map_admission_keeps_retained_callback_await() {
+    let world = fixture(
+        "fn callback(value: i64) -> i64 { let image = await load_bg(); value }\nfn root(values: Vec<i64>) -> Vec<i64> { map(callback)(values) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        context.checked_deterministic_program(source),
+        Err(crate::final_analysis::CheckedProgramAdmissionError::Suspension)
+    ));
+}
+
+#[test]
+fn contextual_prefix_inherits_a_fixed_later_type_through_the_middle_group() {
+    let world = fixture(
+        "#[pure]\nfn choose<A, B>(first: A)(middle: i64)(last: B) -> B { last }\nfn root(value: String) -> String { let prefix: i64 -> (String -> String effects {}) effects {} = choose(1i64); let next = prefix(2i64); next(value) }",
+        None,
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let admitted = context.checked_deterministic_program(source).unwrap();
+    assert_eq!(
+        admitted.input_abi().result().value_type(),
+        Some(&TypeKind::String)
+    );
+}
+
+#[test]
 fn retained_view_execution_environment_rejects_another_view_and_an_ordinary_callable() {
     use arcweft_lang_hir::item::HirItemKind;
     use arcweft_lang_hir::source_index::HirCallableSourceOwner;

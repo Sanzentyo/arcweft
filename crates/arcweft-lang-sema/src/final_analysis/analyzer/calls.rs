@@ -565,6 +565,8 @@ struct PreparedCandidateRequest<'a, 'ctx> {
     candidate: Arc<PreparedResolvedCallable>,
     current_group: CallableGroupIndex,
     expected_result: Option<&'a TypeKind>,
+    expected_application_callee:
+        Option<super::expressions::AnalyzerApplicationCalleeExpectation<'a>>,
     expected_result_scope:
         Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
     callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
@@ -942,7 +944,7 @@ impl Analyzer<'_, '_, '_> {
             context,
             source.module,
             source.call,
-            source.expectation.contextual_shape(),
+            source.expectation,
             source.site,
         ) {
             Ok(recovery) => recovery,
@@ -1191,13 +1193,8 @@ impl Analyzer<'_, '_, '_> {
                 },
             ));
         }
-        let staged_callee = self.stage_call_callee_children(
-            context,
-            module,
-            call,
-            expectation.contextual_shape(),
-            source.site,
-        )?;
+        let staged_callee =
+            self.stage_call_callee_children(context, module, call, expectation, source.site)?;
         if staged_callee.recovery.is_some() {
             return Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::CallResolutionFailed { owner },
@@ -1304,6 +1301,9 @@ impl Analyzer<'_, '_, '_> {
                                 candidate: Arc::clone(candidate),
                                 current_group: candidate_group,
                                 expected_result: source.expectation.nested_call_type(),
+                                expected_application_callee: source
+                                    .expectation
+                                    .application_callee(),
                                 expected_result_scope: source.expectation.nested_call_scope_lease(),
                                 callee_inputs: resolution.callee_inputs.clone(),
                                 pass: CandidateEvaluationPass::Probe,
@@ -2283,6 +2283,7 @@ impl Analyzer<'_, '_, '_> {
                             candidate: Arc::clone(candidate),
                             current_group: candidate_group,
                             expected_result: source.expectation.nested_call_type(),
+                            expected_application_callee: source.expectation.application_callee(),
                             expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
                             pass: CandidateEvaluationPass::Probe,
@@ -2440,6 +2441,7 @@ impl Analyzer<'_, '_, '_> {
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
                         expected_result: expected,
+                        expected_application_callee: None,
                         expected_result_scope: None,
                         callee_inputs:
                             crate::callable::PreparedCallCalleeConstraintInputs::DialogueApplication,
@@ -2781,6 +2783,7 @@ impl Analyzer<'_, '_, '_> {
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
                         expected_result: None,
+                        expected_application_callee: None,
                         expected_result_scope: None,
                         callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs::
                             StaticContentCallee(static_content_callee),
@@ -2961,6 +2964,7 @@ impl Analyzer<'_, '_, '_> {
                             candidate: Arc::clone(&selected),
                             current_group,
                             expected_result: source.expectation.nested_call_type(),
+                            expected_application_callee: source.expectation.application_callee(),
                             expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
                             pass: CandidateEvaluationPass::SelectedReplay,
@@ -4038,9 +4042,10 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         call: &HirCallInvocation,
-        expected: Option<&TypeKind>,
+        expectation: &AnalyzerExpressionExpectation<'_>,
         site: crate::callable::CheckedCallSite,
     ) -> Result<StagedCallCalleeChildren, AnalyzerExpressionError> {
+        let expected = expectation.contextual_shape();
         let owns_callee_expression_fact = site.owns_callee_expression_fact();
         let mut function_value_origin = None;
         match call.callee() {
@@ -4063,6 +4068,24 @@ impl Analyzer<'_, '_, '_> {
                                 &template,
                             ),
                         )?;
+                    } else if matches!(expression.kind(), HirExprKind::Call(_)) {
+                        if let Some(parameters) =
+                            self.contextual_application_parameter_types(module, call)?
+                        {
+                            self.evaluate_expression_with_expectation(
+                                context,
+                                *value,
+                                AnalyzerExpressionExpectation::ApplicationCallee(
+                                    super::expressions::AnalyzerApplicationCalleeExpectation {
+                                        parameters: &parameters,
+                                        result: expected,
+                                        scope_lease: expectation.nested_call_scope_lease(),
+                                    },
+                                ),
+                            )?;
+                        } else {
+                            self.evaluate_expression(context, *value, None)?;
+                        }
                     } else {
                         self.evaluate_expression(context, *value, None)?;
                     }
@@ -4367,6 +4390,55 @@ impl Analyzer<'_, '_, '_> {
             recovery: None,
             function_value_origin,
         })
+    }
+
+    /// Bidirectional application checking can use types already owned by
+    /// lexical bindings or checked expressions. No argument is evaluated or
+    /// published early: source evaluation and candidate facts keep their
+    /// ordinary owners. Named/spread arguments require a selected schema.
+    fn contextual_application_parameter_types(
+        &self,
+        module: &HirModule,
+        call: &HirCallInvocation,
+    ) -> Result<Option<Vec<TypeKind>>, AnalyzerExpressionError> {
+        let mut parameters = Vec::with_capacity(call.arguments().len());
+        for argument in call.arguments() {
+            if !matches!(argument, HirCallArgument::Positional { .. }) {
+                return Ok(None);
+            }
+            let owner = argument.value();
+            let ty = if let Some(ty) = self
+                .facts
+                .expressions()
+                .get(&owner)
+                .and_then(super::PreparedExpressionFact::value_type)
+            {
+                Some(ty.clone())
+            } else {
+                let expression = module.resolve_expr(owner).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                if let HirExprKind::Path(path) = expression.kind()
+                    && let Some(path) = path.as_resolved()
+                    && let Some(resolution) = self
+                        .resolve_path_value(module, owner, expression.scope(), path)
+                        .map_err(AnalyzerExpressionError::fatal)?
+                {
+                    self.staged_value_resolution_type(&resolution, owner)
+                        .map_err(AnalyzerExpressionError::fatal)?
+                } else {
+                    None
+                }
+            };
+            let Some(ty) = ty else { return Ok(None) };
+            if matches!(ty, TypeKind::CompileTimeCallable(_)) {
+                // Declaration values acquire their function type under the
+                // selected formal's expectation, not from a path placeholder.
+                return Ok(None);
+            }
+            parameters.push(ty);
+        }
+        Ok(Some(parameters))
     }
 
     fn stage_function_value_origin(
@@ -4832,6 +4904,7 @@ impl Analyzer<'_, '_, '_> {
             candidate,
             current_group,
             expected_result,
+            expected_application_callee,
             expected_result_scope,
             callee_inputs,
             pass,
@@ -5040,6 +5113,7 @@ impl Analyzer<'_, '_, '_> {
             inputs.clone(),
             authored_arguments,
             expected_result,
+            expected_application_callee,
             owner,
             callee_inputs.clone(),
             dialogue_patch_admissions,

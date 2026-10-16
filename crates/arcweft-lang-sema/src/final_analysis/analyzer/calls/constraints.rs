@@ -2972,6 +2972,7 @@ pub(crate) struct PreparedCallConstraintSet {
     receiver_sources: Box<[PreparedSourceConstraint<AnalyzerCallConstraintDomain>]>,
     source_admissions: BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallSourceAdmission>,
     base_constraints: Box<[PreparedCallTypeConstraint]>,
+    next_application_constraints: Box<[PreparedCallTypeConstraint]>,
     type_application_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     result_constraint: Option<PreparedCallTypeConstraint>,
@@ -4254,6 +4255,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
     inputs: PreparedCallInputs,
     authored_arguments: &[arcweft_lang_hir::expr::HirCallArgument],
     expected_result: Option<&TypeKind>,
+    expected_application_callee: Option<
+        super::super::expressions::AnalyzerApplicationCalleeExpectation<'_>,
+    >,
     result_source: ExprId,
     callee_inputs: PreparedCallCalleeConstraintInputs,
     dialogue_patch_admissions: &[AnalyzerPreparedDialoguePatchAdmission],
@@ -5043,7 +5047,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }
 
-    let result_constraint = if let Some(expected) = expected_result {
+    let mut next_application_constraints = Vec::new();
+    let result_constraint = if expected_result.is_some() || expected_application_callee.is_some() {
         let result = candidate
             .result_schema_for_group(group, terminal_effects)
             .map_err(|error| {
@@ -5053,14 +5058,54 @@ pub(crate) fn validate_and_prepare_call_constraints(
             .map_err(|error| {
                 CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
             })?;
-        let CallableResultSchema::Value(pattern) = result else {
+        let CallableResultSchema::Value(mut pattern) = result else {
             return Err(CallAnalysisFailure::Invariant(
                 CallAnalysisInvariant::Constraint(
                     CallConstraintInvariant::PreparedFunctionTypeMismatch,
                 ),
             ));
         };
-        Some(PreparedCallTypeConstraint {
+        let expected = if let Some(next) = expected_application_callee
+            && candidate.next_group_for(group).is_some()
+        {
+            let TypeKind::Function {
+                params,
+                return_type,
+                binder,
+                ..
+            } = pattern
+            else {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    ),
+                ));
+            };
+            if !binder.is_empty() {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    ),
+                ));
+            }
+            // The next call's inputs constrain this continuation's formal
+            // parameters. Its optional result has the opposite direction.
+            // Both use this candidate's existing application scope; schema
+            // variables never escape into an enclosing actual-type scope.
+            next_application_constraints.push(PreparedCallTypeConstraint {
+                source: AnalyzerCallConstraintSource::Result {
+                    source: result_source,
+                },
+                pattern: TypeKind::Tuple(params),
+                actual: TypeKind::Tuple(next.parameters.to_vec()),
+                acceptance: ConstraintAcceptance::PatternAcceptsActual,
+            });
+            pattern = *return_type;
+            next.result
+        } else {
+            expected_result
+        };
+        expected.map(|expected| PreparedCallTypeConstraint {
             source: AnalyzerCallConstraintSource::Result {
                 source: result_source,
             },
@@ -5097,7 +5142,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
             value: result_projection.clone(),
             closure: result_closure,
         });
-    } else if expected_result.is_some() {
+    } else if expected_result.is_some() || expected_application_callee.is_some() {
         return Err(CallAnalysisFailure::Invariant(
             CallAnalysisInvariant::Constraint(
                 CallConstraintInvariant::PreparedFunctionTypeMismatch,
@@ -5124,6 +5169,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         receiver_sources: receiver_sources.into_boxed_slice(),
         source_admissions,
         base_constraints: base_constraints.into_boxed_slice(),
+        next_application_constraints: next_application_constraints.into_boxed_slice(),
         type_application_constraints,
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         result_constraint,
@@ -5424,6 +5470,7 @@ pub(crate) fn run_prepared_candidate(
         receiver_sources,
         source_admissions,
         base_constraints,
+        next_application_constraints,
         type_application_constraints,
         receiver_constraints,
         result_constraint,
@@ -5485,7 +5532,7 @@ pub(crate) fn run_prepared_candidate(
                         );
                     }
                 }
-                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
+                for constraint in base_constraints.iter().chain(receiver_constraints.iter()).chain(next_application_constraints.iter()) {
                     let _ = constraint.source;
                     if constraint.pattern != constraint.actual {
                         driver.constrain(
@@ -6298,6 +6345,7 @@ pub(crate) fn run_prepared_child_candidate(
         receiver_sources,
         source_admissions,
         base_constraints,
+        next_application_constraints,
         type_application_constraints,
         receiver_constraints,
         result_constraint,
@@ -6354,7 +6402,11 @@ pub(crate) fn run_prepared_child_candidate(
                         );
                     }
                 }
-                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
+                for constraint in base_constraints
+                    .iter()
+                    .chain(receiver_constraints.iter())
+                    .chain(next_application_constraints.iter())
+                {
                     let _ = constraint.source;
                     if constraint.pattern != constraint.actual {
                         driver.constrain(

@@ -2035,6 +2035,25 @@ impl<P, U> PreparedCallGraph<P, U> {
         Ok(())
     }
 
+    /// Borrow the selected prefix issued by this graph. Analysis of retained
+    /// arguments follows this edge instead of reconstructing a call from HIR.
+    pub(crate) fn continuation_prefix(
+        &self,
+        reference: &PreparedCallContinuationRef,
+    ) -> Result<&P, CallConstraintInvariant>
+    where
+        P: PreparedCallPrefixPayload<Unselected = U>,
+    {
+        self.validate_continuation_chain(reference)?;
+        let Some(node) = self.nodes.get(&reference.0.node) else {
+            return Err(CallConstraintInvariant::MissingOrStalePreparedNode);
+        };
+        let PreparedCallNodePayload::SelectedContinuation(continuation) = &node.payload else {
+            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+        };
+        Ok(&continuation.prefix)
+    }
+
     pub(crate) fn resolve_continuation(
         &self,
         reference: &PreparedCallContinuationRef,
@@ -2269,11 +2288,38 @@ fn issue_scope_initialization(
         }
     }
 
+    // Contextual constraints may settle a later group's parameter while the
+    // prefix is created. The graph-issued solution owns that fixed choice;
+    // every intervening group must inherit it just like an earlier input.
+    let inherited_types = continuation_seed
+        .as_ref()
+        .map(|seed| {
+            seed.solution
+                .bindings()
+                .map(|(parameter, _)| parameter.value().clone())
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let inherited_consts = continuation_seed
+        .as_ref()
+        .map(|seed| {
+            seed.solution
+                .const_bindings()
+                .map(|(parameter, _)| parameter.value().clone())
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
     let mut required = Vec::new();
     for entry in inventory.types() {
         let eligibility = match (entry.role(), entry.first_use()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintParameterEligibility::Rigid
+            }
+            (super::CallableSchemaGenericRole::Candidate, _)
+                if inherited_types.contains(entry.parameter()) =>
+            {
+                required.push(entry.parameter().clone());
+                TypeConstraintParameterEligibility::Bindable
             }
             (
                 super::CallableSchemaGenericRole::Candidate,
@@ -2321,6 +2367,12 @@ fn issue_scope_initialization(
         let eligibility = match (entry.role(), entry.first_use()) {
             (super::CallableSchemaGenericRole::RigidReference, _) => {
                 TypeConstraintConstEligibility::Rigid
+            }
+            (super::CallableSchemaGenericRole::Candidate, _)
+                if inherited_consts.contains(entry.parameter()) =>
+            {
+                required_consts.push(entry.parameter().clone());
+                TypeConstraintConstEligibility::Bindable
             }
             (
                 super::CallableSchemaGenericRole::Candidate,

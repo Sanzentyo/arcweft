@@ -119,19 +119,33 @@ impl<'a> CallableEffectGraph<'a> {
                 && matches!(selected.schema().validator(),
                     crate::callable::CallableValidator::StandardMap(family) if family.callback_is_immediate());
             let producer = if immediate_map {
-                node.prefix()
-                    .record()
-                    .inputs()
-                    .mapping()
-                    .arguments()
-                    .iter()
-                    .flat_map(|argument| argument.slots())
-                    .find(|slot| {
-                        slot.coordinate().is_some_and(|coordinate| {
-                            coordinate.group().get() == 0 && coordinate.parameter().get() == 0
+                let mut prefix = node.prefix();
+                loop {
+                    control.check()?;
+                    let source = prefix
+                        .record()
+                        .inputs()
+                        .mapping()
+                        .arguments()
+                        .iter()
+                        .flat_map(|argument| argument.slots())
+                        .find(|slot| {
+                            slot.coordinate().is_some_and(|coordinate| {
+                                coordinate.group().get() == 0 && coordinate.parameter().get() == 0
+                            })
                         })
-                    })
-                    .map(|slot| slot.source().owner())
+                        .map(|slot| slot.source().owner());
+                    if source.is_some() {
+                        break source;
+                    }
+                    let Some(reference) = prefix.application().selected().prepared_continuation()
+                    else {
+                        break None;
+                    };
+                    prefix = prepared_calls
+                        .continuation_prefix(reference)
+                        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                }
             } else {
                 selected.exact_value_producer()
             };
