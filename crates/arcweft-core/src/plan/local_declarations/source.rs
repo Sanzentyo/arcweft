@@ -16,11 +16,53 @@ pub enum RuntimeLocalBindingKind {
     PostconditionResult,
 }
 
+impl RuntimeLocalBindingKind {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Parameter => 0,
+            Self::LetBinding => 1,
+            Self::PatternBinding => 2,
+            Self::ClosureParameter => 3,
+            Self::LoopBinding => 4,
+            Self::MatchBinding => 5,
+            Self::PostconditionResult => 6,
+        }
+    }
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Parameter,
+            1 => Self::LetBinding,
+            2 => Self::PatternBinding,
+            3 => Self::ClosureParameter,
+            4 => Self::LoopBinding,
+            5 => Self::MatchBinding,
+            6 => Self::PostconditionResult,
+            _ => return None,
+        })
+    }
+}
+
 /// Authored lifetime policy; execution-frame placement is a separate authority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimeLocalBindingStorage {
     Derived,
     RetainedState,
+}
+
+impl RuntimeLocalBindingStorage {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Derived => 0,
+            Self::RetainedState => 1,
+        }
+    }
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Derived,
+            1 => Self::RetainedState,
+            _ => return None,
+        })
+    }
 }
 
 /// Exact authored properties carried from the checked declaration owner.
@@ -37,20 +79,9 @@ impl RuntimeLocalBindingDeclaration {
         self,
         encoder: &mut crate::task::semantic::TaskSemanticEncoder<'_>,
     ) {
-        encoder.tag(match self.kind {
-            RuntimeLocalBindingKind::Parameter => 0,
-            RuntimeLocalBindingKind::LetBinding => 1,
-            RuntimeLocalBindingKind::PatternBinding => 2,
-            RuntimeLocalBindingKind::ClosureParameter => 3,
-            RuntimeLocalBindingKind::LoopBinding => 4,
-            RuntimeLocalBindingKind::MatchBinding => 5,
-            RuntimeLocalBindingKind::PostconditionResult => 6,
-        });
+        encoder.tag(self.kind.semantic_tag());
         encoder.tag(u8::from(self.mutable));
-        encoder.tag(match self.storage {
-            RuntimeLocalBindingStorage::Derived => 0,
-            RuntimeLocalBindingStorage::RetainedState => 1,
-        });
+        encoder.tag(self.storage.semantic_tag());
     }
 
     #[must_use]

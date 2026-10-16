@@ -282,13 +282,35 @@ fn deep_tree_and_copy_admission_use_the_iterative_owner() {
     // The synthetic fixture is dropped iteratively too; this test covers the
     // tree/copy visitor, not recursive Box drop glue.
     loop {
-        let kind = std::mem::replace(&mut root.kind, RuntimeExprKind::Value(RuntimeValue::Unit));
+        let kind = std::sync::Arc::try_unwrap(root.node)
+            .expect("unique original fixture node")
+            .kind;
         if let RuntimeExprKind::Unary { expr, .. } = kind {
             root = *expr;
         } else {
             break;
         }
     }
+}
+
+#[test]
+fn cloning_an_authored_expression_retains_the_original_node_and_guard_obligations() {
+    let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+    let local =
+        crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+    let original = RuntimeExpr::from_admitted_parts_with_guard_copy_locals(
+        ty,
+        RuntimeExprKind::Value(RuntimeValue::String("original source literal".to_owned())),
+        vec![local],
+    );
+    let retained = original.clone();
+    assert_eq!(retained.ty(), ty);
+    assert_eq!(retained.guard_copy_locals(), [local]);
+    assert!(std::ptr::eq(original.kind(), retained.kind()));
+    assert!(std::ptr::eq(
+        original.guard_copy_locals(),
+        retained.guard_copy_locals()
+    ));
 }
 
 #[test]

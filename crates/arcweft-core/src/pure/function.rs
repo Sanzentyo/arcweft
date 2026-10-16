@@ -615,7 +615,7 @@ impl<'a> RuntimePureFunctionRef<'a> {
             })
     }
 
-    pub const fn result_type(self) -> crate::runtime_id::RuntimePlanTypeId {
+    pub fn result_type(self) -> crate::runtime_id::RuntimePlanTypeId {
         match self.authority {
             RuntimePureFunctionAuthority::Recipe(helper) => helper.expr.ty(),
             RuntimePureFunctionAuthority::Function(function) => function.result(),

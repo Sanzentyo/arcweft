@@ -9,6 +9,7 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
 mod placement;
 mod source;
+pub(super) mod source_codec;
 pub use placement::{
     RuntimeLineLocalBody, RuntimeLocalInitialization, RuntimeLocalOwner, RuntimeLocalPlacement,
     RuntimeLocalPlacementError, RuntimeLocalStorage,

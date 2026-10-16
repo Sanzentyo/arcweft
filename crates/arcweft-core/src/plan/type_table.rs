@@ -87,6 +87,19 @@ pub struct RuntimePlanTypeDeclaration {
 }
 
 impl RuntimePlanTypeDeclaration {
+    /// A local either has a closed type or the exact child scope of its
+    /// original closed function context. The local's source origin does not
+    /// substitute for that type/scope relationship.
+    pub(crate) fn admits_local_context(&self, context: Option<&Self>) -> bool {
+        match context {
+            None => self.scope().is_root(),
+            Some(owner) => {
+                owner.scope().is_root()
+                    && matches!(owner.projection(), RuntimePlanTypeProjection::Function { contract, .. }
+                    if self.scope().is_entered_from(owner.scope(), contract.binder()))
+            }
+        }
+    }
     pub const fn nominal_declaration(&self) -> Option<crate::entry::RuntimeNominalDeclarationId> {
         self.nominal_declaration
     }

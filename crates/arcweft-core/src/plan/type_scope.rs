@@ -188,6 +188,18 @@ impl RuntimeTypeScope {
         self.0.is_empty()
     }
 
+    /// Compare the exact child scope without allocating a temporary binder Vec.
+    pub(crate) fn is_entered_from(&self, parent: &Self, binder: RuntimeTypeBinder) -> bool {
+        if binder.is_empty() {
+            return self == parent;
+        }
+        parent.binders().len() < super::MAX_RUNTIME_PLAN_TYPE_DEPTH
+            && self
+                .binders()
+                .split_last()
+                .is_some_and(|(last, prefix)| *last == binder && prefix == parent.binders())
+    }
+
     pub fn require_root(&self) -> Result<(), RuntimeTypeScopeError> {
         self.is_root()
             .then_some(())

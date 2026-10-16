@@ -2,6 +2,28 @@
 
 mod pattern;
 
+// Each variant owns its admission temporaries. Keeping them in separate call
+// frames prevents an exhaustive dispatch's unrelated branch storage from
+// accumulating on every recursive expression edge in unoptimized builds.
+macro_rules! admit_expression_variants {
+    (@body $ty:expr, $locals:expr, complete $body:block) => { $body };
+    (@body $ty:expr, $locals:expr, $body:block) => {
+        {
+            let kind = $body;
+            Ok(RuntimeExpr::from_admitted_parts_with_guard_copy_locals($ty, kind, $locals))
+        }
+    };
+    ($seed:expr, $ty:expr, $locals:expr, { $($pattern:pat => $($mode:ident)? $body:block $(,)?)* }) => {
+        match $seed {
+            $($pattern => Self::lower_expression_variant(||
+                admit_expression_variants!(@body $ty, $locals, $($mode)? $body)
+            ),)*
+        }
+    };
+}
+
+#[cfg(test)]
+mod admission_stack_tests;
 #[cfg(test)]
 mod agent_tests;
 #[cfg(test)]
@@ -357,7 +379,7 @@ impl RuntimePlanBodyConstruction<'_> {
             .map(|seed| self.resolve_local(&seed).map(|(local, _)| local))
             .collect::<Result<Vec<_>, _>>()?;
         let ty = self.resolve_seed_type("expression", semantic_ty)?;
-        let kind = match kind {
+        admit_expression_variants!(kind, ty, guard_copy_locals, {
             RuntimeExprSeedKind::Value(value) => {
                 self.validate_plan_value("expression constant", ty, &value)?;
                 RuntimeExprKind::Value(value)
@@ -534,7 +556,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 template,
                 values,
                 effects,
-            } => {
+            } => complete {
                 if !self.is_exact_dialogue_content_type(ty) {
                     return Err(RuntimePlanBuildError::InvalidDialogueContentType {
                         slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0)
@@ -1342,8 +1364,16 @@ impl RuntimePlanBodyConstruction<'_> {
                     state: Box::new(state),
                 }
             }
-        };
-        Ok(RuntimeExpr::from_admitted_parts(ty, kind).with_guard_copy_locals(guard_copy_locals))
+        })
+    }
+
+    /// The variant's frame contains only its own construction work. This
+    /// boundary remains separate from recursive exhaustive source dispatch.
+    #[inline(never)]
+    fn lower_expression_variant(
+        admit: impl FnOnce() -> Result<RuntimeExpr, RuntimePlanBuildError>,
+    ) -> Result<RuntimeExpr, RuntimePlanBuildError> {
+        admit()
     }
 
     fn lower_optional_expression(

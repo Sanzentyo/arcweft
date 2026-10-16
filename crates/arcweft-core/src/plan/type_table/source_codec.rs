@@ -227,9 +227,13 @@ pub(in crate::plan) struct PreparedRuntimeTypeTableSource<'a> {
     limits: RuntimeTypeSourceLimits,
     storage_bytes: usize,
     elements: usize,
+    rows: usize,
 }
 
 impl PreparedRuntimeTypeTableSource<'_> {
+    pub(in crate::plan) const fn row_count(&self) -> usize {
+        self.rows
+    }
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.storage_bytes
     }
@@ -248,6 +252,7 @@ impl PreparedRuntimeTypeTableSource<'_> {
                 .expect("retaining a complete type source frame");
             debug_assert_eq!(reader.counts.storage, self.storage_bytes);
             debug_assert_eq!(reader.counts.elements, self.elements);
+            debug_assert_eq!(rows.len(), self.rows);
             let mut identities = BTreeSet::new();
             for row in &rows {
                 if !identities.insert(row.semantic_identity) {
@@ -332,6 +337,7 @@ impl RuntimePlanTypeTable {
                 limits,
                 storage_bytes: reader.counts.storage,
                 elements: reader.counts.elements,
+                rows: reader.type_count,
             })
         })();
         if result.is_err() {

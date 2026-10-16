@@ -15,6 +15,7 @@ use arcweft_id::{DeclarationIdentityFamily, PublicId, PublicIdFamilyError};
 pub use arcweft_need::Progress;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 use thiserror::Error;
 
 mod agent;
@@ -1572,11 +1573,29 @@ pub struct DenseSeqStorage<T> {
 /// Construction is owned by `RuntimePlanBuilder`; the private type identity
 /// and kind cannot be assembled independently or deserialized as a second
 /// plan authority.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct RuntimeExpr {
+    node: Arc<RuntimeExprData>,
+}
+
+/// One immutable admitted expression. Cloning a source reference retains this
+/// complete owner, including guard obligations, without copying its value tree.
+#[derive(Debug, PartialEq)]
+struct RuntimeExprData {
     ty: RuntimePlanTypeId,
     kind: RuntimeExprKind,
     guard_copy_locals: Vec<RuntimeLocalDeclarationId>,
+}
+
+impl fmt::Debug for RuntimeExpr {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RuntimeExpr")
+            .field("ty", &self.ty())
+            .field("kind", self.kind())
+            .field("guard_copy_locals", &self.guard_copy_locals())
+            .finish()
+    }
 }
 
 /// How one checked local use transfers the value from its owning binding.
@@ -1996,23 +2015,28 @@ impl RuntimeEntityReference {
 }
 
 impl RuntimeExpr {
-    pub(crate) const fn from_admitted_parts(ty: RuntimePlanTypeId, kind: RuntimeExprKind) -> Self {
-        Self {
-            ty,
-            kind,
-            guard_copy_locals: Vec::new(),
-        }
+    pub(crate) fn from_admitted_parts(ty: RuntimePlanTypeId, kind: RuntimeExprKind) -> Self {
+        Self::from_admitted_parts_with_guard_copy_locals(ty, kind, Vec::new())
     }
 
-    pub(crate) fn with_guard_copy_locals(mut self, locals: Vec<RuntimeLocalDeclarationId>) -> Self {
-        self.guard_copy_locals = locals;
-        self
+    pub(crate) fn from_admitted_parts_with_guard_copy_locals(
+        ty: RuntimePlanTypeId,
+        kind: RuntimeExprKind,
+        guard_copy_locals: Vec<RuntimeLocalDeclarationId>,
+    ) -> Self {
+        Self {
+            node: Arc::new(RuntimeExprData {
+                ty,
+                kind,
+                guard_copy_locals,
+            }),
+        }
     }
 
     #[must_use]
     /// Pattern-local Copy leaves issued for this guard transaction.
     pub fn guard_copy_locals(&self) -> &[RuntimeLocalDeclarationId] {
-        &self.guard_copy_locals
+        &self.node.guard_copy_locals
     }
 
     /// Constructs an admitted `DialogueContent` expression with effect-site
@@ -2035,13 +2059,13 @@ impl RuntimeExpr {
     }
 
     #[must_use]
-    pub const fn ty(&self) -> RuntimePlanTypeId {
-        self.ty
+    pub fn ty(&self) -> RuntimePlanTypeId {
+        self.node.ty
     }
 
     #[must_use]
-    pub const fn kind(&self) -> &RuntimeExprKind {
-        &self.kind
+    pub fn kind(&self) -> &RuntimeExprKind {
+        &self.node.kind
     }
 }
 

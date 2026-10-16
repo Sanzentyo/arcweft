@@ -892,13 +892,15 @@ impl RuntimePlanBuilder {
             .iter()
             .map(|local| {
                 let ty = resolve_semantic_type(&prepared_types, local.ty())?;
-                let context = local.context().map(|context| resolve_semantic_type(&prepared_types, context)).transpose()?;
+                let context = local
+                    .context()
+                    .map(|context| resolve_semantic_type(&prepared_types, context))
+                    .transpose()?;
                 let valid = prepared_types.get(ty).is_some_and(|row| match context {
-                    None => row.scope().is_root(),
-                    Some(context) => prepared_types.get(context).is_some_and(|owner| {
-                        owner.scope().is_root() && matches!(owner.projection(), super::RuntimePlanTypeProjection::Function { contract, .. }
-                            if owner.scope().enter(contract.binder()).is_ok_and(|scope| &scope == row.scope()))
-                    }),
+                    None => row.admits_local_context(None),
+                    Some(context) => prepared_types
+                        .get(context)
+                        .is_some_and(|owner| row.admits_local_context(Some(owner))),
                 });
                 if !valid {
                     return Err(RuntimePlanBuildError::InvalidTypeProjection {

@@ -3769,7 +3769,7 @@ mod tests {
             RuntimeValue::i64(7),
             RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
         ]);
-        let guard = crate::value::RuntimeExpr::from_admitted_parts(
+        let guard = crate::value::RuntimeExpr::from_admitted_parts_with_guard_copy_locals(
             admitted.type_ids()[0],
             crate::value::RuntimeExprKind::Local(
                 crate::value::RuntimeLocalRead::from_admitted_parts(
@@ -3777,8 +3777,8 @@ mod tests {
                     RuntimeLocalReadMode::Copy,
                 ),
             ),
-        )
-        .with_guard_copy_locals(vec![scalar]);
+            vec![scalar],
+        );
         let projected =
             prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &guard, None)
                 .expect("Copy scalar guard projection");
@@ -3798,7 +3798,7 @@ mod tests {
                     == RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine"))
         }));
 
-        let affine_guard = crate::value::RuntimeExpr::from_admitted_parts(
+        let affine_guard = crate::value::RuntimeExpr::from_admitted_parts_with_guard_copy_locals(
             admitted.type_ids()[0],
             crate::value::RuntimeExprKind::Local(
                 crate::value::RuntimeLocalRead::from_admitted_parts(
@@ -3806,8 +3806,8 @@ mod tests {
                     RuntimeLocalReadMode::Copy,
                 ),
             ),
-        )
-        .with_guard_copy_locals(vec![affine]);
+            vec![affine],
+        );
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
             RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
