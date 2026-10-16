@@ -13,6 +13,7 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticEncodingError, Task
 use super::{RuntimePlanTypeTable, RuntimeTaskPlanSealLimits};
 
 pub(crate) mod semantic;
+pub(super) mod source_codec;
 
 const CONTROL_EFFECT_DOMAIN: &[u8] = b"arcweft.task.control-effect-contract.v1\0";
 
@@ -27,6 +28,17 @@ pub enum RuntimeTaskControlMode {
 }
 
 impl RuntimeTaskControlMode {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::StraightLine,
+            1 => Self::MaySuspend,
+            2 => Self::MustSuspend,
+            3 => Self::RuntimeAggregate,
+            4 => Self::TimeoutRace,
+            5 => Self::LineTimeline,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -52,6 +64,18 @@ pub enum RuntimeControlEffectKind {
 }
 
 impl RuntimeControlEffectKind {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::HostOperation,
+            1 => Self::RuntimeOperation,
+            2 => Self::ViewSubscription,
+            3 => Self::AwaitObservation,
+            4 => Self::TimeoutClock,
+            5 => Self::LineEmission,
+            6 => Self::CancellationObservation,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -75,6 +99,15 @@ pub enum RuntimeControlEffectCardinality {
 }
 
 impl RuntimeControlEffectCardinality {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::ExactlyOnce,
+            1 => Self::ZeroOrOne,
+            2 => Self::ZeroOrMore,
+            3 => Self::OneOrMore,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -94,6 +127,14 @@ pub enum RuntimeControlEffectOrdering {
 }
 
 impl RuntimeControlEffectOrdering {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::SourceOrder,
+            1 => Self::CompletionOrder,
+            2 => Self::SingleTerminal,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -112,6 +153,14 @@ pub enum RuntimeControlEffectCancellation {
 }
 
 impl RuntimeControlEffectCancellation {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::NotObserved,
+            1 => Self::ObservedNoPayload,
+            2 => Self::PropagatesToChildren,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
@@ -132,6 +181,16 @@ pub enum RuntimeControlEffectTerminalBehavior {
 }
 
 impl RuntimeControlEffectTerminalBehavior {
+    pub(super) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Value,
+            1 => Self::ResultValue,
+            2 => Self::OptionValue,
+            3 => Self::NonreturningCancellation,
+            4 => Self::InfrastructureFailureControl,
+            _ => return None,
+        })
+    }
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
         match self {
