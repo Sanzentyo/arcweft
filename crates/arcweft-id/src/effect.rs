@@ -97,6 +97,34 @@ impl EffectId {
         value.as_ref().parse()
     }
 
+    /// Checks canonical source without retaining an owned identifier or
+    /// allocating path/scope segment arrays. Decoders can validate all labels
+    /// before reserving their aggregate storage. Errors retain source evidence.
+    pub fn validate_source(source: &str) -> Result<(), EffectIdError> {
+        if source.is_empty() {
+            return Err(EffectIdError::Empty);
+        }
+        if source.trim() != source || source.chars().any(char::is_whitespace) {
+            return Err(EffectIdError::Whitespace {
+                value: source.to_owned(),
+            });
+        }
+        let path = split_scope(source)?;
+        let mut segments = path.split('.');
+        if segments.clone().count() < 2 {
+            return Err(EffectIdError::MissingOperation {
+                value: source.to_owned(),
+            });
+        }
+        if let Some(segment) = segments.find(|segment| !valid_path_segment(segment)) {
+            return Err(EffectIdError::InvalidPathSegment {
+                value: source.to_owned(),
+                segment: segment.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -160,38 +188,8 @@ impl FromStr for EffectId {
     type Err = EffectIdError;
 
     fn from_str(source: &str) -> Result<Self, Self::Err> {
-        if source.is_empty() {
-            return Err(EffectIdError::Empty);
-        }
-        if source.trim() != source || source.chars().any(char::is_whitespace) {
-            return Err(EffectIdError::Whitespace {
-                value: source.to_owned(),
-            });
-        }
-
-        let (path, scopes) = split_scope(source)?;
-        let segments = path.split('.').collect::<Vec<_>>();
-        if segments.len() < 2 {
-            return Err(EffectIdError::MissingOperation {
-                value: source.to_owned(),
-            });
-        }
-        if let Some(segment) = segments
-            .iter()
-            .copied()
-            .find(|segment| !valid_path_segment(segment))
-        {
-            return Err(EffectIdError::InvalidPathSegment {
-                value: source.to_owned(),
-                segment: segment.to_owned(),
-            });
-        }
-
-        let canonical = scopes.map_or_else(
-            || path.to_owned(),
-            |scopes| format!("{path}({})", scopes.join(",")),
-        );
-        Ok(Self(canonical))
+        Self::validate_source(source)?;
+        Ok(Self(source.to_owned()))
     }
 }
 
@@ -201,11 +199,11 @@ impl fmt::Display for EffectId {
     }
 }
 
-fn split_scope(source: &str) -> Result<(&str, Option<Vec<&str>>), EffectIdError> {
+fn split_scope(source: &str) -> Result<&str, EffectIdError> {
     let has_open = source.contains('(');
     let has_close = source.contains(')');
     if !has_open && !has_close {
-        return Ok((source, None));
+        return Ok(source);
     }
     if !source.ends_with(')')
         || source.matches('(').count() != 1
@@ -225,23 +223,19 @@ fn split_scope(source: &str) -> Result<(&str, Option<Vec<&str>>), EffectIdError>
             value: source.to_owned(),
         });
     }
-    let scopes = scope_body.split(',').collect::<Vec<_>>();
-    if scopes.iter().any(|scope| scope.is_empty()) {
+    let mut scopes = scope_body.split(',');
+    if scopes.clone().any(str::is_empty) {
         return Err(EffectIdError::EmptyScope {
             value: source.to_owned(),
         });
     }
-    if let Some(scope) = scopes
-        .iter()
-        .copied()
-        .find(|scope| !valid_scope_atom(scope))
-    {
+    if let Some(scope) = scopes.find(|scope| !valid_scope_atom(scope)) {
         return Err(EffectIdError::InvalidScopeAtom {
             value: source.to_owned(),
             scope: scope.to_owned(),
         });
     }
-    Ok((path, Some(scopes)))
+    Ok(path)
 }
 
 fn valid_path_segment(segment: &str) -> bool {
@@ -262,6 +256,51 @@ fn valid_scope_atom(scope: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn borrowed_source_validation_preserves_canonical_scoped_identity() {
+        for source in [
+            "fs.read",
+            "fs.read(a)",
+            "state.write(flow)",
+            "agent.act.semantic",
+            "fs.read(save,asset/path:part@owner-1,*,row')",
+        ] {
+            EffectId::validate_source(source).unwrap();
+            assert_eq!(EffectId::parse(source).unwrap().as_str(), source);
+        }
+    }
+
+    #[test]
+    fn source_validation_and_owned_parse_reject_the_same_complete_grammar() {
+        for source in [
+            "",
+            "read",
+            "Fs.read",
+            "fs..read",
+            "1fs.read",
+            "fs.read ",
+            " fs.read",
+            "fs.read( )",
+            "fs.read()",
+            "fs.read(a,)",
+            "fs.read(,a)",
+            "fs.read(a,,b)",
+            "fs.read(a))",
+            "fs.read((a)",
+            "fs.read(a)b",
+            "fs.read(a,b",
+            "fs.read(é)",
+            "fs.read(a+b)",
+            "fs.read)a(",
+            "fs.read\n",
+        ] {
+            let source_result = EffectId::validate_source(source);
+            let owned_result = EffectId::parse(source).map(|_| ());
+            assert_eq!(source_result, owned_result, "{source:?}");
+            assert!(source_result.is_err(), "{source:?}");
+        }
+    }
 
     #[test]
     fn parses_and_canonicalizes_effect_ids() {

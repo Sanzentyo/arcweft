@@ -2,12 +2,88 @@
 //! Decoded scopes are data; the owning declaration still validates all bound
 //! references and executable roots before the common image seal can publish.
 
-use super::{RuntimeTypeBinder, RuntimeTypeScope, RuntimeTypeScopeError};
+use super::{
+    RuntimeBoundConstReference, RuntimeBoundEffectReference, RuntimeBoundTypeReference,
+    RuntimeTypeBinder, RuntimeTypeScope, RuntimeTypeScopeError,
+};
 use crate::plan::MAX_RUNTIME_PLAN_TYPE_DEPTH;
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 
 const HEADER_BYTES: usize = 1 + 4;
 const BINDER_BYTES: usize = 2 + 2 + 4;
+
+/// Read-only original scope storage. Only an admitted scope or a completely
+/// checked immutable source frame can create this view; it owns no binder Vec.
+#[derive(Clone, Copy)]
+pub(in crate::plan) struct RuntimeTypeScopeRef<'a>(ScopeBinders<'a>);
+
+#[derive(Clone, Copy)]
+enum ScopeBinders<'a> {
+    Retained(&'a [RuntimeTypeBinder]),
+    Encoded(&'a [[u8; BINDER_BYTES]]),
+}
+
+impl<'a> From<&'a RuntimeTypeScope> for RuntimeTypeScopeRef<'a> {
+    fn from(scope: &'a RuntimeTypeScope) -> Self {
+        Self(ScopeBinders::Retained(scope.binders()))
+    }
+}
+
+impl RuntimeTypeScopeRef<'_> {
+    pub(super) const fn binder_count(self) -> usize {
+        match self.0 {
+            ScopeBinders::Retained(binders) => binders.len(),
+            ScopeBinders::Encoded(binders) => binders.len(),
+        }
+    }
+
+    fn binder(self, depth: u32) -> Result<RuntimeTypeBinder, RuntimeTypeScopeError> {
+        let index = usize::try_from(depth)
+            .ok()
+            .and_then(|depth| self.binder_count().checked_sub(depth.checked_add(1)?))
+            .ok_or(RuntimeTypeScopeError::UnknownDepth { depth })?;
+        Ok(match self.0 {
+            ScopeBinders::Retained(binders) => binders[index],
+            ScopeBinders::Encoded(binders) => binder(binders[index]),
+        })
+    }
+
+    pub(super) fn bound_type(
+        self,
+        depth: u32,
+        slot: u16,
+    ) -> Result<RuntimeBoundTypeReference, RuntimeTypeScopeError> {
+        let arity = self.binder(depth)?.types();
+        if slot >= arity {
+            return Err(RuntimeTypeScopeError::TypeSlot { slot, arity });
+        }
+        Ok(RuntimeBoundTypeReference::from_coordinates(depth, slot))
+    }
+
+    pub(super) fn bound_const(
+        self,
+        depth: u32,
+        slot: u16,
+    ) -> Result<RuntimeBoundConstReference, RuntimeTypeScopeError> {
+        let arity = self.binder(depth)?.const_lengths();
+        if slot >= arity {
+            return Err(RuntimeTypeScopeError::ConstSlot { slot, arity });
+        }
+        Ok(RuntimeBoundConstReference::from_coordinates(depth, slot))
+    }
+
+    pub(super) fn bound_effect(
+        self,
+        depth: u32,
+        slot: u32,
+    ) -> Result<RuntimeBoundEffectReference, RuntimeTypeScopeError> {
+        let arity = self.binder(depth)?.effects();
+        if slot >= arity {
+            return Err(RuntimeTypeScopeError::EffectSlot { slot, arity });
+        }
+        Ok(RuntimeBoundEffectReference::from_coordinates(depth, slot))
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(in crate::plan) struct RuntimeTypeScopeCodecLimits {
@@ -97,6 +173,12 @@ pub(in crate::plan) struct ValidatedRuntimeTypeScopeSource<'a> {
 }
 
 impl ValidatedRuntimeTypeScopeSource<'_> {
+    pub(in crate::plan) fn as_scope_ref(&self) -> RuntimeTypeScopeRef<'_> {
+        RuntimeTypeScopeRef(ScopeBinders::Encoded(
+            self.bytes[HEADER_BYTES..].as_chunks::<BINDER_BYTES>().0,
+        ))
+    }
+
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.storage_bytes
     }

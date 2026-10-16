@@ -57,6 +57,32 @@ pub struct EffectMembershipDeclaration<V> {
     pub overrides: Box<[(EffectId, EffectDecisionDeclaration<V>)]>,
 }
 
+impl<V> EffectDecisionDeclaration<V> {
+    /// Logical typed storage present during source admission: the inert and
+    /// admitted node arrays, uniqueness references, reachability marks and the
+    /// bounded traversal stack. Allocator bookkeeping is not source payload.
+    pub(crate) fn source_admission_storage(nodes: usize) -> Option<usize> {
+        let per_node = size_of::<EffectDecisionNodeDeclaration<V>>()
+            .checked_add(size_of::<Node<V>>())?
+            .checked_add(size_of::<&EffectDecisionNodeDeclaration<V>>())?
+            .checked_add(size_of::<bool>())?;
+        let pending = nodes.checked_mul(2)?.checked_add(1)?;
+        nodes
+            .checked_mul(per_node)?
+            .checked_add(pending.checked_mul(size_of::<(Root, bool)>())?)
+    }
+}
+
+impl<V> EffectMembershipDeclaration<V> {
+    /// Both the ordered source entries and the admitted map entries may be
+    /// live while admission moves their owned labels into the final graph.
+    pub(crate) fn source_override_storage(overrides: usize) -> Option<usize> {
+        let entry = size_of::<(EffectId, EffectDecisionDeclaration<V>)>()
+            .checked_add(size_of::<(EffectId, EffectDecision<V>)>())?;
+        overrides.checked_mul(entry)
+    }
+}
+
 mod effect_overrides {
     use super::*;
 
@@ -164,7 +190,12 @@ impl<V: Clone + Ord> TryFrom<EffectDecisionDeclaration<V>> for EffectDecision<V>
             return Err(EffectDeclarationError::InvalidEdge);
         }
         let mut visited = vec![false; count];
-        let mut pending = vec![(root, false)];
+        let pending_capacity = count
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(1))
+            .ok_or(EffectDeclarationError::TooManyNodes)?;
+        let mut pending = Vec::with_capacity(pending_capacity);
+        pending.push((root, false));
         let mut ordinal = 0;
         while let Some((current, finish)) = pending.pop() {
             let Root::Branch(index) = current else {

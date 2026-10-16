@@ -5,6 +5,7 @@
 //! every occurrence against its incoming scope before it can be used by a
 //! program; executable value and ABI roots additionally require an empty scope.
 
+pub(super) mod function_codec;
 mod semantic;
 pub(super) mod source_codec;
 
@@ -12,6 +13,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::effect_row::{EffectFormula, EffectPredicate, EffectSet};
+use source_codec::RuntimeTypeScopeRef;
 
 /// Independent namespaces introduced by one nonempty function binder.
 #[derive(
@@ -206,25 +208,12 @@ impl RuntimeTypeScope {
         Ok(Self(binders))
     }
 
-    fn binder(&self, depth: u32) -> Result<RuntimeTypeBinder, RuntimeTypeScopeError> {
-        usize::try_from(depth)
-            .ok()
-            .and_then(|depth| self.0.len().checked_sub(depth.checked_add(1)?))
-            .and_then(|index| self.0.get(index))
-            .copied()
-            .ok_or(RuntimeTypeScopeError::UnknownDepth { depth })
-    }
-
     pub fn bound_type(
         &self,
         depth: u32,
         slot: u16,
     ) -> Result<RuntimeBoundTypeReference, RuntimeTypeScopeError> {
-        let arity = self.binder(depth)?.types;
-        if slot >= arity {
-            return Err(RuntimeTypeScopeError::TypeSlot { slot, arity });
-        }
-        Ok(RuntimeBoundTypeReference { depth, slot })
+        RuntimeTypeScopeRef::from(self).bound_type(depth, slot)
     }
 
     pub fn bound_const(
@@ -232,11 +221,7 @@ impl RuntimeTypeScope {
         depth: u32,
         slot: u16,
     ) -> Result<RuntimeBoundConstReference, RuntimeTypeScopeError> {
-        let arity = self.binder(depth)?.const_lengths;
-        if slot >= arity {
-            return Err(RuntimeTypeScopeError::ConstSlot { slot, arity });
-        }
-        Ok(RuntimeBoundConstReference { depth, slot })
+        RuntimeTypeScopeRef::from(self).bound_const(depth, slot)
     }
 
     pub fn bound_effect(
@@ -244,11 +229,7 @@ impl RuntimeTypeScope {
         depth: u32,
         slot: u32,
     ) -> Result<RuntimeBoundEffectReference, RuntimeTypeScopeError> {
-        let arity = self.binder(depth)?.effects;
-        if slot >= arity {
-            return Err(RuntimeTypeScopeError::EffectSlot { slot, arity });
-        }
-        Ok(RuntimeBoundEffectReference { depth, slot })
+        RuntimeTypeScopeRef::from(self).bound_effect(depth, slot)
     }
 
     pub fn validate_type(
