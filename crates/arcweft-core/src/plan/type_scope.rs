@@ -6,6 +6,7 @@
 //! program; executable value and ABI roots additionally require an empty scope.
 
 mod semantic;
+pub(super) mod source_codec;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
