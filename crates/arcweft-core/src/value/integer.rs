@@ -22,6 +22,30 @@ pub enum RuntimeSignedIntWidth {
     ISize,
 }
 
+impl RuntimeSignedIntWidth {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::I8 => 0,
+            Self::I16 => 1,
+            Self::I32 => 2,
+            Self::I64 => 3,
+            Self::I128 => 4,
+            Self::ISize => 5,
+        }
+    }
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::I8,
+            1 => Self::I16,
+            2 => Self::I32,
+            3 => Self::I64,
+            4 => Self::I128,
+            5 => Self::ISize,
+            _ => return None,
+        })
+    }
+}
+
 impl RuntimeInt {
     pub const fn i8(value: i8) -> Self {
         Self::I8(value)
@@ -153,6 +177,30 @@ pub enum RuntimeUnsignedIntWidth {
     U64,
     U128,
     USize,
+}
+
+impl RuntimeUnsignedIntWidth {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::U8 => 0,
+            Self::U16 => 1,
+            Self::U32 => 2,
+            Self::U64 => 3,
+            Self::U128 => 4,
+            Self::USize => 5,
+        }
+    }
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::U8,
+            1 => Self::U16,
+            2 => Self::U32,
+            3 => Self::U64,
+            4 => Self::U128,
+            5 => Self::USize,
+            _ => return None,
+        })
+    }
 }
 
 impl RuntimeUInt {

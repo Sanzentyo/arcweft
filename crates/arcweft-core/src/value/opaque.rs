@@ -2860,6 +2860,15 @@ pub enum RuntimeOpaqueValueClass {
 }
 
 impl RuntimeOpaqueValueClass {
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        if tag == 0 {
+            return Some(Self::Plain);
+        }
+        match RuntimeHandleKind::from_encoded(tag - 1) {
+            Some(kind) => Some(Self::AffineHandle(kind)),
+            None => None,
+        }
+    }
     pub(crate) const fn intrinsic_ownership(self) -> super::ownership::RuntimeValueOwnership {
         match self {
             Self::Plain => super::ownership::RuntimeValueOwnership::Unrestricted,

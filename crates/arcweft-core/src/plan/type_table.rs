@@ -6,6 +6,7 @@ use std::{
 };
 
 mod semantic;
+pub(super) mod source_codec;
 
 use thiserror::Error;
 

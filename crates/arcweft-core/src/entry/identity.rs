@@ -75,6 +75,9 @@ pub enum RuntimeIdentityError {
 }
 
 impl RuntimeNominalTypeId {
+    pub(crate) fn validate_source(value: &str) -> Result<(), RuntimeIdentityError> {
+        validate_identity_source("nominal type", value)
+    }
     pub fn try_new(value: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
         validate_identity("nominal type", value.into()).map(Self)
     }
@@ -149,6 +152,11 @@ impl RuntimeCommandTargetId {
 }
 
 fn validate_identity(kind: &'static str, value: String) -> Result<String, RuntimeIdentityError> {
+    validate_identity_source(kind, &value)?;
+    Ok(value)
+}
+
+fn validate_identity_source(kind: &'static str, value: &str) -> Result<(), RuntimeIdentityError> {
     if value.is_empty() {
         return Err(RuntimeIdentityError::Empty { kind });
     }
@@ -158,5 +166,5 @@ fn validate_identity(kind: &'static str, value: String) -> Result<String, Runtim
     {
         return Err(RuntimeIdentityError::Control { kind, byte });
     }
-    Ok(value)
+    Ok(())
 }

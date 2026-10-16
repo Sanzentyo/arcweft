@@ -113,22 +113,8 @@ impl RuntimePlanTypeProjection<RuntimePlanTypeId> {
                 encoder.ordinal(reference.depth());
                 encoder.ordinal(u32::from(reference.slot()));
             }
-            Self::Signed(width) => encoder.tag(match width {
-                crate::value::RuntimeSignedIntWidth::I8 => 0,
-                crate::value::RuntimeSignedIntWidth::I16 => 1,
-                crate::value::RuntimeSignedIntWidth::I32 => 2,
-                crate::value::RuntimeSignedIntWidth::I64 => 3,
-                crate::value::RuntimeSignedIntWidth::I128 => 4,
-                crate::value::RuntimeSignedIntWidth::ISize => 5,
-            }),
-            Self::Unsigned(width) => encoder.tag(match width {
-                crate::value::RuntimeUnsignedIntWidth::U8 => 0,
-                crate::value::RuntimeUnsignedIntWidth::U16 => 1,
-                crate::value::RuntimeUnsignedIntWidth::U32 => 2,
-                crate::value::RuntimeUnsignedIntWidth::U64 => 3,
-                crate::value::RuntimeUnsignedIntWidth::U128 => 4,
-                crate::value::RuntimeUnsignedIntWidth::USize => 5,
-            }),
+            Self::Signed(width) => encoder.tag(width.semantic_tag()),
+            Self::Unsigned(width) => encoder.tag(width.semantic_tag()),
             Self::DenseNumeric(dense) => {
                 for role in dense.semantic_parts() {
                     encoder.tag(role);

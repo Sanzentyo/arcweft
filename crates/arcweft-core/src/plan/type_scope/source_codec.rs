@@ -30,7 +30,7 @@ impl<'a> From<&'a RuntimeTypeScope> for RuntimeTypeScopeRef<'a> {
 }
 
 impl RuntimeTypeScopeRef<'_> {
-    pub(super) const fn binder_count(self) -> usize {
+    pub(in crate::plan) const fn binder_count(self) -> usize {
         match self.0 {
             ScopeBinders::Retained(binders) => binders.len(),
             ScopeBinders::Encoded(binders) => binders.len(),
@@ -48,7 +48,7 @@ impl RuntimeTypeScopeRef<'_> {
         })
     }
 
-    pub(super) fn bound_type(
+    pub(in crate::plan) fn bound_type(
         self,
         depth: u32,
         slot: u16,
@@ -60,7 +60,7 @@ impl RuntimeTypeScopeRef<'_> {
         Ok(RuntimeBoundTypeReference::from_coordinates(depth, slot))
     }
 
-    pub(super) fn bound_const(
+    pub(in crate::plan) fn bound_const(
         self,
         depth: u32,
         slot: u16,
@@ -195,6 +195,23 @@ impl ValidatedRuntimeTypeScopeSource<'_> {
 }
 
 impl RuntimeTypeScope {
+    /// Reuses the same child admission after the enclosing frame has prepaid
+    /// all source passes. It grants no independent budget or executable proof.
+    pub(in crate::plan) fn prepare_source_in_frame(
+        &self,
+        limits: RuntimeTypeScopeCodecLimits,
+    ) -> Result<PreparedRuntimeTypeScopeEncoding<'_>, RuntimeTypeScopeCodecError> {
+        let (encoded_bytes, storage_bytes) = extent(self.binders().len(), limits)?;
+        if self.binders().iter().any(|binder| binder.is_empty()) {
+            return Err(RuntimeTypeScopeError::EmptyBinder.into());
+        }
+        Ok(PreparedRuntimeTypeScopeEncoding {
+            scope: self,
+            encoded_bytes,
+            storage_bytes,
+        })
+    }
+
     pub(in crate::plan) fn prepare_source_encoding(
         &self,
         limits: RuntimeTypeScopeCodecLimits,
@@ -202,16 +219,9 @@ impl RuntimeTypeScope {
     ) -> Result<PreparedRuntimeTypeScopeEncoding<'_>, RuntimeTypeScopeCodecError> {
         meter.status()?;
         let result = (|| {
-            let (encoded_bytes, storage_bytes) = extent(self.binders().len(), limits)?;
+            let (encoded_bytes, _) = extent(self.binders().len(), limits)?;
             charge_passes(meter, encoded_bytes)?;
-            if self.binders().iter().any(|binder| binder.is_empty()) {
-                return Err(RuntimeTypeScopeError::EmptyBinder.into());
-            }
-            Ok(PreparedRuntimeTypeScopeEncoding {
-                scope: self,
-                encoded_bytes,
-                storage_bytes,
-            })
+            self.prepare_source_in_frame(limits)
         })();
         if result.is_err() {
             meter.reject_owner();
@@ -231,37 +241,44 @@ impl RuntimeTypeScope {
         let result = (|| {
             limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
             charge_passes(meter, bytes.len())?;
-            let header = bytes
-                .get(..HEADER_BYTES)
-                .ok_or(RuntimeTypeScopeCodecError::Truncated)?;
-            if header[0] != 1 {
-                return Err(RuntimeTypeScopeCodecError::Version { actual: header[0] });
-            }
-            let count = u32::from_le_bytes(header[1..].try_into().expect("four-byte count"));
-            let count =
-                usize::try_from(count).map_err(|_| RuntimeTypeScopeCodecError::Arithmetic)?;
-            let (encoded_bytes, storage_bytes) = extent(count, limits)?;
-            if bytes.len() < encoded_bytes {
-                return Err(RuntimeTypeScopeCodecError::Truncated);
-            }
-            if bytes.len() > encoded_bytes {
-                return Err(RuntimeTypeScopeCodecError::Trailing);
-            }
-            for bytes in bytes[HEADER_BYTES..].as_chunks::<BINDER_BYTES>().0 {
-                if binder(*bytes).is_empty() {
-                    return Err(RuntimeTypeScopeError::EmptyBinder.into());
-                }
-            }
-            Ok(ValidatedRuntimeTypeScopeSource {
-                bytes,
-                count,
-                storage_bytes,
-            })
+            Self::preflight_source_in_frame(bytes, limits)
         })();
         if result.is_err() {
             meter.reject_owner();
         }
         result
+    }
+
+    pub(in crate::plan) fn preflight_source_in_frame(
+        bytes: &[u8],
+        limits: RuntimeTypeScopeCodecLimits,
+    ) -> Result<ValidatedRuntimeTypeScopeSource<'_>, RuntimeTypeScopeCodecError> {
+        limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
+        let header = bytes
+            .get(..HEADER_BYTES)
+            .ok_or(RuntimeTypeScopeCodecError::Truncated)?;
+        if header[0] != 1 {
+            return Err(RuntimeTypeScopeCodecError::Version { actual: header[0] });
+        }
+        let count = u32::from_le_bytes(header[1..].try_into().expect("four-byte count"));
+        let count = usize::try_from(count).map_err(|_| RuntimeTypeScopeCodecError::Arithmetic)?;
+        let (encoded_bytes, storage_bytes) = extent(count, limits)?;
+        if bytes.len() < encoded_bytes {
+            return Err(RuntimeTypeScopeCodecError::Truncated);
+        }
+        if bytes.len() > encoded_bytes {
+            return Err(RuntimeTypeScopeCodecError::Trailing);
+        }
+        for bytes in bytes[HEADER_BYTES..].as_chunks::<BINDER_BYTES>().0 {
+            if binder(*bytes).is_empty() {
+                return Err(RuntimeTypeScopeError::EmptyBinder.into());
+            }
+        }
+        Ok(ValidatedRuntimeTypeScopeSource {
+            bytes,
+            count,
+            storage_bytes,
+        })
     }
 }
 

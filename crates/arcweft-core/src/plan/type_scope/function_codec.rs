@@ -177,9 +177,13 @@ pub(in crate::plan) struct PreparedRuntimeFunctionTypeEncoding<'a> {
     limits: RuntimeFunctionTypeSourceLimits,
     encoded_bytes: usize,
     storage_bytes: usize,
+    elements: usize,
 }
 
 impl PreparedRuntimeFunctionTypeEncoding<'_> {
+    pub(in crate::plan) const fn elements(&self) -> usize {
+        self.elements
+    }
     pub(in crate::plan) const fn encoded_bytes(&self) -> usize {
         self.encoded_bytes
     }
@@ -213,9 +217,32 @@ pub(in crate::plan) struct PreparedRuntimeFunctionTypeSource<'a> {
     incoming: RuntimeTypeScopeRef<'a>,
     limits: RuntimeFunctionTypeSourceLimits,
     storage_bytes: usize,
+    elements: usize,
 }
 
 impl PreparedRuntimeFunctionTypeSource<'_> {
+    pub(in crate::plan) fn binder(&self) -> RuntimeTypeBinder {
+        RuntimeTypeBinder::new(
+            u16::from_le_bytes(
+                self.bytes[1..3]
+                    .try_into()
+                    .expect("prepared type binder arity"),
+            ),
+            u16::from_le_bytes(
+                self.bytes[3..5]
+                    .try_into()
+                    .expect("prepared const binder arity"),
+            ),
+            u32::from_le_bytes(
+                self.bytes[5..9]
+                    .try_into()
+                    .expect("prepared effect binder arity"),
+            ),
+        )
+    }
+    pub(in crate::plan) const fn elements(&self) -> usize {
+        self.elements
+    }
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.storage_bytes
     }
@@ -241,6 +268,14 @@ impl PreparedRuntimeFunctionTypeSource<'_> {
 }
 
 impl RuntimeFunctionTypeContract {
+    pub(in crate::plan) fn prepare_source_in_frame<'a>(
+        &'a self,
+        incoming: impl Into<RuntimeTypeScopeRef<'a>>,
+        limits: RuntimeFunctionTypeSourceLimits,
+    ) -> Result<PreparedRuntimeFunctionTypeEncoding<'a>, RuntimeFunctionTypeSourceError> {
+        self.count_source_encoding(incoming.into(), limits, None)
+    }
+
     pub(in crate::plan) fn prepare_source_encoding<'a>(
         &'a self,
         incoming: impl Into<RuntimeTypeScopeRef<'a>>,
@@ -248,26 +283,44 @@ impl RuntimeFunctionTypeContract {
         meter: &mut TaskSemanticMeter,
     ) -> Result<PreparedRuntimeFunctionTypeEncoding<'a>, RuntimeFunctionTypeSourceError> {
         meter.status()?;
-        let incoming = incoming.into();
+        self.count_source_encoding(incoming.into(), limits, Some(meter))
+    }
+
+    fn count_source_encoding<'a>(
+        &'a self,
+        incoming: RuntimeTypeScopeRef<'a>,
+        limits: RuntimeFunctionTypeSourceLimits,
+        mut meter: Option<&mut TaskSemanticMeter>,
+    ) -> Result<PreparedRuntimeFunctionTypeEncoding<'a>, RuntimeFunctionTypeSourceError> {
         let result = (|| {
             if self.predicate().is_impossible() {
                 return Err(RuntimeTypeScopeError::ImpossiblePredicate.into());
             }
             let scope = FunctionScope::new(incoming, self.binder())?;
-            let mut writer = Writer::new(None, Some(&mut *meter), scope, limits)?;
+            let mut writer = Writer::new(None, meter.as_deref_mut(), scope, limits)?;
             writer.contract(self)?;
             let encoded_bytes = writer.length;
             let storage_bytes = writer.counts.storage;
-            charge_passes(meter, encoded_bytes, 2)?;
+            let elements = writer
+                .counts
+                .nodes
+                .checked_add(writer.counts.overrides)
+                .ok_or(RuntimeFunctionTypeSourceError::Arithmetic)?;
+            if let Some(meter) = &mut meter {
+                charge_passes(meter, encoded_bytes, 2)?;
+            }
             Ok(PreparedRuntimeFunctionTypeEncoding {
                 contract: self,
                 scope,
                 limits,
                 encoded_bytes,
                 storage_bytes,
+                elements,
             })
         })();
-        if result.is_err() {
+        if result.is_err()
+            && let Some(meter) = meter
+        {
             meter.reject_owner();
         }
         result
@@ -284,19 +337,34 @@ impl RuntimeFunctionTypeContract {
         let result = (|| {
             limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
             charge_passes(meter, bytes.len(), 3)?;
-            let mut reader = Reader::new(bytes, incoming, limits)?;
-            reader.contract(false)?;
-            Ok(PreparedRuntimeFunctionTypeSource {
-                bytes,
-                incoming,
-                limits,
-                storage_bytes: reader.counts.storage,
-            })
+            Self::preflight_source_in_frame(bytes, incoming, limits)
         })();
         if result.is_err() {
             meter.reject_owner();
         }
         result
+    }
+
+    pub(in crate::plan) fn preflight_source_in_frame<'a>(
+        bytes: &'a [u8],
+        incoming: impl Into<RuntimeTypeScopeRef<'a>>,
+        limits: RuntimeFunctionTypeSourceLimits,
+    ) -> Result<PreparedRuntimeFunctionTypeSource<'a>, RuntimeFunctionTypeSourceError> {
+        let incoming = incoming.into();
+        limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
+        let mut reader = Reader::new(bytes, incoming, limits)?;
+        reader.contract(false)?;
+        Ok(PreparedRuntimeFunctionTypeSource {
+            bytes,
+            incoming,
+            limits,
+            storage_bytes: reader.counts.storage,
+            elements: reader
+                .counts
+                .nodes
+                .checked_add(reader.counts.overrides)
+                .ok_or(RuntimeFunctionTypeSourceError::Arithmetic)?,
+        })
     }
 }
 

@@ -203,7 +203,8 @@ impl RuntimeTypeScope {
         if self.0.len() >= super::MAX_RUNTIME_PLAN_TYPE_DEPTH {
             return Err(RuntimeTypeScopeError::DepthLimit);
         }
-        let mut binders = self.0.to_vec();
+        let mut binders = Vec::with_capacity(self.0.len() + 1);
+        binders.extend_from_slice(&self.0);
         binders.push(binder);
         Ok(Self(binders))
     }
