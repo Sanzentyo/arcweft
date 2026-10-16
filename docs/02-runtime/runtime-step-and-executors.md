@@ -93,6 +93,18 @@ pure helper call are evaluated through that batch boundary, so ordinary
 collection-style source can cross into AOT/JIT once per row group instead of
 once per element when an adapter backend is installed.
 
+Repeated i64 rows cross that boundary as a checked capability retaining the
+original function and one borrowed complete input row. Header admission checks
+the whole input count, every input ABI, the output ABI, and the bounded row count
+before execution, promotion, or counters. An empty batch performs no work and
+borrows no bytes. Each nonempty row evaluates the original function once and
+contributes to a wrapping sum; identical inputs do not authorize multiplying one
+evaluation's result. Call counters include only attempted rows, including a
+failing row, while batch item counts describe the admitted request. A failure
+stops the suffix without retry on another backend. Borrowed-byte counters cover
+the single retained row once per batch. This physical capability does not admit
+the source caller's operation budget or establish callback totality.
+
 ## Interpreter / compiled modes
 
 ```text

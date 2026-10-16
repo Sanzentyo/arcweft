@@ -11,9 +11,9 @@ use super::{
     RuntimeExactInteger, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
     RuntimeIntrinsic, RuntimeMathCallBackend, RuntimePureAccelerator, RuntimePureBackendMode,
     RuntimePureCacheEntry, RuntimePureCallBackend, RuntimePureCallStats, RuntimePureFunctionRef,
-    RuntimePureInputType, RuntimePureOutputType, RuntimePureScalarInteger, RuntimeValue,
-    call_jit_exact_int_flat_batch, call_jit_exact_int_flat_batch_sum, call_jit_exact_int_slice,
-    inference,
+    RuntimePureInputType, RuntimePureOutputType, RuntimePureRepeatedI64Batch,
+    RuntimePureScalarInteger, RuntimeValue, call_jit_exact_int_flat_batch,
+    call_jit_exact_int_flat_batch_sum, call_jit_exact_int_slice, inference,
 };
 
 impl RuntimePureAccelerator {
@@ -1509,11 +1509,9 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureFunctionRef<'_>,
-        row: &[i64],
-        rows: usize,
+        batch: RuntimePureRepeatedI64Batch<'_, '_>,
     ) -> Result<i64, RuntimeEvalError> {
-        Self::call_i64_repeated_flat_batch_sum(self, helper, row, rows)
+        Self::call_i64_repeated_flat_batch_sum(self, batch)
     }
 
     fn call_f32_slice(

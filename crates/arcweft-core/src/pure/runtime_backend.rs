@@ -1,8 +1,8 @@
 use super::{
     RuntimeExternalCallBackend, RuntimeExternalCallContext, RuntimeFixedArgs, RuntimeFloat32Args,
     RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
-    RuntimePureCallBackend, RuntimePureFunctionRef, RuntimePureScalarInteger,
-    VmRuntimePureCallBackend,
+    RuntimePureCallBackend, RuntimePureFunctionRef, RuntimePureRepeatedI64Batch,
+    RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::RuntimeSemanticTypeId;
@@ -735,42 +735,24 @@ impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCall
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureFunctionRef<'_>,
-        row: &[i64],
-        rows: usize,
+        batch: RuntimePureRepeatedI64Batch<'_, '_>,
     ) -> Result<i64, RuntimeEvalError> {
-        if row.len() > RuntimeI64Args::MAX {
-            return Err(RuntimeEvalError::TooManyPureArgs {
-                helper: helper.name.to_owned(),
-                max: RuntimeI64Args::MAX,
-                found: row.len(),
-            });
-        }
-        self.stats.batch_calls += usize::from(rows > 0);
-        self.stats.batch_items += rows;
-        self.stats.flat_batch_calls += usize::from(rows > 0);
-        self.stats.flat_batch_items += rows;
-        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(row);
-        self.stats.pure_calls += rows;
-        self.stats.vm_calls += rows;
-        self.stats.arg_bytes_borrowed += std::mem::size_of_val(row);
-        if rows == 0 {
+        if batch.rows() == 0 {
             return Ok(0);
         }
-        let value = match self
-            .scratch
-            .evaluate_i64_slice(helper.plan(), helper.id(), row)?
-        {
-            RuntimeValue::Int(value) => value.exact_i64().ok_or_else(|| {
-                RuntimeEvalError::ExpectedInt(runtime_value_label(&RuntimeValue::Int(value)))
-            })?,
-            value => return Err(RuntimeEvalError::ExpectedInt(runtime_value_label(&value))),
-        };
-        let rows = i64::try_from(rows).map_err(|_| RuntimeEvalError::UnsupportedPure {
-            name: helper.name.to_owned(),
-            reason: "pure repeated batch row count must fit i64".to_owned(),
-        })?;
-        Ok(value.wrapping_mul(rows))
+        self.stats.batch_calls += 1;
+        self.stats.batch_items += batch.rows();
+        self.stats.flat_batch_calls += 1;
+        self.stats.flat_batch_items += batch.rows();
+        self.stats.flat_batch_bytes_borrowed += std::mem::size_of_val(batch.row());
+        self.stats.arg_bytes_borrowed += std::mem::size_of_val(batch.row());
+        let mut sum = 0_i64;
+        for _ in 0..batch.rows() {
+            self.stats.pure_calls += 1;
+            self.stats.vm_calls += 1;
+            sum = sum.wrapping_add(batch.evaluate_vm_row(&mut self.scratch)?);
+        }
+        Ok(sum)
     }
 
     fn call_f32_slice(

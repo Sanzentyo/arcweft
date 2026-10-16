@@ -731,7 +731,9 @@ impl RuntimeNumericMapBatchData {
                         .all(|row| row == &inputs[..arity]) =>
             {
                 backend
-                    .call_i64_repeated_flat_batch_sum(function, &inputs[..arity], rows)
+                    .call_i64_repeated_flat_batch_sum(
+                        function.repeated_i64_batch(&inputs[..arity], rows)?,
+                    )
                     .map(RuntimeNumericMapBatchResult::Sum)
             }
             Self::I64(inputs) => integers!(

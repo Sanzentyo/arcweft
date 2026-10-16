@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+mod repeated_batch;
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 mod wide_scalar;
 
@@ -3382,8 +3383,11 @@ fn ordinary_function_repeated_and_flat_sums_match_wrapping_core_reduction() {
     let flat = [i64::MAX, 999, 1, 333];
     let mut core_vm = arcweft_core::pure::VmRuntimePureCallBackend::default();
     assert_eq!(
-        RuntimePureCallBackend::call_i64_repeated_flat_batch_sum(&mut core_vm, function, &row, 2)
-            .unwrap(),
+        RuntimePureCallBackend::call_i64_repeated_flat_batch_sum(
+            &mut core_vm,
+            function.repeated_i64_batch(&row, 2).unwrap(),
+        )
+        .unwrap(),
         repeated_expected
     );
     assert_eq!(
@@ -3410,7 +3414,7 @@ fn ordinary_function_repeated_and_flat_sums_match_wrapping_core_reduction() {
         );
         assert_eq!(
             backend
-                .call_i64_repeated_flat_batch_sum(function, &row, 2)
+                .call_i64_repeated_flat_batch_sum(function.repeated_i64_batch(&row, 2).unwrap())
                 .unwrap(),
             repeated_expected
         );

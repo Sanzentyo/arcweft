@@ -1432,9 +1432,7 @@ mod synchronous_executable_boundary_tests {
         }
         fn call_i64_repeated_flat_batch_sum(
             &mut self,
-            _helper: RuntimePureFunctionRef<'_>,
-            _row: &[i64],
-            _rows: usize,
+            _batch: crate::pure::RuntimePureRepeatedI64Batch<'_, '_>,
         ) -> Result<i64, RuntimeEvalError> {
             panic!(
                 "synchronous executable ingress must not invoke a physical backend without a caller budget"

@@ -52,6 +52,7 @@ use std::sync::Arc;
 mod aot;
 mod function;
 mod program;
+mod repeated_batch;
 mod runtime_backend;
 pub use function::{
     RuntimePureFunctionBodyRef, RuntimePureFunctionId, RuntimePureFunctionInputIter,
@@ -59,6 +60,7 @@ pub use function::{
     RuntimePureFunctionView,
 };
 pub use program::evaluate_pure_program_with_backend;
+pub use repeated_batch::RuntimePureRepeatedI64Batch;
 
 /// Request for evaluating a deterministic pure helper expression.
 #[derive(Clone, Debug, PartialEq)]
@@ -614,9 +616,7 @@ pub trait RuntimePureCallBackend {
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: RuntimePureFunctionRef<'_>,
-        row: &[i64],
-        rows: usize,
+        batch: RuntimePureRepeatedI64Batch<'_, '_>,
     ) -> Result<i64, RuntimeEvalError>;
 
     fn call_f32_slice(
@@ -1185,7 +1185,7 @@ impl VmPureFunctionScratch {
             .collect::<Vec<_>>();
         validate_function_arguments(helper, &values)?;
         if helper.scalar_eval_supported && helper.body.expression().is_some() {
-            let mut evaluator = PureScalarEvaluator::new_exact(helper.inputs, args);
+            let mut evaluator = PureScalarEvaluator::new(helper.inputs, args, T::into_pure_scalar);
             let result = evaluator
                 .evaluate(helper.expression()?)
                 .map(RuntimePureScalar::into_runtime_value);
@@ -1735,6 +1735,7 @@ fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
 struct PureScalarEvaluator<'a, T> {
     inputs: RuntimePureFunctionInputs<'a>,
     args: &'a [T],
+    into_scalar: fn(T) -> RuntimePureScalar,
     locals: Vec<(RuntimeLocalDeclarationId, RuntimePureScalar)>,
     scopes: Vec<PureScalarScopeFrame>,
 }
@@ -1744,11 +1745,16 @@ struct PureScalarScopeFrame {
     local_start: usize,
 }
 
-impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
-    fn new_exact(inputs: RuntimePureFunctionInputs<'a>, args: &'a [T]) -> Self {
+impl<'a, T: Copy> PureScalarEvaluator<'a, T> {
+    fn new(
+        inputs: RuntimePureFunctionInputs<'a>,
+        args: &'a [T],
+        into_scalar: fn(T) -> RuntimePureScalar,
+    ) -> Self {
         Self {
             inputs,
             args,
+            into_scalar,
             locals: Vec::new(),
             scopes: Vec::new(),
         }
@@ -1841,7 +1847,7 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
             .or_else(|| {
                 self.inputs.iter().zip(self.args.iter().copied()).find_map(
                     |(input_local, value)| {
-                        (input_local.local() == local).then_some(value.into_pure_scalar())
+                        (input_local.local() == local).then_some((self.into_scalar)(value))
                     },
                 )
             })
