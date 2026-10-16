@@ -181,6 +181,7 @@ include!("check/toolchain_jit.rs");
 mod agent_observe_native;
 
 include!("check/cli_runtime_bench.rs");
+include!("check/numeric_map_packet.rs");
 include!("check/profile_entry_selection.rs");
 
 fn temp_arcw(name: &str, source: &str) -> PathBuf {

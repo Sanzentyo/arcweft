@@ -105,6 +105,18 @@ stops the suffix without retry on another backend. Borrowed-byte counters cover
 the single retained row once per batch. This physical capability does not admit
 the source caller's operation budget or establish callback totality.
 
+Numeric Map batches with a homogeneous scalar signature retain the original
+function, complete input layout, row
+count and result mode in one admitted packet. The packet validates every item
+and retained constant before allocating its physical argument storage. Repeated
+rows retain one complete row; distinct floating-point zero signs and NaN payloads
+remain distinct physical representations. Unused source items need no numeric
+projection, while their ownership proof is still required. Zero-argument targets
+retain the source row count, and empty packets execute no backend work. A backend
+that requires dense input materializes that representation only from the admitted
+packet. i64 repeated reductions borrow the retained row directly. These storage
+choices preserve the existing complete source-span budget and totality admission.
+
 ## Interpreter / compiled modes
 
 ```text

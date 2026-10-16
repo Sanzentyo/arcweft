@@ -7,10 +7,7 @@ use crate::pattern::{
     RuntimePatternKind,
 };
 use crate::plan::{FlowOp, RuntimePlan, RuntimePlanTypeProjection};
-use crate::pure::{
-    RuntimeCallBackend, RuntimeNumericMapBatchData, RuntimeNumericMapBatchResult,
-    project_numeric_map,
-};
+use crate::pure::{RuntimeCallBackend, RuntimeNumericMapBatchResult, project_numeric_map};
 use crate::runtime_id::{RuntimeLocalDeclarationId as Local, RuntimePlanTypeId as Ty};
 use crate::step::{RuntimeStepMode, RuntimeStepOutput};
 use crate::value::{
@@ -678,8 +675,8 @@ impl Engine {
         // Materialize the borrowed numeric packet only after its complete
         // original schedule fits this caller budget. Backend selection or
         // promotion still follows the actual representation check.
-        let flat = projection.flat_inputs(items.into_iter())?;
-        backend.prepare_total_numeric_batch(projection.function, rows)?;
+        let batch = projection.batch(&items, sum.is_some())?;
+        backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let commit = Commit {
             source,
             consumed_ops: calls + continuation_ops,
@@ -689,17 +686,16 @@ impl Engine {
             }),
             cost,
         };
-        let function = projection.function;
         let executed =
             self.with_main_flow_transaction(
                 output,
                 backend,
                 move |candidate, staged, backend, _| {
-                    let result = flat.execute(function, rows, commit.sum.is_some(), backend);
+                    let result = batch.execute(backend);
                     match result {
                         Ok(value) => {
-                            // The physical projection removes only closed numeric
-                            // Copy members. Each original item owner still moves once
+                            // The physical projection elides only Copy source
+                            // members. Each original item owner still moves once
                             // at the same committed continuation boundary.
                             let mut sum_result = None;
                             match (&commit.source, value) {
