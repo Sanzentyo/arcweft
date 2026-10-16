@@ -43,6 +43,8 @@ use std::sync::Arc;
 use thiserror::Error;
 pub mod aot;
 pub mod audio;
+#[cfg(test)]
+mod child_poll_tests;
 pub mod dialogue;
 pub mod eval;
 mod numeric_map;
@@ -3990,6 +3992,9 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
+        if self.child_fibers.is_empty() {
+            return false;
+        }
         let image = match self.inert_rollback_image() {
             Ok(image) => image,
             Err(error) => {
