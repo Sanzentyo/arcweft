@@ -831,6 +831,7 @@ fn runtime_ops_work_units(ops: &[arcweft_core::plan::FlowOp]) -> usize {
                     + runtime_ops_work_units(else_ops)
             }
             FlowOp::Scope { body, .. } => 2 + runtime_ops_work_units(body),
+            FlowOp::StandardMap(control) => 1 + runtime_ops_work_units(control.body()),
             FlowOp::EnterScope { .. } | FlowOp::ExitScope | FlowOp::Noop => 1,
             // These operations are outside the scalar physical subset. Their
             // inventory weight cannot grant compilation or bypass control transfer.

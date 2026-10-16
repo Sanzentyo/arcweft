@@ -89,10 +89,43 @@ impl FinalFlowLowerer<'_> {
             .get(&map.receiver())
             .cloned()
             .ok_or_else(|| RuntimePlanLowerError::new("Map receiver operand was not retained"))?;
-        let mut ops = vec![RuntimeFlowOpSeed::Let {
+        let source_local = self
+            .control
+            .expression_values
+            .get(&map.receiver())
+            .cloned()
+            .ok_or_else(|| RuntimePlanLowerError::new("Map source local is absent"))?;
+        let result_local = self
+            .control
+            .expression_values
+            .get(&owner)
+            .cloned()
+            .ok_or_else(|| RuntimePlanLowerError::new("Map result local is absent"))?;
+        let prepare_mapping = RuntimeFlowOpSeed::Let {
             pattern: bind_seed(&mapping, callable.clone()),
             expr: mapping_value,
-        }];
+        };
+        // A control-transferring receiver may already have published precisely
+        // this admitted value slot. Preserve that declaration and its ownership.
+        let prepare_source = (source
+            != local_seed(&receiver, source_local.clone(), RuntimeLocalReadMode::Move))
+        .then(|| RuntimeFlowOpSeed::Let {
+            pattern: bind_seed(&receiver, source_local.clone()),
+            expr: source,
+        });
+        let mut ops = match map.order() {
+            RuntimeStandardMapOperandOrder::MappingThenReceiver => std::iter::once(prepare_mapping)
+                .chain(prepare_source)
+                .collect::<Vec<_>>(),
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping => prepare_source
+                .into_iter()
+                .chain(std::iter::once(prepare_mapping))
+                .collect::<Vec<_>>(),
+        };
+        let bind_result = RuntimeFlowValueContinuation::Bind {
+            pattern: bind_seed(&result, result_local.clone()),
+            tail: RuntimeFlowTail::None,
+        };
         let input = MapFlowInput {
             receiver: &receiver,
             result: &result,
@@ -100,20 +133,31 @@ impl FinalFlowLowerer<'_> {
             input,
             output,
             locals,
-            callable,
-            source,
+            callable: callable.clone(),
+            source: local_seed(&receiver, source_local.clone(), RuntimeLocalReadMode::Move),
         };
-        ops.extend(match map.family() {
+        let body = match map.family() {
             RuntimeStandardMapFamily::Vec
             | RuntimeStandardMapFamily::Seq
             | RuntimeStandardMapFamily::Slice => {
-                self.lower_sequence_map_value(owner, &map, input, continuation)?
+                self.lower_sequence_map_value(owner, &map, input)?
             }
-            RuntimeStandardMapFamily::Array => self.lower_array_map_value(input, continuation)?,
+            RuntimeStandardMapFamily::Array => self.lower_array_map_value(input, bind_result)?,
             RuntimeStandardMapFamily::Option | RuntimeStandardMapFamily::Result => {
-                self.lower_variant_map_value(input, continuation)?
+                self.lower_variant_map_value(input, result_local.clone())?
             }
+        };
+        ops.push(RuntimeFlowOpSeed::StandardMap {
+            family: map.family().into(),
+            source: source_local,
+            mapping: callable,
+            result: result_local.clone(),
+            body,
         });
+        ops.extend(self.apply_value_continuation(
+            local_seed(&result, result_local, RuntimeLocalReadMode::Move),
+            continuation,
+        )?);
         Ok(ops)
     }
 
@@ -122,7 +166,6 @@ impl FinalFlowLowerer<'_> {
         owner: ExprId,
         map: &RuntimeStandardMapCall,
         input: MapFlowInput<'_>,
-        continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let MapFlowInput {
             result,
@@ -240,10 +283,6 @@ impl FinalFlowLowerer<'_> {
                 },
             ],
         });
-        ops.extend(self.apply_value_continuation(
-            local_seed(result, accumulator, RuntimeLocalReadMode::Move),
-            continuation,
-        )?);
         Ok(ops)
     }
 
@@ -310,7 +349,7 @@ impl FinalFlowLowerer<'_> {
     fn lower_variant_map_value(
         &mut self,
         input: MapFlowInput<'_>,
-        continuation: RuntimeFlowValueContinuation,
+        result_local: RuntimeLocalSeedId,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let MapFlowInput {
             receiver,
@@ -337,7 +376,7 @@ impl FinalFlowLowerer<'_> {
             Some(local_seed(output, mapped, RuntimeLocalReadMode::Move)),
         )
         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-        success.extend(self.apply_value_continuation(value, continuation.clone())?);
+        success.push(RuntimeFlowOpSeed::Break(Some(value)));
         let (residual_pattern, residual_value) = match receiver.shape() {
             RuntimeTypeShape::Option { .. } => (
                 normalized_variant_binding_pattern_seed(receiver, 1, None),
@@ -375,15 +414,19 @@ impl FinalFlowLowerer<'_> {
                     pattern: residual_pattern
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                     guard: None,
-                    ops: self.apply_value_continuation(
-                        residual_value
-                            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                        continuation,
-                    )?,
+                    ops: vec![RuntimeFlowOpSeed::Break(Some(residual_value.map_err(
+                        |error| RuntimePlanLowerError::new(error.to_string()),
+                    )?))],
                 },
             ],
         });
-        Ok(ops)
+        // The existing value-producing loop owns the join. Each selected
+        // variant transfers its value through Break before its branch scope
+        // is destroyed; no branch-local result escapes its lifetime.
+        Ok(vec![RuntimeFlowOpSeed::Loop {
+            result: Some(bind_seed(result, result_local)),
+            body: ops,
+        }])
     }
 
     fn map_intrinsic(

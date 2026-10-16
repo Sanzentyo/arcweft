@@ -101,6 +101,12 @@ impl RuntimeBodySemanticContext<'_> {
     ) -> Result<(), RuntimeBodySemanticError> {
         encoder.tag(op.semantic_tag());
         match op {
+            FlowOp::StandardMap(control) => {
+                encoder.tag(control.family().semantic_tag());
+                self.write_local(encoder, control.source())?;
+                self.write_local(encoder, control.mapping())?;
+                self.write_local(encoder, control.result())?;
+            }
             FlowOp::Bind(_)
             | FlowOp::ForNext { .. }
             | FlowOp::LoopNext { .. }

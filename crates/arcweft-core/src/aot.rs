@@ -112,6 +112,7 @@ impl AotLinearOp {
             }),
             FlowOp::Noop => Some(Self::Noop),
             FlowOp::EnterScheduledScope { .. }
+            | FlowOp::StandardMap(_)
             | FlowOp::ExitScheduledScope { .. }
             | FlowOp::LetElse { .. }
             | FlowOp::FormatOperandAttempt { .. }
@@ -252,6 +253,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Noop => true,
         FlowOp::Effect(effect) => !effect_changes_control(effect),
         FlowOp::EnterScheduledScope { .. }
+        | FlowOp::StandardMap(_)
         | FlowOp::ExitScheduledScope { .. }
         | FlowOp::LetElse { .. }
         | FlowOp::FormatOperandAttempt { .. }
@@ -324,6 +326,7 @@ impl AotOpClass {
             | FlowOp::Noop
             | FlowOp::CompleteAwaitObserver => Self::Linear,
             FlowOp::LetElse { .. }
+            | FlowOp::StandardMap(_)
             | FlowOp::FormatOperandAttempt { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
@@ -364,6 +367,7 @@ impl AotProgramStats {
         for op in ops {
             self.record_op(op);
             match op {
+                FlowOp::StandardMap(control) => self.record_ops(control.body()),
                 FlowOp::LetElse { else_ops, .. } => self.record_ops(else_ops),
                 FlowOp::FormatOperandAttempt { body, .. } => self.record_ops(body),
                 FlowOp::If {

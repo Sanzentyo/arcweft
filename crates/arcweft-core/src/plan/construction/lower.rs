@@ -3963,6 +3963,32 @@ impl RuntimePlanBodyConstruction<'_> {
                     .collect::<Result<_, _>>()?,
                 body: self.lower_flow_ops(body)?,
             },
+            RuntimeFlowOpSeed::StandardMap {
+                family,
+                source,
+                mapping,
+                result,
+                body,
+            } => {
+                let (source, source_type) = self.resolve_local(&source)?;
+                let (mapping, mapping_type) = self.resolve_local(&mapping)?;
+                let (result, result_type) = self.resolve_local(&result)?;
+                let (input, output) =
+                    self.standard_map_item_projection(family, source_type, result_type)?;
+                match self.projection(mapping_type)? {
+                    RuntimePlanTypeProjection::Function {
+                        parameters, result, ..
+                    } if parameters.as_ref() == [input] && *result == output => {}
+                    _ => return invalid_projection("standard map callback", mapping_type),
+                }
+                FlowOp::StandardMap(crate::plan::RuntimeStandardMapControl::new(
+                    family,
+                    source,
+                    mapping,
+                    result,
+                    self.lower_flow_ops(body)?,
+                ))
+            }
             RuntimeFlowOpSeed::Scope { identity, body } => FlowOp::Scope {
                 identity,
                 body: self.lower_flow_ops(body)?,
@@ -5252,6 +5278,27 @@ impl RuntimePlanBodyConstruction<'_> {
     ) -> Result<(), RuntimePlanBuildError> {
         for op in ops {
             match op {
+                FlowOp::StandardMap(control) => {
+                    require_local_in_scope(control.source(), scope)?;
+                    require_local_in_scope(control.mapping(), scope)?;
+                    used.insert(control.source());
+                    used.insert(control.mapping());
+                    let mut body_scope = scope.clone();
+                    let mut body_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        control.body(),
+                        &mut body_scope,
+                        used,
+                        &mut body_frames,
+                    )?;
+                    require_local_in_scope(control.result(), &body_scope)?;
+                    if body_frames != *scope_frames {
+                        return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                            context: "Map body changes its caller's lexical scope stack",
+                        });
+                    }
+                    *scope = extend_scope(scope, [control.result()])?;
+                }
                 FlowOp::Let { pattern, expr } => {
                     self.validate_expression_locals(expr, scope, used)?;
                     *scope = extend_scope(

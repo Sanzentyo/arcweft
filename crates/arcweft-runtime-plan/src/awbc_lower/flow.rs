@@ -1154,6 +1154,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) {
         match op {
+            FlowOp::StandardMap(control) => {
+                self.lower_ops(frame, body, control.body(), path);
+            }
             FlowOp::Bind(bindings) => {
                 for binding in bindings {
                     let ty = self.local_type(binding.local);
@@ -3996,6 +3999,10 @@ fn collect_flow_dependencies(
 ) {
     for op in ops {
         let terminates = match op {
+            FlowOp::StandardMap(control) => {
+                collect_flow_dependencies(control.body(), targets, has_dynamic_target);
+                false
+            }
             FlowOp::Choice { options, .. } => {
                 targets.extend(options.iter().filter_map(|option| option.target.clone()));
                 false

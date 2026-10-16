@@ -7750,11 +7750,6 @@ mod source_map_batch_owner_tests {
         ) -> Option<arcweft_core::runtime_id::RuntimeLocalDeclarationId> {
             for op in ops {
                 match op {
-                    FlowOp::Scope { body, .. } | FlowOp::WhileLet { body, .. } => {
-                        if let Some(found) = accumulator(body) {
-                            return Some(found);
-                        }
-                    }
                     FlowOp::Let { expr, .. } => {
                         if let RuntimeExprKind::SequencePush { place, value } = expr.kind() {
                             assert!(
@@ -7764,6 +7759,11 @@ mod source_map_batch_owner_tests {
                         }
                     }
                     _ => {}
+                }
+                for (_, body) in op.owned_bodies() {
+                    if let Some(found) = accumulator(body) {
+                        return Some(found);
+                    }
                 }
             }
             None
@@ -8363,7 +8363,18 @@ mod source_map_batch_owner_tests {
             use arcweft_core::pattern::RuntimePatternKind;
             use arcweft_core::plan::FlowOp;
             use arcweft_core::value::{RuntimeExprKind, RuntimeIntrinsic, RuntimeLocalReadMode};
-            let ops = root_site.body().executable().unwrap().ops();
+            let preparation = root_site.body().executable().unwrap().ops();
+            let maps = preparation
+                .iter()
+                .filter_map(|op| match op {
+                    FlowOp::StandardMap(control) => Some(control),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let [map] = maps.as_slice() else {
+                panic!("one typed source Map owner")
+            };
+            let ops = map.body();
             let loops = ops
                 .iter()
                 .filter_map(|op| {
@@ -8424,7 +8435,7 @@ mod source_map_batch_owner_tests {
             };
             let mut sources = std::collections::BTreeMap::from([(input.local(), input.local())]);
             let mut initialized = false;
-            for op in ops {
+            for op in preparation.iter().chain(ops) {
                 let FlowOp::Let { pattern, expr } = op else {
                     continue;
                 };

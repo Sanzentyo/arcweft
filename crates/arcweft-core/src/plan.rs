@@ -28,6 +28,8 @@ mod local_declarations;
 pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
+mod standard_map;
+pub use standard_map::RuntimeStandardMapControl;
 mod pure_programs;
 pub use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
@@ -1005,6 +1007,7 @@ pub enum FlowOp {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
     },
+    StandardMap(RuntimeStandardMapControl),
     /// Runs one checked source-ordered formatter operand body inside the
     /// owning attempt's recoverable failure boundary.
     FormatOperandAttempt {

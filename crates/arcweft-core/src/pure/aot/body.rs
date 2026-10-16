@@ -195,6 +195,7 @@ fn admit_ops(name: &str, ops: &[FlowOp], depth: usize) -> Result<(), RuntimeEval
             FlowOp::EnterScope { .. } | FlowOp::ExitScope => None,
             FlowOp::ReturnExpr(_) | FlowOp::Noop => None,
             FlowOp::Bind(_) => Some("prebound values"),
+            FlowOp::StandardMap(_) => Some("callable Map control"),
             FlowOp::FormatOperandAttempt { .. } | FlowOp::CompleteFormatOperand { .. } => {
                 Some("format attempt")
             }

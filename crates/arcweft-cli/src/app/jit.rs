@@ -1691,6 +1691,7 @@ fn julia_i64_ops(
                 Some("native scheduler scope marker")
             }
             FlowOp::Bind(_) => Some("prebound values"),
+            FlowOp::StandardMap(_) => Some("callable Map control"),
             FlowOp::FormatOperandAttempt { .. } | FlowOp::CompleteFormatOperand { .. } => {
                 Some("format attempt")
             }

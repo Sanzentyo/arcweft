@@ -17,7 +17,7 @@ use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
     RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeLocalReadMode,
-    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
+    RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
@@ -48,8 +48,7 @@ use crate::semantic_facts::{
     RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedPlace,
     RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
     RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
-    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
-    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTraitMethodInstanceKey,
+    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall, RuntimeTraitMethodInstanceKey,
     RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_interaction_model::dialogue::{
@@ -2719,14 +2718,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Result<RuntimeExprSeedKind, String> {
         let mapping = self.lower(map.mapping())?;
         let source = self.lower(map.receiver())?;
-        let family = match map.family() {
-            SemanticStandardMapFamily::Vec => RuntimeStandardMapFamily::Vec,
-            SemanticStandardMapFamily::Seq => RuntimeStandardMapFamily::Seq,
-            SemanticStandardMapFamily::Array => RuntimeStandardMapFamily::Array,
-            SemanticStandardMapFamily::Slice => RuntimeStandardMapFamily::Slice,
-            SemanticStandardMapFamily::Option => RuntimeStandardMapFamily::Option,
-            SemanticStandardMapFamily::Result => RuntimeStandardMapFamily::Result,
-        };
+        let family = map.family().into();
         let order = match map.order() {
             crate::semantic_facts::RuntimeStandardMapOperandOrder::MappingThenReceiver => {
                 RuntimeStandardMapOperandOrder::MappingThenReceiver

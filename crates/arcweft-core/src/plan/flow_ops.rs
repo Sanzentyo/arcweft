@@ -219,6 +219,7 @@ impl FlowOp {
             Self::Noop => 46,
             Self::EnterScheduledScope { .. } => 47,
             Self::ExitScheduledScope { .. } => 48,
+            Self::StandardMap(_) => 49,
         }
     }
 }
@@ -436,6 +437,7 @@ impl FlowOp {
                 }
             }
             FlowOp::Bind(_)
+            | FlowOp::StandardMap(_)
             | FlowOp::ProjectCall { .. }
             | FlowOp::LoopNext { .. }
             | FlowOp::Scope { .. }
@@ -493,6 +495,9 @@ impl<'a> Iterator for RuntimeFlowOwnedBodies<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use RuntimeFlowBodyRole as Role;
         let next = match self.op {
+            FlowOp::StandardMap(control) => {
+                (self.ordinal == 0).then_some((Role::Body, control.body()))
+            }
             FlowOp::Await { observers, .. } => observers.get(self.ordinal).map(|observer| {
                 (
                     Role::AwaitObserver {

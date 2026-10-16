@@ -73,6 +73,10 @@ impl Engine {
                 self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
                 self.advance_if_needed(next_op_index);
             }
+            FlowOp::StandardMap(control) => {
+                self.advance_if_needed(next_op_index);
+                self.push_ops(control.body().to_vec());
+            }
             FlowOp::FormatOperandAttempt {
                 attempt,
                 parameter,

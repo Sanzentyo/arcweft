@@ -165,6 +165,7 @@ fn admit_ops(ops: &[FlowOp], depth: usize) -> Result<(), CraneliftCodegenError> 
             FlowOp::EnterScope { .. } | FlowOp::ExitScope => None,
             FlowOp::ReturnExpr(_) | FlowOp::Noop => None,
             FlowOp::Bind(_) => Some("prebound values"),
+            FlowOp::StandardMap(_) => Some("callable Map control"),
             FlowOp::FormatOperandAttempt { .. } | FlowOp::CompleteFormatOperand { .. } => {
                 Some("format attempt")
             }

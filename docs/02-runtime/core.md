@@ -87,6 +87,18 @@ The capacity query does not reserve identities, and final admission rechecks the
 same issuer. Local namespace capacity, per-function frame limits, and executable
 image seal budgets remain distinct checks.
 
+A selected standard Map has one typed control owner for its constructor family,
+prepared receiver, prepared callback, result declaration, and complete ordinary
+body. Preparation evaluates both operands once in their accepted source order.
+The body calls the original callable through the ordinary same-fiber application
+boundary; its result is transferred to the caller only after the selected
+iteration or variant has completed. Option and Result transfer their branch
+value through the existing value-producing control join before destroying the
+branch scope. The result declaration must be visible at the body's exit, and
+the body cannot change its caller's lexical scope stack. Semantic transcripts,
+resource inventories, and executable seals visit that owned body exactly once.
+Native execution and canonical AWBC lowering consume the same admitted body.
+
 Runtime semantic facts retain an accepted origin for every selected expression,
 including an effect carrier that owns no runtime value type. A static callee's
 namespace spelling is omitted according to the selected call inventory.

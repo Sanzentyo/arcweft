@@ -801,6 +801,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             Op::AwaitMany { .. } => &[EndpointKind::AwaitManyBase, EndpointKind::AwaitManyChild],
             Op::Dialogue { .. } => &[EndpointKind::LineTask],
             Op::Bind(_)
+            | Op::StandardMap(_)
             | Op::Let { .. }
             | Op::FormatOperandAttempt { .. }
             | Op::CompleteFormatOperand { .. }

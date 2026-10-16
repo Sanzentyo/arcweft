@@ -4349,6 +4349,19 @@ pub enum RuntimeStandardMapFamily {
     Result,
 }
 
+impl From<RuntimeStandardMapFamily> for arcweft_core::value::RuntimeStandardMapFamily {
+    fn from(family: RuntimeStandardMapFamily) -> Self {
+        match family {
+            RuntimeStandardMapFamily::Vec => Self::Vec,
+            RuntimeStandardMapFamily::Seq => Self::Seq,
+            RuntimeStandardMapFamily::Array => Self::Array,
+            RuntimeStandardMapFamily::Slice => Self::Slice,
+            RuntimeStandardMapFamily::Option => Self::Option,
+            RuntimeStandardMapFamily::Result => Self::Result,
+        }
+    }
+}
+
 /// Exact final-HIR operands of one fully applied standard `map` call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeStandardMapCall {
