@@ -46,6 +46,8 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
         roles: 1,
         path_steps: 1,
         encoded_bytes: 1000,
+        decoded_bytes: 16_384,
+        type_count: plan.type_table().len(),
     };
     let definition = context
         .static_request_template(
@@ -79,14 +81,22 @@ fn decoded_request_definition_recomputes_q_under_the_actual_f_endpoint() {
         RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::new(99).unwrap()),
         endpoint.ordinal(),
     );
-    let decoded =
-        RuntimeTaskRequestTemplate::decode(&changed.encode(limits).unwrap(), limits).unwrap();
+    assert!(matches!(
+        changed.encode(limits),
+        Err(
+            crate::plan::body_semantic::request::codec::RuntimeTaskRequestCodecError::Limit {
+                kind: "type coordinate",
+                actual: 99,
+                ..
+            }
+        )
+    ));
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     assert!(matches!(
         context.request_template_digest(
             &mut meter,
             endpoint,
-            &decoded,
+            &changed,
             crate::plan::RuntimeTaskPlanSealLimits::default()
         ),
         Err(RuntimeBodySemanticError::UnknownType { .. })
@@ -195,6 +205,8 @@ fn all_host_argument_transports_round_trip_and_reissue_only_the_original_q() {
         roles: 3,
         path_steps: 5,
         encoded_bytes: 1000,
+        decoded_bytes: 16_384,
+        type_count: plan.type_table().len(),
     };
     let decoded =
         RuntimeTaskRequestTemplate::decode(&definition.encode(limits).unwrap(), limits).unwrap();
@@ -257,6 +269,8 @@ fn decoded_request_cannot_forge_any_original_argument_or_field_component() {
         roles: 2,
         path_steps: 3,
         encoded_bytes: 1000,
+        decoded_bytes: 16_384,
+        type_count: plan.type_table().len(),
     };
     for mutation in 0..9 {
         let mut arguments = vec![RuntimeRequestArgument {

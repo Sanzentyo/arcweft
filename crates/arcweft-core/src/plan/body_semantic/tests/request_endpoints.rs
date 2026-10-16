@@ -237,6 +237,8 @@ fn thread_and_both_await_many_endpoints_use_their_own_request_definition() {
                 roles: 1,
                 path_steps: 1,
                 encoded_bytes: 1000,
+                decoded_bytes: 16_384,
+                type_count: plan.type_table().len(),
             };
             let inert =
                 RuntimeTaskRequestTemplate::decode(&original.encode(limits).unwrap(), limits)

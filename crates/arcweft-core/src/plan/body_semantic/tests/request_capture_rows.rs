@@ -315,6 +315,8 @@ fn function_root_request_uses_original_formals_and_captures_and_rechecks_decoded
             roles: 2,
             path_steps: 1,
             encoded_bytes: 1024,
+            decoded_bytes: 16_384,
+            type_count: plan.type_table().len(),
         };
         let bytes = template.encode(codec_limits).unwrap();
         let mut decoded = RuntimeTaskRequestTemplate::decode(&bytes, codec_limits).unwrap();

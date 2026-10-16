@@ -5,6 +5,8 @@ fn limits() -> RuntimeTaskRequestCodecLimits {
         roles: 13,
         path_steps: 12,
         encoded_bytes: 10_000,
+        decoded_bytes: 16_384,
+        type_count: 1,
     }
 }
 fn fixture_template() -> RuntimeTaskRequestTemplate {
@@ -132,6 +134,9 @@ fn request_codec_limits_apply_before_allocation_and_accept_exact_boundaries() {
     let bytes = template.encode(limits()).unwrap();
     let exact = RuntimeTaskRequestCodecLimits {
         encoded_bytes: bytes.len(),
+        decoded_bytes: RuntimeTaskRequestTemplate::preflight_source(&bytes, limits())
+            .unwrap()
+            .storage_bytes(),
         ..limits()
     };
     assert_eq!(bytes, template.encode(exact).unwrap());
@@ -144,6 +149,14 @@ fn request_codec_limits_apply_before_allocation_and_accept_exact_boundaries() {
         },
         RuntimeTaskRequestCodecLimits {
             encoded_bytes: bytes.len() - 1,
+            ..exact
+        },
+        RuntimeTaskRequestCodecLimits {
+            decoded_bytes: exact.decoded_bytes - 1,
+            ..exact
+        },
+        RuntimeTaskRequestCodecLimits {
+            type_count: 0,
             ..exact
         },
     ] {
@@ -182,4 +195,68 @@ fn combined_role_limit_precedes_a_truncated_field_list() {
             maximum: 12
         })
     ));
+}
+
+#[test]
+fn request_source_preflight_counts_all_owned_rows_and_paths_before_materialization() {
+    let source = fixture_template();
+    let bytes = source.encode(limits()).unwrap();
+    let checked = RuntimeTaskRequestTemplate::preflight_source(&bytes, limits()).unwrap();
+    let expected = 8 * std::mem::size_of::<RuntimeRequestArgument>()
+        + 5 * std::mem::size_of::<RuntimeRequestField>()
+        + 13 * 12 * std::mem::size_of::<RuntimeRequestPathStep>();
+    assert_eq!(checked.storage_bytes(), expected);
+    let exact = RuntimeTaskRequestCodecLimits {
+        decoded_bytes: expected,
+        ..limits()
+    };
+    let retained = RuntimeTaskRequestTemplate::preflight_source(&bytes, exact)
+        .unwrap()
+        .materialize()
+        .unwrap();
+    assert_eq!(retained, source);
+    assert_eq!(retained.encode(exact).unwrap(), bytes);
+    assert!(matches!(
+        RuntimeTaskRequestTemplate::preflight_source(
+            &bytes,
+            RuntimeTaskRequestCodecLimits {
+                decoded_bytes: expected - 1,
+                ..exact
+            },
+        ),
+        Err(RuntimeTaskRequestCodecError::Limit {
+            kind: "decoded bytes",
+            actual,
+            maximum,
+        }) if actual == expected && maximum == expected - 1
+    ));
+}
+
+#[test]
+fn request_source_preflight_rejects_a_late_type_outside_the_original_inventory() {
+    let mut source = fixture_template();
+    source.fields.last_mut().unwrap().ty =
+        RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::new(2).unwrap());
+    let bytes = source
+        .encode(RuntimeTaskRequestCodecLimits {
+            type_count: 2,
+            ..limits()
+        })
+        .unwrap();
+    for error in [
+        RuntimeTaskRequestTemplate::preflight_source(&bytes, limits())
+            .err()
+            .unwrap(),
+        RuntimeTaskRequestTemplate::decode(&bytes, limits()).unwrap_err(),
+        source.encode(limits()).unwrap_err(),
+    ] {
+        assert_eq!(
+            error,
+            RuntimeTaskRequestCodecError::Limit {
+                kind: "type coordinate",
+                actual: 2,
+                maximum: 1,
+            }
+        );
+    }
 }

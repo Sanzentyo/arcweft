@@ -14,6 +14,38 @@ pub(crate) struct RuntimeTaskRequestCodecLimits {
     pub(crate) roles: u32,
     pub(crate) path_steps: u32,
     pub(crate) encoded_bytes: usize,
+    pub(crate) decoded_bytes: usize,
+    pub(crate) type_count: usize,
+}
+
+/// A complete, allocation-free check of immutable source bytes. This carries
+/// storage requirements, never a request digest or an executable capability.
+pub(crate) struct ValidatedRuntimeTaskRequestSource<'a> {
+    bytes: &'a [u8],
+    limits: RuntimeTaskRequestCodecLimits,
+    storage_bytes: usize,
+}
+
+impl ValidatedRuntimeTaskRequestSource<'_> {
+    pub(crate) const fn storage_bytes(&self) -> usize {
+        self.storage_bytes
+    }
+
+    pub(crate) fn materialize(
+        self,
+    ) -> Result<RuntimeTaskRequestTemplate, RuntimeTaskRequestCodecError> {
+        let mut reader = Reader {
+            bytes: self.bytes,
+            offset: 0,
+            limits: self.limits,
+            storage_bytes: 0,
+        };
+        let template = reader
+            .request(true)?
+            .expect("materializing a validated request retains its rows");
+        debug_assert_eq!(reader.storage_bytes, self.storage_bytes);
+        Ok(template)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
@@ -47,11 +79,38 @@ impl RuntimeTaskRequestTemplate {
         &self,
         limits: RuntimeTaskRequestCodecLimits,
     ) -> Result<Vec<u8>, RuntimeTaskRequestCodecError> {
-        check_roles(self.arguments.len(), self.fields.len(), limits)?;
-        let mut writer = Writer {
-            bytes: Vec::new(),
+        let mut count = Writer {
+            bytes: None,
+            length: 0,
+            storage_bytes: 0,
             limits,
         };
+        self.write_source(&mut count)?;
+        let mut writer = Writer {
+            bytes: Some(Vec::with_capacity(count.length)),
+            length: 0,
+            storage_bytes: 0,
+            limits,
+        };
+        self.write_source(&mut writer)?;
+        Ok(writer
+            .bytes
+            .expect("materializing a request retains its bytes"))
+    }
+
+    fn write_source(&self, writer: &mut Writer) -> Result<(), RuntimeTaskRequestCodecError> {
+        let limits = writer.limits;
+        check_roles(self.arguments.len(), self.fields.len(), limits)?;
+        charge_storage::<RuntimeRequestArgument>(
+            &mut writer.storage_bytes,
+            self.arguments.len(),
+            limits,
+        )?;
+        charge_storage::<RuntimeRequestField>(
+            &mut writer.storage_bytes,
+            self.fields.len(),
+            limits,
+        )?;
         writer.put(&[1])?;
         match self.source {
             RuntimeTaskRequestSource::FunctionRoot => writer.put(&[0])?,
@@ -70,7 +129,7 @@ impl RuntimeTaskRequestTemplate {
             if let Some(identity) = argument.identity {
                 writer.put(identity.as_bytes())?;
             }
-            writer.u32(argument.ty.get().get())?;
+            writer.ty(argument.ty)?;
             writer.put(&[argument.source.semantic_tag()])?;
             writer.path(&argument.path)?;
         }
@@ -79,29 +138,52 @@ impl RuntimeTaskRequestTemplate {
             writer.count(ordinal)?;
             writer.put(field.identity.as_bytes())?;
             writer.put(&[field.role.semantic_tag()])?;
-            writer.u32(field.ty.get().get())?;
+            writer.ty(field.ty)?;
             writer.path(&field.path)?;
         }
-        Ok(writer.bytes)
+        Ok(())
     }
 
     pub(crate) fn decode(
         bytes: &[u8],
         limits: RuntimeTaskRequestCodecLimits,
     ) -> Result<Self, RuntimeTaskRequestCodecError> {
+        Self::preflight_source(bytes, limits)?.materialize()
+    }
+
+    pub(crate) fn preflight_source(
+        bytes: &[u8],
+        limits: RuntimeTaskRequestCodecLimits,
+    ) -> Result<ValidatedRuntimeTaskRequestSource<'_>, RuntimeTaskRequestCodecError> {
         check("bytes", bytes.len(), limits.encoded_bytes)?;
         let mut reader = Reader {
             bytes,
             offset: 0,
             limits,
+            storage_bytes: 0,
         };
-        let version = reader.tag()?;
+        reader.request(false)?;
+        Ok(ValidatedRuntimeTaskRequestSource {
+            bytes,
+            limits,
+            storage_bytes: reader.storage_bytes,
+        })
+    }
+}
+
+impl Reader<'_> {
+    fn request(
+        &mut self,
+        materialize: bool,
+    ) -> Result<Option<RuntimeTaskRequestTemplate>, RuntimeTaskRequestCodecError> {
+        let limits = self.limits;
+        let version = self.tag()?;
         if version != 1 {
             return Err(RuntimeTaskRequestCodecError::Version { actual: version });
         }
-        let source = match reader.tag()? {
+        let source = match self.tag()? {
             0 => RuntimeTaskRequestSource::FunctionRoot,
-            1 => RuntimeTaskRequestSource::Operation(reader.u32()?),
+            1 => RuntimeTaskRequestSource::Operation(self.u32()?),
             tag => {
                 return Err(RuntimeTaskRequestCodecError::Tag {
                     kind: "request source",
@@ -109,50 +191,60 @@ impl RuntimeTaskRequestTemplate {
                 });
             }
         };
-        let count = reader.count("roles", limits.roles as usize, 15)?;
-        let mut arguments = Vec::with_capacity(count);
+        let count = self.count("roles", limits.roles as usize, 15)?;
+        charge_storage::<RuntimeRequestArgument>(&mut self.storage_bytes, count, limits)?;
+        let mut arguments = materialize.then(|| Vec::with_capacity(count));
         for ordinal in 0..count {
-            reader.ordinal(ordinal)?;
-            let role = RuntimeRequestArgumentRole::decode_tag(reader.tag()?)?;
-            let identity = match reader.tag()? {
+            self.ordinal(ordinal)?;
+            let role = RuntimeRequestArgumentRole::decode_tag(self.tag()?)?;
+            let identity = match self.tag()? {
                 0 => None,
-                1 => Some(reader.identity()?),
+                1 => Some(self.identity()?),
                 actual => return Err(RuntimeTaskRequestCodecError::Option { actual }),
             };
-            let ty = reader.ty()?;
-            let source = RuntimeRequestValueSource::decode_tag(reader.tag()?)?;
-            arguments.push(RuntimeRequestArgument {
-                role,
-                identity,
-                ty,
-                source,
-                path: reader.path()?,
-            });
+            let ty = self.ty()?;
+            let source = RuntimeRequestValueSource::decode_tag(self.tag()?)?;
+            let path = self.path(materialize)?;
+            if let Some(arguments) = &mut arguments {
+                arguments.push(RuntimeRequestArgument {
+                    role,
+                    identity,
+                    ty,
+                    source,
+                    path: path.expect("materializing an argument retains its path"),
+                });
+            }
         }
-        let fields_count = reader.u32()? as usize;
+        let fields_count = self.u32()? as usize;
         check_roles(count, fields_count, limits)?;
-        reader.minimum_bytes(fields_count, 45)?;
-        let mut fields = Vec::with_capacity(fields_count);
+        self.minimum_bytes(fields_count, 45)?;
+        charge_storage::<RuntimeRequestField>(&mut self.storage_bytes, fields_count, limits)?;
+        let mut fields = materialize.then(|| Vec::with_capacity(fields_count));
         for ordinal in 0..fields_count {
-            reader.ordinal(ordinal)?;
-            let identity = reader.identity()?;
-            let role = RuntimeRequestFieldRole::decode_tag(reader.tag()?)?;
-            let ty = reader.ty()?;
-            fields.push(RuntimeRequestField {
-                identity,
-                role,
-                ty,
-                path: reader.path()?,
-            });
+            self.ordinal(ordinal)?;
+            let identity = self.identity()?;
+            let role = RuntimeRequestFieldRole::decode_tag(self.tag()?)?;
+            let ty = self.ty()?;
+            let path = self.path(materialize)?;
+            if let Some(fields) = &mut fields {
+                fields.push(RuntimeRequestField {
+                    identity,
+                    role,
+                    ty,
+                    path: path.expect("materializing a field retains its path"),
+                });
+            }
         }
-        if reader.offset != bytes.len() {
+        if self.offset != self.bytes.len() {
             return Err(RuntimeTaskRequestCodecError::Trailing);
         }
-        Ok(Self {
-            source,
-            arguments: arguments.into_boxed_slice(),
-            fields: fields.into_boxed_slice(),
-        })
+        Ok(arguments
+            .zip(fields)
+            .map(|(arguments, fields)| RuntimeTaskRequestTemplate {
+                source,
+                arguments: arguments.into_boxed_slice(),
+                fields: fields.into_boxed_slice(),
+            }))
     }
 }
 
@@ -187,19 +279,37 @@ fn check_roles(
     check("roles", actual as usize, limits.roles as usize)
 }
 
+fn charge_storage<T>(
+    total: &mut usize,
+    count: usize,
+    limits: RuntimeTaskRequestCodecLimits,
+) -> Result<(), RuntimeTaskRequestCodecError> {
+    let bytes = count
+        .checked_mul(std::mem::size_of::<T>())
+        .and_then(|bytes| total.checked_add(bytes))
+        .ok_or(RuntimeTaskRequestCodecError::Arithmetic)?;
+    check("decoded bytes", bytes, limits.decoded_bytes)?;
+    *total = bytes;
+    Ok(())
+}
+
 struct Writer {
-    bytes: Vec<u8>,
+    bytes: Option<Vec<u8>>,
+    length: usize,
+    storage_bytes: usize,
     limits: RuntimeTaskRequestCodecLimits,
 }
 impl Writer {
     fn put(&mut self, bytes: &[u8]) -> Result<(), RuntimeTaskRequestCodecError> {
         let length = self
-            .bytes
-            .len()
+            .length
             .checked_add(bytes.len())
             .ok_or(RuntimeTaskRequestCodecError::Arithmetic)?;
         check("bytes", length, self.limits.encoded_bytes)?;
-        self.bytes.extend_from_slice(bytes);
+        if let Some(output) = &mut self.bytes {
+            output.extend_from_slice(bytes);
+        }
+        self.length = length;
         Ok(())
     }
     fn u32(&mut self, value: u32) -> Result<(), RuntimeTaskRequestCodecError> {
@@ -208,11 +318,24 @@ impl Writer {
     fn count(&mut self, count: usize) -> Result<(), RuntimeTaskRequestCodecError> {
         self.u32(u32::try_from(count).map_err(|_| RuntimeTaskRequestCodecError::Arithmetic)?)
     }
+    fn ty(&mut self, ty: RuntimePlanTypeId) -> Result<(), RuntimeTaskRequestCodecError> {
+        check(
+            "type coordinate",
+            ty.get().get() as usize,
+            self.limits.type_count,
+        )?;
+        self.u32(ty.get().get())
+    }
     fn path(
         &mut self,
         steps: &[RuntimeRequestPathStep],
     ) -> Result<(), RuntimeTaskRequestCodecError> {
         check("path steps", steps.len(), self.limits.path_steps as usize)?;
+        charge_storage::<RuntimeRequestPathStep>(
+            &mut self.storage_bytes,
+            steps.len(),
+            self.limits,
+        )?;
         self.count(steps.len())?;
         for step in steps {
             step.write_wire(self)?;
@@ -225,6 +348,7 @@ struct Reader<'a> {
     bytes: &'a [u8],
     offset: usize,
     limits: RuntimeTaskRequestCodecLimits,
+    storage_bytes: usize,
 }
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], RuntimeTaskRequestCodecError> {
@@ -263,6 +387,11 @@ impl Reader<'_> {
     }
     fn ty(&mut self) -> Result<RuntimePlanTypeId, RuntimeTaskRequestCodecError> {
         let raw = NonZeroU32::new(self.u32()?).ok_or(RuntimeTaskRequestCodecError::ZeroType)?;
+        check(
+            "type coordinate",
+            raw.get() as usize,
+            self.limits.type_count,
+        )?;
         Ok(RuntimePlanTypeId::from_accepted_ordinal(raw))
     }
     fn count(
@@ -289,11 +418,20 @@ impl Reader<'_> {
         }
         Ok(())
     }
-    fn path(&mut self) -> Result<Box<[RuntimeRequestPathStep]>, RuntimeTaskRequestCodecError> {
+    fn path(
+        &mut self,
+        materialize: bool,
+    ) -> Result<Option<Box<[RuntimeRequestPathStep]>>, RuntimeTaskRequestCodecError> {
         let count = self.count("path steps", self.limits.path_steps as usize, 1)?;
-        (0..count)
-            .map(|_| RuntimeRequestPathStep::read_wire(self))
-            .collect()
+        charge_storage::<RuntimeRequestPathStep>(&mut self.storage_bytes, count, self.limits)?;
+        let mut steps = materialize.then(|| Vec::with_capacity(count));
+        for _ in 0..count {
+            let step = RuntimeRequestPathStep::read_wire(self)?;
+            if let Some(steps) = &mut steps {
+                steps.push(step);
+            }
+        }
+        Ok(steps.map(Vec::into_boxed_slice))
     }
 }
 
