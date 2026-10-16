@@ -18,7 +18,8 @@ use super::{
 
 impl RuntimePureAccelerator {
     /// Only a compiled scalar capability on this same retained Arc may replace
-    /// an executable Engine frame. A VM/foreign/batch-only slot declines so the
+    /// an executable Engine frame. Wide integer entries provide this capability
+    /// through their pointer-based one-row call. VM/foreign slots decline so the
     /// caller retains its normal operation budget, return and cleanup owner.
     fn admits_executable_scalar(&self, function: RuntimePureFunctionRef<'_>) -> bool {
         if !function.body.is_executable() {
@@ -29,24 +30,21 @@ impl RuntimePureAccelerator {
                 RuntimePureCacheEntry::Jit(_)
                 | RuntimePureCacheEntry::JitI8(_)
                 | RuntimePureCacheEntry::JitI16(_)
+                | RuntimePureCacheEntry::JitI128Batch(_)
                 | RuntimePureCacheEntry::JitI32(_)
                 | RuntimePureCacheEntry::JitISize(_)
                 | RuntimePureCacheEntry::JitU8(_)
                 | RuntimePureCacheEntry::JitU16(_)
                 | RuntimePureCacheEntry::JitU32(_)
                 | RuntimePureCacheEntry::JitU64(_)
+                | RuntimePureCacheEntry::JitU128Batch(_)
                 | RuntimePureCacheEntry::JitUSize(_)
                 | RuntimePureCacheEntry::JitF32(_)
                 | RuntimePureCacheEntry::JitF64(_)
                 | RuntimePureCacheEntry::Aot(_)
                 | RuntimePureCacheEntry::AutoAot { .. },
             ) => true,
-            Some(
-                RuntimePureCacheEntry::Vm
-                | RuntimePureCacheEntry::JitI128Batch(_)
-                | RuntimePureCacheEntry::JitU128Batch(_),
-            )
-            | None => false,
+            Some(RuntimePureCacheEntry::Vm) | None => false,
         }
     }
 }

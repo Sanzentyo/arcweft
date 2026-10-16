@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+mod wide_scalar;
+
 use super::*;
 use arcweft_core::entry::{
     RuntimeCodecUse, RuntimeEnumTagStyle, RuntimeFieldCodecUse, RuntimeVariantCodecUse,
@@ -23,9 +26,10 @@ use arcweft_core::{
     plan::{
         FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeCallArgumentSeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
-        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed,
-        RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
-        RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOwnershipRequirement,
+        RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+        RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
         RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     program_types::RuntimeProgramTypes,
@@ -320,6 +324,18 @@ fn admitted_ordinary_executable_with_unused_formal(offset: i64) -> AdmittedHelpe
 }
 
 fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> AdmittedHelper {
+    admitted_ordinary_numeric_body_with_unused_formal(
+        RuntimePureInputType::I64,
+        RuntimeValue::i64(offset),
+        executable,
+    )
+}
+
+fn admitted_ordinary_numeric_body_with_unused_formal(
+    abi: RuntimePureInputType,
+    offset: RuntimeValue,
+    executable: bool,
+) -> AdmittedHelper {
     use arcweft_core::plan::{
         RuntimeEffectSet, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
         RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
@@ -328,7 +344,7 @@ fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> A
         RuntimeLocalDeclarationSource,
     };
 
-    let ty = helper_type_identity(RuntimePureInputType::I64);
+    let ty = helper_type_identity(abi);
     let parameters = [
         RuntimeFunctionParameterIdentity::from_accepted_identity([0x91; 32]),
         RuntimeFunctionParameterIdentity::from_accepted_identity([0x92; 32]),
@@ -336,7 +352,7 @@ fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> A
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_type_batch(
-            [helper_type_seed(RuntimePureInputType::I64)],
+            [helper_type_seed(abi)],
             parameters.map(|parameter| {
                 RuntimeLocalDeclarationSeed::new(
                     RuntimeLocalDeclarationSource::Parameter(parameter),
@@ -365,7 +381,7 @@ fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> A
                         local,
                     },
                 ),
-                ownership: Default::default(),
+                ownership: RuntimeFunctionInputOwnershipRequirement::default(),
                 unrestricted_bindings: Box::new([]),
             },
         )
@@ -394,7 +410,7 @@ fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> A
             RuntimeLocalReadMode::Copy,
         ),
         RuntimeBinaryOp::Add,
-        value_expr(ty, RuntimeValue::i64(offset)),
+        value_expr(ty, offset),
     );
     let body = if executable {
         RuntimeFunctionSiteBodySeed::Executable(arcweft_core::plan::RuntimeExecutableBodySeed {
@@ -417,9 +433,9 @@ fn admitted_ordinary_body_with_unused_formal(offset: i64, executable: bool) -> A
         .next()
         .expect("ordinary source site")
         .0;
-    let request =
-        PureFunctionRequest::try_new(plan, site, [RuntimeValue::i64(0), RuntimeValue::i64(0)])
-            .expect("complete ordinary function request");
+    let arguments = parameters.map(|_| default_helper_input(abi));
+    let request = PureFunctionRequest::try_new(plan, site, arguments)
+        .expect("complete ordinary function request");
     AdmittedHelper { request }
 }
 
