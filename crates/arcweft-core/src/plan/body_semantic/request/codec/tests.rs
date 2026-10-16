@@ -260,3 +260,51 @@ fn request_source_preflight_rejects_a_late_type_outside_the_original_inventory()
         );
     }
 }
+
+#[test]
+fn prepared_request_encoding_appends_into_the_reserved_parent_buffer() {
+    let source = fixture_template();
+    let expected = source.encode(limits()).unwrap();
+    let prepared = source.prepare_encoding(limits()).unwrap();
+    assert_eq!(prepared.encoded_bytes(), expected.len());
+    let mut parent = Vec::with_capacity(4 + expected.len());
+    parent.extend_from_slice(&[9, 8, 7, 6]);
+    let allocation = parent.as_ptr();
+    prepared.append_to(&mut parent).unwrap();
+    assert_eq!(parent.as_ptr(), allocation);
+    assert_eq!(&parent[..4], &[9, 8, 7, 6]);
+    assert_eq!(&parent[4..], expected);
+    let mut short = Vec::new();
+    assert_eq!(
+        source
+            .prepare_encoding(limits())
+            .unwrap()
+            .append_to(&mut short),
+        Err(RuntimeTaskRequestCodecError::OutputCapacity {
+            required: expected.len(),
+            remaining: 0,
+        })
+    );
+    assert!(short.is_empty());
+    assert_eq!(short.capacity(), 0);
+}
+
+#[test]
+fn request_encoding_count_uses_the_original_sticky_parent_work_bank() {
+    let source = fixture_template();
+    let expected = source.encode(limits()).unwrap();
+    let mut exact = TaskSemanticMeter::new(expected.len() as u64, 1_000_000);
+    source
+        .prepare_encoding_with_meter(limits(), &mut exact)
+        .unwrap();
+    assert_eq!(exact.totals().0, expected.len() as u64);
+    let mut short = TaskSemanticMeter::new(expected.len() as u64 - 1, 1_000_000);
+    assert_eq!(
+        source
+            .prepare_encoding_with_meter(limits(), &mut short)
+            .err()
+            .unwrap(),
+        RuntimeTaskRequestCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
+    );
+    assert_eq!(short.status(), Err(TaskSemanticEncodingError::SemanticWork));
+}

@@ -1,6 +1,7 @@
 //! Private task candidate ownership shared by construction and strict decode.
 //! There is one executable inventory; expected keys remain untrusted assertions.
 
+mod codec;
 mod preflight;
 #[allow(
     dead_code,

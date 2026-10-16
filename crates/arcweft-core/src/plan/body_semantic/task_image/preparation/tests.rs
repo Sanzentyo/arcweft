@@ -541,7 +541,10 @@ fn source_request_semantic_types_require_the_original_builder_type_authority() {
     );
 }
 
-fn image_with_rows(rows: u32, expected: Option<Vec<[u8; 32]>>) -> UnsealedRuntimePlanImage {
+pub(in crate::plan::body_semantic::task_image) fn image_with_rows(
+    rows: u32,
+    expected: Option<Vec<[u8; 32]>>,
+) -> UnsealedRuntimePlanImage {
     let mut coordinate_owner = None;
     let (plan, _owner, function) =
         crate::plan::body_semantic::tests::producer_host_plan_with_setup(true, |builder| {

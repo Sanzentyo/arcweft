@@ -7,6 +7,7 @@ use super::{
     RuntimeRequestValueSource, RuntimeTaskRequestSource, RuntimeTaskRequestTemplate,
 };
 use crate::runtime_id::RuntimePlanTypeId;
+use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 use std::num::NonZeroU32;
 
 #[derive(Clone, Copy)]
@@ -24,6 +25,49 @@ pub(crate) struct ValidatedRuntimeTaskRequestSource<'a> {
     bytes: &'a [u8],
     limits: RuntimeTaskRequestCodecLimits,
     storage_bytes: usize,
+}
+
+/// Borrows the exact original definition after its complete encoding count.
+/// An aggregate writer can append it into its already reserved buffer.
+pub(crate) struct PreparedRuntimeTaskRequestEncoding<'a> {
+    definition: &'a RuntimeTaskRequestTemplate,
+    limits: RuntimeTaskRequestCodecLimits,
+    encoded_bytes: usize,
+    storage_bytes: usize,
+}
+
+impl PreparedRuntimeTaskRequestEncoding<'_> {
+    pub(crate) const fn encoded_bytes(&self) -> usize {
+        self.encoded_bytes
+    }
+
+    pub(crate) const fn storage_bytes(&self) -> usize {
+        self.storage_bytes
+    }
+
+    pub(crate) fn append_to(
+        self,
+        output: &mut Vec<u8>,
+    ) -> Result<(), RuntimeTaskRequestCodecError> {
+        let remaining = output.capacity() - output.len();
+        if self.encoded_bytes > remaining {
+            return Err(RuntimeTaskRequestCodecError::OutputCapacity {
+                required: self.encoded_bytes,
+                remaining,
+            });
+        }
+        let mut writer = Writer {
+            bytes: Some(output),
+            meter: None,
+            length: 0,
+            storage_bytes: 0,
+            limits: self.limits,
+        };
+        self.definition.write_source(&mut writer)?;
+        debug_assert_eq!(writer.length, self.encoded_bytes);
+        debug_assert_eq!(writer.storage_bytes, self.storage_bytes);
+        Ok(())
+    }
 }
 
 impl ValidatedRuntimeTaskRequestSource<'_> {
@@ -50,6 +94,8 @@ impl ValidatedRuntimeTaskRequestSource<'_> {
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum RuntimeTaskRequestCodecError {
+    #[error("static request resource admission failed: {0:?}")]
+    Resource(TaskSemanticEncodingError),
     #[error("unsupported static request version {actual}")]
     Version { actual: u8 },
     #[error("unknown {kind} tag {tag}")]
@@ -72,6 +118,8 @@ pub(crate) enum RuntimeTaskRequestCodecError {
     Truncated,
     #[error("static request codec has trailing data")]
     Trailing,
+    #[error("static request needs {required} output bytes, only {remaining} are reserved")]
+    OutputCapacity { required: usize, remaining: usize },
 }
 
 impl RuntimeTaskRequestTemplate {
@@ -79,23 +127,49 @@ impl RuntimeTaskRequestTemplate {
         &self,
         limits: RuntimeTaskRequestCodecLimits,
     ) -> Result<Vec<u8>, RuntimeTaskRequestCodecError> {
+        let prepared = self.prepare_encoding(limits)?;
+        let mut output = Vec::with_capacity(prepared.encoded_bytes());
+        prepared.append_to(&mut output)?;
+        Ok(output)
+    }
+
+    pub(crate) fn prepare_encoding(
+        &self,
+        limits: RuntimeTaskRequestCodecLimits,
+    ) -> Result<PreparedRuntimeTaskRequestEncoding<'_>, RuntimeTaskRequestCodecError> {
+        self.count_encoding(limits, None)
+    }
+
+    pub(crate) fn prepare_encoding_with_meter(
+        &self,
+        limits: RuntimeTaskRequestCodecLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<PreparedRuntimeTaskRequestEncoding<'_>, RuntimeTaskRequestCodecError> {
+        meter
+            .status()
+            .map_err(RuntimeTaskRequestCodecError::Resource)?;
+        self.count_encoding(limits, Some(meter))
+    }
+
+    fn count_encoding(
+        &self,
+        limits: RuntimeTaskRequestCodecLimits,
+        meter: Option<&mut TaskSemanticMeter>,
+    ) -> Result<PreparedRuntimeTaskRequestEncoding<'_>, RuntimeTaskRequestCodecError> {
         let mut count = Writer {
             bytes: None,
+            meter,
             length: 0,
             storage_bytes: 0,
             limits,
         };
         self.write_source(&mut count)?;
-        let mut writer = Writer {
-            bytes: Some(Vec::with_capacity(count.length)),
-            length: 0,
-            storage_bytes: 0,
+        Ok(PreparedRuntimeTaskRequestEncoding {
+            definition: self,
             limits,
-        };
-        self.write_source(&mut writer)?;
-        Ok(writer
-            .bytes
-            .expect("materializing a request retains its bytes"))
+            encoded_bytes: count.length,
+            storage_bytes: count.storage_bytes,
+        })
     }
 
     fn write_source(&self, writer: &mut Writer) -> Result<(), RuntimeTaskRequestCodecError> {
@@ -293,14 +367,20 @@ fn charge_storage<T>(
     Ok(())
 }
 
-struct Writer {
-    bytes: Option<Vec<u8>>,
+struct Writer<'a> {
+    bytes: Option<&'a mut Vec<u8>>,
+    meter: Option<&'a mut TaskSemanticMeter>,
     length: usize,
     storage_bytes: usize,
     limits: RuntimeTaskRequestCodecLimits,
 }
-impl Writer {
+impl Writer<'_> {
     fn put(&mut self, bytes: &[u8]) -> Result<(), RuntimeTaskRequestCodecError> {
+        if let Some(meter) = &mut self.meter {
+            meter
+                .charge_work(bytes.len() as u64)
+                .map_err(RuntimeTaskRequestCodecError::Resource)?;
+        }
         let length = self
             .length
             .checked_add(bytes.len())

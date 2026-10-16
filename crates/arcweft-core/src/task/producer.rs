@@ -847,6 +847,25 @@ impl NeedProducerTaskPlan {
 }
 
 impl TaskClass {
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::LocalView),
+            1 => Some(Self::Io),
+            2 => Some(Self::Cpu),
+            3 => Some(Self::GpuPrepare),
+            4 => Some(Self::ShaderCompile),
+            5 => Some(Self::WasmCall),
+            6 => Some(Self::AssetDecode),
+            7 => Some(Self::AudioDecode),
+            8 => Some(Self::AudioRender),
+            9 => Some(Self::TtsSynthesis),
+            10 => Some(Self::BgmPrecompose),
+            11 => Some(Self::Lsp),
+            12 => Some(Self::Background),
+            _ => None,
+        }
+    }
+
     /// Canonical version-one class tag in the shared task-plan transcript.
     #[must_use]
     pub const fn semantic_tag(&self) -> u8 {
