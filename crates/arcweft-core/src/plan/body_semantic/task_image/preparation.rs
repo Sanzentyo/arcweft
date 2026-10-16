@@ -235,9 +235,13 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
             let completed_binding = self.rows.tasks[ordinal]
                 .row
                 .binding
-                .try_complete_line(|_| {
+                .try_complete_line(|group| {
                     if let TaskBindingSemantic::Line(proof) = binding {
-                        Ok(proof)
+                        Ok(
+                            crate::plan::RuntimeLineTaskPlanBinding::from_original_group(
+                                *group, proof,
+                            ),
+                        )
                     } else {
                         Err(TaskSemanticEncodingError::OwnerRejected)
                     }

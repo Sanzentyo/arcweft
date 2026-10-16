@@ -15,7 +15,7 @@ use std::cell::Cell;
 /// Both phases have exactly this one grammar.
 #[derive(Debug, PartialEq)]
 pub struct RuntimeTaskPlan<
-    Line = crate::line_task::LinePlanSemanticDigest,
+    Line = RuntimeLineTaskPlanBinding,
     Function = crate::runtime_id::RuntimeFunctionSiteId,
     Request = super::RuntimeTaskRequestTemplate,
     Control = super::RuntimeControlEffectContractId,
@@ -114,10 +114,38 @@ impl<Line> RuntimeTaskPlan<Line> {
     }
 }
 
-/// Closed binding algebra. Published Line bindings contain their original
-/// group's completed proof, never a caller-provided hash.
+/// Original Line source and its completed semantic proof. Only the common
+/// task seal constructs this binding; codecs retain the group coordinate and
+/// recompute its proof from the actual original inventory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeLineTaskPlanBinding {
+    group: crate::runtime_id::RuntimeLineTaskGroupId,
+    semantic: crate::line_task::LinePlanSemanticDigest,
+}
+
+impl RuntimeLineTaskPlanBinding {
+    pub(super) const fn from_original_group(
+        group: crate::runtime_id::RuntimeLineTaskGroupId,
+        semantic: crate::line_task::LinePlanSemanticDigest,
+    ) -> Self {
+        Self { group, semantic }
+    }
+
+    #[must_use]
+    pub const fn group(&self) -> crate::runtime_id::RuntimeLineTaskGroupId {
+        self.group
+    }
+
+    #[must_use]
+    pub const fn semantic_digest(&self) -> crate::line_task::LinePlanSemanticDigest {
+        self.semantic
+    }
+}
+
+/// Closed binding algebra. Published Line bindings retain both the original
+/// group coordinate and its completed proof, never a caller-provided hash.
 #[derive(Debug, PartialEq)]
-pub enum RuntimeTaskSemanticBinding<Line = crate::line_task::LinePlanSemanticDigest> {
+pub enum RuntimeTaskSemanticBinding<Line = RuntimeLineTaskPlanBinding> {
     Ordinary,
     View,
     AwaitManyBase,

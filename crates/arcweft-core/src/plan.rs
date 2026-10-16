@@ -145,11 +145,11 @@ pub use project_call::{
     RuntimeProjectCallSite, RuntimeProjectCallSiteTable, RuntimeProjectCallSiteTableError,
 };
 pub use task_semantic::{
-    RuntimeExecutableSemanticDigest, RuntimeTaskPlan, RuntimeTaskPlanDigestBase,
-    RuntimeTaskPlanFunctionRootSeed, RuntimeTaskPlanIndex, RuntimeTaskPlanSealLimits,
-    RuntimeTaskPlanSeed, RuntimeTaskPlanTable, RuntimeTaskPlanValidationError,
-    RuntimeTaskSemanticBinding, RuntimeTaskSemanticBindingKind, ViewTaskPlanAuthority,
-    ViewTaskPlanDigestRequest, ViewTaskPlanValidationError,
+    RuntimeExecutableSemanticDigest, RuntimeLineTaskPlanBinding, RuntimeTaskPlan,
+    RuntimeTaskPlanDigestBase, RuntimeTaskPlanFunctionRootSeed, RuntimeTaskPlanIndex,
+    RuntimeTaskPlanSealLimits, RuntimeTaskPlanSeed, RuntimeTaskPlanTable,
+    RuntimeTaskPlanValidationError, RuntimeTaskSemanticBinding, RuntimeTaskSemanticBindingKind,
+    ViewTaskPlanAuthority, ViewTaskPlanDigestRequest, ViewTaskPlanValidationError,
 };
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
