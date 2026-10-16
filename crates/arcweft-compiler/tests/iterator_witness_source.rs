@@ -1,4 +1,8 @@
 use arcweft_compiler::source::compile_source;
+
+#[path = "iterator_witness_source/bounded_calls.rs"]
+mod bounded_calls;
+
 use arcweft_core::plan::{
     FlowOp, RuntimeFunctionParameterPassing, RuntimeIteratorEvidence,
     RuntimeIteratorWitnessExecutable, RuntimePureInputType, RuntimeReceiverMode,

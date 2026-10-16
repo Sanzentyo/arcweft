@@ -1028,6 +1028,29 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    named_call_keeps_reads_before_and_after_its_last_control_transfer_in_source_order,
+    r#"
+struct State { value: i64 }
+fn identity(value: i64) -> i64 { value }
+fn combine(first: i64, second: i64, third: i64) -> i64 {
+    first * 100i64 + second * 10i64 + third
+}
+flow main() -> i64 {
+    let state = State { value = 1i64 }
+    return combine(
+        third = state.value,
+        first = { let input = 3i64
+            state.value = 2i64
+            identity(input) },
+        second = state.value,
+    )
+}
+"#,
+    RuntimeValue::i64(321),
+    "321"
+);
+
+callable_case!(
     nominal_binary_read_precedes_later_operand_evaluation,
     r#"
 struct State { value: i64 }

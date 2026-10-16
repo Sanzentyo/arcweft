@@ -7256,6 +7256,22 @@ impl<'a> FinalFlowLowerer<'a> {
         Ok(false)
     }
 
+    /// Only operands through the final control transfer need retained values.
+    /// The call/effect owner evaluates the remaining straight-line expressions
+    /// in source order, without creating separate scheduling operations.
+    fn retained_flow_operand_prefix_len(
+        &self,
+        children: &[ExprId],
+    ) -> Result<usize, RuntimePlanLowerError> {
+        let mut prefix_len = 0;
+        for (index, child) in children.iter().enumerate() {
+            if self.contains_flow_value_expression(*child)? {
+                prefix_len = index + 1;
+            }
+        }
+        Ok(prefix_len)
+    }
+
     fn lower_match_guard(
         &mut self,
         owner: ExprId,
@@ -7451,7 +7467,9 @@ impl<'a> FinalFlowLowerer<'a> {
                     overrides,
                 );
             }
-            for child in self.evaluated_effect_children(effect.application_site())? {
+            let children = self.evaluated_effect_children(effect.application_site())?;
+            let prefix_len = self.retained_flow_operand_prefix_len(&children)?;
+            for child in children.into_iter().take(prefix_len) {
                 if !overrides.contains_key(&child) && self.expression_literal(child).is_none() {
                     return self.lower_flow_value_with_overrides(
                         child,
@@ -7515,7 +7533,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 )
                 || call.need_producer().is_some()
         }) {
-            for child in self.evaluated_expression_children(expression)? {
+            let children = self.evaluated_expression_children(expression)?;
+            let prefix_len = self.retained_flow_operand_prefix_len(&children)?;
+            for child in children.into_iter().take(prefix_len) {
                 if !overrides.contains_key(&child) {
                     return self.lower_flow_value_with_overrides(
                         child,
