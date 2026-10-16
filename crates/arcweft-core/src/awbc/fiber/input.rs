@@ -135,7 +135,11 @@ impl super::FiberFrame {
         }
         for (register, expected) in captures.iter().zip(&signature.params) {
             let value = self.register(*register)?.view();
-            value.admit_unrestricted(&mut resources)?;
+            value.admit_ownership(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                &mut resources,
+                0,
+            )?;
             for ty in [
                 layout
                     .slots
@@ -156,7 +160,11 @@ impl super::FiberFrame {
             }
         }
         let value = self.register(source)?;
-        value.view().admit_unrestricted(&mut resources)?;
+        value.view().admit_ownership(
+            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+            &mut resources,
+            0,
+        )?;
         crate::program_types::RuntimeProgramValueType::Awbc {
             program,
             ty: layout

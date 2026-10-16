@@ -52,7 +52,7 @@ fn capture(local: RuntimeLocalSeedId) -> RuntimeFunctionInputBindingSeed {
                 local,
             },
         ),
-        ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+        ownership: RuntimeValueOwnershipRequirement::Owned,
         unrestricted_bindings: Box::new([]),
     }
 }

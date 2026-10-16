@@ -12,8 +12,8 @@ use crate::pattern::{
 use crate::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeArrayLength, RuntimeBoundTypeReference,
     RuntimeCallableStateDefinition, RuntimeDialogueContentEffectTrigger, RuntimeFlowTargetError,
-    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionTypeContract, RuntimePlanSequenceKind,
-    RuntimeTypeScope,
+    RuntimeFunctionTypeContract, RuntimePlanSequenceKind, RuntimeTypeScope,
+    RuntimeValueOwnershipRequirement,
 };
 use crate::runtime_id::{
     RuntimeCallableSpecializationId, RuntimeCallableStateId, RuntimeDialogueContentTemplateId,
@@ -1278,7 +1278,7 @@ pub struct AwbcFunctionInputOwnership {
     pub source: crate::plan::RuntimeFunctionInputSource,
     /// Exact retained-value creation operation, separate from frame ingress.
     pub transfer: crate::plan::RuntimeFunctionInputTransfer,
-    pub requirement: RuntimeFunctionInputOwnershipRequirement,
+    pub requirement: RuntimeValueOwnershipRequirement,
     pub pattern: Option<AwbcPatternId>,
     pub unrestricted_bindings: Vec<AwbcRegisterId>,
 }
@@ -1294,7 +1294,7 @@ impl AwbcFunctionInputOwnership {
             origin,
             source,
             transfer,
-            requirement: RuntimeFunctionInputOwnershipRequirement::Owned,
+            requirement: RuntimeValueOwnershipRequirement::Owned,
             pattern: None,
             unrestricted_bindings: Vec::new(),
         }
@@ -1761,6 +1761,7 @@ pub enum AwbcOpcode {
     RegisterCleanup = 0x47,
     CancelCleanup = 0x48,
     RegisterDefer = 0x49,
+    RequireUnrestricted = 0x4a,
     Jump = 0x80,
     Branch = 0x81,
     Match = 0x82,
@@ -1838,6 +1839,7 @@ impl AwbcOpcode {
         Self::RegisterCleanup,
         Self::CancelCleanup,
         Self::RegisterDefer,
+        Self::RequireUnrestricted,
         Self::Jump,
         Self::Branch,
         Self::Match,
@@ -1944,6 +1946,7 @@ impl AwbcOpcode {
             | Self::RegisterCleanup
             | Self::CancelCleanup
             | Self::RegisterDefer => AwbcOpcodeFamily::Ownership,
+            Self::RequireUnrestricted => AwbcOpcodeFamily::Ownership,
             Self::Jump
             | Self::Branch
             | Self::Match
@@ -2008,6 +2011,11 @@ pub enum AwbcInstruction {
     CopyValue {
         dst: AwbcRegisterId,
         src: AwbcRegisterId,
+    },
+    /// Checks the complete value graph without copying or consuming it.
+    /// Success refines this register's ownership until mutation.
+    RequireUnrestricted {
+        value: AwbcRegisterId,
     },
     Clear {
         register: AwbcRegisterId,
@@ -2307,6 +2315,7 @@ impl AwbcInstruction {
             Self::LoadConst { .. } => AwbcOpcode::LoadConst,
             Self::Move { .. } => AwbcOpcode::Move,
             Self::CopyValue { .. } => AwbcOpcode::CopyValue,
+            Self::RequireUnrestricted { .. } => AwbcOpcode::RequireUnrestricted,
             Self::Clear { .. } => AwbcOpcode::Clear,
             Self::EnterScope { .. } => AwbcOpcode::EnterScope,
             Self::ExitScope { .. } => AwbcOpcode::ExitScope,

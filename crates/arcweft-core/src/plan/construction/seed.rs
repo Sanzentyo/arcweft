@@ -1997,7 +1997,7 @@ pub struct RuntimeFunctionInputBindingSeed {
     pub source: RuntimeFunctionInputSource,
     pub input_local: RuntimeLocalSeedId,
     pub pattern: RuntimePatternSeed,
-    pub ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement,
+    pub ownership: crate::plan::RuntimeValueOwnershipRequirement,
     pub unrestricted_bindings: Box<[RuntimeLocalSeedId]>,
 }
 

@@ -43,6 +43,17 @@ pub enum AwbcRuntimeValueSnapshotError {
     TaskOutcome(#[from] crate::task::TaskOutcomeBindingError),
 }
 
+impl From<super::ownership::RuntimeValueOwnershipAdmissionError> for AwbcRuntimeValueSnapshotError {
+    fn from(error: super::ownership::RuntimeValueOwnershipAdmissionError) -> Self {
+        match error {
+            super::ownership::RuntimeValueOwnershipAdmissionError::Resource(cause) => {
+                Self::from(*cause)
+            }
+            super::ownership::RuntimeValueOwnershipAdmissionError::AffineValue => Self::AffineValue,
+        }
+    }
+}
+
 impl From<crate::entry::RuntimeSchemaError> for AwbcRuntimeValueSnapshotError {
     fn from(error: crate::entry::RuntimeSchemaError) -> Self {
         match error {
@@ -647,7 +658,11 @@ impl AwbcRuntimeValueSnapshot {
             crate::entry::RuntimeSchemaLimits::engine_default(),
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
         );
-        value.view().admit_unrestricted(&mut resources)?;
+        value.view().admit_ownership(
+            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+            &mut resources,
+            0,
+        )?;
         Self::validate_admitted_storage_view(value.view(), Some(owner), &resources)?;
         Self::from_admitted_storage(value, Some(owner))
     }

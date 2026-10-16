@@ -4,10 +4,10 @@ use super::*;
 use crate::semantic_facts::RuntimeExecutableSemanticFactView;
 use arcweft_core::plan::{
     RuntimeExecutableBodySeed, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin,
-    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
-    RuntimeFunctionInputTransfer, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
-    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
-    RuntimeFunctionSiteSeedId, RuntimeGeneratedFunctionRole, RuntimePlanBuilder,
+    RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionParameterPassing,
+    RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeGeneratedFunctionRole,
+    RuntimePlanBuilder, RuntimeValueOwnershipRequirement,
 };
 
 pub(in crate::flow) fn admit_prefix_functions(
@@ -78,8 +78,8 @@ pub(in crate::flow) fn admit_prefix_functions(
                         source: RuntimeFunctionInputSource::Capture { position: 0 },
                         input_local: callable.clone(),
                         pattern: bind_seed(mapping, callable.clone()),
-                        ownership: RuntimeFunctionInputOwnershipRequirement::Unrestricted,
-                        unrestricted_bindings: Box::new([callable.clone()]),
+                        ownership: RuntimeValueOwnershipRequirement::Owned,
+                        unrestricted_bindings: Box::new([]),
                     },
                     RuntimeFunctionInputBindingSeed {
                         transfer: RuntimeFunctionInputTransfer::Formal,
@@ -92,7 +92,7 @@ pub(in crate::flow) fn admit_prefix_functions(
                         },
                         input_local: frame.source.clone(),
                         pattern: bind_seed(receiver, frame.source.clone()),
-                        ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                        ownership: RuntimeValueOwnershipRequirement::Owned,
                         unrestricted_bindings: Box::new([]),
                     },
                 ]),

@@ -8,6 +8,7 @@ mod format_content_execution;
 mod instruction_call_execution;
 mod local_assignment;
 mod or_patterns;
+mod ownership_admission;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
@@ -26,8 +27,8 @@ use crate::plan::{
     RuntimeCallableDefault, RuntimeCallableInputSource, RuntimeCallableParameterCoordinate,
     RuntimeCallableParameterInput, RuntimeCallableParameterKind, RuntimeCallablePosition,
     RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition, RuntimeFlowTargetError, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionTypeContract,
+    RuntimeCallableTransition, RuntimeFlowTargetError, RuntimeFunctionTypeContract,
+    RuntimeValueOwnershipRequirement,
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
@@ -3111,6 +3112,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::RegisterCleanup, 0x47, Ownership),
         (AwbcOpcode::CancelCleanup, 0x48, Ownership),
         (AwbcOpcode::RegisterDefer, 0x49, Ownership),
+        (AwbcOpcode::RequireUnrestricted, 0x4a, Ownership),
         (AwbcOpcode::Jump, 0x80, Terminator),
         (AwbcOpcode::Branch, 0x81, Terminator),
         (AwbcOpcode::Match, 0x82, Terminator),
@@ -3271,13 +3273,12 @@ fn function_input_copy_proof_uses_only_its_checked_abi_requirement() {
         src: AwbcRegisterId(0),
     };
     program.functions[1].input_ownership[0].requirement =
-        RuntimeFunctionInputOwnershipRequirement::Unrestricted;
+        RuntimeValueOwnershipRequirement::Unrestricted;
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("the first ABI input is checked deeply before it enters the frame");
 
-    program.functions[1].input_ownership[0].requirement =
-        RuntimeFunctionInputOwnershipRequirement::Owned;
+    program.functions[1].input_ownership[0].requirement = RuntimeValueOwnershipRequirement::Owned;
     expect_project_call_rejection(program, "producer-proven unrestricted CopyValue source");
 }
 
@@ -5202,7 +5203,7 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
         crate::plan::RuntimeFunctionParameterPassing::Affine,
     )];
     program.functions[0].input_ownership[0].requirement =
-        RuntimeFunctionInputOwnershipRequirement::Unrestricted;
+        RuntimeValueOwnershipRequirement::Unrestricted;
     program.frame_layouts[0] = AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![

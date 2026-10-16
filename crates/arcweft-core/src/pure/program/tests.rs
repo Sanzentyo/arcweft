@@ -3,9 +3,9 @@ use crate::{
     entry::RuntimeCallableId,
     plan::{
         RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
-        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-        RuntimePlanBuilder, RuntimePlanTypeSeed, RuntimePureProgramBindingSeed,
+        RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+        RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeSeed,
+        RuntimePureProgramBindingSeed, RuntimeValueOwnershipRequirement,
     },
 };
 
@@ -166,7 +166,7 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
                     local,
                 },
             ),
-            ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+            ownership: RuntimeValueOwnershipRequirement::Owned,
             unrestricted_bindings: Box::new([]),
         });
     let site = builder

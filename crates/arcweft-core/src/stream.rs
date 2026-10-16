@@ -232,7 +232,11 @@ impl<'a> RuntimeStreamYieldCopyProof<'a> {
         value: crate::value::RuntimeValueView<'_>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError> {
-        value.admit_unrestricted(resources)
+        value.admit_ownership(
+            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+            resources,
+            0,
+        )
     }
 
     pub(crate) fn inspect(value: &'a RuntimeValue) -> Result<Self, RuntimeStreamYieldError> {

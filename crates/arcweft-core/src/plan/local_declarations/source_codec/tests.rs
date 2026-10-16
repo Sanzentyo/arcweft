@@ -2,12 +2,12 @@ use super::*;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeEffectSet, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
-    RuntimeFunctionInputOrigin, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionParameterPassing,
-    RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteDeclarationSeed,
-    RuntimeFunctionTypeContract, RuntimeLocalDeclarationSeed, RuntimeLocalPlacementError,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeTypeBinder, RuntimeTypeScope,
+    RuntimeFunctionInputOrigin, RuntimeFunctionInputSource, RuntimeFunctionInputTransfer,
+    RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionTypeContract, RuntimeLocalDeclarationSeed,
+    RuntimeLocalPlacementError, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+    RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeTypeBinder,
+    RuntimeTypeScope, RuntimeValueOwnershipRequirement,
 };
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::RuntimeValue;
@@ -172,7 +172,7 @@ fn scoped_plan() -> RuntimePlan {
                         local,
                     },
                 ),
-                ownership: RuntimeFunctionInputOwnershipRequirement::default(),
+                ownership: RuntimeValueOwnershipRequirement::default(),
                 unrestricted_bindings: Box::new([]),
             }]),
             result: type_identity(2),

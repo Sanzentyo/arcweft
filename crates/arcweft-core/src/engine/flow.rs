@@ -74,6 +74,17 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::StandardMap(control) => {
+                let admitted = self
+                    .fiber
+                    .frame
+                    .env
+                    .get(control.mapping())
+                    .ok_or(RuntimeEvalError::UnknownLocal(control.mapping()))
+                    .and_then(|value| control.admit_mapping(value));
+                if let Err(error) = admitted {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                    return;
+                }
                 self.advance_if_needed(next_op_index);
                 self.push_ops(control.body().to_vec());
             }

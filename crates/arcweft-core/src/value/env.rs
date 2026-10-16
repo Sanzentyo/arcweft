@@ -332,6 +332,7 @@ impl<V> RuntimeEnv<V> {
                 })?;
                 slot.storage()
                     .validate_program_type(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                         crate::program_types::RuntimeProgramValueType::Plan {
                             program: plan,
                             ty: declaration.ty(),

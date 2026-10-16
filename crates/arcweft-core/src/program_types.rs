@@ -80,6 +80,8 @@ impl<'a> RuntimeProgramTypes<'a> {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeProgramTypeError {
+    #[error("an unrestricted value graph is required")]
+    UnrestrictedValueRequired,
     #[error("active program has no semantic type {semantic_type:?}")]
     Missing {
         semantic_type: RuntimeSemanticTypeId,
@@ -128,6 +130,21 @@ pub enum RuntimeProgramTypeError {
     AwbcValue(Box<AwbcValueAdmissionError>),
     #[error("program value resource admission failed: {0}")]
     Resource(Box<crate::entry::RuntimeSchemaError>),
+}
+
+impl From<crate::value::ownership::RuntimeValueOwnershipAdmissionError>
+    for RuntimeProgramTypeError
+{
+    fn from(error: crate::value::ownership::RuntimeValueOwnershipAdmissionError) -> Self {
+        match error {
+            crate::value::ownership::RuntimeValueOwnershipAdmissionError::Resource(cause) => {
+                Self::Resource(cause)
+            }
+            crate::value::ownership::RuntimeValueOwnershipAdmissionError::AffineValue => {
+                Self::UnrestrictedValueRequired
+            }
+        }
+    }
 }
 
 impl From<crate::entry::RuntimeSchemaError> for RuntimeProgramTypeError {

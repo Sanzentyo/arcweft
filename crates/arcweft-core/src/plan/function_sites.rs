@@ -369,17 +369,7 @@ impl RuntimeFunctionInputSource {
     }
 }
 
-/// The live value guarantee required when an input enters a function frame.
-/// Function types do not imply this guarantee; the selected caller supplies it.
-#[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeFunctionInputOwnershipRequirement {
-    #[default]
-    Owned,
-    Unrestricted,
-}
+pub use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
 /// One synthetic input local and its checked pattern prologue.
 ///
@@ -393,7 +383,7 @@ pub struct RuntimeFunctionInputBinding {
     source: RuntimeFunctionInputSource,
     input_local: RuntimeLocalDeclarationId,
     pattern: RuntimePattern,
-    ownership: RuntimeFunctionInputOwnershipRequirement,
+    ownership: RuntimeValueOwnershipRequirement,
     unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
 }
 
@@ -404,7 +394,7 @@ impl RuntimeFunctionInputBinding {
         source: RuntimeFunctionInputSource,
         input_local: RuntimeLocalDeclarationId,
         pattern: RuntimePattern,
-        ownership: RuntimeFunctionInputOwnershipRequirement,
+        ownership: RuntimeValueOwnershipRequirement,
         unrestricted_bindings: Box<[RuntimeLocalDeclarationId]>,
     ) -> Self {
         Self {
@@ -444,7 +434,7 @@ impl RuntimeFunctionInputBinding {
     }
 
     #[must_use]
-    pub const fn ownership(&self) -> RuntimeFunctionInputOwnershipRequirement {
+    pub const fn ownership(&self) -> RuntimeValueOwnershipRequirement {
         self.ownership
     }
 

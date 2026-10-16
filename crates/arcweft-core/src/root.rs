@@ -508,7 +508,11 @@ impl<P> RootRuntime<P> {
                     message: "root requires its original program".to_owned(),
                 })?;
             let state = self.active.value.borrowed_view();
-            state.admit_unrestricted(resources)?;
+            state.admit_ownership(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                resources,
+                0,
+            )?;
             owner
                 .types()
                 .value_type(roles.state.semantic_identity)?
@@ -541,7 +545,11 @@ impl<P> RootRuntime<P> {
             for envelope in &self.active.committed_commands {
                 let command = &envelope.command;
                 let value = command.payload().borrowed_view();
-                value.admit_unrestricted(resources)?;
+                value.admit_ownership(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                    resources,
+                    0,
+                )?;
                 crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                     value,
                     Some(owner),

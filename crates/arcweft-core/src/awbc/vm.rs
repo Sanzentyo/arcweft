@@ -30,7 +30,7 @@ use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
-    RuntimeFlowTargetError, RuntimeFunctionInputOwnershipRequirement,
+    RuntimeFlowTargetError, RuntimeValueOwnershipRequirement,
 };
 use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
@@ -801,6 +801,15 @@ fn execute_instruction(
             }
             let value = value.clone();
             fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::RequireUnrestricted { value } => {
+            if !crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+                .accepts(register(fiber, *value)?.ownership())
+            {
+                return Err(VmError::Runtime(
+                    "RequireUnrestricted rejected an affine runtime value graph".to_owned(),
+                ));
+            }
         }
         AwbcInstruction::Clear {
             register: register_id,
@@ -5128,7 +5137,7 @@ pub(crate) fn validate_function_input_ownership_values(
         .zip(values)
         .enumerate()
     {
-        if row.requirement == RuntimeFunctionInputOwnershipRequirement::Unrestricted
+        if row.requirement == RuntimeValueOwnershipRequirement::Unrestricted
             && !value.ownership().permits_copy()
         {
             return Err(VmError::Runtime(format!(

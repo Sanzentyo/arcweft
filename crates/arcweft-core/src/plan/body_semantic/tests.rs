@@ -1474,7 +1474,7 @@ fn actual_host_request_recognizes_typed_capture_prologue_bindings() {
                 source: RuntimeFunctionInputSource::Capture { position: 0 },
                 input_local: input,
                 pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Typed { local }),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings: Box::new([]),
             }]),
         )

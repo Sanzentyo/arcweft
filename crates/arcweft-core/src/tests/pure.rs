@@ -1731,10 +1731,10 @@ fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
     use crate::plan::{
         RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFlowOpSeed,
         RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputTransfer,
-        RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing,
-        RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-        RuntimeFunctionSiteDeclarationSeed,
+        RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
+        RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSiteBodyKind,
+        RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
+        RuntimeValueOwnershipRequirement,
     };
     let boolean = RuntimeSemanticTypeId::from_bytes([0xf8; 32]);
     let fixture_need = |argument: &str| {
@@ -1779,7 +1779,7 @@ fn executable_value_backend_moves_the_original_affine_formal_into_its_return() {
                         local: local.clone(),
                     },
                 ),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings: Box::new([]),
             }]),
             result: need,

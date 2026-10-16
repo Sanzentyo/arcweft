@@ -31,6 +31,57 @@ pub enum RuntimeValueOwnership {
     Affine,
 }
 
+/// The required custody of a complete incoming or retained value graph.
+/// Its carrier type alone need not determine whether it can be copied.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeValueOwnershipRequirement {
+    #[default]
+    Owned,
+    Unrestricted,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeValueOwnershipAdmissionError {
+    #[error(transparent)]
+    Resource(Box<crate::entry::RuntimeSchemaError>),
+    #[error("an unrestricted value graph is required")]
+    AffineValue,
+}
+
+impl RuntimeValueOwnershipRequirement {
+    #[must_use]
+    pub const fn accepts(self, ownership: RuntimeValueOwnership) -> bool {
+        match self {
+            Self::Owned => true,
+            Self::Unrestricted => ownership.permits_copy(),
+        }
+    }
+
+    /// One resource traversal checks every node before ownership is admitted.
+    pub(crate) fn admit(
+        self,
+        value: super::RuntimeValueView<'_>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+        depth: usize,
+    ) -> Result<(), RuntimeValueOwnershipAdmissionError> {
+        let mut affine = false;
+        let mut observe = |value: super::RuntimeValueView<'_>| {
+            affine |= !self.accepts(value.intrinsic_ownership());
+            Ok(())
+        };
+        resources
+            .validate_view(value, depth, Some(&mut observe))
+            .map_err(|cause| RuntimeValueOwnershipAdmissionError::Resource(Box::new(cause)))?;
+        if affine {
+            return Err(RuntimeValueOwnershipAdmissionError::AffineValue);
+        }
+        Ok(())
+    }
+}
+
 /// One typed affine line handle with its canonical path in the containing
 /// runtime value graph.
 #[derive(Clone, Debug, Eq, PartialEq)]

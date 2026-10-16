@@ -9,11 +9,11 @@ use crate::entry::{
 use crate::pattern::{RuntimeBuiltinVariantIdentity, RuntimeSemanticTypeId};
 use crate::plan::{
     FlowRuntimeId, RuntimeEffectSet, RuntimeExecutableBodySeed, RuntimeFunctionDefinitionIdentity,
-    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin,
-    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputTransfer,
+    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin, RuntimeFunctionInputTransfer,
     RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
     RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
     RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanTypeSeed,
+    RuntimeValueOwnershipRequirement,
 };
 use crate::pure::VmPureFunctionScratch;
 use crate::step::{RuntimeStepInput, RuntimeStepOptions};
@@ -287,7 +287,7 @@ fn formal(
                 local,
             },
         ),
-        ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+        ownership: RuntimeValueOwnershipRequirement::Owned,
         unrestricted_bindings: Box::new([]),
     }
 }

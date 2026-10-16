@@ -953,7 +953,11 @@ impl<V, O, E, N, B, R, L, P, H>
             AwbcRuntimeValueSnapshot::validate_admitted_storage_view(target, owner, resources)?;
             for value in self.captures.iter().chain(self.task_inputs.iter()) {
                 let view = value.borrowed_view();
-                view.admit_unrestricted(resources)?;
+                view.admit_ownership(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                    resources,
+                    0,
+                )?;
                 AwbcRuntimeValueSnapshot::validate_admitted_storage_view(view, owner, resources)?;
             }
             for value in self

@@ -886,7 +886,7 @@ fn closure_definition_and_capture_origins_survive_source_revisions() {
 #[test]
 fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
     use arcweft_core::{
-        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole},
+        plan::{FlowOp, RuntimeFunctionSemanticRole, RuntimeValueOwnershipRequirement},
         value::{RuntimeExprKind, RuntimeLocalReadMode},
     };
     use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
@@ -895,13 +895,13 @@ fn root_closure_capture_transfer_proof_drives_creation_and_ingress() {
             "flow main() -> i64 { let value = 42i64; let callback = || value; return callback() }",
             CheckedLocalReadMode::Copy,
             RuntimeLocalReadMode::Copy,
-            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+            RuntimeValueOwnershipRequirement::Unrestricted,
         ),
         (
             "flow main() -> i64 { let value = Vec<Need<i64>>::with_capacity(0usize); let callback = || value; let _ = callback(); return 42i64 }",
             CheckedLocalReadMode::Move,
             RuntimeLocalReadMode::Move,
-            RuntimeFunctionInputOwnershipRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         ),
     ] {
         let (project, context) = removed_role_project(source);
@@ -3187,7 +3187,7 @@ fn implicit_capture_transfer_is_selected_per_closed_instance() {
 #[test]
 fn root_implicit_capture_transfer_drives_creation_and_ingress() {
     use arcweft_core::{
-        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole},
+        plan::{FlowOp, RuntimeFunctionSemanticRole, RuntimeValueOwnershipRequirement},
         value::{RuntimeExprKind, RuntimeLocalReadMode},
     };
     use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
@@ -3196,13 +3196,13 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
             "flow main() -> i64 { let value = 42i64; let callback: i64 -> (i64, i64) effects {} = (_, value); let (result, _) = callback(42i64); return result }",
             CheckedLocalReadMode::Copy,
             RuntimeLocalReadMode::Copy,
-            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+            RuntimeValueOwnershipRequirement::Unrestricted,
         ),
         (
             "flow main() -> i64 { let value = Vec<Need<i64>>::with_capacity(0usize); let callback: i64 -> (i64, Vec<Need<i64>>) effects {} = (_, value); let _ = callback(0i64); return 42i64 }",
             CheckedLocalReadMode::Move,
             RuntimeLocalReadMode::Move,
-            RuntimeFunctionInputOwnershipRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         ),
     ] {
         let (project, context) = removed_role_project(source);
@@ -3281,8 +3281,8 @@ fn root_implicit_capture_transfer_drives_creation_and_ingress() {
 #[test]
 fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() {
     use arcweft_core::plan::{
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
-        RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+        RuntimeFunctionInputSource, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+        RuntimeValueOwnershipRequirement,
     };
     let (project, context) = removed_role_project(
         "fn identity<T>(value: T) -> T { value }\nflow main() -> i64 { let number = identity(42i64); let pending = identity(Vec<Need<i64>>::with_capacity(0usize)); let explicit = |value: i64| value; let implicit = (_ + 1i64); return implicit(explicit(number)) }",
@@ -3298,10 +3298,7 @@ fn function_sites_preserve_accepted_parameter_passing_separately_from_ingress() 
                 unreachable!()
             };
             assert_eq!(position, 0);
-            assert_eq!(
-                input.ownership(),
-                RuntimeFunctionInputOwnershipRequirement::Owned
-            );
+            assert_eq!(input.ownership(), RuntimeValueOwnershipRequirement::Owned);
             match site.role() {
                 RuntimeFunctionSemanticRole::Ordinary => ordinary.push(passing),
                 RuntimeFunctionSemanticRole::Closure => {
@@ -3958,7 +3955,7 @@ fn closed_dialogue_effect_captures_reject_foreign_transfer_authority() {
 #[test]
 fn defer_capture_transfer_drives_registration_and_ingress() {
     use arcweft_core::{
-        plan::{FlowOp, RuntimeFunctionInputOwnershipRequirement},
+        plan::{FlowOp, RuntimeValueOwnershipRequirement},
         value::{RuntimeExprKind, RuntimeLocalReadMode},
     };
     use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
@@ -3967,13 +3964,13 @@ fn defer_capture_transfer_drives_registration_and_ingress() {
             "42i64",
             CheckedLocalReadMode::Copy,
             RuntimeLocalReadMode::Copy,
-            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+            RuntimeValueOwnershipRequirement::Unrestricted,
         ),
         (
             "Vec<Need<i64>>::with_capacity(0usize)",
             CheckedLocalReadMode::Move,
             RuntimeLocalReadMode::Move,
-            RuntimeFunctionInputOwnershipRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         ),
     ] {
         let source = format!(
@@ -4039,21 +4036,19 @@ fn defer_capture_transfer_drives_registration_and_ingress() {
 
 #[test]
 fn dialogue_effect_capture_transfer_drives_creation_and_ingress() {
-    use arcweft_core::plan::{
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionSemanticRole,
-    };
+    use arcweft_core::plan::{RuntimeFunctionSemanticRole, RuntimeValueOwnershipRequirement};
     use arcweft_core::value::{RuntimeExprKind, RuntimeLocalReadMode};
     use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
     for (initializer, mode, ownership) in [
         (
             "42i64",
             CheckedLocalReadMode::Copy,
-            RuntimeFunctionInputOwnershipRequirement::Unrestricted,
+            RuntimeValueOwnershipRequirement::Unrestricted,
         ),
         (
             "Vec<Need<i64>>::with_capacity(0usize)",
             CheckedLocalReadMode::Move,
-            RuntimeFunctionInputOwnershipRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         ),
     ] {
         let source = format!(

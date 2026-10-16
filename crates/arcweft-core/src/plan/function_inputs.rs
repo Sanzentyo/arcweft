@@ -4,8 +4,7 @@ use crate::runtime_id::RuntimeFunctionSiteId;
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 use super::{
-    RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource, RuntimeFunctionSite,
-    RuntimePlan,
+    RuntimeFunctionInputSource, RuntimeFunctionSite, RuntimePlan, RuntimeValueOwnershipRequirement,
 };
 
 pub(crate) struct RuntimeFunctionInputAdmission<'plan> {
@@ -165,7 +164,7 @@ impl RuntimePlan {
                     }
                 });
             }
-            if input.ownership() == RuntimeFunctionInputOwnershipRequirement::Unrestricted
+            if input.ownership() == RuntimeValueOwnershipRequirement::Unrestricted
                 && !value.ownership().permits_copy()
             {
                 return Err(RuntimeFunctionApplyError::UnrestrictedInputRequired {

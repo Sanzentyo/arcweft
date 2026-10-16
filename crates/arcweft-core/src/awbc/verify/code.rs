@@ -27,7 +27,7 @@ use crate::plan::{
     RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableDefault,
     RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
     RuntimeCallableRetainedRole, RuntimeCallableStateDefinition, RuntimeCallableTransition,
-    RuntimeFunctionInputOwnershipRequirement, RuntimePlanSequenceKind, RuntimeSequenceMutation,
+    RuntimePlanSequenceKind, RuntimeSequenceMutation, RuntimeValueOwnershipRequirement,
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
@@ -57,6 +57,33 @@ struct FlowState {
     copy_proofs: Vec<CopyProof>,
     scopes: Vec<AwbcScopeId>,
     format_attempts: Vec<format::FormatAttemptFlowState>,
+}
+
+pub(super) struct ResumeRequirements {
+    pub(super) scopes: Vec<AwbcScopeId>,
+    pub(super) unrestricted: Vec<AwbcRegisterId>,
+}
+
+impl FlowState {
+    fn resume_requirements(
+        &self,
+        program: &AwbcProgram,
+        layout: &AwbcFrameLayout,
+    ) -> ResumeRequirements {
+        ResumeRequirements {
+            scopes: self.scopes.clone(),
+            unrestricted: self
+                .copy_proofs
+                .iter()
+                .enumerate()
+                .filter(|(index, proof)| {
+                    proof.permits_copy()
+                        && !runtime_type_permits_copy(program, layout.slots[*index].ty, 0)
+                })
+                .map(|(index, _)| AwbcRegisterId(block_index_to_u32(index)))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -267,10 +294,10 @@ fn verify_dialogue_effect_callable_state<'a>(
 fn verify_function(
     verifier: &Verifier<'_, '_>,
     function_index: usize,
-    scope_query: Option<(usize, u32)>,
+    resume_query: Option<(usize, u32)>,
     attempts: &format::FormatAttemptCatalog<'_>,
     admission: &mut AssignmentAdmission<'_>,
-) -> Result<Option<Vec<AwbcScopeId>>, AwbcVerifyError> {
+) -> Result<Option<ResumeRequirements>, AwbcVerifyError> {
     let program = verifier.program;
     let function = &program.functions[function_index];
     let layout = &program.frame_layouts[function.frame_layout.index()];
@@ -314,7 +341,7 @@ fn verify_function(
         .iter()
         .zip(positional_parameter_registers(layout))
     {
-        if row.requirement == RuntimeFunctionInputOwnershipRequirement::Unrestricted {
+        if row.requirement == RuntimeValueOwnershipRequirement::Unrestricted {
             initial.copy_proofs[parameter.index()] = CopyProof::Copyable;
         }
     }
@@ -322,7 +349,7 @@ fn verify_function(
     let mut queue = VecDeque::from([function.entry_block.index()]);
     let mut steps = 0_usize;
     let mut edges = 0_usize;
-    let mut queried_scopes = None;
+    let mut queried_requirements = None;
 
     while let Some(block_index) = queue.pop_front() {
         steps = steps.saturating_add(1);
@@ -343,8 +370,8 @@ fn verify_function(
             &format!("block {block_index}"),
         )?;
         for (offset, instruction_index) in instruction_range.enumerate() {
-            if scope_query == Some((block_index, block_index_to_u32(offset))) {
-                queried_scopes = Some(state.scopes.clone());
+            if resume_query == Some((block_index, block_index_to_u32(offset))) {
+                queried_requirements = Some(state.resume_requirements(program, layout));
             }
             apply_instruction(
                 verifier,
@@ -355,8 +382,8 @@ fn verify_function(
                 attempts,
             )?;
         }
-        if scope_query == Some((block_index, block.instructions.len)) {
-            queried_scopes = Some(state.scopes.clone());
+        if resume_query == Some((block_index, block.instructions.len)) {
+            queried_requirements = Some(state.resume_requirements(program, layout));
         }
         let successors = apply_terminator(
             verifier,
@@ -444,7 +471,7 @@ fn verify_function(
             )?;
         }
     }
-    Ok(queried_scopes)
+    Ok(queried_requirements)
 }
 
 fn validate_function_input_ownership(
@@ -685,18 +712,18 @@ fn assign_input_pattern_copy_proofs(
     }
 }
 
-pub(super) fn scope_stack_at(
+pub(super) fn resume_requirements_at(
     verifier: &Verifier<'_, '_>,
     function: usize,
     block: usize,
     offset: u32,
-) -> Result<Vec<AwbcScopeId>, AwbcVerifyError> {
+) -> Result<ResumeRequirements, AwbcVerifyError> {
     if verifier.program.functions.get(function).is_none()
         || verifier.block_owner.get(block) != Some(&function)
     {
         return Err(AwbcVerifyError::InvalidInvariant {
-            at: "scope resume coordinate".to_owned(),
-            message: "scope resume coordinate has a foreign function or block".to_owned(),
+            at: "frame resume coordinate".to_owned(),
+            message: "frame resume coordinate has a foreign function or block".to_owned(),
         });
     }
     let attempts = format::format_attempt_catalog(verifier.program)?;
@@ -708,8 +735,8 @@ pub(super) fn scope_stack_at(
         &mut AssignmentAdmission::Sealed,
     )?
     .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-        at: "scope resume coordinate".to_owned(),
-        message: "scope resume offset is outside the selected block".to_owned(),
+        at: "frame resume coordinate".to_owned(),
+        message: "frame resume offset is outside the selected block".to_owned(),
     })
 }
 
@@ -907,6 +934,10 @@ fn apply_instruction(
             require_compatible(program, dst_ty, src_ty, &at)?;
             write_register(verifier, function, block, *dst, state)?;
             state.copy_proofs[dst.index()] = copy_proof;
+        }
+        AwbcInstruction::RequireUnrestricted { value } => {
+            read_register(verifier, function, block, *value, state)?;
+            state.copy_proofs[value.index()] = CopyProof::Copyable;
         }
         AwbcInstruction::Clear { register } => {
             let ty = read_register(verifier, function, block, *register, state)?;
@@ -2324,6 +2355,7 @@ fn apply_instruction_copy_and_move_effects(
     match instruction {
         AwbcInstruction::Move { .. }
         | AwbcInstruction::CopyValue { .. }
+        | AwbcInstruction::RequireUnrestricted { .. }
         | AwbcInstruction::Clear { .. }
         | AwbcInstruction::BindPattern { .. }
         | AwbcInstruction::TestPattern { .. }

@@ -164,8 +164,14 @@ impl crate::value::RuntimePlaceStorage<RuntimeValue> {
         let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        self.validate_program_type(expected, binding, &mut resources, RuntimeValue::view)
-            .is_ok()
+        self.validate_program_type(
+            crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
+            expected,
+            binding,
+            &mut resources,
+            RuntimeValue::view,
+        )
+        .is_ok()
     }
 }
 
@@ -175,12 +181,13 @@ impl<T> crate::value::RuntimePlaceStorage<T> {
     /// from the candidate's retained nominal provenance.
     pub(crate) fn validate_program_type<'value>(
         &'value self,
+        requirement: crate::value::ownership::RuntimeValueOwnershipRequirement,
         expected: super::RuntimeProgramValueType<'_>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
         view: impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
     ) -> Result<(), super::RuntimeProgramTypeError> {
-        self.preflight_resources(resources, &view, 0)?;
+        self.preflight_resources(resources, &view, 0, requirement)?;
         match expected {
             super::RuntimeProgramValueType::Plan { program, ty } => {
                 self.validate_authority_type(program, ty, binding, resources, &view)
@@ -196,27 +203,31 @@ impl<T> crate::value::RuntimePlaceStorage<T> {
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
         view: &impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
         depth: usize,
-    ) -> Result<(), crate::entry::RuntimeSchemaError> {
+        requirement: crate::value::ownership::RuntimeValueOwnershipRequirement,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
         let result = if let Some(value) = self.as_ref() {
-            resources.validate_view(view(value), depth, None)
+            requirement
+                .admit(view(value), resources, depth)
+                .map_err(Into::into)
         } else if let Some((header, children)) = self.record_parts() {
             resources
                 .partial_record(header, children.len(), depth)
+                .map_err(super::RuntimeProgramTypeError::from)
                 .and_then(|()| {
                     children
                         .iter()
                         .enumerate()
                         .try_for_each(|(ordinal, child)| {
                             child
-                                .preflight_resources(resources, view, depth + 1)
+                                .preflight_resources(resources, view, depth + 1, requirement)
                                 .map_err(|error| error.within_value_path(&format!("$[{ordinal}]")))
                         })
                 })
         } else {
-            resources.vacant(depth)
+            resources.vacant(depth).map_err(Into::into)
         };
-        if let Err(error) = &result {
-            resources.work().retain_failure(error.clone());
+        if let Err(super::RuntimeProgramTypeError::Resource(error)) = &result {
+            resources.work().retain_failure(error.as_ref().clone());
         }
         result
     }

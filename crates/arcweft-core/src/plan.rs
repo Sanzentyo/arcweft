@@ -113,11 +113,11 @@ pub use format_attempt::{
 };
 pub use function_sites::{
     RuntimeFunctionCaptureMode, RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputBinding,
-    RuntimeFunctionInputOrigin, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionInputSource, RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
-    RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole, RuntimeFunctionSite,
-    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
-    RuntimeFunctionSiteTable, RuntimeGeneratedFunctionRole,
+    RuntimeFunctionInputOrigin, RuntimeFunctionInputSource, RuntimeFunctionInputTransfer,
+    RuntimeFunctionParameterIdentity, RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+    RuntimeFunctionSite, RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteError, RuntimeFunctionSiteTable, RuntimeGeneratedFunctionRole,
+    RuntimeValueOwnershipRequirement,
 };
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
@@ -536,7 +536,7 @@ impl RuntimeFlow {
                                 position: formal.coordinate.position(),
                                 passing: formal.passing,
                             }
-                        && input.ownership() == RuntimeFunctionInputOwnershipRequirement::Owned
+                        && input.ownership() == RuntimeValueOwnershipRequirement::Owned
                         && formal.mode == crate::entry::RuntimeFlowParameterMode::Owned
                 })
     }

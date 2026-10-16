@@ -1093,7 +1093,11 @@ impl<P> RuntimeNeedProducerState<P> {
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
                     let view = value.borrowed_view();
                     if policy == TaskPolicy::JoinSameKey {
-                        view.admit_unrestricted(resources)?;
+                        view.admit_ownership(
+                            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                            resources,
+                            0,
+                        )?;
                     } else {
                         resources.validate_view(view, 0, None)?;
                     }
@@ -1585,7 +1589,11 @@ impl<V, P> NeedProducerLaunchRestore<V, P> {
             admission.validate_metadata(&argument.name)?;
             admission.admit_composite(V::admission_origin(), |owner, resources| {
                 let view = argument.value.borrowed_view();
-                view.admit_unrestricted(resources)?;
+                view.admit_ownership(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                    resources,
+                    0,
+                )?;
                 crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                     view, owner, resources,
                 )?;
@@ -2476,7 +2484,11 @@ impl NeedProducerRegistry {
                 argument
                     .value
                     .view()
-                    .admit_unrestricted(&mut resources)
+                    .admit_ownership(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                        &mut resources,
+                        0,
+                    )
                     .map_err(|error| match error {
                         crate::value::AwbcRuntimeValueSnapshotError::AffineValue => {
                             NeedProducerAdmissionError::AffineHostProducerArgument
@@ -2490,7 +2502,11 @@ impl NeedProducerRegistry {
                 value
                     .value()
                     .view()
-                    .admit_unrestricted(&mut resources)
+                    .admit_ownership(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                        &mut resources,
+                        0,
+                    )
                     .map_err(|_| NeedProducerAdmissionError::InvalidRestoredLaunch)?;
             }
         }

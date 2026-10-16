@@ -136,7 +136,9 @@ impl Engine {
             self.fiber.frame.pending_ops.iter().collect::<Vec<_>>()
         };
         let result_pattern = project_body(&owner, control)?;
-        let RuntimeValue::Callable(mapping) = self.fiber.frame.env.get(control.mapping())? else {
+        let value = self.fiber.frame.env.get(control.mapping())?;
+        control.admit_mapping(value).ok()?;
+        let RuntimeValue::Callable(mapping) = value else {
             return None;
         };
         // Captured or partially bound callbacks preserve their original

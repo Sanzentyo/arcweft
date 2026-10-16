@@ -313,6 +313,7 @@ where
     fn validate_retained_values(
         &self,
         program: &AwbcProgram,
+        cursor: FiberCursor,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
         view: impl Fn(&V) -> crate::value::RuntimeValueView<'_> + Copy,
         path: &str,
@@ -320,9 +321,13 @@ where
         let context = self.value_context(program)?;
         context.validate_formats(self.format.as_ref(), &self.format_attempts, resources, view)?;
         context.validate_scopes(&self.root_cleanups, &self.scopes, resources, view)?;
+        let unrestricted = program
+            .unrestricted_registers_at(cursor)
+            .map_err(|_| FiberStateError::InvalidFrame)?;
         validate_frame_registers(
             program,
             context.layout,
+            &unrestricted,
             context.binding,
             &self.registers,
             resources,
@@ -2197,7 +2202,13 @@ impl FiberState {
             return Ok(());
         }
         for (index, frame) in self.frames.iter().enumerate() {
-            validate_frame(program, frame, &mut resources, &format!("frames[{index}]"))?;
+            validate_frame(
+                program,
+                frame,
+                self.frame_resume_cursor(index)?,
+                &mut resources,
+                &format!("frames[{index}]"),
+            )?;
             if let Some(point) = &frame.return_to {
                 if let Some(pending) = point.continuation.pending_packet() {
                     pending
@@ -3608,6 +3619,7 @@ fn validate_frame_layout<'program>(
 fn validate_frame(
     program: &AwbcProgram,
     frame: &FiberFrame,
+    cursor: FiberCursor,
     resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     path: &str,
 ) -> Result<(), FiberStateError> {
@@ -3619,9 +3631,13 @@ fn validate_frame(
         frame.registers.len(),
         &resources.work(),
     )?;
+    let unrestricted = program
+        .unrestricted_registers_at(cursor)
+        .map_err(|_| FiberStateError::InvalidFrame)?;
     validate_frame_registers(
         program,
         layout,
+        &unrestricted,
         frame.type_instantiation.as_deref(),
         &frame.registers,
         resources,
@@ -3650,6 +3666,7 @@ fn validate_frame(
 fn validate_frame_registers<'value, T>(
     program: &AwbcProgram,
     layout: &super::schema::AwbcFrameLayout,
+    unrestricted: &[AwbcRegisterId],
     instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
     registers: &'value [RuntimePlaceStorage<T>],
     resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
@@ -3663,6 +3680,14 @@ fn validate_frame_registers<'value, T>(
         )?;
         storage
             .validate_program_type(
+                if unrestricted
+                    .binary_search_by_key(&index, |register| register.index())
+                    .is_ok()
+                {
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+                } else {
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Owned
+                },
                 crate::program_types::RuntimeProgramValueType::Awbc {
                     program,
                     ty: slot.ty,

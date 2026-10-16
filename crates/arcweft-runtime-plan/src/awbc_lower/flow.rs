@@ -38,9 +38,9 @@ use arcweft_core::pattern::{
 };
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDeferOwner,
-    RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeExecutableBody, RuntimeFlow, RuntimeFunctionInputBinding, RuntimeIteratorEvidence,
-    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
+    RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow,
+    RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeLineOperation,
+    RuntimeMatchArm, RuntimePlan,
     RuntimeProjectCallAttachedPresence as RuntimeProjectCallAttachedPresenceCore,
     RuntimeProjectCallOrdinaryMaterialization as RuntimeProjectCallOrdinaryMaterializationCore,
     RuntimeProjectCallPlan, RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
@@ -1155,6 +1155,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     ) {
         match op {
             FlowOp::StandardMap(control) => {
+                let mapping = frame.local(control.mapping(), self.local_type(control.mapping()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::RequireUnrestricted { value: mapping });
                 self.lower_ops(frame, body, control.body(), path);
             }
             FlowOp::Bind(bindings) => {

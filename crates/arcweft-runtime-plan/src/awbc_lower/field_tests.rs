@@ -349,11 +349,10 @@ fn reference_field_program(
     arcweft_id::runtime_program::RuntimePureProgramId,
 ) {
     use arcweft_core::plan::{
-        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin,
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
+        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin, RuntimeFunctionInputSource,
         RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
         RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
-        RuntimePureProgramBindingSeed,
+        RuntimePureProgramBindingSeed, RuntimeValueOwnershipRequirement,
     };
     use arcweft_core::value::RuntimeEntityReferenceField;
     let mut builder = RuntimePlanBuilder::new();
@@ -418,7 +417,7 @@ fn reference_field_program(
                         local: local.clone(),
                     },
                 ),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings: Box::new([]),
             }],
             RuntimeExprSeed::new(
@@ -461,11 +460,10 @@ fn reference_field_awbc(
 /// Only the field instruction is malformed; all original type/schema rows stay owned.
 fn wrong_owner_reference_field_awbc(inspect: bool) -> AwbcProgram {
     use arcweft_core::plan::{
-        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin,
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
+        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOrigin, RuntimeFunctionInputSource,
         RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
         RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
-        RuntimePureProgramBindingSeed,
+        RuntimePureProgramBindingSeed, RuntimeValueOwnershipRequirement,
     };
     let mut builder = RuntimePlanBuilder::new();
     let admitted = builder
@@ -501,7 +499,7 @@ fn wrong_owner_reference_field_awbc(inspect: bool) -> AwbcProgram {
                         local,
                     },
                 ),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings: Box::new([]),
             }],
             RuntimeExprSeed::new(

@@ -276,13 +276,14 @@ impl AwbcProgram {
             },
         )?;
         for (cursor, scopes) in stacks {
-            let expected = code::scope_stack_at(
+            let expected = code::resume_requirements_at(
                 &verifier,
                 cursor.function.index(),
                 cursor.block.index(),
                 cursor.instruction_offset,
             )?;
             if !expected
+                .scopes
                 .iter()
                 .copied()
                 .eq(scopes.iter().map(|scope| scope.id))
@@ -295,5 +296,29 @@ impl AwbcProgram {
             }
         }
         Ok(())
+    }
+
+    /// Replays the original verifier lattice at the exact stopped coordinate.
+    /// Only value-dependent carrier proofs need an additional retained check.
+    pub(crate) fn unrestricted_registers_at(
+        &self,
+        cursor: super::fiber::FiberCursor,
+    ) -> Result<Vec<super::schema::AwbcRegisterId>, AwbcVerifyError> {
+        let verifier = structure::prepare_verifier(
+            self,
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                supported_feature_bits: self.header.feature_bits,
+                ..AwbcVerifyContext::default()
+            },
+        )?;
+        Ok(code::resume_requirements_at(
+            &verifier,
+            cursor.function.index(),
+            cursor.block.index(),
+            cursor.instruction_offset,
+        )?
+        .unrestricted)
     }
 }

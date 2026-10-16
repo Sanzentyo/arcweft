@@ -409,7 +409,7 @@ impl Wire for crate::awbc::schema::AwbcFunctionInputOwnership {
             origin: crate::plan::RuntimeLocalOrigin::read_wire(reader)?,
             source: crate::plan::RuntimeFunctionInputSource::read_wire(reader)?,
             transfer: crate::plan::RuntimeFunctionInputTransfer::read_wire(reader)?,
-            requirement: crate::plan::RuntimeFunctionInputOwnershipRequirement::read_wire(reader)?,
+            requirement: crate::plan::RuntimeValueOwnershipRequirement::read_wire(reader)?,
             pattern: Option::<crate::awbc::schema::AwbcPatternId>::read_wire(reader)?,
             unrestricted_bindings: Vec::read_wire(reader)?,
         })
@@ -588,7 +588,7 @@ impl Wire for crate::plan::RuntimeFunctionInputSource {
     }
 }
 
-impl Wire for crate::plan::RuntimeFunctionInputOwnershipRequirement {
+impl Wire for crate::plan::RuntimeValueOwnershipRequirement {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(match self {
             Self::Owned => 0,
@@ -842,6 +842,7 @@ impl Wire for AwbcInstruction {
                 src.write_wire(writer)?;
             }
             Self::Clear { register } => register.write_wire(writer)?,
+            Self::RequireUnrestricted { value } => value.write_wire(writer)?,
             Self::Drop { register, policy } => {
                 register.write_wire(writer)?;
                 policy.write_wire(writer)?;
@@ -1187,6 +1188,9 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::Clear => Self::Clear {
                 register: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::RequireUnrestricted => Self::RequireUnrestricted {
+                value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::EnterScope => Self::EnterScope {
                 scope: AwbcScopeId::read_wire(reader)?,
@@ -1883,6 +1887,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::LoadConst
             | AwbcOpcode::Move
             | AwbcOpcode::CopyValue
+            | AwbcOpcode::RequireUnrestricted
             | AwbcOpcode::Clear
             | AwbcOpcode::EnterScope
             | AwbcOpcode::ExitScope

@@ -12,6 +12,29 @@ use crate::program_types::RuntimeFunctionEffectInstantiation;
 use std::{borrow::Borrow, collections::BTreeSet};
 
 impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuation<P, V>>> {
+    /// A stopped caller resumes at its callee's authenticated return point;
+    /// only the innermost frame uses the fiber's current cursor.
+    pub(super) fn frame_resume_cursor(&self, index: usize) -> Result<FiberCursor, FiberStateError> {
+        let frame = self
+            .frames
+            .get(index)
+            .ok_or(FiberStateError::MissingFrame)?;
+        let cursor = match self.frames.get(index + 1) {
+            Some(callee) => {
+                callee
+                    .return_to
+                    .as_ref()
+                    .ok_or(FiberStateError::InvalidFrame)?
+                    .cursor
+            }
+            None => self.cursor,
+        };
+        if cursor.function != frame.function {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        Ok(cursor)
+    }
+
     pub(super) fn validate_structure(
         &self,
         program: &AwbcProgram,
@@ -94,15 +117,14 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
                 &mut resources.work(),
             )?;
         }
+        let stacks = self
+            .frames
+            .iter()
+            .enumerate()
+            .map(|(index, frame)| Ok((self.frame_resume_cursor(index)?, frame.scopes.as_slice())))
+            .collect::<Result<Vec<_>, FiberStateError>>()?;
         program
-            .verify_scope_stacks(self.frames.iter().enumerate().map(|(index, frame)| {
-                let cursor = self
-                    .frames
-                    .get(index + 1)
-                    .and_then(|callee| callee.return_to.as_ref())
-                    .map_or(self.cursor, |point| point.cursor);
-                (cursor, frame.scopes.as_slice())
-            }))
+            .verify_scope_stacks(stacks)
             .map_err(|_| FiberStateError::InvalidFrame)?;
         if matches!(self.status, FiberStatus::Running | FiberStatus::Suspended)
             && self.frames.is_empty()
@@ -194,6 +216,7 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
             }
             frame.validate_retained_values(
                 program,
+                self.frame_resume_cursor(index)?,
                 resources,
                 V::borrowed_view,
                 &format!("frames[{index}]"),

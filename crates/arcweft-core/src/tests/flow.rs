@@ -2192,7 +2192,7 @@ fn await_progress_runs_only_the_first_matching_observer() {
                             local: need_local.clone(),
                         },
                     ),
-                    ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: crate::plan::RuntimeValueOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
                 }]),
                 string_type(),

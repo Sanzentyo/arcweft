@@ -198,6 +198,50 @@ fn direct_map_evaluates_receiver_before_mapping() {
 }
 
 #[test]
+fn opaque_map_mapping_requires_an_executed_ownership_guard() {
+    for body in [
+        "return values.map(factory())",
+        "let mapper: Vec<i64> -> Vec<i64> effects {} = map(factory()); return mapper(values)",
+    ] {
+        let source = format!(
+            r#"
+#[pure]
+fn increment(item: i64) -> i64 {{ item + 1i64 }}
+fn factory() -> (i64 -> i64 effects {{}}) {{ log.info("mapping"); increment }}
+pub fn root(values: Vec<i64>) -> Vec<i64> {{ {body} }}
+flow main() -> i64 {{ return root([1i64, 2i64, 3i64]).sum() }}
+"#
+        );
+        let compiled = compile_source(&source).unwrap();
+        let mut lowered =
+            AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "map-guard.arcw")
+                .lower()
+                .unwrap()
+                .program;
+        let mut removed = 0;
+        for instruction in &mut lowered.instructions {
+            if matches!(
+                instruction,
+                arcweft_core::awbc::schema::AwbcInstruction::RequireUnrestricted { .. }
+            ) {
+                *instruction = arcweft_core::awbc::schema::AwbcInstruction::Nop;
+                removed += 1;
+            }
+        }
+        assert!(removed > 0);
+        let error = lowered
+            .verify(Default::default(), Default::default())
+            .expect_err("an opaque callback has no Copy proof without its runtime guard");
+        assert!(
+            error
+                .to_string()
+                .contains("producer-proven unrestricted CopyValue source"),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn retained_map_prefix_invokes_each_callback_with_its_declared_effects() {
     assert_map_source_order(
         "let mapper: Vec<i64> -> Vec<i64> effects { log.write } = map(logging_increment); return mapper(values()).sum()",

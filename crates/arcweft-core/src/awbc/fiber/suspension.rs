@@ -236,7 +236,11 @@ impl<V, O, N> FiberSuspension<V, O, N> {
                     args.iter().zip(registers).zip(&signature.params)
                 {
                     let value = view(value);
-                    value.admit_unrestricted(resources)?;
+                    value.admit_ownership(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                        resources,
+                        0,
+                    )?;
                     for ty in [
                         frame
                             .layout
@@ -495,7 +499,11 @@ impl<V, O, N> FiberSuspensionReason<V, O, N> {
                     .zip(&signature.params)
                 {
                     let value = view(value);
-                    value.admit_unrestricted(resources)?;
+                    value.admit_ownership(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                        resources,
+                        0,
+                    )?;
                     for ty in [
                         frame
                             .layout

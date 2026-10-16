@@ -116,7 +116,7 @@ pub(super) fn controller_plan(
                             local,
                         },
                     ),
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: RuntimeValueOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
                 }]),
                 boolean,

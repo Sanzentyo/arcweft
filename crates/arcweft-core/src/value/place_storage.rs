@@ -777,6 +777,7 @@ mod tests {
         let saved = RuntimePlaceStorage::from(AwbcRuntimeValueSnapshot::Bool(true));
         let admit = |ty| {
             saved.validate_program_type(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                 RuntimeProgramValueType::Awbc {
                     program: &program,
                     ty,
@@ -834,6 +835,7 @@ mod tests {
             for _ in 0..2 {
                 saved
                     .validate_program_type(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                         owner
                             .types()
                             .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
@@ -877,6 +879,7 @@ mod tests {
                     ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::InertSnapshot);
                 saved
                     .validate_program_type(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                         owner
                             .types()
                             .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
@@ -888,6 +891,7 @@ mod tests {
                     .unwrap();
                 let error = saved
                     .validate_program_type(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                         owner
                             .types()
                             .value_type(RuntimeSemanticTypeId::from_bytes([2; 32]))
@@ -934,6 +938,7 @@ mod tests {
             let saved = live.snapshot_for_owner(Some(&owner)).unwrap();
             saved
                 .validate_program_type(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                     owner.types().value_type(semantic).unwrap(),
                     None,
                     &mut ValueResourceAdmission::snapshot(
@@ -949,6 +954,7 @@ mod tests {
             };
             saved
                 .validate_program_type(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                     owner.types().value_type(semantic).unwrap(),
                     None,
                     &mut ValueResourceAdmission::snapshot(
@@ -960,6 +966,7 @@ mod tests {
                 .unwrap();
             let error = saved
                 .validate_program_type(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                     owner.types().value_type(semantic).unwrap(),
                     None,
                     &mut ValueResourceAdmission::snapshot(
@@ -996,6 +1003,7 @@ mod tests {
             assert!(
                 forged
                     .validate_program_type(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                         owner.types().value_type(semantic).unwrap(),
                         None,
                         &mut ValueResourceAdmission::snapshot(

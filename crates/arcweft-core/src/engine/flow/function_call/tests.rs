@@ -495,10 +495,9 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
     use crate::pattern::RuntimeSemanticTypeId;
     use crate::plan::{
         RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
-        RuntimeFunctionInputOwnershipRequirement, RuntimeFunctionInputSource,
-        RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimePatternSeed,
-        RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-        RuntimePureProgramBindingSeed,
+        RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed,
+        RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimePureProgramBindingSeed, RuntimeValueOwnershipRequirement,
     };
     let boolean = RuntimeSemanticTypeId::from_bytes([84; 32]);
     let fixture_need = |argument: &str| {
@@ -537,7 +536,7 @@ fn owned_program_moves_affine_input_and_returns_it_once() {
                 local: local.clone(),
             },
         ),
-        ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+        ownership: RuntimeValueOwnershipRequirement::Owned,
         unrestricted_bindings: Box::new([]),
     };
     let site = builder

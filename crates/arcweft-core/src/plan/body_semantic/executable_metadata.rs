@@ -164,7 +164,7 @@ impl RuntimeBodySemanticContext<'_> {
         encoder: &mut TaskSemanticEncoder<'_>,
         function: crate::runtime_id::RuntimeFunctionSiteId,
     ) -> Result<(), RuntimeBodySemanticError> {
-        use crate::plan::RuntimeFunctionInputOwnershipRequirement as Ownership;
+        use crate::plan::RuntimeValueOwnershipRequirement as Ownership;
         self.write_function_reference(encoder, function)?;
         let site = self.plan.function_sites().get(function).ok_or_else(|| {
             encoder.reject_owner();

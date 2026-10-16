@@ -481,6 +481,7 @@ fn partial_nominal_places_correlate_original_rows_and_independent_effect_origins
     let admit =
         |candidate: &RuntimePlaceStorage<AwbcRuntimeValueSnapshot>, expected, destination| {
             candidate.validate_program_type(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
                 super::super::RuntimeProgramTypes::Awbc(&program)
                     .value_type(expected)
                     .unwrap(),

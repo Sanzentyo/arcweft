@@ -119,7 +119,7 @@ pub(super) fn reserve_global_defer_sites(
                         ownership: capture.input_ownership(),
                         unrestricted_bindings: if matches!(
                             capture.input_ownership(),
-                            RuntimeFunctionInputOwnershipRequirement::Unrestricted
+                            RuntimeValueOwnershipRequirement::Unrestricted
                         ) {
                             Box::new([input_local.clone()])
                         } else {

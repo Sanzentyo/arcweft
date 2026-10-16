@@ -213,12 +213,12 @@ impl RuntimeExecutableCaptureFact {
         &self.transfer
     }
 
-    pub fn input_ownership(&self) -> arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement {
-        use arcweft_core::plan::RuntimeFunctionInputOwnershipRequirement;
+    pub fn input_ownership(&self) -> arcweft_core::plan::RuntimeValueOwnershipRequirement {
+        use arcweft_core::plan::RuntimeValueOwnershipRequirement;
         use arcweft_lang_sema::final_analysis::CheckedLocalReadMode;
         match self.transfer.mode() {
-            CheckedLocalReadMode::Copy => RuntimeFunctionInputOwnershipRequirement::Unrestricted,
-            CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned,
+            CheckedLocalReadMode::Copy => RuntimeValueOwnershipRequirement::Unrestricted,
+            CheckedLocalReadMode::Move => RuntimeValueOwnershipRequirement::Owned,
             CheckedLocalReadMode::Borrow => {
                 unreachable!("accepted executable capture is a value transfer")
             }

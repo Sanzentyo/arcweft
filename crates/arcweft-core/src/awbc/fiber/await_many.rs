@@ -243,7 +243,11 @@ impl<V, N> FiberAwaitManyState<V, N> {
             .enumerate()
         {
             let value = view(value);
-            value.admit_unrestricted(resources)?;
+            value.admit_ownership(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                resources,
+                0,
+            )?;
             for ty in [
                 frame
                     .layout
@@ -267,7 +271,11 @@ impl<V, N> FiberAwaitManyState<V, N> {
         }
         for value in &self.items {
             let value = view(value);
-            value.admit_unrestricted(resources)?;
+            value.admit_ownership(
+                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                resources,
+                0,
+            )?;
             RuntimeProgramValueType::Awbc {
                 program,
                 ty: item_type,

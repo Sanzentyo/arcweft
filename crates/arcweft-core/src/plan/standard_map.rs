@@ -51,4 +51,25 @@ impl RuntimeStandardMapControl {
     pub fn body(&self) -> &[FlowOp] {
         &self.body
     }
+
+    /// Admit the complete mapping before any callback copy, independently of
+    /// the function carrier's static affine classification.
+    pub(crate) fn admit_mapping(
+        &self,
+        value: &crate::value::RuntimeValue,
+    ) -> Result<(), crate::value::RuntimeEvalError> {
+        if !matches!(value, crate::value::RuntimeValue::Callable(_)) {
+            return Err(crate::value::RuntimeEvalError::ExpectedFunction(
+                crate::value::runtime_value_label(value),
+            ));
+        }
+        if !crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+            .accepts(value.ownership())
+        {
+            return Err(crate::value::RuntimeEvalError::AffineLocalCopy(
+                self.mapping,
+            ));
+        }
+        Ok(())
+    }
 }

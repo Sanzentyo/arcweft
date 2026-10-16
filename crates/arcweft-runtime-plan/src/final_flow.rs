@@ -47,18 +47,18 @@ use arcweft_core::plan::{
     RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
     RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowMatchArmSeed,
     RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatAttemptSeedId,
-    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputOwnershipRequirement,
-    RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed, RuntimeLineId,
-    RuntimeLocalDeclarationSeed, RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
-    RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresenceSeed,
-    RuntimeProjectCallFixedMaterializationSeed, RuntimeProjectCallOperandSeed,
-    RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallPlanSeed,
-    RuntimeProjectCallRestMaterializationSeed, RuntimePureInputType, RuntimePureOutputType,
-    RuntimePureProgramBindingSeed, RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
+    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineId, RuntimeLocalDeclarationSeed,
+    RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
+    RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallFixedMaterializationSeed,
+    RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
+    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed, RuntimePureInputType,
+    RuntimePureOutputType, RuntimePureProgramBindingSeed, RuntimeReceiverMode,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
+    RuntimeValueOwnershipRequirement,
 };
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::value::{
@@ -2072,7 +2072,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
                                             local: local.clone(),
                                         },
                                     ),
-                                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                                    ownership: RuntimeValueOwnershipRequirement::Owned,
                                     unrestricted_bindings: Box::new([]),
                                 })
                             })
@@ -2534,9 +2534,9 @@ fn reserve_implicit_function_sites<'facts>(
                 )));
                 continue;
             }
-            RuntimeFunctionInputOwnershipRequirement::Unrestricted
+            RuntimeValueOwnershipRequirement::Unrestricted
         } else {
-            RuntimeFunctionInputOwnershipRequirement::Owned
+            RuntimeValueOwnershipRequirement::Owned
         };
         let mut frame = match ProjectFunctionFrameLocals::admit_view(scope.facts(), None, builder) {
             Ok(frame) => frame,
@@ -2568,7 +2568,7 @@ fn reserve_implicit_function_sites<'facts>(
                 Ok(RuntimeFunctionInputBindingSeed {
                     transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Transferred(capture.transfer().runtime_capture_mode().expect("accepted capture is a value transfer")),
                     origin: capture.origin().runtime_input_origin().map_err(|error| error.to_string())?,
-                    ownership: match capture.transfer().mode() { arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy => RuntimeFunctionInputOwnershipRequirement::Unrestricted, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow => unreachable!("accepted implicit capture is a value transfer") },
+                    ownership: match capture.transfer().mode() { arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Copy => RuntimeValueOwnershipRequirement::Unrestricted, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Move => RuntimeValueOwnershipRequirement::Owned, arcweft_lang_sema::final_analysis::CheckedLocalReadMode::Borrow => unreachable!("accepted implicit capture is a value transfer") },
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::Capture { position },
                     input_local: input_local.clone(),
@@ -2728,9 +2728,9 @@ fn reserve_closure_sites<'facts>(
                 let ownership = match capture.transfer().mode()
                 {
                     CheckedLocalReadMode::Copy => {
-                        RuntimeFunctionInputOwnershipRequirement::Unrestricted
+                        RuntimeValueOwnershipRequirement::Unrestricted
                     }
-                    CheckedLocalReadMode::Move => RuntimeFunctionInputOwnershipRequirement::Owned,
+                    CheckedLocalReadMode::Move => RuntimeValueOwnershipRequirement::Owned,
                     CheckedLocalReadMode::Borrow => {
                         return Err(RuntimePlanLowerError::new(format!(
                             "project closure {:?} capture source {:?} has an invalid borrowed value role",
@@ -2819,7 +2819,7 @@ fn reserve_closure_sites<'facts>(
                 Ok(RuntimeFunctionInputBindingSeed {
                     transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: parameter.definition().runtime_input_origin(),
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: RuntimeValueOwnershipRequirement::Owned,
                     unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
                     source: RuntimeFunctionInputSource::Parameter {
                         position: parameter.position(),
@@ -3026,7 +3026,7 @@ fn reserve_project_function_sites<'facts>(
             inputs.push(RuntimeFunctionInputBindingSeed {
                 transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: parameter.definition().runtime_input_origin(),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings: unrestricted_bindings.into_boxed_slice(),
                 source,
                 input_local,
@@ -3085,7 +3085,7 @@ fn reserve_project_function_sites<'facts>(
             inputs.push(RuntimeFunctionInputBindingSeed {
                 transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                 origin: formal.runtime_input_origin(),
-                ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                ownership: RuntimeValueOwnershipRequirement::Owned,
                 unrestricted_bindings,
                 source: RuntimeFunctionInputSource::Parameter {
                     position: attached.abi_position(),
@@ -3242,7 +3242,7 @@ fn reserve_project_default_function_sites<'facts>(
                 Ok(RuntimeFunctionInputBindingSeed {
                     transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: capture.formal().definition().runtime_input_origin(),
-                    ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: RuntimeValueOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
                     source: RuntimeFunctionInputSource::CapturedParameter { position, passing: capture.formal().passing() },
                     input_local,
@@ -3370,9 +3370,9 @@ fn reserve_pure_programs<'facts>(
                     ownership: if input.copy_requirement().is_some()
                         || input.copy_evidence().is_some()
                     {
-                        RuntimeFunctionInputOwnershipRequirement::Unrestricted
+                        RuntimeValueOwnershipRequirement::Unrestricted
                     } else {
-                        RuntimeFunctionInputOwnershipRequirement::Owned
+                        RuntimeValueOwnershipRequirement::Owned
                     },
                     unrestricted_bindings: if input.copy_requirement().is_some()
                         || input.copy_evidence().is_some()
@@ -3439,8 +3439,8 @@ fn reserve_pure_programs<'facts>(
                     if requirement.ty().as_bytes() != ty.identity().as_bytes() {
                         return Err(RuntimePlanLowerError::new("program synthetic Copy ingress type disagrees with its formal"));
                     }
-                    RuntimeFunctionInputOwnershipRequirement::Unrestricted
-                } else { RuntimeFunctionInputOwnershipRequirement::Owned };
+                    RuntimeValueOwnershipRequirement::Unrestricted
+                } else { RuntimeValueOwnershipRequirement::Owned };
                 Ok(RuntimeFunctionInputBindingSeed {
                     transfer: arcweft_core::plan::RuntimeFunctionInputTransfer::Formal,
                     origin: parameter.runtime_input_origin(),
@@ -4866,7 +4866,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                             transfer,
                             origin,
                             ownership,
-                            unrestricted_bindings: if matches!(ownership, RuntimeFunctionInputOwnershipRequirement::Unrestricted) {
+                            unrestricted_bindings: if matches!(ownership, RuntimeValueOwnershipRequirement::Unrestricted) {
                                 Box::new([binding.clone()])
                             } else {
                                 Box::new([])
@@ -5160,7 +5160,7 @@ fn lower_dialogue_application<'facts>(
                     .value_callback_definition(value)
                     .expect("iterated accepted fragment slot"),
             ),
-            ownership: RuntimeFunctionInputOwnershipRequirement::Owned,
+            ownership: RuntimeValueOwnershipRequirement::Owned,
             unrestricted_bindings: Box::new([]),
             source: RuntimeFunctionInputSource::Capture { position: 0 },
             input_local: input_local.clone(),

@@ -155,7 +155,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                             local: need_argument.clone(),
                         },
                     ),
-                    ownership: crate::plan::RuntimeFunctionInputOwnershipRequirement::Owned,
+                    ownership: crate::plan::RuntimeValueOwnershipRequirement::Owned,
                     unrestricted_bindings: Box::new([]),
                 }]),
                 string,

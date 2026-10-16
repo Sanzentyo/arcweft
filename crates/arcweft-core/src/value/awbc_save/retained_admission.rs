@@ -9,6 +9,7 @@ use crate::entry::schema::value_budget::ValidationWork;
 use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::value::RuntimeValueView;
+use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
 mod metadata;
 
@@ -22,12 +23,6 @@ enum RetainedTypeObligation<'binding> {
         expected: RuntimeSemanticTypeId,
         binding: Option<&'binding RuntimeFunctionEffectInstantiation>,
     },
-}
-
-#[derive(Clone, Copy)]
-enum RetainedValueRequirement {
-    Unrestricted,
-    Owned,
 }
 
 /// Admits every retained root before an enclosing frame/session copies or
@@ -111,7 +106,7 @@ impl RuntimeRetainedValueAdmission {
             value.value,
             value.origin,
             None,
-            RetainedValueRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         )
     }
 
@@ -124,7 +119,7 @@ impl RuntimeRetainedValueAdmission {
             value.value,
             value.origin,
             Some(RetainedTypeObligation::Stored(expected)),
-            RetainedValueRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         )
     }
 
@@ -138,7 +133,7 @@ impl RuntimeRetainedValueAdmission {
             value.value,
             value.origin,
             Some(RetainedTypeObligation::Invocation { expected, binding }),
-            RetainedValueRequirement::Owned,
+            RuntimeValueOwnershipRequirement::Owned,
         )
     }
 
@@ -367,7 +362,7 @@ impl RuntimeRetainedValueAdmission {
             value,
             origin,
             expected,
-            RetainedValueRequirement::Unrestricted,
+            RuntimeValueOwnershipRequirement::Unrestricted,
         )
     }
 
@@ -376,7 +371,7 @@ impl RuntimeRetainedValueAdmission {
         value: RuntimeValueView<'_>,
         origin: ValueAdmissionOrigin,
         expected: Option<RetainedTypeObligation<'_>>,
-        requirement: RetainedValueRequirement,
+        requirement: RuntimeValueOwnershipRequirement,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         if let Some(failure) = &self.failure {
             return Err(failure.clone());
@@ -393,15 +388,10 @@ impl RuntimeRetainedValueAdmission {
         value: RuntimeValueView<'_>,
         origin: ValueAdmissionOrigin,
         expected: Option<RetainedTypeObligation<'_>>,
-        requirement: RetainedValueRequirement,
+        requirement: RuntimeValueOwnershipRequirement,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.resources.set_origin(origin);
-        match requirement {
-            RetainedValueRequirement::Unrestricted => {
-                value.admit_unrestricted(&mut self.resources)?;
-            }
-            RetainedValueRequirement::Owned => self.resources.validate_view(value, 0, None)?,
-        }
+        value.admit_ownership(requirement, &mut self.resources, 0)?;
         if let Some(obligation) = expected {
             let expected = match &obligation {
                 RetainedTypeObligation::OpaquePayload { outer, .. } => *outer,
