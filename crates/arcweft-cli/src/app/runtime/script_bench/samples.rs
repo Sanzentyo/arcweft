@@ -1,7 +1,8 @@
-use super::super::bench::RuntimeBenchTrace;
+use super::super::bench::CompletedRuntimeBenchTrace;
 use super::super::expectations::{script_command_diagnostics, script_command_goto};
 use crate::output::{
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchSectionRunSummary,
+    ScriptBenchSectionStatus,
 };
 use arcweft_runtime_host::{
     NativeSchedulerStats, NativeTaskClassCounts, NativeTaskStats, RuntimeExecutorMathStatsSummary,
@@ -93,71 +94,72 @@ impl RuntimeBenchSamples {
         }
     }
 
-    pub(in crate::app) fn push(&mut self, elapsed_ns: u128, trace: &RuntimeBenchTrace) {
+    pub(in crate::app) fn push(&mut self, elapsed_ns: u128, trace: &CompletedRuntimeBenchTrace) {
         self.elapsed.push(elapsed_ns);
         self.push_step_stats(trace);
         self.push_pure_stats(trace);
         self.aot_fast_path_ops
-            .push(trace.executor_stats.aot_fast_path_ops);
-        self.executor_stats_samples.push(trace.executor_stats);
-        self.native_io.push(&trace.native_io);
+            .push(trace.executor_stats().aot_fast_path_ops);
+        self.executor_stats_samples.push(trace.executor_stats());
+        self.native_io.push(trace.native_io());
     }
 
-    fn push_step_stats(&mut self, trace: &RuntimeBenchTrace) {
-        self.executed_ops.push(trace.totals.executed_ops);
-        self.child_fiber_ticks.push(trace.totals.child_fiber_ticks);
-        self.max_child_fibers.push(trace.totals.max_child_fibers);
-        self.line_effects.push(trace.totals.line_effects);
-        self.task_requests.push(trace.totals.task_requests);
-        self.task_events_in.push(trace.totals.task_events_in);
-        self.diagnostics += trace.totals.diagnostics;
+    fn push_step_stats(&mut self, trace: &CompletedRuntimeBenchTrace) {
+        self.executed_ops.push(trace.totals().executed_ops);
+        self.child_fiber_ticks
+            .push(trace.totals().child_fiber_ticks);
+        self.max_child_fibers.push(trace.totals().max_child_fibers);
+        self.line_effects.push(trace.totals().line_effects);
+        self.task_requests.push(trace.totals().task_requests);
+        self.task_events_in.push(trace.totals().task_events_in);
+        self.diagnostics += trace.totals().diagnostics;
     }
 
-    fn push_pure_stats(&mut self, trace: &RuntimeBenchTrace) {
-        self.pure_calls.push(trace.totals.pure.pure_calls);
-        self.math_calls.push(trace.totals.pure.math_calls);
+    fn push_pure_stats(&mut self, trace: &CompletedRuntimeBenchTrace) {
+        self.pure_calls.push(trace.totals().pure.pure_calls);
+        self.math_calls.push(trace.totals().pure.math_calls);
         self.math_accelerated_calls
-            .push(trace.totals.pure.math_accelerated_calls);
-        self.pure_batch_items.push(trace.totals.pure.batch_items);
-        self.pure_batch_calls.push(trace.totals.pure.batch_calls);
+            .push(trace.totals().pure.math_accelerated_calls);
+        self.pure_batch_items.push(trace.totals().pure.batch_items);
+        self.pure_batch_calls.push(trace.totals().pure.batch_calls);
         self.pure_flat_batch_calls
-            .push(trace.totals.pure.flat_batch_calls);
+            .push(trace.totals().pure.flat_batch_calls);
         self.pure_flat_batch_items
-            .push(trace.totals.pure.flat_batch_items);
+            .push(trace.totals().pure.flat_batch_items);
         self.pure_flat_batch_bytes_borrowed
-            .push(trace.totals.pure.flat_batch_bytes_borrowed);
+            .push(trace.totals().pure.flat_batch_bytes_borrowed);
         self.pure_flatten_materializations
-            .push(trace.totals.pure.flatten_materializations);
+            .push(trace.totals().pure.flatten_materializations);
         self.pure_flatten_bytes_copied
-            .push(trace.totals.pure.flatten_bytes_copied);
-        self.pure_jit_calls.push(trace.totals.pure.jit_calls);
-        self.pure_aot_calls.push(trace.totals.pure.aot_calls);
-        self.pure_vm_calls.push(trace.totals.pure.vm_calls);
+            .push(trace.totals().pure.flatten_bytes_copied);
+        self.pure_jit_calls.push(trace.totals().pure.jit_calls);
+        self.pure_aot_calls.push(trace.totals().pure.aot_calls);
+        self.pure_vm_calls.push(trace.totals().pure.vm_calls);
         self.pure_parallel_policy_checks
-            .push(trace.totals.pure.parallel_policy_checks);
+            .push(trace.totals().pure.parallel_policy_checks);
         self.pure_parallel_work_units
-            .push(trace.totals.pure.parallel_work_units);
+            .push(trace.totals().pure.parallel_work_units);
         self.pure_parallel_batches
-            .push(trace.totals.pure.parallel_batches);
+            .push(trace.totals().pure.parallel_batches);
         self.pure_parallel_skipped_backend
-            .push(trace.totals.pure.parallel_skipped_backend);
+            .push(trace.totals().pure.parallel_skipped_backend);
         self.pure_parallel_skipped_small
-            .push(trace.totals.pure.parallel_skipped_small);
+            .push(trace.totals().pure.parallel_skipped_small);
         self.pure_thread_pool_jobs
-            .push(trace.totals.pure.thread_pool_jobs);
+            .push(trace.totals().pure.thread_pool_jobs);
         self.pure_thread_pool_build_elapsed_ns
-            .push(trace.totals.pure.thread_pool_build_elapsed_ns);
+            .push(trace.totals().pure.thread_pool_build_elapsed_ns);
         self.pure_arg_stack_packs
-            .push(trace.totals.pure.arg_stack_packs);
+            .push(trace.totals().pure.arg_stack_packs);
         self.pure_arg_vec_allocations
-            .push(trace.totals.pure.arg_vec_allocations);
+            .push(trace.totals().pure.arg_vec_allocations);
         self.pure_arg_bytes_copied
-            .push(trace.totals.pure.arg_bytes_copied);
+            .push(trace.totals().pure.arg_bytes_copied);
         self.pure_arg_bytes_borrowed
-            .push(trace.totals.pure.arg_bytes_borrowed);
+            .push(trace.totals().pure.arg_bytes_borrowed);
         self.pure_result_bytes_copied
-            .push(trace.totals.pure.result_bytes_copied);
-        self.pure_fallbacks.push(trace.totals.pure.fallbacks);
+            .push(trace.totals().pure.result_bytes_copied);
+        self.pure_fallbacks.push(trace.totals().pure.fallbacks);
     }
 
     pub(in crate::app) fn executor_stats(&mut self) -> RuntimeExecutorStats {
@@ -579,13 +581,25 @@ pub(in crate::app) fn validate_bench_section(
     let mut diagnostics = Vec::new();
     if !is_known_bench_section(&section.name) {
         diagnostics.push(format!("unknown bench section `{}`", section.name));
-        return ScriptBenchSectionRunSummary::new(&section.name, "unknown", diagnostics);
+        return ScriptBenchSectionRunSummary::new(
+            &section.name,
+            ScriptBenchSectionStatus::Unknown,
+            diagnostics,
+        );
     }
     diagnostics.extend(script_command_diagnostics(&section.body));
     if !diagnostics.is_empty() {
-        return ScriptBenchSectionRunSummary::new(&section.name, "failed", diagnostics);
+        return ScriptBenchSectionRunSummary::new(
+            &section.name,
+            ScriptBenchSectionStatus::Failed,
+            diagnostics,
+        );
     }
-    ScriptBenchSectionRunSummary::new(&section.name, "validated", diagnostics)
+    ScriptBenchSectionRunSummary::new(
+        &section.name,
+        ScriptBenchSectionStatus::Validated,
+        diagnostics,
+    )
 }
 
 fn is_known_bench_section(name: &str) -> bool {

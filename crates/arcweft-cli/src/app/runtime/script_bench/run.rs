@@ -12,8 +12,10 @@ use super::BenchRuntimeContext;
 use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
 use crate::output::{
     RuntimeExecutorTier, RuntimeStepRunSummary, ScriptBenchMeasurementSummary,
-    ScriptBenchRunSummary, ScriptBenchSectionRunSummary,
+    ScriptBenchRunSummary, ScriptBenchSectionRunSummary, ScriptBenchSectionStatus,
+    ScriptBenchStatus,
 };
+use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan,
 };
@@ -23,6 +25,21 @@ use arcweft_test::{BenchSection, ScriptBench, ScriptCommand, ScriptExpectation};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
+
+#[derive(Clone, Copy)]
+enum BenchPhase {
+    Warmup,
+    Measured,
+}
+
+impl std::fmt::Display for BenchPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Warmup => "warmup",
+            Self::Measured => "measured",
+        })
+    }
+}
 
 fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
     let sections = bench
@@ -43,23 +60,24 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
             .iter()
             .flat_map(|section| section.diagnostics.iter().cloned()),
     );
-    let has_error = diagnostics
+    let has_error = sections.iter().any(|section| {
+        matches!(
+            section.status,
+            ScriptBenchSectionStatus::Unknown | ScriptBenchSectionStatus::Failed
+        )
+    }) || !bench
+        .sections
         .iter()
-        .any(|diagnostic| diagnostic.starts_with("unknown bench section"))
-        || sections.iter().any(|section| section.status == "failed")
-        || !bench
-            .sections
-            .iter()
-            .any(|section| section.name == "measure");
-    let has_unsupported = sections
-        .iter()
-        .any(|section| section.status == "unsupported");
+        .any(|section| section.name == "measure");
     let status = if has_error {
-        "failed"
-    } else if has_unsupported {
-        "skipped"
+        ScriptBenchStatus::Failed
+    } else if sections
+        .iter()
+        .any(|section| section.status == ScriptBenchSectionStatus::Skipped)
+    {
+        ScriptBenchStatus::Skipped
     } else {
-        "validated"
+        ScriptBenchStatus::Validated
     };
     ScriptBenchRunSummary::new(bench, status, sections, diagnostics)
 }
@@ -72,7 +90,7 @@ pub(in crate::app) fn run_script_bench(
     runtime: BenchRuntimeContext<'_>,
 ) -> ScriptBenchRunSummary {
     let mut summary = validate_script_bench(bench);
-    if summary.status != "validated" {
+    if summary.status != ScriptBenchStatus::Validated {
         return summary;
     }
     if !options.values.is_empty()
@@ -81,7 +99,7 @@ pub(in crate::app) fn run_script_bench(
             .iter()
             .any(|section| bench_pure_helper_name(section).is_some())
     {
-        "failed".clone_into(&mut summary.status);
+        summary.status = ScriptBenchStatus::Failed;
         summary.diagnostics.push("--value supplies Flow inputs; pure helper measurements use their checked generated input series".to_owned());
         return summary;
     }
@@ -91,7 +109,7 @@ pub(in crate::app) fn run_script_bench(
             .iter()
             .any(|section| bench_goto_flow(section).is_some())
     {
-        "failed".clone_into(&mut summary.status);
+        summary.status = ScriptBenchStatus::Failed;
         summary
             .diagnostics
             .push("--value requires a measured goto Flow".to_owned());
@@ -104,20 +122,25 @@ pub(in crate::app) fn run_script_bench(
         .collect::<Vec<_>>();
     let section_failures = sections
         .iter()
-        .filter(|section| section.status == "failed")
+        .filter(|section| section.status == ScriptBenchSectionStatus::Failed)
         .flat_map(|section| section.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
-    let has_measured = sections.iter().any(|section| section.status == "measured");
-    if !section_failures.is_empty() {
-        "failed".clone_into(&mut summary.status);
+    let has_measured = sections
+        .iter()
+        .any(|section| section.status == ScriptBenchSectionStatus::Measured);
+    if sections
+        .iter()
+        .any(|section| section.status == ScriptBenchSectionStatus::Failed)
+    {
+        summary.status = ScriptBenchStatus::Failed;
         summary.sections = sections;
         summary.diagnostics.extend(section_failures);
     } else if has_measured {
-        "measured".clone_into(&mut summary.status);
+        summary.status = ScriptBenchStatus::Measured;
         summary.sections = sections;
         let diagnostics = bench_expectation_failures(bench, plan, source_path, options, runtime);
         if !diagnostics.is_empty() {
-            "failed".clone_into(&mut summary.status);
+            summary.status = ScriptBenchStatus::Failed;
             summary.diagnostics.extend(diagnostics);
         }
     } else {
@@ -125,9 +148,9 @@ pub(in crate::app) fn run_script_bench(
         if summary
             .sections
             .iter()
-            .any(|section| section.status == "skipped")
+            .any(|section| section.status == ScriptBenchSectionStatus::Skipped)
         {
-            "skipped".clone_into(&mut summary.status);
+            summary.status = ScriptBenchStatus::Skipped;
         }
     }
     summary
@@ -191,6 +214,14 @@ fn bench_expectation_failures(
     let Ok(frames) = frames else {
         return vec!["native adapter registration failed".to_owned()];
     };
+    if !matches!(frames.final_status, FlowFiberStatus::Done(_)) {
+        return vec![format!(
+            "bench assertion execution did not complete: {}",
+            frames
+                .final_status
+                .status_label(FlowStatusLabelStyle::Compact)
+        )];
+    }
     assertions
         .into_iter()
         .flat_map(|section| bench_assertion_failures(section, &frames.steps, runtime.file_roots))
@@ -250,7 +281,7 @@ fn run_bench_section(
     runtime: BenchRuntimeContext<'_>,
 ) -> ScriptBenchSectionRunSummary {
     let validated = validate_bench_section(section);
-    if section.name != "measure" || validated.status != "validated" {
+    if section.name != "measure" || validated.status != ScriptBenchSectionStatus::Validated {
         return validated;
     }
     if let Some(helper) = bench_pure_helper_name(section) {
@@ -283,19 +314,19 @@ fn run_bench_flow_section(
         Ok(flow) => flow,
         Err(error) => {
             let mut summary = validated;
-            "failed".clone_into(&mut summary.status);
+            summary.status = ScriptBenchSectionStatus::Failed;
             summary.diagnostics.push(format!(
                 "bench measure `goto` target `{flow}` cannot be resolved: {error}"
             ));
             return summary;
         }
     };
-    let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
+    let mut samples = RuntimeBenchSamples::with_capacity(options.iterations.get());
     match bench_entry_for_flow(plan, &flow) {
         Ok(_) => {}
         Err(error) => {
             let mut summary = validated;
-            "failed".clone_into(&mut summary.status);
+            summary.status = ScriptBenchSectionStatus::Failed;
             summary.diagnostics.push(error);
             return summary;
         }
@@ -306,7 +337,7 @@ fn run_bench_flow_section(
             Err(_) => {
                 return ScriptBenchSectionRunSummary::new(
                     &section.name,
-                    "failed",
+                    ScriptBenchSectionStatus::Failed,
                     vec!["bench Flow inputs failed typed admission".to_owned()],
                 );
             }
@@ -314,46 +345,55 @@ fn run_bench_flow_section(
     let pure_plan = Arc::clone(invocation.plan());
     let executor_template = RuntimeExecutorTemplate::new(invocation, options.executor);
     let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
-    for iteration in 0..options.warmup + options.iterations {
-        pure.reset_runtime_counters();
-        let executor = match executor_template.instantiate() {
-            Ok(executor) => executor,
-            Err(error) => {
-                return ScriptBenchSectionRunSummary::new(
-                    &section.name,
-                    "failed",
-                    vec![format!("failed to start bench entry: {error}")],
-                );
-            }
-        };
-        let started = Instant::now();
-        let trace = run_runtime_bench_steps_with_pure(
-            executor,
-            Some(NativeRunSource::new(source_path, runtime.file_roots)),
-            runtime.bundle_assets,
-            RuntimeStepRunConfig {
-                steps: options.steps,
-                mode: options.mode,
-                max_ops: options.max_ops,
-                executor: options.executor,
-                pure_config: runtime.pure_config,
-            },
-            runtime.host_policy,
-            runtime.adapter_registrars,
-            &mut pure,
-        );
-        let Ok(trace) = trace else {
-            return ScriptBenchSectionRunSummary::new(
-                &section.name,
-                "failed",
-                vec!["native adapter registration failed".to_owned()],
+    for (phase, count) in [
+        (BenchPhase::Warmup, options.warmup),
+        (BenchPhase::Measured, options.iterations.get()),
+    ] {
+        for iteration in 0..count {
+            pure.reset_runtime_counters();
+            let executor = match executor_template.instantiate() {
+                Ok(executor) => executor,
+                Err(error) => {
+                    return ScriptBenchSectionRunSummary::new(
+                        &section.name,
+                        ScriptBenchSectionStatus::Failed,
+                        vec![format!("failed to start bench entry: {error}")],
+                    );
+                }
+            };
+            let started = Instant::now();
+            let trace = run_runtime_bench_steps_with_pure(
+                executor,
+                Some(NativeRunSource::new(source_path, runtime.file_roots)),
+                runtime.bundle_assets,
+                RuntimeStepRunConfig {
+                    steps: options.steps,
+                    mode: options.mode,
+                    max_ops: options.max_ops,
+                    executor: options.executor,
+                    pure_config: runtime.pure_config,
+                },
+                runtime.host_policy,
+                runtime.adapter_registrars,
+                &mut pure,
             );
-        };
-        let elapsed_ns = started.elapsed().as_nanos();
-        if iteration < options.warmup {
-            continue;
+            let trace = match trace {
+                Ok(trace) => trace,
+                Err(error) => {
+                    let number = iteration + 1;
+                    return ScriptBenchSectionRunSummary::new(
+                        &section.name,
+                        ScriptBenchSectionStatus::Failed,
+                        vec![format!("{phase} iteration {number} failed: {error}")],
+                    );
+                }
+            };
+            let elapsed_ns = started.elapsed().as_nanos();
+            if matches!(phase, BenchPhase::Warmup) {
+                continue;
+            }
+            samples.push(elapsed_ns, &trace);
         }
-        samples.push(elapsed_ns, &trace);
     }
     ScriptBenchSectionRunSummary::measured(
         &section.name,
@@ -364,7 +404,7 @@ fn run_bench_flow_section(
             executor_stats: samples.executor_stats(),
             native_io: samples.native_io_median(),
             warmup: options.warmup,
-            iterations: options.iterations,
+            iterations: options.iterations.get(),
             steps: options.steps,
             per_executed_op_ns: samples.per_executed_op_ns(),
             elapsed_ns: samples.elapsed_summary(),

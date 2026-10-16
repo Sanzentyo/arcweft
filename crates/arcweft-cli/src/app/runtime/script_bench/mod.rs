@@ -88,7 +88,10 @@ pub(in crate::app) fn script_bench_selection(
         phases,
         benches,
     };
-    let failed = output.benches.iter().any(|bench| bench.status == "failed");
+    let failed = output
+        .benches
+        .iter()
+        .any(|bench| bench.status == crate::output::ScriptBenchStatus::Failed);
     if options.json {
         print_json(&output)?;
     } else {

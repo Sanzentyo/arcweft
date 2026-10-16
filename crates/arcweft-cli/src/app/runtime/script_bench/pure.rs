@@ -10,7 +10,7 @@ use crate::app::jit::{
 use crate::output::{
     RuntimePureCallStatsSummary, ScriptBenchPureHelperMeasurementSummary,
     ScriptBenchPureHelperRuntimeBatchSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchSectionRunSummary,
+    ScriptBenchSectionRunSummary, ScriptBenchSectionStatus,
 };
 use arcweft_core::pure::RuntimePureCallBackend;
 use arcweft_core::step::RuntimeStepBudget;
@@ -41,7 +41,7 @@ pub(super) fn run(
         ),
         Err(error) => {
             let mut result = validated;
-            "failed".clone_into(&mut result.status);
+            result.status = ScriptBenchSectionStatus::Failed;
             result
                 .diagnostics
                 .push(format!("pure helper {helper} measurement failed: {error}"));
@@ -70,9 +70,9 @@ fn measure(
         helper: Some(helper.to_owned()),
         case: JitBuiltinCase::Score,
         julia: false,
-        iterations: options.iterations,
+        iterations: options.iterations.get(),
         warmup: options.warmup,
-        samples: options.samples,
+        samples: options.samples.get(),
         input_seed: options.input_seed,
         vm_max_ops: options.max_ops,
         json: false,
@@ -104,13 +104,9 @@ fn measure_runtime_batch(
     vm_accumulator: i64,
 ) -> Result<ScriptBenchPureHelperRuntimeBatchSummary, PureMeasurementError> {
     let arity = target.inputs().len();
-    let input_count =
-        options
-            .iterations
-            .checked_mul(arity)
-            .ok_or(PureMeasurementError::InvalidWorkload(
-                "flat input series size overflow",
-            ))?;
+    let input_count = options.iterations.get().checked_mul(arity).ok_or(
+        PureMeasurementError::InvalidWorkload("flat input series size overflow"),
+    )?;
     let mut accelerator = RuntimePureAccelerator::with_config(runtime.pure_config, target.plan());
     let function = target.helper();
     let budget = RuntimeStepBudget {
@@ -129,12 +125,12 @@ fn measure_runtime_batch(
     }
     accelerator.reset_runtime_counters();
     let mut inputs = Vec::with_capacity(input_count);
-    let mut out = vec![0_i64; options.iterations];
-    let mut elapsed = Vec::with_capacity(options.samples);
+    let mut out = vec![0_i64; options.iterations.get()];
+    let mut elapsed = Vec::with_capacity(options.samples.get());
     let mut accumulator = 0_i64;
-    for sample in 0..options.samples {
+    for sample in 0..options.samples.get() {
         inputs.clear();
-        for iteration in 0..options.iterations {
+        for iteration in 0..options.iterations.get() {
             let row = jit_check_input_array(options.input_seed, sample, iteration, arity);
             inputs.extend_from_slice(&row[..arity]);
         }
@@ -151,7 +147,7 @@ fn measure_runtime_batch(
         matches_vm: accumulator == vm_accumulator,
         accumulator,
         elapsed_ns: samples.median,
-        per_iteration_ns: per_iteration_ns(samples.median, options.iterations),
+        per_iteration_ns: per_iteration_ns(samples.median, options.iterations.get()),
         speedup_x: speedup_x(vm_elapsed_ns, samples.median),
         samples: ScriptBenchPureHelperTimingSamples::from(samples),
         config: executor.pure_config,

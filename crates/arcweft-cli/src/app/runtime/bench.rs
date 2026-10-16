@@ -1,10 +1,10 @@
 use super::executor::RuntimeExecutorCore;
 use super::parse::step_options;
 use super::steps::{
-    NativeRunHost, NativeRunSource, RuntimeBundleAssets, RuntimeStepRunConfig,
+    NativeRunHost, NativeRunSource, RuntimeBundleAssets, RuntimeStepRunConfig, RuntimeStepRunError,
     build_native_task_bridge,
 };
-use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepInput, RuntimeStepResult, RuntimeStepStats,
 };
@@ -15,7 +15,6 @@ use arcweft_runtime_host::{
     NativeAdapterRegistrar, NativeTaskBridge, NativeTaskStats, RuntimeExecutorStats,
     runtime_executor_stats,
 };
-use std::process::ExitCode;
 
 pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     mut executor: RuntimeExecutorCore,
@@ -25,21 +24,16 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
     pure: &mut RuntimePureAccelerator,
-) -> Result<RuntimeBenchTrace, ExitCode> {
+) -> Result<CompletedRuntimeBenchTrace, RuntimeBenchRunError> {
     let mut host: Option<NativeTaskBridge> = None;
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut totals = RuntimeBenchStepTotals::default();
+    let mut final_status = FlowFiberStatus::Running;
     for step_index in 0..config.steps {
         if let Some(host) = host.as_mut() {
-            host.pump_main_thread().map_err(|error| {
-                eprintln!("error: {error}");
-                ExitCode::FAILURE
-            })?;
-            task_events.extend(host.poll_completions().map_err(|error| {
-                eprintln!("error: {error}");
-                ExitCode::FAILURE
-            })?);
+            host.pump_main_thread().map_err(RuntimeStepRunError::from)?;
+            task_events.extend(host.poll_completions().map_err(RuntimeStepRunError::from)?);
             host_call_results.extend(host.take_host_call_results());
         }
         let result = executor.step(
@@ -60,74 +54,99 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
         let task_requests = std::mem::take(&mut output.requests.tasks);
         let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         totals.push(&stats, task_requests.len(), output.diagnostics.len());
-        let done = matches!(
-            fiber_status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        if done {
-            break;
+        match fiber_status {
+            FlowFiberStatus::Done(_) => {
+                return Ok(CompletedRuntimeBenchTrace {
+                    totals,
+                    executor_stats: runtime_executor_stats(executor.fast_path_ops(), pure),
+                    native_io: host
+                        .as_ref()
+                        .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
+                });
+            }
+            FlowFiberStatus::Failed(reason) => {
+                return Err(RuntimeBenchRunError::Failed {
+                    steps_run: step_index + 1,
+                    reason,
+                });
+            }
+            status => final_status = status,
         }
         if let Some(source) = source
             && (!task_requests.is_empty() || !host_call_requests.is_empty())
         {
             if host.is_none() {
-                host = Some(
-                    build_native_task_bridge(
-                        source,
-                        NativeRunHost {
-                            source: Some(source),
-                            bundle_assets: Some(bundle_assets),
-                            policy: host_policy,
-                            adapter_registrars,
-                            cli_args: &[],
-                        },
-                    )
-                    .map_err(|error| {
-                        eprintln!("error: {error}");
-                        ExitCode::FAILURE
-                    })?,
-                );
+                host = Some(build_native_task_bridge(
+                    source,
+                    NativeRunHost {
+                        source: Some(source),
+                        bundle_assets: Some(bundle_assets),
+                        policy: host_policy,
+                        adapter_registrars,
+                        cli_args: &[],
+                    },
+                )?);
             }
             if let Some(host) = host.as_mut() {
+                let epoch = LogicalEpoch(
+                    u64::try_from(step_index)
+                        .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?,
+                );
                 task_events = host
                     .complete_tasks_with_generation_and_bundle_asset_context(
                         executor.program_owner(),
                         GenerationId::new(0),
-                        LogicalEpoch(u64::try_from(step_index).map_err(|_| {
-                            eprintln!("error: runtime step index exceeds task epoch range");
-                            ExitCode::FAILURE
-                        })?),
+                        epoch,
                         task_requests,
                         Some(bundle_assets.context),
                     )
-                    .map_err(|error| {
-                        eprintln!("error: {error}");
-                        ExitCode::FAILURE
-                    })?;
-                host_call_results = host.complete_host_calls(
-                    executor.program_owner(),
-                    LogicalEpoch(u64::try_from(step_index).map_err(|_| {
-                        eprintln!("error: runtime step index exceeds task epoch range");
-                        ExitCode::FAILURE
-                    })?),
-                    host_call_requests,
-                );
+                    .map_err(RuntimeStepRunError::from)?;
+                host_call_results =
+                    host.complete_host_calls(executor.program_owner(), epoch, host_call_requests);
             }
         }
     }
-    Ok(RuntimeBenchTrace {
-        totals,
-        executor_stats: runtime_executor_stats(executor.fast_path_ops(), pure),
-        native_io: host
-            .as_ref()
-            .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
+    Err(RuntimeBenchRunError::StepLimit {
+        step_limit: config.steps,
+        status: Box::new(final_status),
     })
 }
 
-pub(in crate::app) struct RuntimeBenchTrace {
-    pub(in crate::app) totals: RuntimeBenchStepTotals,
-    pub(in crate::app) executor_stats: RuntimeExecutorStats,
-    pub(in crate::app) native_io: NativeTaskStats,
+#[derive(Debug, thiserror::Error)]
+pub(in crate::app) enum RuntimeBenchRunError {
+    #[error(transparent)]
+    Step(#[from] RuntimeStepRunError),
+    #[error("runtime failed after {steps_run} step(s): {reason}")]
+    Failed { steps_run: usize, reason: String },
+    #[error(
+        "runtime step limit {step_limit} reached before completion (status: {})",
+        .status.status_label(FlowStatusLabelStyle::Compact)
+    )]
+    StepLimit {
+        step_limit: usize,
+        status: Box<FlowFiberStatus>,
+    },
+}
+
+/// Only the Core's normal terminal state can admit a timing sample.
+pub(in crate::app) struct CompletedRuntimeBenchTrace {
+    totals: RuntimeBenchStepTotals,
+    executor_stats: RuntimeExecutorStats,
+    native_io: NativeTaskStats,
+}
+
+impl CompletedRuntimeBenchTrace {
+    pub(in crate::app) const fn totals(&self) -> &RuntimeBenchStepTotals {
+        &self.totals
+    }
+
+    pub(in crate::app) const fn executor_stats(&self) -> RuntimeExecutorStats {
+        self.executor_stats
+    }
+
+    pub(in crate::app) const fn native_io(&self) -> &NativeTaskStats {
+        &self.native_io
+    }
 }
 
 #[derive(Default)]

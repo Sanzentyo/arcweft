@@ -1180,6 +1180,14 @@ Flow, using the same parser and plan-owned parameter/type admission as
 `arcw run --flow`. Missing, duplicate, unknown, or incorrectly typed inputs fail
 before execution. Each warmup and measured iteration starts from the same
 admitted unrestricted values; affine or linear inputs cannot be repeated.
+`--iterations` and `--samples` require positive counts. Every warmup and
+measured Flow iteration must reach Core's normal terminal state within
+`--steps`; exhausting that limit or reaching a failed runtime state fails the
+section. Diagnostics identify the phase, iteration, and cause. A failed section
+publishes no partial timing or counter summary, even if earlier iterations
+completed. Completion on the last permitted step is accepted. A separate
+correctness run for `assert` sections must also complete normally before its
+observations can satisfy expectations.
 The actual matching `entry bench` declaration remains required. Pure-helper
 measurements use their generated checked input series and reject `--value`.
 The same native file task bridge used by `arcw run` and `arcw test` is active

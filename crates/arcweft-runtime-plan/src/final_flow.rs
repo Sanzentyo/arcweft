@@ -5646,14 +5646,21 @@ fn lower_entry_flows(
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> Result<Vec<RuntimeFlowExecutable>, Vec<RuntimePlanLowerError>> {
     let mut by_runtime = BTreeMap::new();
-    let mut owners = BTreeSet::new();
+    let mut owners = BTreeMap::new();
     for flow in &input.flows {
-        if !owners.insert(flow.owner()) {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "checked Entry Flow input repeats final-HIR owner {:?}",
-                flow.owner()
-            )));
-            continue;
+        match owners.entry(flow.owner()) {
+            std::collections::btree_map::Entry::Occupied(previous) => {
+                if *previous.get() != flow {
+                    errors.push(RuntimePlanLowerError::new(format!(
+                        "checked Entry Flow input has conflicting projections for final-HIR owner {:?}",
+                        flow.owner()
+                    )));
+                }
+                continue;
+            }
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(flow);
+            }
         }
         let Some(item) = project.items().find(|item| item.id() == flow.owner()) else {
             errors.push(RuntimePlanLowerError::new(format!(
@@ -9946,6 +9953,21 @@ mod tests {
             .expect("exact checked Entry owner lowers");
         assert_eq!(report.plan.entries().len(), 1);
         assert_eq!(report.plan.flows().len(), 1);
+
+        let mut shared = input.clone();
+        shared.flows.push(shared.flows[0].clone());
+        let report = lower_runtime_plan_with_stats(executable, &facts, &shared)
+            .expect("identical checked Entry references share one Flow executable");
+        assert_eq!(report.plan.flow_executables().len(), 1);
+        assert_eq!(report.plan.flows().len(), 1);
+
+        let last = shared.flows.last_mut().unwrap();
+        last.executable.contract = FlowContractHash::from_bytes([9; 32]);
+        assert!(lower_runtime_plan_with_stats(executable, &facts, &shared).is_err());
+        let last = shared.flows.last_mut().unwrap();
+        last.executable.contract = input.flows[0].executable.contract;
+        last.expected_schema.flow = FlowRuntimeId::from_source_entity_body("flow.other").unwrap();
+        assert!(lower_runtime_plan_with_stats(executable, &facts, &shared).is_err());
     }
 
     fn project_fixture(label: &str, source: &str) -> HirProject {

@@ -8,6 +8,7 @@ use arcweft_runtime_accelerator::{
 use arcweft_runtime_host::BundleRunnerStepMode;
 use clap::{Args, ValueEnum};
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 impl From<BundleRunnerStepMode> for CliRuntimeStepMode {
@@ -241,12 +242,12 @@ pub(in crate::app) struct ScriptBenchOptions {
     pub(in crate::app) mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 32)]
     pub(in crate::app) max_ops: usize,
-    #[arg(long, default_value_t = 1)]
-    pub(in crate::app) iterations: usize,
+    #[arg(long, default_value = "1")]
+    pub(in crate::app) iterations: NonZeroUsize,
     #[arg(long, default_value_t = 0)]
     pub(in crate::app) warmup: usize,
-    #[arg(long, default_value_t = 5)]
-    pub(in crate::app) samples: usize,
+    #[arg(long, default_value = "5")]
+    pub(in crate::app) samples: NonZeroUsize,
     #[arg(long, default_value_t = 0)]
     pub(in crate::app) input_seed: u64,
     #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
