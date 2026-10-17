@@ -13,7 +13,7 @@ use crate::{
 use super::{analyze, fixture, project_specialization::selections};
 
 #[test]
-fn monomorphic_producer_plan_excludes_an_incidental_instance_coordinate() {
+fn monomorphic_producer_definition_retains_its_exact_instance_authority() {
     let world = fixture(
         "fn identity(value: i64) -> i64 { value }\nfn wrapper(value: i64) -> i64 { identity(value) }\nfn numeric() -> i64 { wrapper(1i64) }",
         None,
@@ -49,7 +49,7 @@ fn monomorphic_producer_plan_excludes_an_incidental_instance_coordinate() {
         .checked_call_producer_definition(&world.symbols, source)
         .unwrap();
     assert_eq!(global.site(), bound.site());
-    assert_eq!(global.plan(), bound.plan());
+    assert_ne!(global, bound);
     assert!(!global.matches_authority(source, context.environment().local_uses()));
     assert!(bound.matches_authority(source, context.environment().local_uses()));
 }
@@ -101,7 +101,7 @@ fn producer_definitions_retain_exact_closed_instance_and_source_authority() {
             .unwrap()
     );
     assert_eq!(first.site(), second.site());
-    assert_ne!(first.plan(), second.plan());
+    assert_ne!(first, second);
     assert!(first.matches_authority(source, contexts[0].environment().local_uses()));
     assert!(!first.matches_authority(source, contexts[1].environment().local_uses()));
     let other_source = local_source(&report, instances[0].declaration());

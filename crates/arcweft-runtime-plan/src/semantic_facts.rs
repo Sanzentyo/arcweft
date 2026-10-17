@@ -4017,7 +4017,7 @@ impl RuntimeResolvedCall {
             ) => {
                 matches!(
                     host.owner(),
-                    RuntimeResolvedHostCallOwner::ExternCapability(_)
+                    RuntimeResolvedHostCallOwner::ExternCapability { .. }
                 ) && host.mode() == RuntimeHostCallMode::Suspend
                     && host.contract().is_some_and(|selected| {
                         selected.as_bytes() == contract.as_bytes()
@@ -4251,8 +4251,8 @@ impl RuntimeResolvedCallDispatch {
         match self {
             Self::Static(RuntimeResolvedStaticCallTarget::Declaration(callable)) => Some(callable),
             Self::Static(RuntimeResolvedStaticCallTarget::Host(host)) => match host.owner() {
-                RuntimeResolvedHostCallOwner::ExternCapability(callable) => Some(callable),
-                RuntimeResolvedHostCallOwner::Agent(_) => None,
+                RuntimeResolvedHostCallOwner::ExternCapability { callable, .. } => Some(callable),
+                RuntimeResolvedHostCallOwner::Agent { .. } => None,
             },
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
@@ -4459,7 +4459,6 @@ pub struct RuntimeResolvedHostCall {
     public_id: String,
     capability: String,
     operation: String,
-    contract: Option<arcweft_core::step::HostCallContractDigest>,
     mode: RuntimeHostCallMode,
     deterministic: bool,
 }
@@ -4487,24 +4486,30 @@ impl RuntimeResolvedHostCall {
         }
         let operation = declaration.name().to_owned();
         Ok(Self {
-            owner: RuntimeResolvedHostCallOwner::ExternCapability(callable),
+            owner: RuntimeResolvedHostCallOwner::ExternCapability { callable, contract },
             public_id: format!("{capability}.{operation}"),
             capability,
             operation,
-            contract: Some(contract),
             mode,
             deterministic: false,
         })
     }
 
-    pub fn agent(intrinsic: crate::agent::RuntimeAgentIntrinsic) -> Option<Self> {
+    pub fn agent(schema: &arcweft_lang_sema::callable::CallableSignatureSchema) -> Option<Self> {
+        let arcweft_lang_sema::callable::CallableValidator::Agent(intrinsic) = schema.validator()
+        else {
+            return None;
+        };
+        let intrinsic = crate::agent::RuntimeAgentIntrinsic::from(*intrinsic);
         let operation = intrinsic.host_operation()?;
         Some(Self {
-            owner: RuntimeResolvedHostCallOwner::Agent(intrinsic),
+            owner: RuntimeResolvedHostCallOwner::Agent {
+                intrinsic,
+                schema: schema.semantic_digest(),
+            },
             public_id: format!("agent.{operation}"),
             capability: "agent".to_owned(),
             operation: operation.to_owned(),
-            contract: None,
             mode: RuntimeHostCallMode::Suspend,
             deterministic: false,
         })
@@ -4527,7 +4532,20 @@ impl RuntimeResolvedHostCall {
     }
 
     pub const fn contract(&self) -> Option<arcweft_core::step::HostCallContractDigest> {
-        self.contract
+        match &self.owner {
+            RuntimeResolvedHostCallOwner::ExternCapability { contract, .. } => Some(*contract),
+            RuntimeResolvedHostCallOwner::Agent { .. } => None,
+        }
+    }
+
+    /// The selected manifest or callable schema owns the producer contract;
+    /// evaluated arguments and source-expression bodies do not redefine it.
+    pub const fn producer_contract(&self) -> arcweft_core::task::NeedProducerContractDigest {
+        let bytes = match &self.owner {
+            RuntimeResolvedHostCallOwner::ExternCapability { contract, .. } => contract.as_bytes(),
+            RuntimeResolvedHostCallOwner::Agent { schema, .. } => schema.as_bytes(),
+        };
+        arcweft_core::task::NeedProducerContractDigest::from_bytes(*bytes)
     }
 
     pub const fn mode(&self) -> RuntimeHostCallMode {
@@ -4551,8 +4569,14 @@ pub enum RuntimeResolvedHostCallError {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedHostCallOwner {
-    ExternCapability(RuntimeProjectCallable),
-    Agent(crate::agent::RuntimeAgentIntrinsic),
+    ExternCapability {
+        callable: RuntimeProjectCallable,
+        contract: arcweft_core::step::HostCallContractDigest,
+    },
+    Agent {
+        intrinsic: crate::agent::RuntimeAgentIntrinsic,
+        schema: arcweft_lang_sema::callable::CallableSignatureSchemaDigest,
+    },
 }
 
 /// Closed core `Reduction` constructor vocabulary below semantic analysis.
@@ -11911,7 +11935,7 @@ fn validate_call(
             callable,
         )) => validate_callable(modules, callable)?,
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) => {
-            if let RuntimeResolvedHostCallOwner::ExternCapability(callable) = host.owner() {
+            if let RuntimeResolvedHostCallOwner::ExternCapability { callable, .. } = host.owner() {
                 validate_callable(modules, callable)?;
             }
         }

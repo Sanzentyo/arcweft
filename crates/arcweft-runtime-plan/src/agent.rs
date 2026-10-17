@@ -42,6 +42,46 @@ pub enum RuntimeAgentIntrinsic {
     RagQuery,
 }
 
+impl From<arcweft_lang_sema::callable::AgentIntrinsicSignatureId> for RuntimeAgentIntrinsic {
+    fn from(intrinsic: arcweft_lang_sema::callable::AgentIntrinsicSignatureId) -> Self {
+        use arcweft_lang_sema::callable::AgentIntrinsicSignatureId;
+        match intrinsic {
+            AgentIntrinsicSignatureId::Observe => Self::Observe,
+            AgentIntrinsicSignatureId::Expect => Self::Expect,
+            AgentIntrinsicSignatureId::Deny => Self::Deny,
+            AgentIntrinsicSignatureId::Checkpoint => Self::Checkpoint,
+            AgentIntrinsicSignatureId::Note => Self::Note,
+            AgentIntrinsicSignatureId::Attach => Self::Attach,
+            AgentIntrinsicSignatureId::ChoiceAction => Self::ChoiceAction,
+            AgentIntrinsicSignatureId::Viewport => Self::Viewport,
+            AgentIntrinsicSignatureId::Layer => Self::Layer,
+            AgentIntrinsicSignatureId::Object => Self::Object,
+            AgentIntrinsicSignatureId::Capture => Self::Capture,
+            AgentIntrinsicSignatureId::ReadResource => Self::ReadResource,
+            AgentIntrinsicSignatureId::EntityMeta => Self::EntityMeta,
+            AgentIntrinsicSignatureId::ProjectNeighbors => Self::ProjectNeighbors,
+            AgentIntrinsicSignatureId::Signal => Self::Signal,
+            AgentIntrinsicSignatureId::Metric => Self::Metric,
+            AgentIntrinsicSignatureId::StatePath => Self::StatePath,
+            AgentIntrinsicSignatureId::ObservationPath => Self::ObservationPath,
+            AgentIntrinsicSignatureId::State => Self::State,
+            AgentIntrinsicSignatureId::Observation => Self::Observation,
+            AgentIntrinsicSignatureId::Diagnostics => Self::Diagnostics,
+            AgentIntrinsicSignatureId::Exists => Self::Exists,
+            AgentIntrinsicSignatureId::ActionEnabled => Self::ActionEnabled,
+            AgentIntrinsicSignatureId::All => Self::All,
+            AgentIntrinsicSignatureId::Any => Self::Any,
+            AgentIntrinsicSignatureId::Not => Self::Not,
+            AgentIntrinsicSignatureId::Wait => Self::Wait,
+            AgentIntrinsicSignatureId::AdvanceText => Self::AdvanceText,
+            AgentIntrinsicSignatureId::ViewportPoint => Self::ViewportPoint,
+            AgentIntrinsicSignatureId::PointerClick => Self::PointerClick,
+            AgentIntrinsicSignatureId::Invoke => Self::Invoke,
+            AgentIntrinsicSignatureId::RagQuery => Self::RagQuery,
+        }
+    }
+}
+
 impl RuntimeAgentIntrinsic {
     /// Returns the canonical Agent host ABI operation for effectful calls.
     /// Deterministic value constructors return `None` and remain in expression

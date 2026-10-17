@@ -50,6 +50,8 @@ use super::{
 };
 use crate::{agent::compile_agent_project_bundle, error::CompileAgentError};
 
+mod producer_contract;
+
 fn checked_controller_identity(
     compiled: &CompiledProject,
     entry: &PublicId,

@@ -2715,9 +2715,7 @@ flow main() -> Result<i64, String> {
             };
             if !matches!(
                 host.owner(),
-                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
-                    _
-                )
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability { .. }
             ) {
                 return;
             }

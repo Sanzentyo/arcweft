@@ -133,16 +133,16 @@ use arcweft_lang_sema::semantic_coordinate::{
 use arcweft_lang_sema::{
     assertion::AssertionRuntimePolicy,
     callable::{
-        AgentIntrinsicSignatureId, BuiltinCallableId, CallTargetFacts, CallableCandidateId,
-        CallableFamily, CallableLogLevel, CallableParameterPresence, CallableValidator,
-        CheckedAttachedContentAdmission, CheckedCallApplication, CheckedCallArgumentPassing,
-        CheckedCallCalleeExecution, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-        CheckedCallRuntimeOperand, CheckedCallableExecution,
-        CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeInput,
-        CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-        CollectionMethodId, DomainMethodId, LineContextMethodId, LineScheduleCallableId,
-        MathCallableId, ProbeComparisonOperator, ReductionConstructorKind, ResolvedCallableOrigin,
-        ResolvedCallableState, StageMethodId, StandardMapFamily, StdFloatOperation,
+        BuiltinCallableId, CallTargetFacts, CallableCandidateId, CallableFamily, CallableLogLevel,
+        CallableParameterPresence, CallableValidator, CheckedAttachedContentAdmission,
+        CheckedCallApplication, CheckedCallArgumentPassing, CheckedCallCalleeExecution,
+        CheckedCallOperandDestination, CheckedCallReceiverProjection, CheckedCallRuntimeOperand,
+        CheckedCallableExecution, CheckedProjectFunctionInstanceSolution,
+        CheckedProjectFunctionRuntimeInput, CheckedProjectFunctionRuntimeOutcome,
+        CheckedProjectFunctionRuntimeSelection, CollectionMethodId, DomainMethodId,
+        LineContextMethodId, LineScheduleCallableId, MathCallableId, ProbeComparisonOperator,
+        ReductionConstructorKind, ResolvedCallableOrigin, ResolvedCallableState, StageMethodId,
+        StandardMapFamily, StdFloatOperation,
     },
     checked_rich_text::{
         CheckedContentEmission, CheckedContentModifier, CheckedContentParameter,
@@ -7011,9 +7011,7 @@ fn runtime_call(
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host))
             if matches!(
                 host.owner(),
-                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
-                    _
-                )
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability { .. }
             ) =>
         {
             Some(host)
@@ -9685,9 +9683,9 @@ fn runtime_call_target(
             .map(RuntimeResolvedStaticCallTarget::Intrinsic);
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::Agent(intrinsic) = selected_id {
-        let intrinsic = runtime_agent_intrinsic(*intrinsic);
+        let intrinsic = RuntimeAgentIntrinsic::from(*intrinsic);
         return Ok(
-            if let Some(host) = RuntimeResolvedHostCall::agent(intrinsic) {
+            if let Some(host) = RuntimeResolvedHostCall::agent(selected.schema()) {
                 RuntimeResolvedStaticCallTarget::Host(host)
             } else {
                 RuntimeResolvedStaticCallTarget::Agent(intrinsic)
@@ -9894,43 +9892,6 @@ fn runtime_line_callable(
         _ => return Ok(None),
     };
     Ok(Some(line))
-}
-
-const fn runtime_agent_intrinsic(intrinsic: AgentIntrinsicSignatureId) -> RuntimeAgentIntrinsic {
-    match intrinsic {
-        AgentIntrinsicSignatureId::Observe => RuntimeAgentIntrinsic::Observe,
-        AgentIntrinsicSignatureId::Expect => RuntimeAgentIntrinsic::Expect,
-        AgentIntrinsicSignatureId::Deny => RuntimeAgentIntrinsic::Deny,
-        AgentIntrinsicSignatureId::Checkpoint => RuntimeAgentIntrinsic::Checkpoint,
-        AgentIntrinsicSignatureId::Note => RuntimeAgentIntrinsic::Note,
-        AgentIntrinsicSignatureId::Attach => RuntimeAgentIntrinsic::Attach,
-        AgentIntrinsicSignatureId::ChoiceAction => RuntimeAgentIntrinsic::ChoiceAction,
-        AgentIntrinsicSignatureId::Viewport => RuntimeAgentIntrinsic::Viewport,
-        AgentIntrinsicSignatureId::Layer => RuntimeAgentIntrinsic::Layer,
-        AgentIntrinsicSignatureId::Object => RuntimeAgentIntrinsic::Object,
-        AgentIntrinsicSignatureId::Capture => RuntimeAgentIntrinsic::Capture,
-        AgentIntrinsicSignatureId::ReadResource => RuntimeAgentIntrinsic::ReadResource,
-        AgentIntrinsicSignatureId::EntityMeta => RuntimeAgentIntrinsic::EntityMeta,
-        AgentIntrinsicSignatureId::ProjectNeighbors => RuntimeAgentIntrinsic::ProjectNeighbors,
-        AgentIntrinsicSignatureId::Signal => RuntimeAgentIntrinsic::Signal,
-        AgentIntrinsicSignatureId::Metric => RuntimeAgentIntrinsic::Metric,
-        AgentIntrinsicSignatureId::StatePath => RuntimeAgentIntrinsic::StatePath,
-        AgentIntrinsicSignatureId::ObservationPath => RuntimeAgentIntrinsic::ObservationPath,
-        AgentIntrinsicSignatureId::State => RuntimeAgentIntrinsic::State,
-        AgentIntrinsicSignatureId::Observation => RuntimeAgentIntrinsic::Observation,
-        AgentIntrinsicSignatureId::Diagnostics => RuntimeAgentIntrinsic::Diagnostics,
-        AgentIntrinsicSignatureId::Exists => RuntimeAgentIntrinsic::Exists,
-        AgentIntrinsicSignatureId::ActionEnabled => RuntimeAgentIntrinsic::ActionEnabled,
-        AgentIntrinsicSignatureId::All => RuntimeAgentIntrinsic::All,
-        AgentIntrinsicSignatureId::Any => RuntimeAgentIntrinsic::Any,
-        AgentIntrinsicSignatureId::Not => RuntimeAgentIntrinsic::Not,
-        AgentIntrinsicSignatureId::Wait => RuntimeAgentIntrinsic::Wait,
-        AgentIntrinsicSignatureId::AdvanceText => RuntimeAgentIntrinsic::AdvanceText,
-        AgentIntrinsicSignatureId::ViewportPoint => RuntimeAgentIntrinsic::ViewportPoint,
-        AgentIntrinsicSignatureId::PointerClick => RuntimeAgentIntrinsic::PointerClick,
-        AgentIntrinsicSignatureId::Invoke => RuntimeAgentIntrinsic::Invoke,
-        AgentIntrinsicSignatureId::RagQuery => RuntimeAgentIntrinsic::RagQuery,
-    }
 }
 
 const fn runtime_agent_probe_comparison(

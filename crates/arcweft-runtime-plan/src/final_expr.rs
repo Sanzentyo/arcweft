@@ -491,12 +491,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .call_producer(id)
                     .ok_or_else(|| format!("host call {id:?} has no accepted producer seal"))?;
                 arcweft_core::task::HostCallProducerDefinition {
-                    contract: arcweft_core::task::NeedProducerContractDigest::from_bytes(
-                        host.contract()
-                            .map_or(*definition.plan().as_bytes(), |contract| {
-                                *contract.as_bytes()
-                            }),
-                    ),
+                    contract: host.producer_contract(),
                     plan: self
                         .source_sites
                         .tasks

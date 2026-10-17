@@ -135,10 +135,10 @@ impl RuntimeResolvedStaticCallTarget {
             Self::Declaration(callable) => callable.append_normalized_types(roots),
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
             Self::Host(host) => match host.owner() {
-                RuntimeResolvedHostCallOwner::ExternCapability(callable) => {
+                RuntimeResolvedHostCallOwner::ExternCapability { callable, .. } => {
                     callable.append_normalized_types(roots);
                 }
-                RuntimeResolvedHostCallOwner::Agent(_) => {}
+                RuntimeResolvedHostCallOwner::Agent { .. } => {}
             },
             Self::Intrinsic(_)
             | Self::Format(_)

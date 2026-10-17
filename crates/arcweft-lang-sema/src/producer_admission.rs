@@ -25,8 +25,8 @@ use crate::{
 };
 use arcweft_core::task::NeedProducerSiteDigest;
 
-/// Static definition issued from one accepted producer expression. Its site
-/// uses the canonical checked path; its plan commits the complete body.
+/// Source authority issued from one accepted producer expression. The canonical
+/// site and exact execution environment do not issue an executable task-plan key.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpressionProducerDefinition {
     owner: ExprId,
@@ -34,7 +34,6 @@ pub struct CheckedExpressionProducerDefinition {
     generation: std::sync::Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     instance: Option<crate::final_analysis::CheckedLocalUseInstanceIdentity>,
     site: NeedProducerSiteDigest,
-    plan: arcweft_core::task::TaskPlanSemanticDigest,
 }
 
 /// The report-checked expression family that owns one static producer.
@@ -63,41 +62,11 @@ impl CheckedExpressionProducerDefinition {
         mut self,
         environment: &crate::final_analysis::CheckedExecutionEnvironment,
     ) -> Self {
-        if let Some(instance) = environment.instance_identity() {
-            self.instance = Some(instance.clone());
-            if !environment.has_semantic_substitution() {
-                return self;
-            }
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(b"arcweft.need.closed-producer-plan.v1\0");
-            hasher.update(self.plan.as_bytes());
-            match instance {
-                crate::final_analysis::CheckedLocalUseInstanceIdentity::ProjectFunction {
-                    instantiation,
-                    ..
-                } => {
-                    hasher.update(&[0]);
-                    hasher.update(instantiation.bytes());
-                }
-                crate::final_analysis::CheckedLocalUseInstanceIdentity::DisplayText {
-                    self_type,
-                    ..
-                } => {
-                    hasher.update(&[1]);
-                    hasher.update(self_type.as_bytes());
-                }
-            }
-            self.plan = arcweft_core::task::TaskPlanSemanticDigest::from_bytes(
-                *hasher.finalize().as_bytes(),
-            );
-        }
+        self.instance = environment.instance_identity().cloned();
         self
     }
     pub const fn site(&self) -> NeedProducerSiteDigest {
         self.site
-    }
-    pub const fn plan(&self) -> arcweft_core::task::TaskPlanSemanticDigest {
-        self.plan
     }
 }
 
@@ -175,8 +144,6 @@ impl CheckedNeedProducerAdmission {
 /// checked call and HIR authorities.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedNeedProducerAdmissionError {
-    #[error(transparent)]
-    SemanticTranscript(#[from] crate::final_analysis::CheckedSemanticTranscriptError),
     #[error("internal thread producer requires an accepted Thread expression")]
     NotThread,
     #[error(transparent)]
@@ -240,12 +207,7 @@ impl FinalSemanticAnalysis {
         ) {
             return Err(CheckedNeedProducerAdmissionError::NotThread);
         }
-        self.checked_expression_producer_definition(
-            project,
-            symbols,
-            owner,
-            CheckedExpressionProducerKind::Thread,
-        )
+        self.checked_expression_producer_definition(owner, CheckedExpressionProducerKind::Thread)
     }
 
     pub fn checked_call_producer_definition(
@@ -262,18 +224,11 @@ impl FinalSemanticAnalysis {
         {
             return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
         }
-        self.checked_expression_producer_definition(
-            project,
-            symbols,
-            owner,
-            CheckedExpressionProducerKind::Call,
-        )
+        self.checked_expression_producer_definition(owner, CheckedExpressionProducerKind::Call)
     }
 
     fn checked_expression_producer_definition(
         &self,
-        project: HirAnalysisProjectView<'_>,
-        symbols: &ProjectSymbolTable,
         owner: ExprId,
         kind: CheckedExpressionProducerKind,
     ) -> Result<CheckedExpressionProducerDefinition, CheckedNeedProducerAdmissionError> {
@@ -295,19 +250,12 @@ impl FinalSemanticAnalysis {
                 .to_le_bytes(),
         );
         hasher.update(&bytes);
-        let plan = self.checked_expression_semantic_digest(
-            project,
-            symbols,
-            owner,
-            crate::final_analysis::CheckedMatchLimits::PRODUCTION,
-        )?;
         Ok(CheckedExpressionProducerDefinition {
             owner,
             kind,
             generation: std::sync::Arc::clone(self.hir_generation()),
             instance: None,
             site: NeedProducerSiteDigest::from_bytes(*hasher.finalize().as_bytes()),
-            plan: arcweft_core::task::TaskPlanSemanticDigest::from_bytes(*plan.as_bytes()),
         })
     }
 

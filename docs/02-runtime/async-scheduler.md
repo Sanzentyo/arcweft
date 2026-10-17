@@ -35,6 +35,19 @@ key. `debug_label` is for diagnostics only and is never an execution
 discriminator. Backends such as Tokio, Rayon, web workers, or a cooperative test
 executor sit outside core.
 
+The producer contract identifies the selected callable schema or registered
+host manifest contract. Standard Agent host operations use their selected
+`CallableSignatureSchema`; changing an evaluated argument or its source
+expression does not redefine that contract. Manifest-backed operations retain
+their manifest-owned host-call contract.
+
+Source admission retains the exact accepted expression, generation, execution
+instance and canonical site. It must not mint or rehash a final
+`TaskPlanSemanticDigest`. That key is issued only by the completed original
+Core program's executable seal and its common function/request/control
+semantics. Arguments remain part of producer-instance identity, and changed
+executable expressions remain part of the completed plan's identity.
+
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by

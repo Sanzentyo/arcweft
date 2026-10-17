@@ -252,12 +252,6 @@ pub struct CheckedProjectFunctionInstanceSolution {
 }
 
 impl CheckedProjectFunctionInstanceSolution {
-    pub(crate) fn has_substitution(&self) -> bool {
-        self.solution.type_bindings().len() != 0
-            || self.solution.const_bindings().len() != 0
-            || self.solution.effect_bindings().len() != 0
-    }
-
     pub(crate) fn validate_authority(
         &self,
         catalog: &CheckedCallableCatalog,

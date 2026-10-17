@@ -85,16 +85,6 @@ pub struct CheckedExecutionEnvironment {
 }
 
 impl CheckedExecutionEnvironment {
-    pub(crate) fn has_semantic_substitution(&self) -> bool {
-        match &self.types {
-            ExecutionTypeEnvironment::ProjectFunction(instance) => instance.has_substitution(),
-            ExecutionTypeEnvironment::DisplayText(_) => true,
-            ExecutionTypeEnvironment::Monomorphic | ExecutionTypeEnvironment::Declaration(_) => {
-                false
-            }
-        }
-    }
-
     pub fn producer_definition(
         &self,
         analysis: &FinalSemanticAnalysis,
