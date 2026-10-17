@@ -504,7 +504,6 @@ pub(crate) struct RuntimePlanProfileStats {
     pub(crate) local_use_tail_scans: usize,
     pub(crate) local_use_scan_ops: usize,
     pub(crate) sequence_map_sum_fusions: usize,
-    pub(crate) map_sum_fusions: usize,
     pub(crate) sequence_source_inlines: usize,
     pub(crate) pure_call_exprs: usize,
 }
@@ -524,7 +523,6 @@ impl From<RuntimePlanLowerStats> for RuntimePlanProfileStats {
             local_use_tail_scans: stats.local_use_tail_scans,
             local_use_scan_ops: stats.local_use_scan_ops,
             sequence_map_sum_fusions: stats.sequence_map_sum_fusions,
-            map_sum_fusions: stats.map_sum_fusions,
             sequence_source_inlines: stats.sequence_source_inlines,
             pure_call_exprs: stats.pure_call_exprs,
         }

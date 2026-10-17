@@ -12,7 +12,7 @@ fn project_body<'a>(
 ) -> Option<&'a RuntimePattern> {
     match control.family() {
         Family::Array => {
-            let [FlowOp::Let { pattern, expr }, rest @ ..] = control.body() else {
+            let [FlowOp::Let { pattern, expr }, rest @ ..] = control.mapping_body() else {
                 return None;
             };
             let RuntimePatternKind::Sequence {
@@ -54,7 +54,7 @@ fn project_body<'a>(
                     expr: into,
                 },
                 gate,
-            ] = control.body()
+            ] = control.mapping_body()
             else {
                 return None;
             };
@@ -172,7 +172,9 @@ impl Engine {
         if projection.function.result_type() != output_type {
             return None;
         }
-        let sum = project_sum(&owner, &ops[1..], control.result()).filter(|sum| {
+        let consuming = control.consuming_body().unwrap_or_default();
+        let consuming_ops = consuming.iter().collect::<Vec<_>>();
+        let sum = project_numeric_sum(&owner, &consuming_ops, control.result()).filter(|sum| {
             projection.supports_total_sum()
                 && sum
                     .aliases
@@ -183,13 +185,13 @@ impl Engine {
                         .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),
                     SumTarget::Return => true,
                 }
-                && self.numeric_elision_has_no_later_observer(
-                    &owner,
-                    &ops[1 + sum.skipped_ops..],
-                    &sum.elided,
-                )
+                && self.numeric_elision_has_no_later_observer(&owner, &ops[1..], &sum.elided)
         });
-        let consumed = 1_usize.checked_add(sum.as_ref().map_or(0, |sum| sum.skipped_ops))?;
+        let consumed = if sum.is_some() {
+            control.completion_operation_cost()
+        } else {
+            1
+        };
         if consumed > remaining_ops {
             return None;
         }
@@ -197,6 +199,11 @@ impl Engine {
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let source = control.source();
         let result_pattern = result_pattern.clone();
+        let continuation = if sum.is_none() {
+            consuming.to_vec()
+        } else {
+            Vec::new()
+        };
         let sum = sum.map(|sum| match sum.target {
             SumTarget::Bind(pattern) => OwnedSumTarget::Bind(pattern.clone()),
             SumTarget::Return => OwnedSumTarget::Return,
@@ -213,14 +220,17 @@ impl Engine {
                             .env
                             .take(source)
                             .expect("admitted Map source is consumed once at commit");
-                        candidate.consume_projected_ops(consumed);
+                        candidate.consume_projected_ops(1);
                         candidate.run_child_next = true;
                         match result {
-                            RuntimeNumericMapBatchResult::Values(values) => candidate.bind_value(
-                                &result_pattern,
-                                crate::value::runtime_sequence_from_literal_values(values),
-                                staged,
-                            ),
+                            RuntimeNumericMapBatchResult::Values(values) => {
+                                candidate.bind_value(
+                                    &result_pattern,
+                                    crate::value::runtime_sequence_from_literal_values(values),
+                                    staged,
+                                );
+                                candidate.push_ops(continuation);
+                            }
                             RuntimeNumericMapBatchResult::Sum(value) => {
                                 let value = RuntimeValue::i64(value);
                                 match sum

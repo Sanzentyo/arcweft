@@ -187,7 +187,7 @@ impl<'facts> PreparedRuntimePlanLowering<'facts> {
                     ))]
                 })?;
         }
-        let pure_function_candidate_count = plan.pure_function_candidate_count();
+        let stats = RuntimePlanLowerStats::from_plan(&plan);
         let character_dialogue_generation = facts
             .character_dialogue_generation()
             .map(|declaration| {
@@ -199,12 +199,7 @@ impl<'facts> PreparedRuntimePlanLowering<'facts> {
             .transpose()?;
         Ok(RuntimePlanLowerReport {
             plan,
-            stats: RuntimePlanLowerStats {
-                pure_function_candidates: pure_function_candidate_count,
-                pure_candidate_functions_seen: 0,
-                pure_candidate_lower_attempts: 0,
-                ..RuntimePlanLowerStats::default()
-            },
+            stats,
             dialogue_content_catalog,
             character_presentation_catalog: facts.character_presentation_catalog().cloned(),
             character_dialogue_generation,

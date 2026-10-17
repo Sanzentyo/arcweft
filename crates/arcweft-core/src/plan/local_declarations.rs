@@ -153,6 +153,11 @@ pub enum RuntimeLocalDeclarationTableError {
 }
 
 impl RuntimeLocalDeclarationTableBuilder {
+    pub(crate) fn ty(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimePlanTypeId> {
+        self.declarations
+            .get(local.get().get() as usize - 1)
+            .map(|row| row.ty)
+    }
     pub(crate) fn len(&self) -> usize {
         self.declarations.len()
     }

@@ -129,6 +129,10 @@ and its original per-application budget. The separate optimizer for an already
 expanded ApplyGroup/iterator span still requires its full scheduled cost to fit.
 A consuming Sum may fuse only with its existing totality and later-observer
 proof; its actual continuation operations also have to fit the remaining budget.
+The compiled Map control retains those aliases and Sum in its ordinary body.
+An admitted fused kernel consumes one plan node but charges the original Map
+operation plus every owned continuation operation. If only mapping can batch,
+the same consuming suffix remains scheduled after the collection is bound.
 
 ## Interpreter / compiled modes
 

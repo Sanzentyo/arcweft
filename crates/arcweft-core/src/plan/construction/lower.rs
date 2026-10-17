@@ -3341,6 +3341,42 @@ impl RuntimePlanBodyConstruction<'_> {
 }
 
 impl RuntimePlanBodyConstruction<'_> {
+    fn fold_map_consumption(
+        &self,
+        operations: Vec<FlowOp>,
+    ) -> Result<Vec<FlowOp>, RuntimePlanBuildError> {
+        let mut pending = operations.into_iter();
+        let mut output = Vec::new();
+        while let Some(mut operation) = pending.next() {
+            if let FlowOp::StandardMap(control) = &mut operation
+                && matches!(
+                    control.completion(),
+                    super::super::RuntimeStandardMapCompletion::Collection
+                )
+            {
+                let ty = self
+                    .locals
+                    .lock()
+                    .expect("local request table only runs checked, callback-free transitions")
+                    .ty(control.result())
+                    .ok_or(RuntimePlanBuildError::UnknownFunctionLocal {
+                        local: control.result(),
+                    })?;
+                let consumption = super::super::sequence_sum::RuntimeSequenceSum::project(
+                    control.result(),
+                    ty,
+                    pending.as_slice().iter(),
+                )
+                .map(|sum| sum.skipped_ops);
+                if let Some(count) = consumption {
+                    control.append_sum(pending.by_ref().take(count).collect());
+                }
+            }
+            output.push(operation);
+        }
+        Ok(output)
+    }
+
     pub(super) fn lower_flow_ops(
         &self,
         seeds: Vec<RuntimeFlowOpSeed>,
@@ -3379,51 +3415,54 @@ impl RuntimePlanBodyConstruction<'_> {
                         };
                         lowered.push(operation);
                     }
-                    None => match frames.pop() {
-                        Some(FlowOpLowerFrame::FinishMatchGuard {
-                            pattern,
-                            candidate,
-                            condition,
-                            copy_locals,
-                            arm_ops,
-                        }) => {
-                            frames.push(FlowOpLowerFrame::FinishMatchArm {
+                    None => {
+                        let lowered = self.fold_map_consumption(lowered)?;
+                        match frames.pop() {
+                            Some(FlowOpLowerFrame::FinishMatchGuard {
                                 pattern,
-                                guard: Some(RuntimeMatchGuard {
-                                    candidate,
-                                    condition,
-                                    copy_locals,
-                                    ops: lowered,
-                                }),
-                            });
-                            frames.push(FlowOpLowerFrame::List {
-                                seeds: arm_ops.into_iter(),
-                                lowered: Vec::new(),
-                            });
-                        }
-                        Some(FlowOpLowerFrame::FinishMatchArm { pattern, guard }) => {
-                            let Some(FlowOpLowerFrame::MatchArms {
-                                lowered: arms_lowered,
-                                ..
-                            }) = frames.last_mut()
-                            else {
-                                return Err(RuntimePlanBuildError::FlowLoweringInvariant {
-                                    context: "a match arm body has no owning Match",
+                                candidate,
+                                condition,
+                                copy_locals,
+                                arm_ops,
+                            }) => {
+                                frames.push(FlowOpLowerFrame::FinishMatchArm {
+                                    pattern,
+                                    guard: Some(RuntimeMatchGuard {
+                                        candidate,
+                                        condition,
+                                        copy_locals,
+                                        ops: lowered,
+                                    }),
                                 });
-                            };
-                            arms_lowered.push(RuntimeMatchArm {
-                                pattern,
-                                guard,
-                                ops: lowered,
-                            });
+                                frames.push(FlowOpLowerFrame::List {
+                                    seeds: arm_ops.into_iter(),
+                                    lowered: Vec::new(),
+                                });
+                            }
+                            Some(FlowOpLowerFrame::FinishMatchArm { pattern, guard }) => {
+                                let Some(FlowOpLowerFrame::MatchArms {
+                                    lowered: arms_lowered,
+                                    ..
+                                }) = frames.last_mut()
+                                else {
+                                    return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                        context: "a match arm body has no owning Match",
+                                    });
+                                };
+                                arms_lowered.push(RuntimeMatchArm {
+                                    pattern,
+                                    guard,
+                                    ops: lowered,
+                                });
+                            }
+                            Some(_) => {
+                                return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                    context: "a completed child list has an unexpected parent frame",
+                                });
+                            }
+                            None => return Ok(lowered),
                         }
-                        Some(_) => {
-                            return Err(RuntimePlanBuildError::FlowLoweringInvariant {
-                                context: "a completed child list has an unexpected parent frame",
-                            });
-                        }
-                        None => return Ok(lowered),
-                    },
+                    }
                 },
                 FlowOpLowerFrame::MatchArms {
                     scrutinee,
@@ -5258,7 +5297,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     let mut body_scope = scope.clone();
                     let mut body_frames = scope_frames.clone();
                     self.validate_flow_operation_locals_inner(
-                        control.body(),
+                        control.mapping_body(),
                         &mut body_scope,
                         used,
                         &mut body_frames,
@@ -5269,7 +5308,16 @@ impl RuntimePlanBodyConstruction<'_> {
                             context: "Map body changes its caller's lexical scope stack",
                         });
                     }
-                    *scope = extend_scope(scope, [control.result()])?;
+                    let mut continuation_scope = extend_scope(scope, [control.result()])?;
+                    if let Some(continuation) = control.consuming_body() {
+                        self.validate_flow_operation_locals_inner(
+                            continuation,
+                            &mut continuation_scope,
+                            used,
+                            scope_frames,
+                        )?;
+                    }
+                    *scope = continuation_scope;
                 }
                 FlowOp::Let { pattern, expr } => {
                     self.validate_expression_locals(expr, scope, used)?;

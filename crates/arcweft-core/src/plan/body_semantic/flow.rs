@@ -106,6 +106,13 @@ impl RuntimeBodySemanticContext<'_> {
                 self.write_local(encoder, control.source())?;
                 self.write_local(encoder, control.mapping())?;
                 self.write_local(encoder, control.result())?;
+                match control.completion() {
+                    plan::RuntimeStandardMapCompletion::Collection => encoder.tag(0),
+                    plan::RuntimeStandardMapCompletion::Sum { map_operations } => {
+                        encoder.tag(1);
+                        encoder.count(map_operations);
+                    }
+                }
             }
             FlowOp::Bind(_)
             | FlowOp::ForNext { .. }

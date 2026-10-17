@@ -226,6 +226,50 @@ fn retained_map_prefix_evaluates_mapping_once_and_keeps_source_order() {
 }
 
 #[test]
+fn compiled_map_consumption_owns_source_aliases_and_preserves_one_op_execution() {
+    use arcweft_core::plan::{FlowOp, RuntimeStandardMapCompletion};
+    let source = r"
+#[pure]
+fn increment(item: i64) -> i64 { item + 1i64 }
+flow main() -> i64 {
+    let values: Vec<i64> = [1i64, 2i64, 3i64];
+    let mapped = values.map(increment);
+    let alias = mapped;
+    return alias.sum()
+}
+";
+    let compiled = compile_source(source).unwrap();
+    let controls = compiled.plan.flows()[0]
+        .body()
+        .ops()
+        .iter()
+        .filter_map(|op| {
+            if let FlowOp::StandardMap(control) = op {
+                Some(control)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let [control] = controls.as_slice() else {
+        panic!("one compiled Map owner")
+    };
+    assert!(matches!(
+        control.completion(),
+        RuntimeStandardMapCompletion::Sum { .. }
+    ));
+    assert!(control.consuming_body().is_some());
+    assert_eq!(compiled.runtime_plan_stats.sequence_map_sum_fusions, 1);
+    assert_eq!(compiled.runtime_plan_stats.pure_call_exprs, 1);
+    assert_map_source_order(
+        "let mapped = values().map(increment); let alias = mapped; return alias.sum()",
+        "9",
+        &["values"],
+        3,
+    );
+}
+
+#[test]
 fn direct_map_evaluates_receiver_before_mapping() {
     assert_map_source_order(
         "return values().map(factory()).sum()",

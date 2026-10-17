@@ -98,6 +98,13 @@ branch scope. The result declaration must be visible at the body's exit, and
 the body cannot change its caller's lexical scope stack. Semantic transcripts,
 resource inventories, and executable seals visit that owned body exactly once.
 Native execution and canonical AWBC lowering consume the same admitted body.
+When the admitted operation suffix aliases the collection and consumes it with
+Sum, that same control owns the source-ordered suffix and its mapping boundary.
+The mapping's generated locals remain private; the original collection, aliases,
+and consuming result retain their caller scope. The semantic transcript includes
+the completion kind, mapping boundary, and complete body. Compiler statistics
+derive formed consumers and logical callback sites from this final typed plan;
+physical Array expansion does not multiply the logical invocation-site count.
 
 Runtime semantic facts retain an accepted origin for every selected expression,
 including an effect carrier that owns no runtime value type. A static callee's

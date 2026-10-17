@@ -20,6 +20,8 @@ mod rust_defaults;
 mod scopes;
 #[path = "final_flow/standard_map.rs"]
 mod standard_map;
+#[path = "final_flow/statistics.rs"]
+mod statistics;
 #[path = "final_flow/trait_method.rs"]
 mod trait_method;
 #[path = "final_flow/value_branches.rs"]
@@ -330,8 +332,8 @@ pub struct RuntimePlanLowerStats {
     pub local_use_tail_scans: usize,
     pub local_use_scan_ops: usize,
     pub sequence_map_sum_fusions: usize,
-    pub map_sum_fusions: usize,
     pub sequence_source_inlines: usize,
+    /// Logical pure invocation sites, independent of physical Array expansion.
     pub pure_call_exprs: usize,
 }
 

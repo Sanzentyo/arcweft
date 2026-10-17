@@ -6,6 +6,7 @@ use crate::pattern::{
     RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimePattern,
     RuntimePatternKind,
 };
+use crate::plan::sequence_sum::{RuntimeSequenceSum, RuntimeSequenceSumTarget as SumTarget};
 use crate::plan::{FlowOp, RuntimePlan, RuntimePlanTypeProjection};
 use crate::pure::{RuntimeCallBackend, RuntimeNumericMapBatchResult, project_numeric_map};
 use crate::runtime_id::{RuntimeLocalDeclarationId as Local, RuntimePlanTypeId as Ty};
@@ -26,20 +27,9 @@ struct LoopProjection<'a> {
     item_ty: Ty,
     output_ty: Ty,
 }
-#[derive(Clone, Copy)]
-enum SumTarget<'a> {
-    Bind(&'a RuntimePattern),
-    Return,
-}
 enum OwnedSumTarget {
     Bind(RuntimePattern),
     Return,
-}
-struct SumProjection<'a> {
-    skipped_ops: usize,
-    aliases: Vec<Local>,
-    target: SumTarget<'a>,
-    elided: Vec<Local>,
 }
 struct ArrayProjection<'a> {
     callable: Local,
@@ -313,59 +303,16 @@ fn project_array<'a>(plan: &RuntimePlan, ops: &[&'a FlowOp]) -> Option<ArrayProj
         aggregate,
     })
 }
-fn project_sum<'a>(
+fn project_numeric_sum<'a>(
     plan: &RuntimePlan,
     ops: &[&'a FlowOp],
     accumulator: Local,
-) -> Option<SumProjection<'a>> {
-    let mut source = accumulator;
-    let mut aliases = Vec::new();
-    let sequence_ty = plan.local_declarations().get(source)?.ty();
-    for (index, op) in ops.iter().enumerate() {
-        let (pattern, expr) = match *op {
-            FlowOp::Let { pattern, expr } if pattern.ty() == expr.ty() => (Some(pattern), expr),
-            FlowOp::ReturnExpr(expr) => (None, expr),
-            _ => return None,
-        };
-        if let RuntimeExprKind::Sum { source: sum_source } = expr.kind() {
-            if ![RuntimeLocalReadMode::Move, RuntimeLocalReadMode::Copy]
-                .into_iter()
-                .any(|mode| local(sum_source, mode) == Some(source))
-                || sum_source.ty() != sequence_ty
-                || pattern.is_some_and(|pattern| binder(pattern).is_none())
-                || !plan
-                    .value_matches_type(expr.ty(), &RuntimeValue::i64(0))
-                    .ok()?
-            {
-                return None;
-            }
-            let elided = std::iter::once(accumulator)
-                .chain(aliases.iter().copied())
-                .collect();
-            return Some(SumProjection {
-                skipped_ops: index + 1,
-                aliases,
-                target: pattern.map_or(SumTarget::Return, SumTarget::Bind),
-                elided,
-            });
-        }
-        let pattern = pattern?;
-        if ![RuntimeLocalReadMode::Move, RuntimeLocalReadMode::Copy]
-            .into_iter()
-            .any(|mode| local(expr, mode) == Some(source))
-            || expr.ty() != sequence_ty
-            || pattern.ty() != sequence_ty
-        {
-            return None;
-        }
-        let next = binder(pattern)?;
-        if next == accumulator || aliases.contains(&next) {
-            return None;
-        }
-        aliases.push(next);
-        source = next;
-    }
-    None
+) -> Option<RuntimeSequenceSum<'a>> {
+    let sequence_ty = plan.local_declarations().get(accumulator)?.ty();
+    let sum = RuntimeSequenceSum::project(accumulator, sequence_ty, ops.iter().copied())?;
+    plan.value_matches_type(sum.result_type, &RuntimeValue::i64(0))
+        .ok()?
+        .then_some(sum)
 }
 // Copy receivers are elided only when no admitted remaining control, input,
 // capture or write can observe the omitted numeric locals. This borrows the
@@ -565,7 +512,7 @@ impl Engine {
                 {
                     return None;
                 }
-                let sum = project_sum(&owner, &ops[1..], selected.result.local());
+                let sum = project_numeric_sum(&owner, &ops[1..], selected.result.local());
                 (
                     selected.callable,
                     selected.item_ty,
@@ -602,7 +549,7 @@ impl Engine {
                 let sum = selected
                     .aggregate
                     .filter(|local| self.fiber.frame.env.get(*local).is_none())
-                    .and_then(|aggregate| project_sum(&owner, &ops[calls + 1..], aggregate))
+                    .and_then(|aggregate| project_numeric_sum(&owner, &ops[calls + 1..], aggregate))
                     .map(|mut sum| {
                         sum.skipped_ops += 1;
                         sum
