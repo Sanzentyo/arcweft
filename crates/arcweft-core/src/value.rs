@@ -50,7 +50,7 @@ mod expression_semantic;
 mod external_callable;
 pub use external_callable::{
     RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
-    RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+    RuntimeExternalCallableProvider, StandardEnvironmentId,
 };
 pub(crate) mod expression_tree;
 mod float_storage_serde;

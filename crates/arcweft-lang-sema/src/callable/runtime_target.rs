@@ -5,13 +5,12 @@ use arcweft_core::{
     value::{
         RuntimeCallTarget, RuntimeExternalCallable, RuntimeExternalCallableDeclaration,
         RuntimeExternalCallableExport, RuntimeExternalCallableProvider,
-        RuntimeStandardCallableProvider,
     },
 };
 
 use super::{
     CallableLookupKey, CheckedCallableDeclaration, CheckedCallableId, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, StandardEnvironmentId,
+    EnvironmentCallableKind, EnvironmentCallableOwner,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -50,28 +49,14 @@ impl EnvironmentCallableId {
                 RuntimeExternalCallableProvider::Adapter(package.as_str().to_owned())
             }
             EnvironmentCallableOwner::Standard(environment) => {
-                RuntimeExternalCallableProvider::Standard(match environment {
-                    StandardEnvironmentId::Core => RuntimeStandardCallableProvider::Core,
-                    StandardEnvironmentId::SansIo => RuntimeStandardCallableProvider::SansIo,
-                    StandardEnvironmentId::NativeHttp => {
-                        RuntimeStandardCallableProvider::NativeHttp
-                    }
-                    StandardEnvironmentId::InferenceTensor => {
-                        RuntimeStandardCallableProvider::InferenceTensor
-                    }
-                    StandardEnvironmentId::SystemInfo => {
-                        RuntimeStandardCallableProvider::SystemInfo
-                    }
-                    StandardEnvironmentId::NativeFile => {
-                        RuntimeStandardCallableProvider::NativeFile
-                    }
-                    StandardEnvironmentId::Math => RuntimeStandardCallableProvider::Math,
-                })
+                RuntimeExternalCallableProvider::Standard(*environment)
             }
         };
         let export = match (self.kind(), self.key()) {
-            (EnvironmentCallableKind::Function, CallableLookupKey::Free(path))
-            | (EnvironmentCallableKind::RustFunction, CallableLookupKey::Free(path)) => {
+            (
+                EnvironmentCallableKind::Function | EnvironmentCallableKind::RustFunction,
+                CallableLookupKey::Free(path),
+            ) => {
                 let path = path
                     .segments()
                     .iter()

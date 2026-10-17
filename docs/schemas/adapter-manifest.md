@@ -62,6 +62,9 @@ pub struct AdapterToolingDocFile {
 An admitted external call retains both its checked callable identity and its
 selected declaration linkage: registration provider, function/method/Rust-function
 export key, and overload. Method keys include the semantic receiver identity.
+Standard providers use the same `StandardEnvironmentId` owned by the shared
+manifest model in both semantic catalogs and runtime linkage; its canonical
+provider codes have one authority.
 The checked identity binds the full signature and accepted catalog generation;
 the linkage selects the implementation exported by that provider. Authored
 aliases and display labels do not select an implementation. Native plans, AWBC,

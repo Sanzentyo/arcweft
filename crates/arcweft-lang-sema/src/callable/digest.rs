@@ -668,15 +668,7 @@ impl CanonicalEncoder {
     }
 
     fn standard_owner(&mut self, owner: StandardEnvironmentId) {
-        self.tag(match owner {
-            StandardEnvironmentId::Core => 0,
-            StandardEnvironmentId::SansIo => 1,
-            StandardEnvironmentId::NativeHttp => 2,
-            StandardEnvironmentId::InferenceTensor => 3,
-            StandardEnvironmentId::SystemInfo => 4,
-            StandardEnvironmentId::NativeFile => 5,
-            StandardEnvironmentId::Math => 6,
-        });
+        self.tag(u16::from(owner.canonical_tag()));
     }
 
     pub(super) fn environment_kind(&mut self, kind: EnvironmentCallableKind) {

@@ -8,7 +8,7 @@ use crate::{
     entry::RuntimeCallableId,
     value::{
         RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
-        RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+        RuntimeExternalCallableProvider, StandardEnvironmentId,
     },
 };
 
@@ -18,7 +18,7 @@ impl Wire for RuntimeExternalCallable {
         match self.declaration().provider() {
             RuntimeExternalCallableProvider::Standard(provider) => {
                 0_u8.write_wire(writer)?;
-                provider.semantic_tag().write_wire(writer)?;
+                provider.canonical_tag().write_wire(writer)?;
             }
             RuntimeExternalCallableProvider::Adapter(package) => {
                 1_u8.write_wire(writer)?;
@@ -48,9 +48,10 @@ impl Wire for RuntimeExternalCallable {
         let offset = reader.offset();
         let provider = match u8::read_wire(reader)? {
             0 => {
+                let offset = reader.offset();
                 let tag = u8::read_wire(reader)?;
                 RuntimeExternalCallableProvider::Standard(
-                    RuntimeStandardCallableProvider::from_semantic_tag(tag).ok_or(
+                    StandardEnvironmentId::from_canonical_tag(tag).ok_or(
                         AwbcCodecError::UnknownTag {
                             kind: "standard callable provider",
                             tag,
@@ -113,21 +114,13 @@ mod tests {
 
     #[test]
     fn external_callable_codec_retains_checked_identity_provider_kind_and_overload() {
-        use RuntimeStandardCallableProvider as Standard;
-        let providers = [
-            Standard::Core,
-            Standard::SansIo,
-            Standard::NativeHttp,
-            Standard::InferenceTensor,
-            Standard::SystemInfo,
-            Standard::NativeFile,
-            Standard::Math,
-        ]
-        .map(RuntimeExternalCallableProvider::Standard)
-        .into_iter()
-        .chain([RuntimeExternalCallableProvider::Adapter(
-            "third-party".into(),
-        )]);
+        let providers = StandardEnvironmentId::ALL
+            .iter()
+            .copied()
+            .map(RuntimeExternalCallableProvider::Standard)
+            .chain([RuntimeExternalCallableProvider::Adapter(
+                "third-party".into(),
+            )]);
         for provider in providers {
             for export in [
                 RuntimeExternalCallableExport::Function(["api".into(), "run".into()].into()),
@@ -164,9 +157,7 @@ mod tests {
         let target = RuntimeExternalCallable::new(
             RuntimeCallableId::from_checked_digest([0x92; 32]),
             RuntimeExternalCallableDeclaration::try_new(
-                RuntimeExternalCallableProvider::Standard(
-                    RuntimeStandardCallableProvider::InferenceTensor,
-                ),
+                RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor),
                 RuntimeExternalCallableExport::Function(["infer".into(), "add_f32".into()].into()),
                 0,
             )
@@ -197,6 +188,20 @@ mod tests {
                 tag: 0xff,
                 ..
             })
+        ));
+        invalid[prefix.len()] = 0;
+        let standard_tag_offset = prefix.len() + 1;
+        invalid[standard_tag_offset] = 0xff;
+        assert!(matches!(
+            RuntimeExternalCallable::read_wire(&mut Reader::new(
+                &invalid,
+                &AwbcDecodeBudget::default()
+            )),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "standard callable provider",
+                tag: 0xff,
+                offset,
+            }) if offset == standard_tag_offset
         ));
         let mut json = serde_json::to_value(&target).unwrap();
         json["declaration"]["export"]["Function"] = serde_json::json!([]);

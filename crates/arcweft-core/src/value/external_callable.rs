@@ -4,50 +4,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::entry::{RuntimeCallableId, RuntimeIdentityError};
-
-/// Standard environment owning an external declaration.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum RuntimeStandardCallableProvider {
-    Core,
-    SansIo,
-    NativeHttp,
-    InferenceTensor,
-    SystemInfo,
-    NativeFile,
-    Math,
-}
-
-impl RuntimeStandardCallableProvider {
-    pub(crate) const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::Core => 0,
-            Self::SansIo => 1,
-            Self::NativeHttp => 2,
-            Self::InferenceTensor => 3,
-            Self::SystemInfo => 4,
-            Self::NativeFile => 5,
-            Self::Math => 6,
-        }
-    }
-
-    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
-        match tag {
-            0 => Some(Self::Core),
-            1 => Some(Self::SansIo),
-            2 => Some(Self::NativeHttp),
-            3 => Some(Self::InferenceTensor),
-            4 => Some(Self::SystemInfo),
-            5 => Some(Self::NativeFile),
-            6 => Some(Self::Math),
-            _ => None,
-        }
-    }
-}
+pub use arcweft_manifest_model::StandardEnvironmentId;
 
 /// Registration authority, independent of a source binding or alias.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeExternalCallableProvider {
-    Standard(RuntimeStandardCallableProvider),
+    Standard(StandardEnvironmentId),
     Adapter(String),
 }
 
@@ -178,7 +140,7 @@ impl RuntimeExternalCallable {
         match self.declaration.provider() {
             RuntimeExternalCallableProvider::Standard(provider) => {
                 encoder.tag(0);
-                encoder.tag(provider.semantic_tag());
+                encoder.tag(provider.canonical_tag());
             }
             RuntimeExternalCallableProvider::Adapter(package) => {
                 encoder.tag(1);
@@ -232,9 +194,8 @@ mod tests {
             callable.encode_body_metadata(&mut encoder);
             encoder.finish().unwrap()
         };
-        let provider = RuntimeExternalCallableProvider::Standard(
-            RuntimeStandardCallableProvider::InferenceTensor,
-        );
+        let provider =
+            RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor);
         let export =
             RuntimeExternalCallableExport::Function(["infer".into(), "add_f32".into()].into());
         let original = digest(provider.clone(), export.clone(), 0);

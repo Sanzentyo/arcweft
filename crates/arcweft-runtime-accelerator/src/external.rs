@@ -12,7 +12,7 @@ use super::{
 #[path = "external_data.rs"]
 mod external_data;
 use arcweft_core::value::{
-    RuntimeExternalCallableExport, RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+    RuntimeExternalCallableExport, RuntimeExternalCallableProvider, StandardEnvironmentId,
 };
 use external_data::call_data_external;
 
@@ -37,9 +37,7 @@ impl RuntimeAcceleratorExternalCall {
         };
         let declaration = callable.declaration();
         if declaration.provider()
-            != &RuntimeExternalCallableProvider::Standard(
-                RuntimeStandardCallableProvider::InferenceTensor,
-            )
+            != &RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor)
             || declaration.overload() != 0
         {
             return None;

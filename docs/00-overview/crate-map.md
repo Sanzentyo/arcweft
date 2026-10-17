@@ -166,6 +166,9 @@ arcweft-launch
 
 ## 依存ルール
 
+- `arcweft-manifest-model` は source/HIR/backend に依存しない共通 identity と
+  canonical encoding を所有する。標準 callable provider の `StandardEnvironmentId`
+  もここで一つの型と provider code を定義し、Sema catalog と runtime linkage が共有する。
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
 - `arcweft-core::awbc` は AWBC executable-table の Sans I/O data/verifier
   境界を所有する。product encoding、filesystem、network、signing、runtime

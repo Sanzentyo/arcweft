@@ -52,14 +52,12 @@ fn callable_target(value: &str) -> RuntimeCallTarget {
 fn inference_target(export: &str) -> RuntimeCallTarget {
     use arcweft_core::value::{
         RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
-        RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+        RuntimeExternalCallableProvider, StandardEnvironmentId,
     };
     RuntimeCallTarget::External(RuntimeExternalCallable::new(
         RuntimeCallableId::from_checked_digest([0x71; 32]),
         RuntimeExternalCallableDeclaration::try_new(
-            RuntimeExternalCallableProvider::Standard(
-                RuntimeStandardCallableProvider::InferenceTensor,
-            ),
+            RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor),
             RuntimeExternalCallableExport::Function(export.split('.').map(str::to_owned).collect()),
             0,
         )
@@ -71,7 +69,7 @@ fn inference_target(export: &str) -> RuntimeCallTarget {
 fn inference_dispatch_requires_the_exact_registered_provider_export_and_overload() {
     use arcweft_core::value::{
         RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
-        RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+        RuntimeExternalCallableProvider, StandardEnvironmentId,
     };
     let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Vm);
     let context = RuntimeExternalCallContext::unbound();
@@ -92,9 +90,7 @@ fn inference_dispatch_requires_the_exact_registered_provider_export_and_overload
         RuntimeCallTarget::External(RuntimeExternalCallable::new(
             identity.clone(),
             RuntimeExternalCallableDeclaration::try_new(
-                RuntimeExternalCallableProvider::Standard(
-                    RuntimeStandardCallableProvider::InferenceTensor,
-                ),
+                RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor),
                 RuntimeExternalCallableExport::Function(["infer".into(), "add_f32".into()].into()),
                 1,
             )
@@ -103,9 +99,7 @@ fn inference_dispatch_requires_the_exact_registered_provider_export_and_overload
         RuntimeCallTarget::External(RuntimeExternalCallable::new(
             identity.clone(),
             RuntimeExternalCallableDeclaration::try_new(
-                RuntimeExternalCallableProvider::Standard(
-                    RuntimeStandardCallableProvider::InferenceTensor,
-                ),
+                RuntimeExternalCallableProvider::Standard(StandardEnvironmentId::InferenceTensor),
                 RuntimeExternalCallableExport::RustFunction(
                     ["infer".into(), "add_f32".into()].into(),
                 ),

@@ -9,6 +9,7 @@ mod opaque_producer;
 mod path;
 mod project_locale;
 mod schema;
+mod standard_environment;
 
 pub use canonical::{CanonicalJsonError, canonical_json_bytes};
 pub use dense_numeric_type::{RuntimeDenseNumericType, RuntimeFloatWidth};
@@ -28,3 +29,4 @@ pub use schema::{
     EntityIdRef, ExternalModuleImportSpec, LaunchKind, ManifestSchemaVersion,
     ManifestSchemaVersionError, ManifestVisibility, NonEmptyVec, PackageSpec, ProfileContentSpec,
 };
+pub use standard_environment::StandardEnvironmentId;

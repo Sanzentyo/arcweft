@@ -8,6 +8,7 @@
 //! make the exact identity contract harder to audit without reducing a mixed
 //! responsibility.
 
+pub use arcweft_manifest_model::StandardEnvironmentId;
 use std::sync::Arc;
 
 use arcweft_lang_hir::{
@@ -339,17 +340,6 @@ pub enum ProjectNameBinding {
         path: ProjectCallablePath,
         ty: TypeKind,
     },
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum StandardEnvironmentId {
-    Core,
-    SansIo,
-    NativeHttp,
-    InferenceTensor,
-    SystemInfo,
-    NativeFile,
-    Math,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
