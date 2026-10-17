@@ -10,8 +10,8 @@ use crate::scope::{RuntimeScopeExitTarget, RuntimeScopeFrameKind};
 use crate::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeExprKind, RuntimeUnaryOp, RuntimeValue};
 use std::collections::BTreeMap;
 
-/// Unknown includes every value of the original type, including u128 values
-/// above i128::MAX and any native arithmetic wrap that this analysis cannot bound.
+/// `Unknown` includes every value of the original type, including u128 values
+/// above `i128::MAX` and any native arithmetic wrap that this analysis cannot bound.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::pure) enum RuntimeIntegerRange {
     Unknown,

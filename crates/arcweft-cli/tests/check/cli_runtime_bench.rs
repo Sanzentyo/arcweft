@@ -21,12 +21,14 @@ flow map_pure() -> String {
 "#,
     );
 
+    assert_source_map_one_op_prefix(&path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
         .args(["--entry", "entry.run"])
         .arg("--mode")
-        .arg("one-op")
+        .arg("drain")
+        .args(["--max-ops", "1"])
         .arg("--steps")
         .arg("32")
         .arg("--pure-backend")
@@ -42,6 +44,7 @@ flow map_pure() -> String {
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_source_map_step_output(&json, 1, &["4", "8", "12", "16"]);
     assert_eq!(json["final_status"], "done Return(\"done\")");
     assert_eq!(sum_step_pure_counter(&json, "pure_calls"), 4);
     assert_eq!(sum_step_pure_counter(&json, "batch_calls"), 1);
@@ -77,12 +80,14 @@ flow map_pure_sum() -> String {
 "#,
     );
 
+    assert_source_map_one_op_prefix(&path);
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
         .args(["--entry", "entry.run"])
         .arg("--mode")
-        .arg("one-op")
+        .arg("drain")
+        .args(["--max-ops", "2"])
         .arg("--steps")
         .arg("32")
         .arg("--pure-backend")
@@ -98,6 +103,7 @@ flow map_pure_sum() -> String {
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("run output is structured JSON");
+    assert_source_map_step_output(&json, 2, &["40"]);
     assert_eq!(json["final_status"], "done Return(\"done\")");
     assert_eq!(sum_step_pure_counter(&json, "pure_calls"), 4);
     assert_eq!(sum_step_pure_counter(&json, "batch_calls"), 1);

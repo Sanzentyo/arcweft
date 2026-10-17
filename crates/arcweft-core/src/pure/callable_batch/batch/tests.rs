@@ -451,13 +451,14 @@ fn unused_source_items_zero_formals_and_empty_batches_keep_their_complete_header
 
 #[test]
 fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
-    for (input, output, ty, fits, outside) in [
+    for (input, output, ty, fits, outside, expected_sum) in [
         (
             I::U64,
             O::U64,
             RuntimePlanTypeProjection::Unsigned(U::U64),
             RuntimePureScalar::U64(i64::MAX as u64),
             RuntimePureScalar::U64(i64::MAX as u64 + 1),
+            i64::MAX,
         ),
         (
             I::I128,
@@ -465,6 +466,15 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
             RuntimePlanTypeProjection::Signed(S::I128),
             RuntimePureScalar::I128(i128::from(i64::MAX)),
             RuntimePureScalar::I128(i128::from(i64::MAX) + 1),
+            i64::MAX,
+        ),
+        (
+            I::I128,
+            O::I128,
+            RuntimePlanTypeProjection::Signed(S::I128),
+            RuntimePureScalar::I128(i128::from(i64::MIN)),
+            RuntimePureScalar::I128(i128::from(i64::MIN) - 1),
+            i64::MIN,
         ),
         (
             I::U128,
@@ -472,6 +482,7 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
             RuntimePlanTypeProjection::Unsigned(U::U128),
             RuntimePureScalar::U128(i64::MAX as u128),
             RuntimePureScalar::U128(u128::MAX),
+            i64::MAX,
         ),
         (
             I::USize,
@@ -479,6 +490,7 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
             RuntimePlanTypeProjection::Unsigned(U::USize),
             RuntimePureScalar::USize(i64::MAX as u64),
             RuntimePureScalar::USize(i64::MAX as u64 + 1),
+            i64::MAX,
         ),
     ] {
         let plan = helper_plan(input, output, ty, 1, None);
@@ -495,7 +507,7 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
                 let RuntimeNumericMapBatchResult::Sum(result) = result else {
                     panic!("proved Sum")
                 };
-                assert_eq!(result, i64::MAX.wrapping_mul(3));
+                assert_eq!(result, expected_sum.wrapping_mul(3));
                 assert_eq!(vm.stats().result_bytes_copied, 0);
             } else {
                 let RuntimeNumericMapBatchResult::Values(values) = result else {

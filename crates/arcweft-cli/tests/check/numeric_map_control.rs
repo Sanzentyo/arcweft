@@ -555,3 +555,49 @@ fn run_dense_integer_one_op(
     }
     panic!("typed integer fixture did not complete its original budget");
 }
+
+fn assert_source_map_one_op_prefix(path: &std::path::Path) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(path)
+        .args([
+            "--entry", "entry.run", "--mode", "one-op", "--steps", "32", "--pure-backend", "jit",
+            "--json",
+        ])
+        .output()
+        .expect("run the original bounded OneOp prefix");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["final_status"], "running");
+    assert_eq!(json["steps"].as_array().unwrap().len(), 32);
+    assert_source_map_step_output(&json, 1, &[]);
+    assert_eq!(sum_step_pure_counter(&json, "pure_calls"), 2);
+    assert_eq!(sum_step_pure_counter(&json, "vm_calls"), 2);
+    for counter in ["batch_calls", "batch_items", "jit_calls", "aot_calls"] {
+        assert_eq!(sum_step_pure_counter(&json, counter), 0, "{counter}");
+    }
+}
+
+fn assert_source_map_step_output(json: &serde_json::Value, maximum_ops: u64, messages: &[&str]) {
+    let mut observed = 0;
+    for step in json["steps"].as_array().unwrap() {
+        assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= maximum_ops);
+        assert!(step["diagnostics"].as_array().unwrap().is_empty());
+        let actual = step["observations"]["logs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|log| log["message"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        // Observations are cumulative snapshots. Every snapshot must retain
+        // the exact ordered prefix, and the final snapshot must be complete.
+        assert!(actual.len() >= observed);
+        assert!(messages.starts_with(&actual), "{actual:?}");
+        observed = actual.len();
+    }
+    assert_eq!(observed, messages.len());
+}
