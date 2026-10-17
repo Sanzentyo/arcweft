@@ -1,4 +1,4 @@
-use crate::effect::LineEffectRequest;
+use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
 use crate::value::{RuntimeExpr, RuntimeLocalBinding};
@@ -61,6 +61,7 @@ pub(crate) enum AotLinearOp {
     Return(String),
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
+    EvaluatedEffect(RuntimeEffectExpr),
     RegisterCleanup {
         key: String,
         effect: LineEffectRequest,
@@ -97,6 +98,7 @@ impl AotLinearOp {
             FlowOp::Return(value) => Some(Self::Return(value.clone())),
             FlowOp::ReturnExpr(expr) => Some(Self::ReturnExpr(expr.clone())),
             FlowOp::Effect(effect) => Some(Self::Effect(effect.clone())),
+            FlowOp::EvaluatedEffect(effect) => Some(Self::EvaluatedEffect(effect.clone())),
             FlowOp::RegisterCleanup { key, effect } => Some(Self::RegisterCleanup {
                 key: key.clone(),
                 effect: effect.clone(),
@@ -147,8 +149,7 @@ impl AotLinearOp {
             | FlowOp::Continue
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_)
-            | FlowOp::CompleteAwaitObserver
-            | FlowOp::EvaluatedEffect(_) => None,
+            | FlowOp::CompleteAwaitObserver => None,
         }
     }
 }
@@ -252,6 +253,18 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::ExitScopeBind { .. }
         | FlowOp::Noop => true,
         FlowOp::Effect(effect) => !effect_changes_control(effect),
+        FlowOp::EvaluatedEffect(effect) => match effect {
+            RuntimeEffectExpr::Log { .. }
+            | RuntimeEffectExpr::SignalWrite { .. }
+            | RuntimeEffectExpr::MetricWrite { .. }
+            | RuntimeEffectExpr::EmitEvent { .. } => true,
+            RuntimeEffectExpr::Panic(_)
+            | RuntimeEffectExpr::Fail(_)
+            | RuntimeEffectExpr::Bail(_)
+            | RuntimeEffectExpr::Ensure { .. }
+            | RuntimeEffectExpr::Drop { .. }
+            | RuntimeEffectExpr::Assert { .. } => false,
+        },
         FlowOp::EnterScheduledScope { .. }
         | FlowOp::StandardMap(_)
         | FlowOp::ExitScheduledScope { .. }
@@ -288,8 +301,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Continue
         | FlowOp::Goto(_)
         | FlowOp::GotoExpr(_)
-        | FlowOp::CompleteAwaitObserver
-        | FlowOp::EvaluatedEffect(_) => false,
+        | FlowOp::CompleteAwaitObserver => false,
     }
 }
 

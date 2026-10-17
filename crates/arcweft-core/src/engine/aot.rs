@@ -5,6 +5,9 @@ use super::{
 use crate::aot::{AotLinearOp, AotProgram};
 use crate::pure::RuntimeCallBackend;
 
+#[cfg(test)]
+mod tests;
+
 impl Engine {
     pub(crate) fn step_prechecked_aot_linear_with_pure_backend(
         &mut self,
@@ -13,10 +16,11 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> (RuntimeStepResult, usize) {
         let mut output = RuntimeStepOutput::default();
+        self.task_request_quota_remaining = options.max_new_task_requests;
         let mut executed_ops = 0;
         let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
-        let pending_ops_before = self.fiber.frame.pending_ops.len();
+        let pending_ops_before = self.pending_ops_len();
         let mut runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
@@ -125,7 +129,7 @@ impl Engine {
         RuntimeStepStats {
             executed_ops,
             pending_ops_before,
-            pending_ops_after: self.fiber.frame.pending_ops.len(),
+            pending_ops_after: self.pending_ops_len(),
             child_fibers: self.child_fiber_count(),
             pure,
             line_effects: output.effects.line.len(),
@@ -147,8 +151,7 @@ impl Engine {
         program: &AotProgram,
         input: &RuntimeStepInput,
     ) -> bool {
-        input.task_events.is_empty()
-            && input.root_events.is_empty()
+        input == &RuntimeStepInput::default()
             && self.root.is_none()
             && !self.has_executor_work()
             && self.plan.stream_plans.is_empty()
@@ -200,6 +203,18 @@ impl Engine {
             AotLinearOp::Effect(effect) => {
                 self.emit_line_effect(effect.clone(), output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
+            }
+            AotLinearOp::EvaluatedEffect(effect) => {
+                let mut drop_policy = None;
+                if !self.execute_evaluated_effect(effect, &mut drop_policy, output, pure_backend) {
+                    return;
+                }
+                // The private AOT constructor excludes activation-policy and
+                // control effects; those retain the native scheduler path.
+                debug_assert!(drop_policy.is_none());
+                if !self.apply_control_effects(output, pure_backend) {
+                    self.advance_aot_linear_cursor(next_op_index);
+                }
             }
             AotLinearOp::RegisterCleanup { key, effect } => {
                 self.register_scope_cleanup(key.clone(), effect.clone());

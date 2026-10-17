@@ -32,6 +32,34 @@ pub(super) struct RuntimeEvaluatedEffectOutcome {
 }
 
 impl Engine {
+    /// Executes one typed effect at its owning instruction. Native dispatch
+    /// and pre-lowered AOT dispatch share materialization and policy transfer.
+    pub(super) fn execute_evaluated_effect(
+        &mut self,
+        effect: &RuntimeEffectExpr,
+        drop_policy: &mut Option<RuntimeDropPolicy>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> bool {
+        let outcome = match self.evaluate_effect_expr(effect, pure_backend) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return false;
+            }
+        };
+        if let Some(policy) = outcome.drop_policy
+            && drop_policy.replace(policy).is_some()
+        {
+            self.fail_eval(LineRuntimeError::InvalidActivationOperation, output);
+            return false;
+        }
+        if let Some(effect) = outcome.request {
+            self.emit_line_effect(effect, output, pure_backend);
+        }
+        true
+    }
+
     pub(super) fn evaluate_effect_expr(
         &mut self,
         effect: &RuntimeEffectExpr,

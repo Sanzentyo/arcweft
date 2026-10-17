@@ -802,25 +802,8 @@ impl Engine {
                 }
             }
             FlowOp::EvaluatedEffect(effect) => {
-                match self.evaluate_effect_expr(&effect, pure_backend) {
-                    Ok(outcome) => {
-                        if let Some(policy) = outcome.drop_policy
-                            && drop_policy.replace(policy).is_some()
-                        {
-                            self.fail_eval(
-                                crate::line_task::LineRuntimeError::InvalidActivationOperation,
-                                output,
-                            );
-                            return;
-                        }
-                        if let Some(effect) = outcome.request {
-                            self.emit_line_effect(effect, output, pure_backend);
-                        }
-                    }
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return;
-                    }
+                if !self.execute_evaluated_effect(&effect, drop_policy, output, pure_backend) {
+                    return;
                 }
                 if !self.apply_control_effects(output, pure_backend) {
                     self.advance_if_needed(next_op_index);
