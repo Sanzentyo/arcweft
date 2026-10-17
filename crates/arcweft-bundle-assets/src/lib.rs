@@ -302,7 +302,7 @@ impl BundleAssetResolver {
         context: RuntimeBundleAssetContext,
         id: &str,
     ) -> Result<RuntimeValue, BundleAssetResolverError> {
-        let id = RuntimeBundleAssetResourceId::try_new(id.to_owned())
+        let id = RuntimeBundleAssetResourceId::try_new(id)
             .map_err(BundleAssetResolverError::InvalidResourceId)?;
         let catalog = self.catalog_for_context(context)?;
         let state = asset_content_state(&catalog.bundle, kind, id.as_str())?;

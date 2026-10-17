@@ -1,5 +1,10 @@
 //! Typed Core carriers for bundle-owned image and voice resource handles.
 
+mod parsed;
+
+use std::borrow::Cow;
+
+use self::parsed::{ParsedAssetBinding, ParsedAssetFailure};
 use super::{
     RuntimeBorrowedValue, RuntimeOpaqueValueError, RuntimeScalarView as Scalar, RuntimeValue,
     RuntimeValueView as View, runtime_sequence_dense_bytes,
@@ -199,14 +204,24 @@ impl RuntimeBundleAssetContext {
 }
 
 impl RuntimeBundleAssetResourceId {
-    /// Validates an engine-owned id in the Asset declaration family.
-    pub fn try_new(value: impl Into<String>) -> Result<Self, RuntimeBundleAssetValueError> {
-        let id = PublicId::try_new_engine_owned(value.into())
-            .map_err(|_| RuntimeBundleAssetValueError::InvalidResourceId)?;
-        DeclarationIdentityFamily::Asset
-            .validate_public_id(&id)
+    /// Checks the Asset identity before copying borrowed text, reusing an owned
+    /// string when supplied.
+    pub fn try_new<'text>(
+        value: impl Into<Cow<'text, str>>,
+    ) -> Result<Self, RuntimeBundleAssetValueError> {
+        let value = value.into();
+        Self::validate_text(&value)?;
+        let id = PublicId::try_new_engine_owned(value.into_owned())
             .map_err(|_| RuntimeBundleAssetValueError::InvalidResourceId)?;
         Ok(Self(id))
+    }
+
+    fn validate_text(value: &str) -> Result<(), RuntimeBundleAssetValueError> {
+        if DeclarationIdentityFamily::Asset.accepts_public_id_text(value) {
+            Ok(())
+        } else {
+            Err(RuntimeBundleAssetValueError::InvalidResourceId)
+        }
     }
 
     #[must_use]
@@ -229,7 +244,25 @@ impl<'de> Deserialize<'de> for RuntimeBundleAssetResourceId {
     where
         D: Deserializer<'de>,
     {
-        Self::try_new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        struct ResourceIdVisitor;
+
+        impl serde::de::Visitor<'_> for ResourceIdVisitor {
+            type Value = RuntimeBundleAssetResourceId;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a canonical Asset resource identity")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                RuntimeBundleAssetResourceId::try_new(value).map_err(E::custom)
+            }
+
+            fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+                RuntimeBundleAssetResourceId::try_new(value).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_string(ResourceIdVisitor)
     }
 }
 
@@ -269,15 +302,23 @@ impl RuntimeBundleAssetFailure {
         reason: RuntimeBundleAssetFailureReason,
         content_digest: Option<RuntimeAssetContentDigest>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
-        if matches!(reason, RuntimeBundleAssetFailureReason::Missing) != content_digest.is_none() {
-            return Err(RuntimeBundleAssetValueError::InvalidFailureEvidence);
-        }
+        Self::validate_evidence(reason, content_digest)?;
         Ok(Self {
             context,
             id,
             reason,
             content_digest,
         })
+    }
+
+    fn validate_evidence(
+        reason: RuntimeBundleAssetFailureReason,
+        content_digest: Option<RuntimeAssetContentDigest>,
+    ) -> Result<(), RuntimeBundleAssetValueError> {
+        if matches!(reason, RuntimeBundleAssetFailureReason::Missing) != content_digest.is_none() {
+            return Err(RuntimeBundleAssetValueError::InvalidFailureEvidence);
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -320,7 +361,9 @@ impl RuntimeImageHandleValue {
         value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value.into(), "ImageHandle")?;
-        decode_binding(payload.value).map(Self)
+        ParsedAssetBinding::parse(payload.value)?
+            .materialize()
+            .map(Self)
     }
 }
 
@@ -343,7 +386,9 @@ impl RuntimeAudioHandleValue {
         value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value.into(), "AudioHandle")?;
-        decode_binding(payload.value).map(Self)
+        ParsedAssetBinding::parse(payload.value)?
+            .materialize()
+            .map(Self)
     }
 }
 
@@ -366,7 +411,9 @@ impl RuntimeAssetErrorValue {
         value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value.into(), "AssetError")?;
-        decode_failure(payload.value).map(Self)
+        ParsedAssetFailure::parse(payload.value)?
+            .materialize()
+            .map(Self)
     }
 }
 
@@ -389,7 +436,9 @@ impl RuntimeVoiceErrorValue {
         value: impl Into<RuntimeBorrowedValue<'a>>,
     ) -> Result<Self, RuntimeBundleAssetValueError> {
         let payload = exact_standard_asset_payload(value.into(), "VoiceError")?;
-        decode_failure(payload.value).map(Self)
+        ParsedAssetFailure::parse(payload.value)?
+            .materialize()
+            .map(Self)
     }
 }
 
@@ -402,10 +451,10 @@ pub(crate) fn standard_asset_opaque_payload_is_valid(
 ) -> bool {
     standard_asset_role_for_owner(owner).is_none_or(|role| match role {
         RuntimeBundleAssetOpaqueRole::ImageHandle | RuntimeBundleAssetOpaqueRole::AudioHandle => {
-            decode_binding(payload).is_ok()
+            ParsedAssetBinding::parse(payload).is_ok()
         }
         RuntimeBundleAssetOpaqueRole::AssetError | RuntimeBundleAssetOpaqueRole::VoiceError => {
-            decode_failure(payload).is_ok()
+            ParsedAssetFailure::parse(payload).is_ok()
         }
     })
 }
@@ -457,42 +506,6 @@ fn encode_binding(binding: &RuntimeBundleAssetBinding) -> RuntimeValue {
     ])
 }
 
-fn decode_binding(
-    value: View<'_>,
-) -> Result<RuntimeBundleAssetBinding, RuntimeBundleAssetValueError> {
-    let View::Tuple(fields) = value else {
-        return Err(invalid_payload("asset handle"));
-    };
-    let [
-        Some(version),
-        Some(generation),
-        Some(artifact),
-        Some(id),
-        Some(content_digest),
-    ] = [
-        fields.get(0),
-        fields.get(1),
-        fields.get(2),
-        fields.get(3),
-        fields.get(4),
-    ]
-    else {
-        return Err(invalid_payload("asset handle"));
-    };
-    if fields.len() != 5 || decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
-        return Err(invalid_payload("asset handle"));
-    }
-    let generation = GenerationId::new(decode_u64(generation)?);
-    let artifact = RuntimeBundleAssetArtifactDigest::try_from_bytes(decode_digest(artifact)?)?;
-    let id = RuntimeBundleAssetResourceId::try_new(decode_string(id)?.to_owned())?;
-    let content_digest = RuntimeAssetContentDigest::try_from_bytes(decode_digest(content_digest)?)?;
-    RuntimeBundleAssetBinding::try_new(
-        RuntimeBundleAssetContext::new(generation, artifact),
-        id,
-        content_digest,
-    )
-}
-
 fn encode_failure(failure: &RuntimeBundleAssetFailure) -> RuntimeValue {
     RuntimeValue::Tuple(vec![
         RuntimeValue::u8(RUNTIME_BUNDLE_ASSET_VALUE_VERSION),
@@ -506,44 +519,6 @@ fn encode_failure(failure: &RuntimeBundleAssetFailure) -> RuntimeValue {
                 RuntimeValue::option_some(runtime_sequence_dense_bytes(digest.0.to_vec()))
             }),
     ])
-}
-
-fn decode_failure(
-    value: View<'_>,
-) -> Result<RuntimeBundleAssetFailure, RuntimeBundleAssetValueError> {
-    let View::Tuple(fields) = value else {
-        return Err(invalid_payload("asset error"));
-    };
-    let [
-        Some(version),
-        Some(generation),
-        Some(artifact),
-        Some(id),
-        Some(reason),
-        Some(content_digest),
-    ] = [
-        fields.get(0),
-        fields.get(1),
-        fields.get(2),
-        fields.get(3),
-        fields.get(4),
-        fields.get(5),
-    ]
-    else {
-        return Err(invalid_payload("asset error"));
-    };
-    if fields.len() != 6 || decode_u8(version)? != RUNTIME_BUNDLE_ASSET_VALUE_VERSION {
-        return Err(invalid_payload("asset error"));
-    }
-    let context = RuntimeBundleAssetContext::new(
-        GenerationId::new(decode_u64(generation)?),
-        RuntimeBundleAssetArtifactDigest::try_from_bytes(decode_digest(artifact)?)?,
-    );
-    let id = RuntimeBundleAssetResourceId::try_new(decode_string(id)?.to_owned())?;
-    let reason = RuntimeBundleAssetFailureReason::from_encoded(decode_u8(reason)?)
-        .ok_or_else(|| invalid_payload("asset error"))?;
-    let content_digest = decode_option_digest(content_digest)?;
-    RuntimeBundleAssetFailure::try_new(context, id, reason, content_digest)
 }
 
 fn decode_option_digest(
@@ -662,6 +637,195 @@ mod tests {
                 .expect("content digest"),
         )
         .expect("bundle asset binding")
+    }
+
+    #[test]
+    fn asset_resource_identity_checks_borrowed_input_and_reuses_owned_storage() {
+        let text = "asset.bg.room".to_owned();
+        let address = text.as_ptr();
+        let id = RuntimeBundleAssetResourceId::try_new(text).unwrap();
+        assert!(std::ptr::eq(id.as_str().as_ptr(), address));
+        assert_eq!(
+            serde_json::from_str::<RuntimeBundleAssetResourceId>(r#""asset.bg.room""#).unwrap(),
+            id
+        );
+        assert_eq!(serde_json::to_string(&id).unwrap(), r#""asset.bg.room""#);
+        for text in [
+            "asset.",
+            "view.room",
+            "#asset.bg.room",
+            "asset.bad name",
+            "asset.bad\0name",
+        ] {
+            assert_eq!(
+                RuntimeBundleAssetResourceId::try_new(text),
+                Err(RuntimeBundleAssetValueError::InvalidResourceId)
+            );
+            let encoded = serde_json::to_string(text).unwrap();
+            assert!(serde_json::from_str::<RuntimeBundleAssetResourceId>(&encoded).is_err());
+        }
+    }
+
+    #[test]
+    fn asset_binding_admission_borrows_live_and_snapshot_identity_until_materialization() {
+        let binding = binding();
+        let payload = encode_binding(&binding);
+        let snapshot =
+            crate::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(&payload)
+                .unwrap();
+        for view in [payload.view(), snapshot.view()] {
+            let View::Tuple(fields) = view else {
+                unreachable!()
+            };
+            let source = decode_string(fields.get(3).unwrap()).unwrap();
+            let parsed = ParsedAssetBinding::parse(view).unwrap();
+            assert!(std::ptr::eq(source.as_ptr(), parsed.id().as_ptr()));
+            assert_eq!(parsed.materialize().unwrap(), binding);
+            for role in ["ImageHandle", "AudioHandle"] {
+                assert!(standard_asset_opaque_payload_is_valid(
+                    &standard_owner(role).unwrap(),
+                    view
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn asset_failure_admission_borrows_live_and_snapshot_identity_for_every_reason() {
+        for reason in [
+            RuntimeBundleAssetFailureReason::Missing,
+            RuntimeBundleAssetFailureReason::Decode,
+            RuntimeBundleAssetFailureReason::MetadataMismatch,
+        ] {
+            let binding = binding();
+            let digest = (reason != RuntimeBundleAssetFailureReason::Missing).then_some(
+                if reason == RuntimeBundleAssetFailureReason::MetadataMismatch {
+                    RuntimeAssetContentDigest::try_from_bytes([0; 32]).unwrap()
+                } else {
+                    binding.content_digest()
+                },
+            );
+            let failure = RuntimeBundleAssetFailure::try_new(
+                binding.context(),
+                binding.id().clone(),
+                reason,
+                digest,
+            )
+            .unwrap();
+            let payload = encode_failure(&failure);
+            let snapshot =
+                crate::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(
+                    &payload,
+                )
+                .unwrap();
+            for view in [payload.view(), snapshot.view()] {
+                let View::Tuple(fields) = view else {
+                    unreachable!()
+                };
+                let source = decode_string(fields.get(3).unwrap()).unwrap();
+                let parsed = ParsedAssetFailure::parse(view).unwrap();
+                assert!(std::ptr::eq(source.as_ptr(), parsed.id().as_ptr()));
+                assert_eq!(parsed.materialize().unwrap(), failure);
+                for role in ["AssetError", "VoiceError"] {
+                    assert!(standard_asset_opaque_payload_is_valid(
+                        &standard_owner(role).unwrap(),
+                        view
+                    ));
+                }
+            }
+        }
+    }
+
+    fn assert_asset_payload_rejected(payload: &RuntimeValue, roles: &[&str]) {
+        let snapshot =
+            crate::value::AwbcRuntimeValueSnapshot::from_unrestricted_standalone_value(payload)
+                .unwrap();
+        for view in [payload.view(), snapshot.view()] {
+            for role in roles {
+                assert!(
+                    !standard_asset_opaque_payload_is_valid(&standard_owner(role).unwrap(), view),
+                    "{role}: {payload:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn borrowed_asset_admission_rejects_noncanonical_shape_identity_and_evidence() {
+        let RuntimeValue::Tuple(binding_fields) = encode_binding(&binding()) else {
+            unreachable!()
+        };
+        let failure = RuntimeBundleAssetFailure::try_new(
+            context(),
+            binding().id().clone(),
+            RuntimeBundleAssetFailureReason::Missing,
+            None,
+        )
+        .unwrap();
+        let RuntimeValue::Tuple(failure_fields) = encode_failure(&failure) else {
+            unreachable!()
+        };
+        for (fields, roles) in [
+            (&binding_fields, ["ImageHandle", "AudioHandle"]),
+            (&failure_fields, ["AssetError", "VoiceError"]),
+        ] {
+            assert_asset_payload_rejected(&RuntimeValue::Unit, &roles);
+            assert_asset_payload_rejected(
+                &RuntimeValue::Tuple(fields[..fields.len() - 1].to_vec()),
+                &roles,
+            );
+            let mut extra = fields.clone();
+            extra.push(RuntimeValue::Unit);
+            assert_asset_payload_rejected(&RuntimeValue::Tuple(extra), &roles);
+            for (index, value) in [
+                (0, RuntimeValue::u8(2)),
+                (0, RuntimeValue::u64(1)),
+                (1, RuntimeValue::u32(7)),
+                (2, runtime_sequence_dense_bytes(vec![0; 32])),
+                (2, runtime_sequence_dense_bytes(vec![0x71; 31])),
+                (3, RuntimeValue::String("view.room".to_owned())),
+                (3, RuntimeValue::String("asset.".to_owned())),
+                (3, RuntimeValue::String("asset.bad name".to_owned())),
+                (3, RuntimeValue::u8(1)),
+            ] {
+                let mut malformed = fields.clone();
+                malformed[index] = value;
+                assert_asset_payload_rejected(&RuntimeValue::Tuple(malformed), &roles);
+            }
+        }
+        for value in [
+            runtime_sequence_dense_bytes(vec![0x71; 33]),
+            runtime_sequence_dense_bytes(vec![0x71; 31]),
+        ] {
+            let mut malformed = binding_fields.clone();
+            malformed[4] = value;
+            assert_asset_payload_rejected(
+                &RuntimeValue::Tuple(malformed),
+                &["ImageHandle", "AudioHandle"],
+            );
+        }
+        for (reason, digest) in [
+            (
+                RuntimeValue::u8(0),
+                RuntimeValue::option_some(runtime_sequence_dense_bytes(vec![0x71; 32])),
+            ),
+            (RuntimeValue::u8(1), RuntimeValue::option_none()),
+            (RuntimeValue::u8(2), RuntimeValue::option_none()),
+            (RuntimeValue::u8(3), RuntimeValue::option_none()),
+            (RuntimeValue::u64(0), RuntimeValue::option_none()),
+            (
+                RuntimeValue::u8(1),
+                RuntimeValue::option_some(runtime_sequence_dense_bytes(vec![0; 31])),
+            ),
+        ] {
+            let mut malformed = failure_fields.clone();
+            malformed[4] = reason;
+            malformed[5] = digest;
+            assert_asset_payload_rejected(
+                &RuntimeValue::Tuple(malformed),
+                &["AssetError", "VoiceError"],
+            );
+        }
     }
 
     #[test]

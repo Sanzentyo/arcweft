@@ -248,18 +248,22 @@ impl DeclarationIdentityFamily {
         }
     }
 
+    /// Checks the public ID grammar and family before retaining borrowed text.
+    #[must_use]
+    pub fn accepts_public_id_text(self, value: &str) -> bool {
+        PublicId::validate_text(value).is_ok()
+            && value
+                .strip_prefix(self.prefix())
+                .and_then(|tail| tail.strip_prefix('.'))
+                .is_some_and(|tail| !tail.is_empty())
+    }
+
     pub fn validate_public_id(self, id: &PublicId) -> Result<(), PublicIdFamilyError> {
-        let prefix = self.prefix();
-        if id
-            .as_str()
-            .strip_prefix(prefix)
-            .and_then(|tail| tail.strip_prefix('.'))
-            .is_some_and(|tail| !tail.is_empty())
-        {
+        if self.accepts_public_id_text(id.as_str()) {
             return Ok(());
         }
         Err(PublicIdFamilyError::WrongFamily {
-            expected: prefix,
+            expected: self.prefix(),
             id: id.clone(),
         })
     }
@@ -643,6 +647,57 @@ mod tests {
                 id: derived,
             }
         );
+    }
+
+    #[test]
+    fn declaration_family_borrowed_admission_matches_owned_identity_validation() {
+        let families = [
+            DeclarationIdentityFamily::Asset,
+            DeclarationIdentityFamily::Character,
+            DeclarationIdentityFamily::View,
+            DeclarationIdentityFamily::Action,
+            DeclarationIdentityFamily::Activity,
+            DeclarationIdentityFamily::Signal,
+            DeclarationIdentityFamily::Metric,
+            DeclarationIdentityFamily::Layer,
+            DeclarationIdentityFamily::Flow,
+            DeclarationIdentityFamily::Proof,
+            DeclarationIdentityFamily::Style,
+        ];
+        for family in families {
+            for candidate in families {
+                let text = format!("{}.std.名前", candidate.prefix());
+                assert_eq!(family.accepts_public_id_text(&text), family == candidate);
+                let id = PublicId::try_new_engine_owned(text).unwrap();
+                assert_eq!(
+                    family.accepts_public_id_text(id.as_str()),
+                    family.validate_public_id(&id).is_ok()
+                );
+            }
+            for text in [
+                String::new(),
+                family.prefix().to_owned(),
+                format!("{}.", family.prefix()),
+                format!("{}:member", family.prefix()),
+                format!("{}x.member", family.prefix()),
+                format!("#{}.member", family.prefix()),
+                format!("@{}.member", family.prefix()),
+                format!("{}.bad name", family.prefix()),
+                format!("{}.bad\nname", family.prefix()),
+                format!("{}.bad\0name", family.prefix()),
+                "std.member".to_owned(),
+                "__arcweft.member".to_owned(),
+            ] {
+                assert!(
+                    !family.accepts_public_id_text(&text),
+                    "{family:?}: {text:?}"
+                );
+                assert!(
+                    !PublicId::try_new_engine_owned(text)
+                        .is_ok_and(|id| family.validate_public_id(&id).is_ok())
+                );
+            }
+        }
     }
 
     #[test]
