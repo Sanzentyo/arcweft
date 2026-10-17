@@ -1,3 +1,5 @@
+#[path = "evaluated_effects/lifetime_scopes.rs"]
+mod lifetime_scopes;
 #[path = "support/slot_declarations.rs"]
 mod slot_declarations;
 
