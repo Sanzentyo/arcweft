@@ -204,6 +204,58 @@ pub struct RuntimeTaskPlanTable {
     pub(super) by_digest: std::collections::BTreeMap<TaskPlanSemanticDigest, RuntimeTaskPlanIndex>,
 }
 
+/// Borrowed proof that a task definition and its key belong to one completed
+/// original table. Equal keys in another program do not transfer ownership.
+///
+/// ```compile_fail
+/// fn encode<T: serde::Serialize>() {}
+/// encode::<arcweft_core::plan::RuntimeTaskPlanRef<'static>>();
+/// ```
+/// ```compile_fail
+/// fn decode<T: serde::de::DeserializeOwned>() {}
+/// decode::<arcweft_core::plan::RuntimeTaskPlanRef<'static>>();
+/// ```
+#[derive(Clone, Copy)]
+pub struct RuntimeTaskPlanRef<'plan> {
+    table: &'plan RuntimeTaskPlanTable,
+    row: &'plan SealedRuntimeTaskPlanRow,
+}
+
+impl<'plan> RuntimeTaskPlanRef<'plan> {
+    #[must_use]
+    pub const fn definition(self) -> &'plan RuntimeTaskPlan {
+        &self.row.plan
+    }
+
+    #[must_use]
+    pub const fn key(self) -> TaskPlanSemanticDigest {
+        self.row.digest
+    }
+
+    #[must_use]
+    pub fn belongs_to(self, program: &super::RuntimePlan) -> bool {
+        std::ptr::eq(self.table, program.task_plans())
+    }
+}
+
+impl std::fmt::Debug for RuntimeTaskPlanRef<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeTaskPlanRef")
+            .field("key", &self.row.digest)
+            .field("family", &self.row.plan.family)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for RuntimeTaskPlanRef<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.table, other.table) && std::ptr::eq(self.row, other.row)
+    }
+}
+
+impl Eq for RuntimeTaskPlanRef<'_> {}
+
 /// One immutable result shared by the original construction namespace and
 /// its completed image. Source references never carry a copied task table.
 #[derive(Debug, PartialEq)]
@@ -224,7 +276,7 @@ impl RuntimeTaskPlanTable {
     pub(crate) fn by_expected_key(
         &self,
         expected: &crate::task::ExpectedTaskPlanKey,
-    ) -> Option<(&RuntimeTaskPlan, TaskPlanSemanticDigest)> {
+    ) -> Option<RuntimeTaskPlanRef<'_>> {
         self.by_digest
             .get(expected.bytes())
             .and_then(|index| self.by_index(*index))
@@ -238,20 +290,17 @@ impl RuntimeTaskPlanTable {
         self.rows.is_empty()
     }
     #[must_use]
-    pub fn by_index(
-        &self,
-        index: RuntimeTaskPlanIndex,
-    ) -> Option<(&RuntimeTaskPlan, TaskPlanSemanticDigest)> {
+    pub fn by_index(&self, index: RuntimeTaskPlanIndex) -> Option<RuntimeTaskPlanRef<'_>> {
         self.rows
             .get(index.0 as usize)
-            .map(|row| (&row.plan, row.digest))
+            .map(|row| RuntimeTaskPlanRef { table: self, row })
     }
     #[must_use]
     pub fn by_digest(&self, digest: TaskPlanSemanticDigest) -> Option<&RuntimeTaskPlan> {
         self.by_digest
             .get(&digest)
             .and_then(|index| self.by_index(*index))
-            .map(|(plan, _)| plan)
+            .map(RuntimeTaskPlanRef::definition)
     }
 }
 

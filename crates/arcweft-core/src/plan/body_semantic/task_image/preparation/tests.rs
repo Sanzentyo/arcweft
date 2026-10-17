@@ -94,10 +94,12 @@ fn original_builder_seed_enters_the_same_image_and_consuming_seal() {
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap();
     assert_eq!(sealed.task_plans.len(), 1);
-    let (row, key) = sealed
+    let task_source = sealed
         .task_plans
         .by_index(crate::plan::RuntimeTaskPlanIndex(0))
         .unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert_eq!(row.family(), NeedProducerFamily::HostAdapterTask);
     assert_eq!(row.producer_function(), function);
     assert_eq!(
@@ -114,14 +116,18 @@ fn public_finish_owns_the_only_completed_table_and_executable_proof() {
     let coordinate = builder.push_task_plan(seed).unwrap();
     assert!(coordinate.sealed_plan().is_none());
     let plan = builder.finish().unwrap();
-    let (row, key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert_eq!(row.producer_function(), function);
     assert_eq!(plan.task_plans().len(), 1);
     assert!(std::ptr::eq(row, plan.task_plans().by_digest(key).unwrap()));
     let (mut same_source, seed) = source_builder();
     let other_coordinate = same_source.push_task_plan(seed).unwrap();
     let other = same_source.finish().unwrap();
-    let (other_row, other_key) = other_coordinate.sealed_plan().unwrap();
+    let task_source = other_coordinate.sealed_plan().unwrap();
+    let other_row = task_source.definition();
+    let other_key = task_source.key();
     assert_eq!(
         plan.executable_semantic_digest(),
         other.executable_semantic_digest()
@@ -131,7 +137,18 @@ fn public_finish_owns_the_only_completed_table_and_executable_proof() {
     assert!(!std::ptr::eq(row, other_row));
     assert!(plan.task_plan(&other_coordinate).is_none());
     assert!(other.task_plan(&coordinate).is_none());
-    let (resolved, resolved_key) = plan.task_plan(&coordinate).unwrap();
+    let original_source = plan.task_plan(&coordinate).unwrap();
+    let foreign_source = other.task_plan(&other_coordinate).unwrap();
+    assert!(original_source.belongs_to(&plan));
+    assert!(!original_source.belongs_to(&other));
+    assert!(foreign_source.belongs_to(&other));
+    assert!(!foreign_source.belongs_to(&plan));
+    assert_eq!(original_source.key(), foreign_source.key());
+    assert_ne!(original_source, foreign_source);
+    assert_eq!(coordinate.sealed_plan(), Some(original_source));
+    let task_source = plan.task_plan(&coordinate).unwrap();
+    let resolved = task_source.definition();
+    let resolved_key = task_source.key();
     assert!(std::ptr::eq(row, resolved));
     assert_eq!(resolved_key, key);
 }
@@ -169,11 +186,18 @@ fn source_owned_reservation_uses_the_actual_function_and_request() {
         .request_template
         .try_map_types(|semantic| plan.type_table().id_for_semantic(semantic).ok_or(()))
         .unwrap();
-    let (row, key) = plan.task_plan(&coordinate).unwrap();
+    let task_source = plan.task_plan(&coordinate).unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert_eq!(row.producer_function(), seed.producer_function.id());
     assert_eq!(row.request_template(), &expected_request);
     assert_eq!(row.family(), NeedProducerFamily::HostAdapterTask);
-    assert_eq!(coordinate.sealed_plan().map(|(_, key)| key), Some(key));
+    assert_eq!(
+        coordinate
+            .sealed_plan()
+            .map(crate::plan::RuntimeTaskPlanRef::key),
+        Some(key)
+    );
 }
 
 #[test]
@@ -211,14 +235,21 @@ fn function_root_seed_projects_q_inside_the_consuming_seal() {
         .unwrap();
     assert!(coordinate.sealed_plan().is_none());
     let plan = builder.finish().unwrap();
-    let (row, key) = plan.task_plan(&coordinate).unwrap();
+    let task_source = plan.task_plan(&coordinate).unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert_eq!(row.producer_function(), function);
     assert_eq!(
         row.request_template().source(),
         crate::plan::RuntimeTaskRequestSource::FunctionRoot
     );
     assert!(row.request_template().arguments().is_empty());
-    assert_eq!(coordinate.sealed_plan().map(|(_, key)| key), Some(key));
+    assert_eq!(
+        coordinate
+            .sealed_plan()
+            .map(crate::plan::RuntimeTaskPlanRef::key),
+        Some(key)
+    );
 }
 
 #[test]
@@ -302,13 +333,15 @@ fn source_construction_capabilities_share_one_registry_and_close_at_finish() {
     let coordinate = source.reserve().unwrap();
     alias.define(&coordinate, seed).unwrap();
     let plan = builder.finish().unwrap();
-    let (row, key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert!(std::ptr::eq(row, plan.task_plans().by_digest(key).unwrap()));
     assert!(matches!(
         alias.reserve(),
         Err(RuntimeTaskPlanSealError::ConstructionClosed)
     ));
-    assert_eq!(coordinate.sealed_plan().unwrap().1, key);
+    assert_eq!(coordinate.sealed_plan().unwrap().key(), key);
     assert_eq!(plan.task_plans().len(), 1);
 }
 
@@ -362,7 +395,9 @@ fn source_construction_retains_the_existing_thread_transfer_contract() {
     .join()
     .unwrap();
     let plan = builder.finish().unwrap();
-    let (row, key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert!(std::ptr::eq(row, plan.task_plans().by_digest(key).unwrap()));
 }
 
@@ -387,7 +422,9 @@ fn closed_source_mutation_does_not_poison_an_in_progress_semantic_seal() {
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap()
         .into_plan();
-    let (row, key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert!(std::ptr::eq(row, plan.task_plans().by_digest(key).unwrap()));
 }
 
@@ -735,15 +772,19 @@ fn consuming_seal_moves_original_definitions_into_the_only_completed_table() {
         function_address
     );
     assert_eq!(sealed.task_plans.len(), 1);
-    let (row, indexed) = sealed
+    let task_source = sealed
         .task_plans
         .by_index(crate::plan::RuntimeTaskPlanIndex(0))
         .unwrap();
+    let row = task_source.definition();
+    let indexed = task_source.key();
     assert_eq!(indexed, key);
     assert_eq!(row.producer_function, function);
     assert_eq!(row.family, NeedProducerFamily::HostAdapterTask);
     assert!(std::ptr::eq(row, sealed.task_plans.by_digest(key).unwrap()));
-    let (resolved, resolved_key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let resolved = task_source.definition();
+    let resolved_key = task_source.key();
     assert!(std::ptr::eq(row, resolved));
     assert_eq!(resolved_key, key);
     let row_address = std::ptr::from_ref(row);
@@ -754,7 +795,9 @@ fn consuming_seal_moves_original_definitions_into_the_only_completed_table() {
             .is_none()
     );
     drop(sealed);
-    let (retained, retained_key) = coordinate.sealed_plan().unwrap();
+    let task_source = coordinate.sealed_plan().unwrap();
+    let retained = task_source.definition();
+    let retained_key = task_source.key();
     assert_eq!(std::ptr::from_ref(retained), row_address);
     assert_eq!(retained_key, key);
 }
@@ -791,14 +834,18 @@ fn saved_key_assertions_resolve_only_through_the_actual_issued_table() {
     let sealed = candidate
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap();
-    let (row, key) = sealed
+    let task_source = sealed
         .task_plans
         .by_index(crate::plan::RuntimeTaskPlanIndex(coordinate.ordinal()))
         .unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     let encoded =
         serde_json::to_vec(&crate::task::ExpectedTaskPlanKey::new(*key.as_bytes())).unwrap();
     let expected = serde_json::from_slice(&encoded).unwrap();
-    let (resolved, issued) = sealed.task_plans.by_expected_key(&expected).unwrap();
+    let task_source = sealed.task_plans.by_expected_key(&expected).unwrap();
+    let resolved = task_source.definition();
+    let issued = task_source.key();
     assert!(std::ptr::eq(row, resolved));
     assert_eq!(issued, key);
     let mut changed = *key.as_bytes();
@@ -830,10 +877,11 @@ fn saved_producer_metadata_is_recovered_only_from_the_original_derivation_input(
         .unwrap()
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap();
-    let (_, key) = sealed
+    let key = sealed
         .task_plans
         .by_index(crate::plan::RuntimeTaskPlanIndex(coordinate.ordinal()))
-        .unwrap();
+        .unwrap()
+        .key();
     let empty_arguments = crate::value::RuntimeValue::Tuple(vec![]);
     let arguments = crate::entry::schema::canonical_runtime_value_view_digest(
         empty_arguments.view(),
@@ -898,10 +946,12 @@ fn consuming_seal_completes_an_original_function_root_request_without_a_host_pro
         .unwrap();
     let coordinate = candidate.coordinate_owner.resolve(0).unwrap();
     let sealed = candidate.seal(limits, None).unwrap();
-    let (row, key) = sealed
+    let task_source = sealed
         .task_plans
         .by_index(crate::plan::RuntimeTaskPlanIndex(coordinate.ordinal()))
         .unwrap();
+    let row = task_source.definition();
+    let key = task_source.key();
     assert_eq!(
         row.request_template().source(),
         crate::plan::RuntimeTaskRequestSource::FunctionRoot

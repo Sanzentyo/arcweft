@@ -150,7 +150,7 @@ pub use project_call::{
 pub use task_semantic::{
     RuntimeExecutableSemanticDigest, RuntimeLineTaskPlanBinding, RuntimeTaskPlan,
     RuntimeTaskPlanDigestBase, RuntimeTaskPlanFunctionRootSeed, RuntimeTaskPlanIndex,
-    RuntimeTaskPlanSealLimits, RuntimeTaskPlanSeed, RuntimeTaskPlanTable,
+    RuntimeTaskPlanRef, RuntimeTaskPlanSealLimits, RuntimeTaskPlanSeed, RuntimeTaskPlanTable,
     RuntimeTaskPlanValidationError, RuntimeTaskSemanticBinding, RuntimeTaskSemanticBindingKind,
     ViewTaskPlanAuthority, ViewTaskPlanDigestRequest, ViewTaskPlanValidationError,
 };
@@ -250,7 +250,7 @@ impl RuntimePlan {
     pub fn task_plan(
         &self,
         coordinate: &RuntimeTaskPlanBuildCoordinate,
-    ) -> Option<(&RuntimeTaskPlan, crate::task::TaskPlanSemanticDigest)> {
+    ) -> Option<RuntimeTaskPlanRef<'_>> {
         coordinate.resolve_in(&self.semantics)
     }
 

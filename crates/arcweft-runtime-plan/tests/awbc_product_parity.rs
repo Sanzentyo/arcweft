@@ -589,6 +589,57 @@ fn canonical_awbc_rejects_tampered_payload() {
 }
 
 #[test]
+fn native_selected_need_uses_the_completed_program_task_plan_key() {
+    let plan = plan_with_await_observer();
+    let expected = selected_producer_key(&plan);
+    let mut executor =
+        ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::RuntimePlanVm)
+            .expect("runtime-plan VM builds");
+    executor
+        .start_structured_entry(&entry_id())
+        .expect("runtime-plan entry starts");
+    let result = executor.step(RuntimeStepInput::default(), options());
+    assert_eq!(result.output.requests.tasks.len(), 1);
+    assert_eq!(
+        result.output.requests.tasks[0].spec().producer.plan(),
+        expected,
+        "the emitted Need must retain the original program's completed F/Q/C key"
+    );
+}
+
+#[test]
+fn decoded_awbc_selected_need_uses_the_completed_program_task_plan_key() {
+    let plan = plan_with_await_observer();
+    let expected = selected_producer_key(&plan);
+    let bytes = lower(&plan).encode_canonical().expect("canonical AWBC");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        AwbcDecodeBudget::default(),
+    )
+    .expect("canonical AWBC decodes");
+    let mut executor = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0))
+        .expect("decoded AWBC product builds");
+    let result = executor.step(RuntimeStepInput::default(), options());
+    assert_eq!(result.output.requests.tasks.len(), 1);
+    assert_eq!(
+        result.output.requests.tasks[0].spec().producer.plan(),
+        expected,
+        "decoding must preserve the original program's completed F/Q/C key"
+    );
+}
+
+fn selected_producer_key(plan: &RuntimePlan) -> arcweft_core::task::TaskPlanSemanticDigest {
+    let arcweft_core::plan::FlowOp::StartNeedProducer { target, .. } =
+        &plan.flows()[0].body().ops()[0]
+    else {
+        panic!("the fixture starts its actual selected producer")
+    };
+    plan.task_plan(target.task_plan())
+        .expect("the actual producer belongs to the completed program")
+        .key()
+}
+
+#[test]
 fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() {
     let plan = plan_with_await_observer();
     let program = lower(&plan);

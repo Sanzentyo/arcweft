@@ -56,10 +56,7 @@ impl RuntimeTaskPlanBuildCoordinate {
     pub(in crate::plan) fn resolve_in<'a>(
         &self,
         semantics: &'a Arc<crate::plan::task_semantic::RuntimeTaskProgramSemantics>,
-    ) -> Option<(
-        &'a crate::plan::RuntimeTaskPlan,
-        crate::task::TaskPlanSemanticDigest,
-    )> {
+    ) -> Option<crate::plan::RuntimeTaskPlanRef<'a>> {
         let original = self.issuer.sealed_tasks.get()?;
         if !Arc::ptr_eq(original, semantics) {
             return None;
@@ -72,12 +69,7 @@ impl RuntimeTaskPlanBuildCoordinate {
     /// Resolves only after this original namespace has completed every row.
     /// No assertion, ordinal from another builder, or partial seal issues a key.
     #[must_use]
-    pub fn sealed_plan(
-        &self,
-    ) -> Option<(
-        &crate::plan::RuntimeTaskPlan,
-        crate::task::TaskPlanSemanticDigest,
-    )> {
+    pub fn sealed_plan(&self) -> Option<crate::plan::RuntimeTaskPlanRef<'_>> {
         self.issuer
             .sealed_tasks
             .get()?

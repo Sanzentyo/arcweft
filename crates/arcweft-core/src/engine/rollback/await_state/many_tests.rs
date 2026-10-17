@@ -120,8 +120,8 @@ fn fanout_plan() -> (RuntimePlan, FlowRuntimeId) {
         ))
         .unwrap();
     let plan = builder.finish().unwrap();
-    let (base, _) = plan.task_plan(&base_coordinate).unwrap();
-    let (child, _) = plan.task_plan(&child_coordinate).unwrap();
+    let base = plan.task_plan(&base_coordinate).unwrap().definition();
+    let child = plan.task_plan(&child_coordinate).unwrap().definition();
     assert_eq!(
         plan.control_effect_contracts()
             .get(base.control_effect())

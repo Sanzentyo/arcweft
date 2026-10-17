@@ -301,10 +301,12 @@ impl<'a> Writer<'a> {
         for ordinal in 0..count {
             let index =
                 u32::try_from(ordinal).map_err(|_| RuntimeTaskSourceCodecError::Arithmetic)?;
-            let (row, key) = plan
+            let source = plan
                 .task_plans()
                 .by_index(RuntimeTaskPlanIndex(index))
                 .expect("a sealed task table has dense source rows");
+            let row = source.definition();
+            let key = source.key();
             row.family().validate_runtime_task_binding(row.binding())?;
             self.count(ordinal)?;
             let function = row.producer_function().get().get();

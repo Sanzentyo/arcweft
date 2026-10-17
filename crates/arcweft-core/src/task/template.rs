@@ -19,10 +19,11 @@ impl HostCallProducerDefinition<crate::plan::RuntimeTaskPlanBuildCoordinate> {
     pub(crate) fn sealed_definition(
         &self,
     ) -> Result<HostCallProducerDefinition, NeedProducerAdmissionError> {
-        let (_, plan) = self
+        let plan = self
             .plan
             .sealed_plan()
-            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?;
+            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?
+            .key();
         Ok(HostCallProducerDefinition {
             contract: self.contract,
             plan,
@@ -141,10 +142,11 @@ impl NeedProducerTemplate {
         request: HostTaskRequest,
         max_encoded_bytes: usize,
     ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        let (_, plan) = self
+        let plan = self
             .plan
             .sealed_plan()
-            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?;
+            .ok_or(NeedProducerAdmissionError::UnsealedTaskPlan)?
+            .key();
         let digest =
             crate::entry::schema::canonical_runtime_value_view_digest(arguments, max_encoded_bytes)
                 .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;

@@ -120,11 +120,12 @@ fn view_task_bindings_resolve_only_in_the_original_completed_core_plan() {
             program.task_plan_binding(binding.coordinate()).unwrap(),
             binding
         ));
-        let (row, _) = compiled
+        let row = compiled
             .runtime_plan()
             .plan
             .task_plan(binding.coordinate())
-            .unwrap();
+            .unwrap()
+            .definition();
         assert_eq!(
             row.family(),
             arcweft_core::task::NeedProducerFamily::ViewMatchSubscription
@@ -261,7 +262,7 @@ fn view_task_key_ignores_revision_only_replacement_and_tracks_exact_match_admiss
             .plan
             .task_plan(binding.coordinate())
             .unwrap()
-            .1
+            .key()
     };
     assert_ne!(
         original

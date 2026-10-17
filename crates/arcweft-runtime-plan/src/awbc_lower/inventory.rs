@@ -1927,7 +1927,7 @@ impl AwbcInventory {
         coordinate: &arcweft_core::plan::RuntimeTaskPlanBuildCoordinate,
     ) -> Option<arcweft_core::task::TaskPlanSemanticDigest> {
         match plan.task_plan(coordinate) {
-            Some((_, key)) => Some(key),
+            Some(source) => Some(source.key()),
             None => {
                 self.diagnostic(AwbcLowerDiagnostic::error(
                     "task_plan.original_source",

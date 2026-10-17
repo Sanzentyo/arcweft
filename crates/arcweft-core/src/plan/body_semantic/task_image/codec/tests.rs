@@ -65,7 +65,7 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
     );
     let decoded = decoded.unwrap();
     assert!(coordinate.sealed_plan().is_none());
-    let expected = original.task_plan(&original_coordinate).unwrap().1;
+    let expected = original.task_plan(&original_coordinate).unwrap().key();
     assert_eq!(
         decoded.expected_key(0).unwrap().bytes(),
         expected.as_bytes()
@@ -74,7 +74,7 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap()
         .into_plan();
-    assert_eq!(sealed.task_plan(&coordinate).unwrap().1, expected);
+    assert_eq!(sealed.task_plan(&coordinate).unwrap().key(), expected);
     assert!(sealed.task_plan(&original_coordinate).is_none());
     assert!(original.task_plan(&coordinate).is_none());
     assert_eq!(bytes(&sealed), encoded);
@@ -98,7 +98,7 @@ fn task_source_frame_has_one_canonical_version_one_wire_shape() {
         1, 0, 0, 0, // original control coordinate
         0, // Ordinary binding
     ]);
-    expected.extend_from_slice(original.task_plan(&coordinate).unwrap().1.as_bytes());
+    expected.extend_from_slice(original.task_plan(&coordinate).unwrap().key().as_bytes());
     assert_eq!(bytes(&original), expected);
 }
 
