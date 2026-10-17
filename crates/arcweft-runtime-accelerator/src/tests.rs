@@ -49,6 +49,88 @@ fn callable_target(value: &str) -> RuntimeCallTarget {
     )
 }
 
+fn inference_target(export: &str) -> RuntimeCallTarget {
+    use arcweft_core::value::{
+        RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
+        RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+    };
+    RuntimeCallTarget::External(RuntimeExternalCallable::new(
+        RuntimeCallableId::from_checked_digest([0x71; 32]),
+        RuntimeExternalCallableDeclaration::try_new(
+            RuntimeExternalCallableProvider::Standard(
+                RuntimeStandardCallableProvider::InferenceTensor,
+            ),
+            RuntimeExternalCallableExport::Function(export.split('.').map(str::to_owned).collect()),
+            0,
+        )
+        .unwrap(),
+    ))
+}
+
+#[test]
+fn inference_dispatch_requires_the_exact_registered_provider_export_and_overload() {
+    use arcweft_core::value::{
+        RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
+        RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+    };
+    let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Vm);
+    let context = RuntimeExternalCallContext::unbound();
+    let selected = inference_target("infer.add_f32");
+    let identity = selected.callable_identity().unwrap();
+    for target in [
+        callable_target("infer.add_f32"),
+        RuntimeCallTarget::callable(identity.clone()),
+        RuntimeCallTarget::External(RuntimeExternalCallable::new(
+            identity.clone(),
+            RuntimeExternalCallableDeclaration::try_new(
+                RuntimeExternalCallableProvider::Adapter("same-source-spelling".into()),
+                RuntimeExternalCallableExport::Function(["infer".into(), "add_f32".into()].into()),
+                0,
+            )
+            .unwrap(),
+        )),
+        RuntimeCallTarget::External(RuntimeExternalCallable::new(
+            identity.clone(),
+            RuntimeExternalCallableDeclaration::try_new(
+                RuntimeExternalCallableProvider::Standard(
+                    RuntimeStandardCallableProvider::InferenceTensor,
+                ),
+                RuntimeExternalCallableExport::Function(["infer".into(), "add_f32".into()].into()),
+                1,
+            )
+            .unwrap(),
+        )),
+        RuntimeCallTarget::External(RuntimeExternalCallable::new(
+            identity.clone(),
+            RuntimeExternalCallableDeclaration::try_new(
+                RuntimeExternalCallableProvider::Standard(
+                    RuntimeStandardCallableProvider::InferenceTensor,
+                ),
+                RuntimeExternalCallableExport::RustFunction(
+                    ["infer".into(), "add_f32".into()].into(),
+                ),
+                0,
+            )
+            .unwrap(),
+        )),
+    ] {
+        assert!(accelerator.call_external(&context, &target, &[]).is_none());
+    }
+    assert!(matches!(
+        accelerator.call_external(&context, &selected, &[]),
+        Some(Err(RuntimeEvalError::UnsupportedPure { .. }))
+    ));
+    let tensor = RuntimeValue::tensor_f32(DenseTensorF32::new(vec![2], vec![1.0, 2.0]).unwrap());
+    let result = accelerator
+        .call_external(&context, &selected, &[tensor.clone(), tensor])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        result,
+        RuntimeValue::tensor_f32(DenseTensorF32::new(vec![2], vec![2.0, 4.0]).unwrap())
+    );
+}
+
 struct AdmittedHelper {
     request: PureFunctionRequest,
 }
@@ -744,8 +826,8 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let dense = DenseTensorF32::new(vec![4, 2], vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0])
         .expect("dense tensor shape is valid");
     let bias = DenseTensorF32::new(vec![2], vec![0.0, 0.0]).expect("bias tensor shape is valid");
-    let conv_target = callable_target("conv2d.valid_f32");
-    assert!(matches!(&conv_target, RuntimeCallTarget::Callable(_)));
+    let conv_target = inference_target("conv2d.valid_f32");
+    assert!(matches!(&conv_target, RuntimeCallTarget::External(_)));
     let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Auto);
     let conv = accelerator
         .call_external(
@@ -763,7 +845,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let relu = accelerator
         .call_external(
             &RuntimeExternalCallContext::unbound(),
-            &callable_target("infer.relu_f32"),
+            &inference_target("infer.relu_f32"),
             &[conv],
         )
         .expect("relu call is handled")
@@ -771,7 +853,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let pooled = accelerator
         .call_external(
             &RuntimeExternalCallContext::unbound(),
-            &callable_target("infer.max_pool2d_f32"),
+            &inference_target("infer.max_pool2d_f32"),
             &[
                 relu,
                 RuntimeValue::usize(2),
@@ -785,7 +867,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let flattened = accelerator
         .call_external(
             &RuntimeExternalCallContext::unbound(),
-            &callable_target("infer.flatten_outer_f32"),
+            &inference_target("infer.flatten_outer_f32"),
             &[pooled],
         )
         .expect("flatten call is handled")
@@ -793,7 +875,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let logits = accelerator
         .call_external(
             &RuntimeExternalCallContext::unbound(),
-            &callable_target("infer.matmul_bias_add_f32"),
+            &inference_target("infer.matmul_bias_add_f32"),
             &[
                 flattened,
                 RuntimeValue::tensor_f32(dense),
@@ -805,7 +887,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let classified = accelerator
         .call_external(
             &RuntimeExternalCallContext::unbound(),
-            &callable_target("infer.argmax_last_dim_f32"),
+            &inference_target("infer.argmax_last_dim_f32"),
             &[logits],
         )
         .expect("argmax call is handled")
@@ -989,7 +1071,7 @@ fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
         },
         &empty_runtime_plan(),
     );
-    let target = callable_target("infer.matmul_bias_add_f32");
+    let target = inference_target("infer.matmul_bias_add_f32");
 
     let Some(Ok(first)) = RuntimeExternalCallBackend::call_external(
         &mut accelerator,

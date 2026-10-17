@@ -100,6 +100,10 @@ impl RuntimeExpr {
                         encoder.tag(1);
                         encoder.string(callable.as_str());
                     }
+                    RuntimeCallTarget::External(callable) => {
+                        encoder.tag(2);
+                        callable.encode_body_metadata(encoder);
+                    }
                 }
                 context.write_call_arguments(encoder, args)?;
             }

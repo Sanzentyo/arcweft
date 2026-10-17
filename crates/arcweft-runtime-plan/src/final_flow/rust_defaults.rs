@@ -1,7 +1,7 @@
 //! Executable wrapper emission from the exact accepted Rust callable proof.
 
 use super::*;
-use arcweft_core::{plan::RuntimeExprSeedKind, value::RuntimeCallTarget};
+use arcweft_core::plan::RuntimeExprSeedKind;
 
 pub(super) fn lower(
     facts: &RuntimePlanSemanticFacts,
@@ -18,6 +18,13 @@ pub(super) fn lower(
             }
             continue;
         }
+        let target = match program.target() {
+            Ok(target) => target,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error.to_string()));
+                continue;
+            }
+        };
         let site = match builder.push_function_site_seed(
             program.definition_identity(),
             arcweft_core::plan::RuntimeFunctionSemanticRole::Ordinary,
@@ -25,7 +32,7 @@ pub(super) fn lower(
             RuntimeExprSeed::new(
                 program.result_type(),
                 RuntimeExprSeedKind::Call {
-                    callee: RuntimeCallTarget::callable(program.target()),
+                    callee: target,
                     args: Box::new([]),
                 },
             ),

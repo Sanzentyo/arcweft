@@ -59,6 +59,16 @@ pub struct AdapterToolingDocFile {
 
 ## Callable namespaces and runtime receivers
 
+An admitted external call retains both its checked callable identity and its
+selected declaration linkage: registration provider, function/method/Rust-function
+export key, and overload. Method keys include the semantic receiver identity.
+The checked identity binds the full signature and accepted catalog generation;
+the linkage selects the implementation exported by that provider. Authored
+aliases and display labels do not select an implementation. Native plans, AWBC,
+and semantic body digests carry the same linkage. Inference dispatch accepts only
+the declared function exports of the standard inference provider at overload zero.
+An identically named function in another adapter does not select that backend.
+
 Each `functions` entry owns its complete qualified callable path and parameter
 signature. A namespace prefix is a lookup coordinate and contributes no runtime
 receiver operand. A `symbols` entry supplies an actual injected value; a method

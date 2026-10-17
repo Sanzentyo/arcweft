@@ -49,6 +49,10 @@ impl Wire for RuntimeCallTarget {
                 1_u8.write_wire(writer)?;
                 callable.write_wire(writer)
             }
+            Self::External(callable) => {
+                2_u8.write_wire(writer)?;
+                callable.write_wire(writer)
+            }
         }
     }
 
@@ -66,6 +70,7 @@ impl Wire for RuntimeCallTarget {
                     })
             }
             1 => crate::entry::RuntimeCallableId::read_wire(reader).map(Self::Callable),
+            2 => crate::value::RuntimeExternalCallable::read_wire(reader).map(Self::External),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "runtime call target",
                 tag,

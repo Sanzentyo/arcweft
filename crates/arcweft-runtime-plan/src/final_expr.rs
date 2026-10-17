@@ -2147,7 +2147,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(
                 registered,
             )) => Ok(RuntimeExprSeedKind::Call {
-                callee: RuntimeCallTarget::callable(registered.clone()),
+                callee: registered
+                    .runtime_target()
+                    .map_err(|error| error.to_string())?,
                 args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallDispatch::Value { callee } => {

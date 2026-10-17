@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use arcweft_core::{entry::RuntimeCallableId, pattern::RuntimeSemanticTypeId};
+use arcweft_core::{pattern::RuntimeSemanticTypeId, value::RuntimeCallTarget};
 use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_rust_abi::ArcweftRustCallableRole;
 
@@ -190,8 +190,10 @@ impl CheckedRustFieldDefaultProgram {
     pub const fn result_type(&self) -> RuntimeSemanticTypeId {
         self.registered.result
     }
-    pub fn target(&self) -> RuntimeCallableId {
-        RuntimeCallableId::from_checked_digest(self.checked.semantic_digest().into_bytes())
+    pub fn target(
+        &self,
+    ) -> Result<RuntimeCallTarget, crate::callable::RuntimeCallableProjectionError> {
+        self.checked.runtime_target()
     }
     pub const fn checked(&self) -> &CheckedCallableId {
         &self.checked

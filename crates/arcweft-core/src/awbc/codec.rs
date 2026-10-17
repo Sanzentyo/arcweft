@@ -2,6 +2,7 @@
 
 mod callable;
 mod code;
+mod external_callable;
 mod metadata;
 mod runtime;
 mod types;

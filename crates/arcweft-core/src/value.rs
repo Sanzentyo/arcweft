@@ -47,6 +47,11 @@ mod env;
 mod expression_literals;
 mod expression_locals;
 mod expression_semantic;
+mod external_callable;
+pub use external_callable::{
+    RuntimeExternalCallable, RuntimeExternalCallableDeclaration, RuntimeExternalCallableExport,
+    RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+};
 pub(crate) mod expression_tree;
 mod float_storage_serde;
 mod format_content;
@@ -719,6 +724,7 @@ fn sequence_contains_function(sequence: &RuntimeSeq) -> bool {
 pub enum RuntimeCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Callable(RuntimeCallableId),
+    External(RuntimeExternalCallable),
 }
 
 impl RuntimeCallTarget {
@@ -740,7 +746,7 @@ impl RuntimeCallTarget {
     pub const fn as_intrinsic(&self) -> Option<RuntimeIntrinsic> {
         match self {
             Self::Intrinsic(intrinsic) => Some(*intrinsic),
-            Self::Callable(_) => None,
+            Self::Callable(_) | Self::External(_) => None,
         }
     }
 
@@ -748,6 +754,16 @@ impl RuntimeCallTarget {
         match self {
             Self::Intrinsic(intrinsic) => intrinsic.as_label(),
             Self::Callable(callable) => callable.as_str(),
+            Self::External(callable) => callable.identity().as_str(),
+        }
+    }
+
+    /// The selected semantic identity, including calls with declaration linkage.
+    pub const fn callable_identity(&self) -> Option<&RuntimeCallableId> {
+        match self {
+            Self::Callable(identity) => Some(identity),
+            Self::External(callable) => Some(callable.identity()),
+            Self::Intrinsic(_) => None,
         }
     }
 }

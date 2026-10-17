@@ -25,6 +25,8 @@ mod presentation;
 mod projection;
 mod publication;
 mod resolver;
+mod runtime_target;
+pub use runtime_target::RuntimeCallableProjectionError;
 mod schema;
 mod specialization;
 mod view_modifier;

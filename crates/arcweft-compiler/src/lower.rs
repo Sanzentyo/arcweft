@@ -9760,11 +9760,7 @@ fn runtime_call_target(
                 selected_family
             ),
         })?;
-    Ok(RuntimeResolvedStaticCallTarget::Registered(
-        arcweft_core::entry::RuntimeCallableId::from_checked_digest(
-            checked.semantic_digest().into_bytes(),
-        ),
-    ))
+    Ok(RuntimeResolvedStaticCallTarget::Registered(checked.clone()))
 }
 
 fn runtime_context_intrinsic(

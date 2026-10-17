@@ -43,7 +43,9 @@ flow main() {
             &context(base, facts),
             &mut RecordingCache::default(),
         )
-        .expect("static namespace selects its method without requiring a runtime namespace value");
+        .expect(
+            "static namespace selects its function without requiring a runtime namespace value",
+        );
     let runtime = compiled.runtime_plan();
     let report = AwbcLowerer::new(
         &runtime.plan,
@@ -89,7 +91,26 @@ flow main() {
     let [(target, args)] = native_observed.calls.as_slice() else {
         panic!("one registered invocation")
     };
-    assert!(matches!(target, RuntimeCallTarget::Callable(_)));
+    let RuntimeCallTarget::External(target) = target else {
+        panic!("selected external declaration")
+    };
+    assert!(
+        target
+            .identity()
+            .as_str()
+            .starts_with("arcweft.checked.v1.")
+    );
+    assert_eq!(
+        target.declaration().provider(),
+        &arcweft_core::value::RuntimeExternalCallableProvider::Adapter("selector-api".into())
+    );
+    assert_eq!(
+        target.declaration().export(),
+        &arcweft_core::value::RuntimeExternalCallableExport::Function(
+            ["api".into(), "combine".into()].into()
+        )
+    );
+    assert_eq!(target.declaration().overload(), 0);
     assert_eq!(
         args,
         &[
@@ -159,9 +180,20 @@ impl RuntimeExternalCallBackend for Combine {
         callee: &RuntimeCallTarget,
         args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-        let RuntimeCallTarget::Callable(_) = callee else {
+        let RuntimeCallTarget::External(target) = callee else {
             return None;
         };
+        let declaration = target.declaration();
+        if declaration.provider()
+            != &arcweft_core::value::RuntimeExternalCallableProvider::Adapter("selector-api".into())
+            || declaration.export()
+                != &arcweft_core::value::RuntimeExternalCallableExport::Function(
+                    ["api".into(), "combine".into()].into(),
+                )
+            || declaration.overload() != 0
+        {
+            return None;
+        }
         let [
             RuntimeValue::Int(first),
             RuntimeValue::Int(second),

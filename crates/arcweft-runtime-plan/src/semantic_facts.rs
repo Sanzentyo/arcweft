@@ -4335,7 +4335,7 @@ pub enum RuntimeResolvedStaticCallTarget {
     /// no ordinary runtime-call fallback and is consumed only by line-plan
     /// lowering.
     Line(RuntimeLineCallable),
-    Registered(RuntimeCallableId),
+    Registered(arcweft_lang_sema::callable::CheckedCallableId),
     Host(RuntimeResolvedHostCall),
 }
 

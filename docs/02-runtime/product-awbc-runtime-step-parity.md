@@ -129,6 +129,11 @@ same facade method as structured execution.
 
 - Intrinsics are resolved from their canonical AWBC public identity and routed
   through the existing runtime call evaluator.
+- External call identities retain the exact checked callable ID and the selected
+  registration declaration: provider, export kind/key and overload. Method keys
+  retain their semantic receiver identity. Canonical AWBC and Native body
+  metadata preserve this linkage; adapters select their declared exports from
+  it. An authored alias or display label is not an implementation selector.
 - Pure helpers expose a `RuntimeCompactPureHelper` descriptor containing stable
   helper ID, public name, arity, and scalar-evaluation capability.
 - A backend may return `Some(result)` from `call_compact_values` to select an

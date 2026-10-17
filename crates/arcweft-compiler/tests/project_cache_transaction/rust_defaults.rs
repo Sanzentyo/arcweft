@@ -179,10 +179,7 @@ impl RuntimeExternalCallBackend for RustDefaults {
         target: &RuntimeCallTarget,
         args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-        let RuntimeCallTarget::Callable(target) = target else {
-            return None;
-        };
-        let factory = self.factories.get(target)?;
+        let factory = self.factories.get(target.callable_identity()?)?;
         assert!(args.is_empty());
         assert_eq!(context.argument_types(), Some([].as_slice()));
         assert!(match (context.program_owner().unwrap(), &self.owner) {
@@ -311,7 +308,7 @@ fn default_contract(
             .find(|binding| binding.program() == request.program())
             .unwrap();
         let RuntimeExprKind::Call {
-            callee: RuntimeCallTarget::Callable(target),
+            callee: target,
             args,
         } = plan
             .function_sites()
@@ -325,7 +322,8 @@ fn default_contract(
             panic!("accepted Rust callable wrapper")
         };
         assert!(args.is_empty());
-        factories.insert(target.clone(), factory);
+        assert!(matches!(target, RuntimeCallTarget::External(_)));
+        factories.insert(target.callable_identity().unwrap().clone(), factory);
     }
     (semantic, factories)
 }
@@ -482,10 +480,7 @@ fn rust_defaults_for_primitive_foreign_and_generic_fields_share_checked_bindings
                 .iter()
                 .find(|binding| binding.program() == request.program())
                 .unwrap();
-            let RuntimeExprKind::Call {
-                callee: RuntimeCallTarget::Callable(target),
-                ..
-            } = plan
+            let RuntimeExprKind::Call { callee: target, .. } = plan
                 .function_sites()
                 .get(binding.site())
                 .unwrap()
@@ -497,7 +492,7 @@ fn rust_defaults_for_primitive_foreign_and_generic_fields_share_checked_bindings
                 panic!("declared Rust wrapper")
             };
             factories.insert(
-                target.clone(),
+                target.callable_identity().unwrap().clone(),
                 if name == "PrimitiveDefaults" && ordinal == 1 {
                     Factory::StringDefault
                 } else {

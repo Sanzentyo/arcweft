@@ -11,6 +11,9 @@ use super::{
 
 #[path = "external_data.rs"]
 mod external_data;
+use arcweft_core::value::{
+    RuntimeExternalCallableExport, RuntimeExternalCallableProvider, RuntimeStandardCallableProvider,
+};
 use external_data::call_data_external;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -28,18 +31,36 @@ enum RuntimeAcceleratorExternalCall {
 }
 
 impl RuntimeAcceleratorExternalCall {
-    fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "infer.matmul_f32" => Some(Self::InferMatmulF32),
-            "infer.add_f32" => Some(Self::InferAddF32),
-            "infer.bias_add_f32" => Some(Self::InferBiasAddF32),
-            "infer.matmul_bias_add_f32" => Some(Self::InferMatmulBiasAddF32),
-            "conv2d.valid_f32" => Some(Self::Conv2dValidF32),
-            "infer.relu_f32" => Some(Self::InferReluF32),
-            "infer.max_pool2d_f32" => Some(Self::InferMaxPool2dF32),
-            "infer.softmax_last_dim_f32" => Some(Self::InferSoftmaxLastDimF32),
-            "infer.argmax_last_dim_f32" => Some(Self::InferArgmaxLastDimF32),
-            "infer.flatten_outer_f32" => Some(Self::InferFlattenOuterF32),
+    fn from_target(target: &RuntimeCallTarget) -> Option<Self> {
+        let RuntimeCallTarget::External(callable) = target else {
+            return None;
+        };
+        let declaration = callable.declaration();
+        if declaration.provider()
+            != &RuntimeExternalCallableProvider::Standard(
+                RuntimeStandardCallableProvider::InferenceTensor,
+            )
+            || declaration.overload() != 0
+        {
+            return None;
+        }
+        let RuntimeExternalCallableExport::Function(path) = declaration.export() else {
+            return None;
+        };
+        let [namespace, function] = path.as_ref() else {
+            return None;
+        };
+        match (namespace.as_str(), function.as_str()) {
+            ("infer", "matmul_f32") => Some(Self::InferMatmulF32),
+            ("infer", "add_f32") => Some(Self::InferAddF32),
+            ("infer", "bias_add_f32") => Some(Self::InferBiasAddF32),
+            ("infer", "matmul_bias_add_f32") => Some(Self::InferMatmulBiasAddF32),
+            ("conv2d", "valid_f32") => Some(Self::Conv2dValidF32),
+            ("infer", "relu_f32") => Some(Self::InferReluF32),
+            ("infer", "max_pool2d_f32") => Some(Self::InferMaxPool2dF32),
+            ("infer", "softmax_last_dim_f32") => Some(Self::InferSoftmaxLastDimF32),
+            ("infer", "argmax_last_dim_f32") => Some(Self::InferArgmaxLastDimF32),
+            ("infer", "flatten_outer_f32") => Some(Self::InferFlattenOuterF32),
             _ => None,
         }
     }
@@ -117,7 +138,7 @@ impl RuntimeExternalCallBackend for RuntimePureAccelerator {
         if let Some(result) = call_data_external(self, context, callee.as_label(), args) {
             return Some(result);
         }
-        let call = RuntimeAcceleratorExternalCall::from_label(callee.as_label())?;
+        let call = RuntimeAcceleratorExternalCall::from_target(callee)?;
         Some(match (call, args) {
             (
                 RuntimeAcceleratorExternalCall::InferMatmulF32,
