@@ -15,6 +15,9 @@ use crate::runtime_id::{
 };
 use crate::value::{RuntimeEvalError, RuntimeExpr, RuntimeFunctionApplyError};
 
+mod integer_range;
+pub(in crate::pure) use integer_range::RuntimeIntegerRange;
+
 /// An admitted source body or an explicitly authored synthetic helper recipe.
 /// Neither branch carries a copied expression or a reconstructed signature.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

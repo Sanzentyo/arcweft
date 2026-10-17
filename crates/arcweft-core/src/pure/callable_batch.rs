@@ -576,9 +576,9 @@ fn forwarded_expression(expression: &RuntimeExpr, depth: usize) -> Option<Forwar
 }
 
 impl RuntimeNumericMapProjection<'_> {
-    /// These output ABIs always fit Core's exact i64 Sum member. Wide
-    /// values retain full Map execution before their checked narrowing.
-    pub(crate) fn supports_total_sum(&self) -> bool {
+    /// These complete output domains fit Core's exact i64 Sum member.
+    /// Wider domains require a proof for the admitted input ranges.
+    fn output_always_fits_sum(&self) -> bool {
         use crate::plan::RuntimePureOutputType as O;
         matches!(
             self.function.output_type,

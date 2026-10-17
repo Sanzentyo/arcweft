@@ -175,11 +175,9 @@ impl Engine {
         let consuming = control.consuming_body().unwrap_or_default();
         let consuming_ops = consuming.iter().collect::<Vec<_>>();
         let sum = project_numeric_sum(&owner, &consuming_ops, control.result()).filter(|sum| {
-            projection.supports_total_sum()
-                && sum
-                    .aliases
-                    .iter()
-                    .all(|local| self.fiber.frame.env.get(*local).is_none())
+            sum.aliases
+                .iter()
+                .all(|local| self.fiber.frame.env.get(*local).is_none())
                 && match sum.target {
                     SumTarget::Bind(pattern) => binder(pattern)
                         .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),
@@ -187,6 +185,8 @@ impl Engine {
                 }
                 && self.numeric_elision_has_no_later_observer(&owner, &ops[1..], &sum.elided)
         });
+        let admission = projection.admit_sequence(items, sum.is_some())?;
+        let sum = sum.filter(|_| admission.is_sum());
         let consumed = if sum.is_some() {
             control.completion_operation_cost()
         } else {
@@ -195,7 +195,7 @@ impl Engine {
         if consumed > remaining_ops {
             return None;
         }
-        let batch = projection.batch_sequence(items, sum.is_some())?;
+        let batch = admission.materialize();
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let source = control.source();
         let result_pattern = result_pattern.clone();

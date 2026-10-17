@@ -146,6 +146,7 @@ flow map_control() -> String {
     if again != 1024i64 { return "wrong second sum" }
     return "done"
 }
+
 "#,
     );
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -278,4 +279,150 @@ flow main() -> String { return "unused" }
         arcweft_core::value::RuntimeValue::i64(8256)
     );
     assert_eq!(accelerator.stats().pure_calls, 128);
+}
+
+#[test]
+fn wide_source_map_sum_uses_complete_input_bounds_before_materialization() {
+    for (ty, bytes, maximum) in [
+        ("u64", 8, u128::from(u64::MAX)),
+        ("i128", 16, i128::MAX as u128),
+        ("u128", 16, u128::MAX),
+        ("usize", 8, u128::from(u64::MAX)),
+    ] {
+        for (label, middle, body, expected) in [
+            (
+                "fits",
+                i64::MAX as u128,
+                format!(
+                    "let marker: Unit = (); let _ = marker; let alias = value; if alias > 0{ty} {{ return alias }} else {{ return 0{ty} }}"
+                ),
+                Some(i64::MAX.wrapping_add(4)),
+            ),
+            (
+                "outside",
+                i64::MAX as u128 + 1,
+                format!(
+                    "let alias = value; if alias > 0{ty} {{ return alias }} else {{ return 0{ty} }}"
+                ),
+                None,
+            ),
+            (
+                "annihilated",
+                maximum,
+                format!("return value * 0{ty}"),
+                Some(0),
+            ),
+        ] {
+            let source = format!(
+                r#"
+entry cli @entry.run {{ goto @flow.main }}
+#[pure]
+fn keep(value: {ty}, unused: {ty}) -> {ty} {{ {body} }}
+flow main() -> String {{
+    let values: Vec<{ty}> = [1{ty}, {middle}{ty}, 3{ty}]
+    let mapped = values.map(|item| keep(item, 7{ty}))
+    let total = mapped.sum()
+    log.info(total)
+    return "done"
+}}
+"#
+            );
+            let path = temp_arcw(&format!("wide-map-sum-{ty}-{label}"), &source);
+            assert_wide_map_sum_completion(&path, bytes, expected);
+        }
+    }
+}
+
+fn assert_wide_map_sum_completion(path: &std::path::Path, bytes: u64, expected: Option<i64>) {
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(path)
+        .args([
+            "--entry",
+            "entry.run",
+            "--mode",
+            "drain",
+            "--steps",
+            "64",
+            "--max-ops",
+            "64",
+            "--pure-backend",
+            "jit",
+            "--pure-batch-min-len",
+            "1",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    for (counter, expected) in [
+        ("pure_calls", 3),
+        ("batch_calls", 1),
+        ("batch_items", 3),
+        ("jit_calls", 3),
+        ("arg_bytes_borrowed", 6 * bytes),
+    ] {
+        assert_eq!(
+            sum_step_pure_counter(&json, counter),
+            expected,
+            "{counter}: {json}"
+        );
+    }
+    for counter in [
+        "vm_calls",
+        "aot_calls",
+        "fallbacks",
+        "arg_vec_allocations",
+        "arg_bytes_copied",
+    ] {
+        assert_eq!(
+            sum_step_pure_counter(&json, counter),
+            0,
+            "{counter}: {json}"
+        );
+    }
+    for step in json["steps"].as_array().unwrap() {
+        assert!(step["stats"]["executed_ops"].as_u64().unwrap() <= 64);
+    }
+    if let Some(value) = expected {
+        assert_eq!(json["final_status"], "done Return(\"done\")", "{json}");
+        assert_eq!(
+            sum_step_pure_counter(&json, "result_bytes_copied"),
+            0,
+            "{json}"
+        );
+        let logs = json["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|step| step["observations"]["logs"].as_array().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(logs.len(), 1, "{json}");
+        assert_eq!(logs[0]["message"], value.to_string());
+    } else {
+        assert!(
+            json["final_status"]
+                .as_str()
+                .unwrap()
+                .starts_with("failed "),
+            "{json}"
+        );
+        assert!(
+            json["final_status"]
+                .as_str()
+                .unwrap()
+                .contains("9223372036854775808"),
+            "{json}"
+        );
+        assert_eq!(
+            sum_step_pure_counter(&json, "result_bytes_copied"),
+            3 * bytes,
+            "{json}"
+        );
+    }
 }

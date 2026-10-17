@@ -599,11 +599,9 @@ impl Engine {
             if let CommitSource::Array { results, .. } = &source {
                 elided.extend(results.iter().filter_map(binder));
             }
-            projection.supports_total_sum()
-                && sum
-                    .aliases
-                    .iter()
-                    .all(|local| self.fiber.frame.env.get(*local).is_none())
+            sum.aliases
+                .iter()
+                .all(|local| self.fiber.frame.env.get(*local).is_none())
                 && match sum.target {
                     SumTarget::Bind(pattern) => binder(pattern)
                         .is_some_and(|local| self.fiber.frame.env.get(local).is_none()),
@@ -615,6 +613,8 @@ impl Engine {
                     &elided,
                 )
         });
+        let admission = projection.admit(&items, sum.is_some())?;
+        let sum = sum.filter(|_| admission.is_sum());
         let continuation_ops = sum.as_ref().map_or(0, |sum| sum.skipped_ops);
         // The WhileLet owner schedules EnterScope, Bind, its three body ops,
         // ExitScope and WhileLetNext per row, plus the initial WhileLet. The
@@ -637,7 +637,7 @@ impl Engine {
         // Materialize the borrowed numeric packet only after its complete
         // original schedule fits this caller budget. Backend selection or
         // promotion still follows the actual representation check.
-        let batch = projection.batch(&items, sum.is_some())?;
+        let batch = admission.materialize();
         backend.prepare_total_numeric_batch(batch.function(), batch.rows())?;
         let commit = Commit {
             source,

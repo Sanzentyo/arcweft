@@ -134,6 +134,16 @@ An admitted fused kernel consumes one plan node but charges the original Map
 operation plus every owned continuation operation. If only mapping can batch,
 the same consuming suffix remains scheduled after the collection is bound.
 
+Numeric Map admission borrows the immutable source and every original whole
+formal before allocating physical argument storage. Its selected completion
+permits Sum only when the output domain fits i64 or conservative integer bounds
+prove that every result of the original admitted function fits. The proof reads
+that body's typed operations and uses the shared lexical/Unit/move bindings;
+it executes no callback. Uncertain native wrapping or narrowing retains the
+collection and its original consuming Sum. Unused formals still undergo complete
+ABI validation. The caller admits the original cost of the selected completion
+before materializing arguments or preparing/promoting a backend.
+
 ## Interpreter / compiled modes
 
 ```text
