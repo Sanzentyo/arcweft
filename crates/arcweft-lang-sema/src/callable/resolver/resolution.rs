@@ -4,16 +4,16 @@ use super::{
     AgentIntrinsicSignatureId, Arc, BuiltinCallableId, CallResolverRequest, CallableCandidateId,
     CallableDeclarationKey, CallableInstantiation, CallableLookupKey, CallableName, CallablePath,
     CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId, DomainMethodId,
-    EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver, HirCallArgument,
-    IntegerMethodId, LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId,
-    NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind, Ordering,
-    PreparedCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
-    PreparedFunctionValueCallee, PreparedFunctionValueOriginProducer, PreparedResolvedCallable,
-    PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
-    PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
-    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedFunctionValueSeed,
-    ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind,
-    TypeReceiverInstantiation, TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
+    EquivalentCallableSource, EvaluatedReceiver, HirCallArgument, IntegerMethodId,
+    LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId, NonCallableSource,
+    NonEmptyResolvedCandidates, OptionConstructorKind, Ordering, PreparedCallCallee,
+    PreparedFreeCallContext, PreparedFreeCallScope, PreparedFunctionValueCallee,
+    PreparedFunctionValueOriginProducer, PreparedResolvedCallable, PresentationCallableId,
+    PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
+    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver,
+    ResolvedCallTarget, ResolvedFunctionValueSeed, ResolvedNonCallableTarget,
+    ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
+    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
 };
 use crate::callable::{
     CallConstraintInvariant, ContentCallableIdentity, presentation_content_schema,
@@ -1046,23 +1046,6 @@ fn resolve_catalog_record(
     if !Arc::ptr_eq(checked_record, record) {
         return Err(ResolveCallError::InvalidResolvedCallable);
     }
-    let origin = match record.id() {
-        CallableCandidateId::Project(declaration) => SignatureOrigin::Project {
-            declaration: declaration.clone(),
-            binding: project_path.cloned(),
-        },
-        CallableCandidateId::Environment(id) => match id.owner() {
-            EnvironmentCallableOwner::Standard(owner) => SignatureOrigin::Standard {
-                owner: *owner,
-                id: id.clone(),
-            },
-            EnvironmentCallableOwner::Adapter(package) => SignatureOrigin::Adapter {
-                package: package.clone(),
-                id: id.clone(),
-            },
-        },
-        _ => return Err(ResolveCallError::InvalidResolvedCallable),
-    };
     let (_, _, world) = request.authority.parts();
     let reachable = match record.id() {
         CallableCandidateId::Project(id) => world
@@ -1086,10 +1069,9 @@ fn resolve_catalog_record(
     PreparedResolvedCallable::try_from_checked_record(
         checked_id.clone(),
         Arc::clone(record),
-        origin,
+        project_path.cloned(),
         instantiation,
         equivalent_sources.to_vec(),
-        Some(record.authority()),
         request.limits,
     )
 }

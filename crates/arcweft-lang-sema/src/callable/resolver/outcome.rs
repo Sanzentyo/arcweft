@@ -646,19 +646,38 @@ impl PreparedResolvedCallable {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Materializes the exact accepted record without accepting a second
+    /// provider or authority assertion from its consumer. A project lookup
+    /// path is diagnostic binding evidence; the declaration owns its origin.
     pub(crate) fn try_from_checked_record(
         checked: CheckedCallableId,
         record: Arc<CallableRecord>,
-        origin: SignatureOrigin,
+        project_binding: Option<ProjectCallablePath>,
         instantiation: CallableInstantiation,
         equivalent_sources: Vec<EquivalentCallableSource>,
-        authority: Option<CallableAuthorityRank>,
         limits: &CallableLimits,
     ) -> Result<Self, ResolveCallError> {
-        if !checked_matches_record(&checked, &record) || authority != Some(record.authority()) {
+        if !checked_matches_record(&checked, &record) {
             return Err(ResolveCallError::InvalidResolvedCallable);
         }
+        let origin = match record.id() {
+            CallableCandidateId::Project(declaration) => SignatureOrigin::Project {
+                declaration: declaration.clone(),
+                binding: project_binding,
+            },
+            CallableCandidateId::Environment(id) => match id.owner() {
+                super::EnvironmentCallableOwner::Standard(owner) => SignatureOrigin::Standard {
+                    owner: *owner,
+                    id: id.clone(),
+                },
+                super::EnvironmentCallableOwner::Adapter(package) => SignatureOrigin::Adapter {
+                    package: package.clone(),
+                    id: id.clone(),
+                },
+            },
+            _ => return Err(ResolveCallError::InvalidResolvedCallable),
+        };
+        let authority = Some(record.authority());
         let id = record.id().clone();
         let family = record.family();
         Self::try_new_state(

@@ -18,8 +18,47 @@ use std::sync::Mutex;
 
 #[test]
 fn static_selector_and_value_callee_keep_exact_source_order_in_native_and_awbc() {
-    let manifest = selector_manifest();
-    let (project, facts, base) = fixture_with_manifest(
+    assert_callable_execution(
+        r#"let value = api.combine(label = mark("label", "units"), second = factory()(mark("second", 2i64)), first = mark("first", 1i64))"#,
+        false,
+        &[
+            "label", "callee", "second", "body", "first", "combine", "12", "receiver", "x",
+        ],
+    );
+}
+
+#[test]
+fn external_callable_value_keeps_exact_source_order_in_native_and_awbc() {
+    assert_callable_execution(
+        r#"
+    let combine = api.combine
+    let value = combine(label = mark("label", "units"), second = factory()(mark("second", 2i64)), first = mark("first", 1i64))
+"#,
+        false,
+        &[
+            "label", "callee", "second", "body", "first", "combine", "12", "receiver", "x",
+        ],
+    );
+}
+
+#[test]
+fn external_callable_value_retains_groups_and_captured_arguments_in_native_and_awbc() {
+    assert_callable_execution(
+        r#"
+    let combine = api.combine
+    let captured = combine(mark("first", 1i64))
+    let value = captured(label = mark("label", "units"), second = factory()(mark("second", 2i64)))
+"#,
+        true,
+        &[
+            "first", "label", "callee", "second", "body", "combine", "12", "receiver", "x",
+        ],
+    );
+}
+
+fn assert_callable_execution(call_source: &str, staged: bool, expected_events: &[&str]) {
+    let manifest = selector_manifest(staged);
+    let source = [
         r#"
 entry cli @entry.main { goto @flow.main }
 fn mark<T>(label: String, value: T) -> T effects { log.write } {
@@ -28,15 +67,17 @@ fn mark<T>(label: String, value: T) -> T effects { log.write } {
 }
 flow main() {
     let factory = || { log.info("callee"); |value: i64| { log.info("body"); value } }
-    let value = api.combine(label = mark("label", "units"), second = factory()(mark("second", 2i64)), first = mark("first", 1i64))
+"#,
+        call_source,
+        r#"
     log.info(value)
     let text = mark("receiver", " x ").trim()
     log.info(text)
 }
 "#,
-        "static-selector",
-        &manifest,
-    );
+    ]
+    .concat();
+    let (project, facts, base) = fixture_with_manifest(&source, "static-selector", &manifest);
     let compiled = AttachedCompiler::new(&project)
         .compile(
             &project,
@@ -46,6 +87,19 @@ flow main() {
         .expect(
             "static namespace selects its function without requiring a runtime namespace value",
         );
+    let declared_targets = compiled
+        .analysis_lease()
+        .final_analysis()
+        .checked_callables()
+        .records()
+        .filter(|facts| {
+            matches!(facts.provider(), arcweft_lang_sema::callable::CallableProviderId::Adapter(package) if package.as_str() == "selector-api")
+        })
+        .map(|facts| facts.id().runtime_target().unwrap())
+        .collect::<Vec<_>>();
+    let [declared_target] = declared_targets.as_slice() else {
+        panic!("one accepted declaration from the fixture provider")
+    };
     let runtime = compiled.runtime_plan();
     let report = AwbcLowerer::new(
         &runtime.plan,
@@ -82,15 +136,11 @@ flow main() {
     let native_observed = native_observed.lock().unwrap();
     let awbc_observed = awbc_observed.lock().unwrap();
     assert_eq!(*native_observed, *awbc_observed);
-    assert_eq!(
-        native_observed.events,
-        [
-            "label", "callee", "second", "body", "first", "combine", "12", "receiver", "x"
-        ]
-    );
+    assert_eq!(native_observed.events, expected_events);
     let [(target, args)] = native_observed.calls.as_slice() else {
         panic!("one registered invocation")
     };
+    assert_eq!(target, declared_target);
     let RuntimeCallTarget::External(target) = target else {
         panic!("selected external declaration")
     };
@@ -121,37 +171,49 @@ flow main() {
     );
 }
 
-fn selector_manifest() -> AdapterManifest {
+fn selector_manifest(staged: bool) -> AdapterManifest {
     let manifest = AdapterManifest::new("selector-api", "Selector API");
-    let params = [
-        ("first", AdapterTypeKind::I64),
-        ("second", AdapterTypeKind::I64),
-        ("label", AdapterTypeKind::String),
-    ]
-    .into_iter()
-    .enumerate()
-    .map(|(index, (name, ty))| {
-        AdapterFunctionParam::try_new(
-            AdapterCallableParameterIndex::try_from_usize(index).unwrap(),
-            Some(AdapterCallableName::try_new(name).unwrap()),
-            ty,
-            AdapterParameterPassing::PositionalOrNamed,
-            AdapterParameterPresence::Required,
-        )
-        .unwrap()
-    })
-    .collect();
-    let signature = AdapterFunctionSignature::try_new(
+    let group_specs = if staged {
         vec![
+            vec![("first", AdapterTypeKind::I64)],
+            vec![
+                ("second", AdapterTypeKind::I64),
+                ("label", AdapterTypeKind::String),
+            ],
+        ]
+    } else {
+        vec![vec![
+            ("first", AdapterTypeKind::I64),
+            ("second", AdapterTypeKind::I64),
+            ("label", AdapterTypeKind::String),
+        ]]
+    };
+    let groups = group_specs
+        .into_iter()
+        .enumerate()
+        .map(|(group, params)| {
+            let params = params
+                .into_iter()
+                .enumerate()
+                .map(|(index, (name, ty))| {
+                    AdapterFunctionParam::try_new(
+                        AdapterCallableParameterIndex::try_from_usize(index).unwrap(),
+                        Some(AdapterCallableName::try_new(name).unwrap()),
+                        ty,
+                        AdapterParameterPassing::PositionalOrNamed,
+                        AdapterParameterPresence::Required,
+                    )
+                    .unwrap()
+                })
+                .collect();
             AdapterParameterGroup::try_new(
-                AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                AdapterCallableGroupIndex::try_from_usize(group).unwrap(),
                 params,
             )
-            .unwrap(),
-        ],
-        AdapterTypeKind::I64,
-    )
-    .unwrap();
+            .unwrap()
+        })
+        .collect();
+    let signature = AdapterFunctionSignature::try_new(groups, AdapterTypeKind::I64).unwrap();
     manifest.with_function_signature(
         AdapterCallablePath::try_new(
             ["api", "combine"].map(|name| AdapterCallableName::try_new(name).unwrap()),

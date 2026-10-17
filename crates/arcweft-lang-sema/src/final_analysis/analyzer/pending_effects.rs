@@ -53,13 +53,9 @@ impl Analyzer<'_, '_, '_> {
         let candidate = PreparedResolvedCallable::try_from_checked_record(
             pending.id().clone(),
             Arc::clone(&record),
-            crate::callable::SignatureOrigin::Project {
-                declaration: callable.declaration().clone(),
-                binding: None,
-            },
+            None,
             CallableInstantiation::None,
             Vec::new(),
-            Some(record.authority()),
             &self.catalogs.callable_limits,
         )
         .map_err(|_| {
