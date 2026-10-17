@@ -6405,7 +6405,7 @@ impl<'a> FinalFlowLowerer<'a> {
             .call(expression)
             .and_then(RuntimeResolvedCall::mutation)
             .map(crate::semantic_facts::RuntimeResolvedCallMutation::source);
-        let evaluated_call_target = if let Some(call) = self.call(expression) {
+        let (call_selector, evaluated_call_target) = if let Some(call) = self.call(expression) {
             let hir = self
                 .module
                 .resolve_expr(expression)
@@ -6427,37 +6427,36 @@ impl<'a> FinalFlowLowerer<'a> {
                             "cannot resolve runtime receiver for call {expression:?}: {error}"
                         ))
                     })?;
-                callee.and_then(|callee| {
+                let target = callee.and_then(|callee| {
                     if call.evaluates_callee(callee) {
-                        Some((callee, callee))
+                        Some(callee)
                     } else {
-                        receiver
-                            .filter(|receiver| {
-                                call.operands().iter().any(|operand| {
-                                    matches!(
-                                        (operand.origin(), operand.source()),
-                                        (
-                                            RuntimeResolvedCallOperandOrigin::Receiver,
-                                            RuntimeResolvedCallOperandSource::Expression(source)
-                                        ) if source == *receiver
-                                    )
-                                })
+                        receiver.filter(|receiver| {
+                            call.operands().iter().any(|operand| {
+                                matches!(
+                                    (operand.origin(), operand.source()),
+                                    (
+                                        RuntimeResolvedCallOperandOrigin::Receiver,
+                                        RuntimeResolvedCallOperandSource::Expression(source)
+                                    ) if source == *receiver
+                                )
                             })
-                            .map(|receiver| (callee, receiver))
+                        })
                     }
-                })
+                });
+                (callee, target)
             } else {
-                None
+                (None, None)
             }
         } else {
-            None
+            (None, None)
         };
         let children = self.expression_children(expression)?;
         let mut evaluated = Vec::with_capacity(children.len());
-        let selector = evaluated_call_target.map(|(selector, target)| {
-            if selector == target && !children.contains(&selector) {
+        if let Some(target) = evaluated_call_target {
+            if call_selector == Some(target) && !children.contains(&target) {
                 return Err(RuntimePlanLowerError::new(format!(
-                    "evaluated call selector {selector:?} is absent from its checked expression graph"
+                    "evaluated call selector {target:?} is absent from its checked expression graph"
                 )));
             }
             // A selected mutable receiver is an address. Its operand must
@@ -6465,14 +6464,12 @@ impl<'a> FinalFlowLowerer<'a> {
             if Some(target) != place_receiver {
                 evaluated.push(target);
             }
-            Ok(selector)
-        }).transpose()?;
-        evaluated.extend(
-            children
-                .iter()
-                .copied()
-                .filter(|child| Some(*child) != selector && Some(*child) != place_receiver),
-        );
+        }
+        evaluated.extend(children.iter().copied().filter(|child| {
+            Some(*child) != call_selector
+                && Some(*child) != evaluated_call_target
+                && Some(*child) != place_receiver
+        }));
         Ok(evaluated)
     }
 

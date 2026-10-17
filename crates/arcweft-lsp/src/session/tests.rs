@@ -1282,11 +1282,10 @@ flow @flow.main main {}\n";
         first.label,
         "infer.add_f32(lhs: TensorF32, rhs: TensorF32) -> TensorF32"
     );
-    assert!(matches!(
-        first.documentation.as_ref(),
-        Some(lsp_types::Documentation::MarkupContent(content))
-            if content.value.contains("Canonical owner: `InferApi.add_f32`.")
-    ));
+    assert!(
+        first.documentation.is_none(),
+        "the authored path is the canonical function owner"
+    );
     assert_eq!(
         first.parameters.as_ref().expect("parameters"),
         &[

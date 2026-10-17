@@ -6,6 +6,8 @@ mod rust_codec_policy;
 mod rust_defaults;
 #[path = "project_cache_transaction/rust_nominals.rs"]
 mod rust_nominals;
+#[path = "project_cache_transaction/static_selectors.rs"]
+mod static_selectors;
 
 use arcweft_adapter_context::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,

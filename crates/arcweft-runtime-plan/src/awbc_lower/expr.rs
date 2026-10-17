@@ -657,7 +657,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 } else {
                     self.lower(receiver)
                 };
-                let args = args.iter().map(|arg| self.lower(arg.value())).collect();
+                let args = self.lower_argument_registers(args);
                 let dst = self
                     .frame
                     .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
@@ -683,7 +683,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::PureCall { helper, args } => {
-                let args = args.iter().map(|arg| self.lower(arg.value())).collect();
+                let args = self.lower_argument_registers(args);
                 let dst = self
                     .frame
                     .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
@@ -759,13 +759,14 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         callee: &RuntimeCallTarget,
         args: &[arcweft_core::value::RuntimeCallArgument],
     ) -> AwbcRegisterId {
+        let args = self.lower_argument_registers(args);
         let argument_types = args
             .iter()
-            .map(|arg| admitted_plan_type(self.inventory, self.plan, arg.value().ty()))
-            .collect::<Vec<_>>();
-        let args = args
-            .iter()
-            .map(|arg| self.lower(arg.value()))
+            .map(|register| {
+                self.frame
+                    .register_type(*register)
+                    .expect("lowered argument register belongs to this typed frame")
+            })
             .collect::<Vec<_>>();
         let result_type = admitted_plan_type(self.inventory, self.plan, result_type);
         let dst = self.frame.temp(result_type);
@@ -806,6 +807,21 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
     ) -> AwbcRegisterId {
         let callee = self.lower(callee);
+        let args = self.lower_argument_registers(args);
+        let dst = self
+            .frame
+            .temp(admitted_plan_type(self.inventory, self.plan, result_type));
+        self.inventory
+            .push_instruction(AwbcInstruction::ApplyGroup { dst, callee, args });
+        dst
+    }
+
+    /// All call families evaluate and expand operands in source order, then
+    /// assemble registers in the original admitted ABI order.
+    fn lower_argument_registers(
+        &mut self,
+        args: &[arcweft_core::value::RuntimeCallArgument],
+    ) -> Vec<AwbcRegisterId> {
         let mut groups = Vec::with_capacity(args.len());
         for argument in args {
             let value = self.lower(argument.value());
@@ -875,13 +891,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             groups.push((argument.abi_position(), values));
         }
         groups.sort_by_key(|(position, _)| *position);
-        let args = groups.into_iter().flat_map(|(_, values)| values).collect();
-        let dst = self
-            .frame
-            .temp(admitted_plan_type(self.inventory, self.plan, result_type));
-        self.inventory
-            .push_instruction(AwbcInstruction::ApplyGroup { dst, callee, args });
-        dst
+        groups.into_iter().flat_map(|(_, values)| values).collect()
     }
 
     fn control_expr_captures(&self, expr: &RuntimeExpr) -> Vec<FrameCaptureSlot> {

@@ -57,6 +57,20 @@ pub struct AdapterToolingDocFile {
 
 `schema_version` is required and currently must be `1`.
 
+## Callable namespaces and runtime receivers
+
+Each `functions` entry owns its complete qualified callable path and parameter
+signature. A namespace prefix is a lookup coordinate and contributes no runtime
+receiver operand. A `symbols` entry supplies an actual injected value; a method
+uses the supplied value receiver's declared type.
+
+The standard inference adapter declares all ten `infer.*` and `conv2d.*` exports
+as qualified functions over the shared dense tensor types and scalar stride or
+shape parameters. Its function signatures are the sole callable inventory.
+Namespace prefixes require no opaque API values or nominal API declarations.
+These pure functions carry no task host-call permissions; `host_calls` describes
+actual adapter requests with their own execution contracts.
+
 ## Type Labels
 
 Type labels use Arcweft diagnostic spelling for primitive and common generic

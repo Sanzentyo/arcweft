@@ -2,12 +2,13 @@
 
 use crate::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
-    AdapterCallableParameterIndex, AdapterEffectCapability, AdapterEnvironmentOwnerId,
-    AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterId, AdapterManifest,
-    AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathSegment,
-    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterOpaqueTypeProducerId,
-    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry,
-    AdapterSymbol, AdapterSymbolPath, AdapterSymbolSegment, AdapterTypeKind,
+    AdapterCallableParameterIndex, AdapterCallablePath, AdapterEffectCapability,
+    AdapterEnvironmentOwnerId, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+    AdapterId, AdapterManifest, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
+    AdapterNominalPathSegment, AdapterNominalTypeRef, AdapterNominalVisibility,
+    AdapterOpaqueTypeProducerId, AdapterParameterGroup, AdapterParameterPassing,
+    AdapterParameterPresence, AdapterRegistry, AdapterSymbol, AdapterSymbolPath,
+    AdapterSymbolSegment, AdapterTypeKind,
 };
 
 /// Adapter id for the default Sans I/O environment.
@@ -110,22 +111,14 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
             arcweft_manifest_model::RuntimeFloatWidth::F32,
         ),
     };
-    let manifest = declare_nominals(
-        AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor"),
-        ["Conv2dApi", "InferApi"],
-        "arcweft.adapter.inference-tensor",
-    )
-    .with_symbol(adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")))
-    .with_symbol(adapter_symbol(["infer"], inference_nominal("InferApi")));
+    let manifest = AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor");
     let manifest = with_conv2d_callable(manifest, &tensor);
-    let manifest = with_inference_callables(manifest, &tensor);
-    with_inference_host_calls(manifest)
+    with_inference_callables(manifest, &tensor)
 }
 
 fn with_conv2d_callable(manifest: AdapterManifest, tensor: &AdapterTypeKind) -> AdapterManifest {
-    manifest.with_method_signature(
-        inference_nominal("Conv2dApi"),
-        callable_name("valid_f32"),
+    manifest.with_function_signature(
+        callable_path(["conv2d", "valid_f32"]),
         overload_zero(),
         signature(
             [
@@ -145,9 +138,8 @@ fn with_inference_callables(
     tensor: &AdapterTypeKind,
 ) -> AdapterManifest {
     manifest
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("matmul_f32"),
+        .with_function_signature(
+            callable_path(["infer", "matmul_f32"]),
             overload_zero(),
             signature(
                 [("lhs", tensor.clone()), ("rhs", tensor.clone())],
@@ -155,9 +147,8 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("add_f32"),
+        .with_function_signature(
+            callable_path(["infer", "add_f32"]),
             overload_zero(),
             signature(
                 [("lhs", tensor.clone()), ("rhs", tensor.clone())],
@@ -165,9 +156,8 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("bias_add_f32"),
+        .with_function_signature(
+            callable_path(["infer", "bias_add_f32"]),
             overload_zero(),
             signature(
                 [("tensor", tensor.clone()), ("bias", tensor.clone())],
@@ -175,9 +165,8 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("matmul_bias_add_f32"),
+        .with_function_signature(
+            callable_path(["infer", "matmul_bias_add_f32"]),
             overload_zero(),
             signature(
                 [
@@ -189,16 +178,14 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("relu_f32"),
+        .with_function_signature(
+            callable_path(["infer", "relu_f32"]),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("max_pool2d_f32"),
+        .with_function_signature(
+            callable_path(["infer", "max_pool2d_f32"]),
             overload_zero(),
             signature(
                 [
@@ -212,16 +199,14 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("softmax_last_dim_f32"),
+        .with_function_signature(
+            callable_path(["infer", "softmax_last_dim_f32"]),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("argmax_last_dim_f32"),
+        .with_function_signature(
+            callable_path(["infer", "argmax_last_dim_f32"]),
             overload_zero(),
             signature(
                 [("input", tensor.clone())],
@@ -231,27 +216,12 @@ fn with_inference_callables(
             ),
             [],
         )
-        .with_method_signature(
-            inference_nominal("InferApi"),
-            callable_name("flatten_outer_f32"),
+        .with_function_signature(
+            callable_path(["infer", "flatten_outer_f32"]),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
-}
-
-fn with_inference_host_calls(manifest: AdapterManifest) -> AdapterManifest {
-    manifest
-        .with_host_call(AdapterHostCall::new("conv2d.valid_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.matmul_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.add_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.bias_add_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.matmul_bias_add_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.relu_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.max_pool2d_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.softmax_last_dim_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.argmax_last_dim_f32", []))
-        .with_host_call(AdapterHostCall::new("infer.flatten_outer_f32", []))
 }
 
 /// Host system information manifest.
@@ -481,10 +451,6 @@ fn declare_nominals<const N: usize>(
     manifest
 }
 
-fn inference_nominal(name: &str) -> AdapterTypeKind {
-    environment_nominal(INFERENCE_TENSOR_ADAPTER_ID, name)
-}
-
 fn environment_nominal(adapter_id: &str, name: &str) -> AdapterTypeKind {
     environment_nominal_path(adapter_id, [name])
 }
@@ -558,6 +524,11 @@ fn callable_name(value: &str) -> AdapterCallableName {
     AdapterCallableName::try_new(value).expect("standard callable names are valid typed segments")
 }
 
+fn callable_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
+    AdapterCallablePath::try_new(segments.map(callable_name))
+        .expect("standard callable paths are non-empty typed segments")
+}
+
 fn adapter_symbol<const N: usize>(segments: [&str; N], ty: AdapterTypeKind) -> AdapterSymbol {
     AdapterSymbol::new(
         AdapterSymbolPath::try_new(segments.map(|segment| {
@@ -612,44 +583,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inference_tensor_manifest_binds_shared_dense_types_and_namespaced_methods() {
+    fn inference_tensor_manifest_binds_shared_dense_types_and_namespaced_functions() {
         let manifest = inference_tensor_manifest();
-        assert_eq!(
-            manifest.nominal_declarations().len(),
-            2,
-            "only API receivers are nominal; TensorF32 is the shared primitive"
-        );
+        assert!(manifest.nominal_declarations().is_empty());
+        assert!(manifest.symbols().is_empty());
+        assert!(manifest.methods().is_empty());
+        assert!(manifest.host_calls().is_empty());
         let tensor = AdapterTypeKind::DenseNumeric {
             ty: arcweft_manifest_model::RuntimeDenseNumericType::Tensor(
                 arcweft_manifest_model::RuntimeFloatWidth::F32,
             ),
         };
 
-        assert_eq!(
-            manifest.symbols(),
-            &[
-                adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")),
-                adapter_symbol(["infer"], inference_nominal("InferApi"))
-            ]
-        );
-        assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &inference_nominal("Conv2dApi")
-                && method.name() == "valid_f32"
-                && method.signature().return_type() == &tensor
+        assert!(manifest.functions().iter().any(|function| {
+            function.path() == &callable_path(["conv2d", "valid_f32"])
+                && function.signature().return_type() == &tensor
         }));
-        assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &inference_nominal("InferApi")
-                && method.name() == "argmax_last_dim_f32"
-                && method.signature().return_type()
+        assert!(manifest.functions().iter().any(|function| {
+            function.path() == &callable_path(["infer", "argmax_last_dim_f32"])
+                && function.signature().return_type()
                     == &AdapterTypeKind::Seq {
                         item: Box::new(AdapterTypeKind::USize),
                     }
         }));
         let fused = manifest
-            .methods()
+            .functions()
             .iter()
-            .find(|method| method.name() == "matmul_bias_add_f32")
-            .expect("fused inference method");
+            .find(|function| function.path() == &callable_path(["infer", "matmul_bias_add_f32"]))
+            .expect("fused inference function");
         assert_eq!(fused.signature().groups().len(), 1);
         let parameters = fused.signature().groups()[0].parameters();
         assert_eq!(parameters.len(), 3);
@@ -663,25 +624,34 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("lhs", &tensor), ("rhs", &tensor), ("bias", &tensor),]
         );
-        for call in [
-            "conv2d.valid_f32",
-            "infer.matmul_f32",
-            "infer.add_f32",
-            "infer.bias_add_f32",
-            "infer.matmul_bias_add_f32",
-            "infer.relu_f32",
-            "infer.max_pool2d_f32",
-            "infer.softmax_last_dim_f32",
-            "infer.argmax_last_dim_f32",
-            "infer.flatten_outer_f32",
-        ] {
-            assert!(
-                manifest
-                    .host_calls()
-                    .iter()
-                    .any(|host_call| host_call.id() == call)
-            );
-        }
+        let paths = [
+            ["conv2d", "valid_f32"],
+            ["infer", "matmul_f32"],
+            ["infer", "add_f32"],
+            ["infer", "bias_add_f32"],
+            ["infer", "matmul_bias_add_f32"],
+            ["infer", "relu_f32"],
+            ["infer", "max_pool2d_f32"],
+            ["infer", "softmax_last_dim_f32"],
+            ["infer", "argmax_last_dim_f32"],
+            ["infer", "flatten_outer_f32"],
+        ]
+        .map(callable_path);
+        assert_eq!(manifest.functions().len(), paths.len());
+        assert_eq!(
+            manifest
+                .functions()
+                .iter()
+                .map(|function| function.path())
+                .collect::<Vec<_>>(),
+            paths.iter().collect::<Vec<_>>()
+        );
+        assert!(
+            manifest
+                .functions()
+                .iter()
+                .all(|function| function.effects().is_empty())
+        );
     }
 
     #[test]

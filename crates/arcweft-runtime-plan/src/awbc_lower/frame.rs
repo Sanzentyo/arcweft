@@ -263,6 +263,10 @@ impl FrameBuilder {
         self.by_key.get(&FrameSlotKey::Local(local)).copied()
     }
 
+    pub(super) fn register_type(&self, register: AwbcRegisterId) -> Option<AwbcTypeId> {
+        self.slots.get(register.index()).map(|slot| slot.ty)
+    }
+
     pub fn capture_slots(&self) -> Vec<FrameCaptureSlot> {
         self.by_key
             .iter()
