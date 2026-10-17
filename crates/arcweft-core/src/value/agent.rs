@@ -1283,14 +1283,19 @@ pub enum RuntimeAgentCaptureTarget {
 pub struct RuntimeAgentPath(String);
 
 impl RuntimeAgentPath {
-    pub fn try_new(path: impl Into<String>) -> Result<Self, RuntimeAgentConstructionError> {
-        let path = path.into();
+    pub(crate) fn validate_source(path: &str) -> Result<(), RuntimeAgentConstructionError> {
         if path.trim().is_empty() {
             return Err(RuntimeAgentConstructionError::InvalidPath);
         }
         if path.chars().any(char::is_control) {
             return Err(RuntimeAgentConstructionError::InvalidPath);
         }
+        Ok(())
+    }
+
+    pub fn try_new(path: impl Into<String>) -> Result<Self, RuntimeAgentConstructionError> {
+        let path = path.into();
+        Self::validate_source(&path)?;
         Ok(Self(path))
     }
 
@@ -1333,14 +1338,18 @@ impl<T> TryFrom<Vec<T>> for AgentPredicateOperands<T> {
     type Error = AgentPredicateOperandsError;
 
     fn try_from(values: Vec<T>) -> Result<Self, Self::Error> {
-        if values.is_empty() {
-            return Err(AgentPredicateOperandsError { actual: 0 });
-        }
+        Self::validate_source_count(values.len())?;
         Ok(Self(values.into_boxed_slice()))
     }
 }
 
 impl<T> AgentPredicateOperands<T> {
+    pub(crate) fn validate_source_count(actual: usize) -> Result<(), AgentPredicateOperandsError> {
+        if actual == 0 {
+            return Err(AgentPredicateOperandsError { actual });
+        }
+        Ok(())
+    }
     #[must_use]
     pub fn as_slice(&self) -> &[T] {
         &self.0

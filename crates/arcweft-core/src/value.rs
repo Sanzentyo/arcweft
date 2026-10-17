@@ -135,6 +135,7 @@ pub use asset_handle::{
     RuntimeBundleAssetOpaqueRole, RuntimeBundleAssetResourceId, RuntimeBundleAssetValueError,
     RuntimeImageHandleValue, RuntimeVoiceErrorValue, runtime_bundle_asset_opaque_role,
 };
+pub(crate) use awbc_save::source_codec::{RuntimeLiteralSourceError, RuntimeLiteralSourceLimits};
 pub use awbc_save::{
     AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
 };

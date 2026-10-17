@@ -615,8 +615,14 @@ impl FlowRuntimeId {
         // The contract stores its public target selector separately from identity.
         // Generated controller labels are valid runtime labels even though
         // their reserved segments cannot be authored as source Flow names.
-        let public_label = RuntimePublicLabel::new(public_id);
-        Ok(Self { path, public_label })
+        Ok(Self::from_source_path(path, public_id.to_owned()))
+    }
+
+    pub(crate) fn from_source_path(path: RuntimeIdPath, public_id: String) -> Self {
+        Self {
+            path,
+            public_label: RuntimePublicLabel::new(public_id),
+        }
     }
 
     #[must_use]
@@ -687,6 +693,10 @@ impl fmt::Display for FlowRuntimeId {
 }
 
 impl RuntimeLineId {
+    pub(crate) fn from_source_path(path: RuntimeIdPath) -> Self {
+        Self { path }
+    }
+
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
         RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Line, value).map(|path| Self { path })
     }

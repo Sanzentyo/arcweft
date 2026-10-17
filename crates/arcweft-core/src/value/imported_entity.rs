@@ -23,7 +23,7 @@ pub struct RuntimeImportedProjectEntityReference {
 /// uses the same validated RuntimeLineId as the original source line.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum ImportedProjectTarget {
+pub(in crate::value) enum ImportedProjectTarget {
     Public,
     Flow(FlowRuntimeId),
     Line(RuntimeLineId),
@@ -59,6 +59,75 @@ pub enum RuntimeImportedProjectEntityError {
 }
 
 impl RuntimeImportedProjectEntityReference {
+    fn validate_source_header(
+        family: ProjectEntityReferenceFamily,
+        public_id: &PublicId,
+        target_generation: [u8; 32],
+        semantic_identity: [u8; 32],
+        value_type: [u8; 32],
+    ) -> Result<(), RuntimeImportedProjectEntityError> {
+        family.validate_public_id(public_id)?;
+        if [target_generation, semantic_identity, value_type].contains(&[0; 32]) {
+            return Err(RuntimeImportedProjectEntityError::MissingIdentity);
+        }
+        Ok(())
+    }
+
+    pub(in crate::value) fn from_source_parts(
+        family: ProjectEntityReferenceFamily,
+        public_id: PublicId,
+        target_generation: [u8; 32],
+        semantic_identity: [u8; 32],
+        value_type: [u8; 32],
+        target: ImportedProjectTarget,
+    ) -> Result<Self, RuntimeImportedProjectEntityError> {
+        Self::validate_source_header(
+            family,
+            &public_id,
+            target_generation,
+            semantic_identity,
+            value_type,
+        )?;
+        match (family, &target) {
+            (ProjectEntityReferenceFamily::Flow, ImportedProjectTarget::Flow(flow))
+                if flow.public_label_ref().as_str() == public_id.as_str() => {}
+            (ProjectEntityReferenceFamily::Flow, _) => {
+                return Err(RuntimeImportedProjectEntityError::FlowIdentity);
+            }
+            (_, ImportedProjectTarget::Flow(_)) => {
+                return Err(RuntimeImportedProjectEntityError::UnexpectedFlowIdentity);
+            }
+            (ProjectEntityReferenceFamily::DialogueLine, target) => {
+                let expected = crate::runtime_id::RuntimeIdPath::preflight_source_entity_body(
+                    crate::runtime_id::RuntimeIdFamily::Line,
+                    public_id.as_str(),
+                    crate::runtime_id::RuntimeIdFamily::Line.source_families(),
+                )
+                .map_err(RuntimeImportedProjectEntityError::LineIdentity)?;
+                if !matches!(target, ImportedProjectTarget::Line(line) if expected.matches_path(line.path()))
+                {
+                    return Err(RuntimeImportedProjectEntityError::TargetIdentity);
+                }
+            }
+            (_, ImportedProjectTarget::Line(_)) => {
+                return Err(RuntimeImportedProjectEntityError::TargetIdentity);
+            }
+            (_, ImportedProjectTarget::Public) => {}
+        }
+        Ok(Self {
+            family,
+            public_id,
+            target_generation,
+            semantic_identity,
+            value_type,
+            target,
+        })
+    }
+
+    pub(in crate::value) const fn source_target(&self) -> &ImportedProjectTarget {
+        &self.target
+    }
+
     pub fn try_new(
         family: ProjectEntityReferenceFamily,
         public_id: PublicId,
@@ -67,16 +136,15 @@ impl RuntimeImportedProjectEntityReference {
         value_type: [u8; 32],
         flow: Option<FlowRuntimeId>,
     ) -> Result<Self, RuntimeImportedProjectEntityError> {
-        family.validate_public_id(&public_id)?;
-        if [target_generation, semantic_identity, value_type].contains(&[0; 32]) {
-            return Err(RuntimeImportedProjectEntityError::MissingIdentity);
-        }
+        Self::validate_source_header(
+            family,
+            &public_id,
+            target_generation,
+            semantic_identity,
+            value_type,
+        )?;
         let target = match (family, flow) {
-            (ProjectEntityReferenceFamily::Flow, Some(flow))
-                if flow.public_label().as_str() == public_id.as_str() =>
-            {
-                ImportedProjectTarget::Flow(flow)
-            }
+            (ProjectEntityReferenceFamily::Flow, Some(flow)) => ImportedProjectTarget::Flow(flow),
             (ProjectEntityReferenceFamily::Flow, _) => {
                 return Err(RuntimeImportedProjectEntityError::FlowIdentity);
             }
@@ -87,14 +155,14 @@ impl RuntimeImportedProjectEntityReference {
             ),
             (_, None) => ImportedProjectTarget::Public,
         };
-        Ok(Self {
+        Self::from_source_parts(
             family,
             public_id,
             target_generation,
             semantic_identity,
             value_type,
             target,
-        })
+        )
     }
 
     pub const fn family(&self) -> ProjectEntityReferenceFamily {
@@ -129,22 +197,14 @@ impl RuntimeImportedProjectEntityReference {
 impl TryFrom<ImportedProjectEntityParts> for RuntimeImportedProjectEntityReference {
     type Error = RuntimeImportedProjectEntityError;
     fn try_from(parts: ImportedProjectEntityParts) -> Result<Self, Self::Error> {
-        let flow = match &parts.target {
-            ImportedProjectTarget::Flow(flow) => Some(flow.clone()),
-            _ => None,
-        };
-        let value = Self::try_new(
+        Self::from_source_parts(
             parts.family,
             parts.public_id,
             parts.target_generation,
             parts.semantic_identity,
             parts.value_type,
-            flow,
-        )?;
-        if value.target != parts.target {
-            return Err(RuntimeImportedProjectEntityError::TargetIdentity);
-        }
-        Ok(value)
+            parts.target,
+        )
     }
 }
 

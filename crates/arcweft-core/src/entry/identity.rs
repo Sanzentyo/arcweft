@@ -130,6 +130,10 @@ impl RuntimeCallableId {
 }
 
 impl RuntimeCommandConstructorId {
+    pub(crate) fn validate_source(value: &str) -> Result<(), RuntimeIdentityError> {
+        validate_identity_source("command constructor", value)
+    }
+
     pub fn try_new(value: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
         validate_identity("command constructor", value.into()).map(Self)
     }
@@ -141,6 +145,10 @@ impl RuntimeCommandConstructorId {
 }
 
 impl RuntimeCommandTargetId {
+    pub(crate) fn validate_source(value: &str) -> Result<(), RuntimeIdentityError> {
+        validate_identity_source("command target", value)
+    }
+
     pub fn try_new(value: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
         validate_identity("command target", value.into()).map(Self)
     }

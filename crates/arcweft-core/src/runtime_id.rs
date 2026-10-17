@@ -932,6 +932,16 @@ pub enum RuntimeIdFamily {
 #[serde(transparent)]
 pub struct RuntimeIdSegment(String);
 
+/// One borrowed segment admitted by the stored runtime-path owner. Retention
+/// is delayed until the enclosing source frame has passed its allocation bound.
+pub(crate) struct RuntimeIdSegmentSource<'a>(&'a str);
+
+impl RuntimeIdSegmentSource<'_> {
+    pub(crate) fn materialize(self) -> RuntimeIdSegment {
+        RuntimeIdSegment(self.0.to_owned())
+    }
+}
+
 /// Canonical runtime lookup path.
 ///
 /// This value stores only canonical path segments. It never includes source
@@ -939,6 +949,68 @@ pub struct RuntimeIdSegment(String);
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeIdPath {
     segments: Vec<RuntimeIdSegment>,
+}
+
+/// Borrowed original path after complete segment validation. Source codecs can
+/// count its retained slots and strings before materializing the exact path.
+/// This is path data, not a public label or an executable ownership proof.
+pub(crate) struct RuntimeIdPathSource<'a> {
+    source: &'a str,
+    segments: usize,
+}
+
+#[derive(Clone, Copy)]
+enum RuntimeIdPathSourceMode {
+    Canonical,
+    RuntimeContract,
+    SourcePayload,
+}
+
+impl<'a> RuntimeIdPathSource<'a> {
+    fn preflight(
+        family: RuntimeIdFamily,
+        source: &'a str,
+        mode: RuntimeIdPathSourceMode,
+    ) -> Result<Self, RuntimeIdError> {
+        if source.is_empty() {
+            return Err(RuntimeIdError::Empty { family });
+        }
+        let mut segments = 0;
+        let mut runtime_prefix = false;
+        for (index, segment) in source.split('.').enumerate() {
+            if matches!(mode, RuntimeIdPathSourceMode::SourcePayload) {
+                RuntimeIdSegment::validate_source_payload(family, segment)?;
+            } else if matches!(mode, RuntimeIdPathSourceMode::RuntimeContract)
+                && index == 0
+                && matches!(segment, "__agent_controller" | "__checked_flow")
+            {
+                runtime_prefix = true;
+            } else {
+                validate_segment(family, segment)?;
+            }
+            segments += 1;
+        }
+        if runtime_prefix && segments == 1 {
+            return Err(RuntimeIdError::EmptySegment { family });
+        }
+        Ok(Self { source, segments })
+    }
+
+    pub(crate) fn matches_path(&self, path: &RuntimeIdPath) -> bool {
+        self.source
+            .split('.')
+            .eq(path.segments.iter().map(RuntimeIdSegment::as_str))
+    }
+
+    pub(crate) fn materialize(self) -> RuntimeIdPath {
+        let mut segments = Vec::with_capacity(self.segments);
+        segments.extend(
+            self.source
+                .split('.')
+                .map(|segment| RuntimeIdSegment(segment.to_owned())),
+        );
+        RuntimeIdPath { segments }
+    }
 }
 
 /// Anchor for a source-side runtime ID reference before resolution.
@@ -1047,7 +1119,7 @@ impl RuntimeIdSegment {
         &self.0
     }
 
-    fn from_source_payload(family: RuntimeIdFamily, value: &str) -> Result<Self, RuntimeIdError> {
+    fn validate_source_payload(family: RuntimeIdFamily, value: &str) -> Result<(), RuntimeIdError> {
         if value.is_empty() {
             return Err(RuntimeIdError::EmptySegment { family });
         }
@@ -1057,7 +1129,7 @@ impl RuntimeIdSegment {
                 segment: value.to_owned(),
             });
         }
-        Ok(Self(value.to_owned()))
+        Ok(())
     }
 }
 
@@ -1066,14 +1138,8 @@ impl RuntimeIdPath {
         family: RuntimeIdFamily,
         value: &str,
     ) -> Result<Self, RuntimeIdError> {
-        if value.is_empty() {
-            return Err(RuntimeIdError::Empty { family });
-        }
-        value
-            .split('.')
-            .map(|segment| RuntimeIdSegment::new(family, segment))
-            .collect::<Result<Vec<_>, _>>()
-            .map(|segments| Self { segments })
+        RuntimeIdPathSource::preflight(family, value, RuntimeIdPathSourceMode::Canonical)
+            .map(RuntimeIdPathSource::materialize)
     }
 
     /// Decodes an already-verified runtime contract identity.
@@ -1084,21 +1150,14 @@ impl RuntimeIdPath {
         family: RuntimeIdFamily,
         value: &str,
     ) -> Result<Self, RuntimeIdError> {
-        let mut raw_segments = value.split('.');
-        let Some(first) = raw_segments.next() else {
-            return Err(RuntimeIdError::Empty { family });
-        };
-        if !matches!(first, "__agent_controller" | "__checked_flow") {
-            return Self::from_canonical_str(family, value);
-        }
-        let mut segments = vec![RuntimeIdSegment(first.to_owned())];
-        for segment in raw_segments {
-            segments.push(RuntimeIdSegment::new(family, segment)?);
-        }
-        if segments.len() == 1 {
-            return Err(RuntimeIdError::EmptySegment { family });
-        }
-        Ok(Self { segments })
+        Self::preflight_runtime_contract_source(family, value).map(RuntimeIdPathSource::materialize)
+    }
+
+    pub(crate) fn preflight_runtime_contract_source(
+        family: RuntimeIdFamily,
+        value: &str,
+    ) -> Result<RuntimeIdPathSource<'_>, RuntimeIdError> {
+        RuntimeIdPathSource::preflight(family, value, RuntimeIdPathSourceMode::RuntimeContract)
     }
 
     pub fn from_source_entity_body(
@@ -1106,6 +1165,15 @@ impl RuntimeIdPath {
         value: &str,
         accepted_families: &[&str],
     ) -> Result<Self, RuntimeIdError> {
+        Self::preflight_source_entity_body(expected, value, accepted_families)
+            .map(RuntimeIdPathSource::materialize)
+    }
+
+    pub(crate) fn preflight_source_entity_body<'a>(
+        expected: RuntimeIdFamily,
+        value: &'a str,
+        accepted_families: &[&str],
+    ) -> Result<RuntimeIdPathSource<'a>, RuntimeIdError> {
         let Some((found, suffix)) = value.split_once('.') else {
             return Err(RuntimeIdError::MissingSourceFamily {
                 expected,
@@ -1122,11 +1190,42 @@ impl RuntimeIdPath {
         if suffix.is_empty() {
             return Err(RuntimeIdError::Empty { family: expected });
         }
-        suffix
-            .split('.')
-            .map(|segment| RuntimeIdSegment::from_source_payload(expected, segment))
-            .collect::<Result<Vec<_>, _>>()
-            .map(|segments| Self { segments })
+        RuntimeIdPathSource::preflight(expected, suffix, RuntimeIdPathSourceMode::SourcePayload)
+    }
+
+    /// Stored paths retain their actual segments, including source-authored
+    /// segments whose text is a reserved source-family spelling. Only a Flow's
+    /// first segment may use an engine-generated owner prefix.
+    pub(crate) fn preflight_stored_source_segment<'a>(
+        family: RuntimeIdFamily,
+        index: usize,
+        count: usize,
+        value: &'a str,
+    ) -> Result<RuntimeIdSegmentSource<'a>, RuntimeIdError> {
+        if family == RuntimeIdFamily::Flow
+            && index == 0
+            && matches!(value, "__agent_controller" | "__checked_flow")
+        {
+            if count < 2 {
+                return Err(RuntimeIdError::EmptySegment { family });
+            }
+        } else {
+            RuntimeIdSegment::validate_source_payload(family, value)?;
+        }
+        Ok(RuntimeIdSegmentSource(value))
+    }
+
+    pub(crate) fn from_source_segment_storage(
+        family: RuntimeIdFamily,
+        segments: Vec<RuntimeIdSegment>,
+    ) -> Result<Self, RuntimeIdError> {
+        if segments.is_empty() {
+            return Err(RuntimeIdError::Empty { family });
+        }
+        for (index, segment) in segments.iter().enumerate() {
+            Self::preflight_stored_source_segment(family, index, segments.len(), segment.as_str())?;
+        }
+        Ok(Self { segments })
     }
 
     pub fn from_segments(
@@ -1175,6 +1274,15 @@ impl RuntimeIdPath {
     #[must_use]
     pub fn segments(&self) -> &[RuntimeIdSegment] {
         &self.segments
+    }
+
+    /// Length of the canonical text without allocating a joined path.
+    pub(crate) fn canonical_len(&self) -> Option<usize> {
+        self.segments
+            .iter()
+            .try_fold(self.segments.len().saturating_sub(1), |length, segment| {
+                length.checked_add(segment.as_str().len())
+            })
     }
 
     #[must_use]

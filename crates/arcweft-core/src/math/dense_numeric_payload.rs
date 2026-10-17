@@ -86,18 +86,26 @@ impl RuntimeDenseNumericPayload {
         dimensions: &[u64],
         element_count: usize,
     ) -> Result<(), RuntimeDenseNumericPayloadError> {
-        if !ty.accepts_rank(dimensions.len()) {
-            return Err(RuntimeDenseNumericPayloadError::Rank {
-                ty,
-                rank: dimensions.len(),
-            });
+        Self::validate_shape_values(ty, dimensions.iter().copied(), element_count)
+    }
+
+    /// The same shape rule over retained dimensions or a borrowed source frame.
+    /// Source admission need not first allocate a dimensions Vec to validate it.
+    pub(crate) fn validate_shape_values(
+        ty: RuntimeDenseNumericType,
+        dimensions: impl ExactSizeIterator<Item = u64> + Clone,
+        element_count: usize,
+    ) -> Result<(), RuntimeDenseNumericPayloadError> {
+        let rank = dimensions.len();
+        if !ty.accepts_rank(rank) {
+            return Err(RuntimeDenseNumericPayloadError::Rank { ty, rank });
         }
-        let expected = if dimensions.contains(&0) {
+        let expected = if dimensions.clone().any(|dimension| dimension == 0) {
             0
         } else {
             dimensions
-                .iter()
-                .try_fold(1_u64, |count, dimension| count.checked_mul(*dimension))
+                .clone()
+                .try_fold(1_u64, u64::checked_mul)
                 .ok_or(RuntimeDenseNumericPayloadError::ElementCountOverflow)?
         };
         let actual = u64::try_from(element_count)

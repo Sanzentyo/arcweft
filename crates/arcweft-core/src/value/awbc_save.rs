@@ -22,6 +22,7 @@ use thiserror::Error;
 
 mod materialization;
 use materialization::SnapshotMaterialization;
+pub(crate) mod source_codec;
 
 #[cfg(test)]
 pub(super) mod tests;

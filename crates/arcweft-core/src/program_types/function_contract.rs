@@ -384,6 +384,19 @@ impl TryFrom<EffectInstantiationWire> for RuntimeFunctionEffectInstantiation {
 }
 
 impl RuntimeFunctionEffectInstantiation {
+    /// Inert source fields. The selected original type context still admits
+    /// their scope and arity before this metadata may accompany a live value.
+    pub(crate) fn source_rows(&self) -> &[crate::effect_row::EffectSet] {
+        &self.effects
+    }
+
+    pub(crate) fn from_source_rows(
+        context: RuntimeSemanticTypeId,
+        effects: Box<[crate::effect_row::EffectSet]>,
+    ) -> Self {
+        Self { context, effects }
+    }
+
     /// Charges the retained declaration solution before matching or copying its
     /// rows. Metadata contributes work and depth, not logical payload nodes.
     pub(crate) fn validate_resource_limits(

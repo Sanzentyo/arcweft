@@ -133,12 +133,28 @@ impl ValueBudget {
     }
 
     pub(crate) fn string(&self, text: &str) -> Result<(), RuntimeSchemaError> {
-        if !self.limits.permits_string_bytes(text.len()) {
+        self.string_length(text.len())
+    }
+
+    fn string_length(&self, length: usize) -> Result<(), RuntimeSchemaError> {
+        if !self.limits.permits_string_bytes(length) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "string_bytes",
             });
         }
         Ok(())
+    }
+
+    fn runtime_path(
+        &self,
+        path: &crate::runtime_id::RuntimeIdPath,
+    ) -> Result<(), RuntimeSchemaError> {
+        let length = path
+            .canonical_len()
+            .ok_or(RuntimeSchemaError::BudgetExceeded {
+                budget: "string_bytes",
+            })?;
+        self.string_length(length)
     }
 
     pub(super) fn value(
@@ -160,15 +176,17 @@ impl ValueBudget {
             }
             RuntimeValueView::Scalar(RuntimeScalarView::EntityRef(reference)) => match reference {
                 RuntimeEntityReference::StructuralFlow(flow) => {
-                    self.string(&flow.canonical_label())?
+                    self.runtime_path(flow.path())?;
+                    self.string(flow.public_label_ref().as_str())?;
                 }
                 RuntimeEntityReference::ImportedProject(entity) => {
                     self.string(entity.public_id().as_str())?;
                     if let Some(flow) = entity.flow() {
-                        self.string(&flow.canonical_label())?;
+                        self.runtime_path(flow.path())?;
+                        self.string(flow.public_label_ref().as_str())?;
                     }
                     if let Some(line) = entity.line() {
-                        self.string(&line.canonical_label())?;
+                        self.runtime_path(line.path())?;
                     }
                 }
                 RuntimeEntityReference::Project { public_id, .. } => {
@@ -179,7 +197,7 @@ impl ValueBudget {
                     self.string(look.as_str())?;
                 }
                 RuntimeEntityReference::DialogueLine(line) => {
-                    self.string(&line.canonical_label())?
+                    self.runtime_path(line.path())?;
                 }
             },
             RuntimeValueView::DenseNumeric(value) => {
@@ -229,5 +247,48 @@ impl ValueBudget {
             | RuntimeValueView::Callable(_) => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod source_metadata_tests {
+    use super::*;
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    use crate::plan::FlowRuntimeId;
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeEntityReference, RuntimeValue};
+
+    #[test]
+    fn entity_resource_preflight_bounds_retained_flow_labels_in_live_and_inert_graphs() {
+        let limits = RuntimeSchemaLimits {
+            max_string_bytes: 4,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        for label in ["text", "texts"] {
+            let reference = RuntimeEntityReference::StructuralFlow(
+                FlowRuntimeId::from_runtime_contract("main", label).unwrap(),
+            );
+            let live = RuntimeValue::EntityRef(reference.clone());
+            let inert = AwbcRuntimeValueSnapshot::EntityRef(reference);
+            for (origin, view) in [
+                (ValueAdmissionOrigin::Live, live.view()),
+                (ValueAdmissionOrigin::InertSnapshot, inert.view()),
+            ] {
+                let mut resources = ValueResourceAdmission::snapshot(limits, origin);
+                let result = resources.validate_view(view, 0, None);
+                if label == "text" {
+                    result.unwrap();
+                } else {
+                    let expected = RuntimeSchemaError::BudgetExceeded {
+                        budget: "string_bytes",
+                    };
+                    assert_eq!(result, Err(expected.clone()));
+                    assert_eq!(resources.work().failure(), Some(expected.clone()));
+                    assert_eq!(
+                        resources.validate_view(RuntimeValue::Unit.view(), 0, None),
+                        Err(expected)
+                    );
+                }
+            }
+        }
     }
 }

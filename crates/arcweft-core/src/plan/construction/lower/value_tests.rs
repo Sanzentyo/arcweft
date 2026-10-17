@@ -67,6 +67,15 @@ fn inert_literal_sources_are_admitted_under_the_actual_building_type_domain_auth
 
 #[test]
 fn materialized_building_literals_reach_the_actual_function_and_common_executable_seal() {
+    building_literals_reach_the_common_executable_seal(false);
+}
+
+#[test]
+fn binary_building_literals_reach_the_actual_function_and_common_executable_seal() {
+    building_literals_reach_the_common_executable_seal(true);
+}
+
+fn building_literals_reach_the_common_executable_seal(binary: bool) {
     use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
     use crate::plan::value_admission::PlanValueAuthority;
     use crate::value::AwbcRuntimeValueSnapshot;
@@ -93,20 +102,35 @@ fn materialized_building_literals_reach_the_actual_function_and_common_executabl
     let ty = builder
         .resolve_seed_type("literal source", semantic)
         .unwrap();
-    let restored = PlanValueAuthority::Building {
+    let authority = PlanValueAuthority::Building {
         types: &builder.types,
         records: &builder.nominal_record_domains,
         variants: &builder.variant_domains,
-    }
-    .materialize_literal_source_value(
-        ty,
-        source,
-        &mut ValueResourceAdmission::snapshot(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-            ValueAdmissionOrigin::InertSnapshot,
-        ),
-    )
-    .unwrap();
+    };
+    let mut resources = ValueResourceAdmission::snapshot(
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+        ValueAdmissionOrigin::InertSnapshot,
+    );
+    let restored = if binary {
+        let limits = crate::value::RuntimeLiteralSourceLimits {
+            encoded_bytes: 1 << 20,
+            decoded_bytes: 1 << 20,
+            elements: 10_000,
+        };
+        let mut meter = crate::task::semantic::TaskSemanticMeter::new(1 << 24, 1 << 24);
+        let prepared = source
+            .prepare_literal_source_encoding(limits, &resources, &mut meter)
+            .unwrap();
+        let mut bytes = Vec::with_capacity(prepared.encoded_bytes());
+        prepared.append_to(&mut bytes).unwrap();
+        authority
+            .decode_literal_source_value(ty, &bytes, limits, &mut resources, &mut meter)
+            .unwrap()
+    } else {
+        authority
+            .materialize_literal_source_value(ty, source, &mut resources)
+            .unwrap()
+    };
     let mut expected = fixture();
     for (builder, value) in [(&mut builder, restored), (&mut expected, value)] {
         builder

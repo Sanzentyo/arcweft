@@ -8,9 +8,25 @@ use super::{
 };
 use crate::entry::schema::value_encoding::{self, ValueAdmissionOrigin, ValueResourceAdmission};
 use crate::runtime_id::RuntimePlanTypeId;
-use crate::value::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeValue};
+use crate::task::semantic::TaskSemanticMeter;
+use crate::value::{
+    AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeLiteralSourceError,
+    RuntimeLiteralSourceLimits, RuntimeValue,
+};
 
 impl crate::plan::RuntimePlanInventory {
+    pub(crate) fn decode_literal_source_value(
+        &self,
+        ty: RuntimePlanTypeId,
+        bytes: &[u8],
+        limits: RuntimeLiteralSourceLimits,
+        resources: &mut ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeValue, RuntimeLiteralSourceError> {
+        PlanValueAuthority::Inventory(self)
+            .decode_literal_source_value(ty, bytes, limits, resources, meter)
+    }
+
     pub(crate) fn materialize_literal_source_value(
         &self,
         ty: RuntimePlanTypeId,
@@ -30,6 +46,24 @@ impl crate::plan::RuntimePlanInventory {
 }
 
 impl PlanValueAuthority<'_> {
+    pub(in crate::plan) fn decode_literal_source_value(
+        self,
+        ty: RuntimePlanTypeId,
+        bytes: &[u8],
+        limits: RuntimeLiteralSourceLimits,
+        resources: &mut ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeValue, RuntimeLiteralSourceError> {
+        let source =
+            AwbcRuntimeValueSnapshot::preflight_literal_source(bytes, limits, resources, meter)?
+                .materialize(meter)?;
+        let result = self.materialize_literal_source_value(ty, source, resources);
+        if result.is_err() {
+            meter.reject_owner();
+        }
+        result.map_err(RuntimeLiteralSourceError::Value)
+    }
+
     /// Consumes the exact source which passed admission; the private capability
     /// never escapes this call or grants a finished executable lease.
     pub(in crate::plan) fn materialize_literal_source_value(

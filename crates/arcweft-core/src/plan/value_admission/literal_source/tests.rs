@@ -5,6 +5,8 @@ use crate::plan::{RuntimePlanInventory, RuntimeTaskPlanSealLimits};
 use crate::program_types::RuntimeProgramTypes;
 use crate::value::{AwbcRuntimeCallableSnapshot, RuntimeValue};
 
+mod codec;
+
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }
