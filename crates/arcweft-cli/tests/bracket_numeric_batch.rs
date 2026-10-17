@@ -86,13 +86,45 @@ flow main() -> String {
     assert_eq!(stats.arg_vec_allocations, 0);
 }
 
+#[test]
+fn a_source_equivalent_foreign_plan_owner_does_not_authorize_a_numeric_packet() {
+    let stats = execute_with_owner(
+        SOURCE,
+        RuntimeStepMode::Drain,
+        8,
+        BackendOwner::EquivalentClone,
+    );
+    assert_eq!(stats.pure_calls, 4);
+    assert_eq!(stats.batch_calls, 0);
+    assert_eq!(stats.batch_items, 0);
+}
+
+enum BackendOwner {
+    Invocation,
+    EquivalentClone,
+}
+
 fn execute(source: &str, mode: RuntimeStepMode, max_ops: usize) -> RuntimePureCallStats {
+    execute_with_owner(source, mode, max_ops, BackendOwner::Invocation)
+}
+
+fn execute_with_owner(
+    source: &str,
+    mode: RuntimeStepMode,
+    max_ops: usize,
+    owner: BackendOwner,
+) -> RuntimePureCallStats {
     let compiled = arcweft_compiler::source::compile_source(source).unwrap();
     let [flow] = compiled.plan.flows() else {
         panic!("one real source flow")
     };
-    let mut engine = Engine::for_flow(compiled.plan.clone(), &flow.id).unwrap();
-    let plan = std::sync::Arc::new(compiled.plan);
+    let flow = flow.id.clone();
+    let invocation = compiled.plan.seal_flow_invocation(flow, []).unwrap();
+    let plan = match owner {
+        BackendOwner::Invocation => std::sync::Arc::clone(invocation.plan()),
+        BackendOwner::EquivalentClone => std::sync::Arc::new(invocation.plan().as_ref().clone()),
+    };
+    let mut engine = Engine::for_flow_invocation(invocation).unwrap();
     let mut backend = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
