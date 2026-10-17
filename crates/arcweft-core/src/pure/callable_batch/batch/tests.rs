@@ -80,9 +80,9 @@ fn helper_plan(
 
 fn projection(
     plan: &Arc<RuntimePlan>,
-    inputs: Box<[RuntimeNumericMapInput]>,
-) -> RuntimeNumericMapProjection<'_> {
-    RuntimeNumericMapProjection {
+    inputs: Box<[RuntimeNumericInput]>,
+) -> RuntimeNumericProjection<'_> {
+    RuntimeNumericProjection {
         function: RuntimePureFunctionRef::resolve(plan, plan.pure_helpers()[0].id).unwrap(),
         inputs,
         forwarding_ops: 0,
@@ -99,7 +99,7 @@ fn shape<T>(rows: &Rows<T>) -> (bool, usize) {
     }
 }
 
-fn storage(batch: &RuntimeNumericMapBatch<'_>) -> (bool, usize) {
+fn storage(batch: &RuntimeNumericBatch<'_>) -> (bool, usize) {
     match &batch.inputs {
         Inputs::I8(rows) => shape(rows),
         Inputs::I16(rows) => shape(rows),
@@ -203,7 +203,7 @@ fn all_numeric_widths_keep_complete_uniform_and_dense_rows() {
             .materialize();
         assert_eq!(storage(&batch), (true, 0));
         let mut vm = VmRuntimePureCallBackend::default();
-        let RuntimeNumericMapBatchResult::Values(result) = batch.execute(&mut vm).unwrap() else {
+        let RuntimeNumericBatchResult::Values(result) = batch.execute(&mut vm).unwrap() else {
             panic!("nullary collect mode")
         };
         assert_eq!(result, vec![a.into_runtime_value(); 3], "{input:?}");
@@ -213,8 +213,8 @@ fn all_numeric_widths_keep_complete_uniform_and_dense_rows() {
         let projection = projection(
             &plan,
             Box::new([
-                RuntimeNumericMapInput::Item,
-                RuntimeNumericMapInput::Constant(b),
+                RuntimeNumericInput::Column(0),
+                RuntimeNumericInput::Constant(b),
             ]),
         );
         for (values, expected_storage) in [(vec![a, a, a], (true, 2)), (vec![a, b, a], (false, 6))]
@@ -229,8 +229,7 @@ fn all_numeric_widths_keep_complete_uniform_and_dense_rows() {
             assert_eq!(batch.rows(), 3);
             assert!(Arc::ptr_eq(batch.function().plan(), &plan));
             let mut vm = VmRuntimePureCallBackend::default();
-            let RuntimeNumericMapBatchResult::Values(result) = batch.execute(&mut vm).unwrap()
-            else {
+            let RuntimeNumericBatchResult::Values(result) = batch.execute(&mut vm).unwrap() else {
                 panic!("collect mode")
             };
             assert_eq!(result, values, "{input:?}");
@@ -251,7 +250,7 @@ fn all_numeric_widths_keep_complete_uniform_and_dense_rows() {
                 assert_eq!(batch.rows(), 3);
                 assert!(Arc::ptr_eq(batch.function().plan(), &plan));
                 let mut vm = VmRuntimePureCallBackend::default();
-                let RuntimeNumericMapBatchResult::Values(result) = batch.execute(&mut vm).unwrap()
+                let RuntimeNumericBatchResult::Values(result) = batch.execute(&mut vm).unwrap()
                 else {
                     panic!("sequence collect mode")
                 };
@@ -294,7 +293,7 @@ fn floating_rows_preserve_signed_zero_and_nan_payloads() {
         ),
     ] {
         let plan = helper_plan(input, output, ty, 1, None);
-        let projection = projection(&plan, Box::new([RuntimeNumericMapInput::Item]));
+        let projection = projection(&plan, Box::new([RuntimeNumericInput::Column(0)]));
         for (index, values) in cases.into_iter().enumerate() {
             let values = values
                 .into_iter()
@@ -307,8 +306,7 @@ fn floating_rows_preserve_signed_zero_and_nan_payloads() {
                 if index == 1 { (true, 1) } else { (false, 2) }
             );
             let mut vm = VmRuntimePureCallBackend::default();
-            let RuntimeNumericMapBatchResult::Values(result) = batch.execute(&mut vm).unwrap()
-            else {
+            let RuntimeNumericBatchResult::Values(result) = batch.execute(&mut vm).unwrap() else {
                 panic!("collect mode")
             };
             for (actual, expected) in result.iter().zip(&values) {
@@ -338,8 +336,8 @@ fn repeated_i64_reduction_retains_one_row_and_executes_the_full_count() {
     let projection = projection(
         &plan,
         Box::new([
-            RuntimeNumericMapInput::Item,
-            RuntimeNumericMapInput::Constant(RuntimePureScalar::I64(9)),
+            RuntimeNumericInput::Column(0),
+            RuntimeNumericInput::Constant(RuntimePureScalar::I64(9)),
         ]),
     );
     let values = vec![RuntimeValue::i64(i64::MAX); 4096];
@@ -347,7 +345,7 @@ fn repeated_i64_reduction_retains_one_row_and_executes_the_full_count() {
     let batch = projection.admit(&refs, true).unwrap().materialize();
     assert_eq!(storage(&batch), (true, 2));
     let mut vm = VmRuntimePureCallBackend::default();
-    let RuntimeNumericMapBatchResult::Sum(result) = batch.execute(&mut vm).unwrap() else {
+    let RuntimeNumericBatchResult::Sum(result) = batch.execute(&mut vm).unwrap() else {
         panic!("sum mode")
     };
     assert_eq!(result, -4096);
@@ -362,6 +360,23 @@ fn repeated_i64_reduction_retains_one_row_and_executes_the_full_count() {
 }
 
 #[test]
+fn admission_rejects_missing_and_out_of_range_columns_before_materialization() {
+    let plan = helper_plan(
+        I::I64,
+        O::I64,
+        RuntimePlanTypeProjection::Signed(S::I64),
+        1,
+        None,
+    );
+    let value = RuntimeValue::i64(1);
+    for column in [1, crate::pure::RuntimeI64Args::MAX, usize::MAX] {
+        let projection = projection(&plan, Box::new([RuntimeNumericInput::Column(column)]));
+        assert!(projection.admit(&[&value], false).is_none());
+        assert!(projection.admit(&[], false).is_none());
+    }
+}
+
+#[test]
 fn admission_rejects_late_wrong_items_and_unused_constants_before_backend_work() {
     let plan = helper_plan(
         I::I64,
@@ -373,21 +388,21 @@ fn admission_rejects_late_wrong_items_and_unused_constants_before_backend_work()
     let mut projection = projection(
         &plan,
         Box::new([
-            RuntimeNumericMapInput::Item,
-            RuntimeNumericMapInput::Constant(RuntimePureScalar::I64(9)),
+            RuntimeNumericInput::Column(0),
+            RuntimeNumericInput::Constant(RuntimePureScalar::I64(9)),
         ]),
     );
     let good = RuntimeValue::i64(1);
     let wrong = RuntimeValue::F64(1.0);
     assert!(projection.admit(&[&good, &good, &wrong], true).is_none());
-    projection.inputs[1] = RuntimeNumericMapInput::Constant(RuntimePureScalar::U64(9));
+    projection.inputs[1] = RuntimeNumericInput::Constant(RuntimePureScalar::U64(9));
     assert!(projection.admit(&[&good], false).is_none());
     assert!(projection.admit(&[], false).is_none());
-    projection.inputs = Box::new([RuntimeNumericMapInput::Item]);
+    projection.inputs = Box::new([RuntimeNumericInput::Column(0)]);
     assert!(projection.admit(&[&good], false).is_none());
     let floats = helper_plan(I::F64, O::F64, RuntimePlanTypeProjection::F64, 1, None);
     assert!(
-        self::projection(&floats, Box::new([RuntimeNumericMapInput::Item]))
+        self::projection(&floats, Box::new([RuntimeNumericInput::Column(0)]))
             .admit(&[&wrong], true)
             .is_none()
     );
@@ -404,7 +419,7 @@ fn unused_source_items_zero_formals_and_empty_batches_keep_their_complete_header
     );
     let constant = self::projection(
         &constant,
-        Box::new([RuntimeNumericMapInput::Constant(RuntimePureScalar::I64(9))]),
+        Box::new([RuntimeNumericInput::Constant(RuntimePureScalar::I64(9))]),
     );
     let source = RuntimeValue::String("unused source item".to_owned());
     let batch = constant
@@ -412,7 +427,7 @@ fn unused_source_items_zero_formals_and_empty_batches_keep_their_complete_header
         .unwrap()
         .materialize();
     let mut vm = VmRuntimePureCallBackend::default();
-    let RuntimeNumericMapBatchResult::Values(values) = batch.execute(&mut vm).unwrap() else {
+    let RuntimeNumericBatchResult::Values(values) = batch.execute(&mut vm).unwrap() else {
         panic!("collect mode")
     };
     assert_eq!(values, [RuntimeValue::i64(9), RuntimeValue::i64(9)]);
@@ -432,7 +447,7 @@ fn unused_source_items_zero_formals_and_empty_batches_keep_their_complete_header
         .materialize();
     assert_eq!(storage(&batch), (true, 0));
     let mut vm = VmRuntimePureCallBackend::default();
-    let RuntimeNumericMapBatchResult::Sum(result) = batch.execute(&mut vm).unwrap() else {
+    let RuntimeNumericBatchResult::Sum(result) = batch.execute(&mut vm).unwrap() else {
         panic!("sum mode")
     };
     assert_eq!(result, 21);
@@ -442,8 +457,8 @@ fn unused_source_items_zero_formals_and_empty_batches_keep_their_complete_header
         let batch = projection.admit(&[], fused).unwrap().materialize();
         let mut vm = VmRuntimePureCallBackend::default();
         match batch.execute(&mut vm).unwrap() {
-            RuntimeNumericMapBatchResult::Sum(value) => assert_eq!(value, 0),
-            RuntimeNumericMapBatchResult::Values(values) => assert!(values.is_empty()),
+            RuntimeNumericBatchResult::Sum(value) => assert_eq!(value, 0),
+            RuntimeNumericBatchResult::Values(values) => assert!(values.is_empty()),
         }
         assert_eq!(vm.stats(), crate::step::RuntimePureCallStats::default());
     }
@@ -494,7 +509,7 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
         ),
     ] {
         let plan = helper_plan(input, output, ty, 1, None);
-        let projection = projection(&plan, Box::new([RuntimeNumericMapInput::Item]));
+        let projection = projection(&plan, Box::new([RuntimeNumericInput::Column(0)]));
         for (value, expect_sum) in [(fits, true), (outside, false)] {
             let value = value.into_runtime_value();
             let references = [&value, &value, &value];
@@ -504,13 +519,13 @@ fn wide_sum_admission_keeps_all_rows_and_narrowing_failures() {
             let result = admission.materialize().execute(&mut vm).unwrap();
             assert_eq!(vm.stats().pure_calls, 3, "{input:?}");
             if expect_sum {
-                let RuntimeNumericMapBatchResult::Sum(result) = result else {
+                let RuntimeNumericBatchResult::Sum(result) = result else {
                     panic!("proved Sum")
                 };
                 assert_eq!(result, expected_sum.wrapping_mul(3));
                 assert_eq!(vm.stats().result_bytes_copied, 0);
             } else {
-                let RuntimeNumericMapBatchResult::Values(values) = result else {
+                let RuntimeNumericBatchResult::Values(values) = result else {
                     panic!("unproven collection")
                 };
                 assert_eq!(values, vec![value; 3]);

@@ -16,21 +16,23 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 mod batch;
-pub(crate) use batch::RuntimeNumericMapBatchResult;
+pub(crate) use batch::{RuntimeNumericBatch, RuntimeNumericBatchResult};
+mod project_calls;
+pub(crate) use project_calls::RuntimeNumericCallRow;
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum RuntimeNumericMapInput {
-    Item,
+pub(crate) enum RuntimeNumericInput {
+    Column(usize),
     Constant(RuntimePureScalar),
 }
 #[derive(Clone, Copy, Debug)]
 struct Input {
-    source: RuntimeNumericMapInput,
+    source: RuntimeNumericInput,
     ty: RuntimePlanTypeId,
 }
-pub(crate) struct RuntimeNumericMapProjection<'a> {
+pub(crate) struct RuntimeNumericProjection<'a> {
     pub function: RuntimePureFunctionRef<'a>,
-    pub inputs: Box<[RuntimeNumericMapInput]>,
+    pub inputs: Box<[RuntimeNumericInput]>,
     /// Control operations executed by the actual forwarding closure. Target
     /// scalar completion is reported separately by its compiled backend.
     pub forwarding_ops: usize,
@@ -51,7 +53,7 @@ enum ForwardedCall<'a> {
 pub(crate) fn project_numeric_map<'a>(
     plan: &'a Arc<RuntimePlan>,
     mapping: &RuntimeCallableValue,
-) -> Result<Option<RuntimeNumericMapProjection<'a>>, RuntimeEvalError> {
+) -> Result<Option<RuntimeNumericProjection<'a>>, RuntimeEvalError> {
     mapping.validate_for_owner(&RuntimeProgramOwner::Plan(Arc::clone(plan)))?;
     let Some(state) = plan.callable_states().get(mapping.state()) else {
         return Ok(None);
@@ -81,7 +83,7 @@ pub(crate) fn project_numeric_map<'a>(
     }
     let source = |source: RuntimeCallableInputSource| match source {
         RuntimeCallableInputSource::Argument { position: 0 } => Some(Input {
-            source: RuntimeNumericMapInput::Item,
+            source: RuntimeNumericInput::Column(0),
             ty: parameter.binding_ty,
         }),
         RuntimeCallableInputSource::Retained { position } => {
@@ -89,7 +91,7 @@ pub(crate) fn project_numeric_map<'a>(
             let value = mapping.retained().get(position as usize)?;
             value.ownership().permits_copy().then_some(())?;
             Some(Input {
-                source: RuntimeNumericMapInput::Constant(runtime_value_as_scalar(value)?),
+                source: RuntimeNumericInput::Constant(runtime_value_as_scalar(value)?),
                 ty,
             })
         }
@@ -288,7 +290,7 @@ fn selected_projection<'a>(
     site: crate::runtime_id::RuntimeFunctionSiteId,
     inputs: Vec<Input>,
     forwarding_ops: usize,
-) -> Result<Option<RuntimeNumericMapProjection<'a>>, RuntimeEvalError> {
+) -> Result<Option<RuntimeNumericProjection<'a>>, RuntimeEvalError> {
     let Some(body) = plan.function_sites().get(site) else {
         return Ok(None);
     };
@@ -303,7 +305,7 @@ fn selected_projection<'a>(
     {
         return Ok(None);
     }
-    Ok(Some(RuntimeNumericMapProjection {
+    Ok(Some(RuntimeNumericProjection {
         function,
         inputs: inputs.into_iter().map(|row| row.source).collect(),
         forwarding_ops,
@@ -326,7 +328,7 @@ fn expression_input_at_depth(
             (expression.ty() == input.ty).then_some(input.source)?
         }
         RuntimeExprKind::Value(value) if value.ownership().permits_copy() => {
-            RuntimeNumericMapInput::Constant(runtime_value_as_scalar(value)?)
+            RuntimeNumericInput::Constant(runtime_value_as_scalar(value)?)
         }
         // Numeric Copy values may be moved by the admitted call. The projection
         // neither clones affine locals nor changes the actual transfer contract.
@@ -380,7 +382,7 @@ fn forwarding_value(
         }
         RuntimeExprKind::Value(value) if value.ownership().permits_copy() => {
             ForwardingValue::Input(Input {
-                source: RuntimeNumericMapInput::Constant(runtime_value_as_scalar(value)?),
+                source: RuntimeNumericInput::Constant(runtime_value_as_scalar(value)?),
                 ty: expression.ty(),
             })
         }
@@ -575,7 +577,7 @@ fn forwarded_expression(expression: &RuntimeExpr, depth: usize) -> Option<Forwar
     }
 }
 
-impl RuntimeNumericMapProjection<'_> {
+impl RuntimeNumericProjection<'_> {
     /// These complete output domains fit Core's exact i64 Sum member.
     /// Wider domains require a proof for the admitted input ranges.
     fn output_always_fits_sum(&self) -> bool {

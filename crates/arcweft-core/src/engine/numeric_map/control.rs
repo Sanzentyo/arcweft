@@ -223,7 +223,7 @@ impl Engine {
                         candidate.consume_projected_ops(1);
                         candidate.run_child_next = true;
                         match result {
-                            RuntimeNumericMapBatchResult::Values(values) => {
+                            RuntimeNumericBatchResult::Values(values) => {
                                 candidate.bind_value(
                                     &result_pattern,
                                     crate::value::runtime_sequence_from_literal_values(values),
@@ -231,7 +231,7 @@ impl Engine {
                                 );
                                 candidate.push_ops(continuation);
                             }
-                            RuntimeNumericMapBatchResult::Sum(value) => {
+                            RuntimeNumericBatchResult::Sum(value) => {
                                 let value = RuntimeValue::i64(value);
                                 match sum
                                     .as_ref()

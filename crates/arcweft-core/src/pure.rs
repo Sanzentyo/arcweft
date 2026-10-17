@@ -1,6 +1,9 @@
 mod callable;
 mod callable_batch;
-pub(crate) use callable_batch::{RuntimeNumericMapBatchResult, project_numeric_map};
+pub(crate) use callable_batch::{
+    RuntimeNumericBatch, RuntimeNumericBatchResult, RuntimeNumericCallRow,
+    RuntimeNumericProjection, project_numeric_map,
+};
 mod control;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use arcweft_interaction_model::dialogue::{

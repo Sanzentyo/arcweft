@@ -24,7 +24,7 @@ flow main() -> String {
 
 #[test]
 fn nary_bracket_calls_keep_one_op_results_and_ordinary_continuations() {
-    let stats = execute(RuntimeStepMode::OneOp, 1);
+    let stats = execute(SOURCE, RuntimeStepMode::OneOp, 1);
     assert_eq!(stats.pure_calls, 4);
     assert_eq!(stats.vm_calls, 4);
     assert_eq!(stats.batch_calls, 0);
@@ -33,7 +33,7 @@ fn nary_bracket_calls_keep_one_op_results_and_ordinary_continuations() {
 
 #[test]
 fn nary_bracket_calls_batch_four_complete_rows_with_the_original_eight_op_budget() {
-    let stats = execute(RuntimeStepMode::Drain, 8);
+    let stats = execute(SOURCE, RuntimeStepMode::Drain, 8);
     assert_eq!(stats.pure_calls, 4);
     assert_eq!(stats.batch_calls, 1);
     assert_eq!(stats.batch_items, 4);
@@ -49,8 +49,45 @@ fn nary_bracket_calls_batch_four_complete_rows_with_the_original_eight_op_budget
     assert_eq!(stats.arg_bytes_copied, 0);
 }
 
-fn execute(mode: RuntimeStepMode, max_ops: usize) -> RuntimePureCallStats {
-    let compiled = arcweft_compiler::source::compile_source(SOURCE).unwrap();
+#[test]
+fn nary_bracket_calls_keep_the_original_continuation_when_the_packet_cannot_fit() {
+    let stats = execute(SOURCE, RuntimeStepMode::Drain, 7);
+    assert_eq!(stats.pure_calls, 4);
+    assert_eq!(stats.batch_calls, 0);
+    assert_eq!(stats.batch_items, 0);
+}
+
+#[test]
+fn named_bracket_rows_keep_unused_whole_formals_in_the_original_abi() {
+    let stats = execute(
+        r#"
+#[pure]
+fn score(base: i64, bonus: i64, unused: i64) -> i64 { return base * (bonus + 2i64) }
+flow main() -> String {
+    let scores: Vec<i64> = [
+        score(unused = 91i64, bonus = 2i64, base = 1i64),
+        score(unused = 92i64, bonus = 2i64, base = 2i64),
+        score(unused = 93i64, bonus = 2i64, base = 3i64),
+        score(unused = 94i64, bonus = 2i64, base = 4i64),
+    ]
+    for item in scores { log.info(item) }
+    return "done"
+}
+"#,
+        RuntimeStepMode::Drain,
+        8,
+    );
+    assert_eq!(stats.pure_calls, 4);
+    assert_eq!(stats.batch_calls, 1);
+    assert_eq!(stats.batch_items, 4);
+    assert_eq!(stats.flat_batch_bytes_borrowed, 96);
+    assert_eq!(stats.jit_calls, 4);
+    assert_eq!(stats.arg_bytes_copied, 0);
+    assert_eq!(stats.arg_vec_allocations, 0);
+}
+
+fn execute(source: &str, mode: RuntimeStepMode, max_ops: usize) -> RuntimePureCallStats {
+    let compiled = arcweft_compiler::source::compile_source(source).unwrap();
     let [flow] = compiled.plan.flows() else {
         panic!("one real source flow")
     };

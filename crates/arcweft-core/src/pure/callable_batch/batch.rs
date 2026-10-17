@@ -1,7 +1,7 @@
 //! Complete physical numeric Map packets, admitted before input materialization.
 
 use super::{
-    RuntimeNumericMapInput, RuntimeNumericMapProjection, RuntimePureFunctionRef, RuntimePureScalar,
+    RuntimeNumericInput, RuntimeNumericProjection, RuntimePureFunctionRef, RuntimePureScalar,
     runtime_value_as_scalar,
 };
 use crate::pure::function::RuntimeIntegerRange;
@@ -53,14 +53,14 @@ enum ResultMode {
 /// The original function, complete row shape and reduction mode cannot be
 /// supplied independently after admission. Repeated storage is one whole row.
 #[derive(Debug)]
-pub(crate) struct RuntimeNumericMapBatch<'plan> {
+pub(crate) struct RuntimeNumericBatch<'plan> {
     function: RuntimePureFunctionRef<'plan>,
     rows: usize,
     inputs: Inputs,
     result: ResultMode,
 }
 
-pub(crate) enum RuntimeNumericMapBatchResult {
+pub(crate) enum RuntimeNumericBatchResult {
     Values(Vec<RuntimeValue>),
     Sum(i64),
 }
@@ -69,31 +69,55 @@ pub(crate) enum RuntimeNumericMapBatchResult {
 enum Source<'a> {
     Bound(&'a [&'a RuntimeValue]),
     Sequence(&'a RuntimeSeq),
+    Calls(&'a [super::RuntimeNumericCallRow<'a>]),
 }
 
 /// Borrowed complete admission. No physical input/result storage exists yet;
 /// the caller can admit its original schedule using this selected completion.
-pub(crate) struct RuntimeNumericMapAdmission<'plan, 'source> {
-    projection: &'source RuntimeNumericMapProjection<'plan>,
+pub(crate) struct RuntimeNumericAdmission<'plan, 'source> {
+    projection: &'source RuntimeNumericProjection<'plan>,
     source: Source<'source>,
     repeated: bool,
     result: ResultMode,
 }
 
 impl Source<'_> {
+    fn has_column(self, column: usize, formal_count: usize) -> bool {
+        match self {
+            Self::Bound(_) | Self::Sequence(_) => column == 0,
+            Self::Calls(_) => column < formal_count,
+        }
+    }
+
     fn permits_copy(&self) -> bool {
         match self {
             Self::Bound(items) => items.iter().all(|item| item.ownership().permits_copy()),
             Self::Sequence(items) => items.ownership().permits_copy(),
+            Self::Calls(rows) => rows.iter().all(|row| {
+                row.values
+                    .iter()
+                    .all(|value| value.ownership().permits_copy())
+            }),
         }
     }
     fn len(&self) -> usize {
         match self {
             Self::Bound(items) => items.len(),
             Self::Sequence(items) => items.len(),
+            Self::Calls(rows) => rows.len(),
         }
     }
-    fn get(&self, index: usize) -> Option<Cow<'_, RuntimeValue>> {
+    fn get(&self, index: usize, column: usize) -> Option<Cow<'_, RuntimeValue>> {
+        if let Self::Calls(rows) = self {
+            return rows
+                .get(index)?
+                .values
+                .get(column)
+                .map(|value| Cow::Borrowed(*value));
+        }
+        if column != 0 {
+            return None;
+        }
         match self {
             Self::Bound(items) => items.get(index).map(|item| Cow::Borrowed(*item)),
             Self::Sequence(RuntimeSeq::Values(items)) => items.get(index).map(Cow::Borrowed),
@@ -126,18 +150,21 @@ impl Source<'_> {
                 }
             }
             Self::Sequence(_) => None,
+            Self::Calls(_) => {
+                unreachable!("complete call rows are handled before one-column sources")
+            }
         }
     }
 }
 
-impl<'plan> RuntimeNumericMapProjection<'plan> {
+impl<'plan> RuntimeNumericProjection<'plan> {
     /// Validate the complete immutable source before materialization. A Sum
     /// request retains collection completion when its narrowing is unproven.
     pub(crate) fn admit<'source>(
         &'source self,
         items: &'source [&'source RuntimeValue],
         fused: bool,
-    ) -> Option<RuntimeNumericMapAdmission<'plan, 'source>> {
+    ) -> Option<RuntimeNumericAdmission<'plan, 'source>> {
         self.admit_source(Source::Bound(items), fused)
     }
 
@@ -145,15 +172,29 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
         &'source self,
         items: &'source RuntimeSeq,
         fused: bool,
-    ) -> Option<RuntimeNumericMapAdmission<'plan, 'source>> {
+    ) -> Option<RuntimeNumericAdmission<'plan, 'source>> {
         self.admit_source(Source::Sequence(items), fused)
+    }
+
+    pub(crate) fn admit_calls<'source>(
+        &'source self,
+        rows: &'source [super::RuntimeNumericCallRow<'plan>],
+    ) -> Option<RuntimeNumericAdmission<'plan, 'source>> {
+        if rows.iter().any(|row| {
+            !std::sync::Arc::ptr_eq(row.function.plan(), self.function.plan())
+                || row.function.id != self.function.id
+                || row.values.len() != self.function.inputs.len()
+        }) {
+            return None;
+        }
+        self.admit_source(Source::Calls(rows), false)
     }
 
     fn admit_source<'source>(
         &'source self,
         items: Source<'source>,
         mut fused: bool,
-    ) -> Option<RuntimeNumericMapAdmission<'plan, 'source>> {
+    ) -> Option<RuntimeNumericAdmission<'plan, 'source>> {
         use crate::plan::{RuntimePureInputType as I, RuntimePureOutputType as O};
         let arity = self.function.inputs.len();
         if arity != self.inputs.len()
@@ -164,6 +205,10 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
                     O::F32 | O::F64 | O::Bool | O::Value
                 ))
             || !items.permits_copy()
+            || self.inputs.iter().any(|input| {
+                matches!(input, RuntimeNumericInput::Column(position)
+                    if *position >= super::super::RuntimeI64Args::MAX || !items.has_column(*position, arity))
+            })
         {
             return None;
         }
@@ -182,10 +227,6 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
         }
         let rows = items.len();
         i64::try_from(rows).ok()?;
-        let has_item = self
-            .inputs
-            .iter()
-            .any(|input| matches!(input, RuntimeNumericMapInput::Item));
         macro_rules! build {
             ($variant:ident, $ty:ty, $convert:expr) => {{
                 let convert = |scalar| {
@@ -200,27 +241,30 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
                     return None;
                 }
                 for input in &self.inputs {
-                    if let RuntimeNumericMapInput::Constant(value) = input {
+                    if let RuntimeNumericInput::Constant(value) = input {
                         convert(*value)?;
                     }
                 }
-                let mut first: Option<RuntimePureScalar> = None;
-                let mut item_range = None;
+                let mut first: [Option<RuntimePureScalar>; super::super::RuntimeI64Args::MAX] =
+                    [None; super::super::RuntimeI64Args::MAX];
+                let mut ranges: [Option<RuntimeIntegerRange>; super::super::RuntimeI64Args::MAX] =
+                    [None; super::super::RuntimeI64Args::MAX];
                 let mut repeated = true;
                 for index in 0..rows {
-                    if has_item {
-                        let item = items.get(index)?;
+                    for input in &self.inputs {
+                        let RuntimeNumericInput::Column(position) = input else {
+                            continue;
+                        };
+                        let item = items.get(index, *position)?;
                         let scalar = runtime_value_as_scalar(&item)?;
                         convert(scalar)?;
                         let range = RuntimeIntegerRange::from_scalar(scalar);
-                        item_range =
-                            Some(item_range.map_or(range, |previous: RuntimeIntegerRange| {
-                                previous.join(range)
-                            }));
-                        if let Some(previous) = first {
+                        ranges[*position] =
+                            Some(ranges[*position].map_or(range, |previous| previous.join(range)));
+                        if let Some(previous) = first[*position] {
                             repeated &= previous.same_physical_representation(scalar);
                         } else {
-                            first = Some(scalar);
+                            first[*position] = Some(scalar);
                         }
                     }
                 }
@@ -228,10 +272,10 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
                     fused = self
                         .function
                         .integer_result_fits_i64(self.inputs.iter().map(|input| match input {
-                            RuntimeNumericMapInput::Item => {
-                                item_range.unwrap_or(RuntimeIntegerRange::Unknown)
+                            RuntimeNumericInput::Column(position) => {
+                                ranges[*position].unwrap_or(RuntimeIntegerRange::Unknown)
                             }
-                            RuntimeNumericMapInput::Constant(value) => {
+                            RuntimeNumericInput::Constant(value) => {
                                 RuntimeIntegerRange::from_scalar(*value)
                             }
                         }));
@@ -273,7 +317,7 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
             (None | Some(I::F64), O::F64) => build!(F64, f64, |v| v),
             _ => return None,
         };
-        Some(RuntimeNumericMapAdmission {
+        Some(RuntimeNumericAdmission {
             projection: self,
             source: items,
             repeated,
@@ -286,14 +330,14 @@ impl<'plan> RuntimeNumericMapProjection<'plan> {
     }
 }
 
-impl<'plan> RuntimeNumericMapAdmission<'plan, '_> {
+impl<'plan> RuntimeNumericAdmission<'plan, '_> {
     pub(crate) fn is_sum(&self) -> bool {
         matches!(self.result, ResultMode::Sum)
     }
 
     /// Source, whole inputs, completion and allocation sizes were checked
     /// together. Immutable borrows preserve those facts across budget admission.
-    pub(crate) fn materialize(self) -> RuntimeNumericMapBatch<'plan> {
+    pub(crate) fn materialize(self) -> RuntimeNumericBatch<'plan> {
         use crate::plan::RuntimePureOutputType as O;
         let rows = self.source.len();
         let projection = self.projection;
@@ -306,15 +350,15 @@ impl<'plan> RuntimeNumericMapAdmission<'plan, '_> {
                 for index in 0..if self.repeated { 1 } else { rows } {
                     for input in &projection.inputs {
                         let scalar = match input {
-                            RuntimeNumericMapInput::Item => {
+                            RuntimeNumericInput::Column(position) => {
                                 let item = self
                                     .source
-                                    .get(index)
+                                    .get(index, *position)
                                     .expect("admitted immutable source row");
                                 runtime_value_as_scalar(&item)
                                     .expect("admitted numeric source item")
                             }
-                            RuntimeNumericMapInput::Constant(value) => *value,
+                            RuntimeNumericInput::Constant(value) => *value,
                         };
                         let RuntimePureScalar::$variant(value) = scalar else {
                             unreachable!("admitted homogeneous whole input ABI")
@@ -354,7 +398,7 @@ impl<'plan> RuntimeNumericMapAdmission<'plan, '_> {
             O::F64 => build!(F64, f64, |v| v),
             _ => unreachable!("admitted homogeneous numeric output ABI"),
         };
-        RuntimeNumericMapBatch {
+        RuntimeNumericBatch {
             function: projection.function,
             rows,
             inputs,
@@ -373,7 +417,7 @@ impl RuntimePureScalar {
     }
 }
 
-impl<'plan> RuntimeNumericMapBatch<'plan> {
+impl<'plan> RuntimeNumericBatch<'plan> {
     pub(crate) const fn function(&self) -> RuntimePureFunctionRef<'plan> {
         self.function
     }
@@ -385,16 +429,16 @@ impl<'plan> RuntimeNumericMapBatch<'plan> {
     pub(crate) fn execute(
         self,
         backend: &mut impl super::super::RuntimePureCallBackend,
-    ) -> Result<RuntimeNumericMapBatchResult, RuntimeEvalError> {
+    ) -> Result<RuntimeNumericBatchResult, RuntimeEvalError> {
         let function = self.function;
         let rows = self.rows;
         let arity = function.inputs.len();
         let fused = matches!(self.result, ResultMode::Sum);
         if rows == 0 {
             return Ok(if fused {
-                RuntimeNumericMapBatchResult::Sum(0)
+                RuntimeNumericBatchResult::Sum(0)
             } else {
-                RuntimeNumericMapBatchResult::Values(Vec::new())
+                RuntimeNumericBatchResult::Values(Vec::new())
             });
         }
         macro_rules! integers {
@@ -403,11 +447,11 @@ impl<'plan> RuntimeNumericMapBatch<'plan> {
                 if fused {
                     backend
                         .$sum(function, &inputs, arity, rows)
-                        .map(RuntimeNumericMapBatchResult::Sum)
+                        .map(RuntimeNumericBatchResult::Sum)
                 } else {
                     let mut output = vec![<$ty>::default(); rows];
                     backend.$batch(function, &inputs, arity, &mut output)?;
-                    Ok(RuntimeNumericMapBatchResult::Values(
+                    Ok(RuntimeNumericBatchResult::Values(
                         output.into_iter().map($convert).collect(),
                     ))
                 }
@@ -418,7 +462,7 @@ impl<'plan> RuntimeNumericMapBatch<'plan> {
                 let inputs = $inputs.into_flat(rows);
                 let mut output = vec![<$ty>::default(); rows];
                 backend.$batch(function, &inputs, arity, &mut output)?;
-                Ok(RuntimeNumericMapBatchResult::Values(
+                Ok(RuntimeNumericBatchResult::Values(
                     output.into_iter().map(RuntimeValue::$variant).collect(),
                 ))
             }};
@@ -447,7 +491,7 @@ impl<'plan> RuntimeNumericMapBatch<'plan> {
             ),
             Inputs::I64(Rows::Repeated(inputs)) if fused => backend
                 .call_i64_repeated_flat_batch_sum(function.repeated_i64_batch(&inputs, rows)?)
-                .map(RuntimeNumericMapBatchResult::Sum),
+                .map(RuntimeNumericBatchResult::Sum),
             Inputs::I64(inputs) => integers!(
                 inputs,
                 i64,

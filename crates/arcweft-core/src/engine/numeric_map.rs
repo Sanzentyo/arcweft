@@ -8,7 +8,7 @@ use crate::pattern::{
 };
 use crate::plan::sequence_sum::{RuntimeSequenceSum, RuntimeSequenceSumTarget as SumTarget};
 use crate::plan::{FlowOp, RuntimePlan, RuntimePlanTypeProjection};
-use crate::pure::{RuntimeCallBackend, RuntimeNumericMapBatchResult, project_numeric_map};
+use crate::pure::{RuntimeCallBackend, RuntimeNumericBatchResult, project_numeric_map};
 use crate::runtime_id::{RuntimeLocalDeclarationId as Local, RuntimePlanTypeId as Ty};
 use crate::step::{RuntimeStepMode, RuntimeStepOutput};
 use crate::value::{
@@ -18,6 +18,7 @@ use crate::value::{
 };
 use std::sync::Arc;
 
+mod calls;
 mod control;
 
 struct LoopProjection<'a> {
@@ -495,6 +496,10 @@ impl Engine {
         } else {
             self.fiber.frame.pending_ops.iter().collect::<Vec<_>>()
         };
+        if matches!(ops.first().copied(), Some(FlowOp::ProjectCall { .. })) {
+            let packet = self.prepare_numeric_project_calls(&owner, &ops, remaining_ops)?;
+            return self.commit_numeric_project_calls(packet, output, backend);
+        }
         let (callable, item_ty, output_ty, items, source, calls, loop_base, ordinary_row_ops, sum) =
             if let Some(selected) = project_loop(&owner, ops.first().copied()?) {
                 let RuntimeValue::Iterator(RuntimeIterator::Values { items }) =
@@ -666,7 +671,7 @@ impl Engine {
                                         iterator,
                                         accumulator,
                                     },
-                                    RuntimeNumericMapBatchResult::Values(values),
+                                    RuntimeNumericBatchResult::Values(values),
                                 ) => {
                                     let _iterator =
                                         candidate.fiber.frame.env.take(*iterator).expect(
@@ -689,7 +694,7 @@ impl Engine {
                                         iterator,
                                         accumulator,
                                     },
-                                    RuntimeNumericMapBatchResult::Sum(value),
+                                    RuntimeNumericBatchResult::Sum(value),
                                 ) => {
                                     let _iterator =
                                         candidate.fiber.frame.env.take(*iterator).expect(
@@ -703,7 +708,7 @@ impl Engine {
                                 }
                                 (
                                     CommitSource::Array { items, results },
-                                    RuntimeNumericMapBatchResult::Values(values),
+                                    RuntimeNumericBatchResult::Values(values),
                                 ) => {
                                     for (local, (pattern, value)) in
                                         items.iter().zip(results.iter().zip(values))
@@ -716,7 +721,7 @@ impl Engine {
                                 }
                                 (
                                     CommitSource::Array { items, .. },
-                                    RuntimeNumericMapBatchResult::Sum(value),
+                                    RuntimeNumericBatchResult::Sum(value),
                                 ) => {
                                     for local in items {
                                         let _item = candidate.fiber.frame.env.take(*local).expect(
