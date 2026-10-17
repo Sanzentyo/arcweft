@@ -10360,6 +10360,30 @@ impl RuntimePlanSemanticFacts {
         }
     }
 
+    pub(crate) fn visit_callable_values<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            ExprId,
+            &'facts RuntimeResolvedValue,
+            Option<&'facts RuntimeNormalizedType>,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for (owner, value) in &self.values {
+            visitor(*owner, value, global.expression_source_type(*owner));
+        }
+        for (_, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+            self.trait_methods.values(),
+            self.pure_program_semantics
+                .iter()
+                .map(|(program, semantics)| (*program, semantics)),
+        ) {
+            semantics.visit_callable_values(visitor);
+        }
+    }
+
     /// Visits each selected call with the exact global, closed project-
     /// function, or closure semantic catalog that owns it.
     ///

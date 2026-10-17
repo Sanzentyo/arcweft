@@ -6,7 +6,7 @@ use arcweft_core::{
     },
     effect::LineEffectRequest,
     engine::{Engine, FlowExit, FlowFiberStatus},
-    executor::ArcweftRuntimeExecutor,
+    executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot},
     pure::{RuntimeExternalCallBackend, RuntimeExternalCallContext, VmRuntimePureCallBackend},
     step::{
         RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
@@ -56,8 +56,33 @@ fn external_callable_value_retains_groups_and_captured_arguments_in_native_and_a
     );
 }
 
+#[test]
+fn effectful_external_callable_value_keeps_its_frame_and_source_order_across_awbc_restoration() {
+    assert_callable_execution_with_effects(
+        r#"
+    let combine = api.combine
+    let captured = combine(mark("first", 1i64))
+    let value = captured(label = mark("label", "units"), second = factory()(mark("second", 2i64)))
+"#,
+        true,
+        &[
+            "first", "label", "callee", "second", "body", "combine", "12", "receiver", "x",
+        ],
+        true,
+    );
+}
+
 fn assert_callable_execution(call_source: &str, staged: bool, expected_events: &[&str]) {
-    let manifest = selector_manifest(staged);
+    assert_callable_execution_with_effects(call_source, staged, expected_events, false);
+}
+
+fn assert_callable_execution_with_effects(
+    call_source: &str,
+    staged: bool,
+    expected_events: &[&str],
+    effectful: bool,
+) {
+    let manifest = selector_manifest(staged, effectful);
     let source = [
         r#"
 entry cli @entry.main { goto @flow.main }
@@ -118,7 +143,8 @@ flow main() {
         panic!("one flow")
     };
     let mut native = Engine::for_flow(runtime.plan.clone(), &flow.id).unwrap();
-    let mut awbc = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+    let mut awbc =
+        Some(ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap());
     let native_observed = Arc::new(Mutex::new(Observed::default()));
     let awbc_observed = Arc::new(Mutex::new(Observed::default()));
     let mut native_backend = VmRuntimePureCallBackend::default().with_external_calls(Combine {
@@ -131,7 +157,21 @@ flow main() {
         native.step_with_pure_backend(input, options, &mut native_backend)
     });
     run_one_op(&awbc_observed, &mut |input, options| {
-        awbc.step_with_pure_backend(input, options, &mut awbc_backend)
+        let mut executor = awbc.take().expect("one owned AWBC executor");
+        let result = executor.step_with_pure_backend(input, options, &mut awbc_backend);
+        let snapshot = match executor.snapshot().expect("save every OneOp boundary") {
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) => {
+                let bytes = serde_json::to_vec(&saved).unwrap();
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(serde_json::from_slice(&bytes).unwrap())
+            }
+        };
+        let expected = snapshot.clone();
+        let restored = executor
+            .restore_snapshot(snapshot)
+            .expect("restore for the original program");
+        assert_eq!(restored.snapshot().unwrap(), expected);
+        awbc = Some(restored);
+        result
     });
     let native_observed = native_observed.lock().unwrap();
     let awbc_observed = awbc_observed.lock().unwrap();
@@ -171,8 +211,17 @@ flow main() {
     );
 }
 
-fn selector_manifest(staged: bool) -> AdapterManifest {
+fn selector_manifest(staged: bool, effectful: bool) -> AdapterManifest {
     let manifest = AdapterManifest::new("selector-api", "Selector API");
+    let effects = if effectful {
+        vec![arcweft_adapter_context::manifest::AdapterEffectCapability::new("log.write")]
+    } else {
+        vec![]
+    };
+    let manifest = effects
+        .iter()
+        .cloned()
+        .fold(manifest, AdapterManifest::with_effect);
     let group_specs = if staged {
         vec![
             vec![("first", AdapterTypeKind::I64)],
@@ -221,7 +270,7 @@ fn selector_manifest(staged: bool) -> AdapterManifest {
         .unwrap(),
         AdapterCallableOverloadIndex::try_from_usize(0).unwrap(),
         signature,
-        [],
+        effects,
     )
 }
 

@@ -5,6 +5,7 @@
 
 mod assignment;
 pub(super) use assignment::AssignmentAdmission;
+mod callable_copy;
 mod copy_proof;
 mod format;
 
@@ -405,6 +406,7 @@ fn verify_function(
                 instruction_index,
                 &mut state,
                 attempts,
+                &mut steps,
             )?;
         }
         if resume_query == Some((block_index, block.instructions.len)) {
@@ -493,6 +495,7 @@ fn verify_function(
                 instruction_index,
                 &mut state,
                 attempts,
+                &mut steps,
             )?;
         }
     }
@@ -924,6 +927,7 @@ fn apply_instruction(
     instruction_index: usize,
     state: &mut FlowState,
     attempts: &format::FormatAttemptCatalog<'_>,
+    steps: &mut usize,
 ) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     let instruction = &program.instructions[instruction_index];
@@ -2097,7 +2101,22 @@ fn apply_instruction(
                 read_register(verifier, function, block, *arg, state)?;
             }
             verify_apply_group(verifier, function, block, *dst, *callee, args, &at)?;
+            callable_copy::charge_work(steps, args.len(), verifier.budget.dataflow_steps)?;
+            let arguments = args
+                .iter()
+                .map(|arg| state.copy_proofs[arg.index()].clone())
+                .collect::<Vec<_>>();
+            let proof = callable_copy::applied_group(
+                program,
+                register_type(verifier, function, block, *callee)?,
+                register_type(verifier, function, block, *dst)?,
+                &state.copy_proofs[callee.index()],
+                &arguments,
+                steps,
+                verifier.budget.dataflow_steps,
+            )?;
             write_register(verifier, function, block, *dst, state)?;
+            state.copy_proofs[dst.index()] = proof;
         }
         AwbcInstruction::StartNeed { dst, plan, args } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
@@ -4284,27 +4303,7 @@ fn project_call_result_copy_proof(
             .unwrap_or(CopyProof::Affine),
         _ => CopyProof::Affine,
     };
-    CopyProof::Function(
-        values
-            .iter()
-            .map(|source| match source {
-                RuntimeCallableInputSource::Retained { position } => match callee {
-                    CopyProof::Copyable => CopyProof::Copyable,
-                    CopyProof::Function(retained) => retained
-                        .get(*position as usize)
-                        .cloned()
-                        .unwrap_or(CopyProof::Affine),
-                    _ => CopyProof::Affine,
-                },
-                RuntimeCallableInputSource::Argument { position } => arguments
-                    .get(*position as usize)
-                    .cloned()
-                    .unwrap_or(CopyProof::Affine),
-                RuntimeCallableInputSource::Attached => attached.clone(),
-            })
-            .collect(),
-    )
-    .compact()
+    callee.retaining(values, &arguments, &attached)
 }
 
 fn verify_apply_group(

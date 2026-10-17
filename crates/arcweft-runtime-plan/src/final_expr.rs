@@ -90,6 +90,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
             Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
         >,
     >,
+    environment_callable_states: Option<&'hir crate::flow::EnvironmentCallableStates>,
     callable_specializations: Option<
         &'hir BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationSeedId>,
     >,
@@ -221,6 +222,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             specialized_operand_locals: None,
             closure_sites: None,
             project_callable_states: None,
+            environment_callable_states: None,
             callable_specializations: None,
             callable_sources: None,
             overrides: BTreeMap::new(),
@@ -306,6 +308,14 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     pub(crate) fn with_implicit_body_root(mut self, owner: Option<ExprId>) -> Self {
         self.implicit_body_root = owner;
+        self
+    }
+
+    pub(crate) fn with_environment_callable_states(
+        mut self,
+        states: &'hir crate::flow::EnvironmentCallableStates,
+    ) -> Self {
+        self.environment_callable_states = Some(states);
         self
     }
 
@@ -964,6 +974,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             specialized_operand_locals: self.specialized_operand_locals,
             closure_sites: self.closure_sites,
             project_callable_states: self.project_callable_states,
+            environment_callable_states: self.environment_callable_states,
             callable_specializations: self.callable_specializations,
             callable_sources: self.callable_sources,
             semantic_facts: self.semantic_facts,
@@ -1914,8 +1925,18 @@ impl<'hir> FinalExprLowerer<'hir> {
                     captures: Box::new([]),
                 })
             }
+            RuntimeResolvedValue::EnvironmentCallable(value) => {
+                let key = crate::flow::EnvironmentCallableKey::of(value);
+                let state = self.environment_callable_states
+                    .and_then(|states| states.get(&key))
+                    .and_then(|states| states.first()).cloned()
+                    .ok_or_else(|| format!("environment declaration value {id:?} has no admitted initial callable state"))?;
+                Ok(RuntimeExprSeedKind::MakeCallable {
+                    state,
+                    captures: Box::new([]),
+                })
+            }
             RuntimeResolvedValue::Intrinsic(_)
-            | RuntimeResolvedValue::EnvironmentCallable(_)
             | RuntimeResolvedValue::DialogueLine(_)
             | RuntimeResolvedValue::Registered(_) => Err(format!(
                 "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"

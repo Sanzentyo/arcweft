@@ -3,6 +3,10 @@
 #[path = "final_flow/callable_states.rs"]
 mod callable_states;
 
+#[path = "final_flow/environment_callables.rs"]
+mod environment_callables;
+pub(crate) use environment_callables::{EnvironmentCallableKey, EnvironmentCallableStates};
+
 #[path = "final_flow/control_locals.rs"]
 mod control_locals;
 #[path = "final_flow/defer.rs"]
@@ -580,6 +584,7 @@ struct FinalLoweringContext<'project, 'data> {
     facts: &'data RuntimePlanSemanticFacts,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_callable_states: &'data callable_states::ProjectCallableStates,
+    environment_callable_states: &'data EnvironmentCallableStates,
     callable_sources: &'data callable_states::ProjectCallableSourceStates,
     callable_specializations: &'data callable_states::CallableSpecializationSeeds,
     callable_applications: &'data callable_states::ProjectCallableApplicationStates,
@@ -666,6 +671,7 @@ impl FinalLoweringContext<'_, '_> {
         .with_closure_sites(self.closure_sites)
         .with_format_attempts(self.format_attempts)
         .with_project_callable_states(self.project_callable_states)
+        .with_environment_callable_states(self.environment_callable_states)
         .with_callable_sources(self.callable_sources)
         .with_callable_specializations(self.callable_specializations)
     }
@@ -834,6 +840,9 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         )]);
     }
 
+    let environment_definitions =
+        environment_callables::EnvironmentCallableDefinitions::prepare(facts)
+            .map_err(|error| vec![error])?;
     let mut type_seeds = facts
         .runtime_plan_type_seeds()
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
@@ -1303,6 +1312,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
             .iter()
             .map(|(_, seed)| *seed),
     );
+    local_seeds.extend(environment_definitions.local_seeds());
     let mut builder = RuntimePlanBuilder::new();
     let nominal_schema = facts
         .runtime_plan_nominal_schema()
@@ -1656,6 +1666,9 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
             )]);
         }
     }
+    let environment_callable_locals = environment_definitions
+        .bind_locals(&mut admitted_locals)
+        .map_err(|error| vec![error])?;
     debug_assert!(admitted_locals.next().is_none());
     let mut errors = Vec::new();
     let (function_sites, function_definitions) = reserve_function_sites(
@@ -1712,6 +1725,9 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         &mut builder,
         &mut errors,
     );
+    let environment_callable_states = environment_definitions
+        .materialize(&environment_callable_locals, &mut builder)
+        .map_err(|error| vec![error])?;
     rust_defaults::lower(facts, &mut builder, &mut errors);
     let (trait_methods, trait_definitions) = reserve_trait_methods(
         project,
@@ -1742,6 +1758,7 @@ pub fn prepare_runtime_plan_with_stats<'facts>(
         facts,
         locals: &locals,
         project_callable_states: &project_callable_states,
+        environment_callable_states: &environment_callable_states,
         callable_sources: &callable_sources,
         callable_specializations: &callable_specializations,
         callable_applications: &callable_applications,
@@ -5911,6 +5928,7 @@ struct FinalFlowLowerer<'a> {
     defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
+    environment_callable_states: &'a EnvironmentCallableStates,
     callable_sources: &'a callable_states::ProjectCallableSourceStates,
     callable_specializations: &'a callable_states::CallableSpecializationSeeds,
     callable_applications: &'a callable_states::ProjectCallableApplicationStates,
@@ -6256,6 +6274,7 @@ impl<'a> FinalFlowLowerer<'a> {
             defer_sites: context.defer_sites,
             closure_sites: context.closure_sites,
             project_callable_states: context.project_callable_states,
+            environment_callable_states: context.environment_callable_states,
             callable_sources: context.callable_sources,
             callable_specializations: context.callable_specializations,
             callable_applications: context.callable_applications,
@@ -6339,6 +6358,7 @@ impl<'a> FinalFlowLowerer<'a> {
         .with_map_functions(&self.control.map_functions)
         .with_format_attempts(self.format_attempts)
         .with_project_callable_states(self.project_callable_states)
+        .with_environment_callable_states(self.environment_callable_states)
         .with_callable_sources(self.callable_sources)
         .with_callable_specializations(self.callable_specializations)
         .with_scope_locals(&self.control.scopes)

@@ -7,6 +7,63 @@ use crate::value::ownership::RuntimeValueOwnershipAdmissionError;
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePlaceStorage, RuntimeSeq};
 use std::sync::Arc;
 
+fn applied_group_retained_copy_program() -> AwbcProgram {
+    let mut program = project_call_retained_copy_program();
+    program.instructions.insert(
+        2,
+        AwbcInstruction::ApplyGroup {
+            dst: AwbcRegisterId(1),
+            callee: AwbcRegisterId(0),
+            args: vec![AwbcRegisterId(2)],
+        },
+    );
+    program.blocks[0].instructions.len += 1;
+    program.blocks[0].terminator = AwbcTerminator::Jump {
+        target: AwbcBlockId(1),
+    };
+    for block in program.blocks.iter_mut().skip(1) {
+        block.instructions.start += 1;
+    }
+    program
+}
+
+#[test]
+fn group_application_retained_copy_requires_the_actual_input_proof() {
+    let program = applied_group_retained_copy_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("the sealed retaining transition preserves its unrestricted input");
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    assert_eq!(decoded, program);
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let mut affine = program;
+    make_retained_operand_affine_capable(&mut affine);
+    expect_project_call_rejection(affine, "producer-proven unrestricted CopyValue source");
+}
+
+#[test]
+fn group_application_copy_projection_spends_the_existing_dataflow_budget() {
+    let program = applied_group_retained_copy_program();
+    assert!(matches!(
+        program.verify(
+            AwbcVerifyBudget {
+                dataflow_steps: 4,
+                ..AwbcVerifyBudget::default()
+            },
+            AwbcVerifyContext::default()
+        ),
+        Err(AwbcVerifyError::BudgetExceeded {
+            budget: "dataflow_steps"
+        })
+    ));
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+}
+
 fn guarded_copy_program() -> AwbcProgram {
     let mut program = minimal_program();
     program.runtime_types = vec![
