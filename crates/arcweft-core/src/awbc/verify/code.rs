@@ -2785,14 +2785,17 @@ fn apply_instruction_copy_and_move_effects(
         AwbcInstruction::MakeAgent { dst, operands, .. } => {
             consumed.extend(operands.iter().copied());
             outputs.push(*dst);
+            // Constructor operands are not record fields in the opaque Agent
+            // result. They establish whole-graph custody, not positional shape.
             output_proof = Some(
-                CopyProof::Record(
-                    operands
-                        .iter()
-                        .map(|operand| state.copy_proofs[operand.index()].clone())
-                        .collect(),
-                )
-                .compact(),
+                if operands
+                    .iter()
+                    .all(|operand| state.copy_proofs[operand.index()].permits_copy())
+                {
+                    CopyProof::Copyable
+                } else {
+                    CopyProof::Affine
+                },
             );
         }
         AwbcInstruction::MakeReductionUnchanged {
