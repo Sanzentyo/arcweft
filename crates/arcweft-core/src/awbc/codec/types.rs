@@ -24,8 +24,8 @@ use crate::plan::{
     RuntimeTypeBinder, RuntimeTypeScope,
 };
 use crate::value::{
-    RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
-    RuntimeRecordFieldId,
+    ImportedProjectTarget, RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence,
+    RuntimeOpaqueValueClass, RuntimeRecordFieldId,
 };
 use arcweft_character::id::CharacterLookId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
@@ -176,42 +176,7 @@ impl Wire for RuntimeArrayLength {
 
 impl Wire for RuntimeEntityReference {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::StructuralFlow(flow) => {
-                writer.write_u8(4);
-                flow.write_wire(writer)?;
-            }
-            Self::ImportedProject(value) => {
-                writer.write_u8(3);
-                writer.write_u8(value.family().semantic_tag());
-                writer.write_str(value.public_id().as_str())?;
-                writer.write_bytes(value.target_generation());
-                writer.write_bytes(value.semantic_identity());
-                writer.write_bytes(value.value_type());
-                match value.flow() {
-                    None => writer.write_u8(0),
-                    Some(flow) => {
-                        writer.write_u8(1);
-                        flow.write_wire(writer)?;
-                    }
-                }
-            }
-            Self::Project { family, public_id } => {
-                writer.write_u8(0);
-                writer.write_u8(family.semantic_tag());
-                writer.write_str(public_id.as_str())?;
-            }
-            Self::DialogueLine(line) => {
-                writer.write_u8(1);
-                writer.write_runtime_id_path(line.path())?;
-            }
-            Self::CharacterLook { character, look } => {
-                writer.write_u8(2);
-                character.write_wire(writer)?;
-                writer.write_str(look.as_str())?;
-            }
-        }
-        Ok(())
+        writer.transaction(|writer| self.visit_identity(writer))
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
@@ -246,15 +211,11 @@ impl Wire for RuntimeEntityReference {
                 Ok(Self::Project { family, public_id })
             }
             1 => {
-                let line_offset = reader.offset();
-                let line = reader.read_str()?;
-                RuntimeLineId::canonical(line)
-                    .map(Self::DialogueLine)
-                    .map_err(|error| AwbcCodecError::InvalidMetadata {
-                        kind: "entity reference dialogue line",
-                        message: error.to_string(),
-                        offset: line_offset,
-                    })
+                let path = reader.read_runtime_id_path(
+                    crate::runtime_id::RuntimeIdFamily::Line,
+                    "entity reference dialogue line",
+                )?;
+                Ok(Self::DialogueLine(RuntimeLineId::from_source_path(path)))
             }
             2 => {
                 let character = arcweft_character::id::CharacterId::read_wire(reader)?;
@@ -298,19 +259,28 @@ impl Wire for RuntimeEntityReference {
                     .read_exact(32)?
                     .try_into()
                     .expect("exact 32-byte digest");
-                let flow = match reader.read_u8()? {
-                    0 => None,
-                    1 => Some(crate::plan::FlowRuntimeId::read_wire(reader)?),
+                let target_offset = reader.offset();
+                let target = match reader.read_u8()? {
+                    0 => ImportedProjectTarget::Public,
+                    1 => {
+                        ImportedProjectTarget::Flow(crate::plan::FlowRuntimeId::read_wire(reader)?)
+                    }
+                    2 => ImportedProjectTarget::Line(RuntimeLineId::from_source_path(
+                        reader.read_runtime_id_path(
+                            crate::runtime_id::RuntimeIdFamily::Line,
+                            "imported entity line identity",
+                        )?,
+                    )),
                     tag => {
                         return Err(AwbcCodecError::UnknownTag {
-                            kind: "imported entity Flow identity",
+                            kind: "imported entity target",
                             tag,
-                            offset,
+                            offset: target_offset,
                         });
                     }
                 };
-                crate::value::RuntimeImportedProjectEntityReference::try_new(
-                    family, public_id, generation, semantic, value_type, flow,
+                crate::value::RuntimeImportedProjectEntityReference::from_source_parts(
+                    family, public_id, generation, semantic, value_type, target,
                 )
                 .map(Self::ImportedProject)
                 .map_err(|error| AwbcCodecError::InvalidMetadata {

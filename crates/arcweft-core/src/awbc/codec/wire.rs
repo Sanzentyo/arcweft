@@ -1,6 +1,7 @@
 use super::{AwbcCodecError, AwbcDecodeBudget};
 use crate::canonical_varint::{CanonicalVarintError, CanonicalVarintWidth, encode_u32, encode_u64};
-use crate::runtime_id::RuntimeIdPath;
+use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimeIdSegment};
+use crate::value::RuntimeEntityIdentityVisitor;
 
 pub(super) trait Wire: Sized {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError>;
@@ -101,20 +102,35 @@ impl Writer {
 
     pub(super) fn write_runtime_id_path(
         &mut self,
+        family: RuntimeIdFamily,
         path: &RuntimeIdPath,
     ) -> Result<(), AwbcCodecError> {
         let segments = path.segments();
-        let separators = segments.len().saturating_sub(1);
-        let len = segments.iter().try_fold(separators, |len, segment| {
-            len.checked_add(segment.as_str().len())
-                .ok_or(AwbcCodecError::LengthOverflow)
-        })?;
-        self.write_len(len)?;
+        let count = u32::try_from(segments.len()).map_err(|_| AwbcCodecError::LengthOverflow)?;
+        if segments.is_empty() {
+            return Err(AwbcCodecError::InvalidMetadata {
+                kind: "runtime identity path",
+                message: RuntimeIdError::Empty { family }.to_string(),
+                offset: self.len(),
+            });
+        }
         for (index, segment) in segments.iter().enumerate() {
-            if index > 0 {
-                self.write_u8(b'.');
-            }
-            self.write_bytes(segment.as_str().as_bytes());
+            RuntimeIdPath::preflight_stored_source_segment(
+                family,
+                index,
+                segments.len(),
+                segment.as_str(),
+            )
+            .map_err(|error| AwbcCodecError::InvalidMetadata {
+                kind: "runtime identity path",
+                message: error.to_string(),
+                offset: self.len(),
+            })?;
+            u32::try_from(segment.as_str().len()).map_err(|_| AwbcCodecError::LengthOverflow)?;
+        }
+        self.write_u32_var(count);
+        for segment in segments {
+            self.write_str(segment.as_str())?;
         }
         Ok(())
     }
@@ -129,6 +145,25 @@ impl Writer {
             .ok_or(AwbcCodecError::LengthOverflow)?;
         destination.copy_from_slice(&value.to_le_bytes());
         Ok(())
+    }
+}
+
+impl RuntimeEntityIdentityVisitor for Writer {
+    type Error = AwbcCodecError;
+
+    fn tag(&mut self, tag: u8) -> Result<(), Self::Error> {
+        self.write_u8(tag);
+        Ok(())
+    }
+    fn text(&mut self, text: &str) -> Result<(), Self::Error> {
+        self.write_str(text)
+    }
+    fn digest(&mut self, digest: &[u8; 32]) -> Result<(), Self::Error> {
+        self.write_bytes(digest);
+        Ok(())
+    }
+    fn path(&mut self, family: RuntimeIdFamily, path: &RuntimeIdPath) -> Result<(), Self::Error> {
+        self.write_runtime_id_path(family, path)
     }
 }
 
@@ -291,13 +326,18 @@ impl<'a> Reader<'a> {
     }
 
     pub(super) fn read_items<T: Wire>(&mut self, len: usize) -> Result<Vec<T>, AwbcCodecError> {
+        self.add_collection_items(len)?;
+        self.read_nested(|reader| (0..len).map(|_| T::read_wire(reader)).collect())
+    }
+
+    fn add_collection_items(&mut self, len: usize) -> Result<(), AwbcCodecError> {
         let next = self
             .collection_items
             .checked_add(len)
             .ok_or(AwbcCodecError::LengthOverflow)?;
         Self::check_limit("collection_items", next, self.budget.collection_items)?;
         self.collection_items = next;
-        self.read_nested(|reader| (0..len).map(|_| T::read_wire(reader)).collect())
+        Ok(())
     }
 
     pub(super) fn read_nested<T>(
@@ -323,9 +363,76 @@ impl<'a> Reader<'a> {
     pub(super) fn read_str(&mut self) -> Result<&'a str, AwbcCodecError> {
         let len = self.read_len()?;
         self.add_string_bytes(len)?;
+        self.read_utf8(len)
+    }
+
+    fn read_utf8(&mut self, len: usize) -> Result<&'a str, AwbcCodecError> {
         let offset = self.offset();
         let bytes = self.read_exact(len)?;
         std::str::from_utf8(bytes).map_err(|_| AwbcCodecError::InvalidUtf8 { offset })
+    }
+
+    pub(super) fn read_runtime_id_path(
+        &mut self,
+        family: RuntimeIdFamily,
+        kind: &'static str,
+    ) -> Result<RuntimeIdPath, AwbcCodecError> {
+        let offset = self.offset();
+        let count = self.read_len()?;
+        if count == 0 {
+            return Err(AwbcCodecError::InvalidMetadata {
+                kind,
+                message: RuntimeIdError::Empty { family }.to_string(),
+                offset,
+            });
+        }
+        self.add_collection_items(count)?;
+        let start = self.offset();
+        // The complete borrowed path and its cumulative allocation allowance
+        // pass before retaining the first segment or allocating the slot Vec.
+        self.read_nested(|reader| {
+            for index in 0..count {
+                let segment_offset = reader.offset();
+                let text = reader.read_str()?;
+                RuntimeIdPath::preflight_stored_source_segment(family, index, count, text)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind,
+                        message: error.to_string(),
+                        offset: segment_offset,
+                    })?;
+            }
+            Ok(())
+        })?;
+        let end = self.offset();
+        count
+            .checked_mul(std::mem::size_of::<RuntimeIdSegment>())
+            .filter(|bytes| isize::try_from(*bytes).is_ok())
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        // Reread only this admitted immutable span using the same primitive
+        // grammar. Collection/string counters stay fully precharged; no new
+        // Reader or allowance is created and no quota is rewound.
+        self.offset = start;
+        let mut segments = Vec::<RuntimeIdSegment>::with_capacity(count);
+        for index in 0..count {
+            let length = self.read_len()?;
+            let text = self.read_utf8(length)?;
+            let segment =
+                RuntimeIdPath::preflight_stored_source_segment(family, index, count, text)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind,
+                        message: error.to_string(),
+                        offset,
+                    })?;
+            segments.push(segment.materialize());
+        }
+        debug_assert_eq!(self.offset(), end);
+        RuntimeIdPath::from_source_segment_storage(family, segments).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind,
+                message: error.to_string(),
+                offset,
+            }
+        })
     }
 
     pub(super) fn check_limit(

@@ -38,10 +38,16 @@ Flow executable transcript. Purely diagnostic labels remain excluded.
 Entity-reference value identity preserves the original runtime-path segment
 boundaries, each Flow's retained public selector, and an imported reference's
 complete Public/Flow/Line target and generation/type headers. Canonical value
-digests, executable literal transcripts and the private literal source codec
-take these fields from the same owning entity traversal. A joined path label
+digests, executable literal transcripts, the private literal source codec and
+the AWBC binary codec take these fields from the same owning entity traversal.
+A joined path label
 does not substitute for a runtime identity, and observable selector metadata
 does not disappear when a Flow is carried as a value or pattern.
+
+The version-1 AWBC runtime-ID wire stores nonempty segment sequences. Decoding
+admits every segment on the same cumulative collection, string and nesting
+allowance before retaining the path. Imported references retain their explicit
+closed target through the existing owner admission.
 
 If runtime-ID equality, hashing, or storage later becomes a measured hot path,
 the canonical path representation may be interned behind the typed ID API. That

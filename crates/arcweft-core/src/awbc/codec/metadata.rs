@@ -657,37 +657,32 @@ impl Wire for RuntimeCommandTargetId {
 
 impl Wire for FlowRuntimeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        writer.write_runtime_id_path(self.path())?;
+        writer.write_runtime_id_path(crate::runtime_id::RuntimeIdFamily::Flow, self.path())?;
         writer.write_str(self.public_label_ref().as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        let identity = reader.read_str()?;
+        let path = reader.read_runtime_id_path(
+            crate::runtime_id::RuntimeIdFamily::Flow,
+            "flow runtime identity",
+        )?;
         let public_id = reader.read_str()?;
-        Self::from_runtime_contract(identity, public_id).map_err(|error| {
-            AwbcCodecError::InvalidMetadata {
-                kind: "flow runtime identity",
-                message: error.to_string(),
-                offset,
-            }
-        })
+        Ok(Self::from_source_path(path, public_id.to_owned()))
     }
 }
 
 impl Wire for EntryRuntimeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        writer.write_runtime_id_path(self.path())
+        writer.write_runtime_id_path(crate::runtime_id::RuntimeIdFamily::Entry, self.path())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        let value = reader.read_str()?;
-        Self::canonical(value).map_err(|error| AwbcCodecError::InvalidMetadata {
-            kind: "entry runtime identity",
-            message: error.to_string(),
-            offset,
-        })
+        reader
+            .read_runtime_id_path(
+                crate::runtime_id::RuntimeIdFamily::Entry,
+                "entry runtime identity",
+            )
+            .map(Self::from_source_path)
     }
 }
 

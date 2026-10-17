@@ -467,6 +467,10 @@ pub struct RuntimeEntrySpec {
 }
 
 impl EntryRuntimeId {
+    pub(crate) fn from_source_path(path: RuntimeIdPath) -> Self {
+        Self { path }
+    }
+
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
         RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Entry, value).map(|path| Self { path })
     }

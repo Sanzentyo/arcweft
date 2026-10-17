@@ -8,6 +8,9 @@ mod runtime;
 mod types;
 mod wire;
 
+#[cfg(test)]
+mod entity_tests;
+
 use super::schema::{AWBC_CODEC_VERSION, AWBC_MAGIC, AwbcProgram};
 use thiserror::Error;
 use wire::{Reader, Wire, Writer};

@@ -58,6 +58,7 @@ pub(crate) mod expression_tree;
 mod float_storage_serde;
 mod format_content;
 mod imported_entity;
+pub(crate) use imported_entity::ImportedProjectTarget;
 mod integer;
 pub use imported_entity::{
     RuntimeImportedProjectEntityError, RuntimeImportedProjectEntityReference,

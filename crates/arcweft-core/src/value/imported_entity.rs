@@ -23,7 +23,7 @@ pub struct RuntimeImportedProjectEntityReference {
 /// uses the same validated RuntimeLineId as the original source line.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::value) enum ImportedProjectTarget {
+pub(crate) enum ImportedProjectTarget {
     Public,
     Flow(FlowRuntimeId),
     Line(RuntimeLineId),
@@ -73,7 +73,7 @@ impl RuntimeImportedProjectEntityReference {
         Ok(())
     }
 
-    pub(in crate::value) fn from_source_parts(
+    pub(crate) fn from_source_parts(
         family: ProjectEntityReferenceFamily,
         public_id: PublicId,
         target_generation: [u8; 32],
