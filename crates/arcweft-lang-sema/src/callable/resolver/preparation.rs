@@ -622,6 +622,21 @@ where
         return Err(PrepareFinalCallCalleeError::InvalidFunctionValueOrigin { expression });
     }
     let (seed, origin) = match producer {
+        PreparedFunctionValueOriginProducer::Declaration { producer, checked } => {
+            if !captures.is_empty() {
+                return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression });
+            }
+            (
+                ResolvedFunctionValueSeed::Declaration {
+                    checked: checked.clone(),
+                },
+                PreparedFunctionValueOriginEvidence::new(
+                    origin_callee,
+                    PreparedFunctionValueOriginProducer::Declaration { producer, checked },
+                    Vec::new(),
+                ),
+            )
+        }
         PreparedFunctionValueOriginProducer::Call(super::super::CheckedCallSite::HirCall(
             producer,
         )) => {
@@ -735,7 +750,7 @@ fn required_expression_span(
         .ok_or(PrepareFinalCallCalleeError::MissingValueSource { expression })
 }
 
-fn callable_path_from_hir(
+pub(super) fn callable_path_from_hir(
     expression: ExprId,
     path: &HirPath,
     limits: &CallableLimits,

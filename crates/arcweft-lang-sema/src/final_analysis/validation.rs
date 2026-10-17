@@ -510,6 +510,7 @@ pub(super) fn validate_bindings(
 
 pub(super) fn validate_expressions(
     symbols: &ProjectSymbolTable,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
     semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
@@ -669,6 +670,7 @@ pub(super) fn validate_expressions(
         if let Some(fact_type) = fact.source_value_type() {
             validate_expression_resolution(
                 symbols,
+                checked_callables,
                 semantic_shapes,
                 topology,
                 modules,
@@ -920,6 +922,10 @@ fn expression_resolution_matches(
         )
         | (HirExprKind::Select(_), CheckedExpressionResolution::Select(_))
         | (
+            HirExprKind::Select(_),
+            CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(_)),
+        )
+        | (
             HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) | HirExprKind::Path(_),
             CheckedExpressionResolution::Nominal(_),
         )
@@ -1151,6 +1157,7 @@ fn validate_content_application_resolution(
 
 fn validate_expression_resolution(
     symbols: &ProjectSymbolTable,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
     semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
@@ -1168,6 +1175,7 @@ fn validate_expression_resolution(
         }
         CheckedExpressionResolution::ImplicitCallable(callable) => validate_implicit_callable(
             symbols,
+            checked_callables,
             semantic_shapes,
             topology,
             modules,
@@ -1197,9 +1205,13 @@ fn validate_expression_resolution(
         {
             Err(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
-        CheckedExpressionResolution::Value(value) => {
-            validate_value(symbols, topology.generation(), modules, value)
-        }
+        CheckedExpressionResolution::Value(value) => validate_value(
+            symbols,
+            checked_callables,
+            topology.generation(),
+            modules,
+            value,
+        ),
         CheckedExpressionResolution::Select(select) => match select {
             CheckedSelectResolution::Method(method) => method
                 .has_valid_receiver_identity()
@@ -1347,6 +1359,7 @@ fn validate_expression_resolution(
         }
         CheckedExpressionResolution::CompileTimeScalar(scalar) => validate_expression_resolution(
             symbols,
+            checked_callables,
             semantic_shapes,
             topology,
             modules,
@@ -1825,6 +1838,7 @@ fn validate_choice(
 
 fn validate_implicit_callable(
     symbols: &ProjectSymbolTable,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
     semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
@@ -1899,6 +1913,7 @@ fn validate_implicit_callable(
     match callable.body() {
         CheckedImplicitCallableBody::Plain(resolution) => validate_expression_resolution(
             symbols,
+            checked_callables,
             semantic_shapes,
             topology,
             modules,
@@ -2048,6 +2063,7 @@ fn validate_pipe_left(
 
 fn validate_value(
     symbols: &ProjectSymbolTable,
+    checked_callables: &crate::callable::CheckedCallableCatalog,
     generation: &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     value: &CheckedValueResolution,
@@ -2058,10 +2074,27 @@ fn validate_value(
             .map(|_| ())
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner),
         CheckedValueResolution::CharacterField { receiver, .. } => {
-            validate_value(symbols, generation, modules, receiver)
+            validate_value(symbols, checked_callables, generation, modules, receiver)
         }
         CheckedValueResolution::ProjectCallable(callable) => {
             validate_callable(symbols, modules, callable)
+        }
+        CheckedValueResolution::EnvironmentCallable(callable) => {
+            if !matches!(
+                callable.declaration(),
+                crate::callable::CheckedCallableDeclaration::Environment(_)
+            ) {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
+            let facts = checked_callables
+                .callable(callable)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            matches!(
+                facts.record().key(),
+                crate::callable::CallableLookupKey::Free(_)
+            )
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
         CheckedValueResolution::ProjectItem(item) => validate_project_item(symbols, modules, item),
         CheckedValueResolution::ImportedProjectEntity(entity) => entity

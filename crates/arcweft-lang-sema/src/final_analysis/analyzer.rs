@@ -1023,6 +1023,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
 mod call_seal;
 #[path = "analyzer/callable_effect_graph.rs"]
 mod callable_effect_graph;
+#[path = "analyzer/callable_values.rs"]
+mod callable_values;
 #[path = "analyzer/calls.rs"]
 mod calls;
 #[path = "analyzer/checked_value_program.rs"]

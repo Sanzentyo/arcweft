@@ -826,6 +826,18 @@ fn typed_overload_fixture_with_catalog_limits(
     overloads: Vec<TestCallableOverload>,
     catalog_limits: CallableLimits,
 ) -> Fixture {
+    let callable_path =
+        CallablePath::try_new([CallableName::try_new(name).expect("test callable name")])
+            .expect("test callable path");
+    typed_overload_fixture_at_path(root_source, callable_path, overloads, catalog_limits)
+}
+
+fn typed_overload_fixture_at_path(
+    root_source: &str,
+    callable_path: CallablePath,
+    overloads: Vec<TestCallableOverload>,
+    catalog_limits: CallableLimits,
+) -> Fixture {
     let Fixture {
         project,
         symbols,
@@ -833,9 +845,6 @@ fn typed_overload_fixture_with_catalog_limits(
         root_document,
     } = fixture(root_source, None);
     let accepted = registered.environment().callable_catalog();
-    let callable_path =
-        CallablePath::try_new([CallableName::try_new(name).expect("test callable name")])
-            .expect("test callable path");
     let key = CallableLookupKey::Free(callable_path.clone());
     let package =
         AdapterPackageId::try_new("final-analysis-typed-overloads").expect("adapter package ID");

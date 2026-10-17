@@ -460,25 +460,41 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls()
             .map_err(FinalSemanticAnalysisError::from)?;
-        self.executable.selected_declaration_expression_graph_with_select_target_disposition(
-            &self.topology,
-            declaration,
-            |owner| self.facts.expressions().get(&owner)?.selected_postfix_candidate(),
-            |owner| {
-                let fact = self.facts.expressions().get(&owner)?;
-                let Some(site) = fact.checked_call_site(owner) else {
-                    return Some(HirSelectedCallExpressionDisposition::Structural);
-                };
-                graph.project_site_payload(
-                    site,
-                    |prefix| prefix.selected_expression_inventory().map(HirSelectedCallExpressionDisposition::Callable),
-                    |unselected| Ok(unselected.source_expression_disposition()),
-                )?.ok()
-            },
-            |owner| self.facts.expressions().get(&owner)
-                .is_some_and(super::PreparedExpressionFact::is_variant_expression)
-                .then_some(arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticVariantQualifier),
-        ).map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+        self.executable
+            .selected_declaration_expression_graph_with_select_target_disposition(
+                &self.topology,
+                declaration,
+                |owner| {
+                    self.facts
+                        .expressions()
+                        .get(&owner)?
+                        .selected_postfix_candidate()
+                },
+                |owner| {
+                    let fact = self.facts.expressions().get(&owner)?;
+                    let Some(site) = fact.checked_call_site(owner) else {
+                        return Some(HirSelectedCallExpressionDisposition::Structural);
+                    };
+                    graph
+                        .project_site_payload(
+                            site,
+                            |prefix| {
+                                prefix
+                                    .selected_expression_inventory()
+                                    .map(HirSelectedCallExpressionDisposition::Callable)
+                            },
+                            |unselected| Ok(unselected.source_expression_disposition()),
+                        )?
+                        .ok()
+                },
+                |owner| {
+                    self.facts
+                        .expressions()
+                        .get(&owner)?
+                        .select_target_disposition()
+                },
+            )
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
     }
 
     fn finalize_declaration_locals(

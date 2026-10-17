@@ -219,7 +219,7 @@ pub(crate) use resolver::{
     PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity,
     PreparedStaticContentCallee, ResolveCallOutcome, ResolvedCallTarget, prepare_final_call_callee,
     prepare_function_value_origin_query_with_pending_captures, prepare_language_free_dot_path,
-    prepare_presentation_callee_id, resolve_call_target,
+    prepare_presentation_callee_id, resolve_call_target, resolve_callable_reference,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, ResolvedCharacterOwner,

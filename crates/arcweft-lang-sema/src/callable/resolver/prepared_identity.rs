@@ -408,7 +408,8 @@ fn function_value_identity(
     origin: Option<&PreparedFunctionValueOriginEvidence>,
 ) -> Option<(PreparedFunctionValueOriginIdentity, FunctionValueOrdinal)> {
     let producer = match origin?.producer() {
-        PreparedFunctionValueOriginProducer::Call(_)
+        PreparedFunctionValueOriginProducer::Declaration { .. }
+        | PreparedFunctionValueOriginProducer::Call(_)
         | PreparedFunctionValueOriginProducer::PreparedContinuation(_)
         | PreparedFunctionValueOriginProducer::Lexical { .. } => return None,
         PreparedFunctionValueOriginProducer::IndependentExpression { producer } => {

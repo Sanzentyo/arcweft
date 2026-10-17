@@ -23,7 +23,6 @@ use arcweft_lang_hir::{
         HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
         HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
         HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
-        HirSelectedSelectTargetDisposition,
     },
     symbol::CallableDeclarationKey,
 };
@@ -274,12 +273,7 @@ impl CheckedSelectedExpressionGraph {
                 root_partition,
                 |owner| expressions.get(&owner)?.selected_postfix_candidate(),
                 selected_call,
-                |owner| {
-                    expressions
-                        .get(&owner)
-                        .is_some_and(super::PreparedExpressionFact::is_variant_expression)
-                        .then_some(HirSelectedSelectTargetDisposition::StaticVariantQualifier)
-                },
+                |owner| expressions.get(&owner)?.select_target_disposition(),
             )
             .map_err(|error| {
                 match error {

@@ -5557,6 +5557,23 @@ impl Analyzer<'_, '_, '_> {
             }
             return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
         }
+        if matches!(
+            callee_inputs,
+            crate::callable::PreparedCallCalleeConstraintInputs::Free
+        ) && selected.checked().is_some_and(|checked| {
+            matches!(
+                checked.declaration(),
+                crate::callable::CheckedCallableDeclaration::Environment(_)
+            )
+        }) {
+            // The selected declaration belongs to the call fact. A static
+            // selector coordinate (possibly just its namespace prefix) is
+            // not a separately evaluated function/namespace value.
+            self.facts
+                .discard_provisional_expression(value)
+                .map_err(FinalSemanticAnalysisError::from)?;
+            return Ok(AnalyzerPreparedCalleeExpression::none());
+        }
         let method_callee = match expression.kind() {
             HirExprKind::Select(select) => {
                 let HirSelectedMember::Name(name) = select.member() else {
@@ -5572,6 +5589,7 @@ impl Analyzer<'_, '_, '_> {
             match existing.checked_resolution() {
                 Some(CheckedExpressionResolution::Value(
                     CheckedValueResolution::ProjectCallable(_)
+                    | CheckedValueResolution::EnvironmentCallable(_)
                     | CheckedValueResolution::Registered(_),
                 )) => existing.checked_resolution().cloned(),
                 None if matches!(existing, super::PreparedExpressionFact::Variant(_)) => {
@@ -5649,6 +5667,15 @@ impl Analyzer<'_, '_, '_> {
                     declaration.clone(),
                     symbol.source_item(),
                 )),
+            ))
+        } else if let Some(checked) = selected.checked().filter(|checked| {
+            matches!(
+                checked.declaration(),
+                crate::callable::CheckedCallableDeclaration::Environment(_)
+            )
+        }) {
+            Some(CheckedExpressionResolution::Value(
+                CheckedValueResolution::EnvironmentCallable(checked.clone()),
             ))
         } else {
             Some(CheckedExpressionResolution::Value(

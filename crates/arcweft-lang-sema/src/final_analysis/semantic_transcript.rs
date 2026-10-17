@@ -2982,7 +2982,7 @@ fn write_value_resolution(
     owner: ExprId,
     ty: Option<&TypeKind>,
 ) -> Result<(), SemanticTranscriptError> {
-    transcript_update!(hasher, &value.semantic_transcript_tag().to_le_bytes());
+    transcript_update!(hasher, &value.semantic_tag().to_le_bytes());
     match value {
         CheckedValueResolution::Local(local) => {
             transcript_update!(hasher, &coordinates.binding(*local)?.canonical_bytes()?);
@@ -3004,6 +3004,25 @@ fn write_value_resolution(
         }
         CheckedValueResolution::ProjectCallable(callable) => {
             write_project_callable(hasher, analysis, coordinates, callable)?;
+        }
+        CheckedValueResolution::EnvironmentCallable(callable) => {
+            let facts = analysis
+                .checked_callables()
+                .callable(callable)
+                .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
+            let crate::callable::CheckedCallableDeclaration::Environment(declaration) =
+                callable.declaration()
+            else {
+                return Err(SemanticTranscriptError::MissingIdentity);
+            };
+            transcript_update!(hasher, declaration.semantic_digest().as_bytes());
+            transcript_update!(
+                hasher,
+                facts
+                    .sealed_interface_digest()
+                    .ok_or(SemanticTranscriptError::MissingIdentity)?
+                    .as_bytes()
+            );
         }
         CheckedValueResolution::ProjectItem(item) => {
             if !item.has_valid_semantic_identity() {

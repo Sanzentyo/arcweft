@@ -1369,15 +1369,20 @@ impl Analyzer<'_, '_, '_> {
                 )
                 .map(Some)
             }
-            HirExprKind::Select(select) => self
-                .prepare_qualified_variant_select(module, owner, select, expected)?
-                .map_or_else(
-                    || {
-                        self.check_select_expression(context, owner, select)
-                            .map(Some)
-                    },
-                    |variant| Ok(Some(variant)),
-                ),
+            HirExprKind::Select(select) => {
+                if let Some(variant) =
+                    self.prepare_qualified_variant_select(module, owner, select, expected)?
+                {
+                    return Ok(Some(variant));
+                }
+                if let Some(callable) =
+                    self.prepare_environment_callable_value(module, owner, expected)?
+                {
+                    return Ok(Some(callable));
+                }
+                self.check_select_expression(context, owner, select)
+                    .map(Some)
+            }
             _ => Ok(None),
         }
     }
@@ -1680,6 +1685,9 @@ impl Analyzer<'_, '_, '_> {
                 CheckedExpressionResolution::Value(resolution),
             )
             .into());
+        }
+        if let Some(callable) = self.prepare_environment_callable_value(module, owner, expected)? {
+            return Ok(callable);
         }
         let (ty, variant_owner, ordinal, selection) = if let (
             Some(expected),

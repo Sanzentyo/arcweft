@@ -74,7 +74,8 @@ impl<'a> PreparedEffectTraceCallAuthority<'a> {
             crate::callable::PreparedFunctionValueOriginProducer::IndependentExpression {
                 producer,
             } => prepared_call_node(self.graph, *producer).map(|_| *producer),
-            crate::callable::PreparedFunctionValueOriginProducer::Lexical { .. } => None,
+            crate::callable::PreparedFunctionValueOriginProducer::Declaration { .. }
+            | crate::callable::PreparedFunctionValueOriginProducer::Lexical { .. } => None,
         });
         let argument_sources = record.inputs().expression_sources();
         Some(EffectTraceSelectedCall {

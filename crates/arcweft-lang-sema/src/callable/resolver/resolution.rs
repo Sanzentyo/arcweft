@@ -51,19 +51,7 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             project,
             scope,
             context,
-        } => {
-            let path = path.clone();
-            match resolve_free_call(&mut request, &path, project, scope, context) {
-                Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
-                Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
-                    UnknownCallKind::Free,
-                    Some(path),
-                    None,
-                    None,
-                )),
-                Err(error) => ResolveCallOutcome::Rejected(error),
-            }
-        }
+        } => resolve_free_target(&mut request, path, project, scope, context),
         PreparedCallCallee::EnumConstructor { seed } => {
             match resolve_enum_constructor(&mut request, seed) {
                 Ok(target) => ResolveCallOutcome::Resolved(target),
@@ -136,6 +124,51 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
                 ResolvedNonCallableTarget::new(NonCallableSource::EvaluatedExpression, ty.clone()),
             ))
         }
+    }
+}
+
+/// Resolves an original declaration reference through the same ordered free
+/// family chain as direct calls. Parameter mapping/application is not entered.
+pub(crate) fn resolve_callable_reference(
+    mut request: CallResolverRequest<'_>,
+) -> ResolveCallOutcome {
+    if let Err(error) = request.work.record_resolver_invocation() {
+        return ResolveCallOutcome::Rejected(error.into());
+    }
+    if let Err(error) = check_query_step(&mut request) {
+        return ResolveCallOutcome::Rejected(error);
+    }
+    if request.parenthesized_call().is_some() {
+        return ResolveCallOutcome::Rejected(ResolveCallError::InvalidResolvedCallable);
+    }
+    let PreparedCallCallee::Free {
+        path,
+        project,
+        scope,
+        context,
+    } = request.callee.clone()
+    else {
+        return ResolveCallOutcome::Rejected(ResolveCallError::InvalidResolvedCallable);
+    };
+    resolve_free_target(&mut request, path, project, scope, context)
+}
+
+fn resolve_free_target(
+    request: &mut CallResolverRequest<'_>,
+    path: &CallablePath,
+    project: Option<&CallableDeclarationKey>,
+    scope: PreparedFreeCallScope,
+    context: PreparedFreeCallContext,
+) -> ResolveCallOutcome {
+    match resolve_free_call(request, path, project, scope, context) {
+        Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
+        Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+            UnknownCallKind::Free,
+            Some(path.clone()),
+            None,
+            None,
+        )),
+        Err(error) => ResolveCallOutcome::Rejected(error),
     }
 }
 
@@ -297,6 +330,28 @@ fn resolve_function_value(
 ) -> Result<ResolvedCallTarget, ResolveFunctionValueError> {
     check_query_step(request)?;
     let (id, schema) = match value.seed() {
+        ResolvedFunctionValueSeed::Declaration { checked } => {
+            let PreparedFunctionValueOriginProducer::Declaration {
+                checked: origin, ..
+            } = value.origin().producer()
+            else {
+                return Err(ResolveCallError::InvalidResolvedCallable.into());
+            };
+            if origin != checked {
+                return Err(ResolveCallError::InvalidResolvedCallable.into());
+            }
+            let record = Arc::clone(
+                request
+                    .checked
+                    .record(checked)
+                    .map_err(|_| ResolveCallError::InvalidResolvedCallable)?,
+            );
+            let callable =
+                resolve_catalog_record(&record, &[], None, CallableInstantiation::None, request)?;
+            return NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+                .map(ResolvedCallTarget::Candidates)
+                .map_err(ResolveFunctionValueError::Resolver);
+        }
         ResolvedFunctionValueSeed::Lexical {
             id,
             schema,

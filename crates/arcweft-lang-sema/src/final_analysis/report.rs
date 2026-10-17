@@ -1555,6 +1555,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         );
         validate_expressions(
             symbols,
+            &checked_callables,
             &semantic_shapes,
             &evaluation_topology,
             &modules,

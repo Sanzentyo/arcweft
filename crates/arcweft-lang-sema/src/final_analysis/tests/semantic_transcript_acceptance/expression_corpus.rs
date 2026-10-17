@@ -207,6 +207,7 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::LineContext => LineContext => Accepted,
     CheckedValueResolution::CharacterField { .. } => CharacterField => Accepted,
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
+    CheckedValueResolution::EnvironmentCallable(_) => EnvironmentCallable => Accepted,
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::CatalogAsset(_) => CatalogAsset => Accepted,
     CheckedValueResolution::ImportedProjectEntity(_) => ImportedProjectEntity => Accepted,
@@ -383,6 +384,7 @@ struct ExpressionCorpusRow {
 #[derive(Clone, Copy)]
 enum ExpressionCorpusFixture {
     Standard,
+    EnvironmentCallable,
     ExternalCharacter,
     CharacterNominal,
     RegisteredI32Pair,
@@ -394,6 +396,18 @@ impl ExpressionCorpusFixture {
     fn build(self, source: &str) -> super::Fixture {
         match self {
             Self::Standard => super::fixture(source, None),
+            Self::EnvironmentCallable => super::typed_overload_fixture_at_path(
+                source,
+                CallablePath::try_new(
+                    ["api", "combine"].map(|name| CallableName::try_new(name).unwrap()),
+                )
+                .unwrap(),
+                vec![super::TestCallableOverload::strict(
+                    [TypeKind::I64],
+                    TypeKind::I64,
+                )],
+                super::PRODUCTION_CALLABLE_LIMITS,
+            ),
             Self::ImportedHostSignal => super::fixture_with_host_target_signal(source),
             Self::ExternalCharacter => super::external_character_fixture(source),
             Self::CharacterNominal => super::character_nominal_fixture(source),
@@ -704,6 +718,20 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
                 ValueResolutionFamily::Local,
                 ValueResolutionFamily::ProjectCallable,
             ],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "checked environment callable value",
+            exact_path_families: false,
+            source: callable_value_match_source("api.combine"),
+            fixture: ExpressionCorpusFixture::EnvironmentCallable,
+            shapes: &[
+                ExprShapeFamily::Block,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Select,
+            ],
+            resolutions: &[ExpressionResolutionFamily::Value],
+            values: &[ValueResolutionFamily::EnvironmentCallable],
             selects: &[],
         },
         ExpressionCorpusRow {

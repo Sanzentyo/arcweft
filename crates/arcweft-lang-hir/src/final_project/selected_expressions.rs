@@ -148,13 +148,13 @@ pub enum HirSelectedCallExpressionDisposition {
     Unselected(HirSelectedCallExpressionInventory),
 }
 
-/// Accepted HIR Select whose target is a static nominal-variant qualifier.
+/// Accepted HIR Select whose target is a static declaration qualifier.
 ///
-/// The checked variant expression remains an evaluated value; only the
+/// The checked selected expression remains an evaluated value; only the
 /// qualifier subtree is omitted from the selected expression graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirSelectedSelectTargetDisposition {
-    StaticVariantQualifier,
+    StaticQualifier,
 }
 
 impl HirSelectedCallExpressionInventory {
@@ -1168,7 +1168,7 @@ impl HirAnalysisProjectView<'_> {
             };
             if let (
                 HirExprKind::Select(select),
-                Some(HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+                Some(HirSelectedSelectTargetDisposition::StaticQualifier),
             ) = (kind, select_target_disposition)
             {
                 if !matches!(select.member(), HirSelectedMember::Name(_)) {
@@ -1405,7 +1405,7 @@ fn selected_semantic_expression_edges(
     }
     if let (
         HirExprKind::Select(select),
-        Some(HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+        Some(HirSelectedSelectTargetDisposition::StaticQualifier),
     ) = (kind, selected_select_target)
     {
         if !matches!(select.member(), HirSelectedMember::Name(_)) {

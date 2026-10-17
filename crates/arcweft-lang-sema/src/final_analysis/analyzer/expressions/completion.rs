@@ -15,7 +15,7 @@ use arcweft_lang_hir::identity::StmtId;
 use arcweft_lang_hir::project::{
     HirControlTransferTarget, HirExpressionEvaluationEdge, HirLoopTargetFamily, HirReturnContext,
     HirSelectedCallExpressionDisposition, HirSelectedExpressionInventoryError,
-    HirSelectedSelectTargetDisposition, HirSemanticBodyOwner,
+    HirSemanticBodyOwner,
 };
 use arcweft_lang_hir::stmt::{
     HirConditionalElseBranch, HirContextualStmtBody, HirStatementBodyRole, HirStmtEvaluationPlan,
@@ -233,8 +233,7 @@ impl Analyzer<'_, '_, '_> {
                 owner,
                 fact.selected_postfix_candidate(),
                 call,
-                fact.is_variant_expression()
-                    .then_some(HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+                fact.select_target_disposition(),
             )
             .map_err(|error| {
                 AnalyzerExpressionError::fatal(match error {

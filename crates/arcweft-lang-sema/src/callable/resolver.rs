@@ -3,6 +3,7 @@
 mod outcome;
 mod preparation;
 mod prepared_identity;
+mod reference;
 mod resolution;
 
 pub use outcome::{
@@ -29,7 +30,7 @@ pub(crate) use prepared_identity::{
     PreparedFunctionValueOriginIdentity, PreparedResolvedCallableIdentity,
 };
 use resolution::corrupt;
-pub(crate) use resolution::resolve_call_target;
+pub(crate) use resolution::{resolve_call_target, resolve_callable_reference};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -904,6 +905,9 @@ impl AcceptedEnumVariantCase {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ResolvedFunctionValueSeed {
+    Declaration {
+        checked: CheckedCallableId,
+    },
     Lexical {
         id: LocalCallableId,
         schema: CallableSignatureSchema,
@@ -937,6 +941,12 @@ pub(crate) enum PreparedFunctionValueOriginQueryError {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedFunctionValueOriginProducer {
+    /// Original checked declaration, reached through zero or more immutable
+    /// value bindings. Its parameter grammar remains in the accepted record.
+    Declaration {
+        producer: ExprId,
+        checked: CheckedCallableId,
+    },
     /// A typed call-origin observation.  The prepared graph later resolves
     /// this site to either a continuation or an independent terminal value.
     Call(super::CheckedCallSite),
@@ -1165,6 +1175,21 @@ impl PreparedFunctionValueOriginQuery {
         let fact = fact
             .complete()
             .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+        if let CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(
+            checked,
+        )) = fact.resolution()
+        {
+            return Ok(PreparedFunctionValueOriginProgress::Ready(
+                PreparedFunctionValueOriginEvidence::new(
+                    self.callee,
+                    PreparedFunctionValueOriginProducer::Declaration {
+                        producer: self.current,
+                        checked: checked.clone(),
+                    },
+                    Vec::new(),
+                ),
+            ));
+        }
         if fact.function_specialization().is_some() {
             return Ok(PreparedFunctionValueOriginProgress::Ready(
                 PreparedFunctionValueOriginEvidence::new(

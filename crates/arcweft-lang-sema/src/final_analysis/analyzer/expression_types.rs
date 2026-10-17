@@ -142,7 +142,8 @@ pub(super) fn value_resolution_type(
             .and_then(|binding| world.environment().environment_binding(binding))
             .cloned(),
         // Named callable values require the staged body-effect authority.
-        CheckedValueResolution::ProjectCallable(_) => None,
+        CheckedValueResolution::ProjectCallable(_)
+        | CheckedValueResolution::EnvironmentCallable(_) => None,
         CheckedValueResolution::ProjectItem(item) => Some(item.ty()),
         CheckedValueResolution::ImportedProjectEntity(entity) => Some(entity.ty()),
         CheckedValueResolution::CatalogAsset(_) => {

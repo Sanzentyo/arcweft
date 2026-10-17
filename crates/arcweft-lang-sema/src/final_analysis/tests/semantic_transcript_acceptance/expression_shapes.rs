@@ -229,7 +229,7 @@ fn checked_match_transcript_uses_closed_value_and_select_families() {
         let CheckedExpressionResolution::Value(value) = expression.resolution() else {
             return None;
         };
-        Some(value.semantic_transcript_tag())
+        Some(value.semantic_tag())
     });
     let observed = value_tags.collect::<BTreeSet<_>>();
     assert!(observed.contains(&0x0300), "checked local value");

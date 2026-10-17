@@ -15,8 +15,9 @@ use super::{
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
-    CheckedCallApplicationDigest, CheckedCallableJoin, CheckedCallableJoinDigest,
-    CheckedCallableJoinError, CheckedCallableJoinTranscriptDigest, DropCallableId, OpenArgumentId,
+    CheckedCallApplicationDigest, CheckedCallableId, CheckedCallableJoin,
+    CheckedCallableJoinDigest, CheckedCallableJoinError, CheckedCallableJoinTranscriptDigest,
+    DropCallableId, OpenArgumentId,
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::checked_compile_time::CheckedCompileTimeScalar;
@@ -558,6 +559,9 @@ pub enum CheckedValueResolution {
         field: CharacterField,
     },
     ProjectCallable(CheckedProjectCallable),
+    /// A catalog-declared callable value. Its full schema and invocation row
+    /// remain owned by the exact checked catalog, not by an injected value ID.
+    EnvironmentCallable(CheckedCallableId),
     ProjectItem(CheckedProjectItem),
     ImportedProjectEntity(CheckedImportedProjectEntity),
     /// Catalog-owned resource identity. It is not a source declaration or a
@@ -569,22 +573,6 @@ pub enum CheckedValueResolution {
 }
 
 impl CheckedValueResolution {
-    /// Closed nested Value-family tag in the checked Match transcript.
-    pub(crate) const fn semantic_transcript_tag(&self) -> u16 {
-        match self {
-            Self::Local(_) => 0x0300,
-            Self::LineContext => 0x0301,
-            Self::CharacterField { .. } => 0x0302,
-            Self::ProjectCallable(_) => 0x0303,
-            Self::ProjectItem(_) => 0x0304,
-            Self::ImportedProjectEntity(_) => 0x0309,
-            Self::Entry(_) => 0x0305,
-            Self::Registered(_) => 0x0306,
-            Self::Constant(_) => 0x0307,
-            Self::CatalogAsset(_) => 0x0308,
-        }
-    }
-
     /// Exact Character identity retained by a checked Character value.
     pub fn character(&self) -> Option<CharacterId> {
         match self {
@@ -597,6 +585,7 @@ impl CheckedValueResolution {
             | Self::LineContext
             | Self::CharacterField { .. }
             | Self::ProjectCallable(_)
+            | Self::EnvironmentCallable(_)
             | Self::CatalogAsset(_)
             | Self::Entry(_)
             | Self::Registered(_)
@@ -615,6 +604,7 @@ impl CheckedValueResolution {
             Self::Local(_)
             | Self::LineContext
             | Self::ProjectCallable(_)
+            | Self::EnvironmentCallable(_)
             | Self::CatalogAsset(_)
             | Self::Entry(_)
             | Self::Registered(_)
@@ -1039,6 +1029,24 @@ pub enum CheckedExpressionResolution {
 }
 
 impl CheckedExpressionResolution {
+    /// Whether a Select's source qualifier denotes a declaration instead of
+    /// an evaluated receiver. All selected-expression consumers share this
+    /// rule, including declaration values and nominal variants.
+    pub const fn select_target_disposition(
+        &self,
+    ) -> Option<arcweft_lang_hir::project::HirSelectedSelectTargetDisposition> {
+        match self {
+            Self::Variant(_)
+            | Self::Value(
+                CheckedValueResolution::ProjectCallable(_)
+                | CheckedValueResolution::EnvironmentCallable(_),
+            ) => {
+                Some(arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticQualifier)
+            }
+            _ => None,
+        }
+    }
+
     /// Returns the unique prepared/final call site required by this checked
     /// semantic resolution. Raw HIR Call syntax is deliberately not enough:
     /// structural Call-shaped operands remain outside the callable graph.

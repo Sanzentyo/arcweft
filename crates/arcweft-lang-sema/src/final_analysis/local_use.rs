@@ -1389,7 +1389,10 @@ impl<'a> LocalUseChecker<'a> {
             CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
                 return self.binding_is_copy(*local, visiting);
             }
-            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(_)) => {
+            CheckedExpressionResolution::Value(
+                CheckedValueResolution::ProjectCallable(_)
+                | CheckedValueResolution::EnvironmentCallable(_),
+            ) => {
                 return Ok(true);
             }
             CheckedExpressionResolution::Closure(closure) => {

@@ -1322,6 +1322,18 @@ impl PreparedExpressionFact {
             )
     }
 
+    pub(crate) const fn select_target_disposition(
+        &self,
+    ) -> Option<arcweft_lang_hir::project::HirSelectedSelectTargetDisposition> {
+        if matches!(self, Self::Variant(_)) {
+            Some(arcweft_lang_hir::project::HirSelectedSelectTargetDisposition::StaticQualifier)
+        } else if let Some(resolution) = self.checked_resolution() {
+            resolution.select_target_disposition()
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn reusable_for_parametric_expectation(&self, expected: &TypeKind) -> bool {
         let Some(value_type) = self.value_type() else {
             return false;

@@ -5878,6 +5878,7 @@ fn runtime_value_resolution(
         // generation-bound checked callable digest. A bare callable reference
         // needs a typed function-value identity before it can be executable.
         CheckedValueResolution::ProjectCallable(_)
+        | CheckedValueResolution::EnvironmentCallable(_)
         | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::CatalogAsset(_)
         | CheckedValueResolution::ImportedProjectEntity(_)

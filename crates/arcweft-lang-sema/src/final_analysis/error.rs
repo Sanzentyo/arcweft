@@ -257,6 +257,12 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error("callable reference {owner:?} could not be resolved: {error}")]
+    CallableReferenceResolution {
+        owner: ExprId,
+        #[source]
+        error: Box<crate::callable::ResolveCallError>,
+    },
     #[error("local state {owner:?} must be declared in a retained View lexical scope")]
     InvalidRetainedState { owner: LocalId },
     #[error("local state {owner:?} must declare at least one retained field")]

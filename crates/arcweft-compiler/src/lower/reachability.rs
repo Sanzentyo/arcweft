@@ -766,11 +766,10 @@ pub(super) fn runtime_select_target_disposition(
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
 ) -> Option<HirSelectedSelectTargetDisposition> {
-    matches!(
-        analysis.expression(owner)?.resolution(),
-        CheckedExpressionResolution::Variant(_)
-    )
-    .then_some(HirSelectedSelectTargetDisposition::StaticVariantQualifier)
+    analysis
+        .expression(owner)?
+        .resolution()
+        .select_target_disposition()
 }
 
 fn validate_checked_executable_edges(
