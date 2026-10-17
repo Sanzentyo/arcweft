@@ -238,7 +238,7 @@ impl Engine {
                                     .expect("fused Map retains its original consuming Sum")
                                 {
                                     OwnedSumTarget::Bind(pattern) => {
-                                        candidate.bind_value(pattern, value, staged)
+                                        candidate.bind_value(pattern, value, staged);
                                     }
                                     OwnedSumTarget::Return => {
                                         let label = crate::value::runtime_value_label(&value);

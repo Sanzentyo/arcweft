@@ -2,8 +2,8 @@
 
 use super::RuntimePlanLowerStats;
 use arcweft_core::plan::{
-    FlowOp, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeProjection,
-    RuntimeStandardMapCompletion,
+    FlowOp, RuntimeFlow, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeDeclaration,
+    RuntimePlanTypeProjection, RuntimeStandardMapCompletion,
 };
 use arcweft_core::runtime_id::RuntimePlanTypeId;
 use arcweft_core::value::{RuntimeExpr, RuntimeExprKind, RuntimeExpressionNode};
@@ -14,19 +14,28 @@ impl RuntimePlanLowerStats {
             pure_function_candidates: plan.pure_function_candidate_count(),
             ..Self::default()
         };
-        for flow in plan.flows() {
-            let before = stats.sequence_map_sum_fusions;
-            stats.record_operations(plan, flow.body().ops());
-            stats.optimized_flows += usize::from(stats.sequence_map_sum_fusions > before);
-        }
-        for function in plan.function_sites().iter() {
+        let flow_sites = plan
+            .flows()
+            .iter()
+            .map(RuntimeFlow::function_site)
+            .collect::<std::collections::BTreeSet<_>>();
+        // Flow is an invocation index into these same immutable function rows.
+        // Visit the owning row once, irrespective of its entry projections.
+        for (site, function) in plan.function_sites().iter_with_ids() {
+            let mut body_stats = Self::default();
             match function.body() {
                 RuntimeFunctionSiteBody::Expression(expression) => {
-                    stats.record_expression(expression)
+                    body_stats.record_expression(expression);
                 }
                 RuntimeFunctionSiteBody::Executable(body) => {
-                    stats.record_operations(plan, body.ops())
+                    body_stats.record_operations(plan, body.ops());
                 }
+            }
+            stats.sequence_map_sum_fusions += body_stats.sequence_map_sum_fusions;
+            stats.optimized_op_slices += body_stats.optimized_op_slices;
+            if flow_sites.contains(&site) {
+                stats.optimized_flows += usize::from(body_stats.sequence_map_sum_fusions != 0);
+                stats.pure_call_exprs += body_stats.pure_call_exprs;
             }
         }
         stats
@@ -100,7 +109,7 @@ impl RuntimePlanLowerStats {
 }
 
 fn pure_function_type(plan: &RuntimePlan, ty: RuntimePlanTypeId) -> bool {
-    matches!(plan.type_table().get(ty).map(|row| row.projection()),
+    matches!(plan.type_table().get(ty).map(RuntimePlanTypeDeclaration::projection),
         Some(RuntimePlanTypeProjection::Function { contract, .. })
             if contract.invocation().is_closed() && contract.invocation().constant_effects().is_empty())
 }

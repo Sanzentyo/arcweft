@@ -333,7 +333,8 @@ pub struct RuntimePlanLowerStats {
     pub local_use_scan_ops: usize,
     pub sequence_map_sum_fusions: usize,
     pub sequence_source_inlines: usize,
-    /// Logical pure invocation sites, independent of physical Array expansion.
+    /// Logical pure invocation sites in Flow roots, independent of physical
+    /// Array expansion and the separately owned implementation bodies.
     pub pure_call_exprs: usize,
 }
 
@@ -8703,6 +8704,12 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops
             }
             RuntimeFlowValueContinuation::Ignore(tail) => {
+                // The effect or control continuation already completed. A fresh
+                // Unit literal owns no resource and requires no discard step.
+                // Other expressions must still run for traps, moves and drops.
+                if matches!(value.kind(), RuntimeExprSeedKind::Value(RuntimeValue::Unit)) {
+                    return self.lower_flow_tail(tail);
+                }
                 let mut ops = vec![RuntimeFlowOpSeed::Let {
                     pattern: RuntimePatternSeed::new(value.ty(), RuntimePatternSeedKind::Discard),
                     expr: value,

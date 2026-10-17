@@ -103,8 +103,14 @@ Sum, that same control owns the source-ordered suffix and its mapping boundary.
 The mapping's generated locals remain private; the original collection, aliases,
 and consuming result retain their caller scope. The semantic transcript includes
 the completion kind, mapping boundary, and complete body. Compiler statistics
-derive formed consumers and logical callback sites from this final typed plan;
-physical Array expansion does not multiply the logical invocation-site count.
+derive formed consumers and logical Flow callback sites from this final typed
+plan. Flow is an invocation projection of its immutable FunctionSite row, which
+is visited once. Physical Array expansion and separately owned implementation
+bodies do not multiply the Flow invocation-site count.
+
+Ignoring a fresh Unit result adds no separate executable discard operation.
+Its producing effect or control continuation has already completed. Other
+discarded expressions still execute for their traps, moves, and resource drops.
 
 Runtime semantic facts retain an accepted origin for every selected expression,
 including an effect carrier that owns no runtime value type. A static callee's
