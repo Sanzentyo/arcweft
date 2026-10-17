@@ -59,8 +59,12 @@ pub use execution_regions::{
 mod deterministic_program;
 mod entity_pattern;
 mod entity_value;
+mod environment_callable_value;
 pub use entity_pattern::{CheckedEntityPatternProjection, CheckedEntityPatternProjectionError};
 pub use entity_value::{CheckedEntityValueProjection, CheckedEntityValueProjectionError};
+pub use environment_callable_value::{
+    CheckedEnvironmentCallableValueProjection, CheckedEnvironmentCallableValueProjectionError,
+};
 mod execution_inputs;
 mod flow_execution;
 pub use deterministic_program::{

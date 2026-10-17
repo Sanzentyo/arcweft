@@ -5862,6 +5862,15 @@ fn runtime_value_resolution(
 ) -> Result<Option<RuntimeResolvedValue>, String> {
     Ok(Some(match value {
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
+        CheckedValueResolution::EnvironmentCallable(id) => {
+            let value = analysis
+                .environment_callable_value_projection(owner)
+                .map_err(|error| error.to_string())?;
+            if value.declaration().id() != id || value.ty() != ty {
+                return Err("environment callable projection differs from its accepted declaration or source type".to_owned());
+            }
+            RuntimeResolvedValue::EnvironmentCallable(Box::new(value))
+        }
         CheckedValueResolution::CatalogAsset(_) | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::ImportedProjectEntity(_)
             if matches!(ty, TypeKind::Ref(_)) => {
@@ -5878,7 +5887,6 @@ fn runtime_value_resolution(
         // generation-bound checked callable digest. A bare callable reference
         // needs a typed function-value identity before it can be executable.
         CheckedValueResolution::ProjectCallable(_)
-        | CheckedValueResolution::EnvironmentCallable(_)
         | CheckedValueResolution::ProjectItem(_)
         | CheckedValueResolution::CatalogAsset(_)
         | CheckedValueResolution::ImportedProjectEntity(_)

@@ -32,18 +32,42 @@ fn caller(value: i64) -> i64 {
         .expect("the original i64 overload");
     let references = analysis
         .expressions()
-        .filter_map(|(_, checked)| match checked.resolution() {
+        .filter_map(|(owner, checked)| match checked.resolution() {
             CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(id)) => {
-                Some((id, checked))
+                Some((owner, id, checked))
             }
             _ => None,
         })
         .collect::<Vec<_>>();
-    let [(reference, checked)] = references.as_slice() else {
+    let [(reference_owner, reference, checked)] = references.as_slice() else {
         panic!("only the bare declaration creates a callable value")
     };
     assert_eq!(*reference, declared.id());
     assert!(checked.effects().is_empty(), "creation does not invoke");
+    let projection = analysis
+        .environment_callable_value_projection(*reference_owner)
+        .expect("the accepted reference issues its original complete declaration");
+    assert_eq!(projection.declaration(), declared);
+    assert!(std::ptr::eq(projection.declaration(), declared));
+    assert_eq!(Some(projection.ty()), checked.source_value_type());
+    assert_eq!(
+        projection.type_identity(),
+        projection.ty().semantic_identity_digest().unwrap(),
+    );
+    let project = fixture.project.analysis_view().expect("accepted HIR");
+    assert!(
+        projection
+            .origin()
+            .validate_owner(project, *reference_owner)
+    );
+    for (owner, _) in analysis.calls() {
+        assert!(!projection.origin().validate_owner(project, owner));
+        assert!(matches!(
+            analysis.environment_callable_value_projection(owner),
+            Err(crate::final_analysis::CheckedEnvironmentCallableValueProjectionError::NotEnvironmentCallable { owner: rejected })
+                if rejected == owner
+        ));
+    }
 
     let applications = analysis
         .calls()

@@ -50,6 +50,7 @@ impl RuntimeResolvedValue {
         match self {
             Self::ProjectCallable { callable, .. } => callable.append_normalized_types(roots),
             Self::Local(_)
+            | Self::EnvironmentCallable(_)
             | Self::Place(_)
             | Self::Entity(_)
             | Self::DialogueLine(_)

@@ -2513,7 +2513,8 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         for expression in &self.expressions {
             match expression.payload() {
                 RuntimeProjectFunctionExpressionPayload::Value(
-                    value @ RuntimeResolvedValue::ProjectCallable { .. },
+                    value @ (RuntimeResolvedValue::ProjectCallable { .. }
+                    | RuntimeResolvedValue::EnvironmentCallable(_)),
                 ) => {
                     visitor(
                         expression.owner(),

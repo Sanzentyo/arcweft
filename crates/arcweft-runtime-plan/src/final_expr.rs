@@ -1915,6 +1915,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 })
             }
             RuntimeResolvedValue::Intrinsic(_)
+            | RuntimeResolvedValue::EnvironmentCallable(_)
             | RuntimeResolvedValue::DialogueLine(_)
             | RuntimeResolvedValue::Registered(_) => Err(format!(
                 "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
@@ -3064,6 +3065,15 @@ impl<'hir> FinalExprLowerer<'hir> {
      */
 
     fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
+        if matches!(
+            self.value(id),
+            Some(
+                RuntimeResolvedValue::ProjectCallable { .. }
+                    | RuntimeResolvedValue::EnvironmentCallable(_)
+            )
+        ) {
+            return self.lower_path(id);
+        }
         let target = if let Some(access) = self.semantic_facts.checked_local_place_access(id)
             && access.mode() == CheckedLocalPlaceMode::Inspect
         {
