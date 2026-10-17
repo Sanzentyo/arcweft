@@ -90,6 +90,14 @@ pub struct RuntimeNominalRecordDomainField {
 }
 
 impl RuntimeNominalRecordDomainField {
+    pub(in crate::plan) fn from_source_parts(
+        field: RuntimeRecordFieldId,
+        name: Option<String>,
+        ty: RuntimePlanTypeId,
+    ) -> Self {
+        Self { field, name, ty }
+    }
+
     #[must_use]
     pub const fn field(&self) -> RuntimeRecordFieldId {
         self.field
@@ -117,6 +125,19 @@ pub struct RuntimeNominalRecordDomain {
 }
 
 impl RuntimeNominalRecordDomain {
+    pub(in crate::plan) fn from_source_fields(
+        owner: RuntimePlanTypeId,
+        shape: RuntimeNominalRecordShape,
+        fields: Box<[RuntimeNominalRecordDomainField]>,
+    ) -> Self {
+        Self {
+            owner,
+            shape,
+            fields,
+            data_codec: None,
+        }
+    }
+
     pub(crate) fn from_admitted_parts(
         owner: RuntimePlanTypeId,
         shape: RuntimeNominalRecordShape,
@@ -201,6 +222,22 @@ pub struct RuntimeNominalRecordDomainTable {
 }
 
 impl RuntimeNominalRecordDomainTable {
+    /// Admits an already bounded private source candidate without cloning its
+    /// fields or refreshing a resource allowance.
+    pub(in crate::plan) fn from_source_domains(
+        rows: Vec<RuntimeNominalRecordDomain>,
+    ) -> Result<Self, RuntimeNominalRecordDomainError> {
+        let mut domains = BTreeMap::new();
+        for row in rows {
+            row.validate()?;
+            let owner = row.owner();
+            if domains.insert(owner, row).is_some() {
+                return Err(RuntimeNominalRecordDomainError::ConflictingDomain { owner });
+            }
+        }
+        Ok(Self { domains })
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.domains.len()

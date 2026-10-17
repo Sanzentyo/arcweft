@@ -76,6 +76,8 @@ pub(in crate::plan) enum RuntimeTaskSourceCodecError {
     DeclarationMismatch { table: &'static str },
     #[error("task source type declarations are invalid: {0}")]
     Types(#[from] crate::plan::type_table::source_codec::RuntimeTypeSourceError),
+    #[error("task source nominal declarations are invalid: {0}")]
+    Nominals(crate::plan::type_table::source_codec::RuntimeTypeSourceError),
     #[error("task source local declarations are invalid: {0}")]
     Locals(#[from] crate::plan::local_declarations::source_codec::RuntimeLocalSourceError),
     #[error("task source control declarations are invalid: {0}")]

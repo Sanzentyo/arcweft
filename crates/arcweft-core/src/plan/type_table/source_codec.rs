@@ -1,6 +1,7 @@
 //! Complete private source frame for the existing type declaration table.
 //! No executable row digest or task proof is accepted from this frame.
 
+pub(in crate::plan) mod domains;
 mod policy;
 mod projection;
 
@@ -89,6 +90,18 @@ pub(in crate::plan) enum RuntimeTypeSourceError {
     Function(#[from] RuntimeFunctionTypeSourceError),
     #[error("type source graph admission failed: {0}")]
     Admission(Box<RuntimePlanTypeTableError>),
+    #[error("nominal source owner {owner} has no admitted nominal declaration")]
+    NominalOwner { owner: RuntimePlanTypeId },
+    #[error("nominal source owners are not strictly ordered")]
+    NominalOrder,
+    #[error("nominal source owner {owner} is both a record and a variant")]
+    NominalKind { owner: RuntimePlanTypeId },
+    #[error("nominal source type count {expected} differs from supplied count {actual}")]
+    TypeTableCount { expected: usize, actual: usize },
+    #[error("nominal record source admission failed: {0}")]
+    RecordDomain(#[from] crate::plan::RuntimeNominalRecordDomainError),
+    #[error("nominal variant source admission failed: {0}")]
+    VariantDomain(#[from] crate::plan::RuntimeVariantDomainError),
     #[error("type source needs {required} output bytes, only {remaining} are reserved")]
     OutputCapacity { required: usize, remaining: usize },
 }

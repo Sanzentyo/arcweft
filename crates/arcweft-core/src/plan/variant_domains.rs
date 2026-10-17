@@ -86,6 +86,13 @@ pub struct RuntimeVariantCase {
 }
 
 impl RuntimeVariantCase {
+    pub(in crate::plan) fn from_source_parts(
+        name: String,
+        payload: Option<RuntimePlanTypeId>,
+    ) -> Self {
+        Self { name, payload }
+    }
+
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -107,6 +114,21 @@ pub struct RuntimeVariantDomain {
 }
 
 impl RuntimeVariantDomain {
+    pub(in crate::plan) fn from_source_cases(
+        owner: RuntimePlanTypeId,
+        nominal: RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
+        cases: Box<[RuntimeVariantCase]>,
+    ) -> Self {
+        Self {
+            owner,
+            nominal,
+            layout,
+            cases,
+            data_codec: None,
+        }
+    }
+
     pub(crate) fn from_admitted_parts(
         owner: RuntimePlanTypeId,
         nominal: RuntimeNominalTypeId,
@@ -173,6 +195,22 @@ pub struct RuntimeVariantDomainTable {
 }
 
 impl RuntimeVariantDomainTable {
+    /// Admits an already bounded private source candidate without cloning its
+    /// cases or refreshing a resource allowance.
+    pub(in crate::plan) fn from_source_domains(
+        rows: Vec<RuntimeVariantDomain>,
+    ) -> Result<Self, RuntimeVariantDomainError> {
+        let mut domains = BTreeMap::new();
+        for row in rows {
+            validate_domain(&row)?;
+            let owner = row.owner();
+            if domains.insert(owner, row).is_some() {
+                return Err(RuntimeVariantDomainError::ConflictingDomain { owner });
+            }
+        }
+        Ok(Self { domains })
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.domains.len()

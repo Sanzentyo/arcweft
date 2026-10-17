@@ -9,6 +9,7 @@ fn declaration_encoding(
     plan: &RuntimePlan,
 ) -> (
     crate::plan::type_table::source_codec::PreparedRuntimeTypeTableEncoding<'_>,
+    crate::plan::type_table::source_codec::domains::PreparedRuntimeNominalEncoding<'_>,
     crate::plan::local_declarations::source_codec::PreparedRuntimeLocalEncoding<'_>,
     crate::plan::control_effect::source_codec::PreparedRuntimeControlEncoding<'_>,
 ) {
@@ -19,6 +20,22 @@ fn declaration_encoding(
         .prepare_sources_encoding(
             crate::plan::type_table::source_codec::RuntimeTypeSourceLimits {
                 rows: u32::try_from(plan.type_table().len()).unwrap(),
+                elements: limits.declaration_elements,
+                encoded_bytes: limits.encoded_bytes,
+                decoded_bytes: limits.decoded_bytes,
+                policy_depth: limits.type_policy_depth,
+            },
+            &mut meter,
+        )
+        .unwrap();
+    let nominals = plan
+        .inventory
+        .prepare_nominal_sources_encoding(
+            crate::plan::type_table::source_codec::RuntimeTypeSourceLimits {
+                rows: u32::try_from(
+                    plan.nominal_record_domains().len() + plan.variant_domains().len(),
+                )
+                .unwrap(),
                 elements: limits.declaration_elements,
                 encoded_bytes: limits.encoded_bytes,
                 decoded_bytes: limits.decoded_bytes,
@@ -52,18 +69,20 @@ fn declaration_encoding(
             &mut meter,
         )
         .unwrap();
-    (types, locals, controls)
+    (types, nominals, locals, controls)
 }
 
-fn declaration_frames(plan: &RuntimePlan) -> [Vec<u8>; 3] {
-    let (types, locals, controls) = declaration_encoding(plan);
+fn declaration_frames(plan: &RuntimePlan) -> [Vec<u8>; 4] {
+    let (types, nominals, locals, controls) = declaration_encoding(plan);
     let mut type_bytes = Vec::with_capacity(types.encoded_bytes());
     types.append_to(&mut type_bytes).unwrap();
+    let mut nominal_bytes = Vec::with_capacity(nominals.encoded_bytes());
+    nominals.append_to(&mut nominal_bytes).unwrap();
     let mut local_bytes = Vec::with_capacity(locals.encoded_bytes());
     locals.append_to(&mut local_bytes).unwrap();
     let mut control_bytes = Vec::with_capacity(controls.encoded_bytes());
     controls.append_to(&mut control_bytes).unwrap();
-    [type_bytes, local_bytes, control_bytes]
+    [type_bytes, nominal_bytes, local_bytes, control_bytes]
 }
 
 fn task_count_offset(input: &[u8]) -> usize {
@@ -263,8 +282,9 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
     let mut second = encoded[row..].to_vec();
     second[..4].copy_from_slice(&1_u32.to_le_bytes());
     doubled.extend(second);
-    let (types, locals, controls) = declaration_encoding(&original);
+    let (types, nominals, locals, controls) = declaration_encoding(&original);
     let required = types.storage_bytes()
+        + nominals.storage_bytes()
         + locals.storage_bytes()
         + controls.storage_bytes()
         + 2 * (std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<ExpectedTaskPlanKey>());
