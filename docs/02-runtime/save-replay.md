@@ -277,6 +277,12 @@ cursor、呼出元 frame は直下 callee の元 return point を使い、異な
 cursor を受け入れない。Unrestricted を証明された register は実際の全 descendant
 が Copy であることを live／inert 共通の資源 traversal 内で再検証してから、保存用の
 複製または復元用の構築を始める。保存側の独立した Copy-proof catalog は保持しない。
+同じ元の proof にある tuple／record の子、callable capture、variant payload、
+sequence element の保証と producer が確定した shape も照合する。全体が affine
+でも Copy の子の保証を省かず、部分 move 後は残存する子を検証する。後の削除で
+Copy 保証の根拠になる sequence の個数も含み、未知の個数に仮の prefix を足さない。
+この借用 relation は既存の値 grammar と残りの validation-work を使い、
+node／encoded-byte の枠を再発行・二重消費しない。affine な兄弟要素は保持できる。
 
 lexical scope・cleanup・scoped defer は一つの generic grammar を live／inert に使う。
 private codec capability は Core の inert value carrier だけに実装し、live serde

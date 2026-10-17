@@ -4,6 +4,7 @@ mod callable_specialization;
 mod code;
 mod structure;
 
+pub(in crate::awbc) use code::CopyProof;
 pub(crate) use structure::types_compatible;
 
 use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram, AwbcTypeId};
@@ -300,10 +301,10 @@ impl AwbcProgram {
 
     /// Replays the original verifier lattice at the exact stopped coordinate.
     /// Only value-dependent carrier proofs need an additional retained check.
-    pub(crate) fn unrestricted_registers_at(
+    pub(in crate::awbc) fn copy_proofs_at(
         &self,
         cursor: super::fiber::FiberCursor,
-    ) -> Result<Vec<super::schema::AwbcRegisterId>, AwbcVerifyError> {
+    ) -> Result<Vec<(super::schema::AwbcRegisterId, CopyProof)>, AwbcVerifyError> {
         let layout = self
             .functions
             .get(cursor.function.index())
@@ -337,6 +338,6 @@ impl AwbcProgram {
             cursor.block.index(),
             cursor.instruction_offset,
         )?
-        .unrestricted)
+        .copy_proofs)
     }
 }

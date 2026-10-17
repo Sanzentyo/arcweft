@@ -431,7 +431,7 @@ pub(crate) fn visit_admitted_storage<E: From<RuntimeSchemaError>>(
 
 /// Applies the existing schema predicate to already admitted storage, without
 /// refreshing any value quota. Its predicate owns the enclosing shared work.
-pub(super) fn validate_admitted_view<V: ValueValidation>(
+pub(crate) fn validate_admitted_view<V: ValueValidation>(
     value: RuntimeValueView<'_>,
     validation: &mut V,
     expected: V::Expected,

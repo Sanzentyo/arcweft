@@ -321,11 +321,11 @@ where
         let context = self.value_context(program)?;
         context.validate_formats(self.format.as_ref(), &self.format_attempts, resources, view)?;
         context.validate_scopes(&self.root_cleanups, &self.scopes, resources, view)?;
-        let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
+        let copy_proofs = program.copy_proofs_at(cursor).map_err(|error| {
             crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error))
         })?;
         context
-            .validate_registers(&unrestricted, resources, view, path)
+            .validate_registers(&copy_proofs, resources, view, path)
             .map_err(|error| {
                 crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
             })
@@ -3626,13 +3626,13 @@ fn validate_frame(
         &resources.work(),
     )?;
     let context = frame.value_context(program)?;
-    let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
+    let copy_proofs = program.copy_proofs_at(cursor).map_err(|error| {
         FiberStateError::Snapshot(
             crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error)),
         )
     })?;
     context
-        .validate_registers(&unrestricted, resources, RuntimeValue::view, path)
+        .validate_registers(&copy_proofs, resources, RuntimeValue::view, path)
         .map_err(|error| FiberStateError::InvalidRuntimeValue {
             path: path.to_owned(),
             reason: error.to_string(),

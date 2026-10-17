@@ -21,25 +21,25 @@ impl<'value, V> FrameValueContext<'value, V> {
     /// Register types and bindings belong to this same original frame.
     pub(super) fn validate_registers(
         &self,
-        unrestricted: &[super::AwbcRegisterId],
+        copy_proofs: &[(super::AwbcRegisterId, crate::awbc::verify::CopyProof)],
         resources: &mut ValueResourceAdmission,
         view: impl Fn(&'value V) -> RuntimeValueView<'value>,
         path: &str,
     ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
         for (index, (slot, storage)) in self.layout.slots.iter().zip(self.registers).enumerate() {
+            let proof = copy_proofs
+                .binary_search_by_key(&index, |(register, _)| register.index())
+                .ok()
+                .map(|index| &copy_proofs[index].1);
             self.program.runtime_types.get(slot.ty.index()).ok_or(
                 crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { ty: slot.ty },
             )?;
             storage
                 .validate_program_type(
-                    if unrestricted
-                        .binary_search_by_key(&index, |register| register.index())
-                        .is_ok()
-                    {
-                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
-                    } else {
-                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned
-                    },
+                    proof.map_or(
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned,
+                        crate::awbc::verify::CopyProof::ownership_requirement,
+                    ),
                     crate::program_types::RuntimeProgramValueType::Awbc {
                         program: self.program,
                         ty: slot.ty,
@@ -49,6 +49,21 @@ impl<'value, V> FrameValueContext<'value, V> {
                     &view,
                 )
                 .map_err(|error| error.within_value_path(&format!("{path}.registers[{index}]")))?;
+            if let Some(proof) = proof
+                && !matches!(proof, crate::awbc::verify::CopyProof::Copyable)
+            {
+                proof
+                    .validate_storage(storage, &resources.work(), &view, 0)
+                    .map_err(|source| {
+                        crate::program_types::RuntimeProgramTypeError::from(
+                            crate::awbc::value_admission::AwbcValueAdmissionError::Value {
+                                ty: slot.ty,
+                                source,
+                            },
+                        )
+                        .within_value_path(&format!("{path}.registers[{index}]"))
+                    })?;
+            }
         }
         Ok(())
     }

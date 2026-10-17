@@ -480,6 +480,16 @@ revalidate the original program's ownership obligations at their exact resume
 coordinates before constructing or copying retained values. Ownership observation
 shares the cumulative value-resource traversal with ordinary storage admission.
 
+Resume admission retains the same verifier proof for mixed aggregates as well:
+tuple/record fields, callable captures, variant payloads and sequence elements
+can carry Copy guarantees beside affine siblings. Producer-known shape and
+sequence cardinality are checked before construction, including when a later
+removal will expose the Copy guarantee. An unknown-length unrestricted sequence
+does not imply an existing prefix element. Slicing retains only a guarantee
+common to every possible remaining element; front/back removal updates the
+corresponding end. These borrowed proof relations use the existing value grammar
+and remaining validation-work allowance without charging node/byte quotas again.
+
 `EmitEffect` is for already modeled Sans I/O effect requests. A call that must
 cross a host ABI boundary uses `HostCall` below. There is no generic “execute
 string opcode”.

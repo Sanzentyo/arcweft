@@ -1,9 +1,10 @@
 use super::*;
 use crate::awbc::fiber::FiberCursor;
+use crate::awbc::schema::AwbcPlaceReadMode;
 use crate::entry::RuntimeSchemaLimits;
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::value::ownership::RuntimeValueOwnershipAdmissionError;
-use crate::value::{AwbcRuntimeValueSnapshot, RuntimeSeq};
+use crate::value::{AwbcRuntimeValueSnapshot, RuntimePlaceStorage, RuntimeSeq};
 use std::sync::Arc;
 
 fn guarded_copy_program() -> AwbcProgram {
@@ -88,12 +89,15 @@ fn ownership_guard_refines_only_the_checked_value_at_the_exact_cursor() {
     ] {
         assert_eq!(
             program
-                .unrestricted_registers_at(FiberCursor {
+                .copy_proofs_at(FiberCursor {
                     function: AwbcFunctionId(0),
                     block: AwbcBlockId(0),
                     instruction_offset: offset,
                 })
-                .unwrap(),
+                .unwrap()
+                .into_iter()
+                .map(|(register, _)| register)
+                .collect::<Vec<_>>(),
             expected
         );
     }
@@ -238,4 +242,361 @@ fn inert_frame_counts_precede_original_ownership_dataflow() {
             );
         }
     }
+}
+
+fn mixed_copy_program() -> AwbcProgram {
+    let mut program = guarded_copy_program();
+    program.runtime_types.push(runtime_type(
+        74,
+        AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(2), AwbcTypeId(1)]),
+    ));
+    program.signatures[0].params = vec![AwbcTypeId(1)];
+    program.frame_layouts[0].slots = [1, 2, 3, 2]
+        .into_iter()
+        .enumerate()
+        .map(|(index, ty)| AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(ty),
+            role: if index == 0 {
+                AwbcFrameSlotRole::Parameter
+            } else {
+                AwbcFrameSlotRole::Temporary
+            },
+            scope_depth: 0,
+        })
+        .collect();
+    program.instructions = vec![
+        AwbcInstruction::MakeSequence {
+            dst: AwbcRegisterId(1),
+            items: Vec::new(),
+        },
+        AwbcInstruction::MakeTuple {
+            dst: AwbcRegisterId(2),
+            items: vec![AwbcRegisterId(1), AwbcRegisterId(0)],
+        },
+        AwbcInstruction::ProjectTuple {
+            dst: AwbcRegisterId(3),
+            target: AwbcRegisterId(2),
+            ordinal: 0,
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program
+}
+
+fn mixed_copy_fiber(program: &AwbcProgram, identity: &str) -> FiberState {
+    let mut fiber = FiberState::for_entry(program, AwbcEntryId(0), 1, 64).unwrap();
+    fiber
+        .bind_function_argument_values_owned(
+            program,
+            vec![RuntimeValue::NeedHandle(
+                crate::tests::reusable_need_with_outcome(
+                    identity,
+                    crate::task::TaskOutcomeContract::program(RuntimeSemanticTypeId::from_bytes(
+                        [71; 32],
+                    )),
+                ),
+            )],
+        )
+        .unwrap();
+    fiber
+}
+
+#[test]
+fn restore_checks_copy_subtrees_without_rejecting_affine_siblings() {
+    let program = Arc::new(mixed_copy_program());
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
+    let mut distinct = mixed_copy_fiber(&program, "distinct.forged.child");
+    let forged = RuntimeValue::Seq(RuntimeSeq::values(vec![
+        distinct.frames[0].registers[0].take().unwrap(),
+    ]));
+    let forged = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&forged, &owner).unwrap();
+    let mut fiber = mixed_copy_fiber(&program, "original.affine.sibling");
+    super::super::vm::step(
+        &program,
+        &mut fiber,
+        super::super::vm::VmStepOptions {
+            max_instructions: 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(fiber.cursor.instruction_offset, 2);
+    let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let mut restored = saved.clone().into_live_for_program(&owner).unwrap();
+    let mut tampered = saved.clone();
+    let Some(AwbcRuntimeValueSnapshot::Tuple(items)) = tampered.frames[0].registers[2].as_mut()
+    else {
+        panic!("the mixed aggregate remains a tuple");
+    };
+    items[0] = forged;
+    let error = restored
+        .replace_from_snapshot(tampered, &owner)
+        .expect_err("a distinct affine descendant cannot replace a producer-proven Copy subtree");
+    assert!(
+        error
+            .to_string()
+            .contains("original Copy-proof value shape"),
+        "{error:?}"
+    );
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+        saved
+    );
+    super::super::vm::step(
+        &program,
+        &mut restored,
+        super::super::vm::VmStepOptions {
+            max_instructions: 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(restored.status, FiberStatus::Returned);
+
+    let mut distinct = mixed_copy_fiber(&program, "distinct.live.child");
+    let Some(RuntimeValue::Tuple(items)) = fiber.frames[0].registers[2].as_mut() else {
+        panic!("the live mixed aggregate remains a tuple");
+    };
+    items[0] = RuntimeValue::Seq(RuntimeSeq::values(vec![
+        distinct.frames[0].registers[0].take().unwrap(),
+    ]));
+    let error = AwbcFiberStateSnapshot::from_live(&fiber, &owner)
+        .expect_err("live capture must check the same original subtree proof before copying");
+    assert!(
+        error
+            .to_string()
+            .contains("original Copy-proof value shape"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn pushing_to_an_unknown_copy_sequence_does_not_invent_a_copy_prefix() {
+    let mut program = guarded_copy_program();
+    program.runtime_types[2] = runtime_type(
+        73,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(1),
+        },
+    );
+    program.signatures[0].params = vec![AwbcTypeId(2), AwbcTypeId(1)];
+    program.functions[0].input_ownership = [
+        crate::plan::RuntimeFunctionParameterPassing::Value,
+        crate::plan::RuntimeFunctionParameterPassing::Affine,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, passing)| {
+        AwbcFunctionInputOwnership::parameter(
+            manual_awbc_formal_identity(&format!("awbc.ownership_admission.push.{index}")),
+            u32::try_from(index).unwrap(),
+            passing,
+        )
+    })
+    .collect();
+    program.functions[0].input_ownership[0].requirement =
+        RuntimeValueOwnershipRequirement::Unrestricted;
+    program.frame_layouts[0].slots = [2, 1, 1, 1]
+        .into_iter()
+        .enumerate()
+        .map(|(index, ty)| AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(ty),
+            role: if index < 2 {
+                AwbcFrameSlotRole::Parameter
+            } else {
+                AwbcFrameSlotRole::Temporary
+            },
+            scope_depth: 0,
+        })
+        .collect();
+    program.instructions = vec![
+        AwbcInstruction::SequencePush {
+            sequence: AwbcRegisterId(0),
+            value: AwbcRegisterId(1),
+        },
+        AwbcInstruction::CopyValue {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(2),
+        },
+    ];
+    let mut some = program.blocks[0].clone();
+    some.instructions = AwbcTableRange::new(1, 1);
+    some.safe_point = AwbcSafePointKind::None;
+    let mut none = some.clone();
+    none.instructions = AwbcTableRange::new(2, 0);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.blocks[0].terminator = AwbcTerminator::SequenceNext {
+        sequence: AwbcRegisterId(0),
+        item: AwbcRegisterId(2),
+        some_block: AwbcBlockId(1),
+        none_block: AwbcBlockId(2),
+    };
+    program.blocks.extend([some, none]);
+    program.functions[0].blocks = AwbcTableRange::new(0, 3);
+    expect_project_call_rejection(program, "producer-proven unrestricted CopyValue source");
+}
+
+#[test]
+fn partial_copy_relations_share_the_admitted_node_and_work_allowance() {
+    let live = RuntimeValue::Tuple(vec![RuntimeValue::Unit, RuntimeValue::Unit]);
+    let inert = AwbcRuntimeValueSnapshot::Tuple(vec![
+        AwbcRuntimeValueSnapshot::Unit,
+        AwbcRuntimeValueSnapshot::Unit,
+    ]);
+    let proof = crate::awbc::verify::CopyProof::Tuple(vec![
+        crate::awbc::verify::CopyProof::Copyable,
+        crate::awbc::verify::CopyProof::Affine,
+    ]);
+    for value in [live.view(), inert.view()] {
+        let storage = RuntimePlaceStorage::from(value);
+        let mut resources = ValueResourceAdmission::live(RuntimeSchemaLimits {
+            max_nodes: 3,
+            ..RuntimeSchemaLimits::engine_default()
+        });
+        RuntimeValueOwnershipRequirement::Owned
+            .admit(value, &mut resources, 0)
+            .unwrap();
+        proof
+            .validate_storage(&storage, &resources.work(), &|value| *value, 0)
+            .unwrap();
+        assert!(matches!(
+            RuntimeValueOwnershipRequirement::Owned.admit(
+                RuntimeValue::Unit.view(),
+                &mut resources,
+                0
+            ),
+            Err(RuntimeValueOwnershipAdmissionError::Resource(_))
+        ));
+
+        let mut limited = ValueResourceAdmission::live(RuntimeSchemaLimits {
+            max_validation_work: 3,
+            ..RuntimeSchemaLimits::engine_default()
+        });
+        RuntimeValueOwnershipRequirement::Owned
+            .admit(value, &mut limited, 0)
+            .unwrap();
+        assert!(matches!(
+            proof.validate_storage(&storage, &limited.work(), &|value| *value, 0),
+            Err(crate::entry::RuntimeSchemaError::ValidationWork { .. })
+        ));
+    }
+}
+
+fn partially_moved_record_program() -> AwbcProgram {
+    let mut program = mixed_copy_program();
+    let fields = [0, 1].map(|ordinal| {
+        crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap()
+    });
+    program
+        .strings
+        .extend(["kept".to_owned(), "moved".to_owned()]);
+    program.runtime_types[3] = runtime_type(
+        74,
+        AwbcRuntimeTypeShape::Record {
+            public_id: None,
+            fields: vec![
+                AwbcRecordField {
+                    field: fields[0],
+                    name: Some(AwbcStringId(1)),
+                    ty: AwbcTypeId(2),
+                },
+                AwbcRecordField {
+                    field: fields[1],
+                    name: Some(AwbcStringId(2)),
+                    ty: AwbcTypeId(1),
+                },
+            ],
+        },
+    );
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(1),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.truncate(1);
+    program.instructions.extend([
+        AwbcInstruction::MakeRecord {
+            dst: AwbcRegisterId(2),
+            ty: AwbcTypeId(3),
+            fields: vec![AwbcRegisterId(1), AwbcRegisterId(0)],
+        },
+        AwbcInstruction::ReadPlace {
+            dst: AwbcRegisterId(4),
+            root: AwbcRegisterId(2),
+            fields: vec![fields[1]],
+            mode: AwbcPlaceReadMode::Move,
+        },
+        AwbcInstruction::ReadPlace {
+            dst: AwbcRegisterId(3),
+            root: AwbcRegisterId(2),
+            fields: vec![fields[0]],
+            mode: AwbcPlaceReadMode::Copy,
+        },
+    ]);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 4);
+    program.canonicalize_string_table();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    program
+}
+
+#[test]
+fn restore_checks_surviving_copy_children_in_a_partially_moved_record() {
+    let program = Arc::new(partially_moved_record_program());
+    let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
+    let mut fiber = mixed_copy_fiber(&program, "partial.original.sibling");
+    super::super::vm::step(
+        &program,
+        &mut fiber,
+        super::super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .unwrap();
+    assert_eq!(fiber.cursor.instruction_offset, 3);
+    assert!(fiber.frames[0].registers[2].record_parts().unwrap().1[1].is_vacant());
+    let saved = AwbcFiberStateSnapshot::from_live(&fiber, &owner).unwrap();
+    let mut restored = saved.clone().into_live_for_program(&owner).unwrap();
+    let mut distinct = mixed_copy_fiber(&program, "partial.distinct.child");
+    let forged = RuntimeValue::Seq(RuntimeSeq::values(vec![
+        distinct.frames[0].registers[0].take().unwrap(),
+    ]));
+    let forged = AwbcRuntimeValueSnapshot::from_runtime_value_for_program(&forged, &owner).unwrap();
+    let mut tampered = saved.clone();
+    let mut replaced = 0;
+    tampered.frames[0].registers[2] = std::mem::take(&mut tampered.frames[0].registers[2])
+        .try_map(&mut |_| {
+            replaced += 1;
+            Ok::<_, std::convert::Infallible>(forged.clone())
+        })
+        .unwrap();
+    assert_eq!(replaced, 1);
+    let error = restored
+        .replace_from_snapshot(tampered, &owner)
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("original Copy-proof value shape"),
+        "{error:?}"
+    );
+    assert_eq!(
+        AwbcFiberStateSnapshot::from_live(&restored, &owner).unwrap(),
+        saved
+    );
+    super::super::vm::step(
+        &program,
+        &mut restored,
+        super::super::vm::VmStepOptions {
+            max_instructions: 2,
+        },
+    )
+    .unwrap();
+    assert_eq!(restored.status, FiberStatus::Returned);
 }

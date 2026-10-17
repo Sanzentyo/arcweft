@@ -5,6 +5,7 @@
 
 mod assignment;
 pub(super) use assignment::AssignmentAdmission;
+mod copy_proof;
 mod format;
 
 use super::AwbcVerifyError;
@@ -61,7 +62,7 @@ struct FlowState {
 
 pub(super) struct ResumeRequirements {
     pub(super) scopes: Vec<AwbcScopeId>,
-    pub(super) unrestricted: Vec<AwbcRegisterId>,
+    pub(super) copy_proofs: Vec<(AwbcRegisterId, CopyProof)>,
 }
 
 impl FlowState {
@@ -72,22 +73,22 @@ impl FlowState {
     ) -> ResumeRequirements {
         ResumeRequirements {
             scopes: self.scopes.clone(),
-            unrestricted: self
+            copy_proofs: self
                 .copy_proofs
                 .iter()
                 .enumerate()
                 .filter(|(index, proof)| {
-                    proof.permits_copy()
+                    proof.requires_retained_check()
                         && !runtime_type_permits_copy(program, layout.slots[*index].ty, 0)
                 })
-                .map(|(index, _)| AwbcRegisterId(block_index_to_u32(index)))
+                .map(|(index, proof)| (AwbcRegisterId(block_index_to_u32(index)), proof.clone()))
                 .collect(),
         }
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum CopyProof {
+pub(in crate::awbc) enum CopyProof {
     Copyable,
     Affine,
     Tuple(Vec<CopyProof>),
@@ -97,6 +98,7 @@ enum CopyProof {
         payload: Option<Box<CopyProof>>,
     },
     Sequence(Vec<CopyProof>),
+    UniformSequence(Box<CopyProof>),
     Function(Vec<CopyProof>),
 }
 
@@ -109,15 +111,17 @@ impl CopyProof {
             | Self::Record(values)
             | Self::Sequence(values)
             | Self::Function(values) => values.iter().all(Self::permits_copy),
+            Self::UniformSequence(item) => item.permits_copy(),
             Self::Variant { payload, .. } => payload.as_deref().is_none_or(Self::permits_copy),
         }
     }
 
     fn compact(self) -> Self {
-        if self.permits_copy() {
-            Self::Copyable
-        } else {
-            self
+        // Producer shape is needed after mutation, projection and resumption.
+        // Static Copy types are compacted at the original output row instead.
+        match self {
+            Self::UniformSequence(ref item) if item.permits_copy() => Self::Copyable,
+            _ => self,
         }
     }
 
@@ -154,6 +158,13 @@ impl CopyProof {
                 },
             }
             .compact(),
+            (
+                Self::Sequence(_) | Self::UniformSequence(_),
+                Self::Sequence(_) | Self::UniformSequence(_),
+            ) => {
+                Self::UniformSequence(Box::new(self.sequence_item().merge(&other.sequence_item())))
+            }
+            _ if self.permits_copy() && other.permits_copy() => Self::Copyable,
             _ => Self::Affine,
         }
     }
@@ -164,7 +175,21 @@ impl CopyProof {
                 values.get(ordinal).cloned()
             }
             Self::Copyable => Some(Self::Copyable),
+            Self::UniformSequence(item) => Some((**item).clone()),
             Self::Affine | Self::Function(_) | Self::Variant { .. } => None,
+        }
+    }
+
+    fn sequence_item(&self) -> Self {
+        match self {
+            Self::Copyable => Self::Copyable,
+            Self::Sequence(values) => values
+                .iter()
+                .cloned()
+                .reduce(|left, right| left.merge(&right))
+                .unwrap_or(Self::Copyable),
+            Self::UniformSequence(item) => (**item).clone(),
+            _ => Self::Affine,
         }
     }
 }
@@ -2445,7 +2470,9 @@ fn apply_instruction_copy_and_move_effects(
             outputs.push(*dst);
             output_proof = Some(match &state.copy_proofs[sequence.index()] {
                 CopyProof::Copyable => CopyProof::Copyable,
-                CopyProof::Sequence(values) => CopyProof::Sequence(values.clone()).compact(),
+                proof @ (CopyProof::Sequence(_) | CopyProof::UniformSequence(_)) => {
+                    CopyProof::UniformSequence(Box::new(proof.sequence_item())).compact()
+                }
                 _ => base_copy_proof(program, dst_type(verifier, function, block, *dst)?),
             });
         }
@@ -2508,7 +2535,14 @@ fn apply_instruction_copy_and_move_effects(
             } else {
                 base_copy_proof(program, option_ty)
             });
-            let popped_proof = pop_sequence_proof(sequence_proof);
+            let popped_proof = pop_sequence_proof(
+                sequence_proof,
+                if matches!(instruction, AwbcInstruction::VecPop { .. }) {
+                    SequenceEnd::Last
+                } else {
+                    SequenceEnd::First
+                },
+            );
             mutated_proof = Some(update_record_proof_path(
                 &state.copy_proofs[base.index()],
                 program,
@@ -2849,10 +2883,15 @@ fn apply_instruction_copy_and_move_effects(
             state.copy_proofs[target.index()] = proof;
         }
     }
-    if let Some(proof) = output_proof {
-        if let Some(output) = outputs.first() {
-            state.copy_proofs[output.index()] = proof;
-        }
+    if let Some(proof) = output_proof
+        && let Some(output) = outputs.first()
+    {
+        let ty = register_type(verifier, function, block, *output)?;
+        state.copy_proofs[output.index()] = if runtime_type_permits_copy(program, ty, 0) {
+            CopyProof::Copyable
+        } else {
+            proof
+        };
     }
     for output in outputs {
         state.initialized[output.index()] = RuntimePlaceInitialization::Initialized;
@@ -2887,30 +2926,50 @@ fn sequence_element_proof(
             .cloned()
             .reduce(|left, right| left.merge(&right))
             .unwrap_or_else(|| base_copy_proof(program, item_ty)),
+        CopyProof::UniformSequence(item) => (**item).clone(),
         _ => base_copy_proof(program, item_ty),
     }
 }
 
 fn append_sequence_proof(sequence: CopyProof, value: CopyProof) -> CopyProof {
     match sequence {
-        CopyProof::Copyable => CopyProof::Sequence(vec![CopyProof::Copyable, value]).compact(),
+        CopyProof::Copyable => {
+            CopyProof::UniformSequence(Box::new(CopyProof::Copyable.merge(&value))).compact()
+        }
         CopyProof::Sequence(mut values) => {
             values.push(value);
             CopyProof::Sequence(values).compact()
+        }
+        CopyProof::UniformSequence(item) => {
+            CopyProof::UniformSequence(Box::new(item.merge(&value))).compact()
         }
         _ => CopyProof::Affine,
     }
 }
 
-fn pop_sequence_proof(sequence: CopyProof) -> CopyProof {
+#[derive(Clone, Copy)]
+enum SequenceEnd {
+    First,
+    Last,
+}
+
+fn pop_sequence_proof(sequence: CopyProof, end: SequenceEnd) -> CopyProof {
     match sequence {
         CopyProof::Copyable => CopyProof::Copyable,
         CopyProof::Sequence(mut values) => {
             if !values.is_empty() {
-                values.remove(0);
+                match end {
+                    SequenceEnd::First => {
+                        values.remove(0);
+                    }
+                    SequenceEnd::Last => {
+                        values.pop();
+                    }
+                }
             }
             CopyProof::Sequence(values).compact()
         }
+        CopyProof::UniformSequence(item) => CopyProof::UniformSequence(item),
         _ => CopyProof::Affine,
     }
 }
@@ -3147,7 +3206,8 @@ fn apply_terminator(
             }
             let mut nonempty = state.clone();
             let source_proof = state.copy_proofs[sequence.index()].clone();
-            nonempty.copy_proofs[sequence.index()] = pop_sequence_proof(source_proof.clone());
+            nonempty.copy_proofs[sequence.index()] =
+                pop_sequence_proof(source_proof.clone(), SequenceEnd::First);
             write_register(verifier, function, block, *item, &mut nonempty)?;
             nonempty.copy_proofs[item.index()] = source_proof
                 .element(0)
@@ -5099,19 +5159,13 @@ fn assign_pattern_copy_proofs(
             }
             if let AwbcPatternRest::Bind(target) = rest {
                 let rest_ty = register_type(verifier, function, block, *target)?;
-                let tail_proofs = match proof {
+                state.copy_proofs[target.index()] = match proof {
                     CopyProof::Sequence(values) => {
-                        values.iter().skip(items.len()).cloned().collect::<Vec<_>>()
+                        CopyProof::Sequence(values.iter().skip(items.len()).cloned().collect())
                     }
-                    CopyProof::Copyable => Vec::new(),
-                    _ => vec![base_copy_proof(program, item_ty)],
-                };
-                state.copy_proofs[target.index()] = if proof.permits_copy() {
-                    CopyProof::Copyable
-                } else if tail_proofs.is_empty() {
-                    base_copy_proof(program, rest_ty)
-                } else {
-                    CopyProof::Sequence(tail_proofs).compact()
+                    CopyProof::UniformSequence(item) => CopyProof::UniformSequence(item.clone()),
+                    CopyProof::Copyable => CopyProof::Copyable,
+                    _ => base_copy_proof(program, rest_ty),
                 };
             }
         }
