@@ -15,6 +15,57 @@ use crate::value::{
 };
 
 #[test]
+fn inert_literal_sources_are_admitted_under_the_actual_building_type_domain_authority() {
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    use crate::plan::value_admission::PlanValueAuthority;
+    use crate::value::AwbcRuntimeValueSnapshot;
+    let fixture = || {
+        crate::plan::type_table::source_codec::domains::tests::builder(
+            crate::entry::RuntimeNominalRecordShape::Record,
+            2,
+            true,
+        )
+    };
+    let original = fixture()
+        .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 0)
+        .unwrap();
+    let semantic = RuntimeSemanticTypeId::from_bytes([1; 32]);
+    let value = crate::program_types::RuntimeProgramTypes::Plan(&original)
+        .try_record_value(
+            semantic,
+            vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let mut source = AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap();
+    let builder = fixture();
+    let ty = builder
+        .resolve_seed_type("literal source", semantic)
+        .unwrap();
+    let admit = |source: &AwbcRuntimeValueSnapshot| {
+        PlanValueAuthority::Building {
+            types: &builder.types,
+            records: &builder.nominal_record_domains,
+            variants: &builder.variant_domains,
+        }
+        .admit_literal_source_value(
+            ty,
+            source,
+            &mut ValueResourceAdmission::snapshot(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+                ValueAdmissionOrigin::InertSnapshot,
+            ),
+        )
+    };
+    admit(&source).unwrap();
+    let AwbcRuntimeValueSnapshot::NominalRecord(record) = &mut source else {
+        unreachable!()
+    };
+    record.fields[0].value = AwbcRuntimeValueSnapshot::String("wrong".into());
+    assert!(admit(&source).is_err());
+}
+
+#[test]
 fn exact_opaque_branches_keep_their_identities_under_a_producer_wide_result() {
     let producer = RuntimeOpaqueTypeProducerId::try_new("test.dialogue")
         .expect("test opaque producer identity");

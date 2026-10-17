@@ -5,6 +5,8 @@
 
 use thiserror::Error;
 
+mod literal_source;
+
 use crate::entry::schema::{
     value_budget::ValidationWork,
     value_encoding::{self, ValueAdmission, ValueAdmissionOrigin, ValueValidation},
@@ -371,6 +373,20 @@ impl<'a> PlanValueValidation<'a> {
         ty: RuntimePlanTypeId,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimePlanValueAdmissionError> {
+        Self::with_work(
+            authority,
+            ty,
+            ValidationWork::new(limits),
+            ValueAdmissionOrigin::Live,
+        )
+    }
+
+    fn with_work(
+        authority: PlanValueAuthority<'a>,
+        ty: RuntimePlanTypeId,
+        work: ValidationWork,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<Self, RuntimePlanValueAdmissionError> {
         let declaration = authority
             .get(ty)
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
@@ -379,8 +395,8 @@ impl<'a> PlanValueValidation<'a> {
         }
         Ok(Self {
             authority,
-            work: ValidationWork::new(limits),
-            origin: ValueAdmissionOrigin::Live,
+            work,
+            origin,
             context: (),
         })
     }

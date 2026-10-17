@@ -162,7 +162,16 @@ pub(crate) fn validate_literal<V: ValueValidation>(
     validation: &mut V,
     expected: V::Expected,
 ) -> Result<(), RuntimeSchemaError> {
-    validate_without_digest(value, limits, validation, expected, ValueEncoding::Literal)
+    validate_literal_view(value.view(), limits, validation, expected)
+}
+
+pub(crate) fn validate_literal_view<V: ValueValidation>(
+    value: RuntimeValueView<'_>,
+    limits: super::RuntimeSchemaLimits,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<(), RuntimeSchemaError> {
+    validate_view_without_digest(value, limits, validation, expected, ValueEncoding::Literal)
 }
 
 /// Validates a live value without requiring a canonical persistence encoding.
@@ -1369,12 +1378,27 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
             )?;
         }
         RuntimeValueView::Iterator(iterator) if matches!(encoding, ValueEncoding::Literal) => {
-            if let RuntimeIteratorKind::Values(items) = iterator.kind() {
-                if let Some(budget) = budget {
-                    budget.collection(items.len())?;
+            match iterator.kind() {
+                RuntimeIteratorKind::Values(items) => {
+                    if let Some(budget) = budget {
+                        budget.collection(items.len())?;
+                    }
+                    work.push(Work::Tuple(items, 0, depth + 1, children));
                 }
-                work.push(Work::Tuple(items, 0, depth + 1, children));
+                RuntimeIteratorKind::Range(_) => {}
+                RuntimeIteratorKind::Witness(_) => {
+                    return Err(RuntimeSchemaError::Encoding {
+                        message: "iterator witnesses are not static literals".to_owned(),
+                    });
+                }
             }
+        }
+        RuntimeValueView::Need(_) | RuntimeValueView::Callable(_)
+            if matches!(encoding, ValueEncoding::Literal) =>
+        {
+            return Err(RuntimeSchemaError::Encoding {
+                message: "program-owned runtime values are not static literals".to_owned(),
+            });
         }
         RuntimeValueView::Range(_)
         | RuntimeValueView::Iterator(_)
