@@ -37,12 +37,12 @@ use super::{
     CallableParameterIndex, CallableParameterPresence, CallableParameterValueAlternative,
     CallableReceiverMode, CallableResultSchema, CallableSemanticAdmission, CallableSignatureSchema,
     CallableSignatureSchemaDigest, CallableValidator, CapabilityCallableId,
-    CheckedCallArgumentSlotSource, CheckedCallableDigest, CheckedCallableId,
-    CheckedSemanticValueEvidence, CollectionMethodId, ContentCallableIdentity, DialogueCallableId,
-    DropCallableId, EquivalentCallableSource, FloatWidth, FmtParameterId, FunctionValueOrdinal,
-    FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
-    LineScheduleCallableId, MathCallableId, OpenArgumentId, OptionConstructorKind,
-    PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
+    CatalogCallableDispatch, CheckedCallArgumentSlotSource, CheckedCallableDigest,
+    CheckedCallableId, CheckedSemanticValueEvidence, CollectionMethodId, ContentCallableIdentity,
+    DialogueCallableId, DropCallableId, EquivalentCallableSource, FloatWidth, FmtParameterId,
+    FunctionValueOrdinal, FxSourceConstructor, IntegerMethodId, LanguageCallableFamily,
+    LineContextMethodId, LineScheduleCallableId, MathCallableId, OpenArgumentId,
+    OptionConstructorKind, PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
     PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionSealInput,
     PreparedResolvedCallableIdentity, PresentationCallableId, PresentationHandleMethodId,
     ProbeComparisonOperator, PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind,
@@ -402,7 +402,10 @@ pub enum CheckedLanguageCallableIdentity {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedCallableStableIdentity {
-    Catalog(CheckedCallableDigest),
+    Catalog {
+        id: CheckedCallableDigest,
+        dispatch: CatalogCallableDispatch,
+    },
     Language(CheckedLanguageCallableIdentity),
     Lexical(CheckedLexicalCallableIdentity),
     FunctionValue(CheckedFunctionValueIdentity),
@@ -3076,7 +3079,11 @@ impl CheckedCallApplication {
 
 impl ResolvedCallableStableIdentity {
     const fn requires_value_callee(&self) -> bool {
-        matches!(self, Self::Lexical(_) | Self::FunctionValue(_))
+        match self {
+            Self::Catalog { dispatch, .. } => dispatch.requires_value_callee(),
+            Self::Lexical(_) | Self::FunctionValue(_) => true,
+            Self::Language(_) => false,
+        }
     }
 
     fn seal(
@@ -3089,7 +3096,10 @@ impl ResolvedCallableStableIdentity {
     ) -> Result<Self, CallConstraintInvariant> {
         match (prepared, input) {
             (
-                PreparedResolvedCallableIdentity::Catalog(prepared),
+                PreparedResolvedCallableIdentity::Catalog {
+                    id: prepared,
+                    dispatch,
+                },
                 ResolvedCallableStableIdentitySeal::Catalog,
             ) => {
                 let ResolvedCallableCheckedDefinition::Catalog { id, .. } = checked else {
@@ -3098,7 +3108,10 @@ impl ResolvedCallableStableIdentity {
                 if &prepared != id {
                     return Err(CallConstraintInvariant::PreparedBaseMismatch);
                 }
-                Ok(Self::Catalog(id.semantic_digest()))
+                Ok(Self::Catalog {
+                    id: id.semantic_digest(),
+                    dispatch,
+                })
             }
             (
                 PreparedResolvedCallableIdentity::Language(prepared),
@@ -3222,7 +3235,7 @@ fn validate_definition(
 ) -> Result<(), CallConstraintInvariant> {
     match (stable, checked) {
         (
-            ResolvedCallableStableIdentity::Catalog(digest),
+            ResolvedCallableStableIdentity::Catalog { id: digest, .. },
             ResolvedCallableCheckedDefinition::Catalog { id, record },
         ) if *digest == id.semantic_digest()
             && record.id() == candidate
@@ -3251,17 +3264,19 @@ fn seal_origin(
                 declaration,
                 binding,
             },
-            ResolvedCallableStableIdentity::Catalog(_),
+            ResolvedCallableStableIdentity::Catalog { .. },
         ) => Ok(ResolvedCallableOrigin::Project {
             declaration,
             binding,
         }),
-        (SignatureOrigin::Standard { owner, id }, ResolvedCallableStableIdentity::Catalog(_)) => {
-            Ok(ResolvedCallableOrigin::Standard { owner, id })
-        }
-        (SignatureOrigin::Adapter { package, id }, ResolvedCallableStableIdentity::Catalog(_)) => {
-            Ok(ResolvedCallableOrigin::Adapter { package, id })
-        }
+        (
+            SignatureOrigin::Standard { owner, id },
+            ResolvedCallableStableIdentity::Catalog { .. },
+        ) => Ok(ResolvedCallableOrigin::Standard { owner, id }),
+        (
+            SignatureOrigin::Adapter { package, id },
+            ResolvedCallableStableIdentity::Catalog { .. },
+        ) => Ok(ResolvedCallableOrigin::Adapter { package, id }),
         (
             SignatureOrigin::Language { family },
             ResolvedCallableStableIdentity::Language(identity),
@@ -3365,12 +3380,7 @@ fn validate_callee(
     callee: &CheckedCallCalleeExecution,
     selected: &ResolvedCallable,
 ) -> Result<(), CallConstraintInvariant> {
-    let value_dispatch = matches!(selected.state(), ResolvedCallableState::Continuation(_))
-        || matches!(
-            selected.base().authority().stable(),
-            ResolvedCallableStableIdentity::Lexical(_)
-                | ResolvedCallableStableIdentity::FunctionValue(_)
-        );
+    let value_dispatch = selected.requires_value_callee();
     match (value_dispatch, callee) {
         (false, CheckedCallCalleeExecution::Direct)
         | (true, CheckedCallCalleeExecution::Value { .. }) => Ok(()),
@@ -4018,8 +4028,11 @@ impl CheckedCallCanonicalEncoder {
         identity: &ResolvedCallableStableIdentity,
     ) -> Result<(), CallConstraintInvariant> {
         match identity {
-            ResolvedCallableStableIdentity::Catalog(digest) => {
-                self.tag(0);
+            ResolvedCallableStableIdentity::Catalog {
+                id: digest,
+                dispatch,
+            } => {
+                self.tag(dispatch.canonical_identity_tag());
                 self.digest(digest.as_bytes());
             }
             ResolvedCallableStableIdentity::Language(identity) => {

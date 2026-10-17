@@ -29,7 +29,7 @@ use super::{
     AcceptedEnumVariantCase, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginProducer, SignatureOrigin,
 };
-use crate::callable::CheckedCallableId;
+use crate::callable::{CatalogCallableDispatch, CheckedCallableId};
 
 /// The typed language-owned callable family projection used by a prepared
 /// candidate.  This is intentionally exhaustive: a new language candidate
@@ -224,7 +224,10 @@ impl DomainMethodId {
 /// no replayable pointer or clone of the semantic identity is exposed.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedResolvedCallableIdentity {
-    Catalog(CheckedCallableId),
+    Catalog {
+        id: CheckedCallableId,
+        dispatch: CatalogCallableDispatch,
+    },
     Language(PreparedLanguageCallableIdentity),
     Lexical {
         local: LocalId,
@@ -267,7 +270,11 @@ impl PreparedResolvedCallableIdentity {
     /// Returns whether this stable identity is invoked through a runtime value
     /// callee rather than direct catalog/language dispatch.
     pub(crate) const fn requires_value_callee(&self) -> bool {
-        matches!(self, Self::Lexical { .. } | Self::FunctionValue { .. })
+        match self {
+            Self::Catalog { dispatch, .. } => dispatch.requires_value_callee(),
+            Self::Lexical { .. } | Self::FunctionValue { .. } => true,
+            Self::Language(_) => false,
+        }
     }
 
     /// Projects one fully validated resolver candidate into its typed
@@ -285,7 +292,27 @@ impl PreparedResolvedCallableIdentity {
         match origin {
             SignatureOrigin::Project { .. }
             | SignatureOrigin::Standard { .. }
-            | SignatureOrigin::Adapter { .. } => checked.cloned().map(Self::Catalog),
+            | SignatureOrigin::Adapter { .. } => {
+                let id = checked?;
+                let dispatch = match function_origin {
+                    None => CatalogCallableDispatch::Direct,
+                    Some(origin) => {
+                        let PreparedFunctionValueOriginProducer::Declaration { checked, .. } =
+                            origin.producer()
+                        else {
+                            return None;
+                        };
+                        if checked != id || !origin.captures().is_empty() {
+                            return None;
+                        }
+                        CatalogCallableDispatch::Value
+                    }
+                };
+                Some(Self::Catalog {
+                    id: id.clone(),
+                    dispatch,
+                })
+            }
             SignatureOrigin::Lexical { id: lexical, local } => match id {
                 CallableCandidateId::Local(candidate) if candidate == lexical => {
                     Some(Self::Lexical { local: *local })

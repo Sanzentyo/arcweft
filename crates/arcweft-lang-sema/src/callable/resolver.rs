@@ -13,9 +13,9 @@ pub use outcome::{
 };
 pub(crate) use outcome::{
     CallableProjection, CallableTerminalEffectProjection, DetachedPreparedResolvedCallable,
-    PreparedCallableDefinitionKey, PreparedResolvedCallable, PreparedResolvedCallableDefinition,
-    PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDefinitionSealInput,
-    PreparedResolvedCallableDetachArena,
+    PreparedCallableDefinitionKey, PreparedCatalogCallee, PreparedResolvedCallable,
+    PreparedResolvedCallableDefinition, PreparedResolvedCallableDefinitionBatch,
+    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableDetachArena,
 };
 pub(crate) use outcome::{NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget};
 use preparation::classify_prepared_callee;

@@ -9,6 +9,30 @@
 //! responsibility.
 
 pub use arcweft_manifest_model::StandardEnvironmentId;
+
+/// How an admitted catalog definition supplies its callee at an application.
+/// The checked declaration identity and its schema are identical in both modes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CatalogCallableDispatch {
+    Direct,
+    Value,
+}
+
+impl CatalogCallableDispatch {
+    pub(crate) const fn requires_value_callee(self) -> bool {
+        matches!(self, Self::Value)
+    }
+
+    /// Version-one stable callable identity constructors. Existing direct
+    /// catalog bytes stay unchanged; value dispatch has its own constructor.
+    pub(crate) const fn canonical_identity_tag(self) -> u8 {
+        match self {
+            Self::Direct => 0,
+            Self::Value => 4,
+        }
+    }
+}
+
 use std::sync::Arc;
 
 use arcweft_lang_hir::{

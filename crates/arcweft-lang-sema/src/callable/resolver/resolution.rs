@@ -1124,7 +1124,16 @@ fn resolve_catalog_record(
     PreparedResolvedCallable::try_from_checked_record(
         checked_id.clone(),
         Arc::clone(record),
-        project_path.cloned(),
+        match &request.callee {
+            PreparedCallCallee::FunctionValue { value }
+                if matches!(value.seed(), ResolvedFunctionValueSeed::Declaration { .. }) =>
+            {
+                super::PreparedCatalogCallee::Value(value.origin())
+            }
+            _ => super::PreparedCatalogCallee::Direct {
+                project_binding: project_path.cloned(),
+            },
+        },
         instantiation,
         equivalent_sources.to_vec(),
         request.limits,

@@ -2095,7 +2095,7 @@ fn stable_identity_seal(
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
     };
     match definition.identity() {
-        PreparedResolvedCallableIdentity::Catalog(_) => {
+        PreparedResolvedCallableIdentity::Catalog { .. } => {
             Ok(ResolvedCallableStableIdentitySeal::Catalog)
         }
         PreparedResolvedCallableIdentity::Language(_) => {

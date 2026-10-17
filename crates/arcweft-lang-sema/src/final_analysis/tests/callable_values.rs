@@ -2,6 +2,108 @@ use super::{analyze, fixture};
 use crate::final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis};
 use crate::types::TypeKind;
 
+#[test]
+fn environment_callable_alias_keeps_the_selected_declaration_and_named_formal() {
+    use crate::callable::{
+        CatalogCallableDispatch, CheckedCallCalleeExecution, ResolvedCallableStableIdentity,
+    };
+    use crate::final_analysis::CheckedValueResolution;
+
+    let fixture = super::environment_overload_fixture(
+        r"
+fn caller(value: i64) -> i64 {
+    let selected: i64 -> i64 effects {} = choose
+    let alias = selected
+    let direct = choose(value = value)
+    alias(value = direct)
+}
+",
+    );
+    let analysis = analyze(&fixture).expect("the reference and both applications seal");
+    let declared = analysis
+        .checked_callables()
+        .records()
+        .find(|facts| {
+            matches!(
+                facts.id().declaration(),
+                crate::callable::CheckedCallableDeclaration::Environment(_)
+            ) && facts.signature().value_type() == Some(&TypeKind::I64)
+        })
+        .expect("the original i64 overload");
+    let references = analysis
+        .expressions()
+        .filter_map(|(_, checked)| match checked.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::EnvironmentCallable(id)) => {
+                Some((id, checked))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(reference, checked)] = references.as_slice() else {
+        panic!("only the bare declaration creates a callable value")
+    };
+    assert_eq!(*reference, declared.id());
+    assert!(checked.effects().is_empty(), "creation does not invoke");
+
+    let applications = analysis
+        .calls()
+        .map(|(_, call)| call.selected_application().expect("selected application"))
+        .collect::<Vec<_>>();
+    assert_eq!(applications.len(), 2);
+    let mut modes = std::collections::BTreeSet::new();
+    for application in applications {
+        let selected = application.core().candidates().selected();
+        assert_eq!(selected.checked(), Some(declared.id()));
+        assert_eq!(selected.schema(), declared.signature());
+        assert_eq!(application.result().value_type(), Some(&TypeKind::I64));
+        let dispatch = match application.core().callee() {
+            CheckedCallCalleeExecution::Direct => CatalogCallableDispatch::Direct,
+            CheckedCallCalleeExecution::Value { .. } => CatalogCallableDispatch::Value,
+        };
+        assert_eq!(
+            selected.base().authority().stable(),
+            &ResolvedCallableStableIdentity::Catalog {
+                id: declared.id().semantic_digest(),
+                dispatch,
+            },
+        );
+        modes.insert(dispatch);
+    }
+    assert_eq!(
+        modes,
+        std::collections::BTreeSet::from([
+            CatalogCallableDispatch::Direct,
+            CatalogCallableDispatch::Value,
+        ]),
+    );
+}
+
+#[test]
+fn environment_callable_value_rejects_an_argument_outside_its_original_schema() {
+    let fixture = super::environment_overload_fixture(
+        r"
+fn caller() {
+    let selected: i64 -> i64 effects {} = choose
+    selected(true)
+}
+",
+    );
+    let analysis = analyze(&fixture).expect("the rejected application remains tooling evidence");
+    let calls = analysis.calls().collect::<Vec<_>>();
+    let [(owner, call)] = calls.as_slice() else {
+        panic!("one application")
+    };
+    let crate::callable::CallAnalysisOutcome::Rejected(evidence) = call.outcome() else {
+        panic!("the value cannot bypass declaration argument admission")
+    };
+    assert_eq!(evidence.candidates().len(), 1);
+    assert_eq!(
+        evidence.candidates()[0].schema().value_type(),
+        Some(&TypeKind::I64)
+    );
+    assert_unselected_call_has_no_execution(&analysis, *owner);
+}
+
 pub(super) fn assert_unselected_call_has_no_execution(
     analysis: &FinalSemanticAnalysis,
     owner: arcweft_lang_hir::identity::ExprId,

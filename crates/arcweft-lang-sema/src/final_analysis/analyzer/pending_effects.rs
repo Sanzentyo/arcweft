@@ -53,7 +53,9 @@ impl Analyzer<'_, '_, '_> {
         let candidate = PreparedResolvedCallable::try_from_checked_record(
             pending.id().clone(),
             Arc::clone(&record),
-            None,
+            crate::callable::PreparedCatalogCallee::Direct {
+                project_binding: None,
+            },
             CallableInstantiation::None,
             Vec::new(),
             &self.catalogs.callable_limits,

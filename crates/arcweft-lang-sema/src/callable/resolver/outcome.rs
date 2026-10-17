@@ -234,6 +234,15 @@ impl PreparedResolvedCallable {
     }
 }
 
+/// Actual source binding of a checked catalog candidate. This is lookup/callee
+/// evidence, not another definition, schema, or provider identity.
+pub(crate) enum PreparedCatalogCallee<'a> {
+    Direct {
+        project_binding: Option<ProjectCallablePath>,
+    },
+    Value(&'a super::PreparedFunctionValueOriginEvidence),
+}
+
 /// Opaque index of one shared prepared definition inside the one consuming
 /// detach batch.  It is deliberately not a semantic identity and has no
 /// canonical encoder.
@@ -652,7 +661,7 @@ impl PreparedResolvedCallable {
     pub(crate) fn try_from_checked_record(
         checked: CheckedCallableId,
         record: Arc<CallableRecord>,
-        project_binding: Option<ProjectCallablePath>,
+        callee: PreparedCatalogCallee<'_>,
         instantiation: CallableInstantiation,
         equivalent_sources: Vec<EquivalentCallableSource>,
         limits: &CallableLimits,
@@ -660,6 +669,10 @@ impl PreparedResolvedCallable {
         if !checked_matches_record(&checked, &record) {
             return Err(ResolveCallError::InvalidResolvedCallable);
         }
+        let (project_binding, function_origin) = match callee {
+            PreparedCatalogCallee::Direct { project_binding } => (project_binding, None),
+            PreparedCatalogCallee::Value(origin) => (None, Some(origin)),
+        };
         let origin = match record.id() {
             CallableCandidateId::Project(declaration) => SignatureOrigin::Project {
                 declaration: declaration.clone(),
@@ -692,7 +705,7 @@ impl PreparedResolvedCallable {
             family,
             limits,
             None,
-            None,
+            function_origin,
         )
     }
 
