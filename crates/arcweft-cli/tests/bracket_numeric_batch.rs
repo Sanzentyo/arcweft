@@ -99,6 +99,7 @@ fn a_source_equivalent_foreign_plan_owner_does_not_authorize_a_numeric_packet() 
     assert_eq!(stats.batch_items, 0);
 }
 
+#[derive(Clone, Copy)]
 enum BackendOwner {
     Invocation,
     EquivalentClone,
