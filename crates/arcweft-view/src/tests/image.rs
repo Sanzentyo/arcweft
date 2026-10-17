@@ -1,9 +1,11 @@
 use crate::{
-    ImageAlignment, ImageFit, ImagePlayback, LayoutBox, LayoutLength, LayoutPoint, LayoutSize,
-    ViewImageSource, ViewImageSourceTable,
+    LayoutBox, LayoutLength, LayoutPoint, LayoutSize, ViewImageSource, ViewImageSourceTable,
 };
 use arcweft_image::{
     DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
+};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback,
 };
 
 fn one_pixel_frame(index: u32, duration_millis: u64, rgba: [u8; 4]) -> DecodedImageFrame {
@@ -46,20 +48,20 @@ fn image_source_table_resolves_static_and_animated_frames() {
     let animated_id = table
         .insert(
             ViewImageSource::new(animated_image)
-                .with_fit(ImageFit::Cover)
-                .with_alignment(ImageAlignment::top_left())
-                .with_playback(ImagePlayback::new(1_000)),
+                .with_fit(ImageObjectFit::Cover)
+                .with_alignment(ImageObjectAlignment::top_left())
+                .with_playback(ImageObjectPlayback::new(1_000)),
         )
         .unwrap();
 
     let static_frame = table.resolve_frame(static_id, layout, 9_999).unwrap();
     assert_eq!(static_frame.frame().rgba(), &[10, 20, 30, 255]);
-    assert_eq!(static_frame.fit(), ImageFit::Contain);
+    assert_eq!(static_frame.fit(), ImageObjectFit::Contain);
 
     let first = table.resolve_frame(animated_id, layout, 1_039).unwrap();
     assert_eq!(first.frame().index(), 0);
-    assert_eq!(first.fit(), ImageFit::Cover);
-    assert_eq!(first.alignment(), ImageAlignment::top_left());
+    assert_eq!(first.fit(), ImageObjectFit::Cover);
+    assert_eq!(first.alignment(), ImageObjectAlignment::top_left());
 
     let second = table.resolve_frame(animated_id, layout, 1_040).unwrap();
     assert_eq!(second.frame().index(), 1);
@@ -86,13 +88,13 @@ fn image_source_playback_can_pause_and_scale_time() {
     let paused = table
         .insert(
             ViewImageSource::new(animated_image.clone())
-                .with_playback(ImagePlayback::new(0).paused_at(150)),
+                .with_playback(ImageObjectPlayback::new(0).paused_at(150)),
         )
         .unwrap();
     let slow = table
         .insert(
             ViewImageSource::new(animated_image)
-                .with_playback(ImagePlayback::new(0).with_rate_milli(500)),
+                .with_playback(ImageObjectPlayback::new(0).with_rate_milli(500)),
         )
         .unwrap();
 

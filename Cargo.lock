@@ -572,6 +572,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-character",
  "arcweft-image",
+ "arcweft-interaction-model",
  "arcweft-presentation",
  "arcweft-view",
  "thiserror 2.0.18",
@@ -1285,6 +1286,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-character",
  "arcweft-id",
+ "arcweft-interaction-model",
  "arcweft-rich-text-schema",
  "blake3",
  "serde",
@@ -1393,6 +1395,7 @@ dependencies = [
  "arcweft-dialogue",
  "arcweft-glyphon",
  "arcweft-id",
+ "arcweft-interaction-model",
  "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",
@@ -1763,6 +1766,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-interaction-model",
  "arcweft-presentation",
  "blake3",
  "serde",

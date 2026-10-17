@@ -40,6 +40,7 @@ use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjec
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_core::task::TaskEvent;
 use arcweft_core::{effect::RuntimeAssertionFailure, engine::FlowFiberStatus};
+use arcweft_interaction_model::presentation::ImageObjectFit;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
@@ -48,7 +49,6 @@ use arcweft_player_scene::{images::BundleImageCatalog, input::InputController};
 use arcweft_presentation::{
     fx::{FxDiagnostic, FxDiagnosticSeverity},
     hit::HitRect,
-    image::ImageObjectFit,
     semantic::SemanticRole,
 };
 use arcweft_render_wgpu::{

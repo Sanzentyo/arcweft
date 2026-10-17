@@ -1,6 +1,9 @@
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectTransform,
+};
 use arcweft_layout::stage_placement::ResolvedStagePlacement;
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
+
 use num_traits::ToPrimitive;
 
 /// One decoded RGBA image frame ready for GPU upload.

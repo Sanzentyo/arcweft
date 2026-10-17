@@ -10,10 +10,11 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
     ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface,
 };
+use arcweft_interaction_model::presentation::ImageObjectTransform;
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::ImageObjectTransform;
+
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedViewImageResource, PreparedViewScene, PreparedViewSceneResources,
     RenderImage,

@@ -3,51 +3,21 @@
 use crate::{ImageId, LayoutBox, ViewError};
 use arcweft_id::PublicId;
 use arcweft_image::{DecodedImage, DecodedImageFrame};
-use arcweft_presentation::image::{
-    ImageObjectAlignment, ImageObjectFit, ImageObjectParam, ImageObjectPlayback, ImageObjectProxy,
-    ImageObjectTransform,
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
+use arcweft_presentation::image::{ImageObjectParam, ImageObjectProxy};
 use std::collections::BTreeMap;
-
-/// How an image's intrinsic pixels map into a layout box.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ImageFit {
-    /// Preserve aspect ratio and fit entirely inside the destination box.
-    #[default]
-    Contain,
-    /// Preserve aspect ratio and cover the destination box, clipping overflow.
-    Cover,
-    /// Stretch to exactly fill the destination box.
-    Stretch,
-    /// Use the intrinsic pixel size.
-    Intrinsic,
-}
-
-/// Alignment inside the destination box, expressed in thousandths.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ImageAlignment {
-    x_milli: i32,
-    y_milli: i32,
-}
-
-/// Playback state for static and animated images.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ImagePlayback {
-    start_time_millis: u64,
-    paused_at_millis: Option<u64>,
-    rate_milli: u32,
-    pinned_local_time_millis: Option<u64>,
-}
 
 /// Image source registered outside the retained fragment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewImageSource {
     image: DecodedImage,
-    fit: ImageFit,
-    alignment: ImageAlignment,
+    fit: ImageObjectFit,
+    alignment: ImageObjectAlignment,
     opacity_milli: u16,
     transform: ImageObjectTransform,
-    playback: ImagePlayback,
+    playback: ImageObjectPlayback,
     presentation: Option<ViewImagePresentationMetadata>,
 }
 
@@ -71,8 +41,8 @@ pub struct ViewImagePresentationMetadata {
 pub struct ViewResolvedImageFrame<'a> {
     source: ImageId,
     frame: &'a DecodedImageFrame,
-    fit: ImageFit,
-    alignment: ImageAlignment,
+    fit: ImageObjectFit,
+    alignment: ImageObjectAlignment,
     opacity_milli: u16,
     transform: ImageObjectTransform,
     layout: LayoutBox,
@@ -85,142 +55,27 @@ pub struct ViewImageSourceTable {
     next: u32,
 }
 
-impl From<ImageObjectFit> for ImageFit {
-    fn from(value: ImageObjectFit) -> Self {
-        match value {
-            ImageObjectFit::Contain => Self::Contain,
-            ImageObjectFit::Cover => Self::Cover,
-            ImageObjectFit::Stretch => Self::Stretch,
-            ImageObjectFit::Intrinsic => Self::Intrinsic,
-        }
-    }
-}
-
-impl ImageAlignment {
-    pub const fn new(x_milli: i32, y_milli: i32) -> Self {
-        Self { x_milli, y_milli }
-    }
-
-    pub const fn center() -> Self {
-        Self::new(500, 500)
-    }
-
-    pub const fn top_left() -> Self {
-        Self::new(0, 0)
-    }
-
-    pub const fn x_milli(self) -> i32 {
-        self.x_milli
-    }
-
-    pub const fn y_milli(self) -> i32 {
-        self.y_milli
-    }
-}
-
-impl From<ImageObjectAlignment> for ImageAlignment {
-    fn from(value: ImageObjectAlignment) -> Self {
-        Self::new(value.x_milli(), value.y_milli())
-    }
-}
-
-impl Default for ImageAlignment {
-    fn default() -> Self {
-        Self::center()
-    }
-}
-
-impl ImagePlayback {
-    pub const fn new(start_time_millis: u64) -> Self {
-        Self {
-            start_time_millis,
-            paused_at_millis: None,
-            rate_milli: 1000,
-            pinned_local_time_millis: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn paused_at(mut self, visual_time_millis: u64) -> Self {
-        self.paused_at_millis = Some(visual_time_millis);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_rate_milli(mut self, rate_milli: u32) -> Self {
-        self.rate_milli = rate_milli;
-        self
-    }
-
-    #[must_use]
-    pub const fn pinned_local_time(mut self, local_time_millis: u64) -> Self {
-        self.pinned_local_time_millis = Some(local_time_millis);
-        self
-    }
-
-    pub const fn start_time_millis(self) -> u64 {
-        self.start_time_millis
-    }
-
-    pub const fn paused_at_millis(self) -> Option<u64> {
-        self.paused_at_millis
-    }
-
-    pub const fn rate_milli(self) -> u32 {
-        self.rate_milli
-    }
-
-    pub const fn pinned_local_time_millis(self) -> Option<u64> {
-        self.pinned_local_time_millis
-    }
-
-    pub fn local_time_millis(self, visual_time_millis: u64) -> u64 {
-        if let Some(pinned) = self.pinned_local_time_millis {
-            return pinned;
-        }
-        let sample_time = self.paused_at_millis.unwrap_or(visual_time_millis);
-        let elapsed = sample_time.saturating_sub(self.start_time_millis);
-        if self.rate_milli == 0 {
-            return 0;
-        }
-        elapsed.saturating_mul(u64::from(self.rate_milli)) / 1000
-    }
-}
-
-impl From<ImageObjectPlayback> for ImagePlayback {
-    fn from(value: ImageObjectPlayback) -> Self {
-        let mut playback = Self::new(value.start_time_millis()).with_rate_milli(value.rate_milli());
-        if let Some(paused_at) = value.paused_at_millis() {
-            playback = playback.paused_at(paused_at);
-        }
-        if let Some(pinned) = value.pinned_local_time_millis() {
-            playback = playback.pinned_local_time(pinned);
-        }
-        playback
-    }
-}
-
 impl ViewImageSource {
     pub fn new(image: DecodedImage) -> Self {
         Self {
             image,
-            fit: ImageFit::default(),
-            alignment: ImageAlignment::default(),
+            fit: ImageObjectFit::default(),
+            alignment: ImageObjectAlignment::default(),
             opacity_milli: 1_000,
             transform: ImageObjectTransform::identity(),
-            playback: ImagePlayback::new(0),
+            playback: ImageObjectPlayback::new(0),
             presentation: None,
         }
     }
 
     #[must_use]
-    pub const fn with_fit(mut self, fit: ImageFit) -> Self {
+    pub const fn with_fit(mut self, fit: ImageObjectFit) -> Self {
         self.fit = fit;
         self
     }
 
     #[must_use]
-    pub const fn with_alignment(mut self, alignment: ImageAlignment) -> Self {
+    pub const fn with_alignment(mut self, alignment: ImageObjectAlignment) -> Self {
         self.alignment = alignment;
         self
     }
@@ -238,7 +93,7 @@ impl ViewImageSource {
     }
 
     #[must_use]
-    pub const fn with_playback(mut self, playback: ImagePlayback) -> Self {
+    pub const fn with_playback(mut self, playback: ImageObjectPlayback) -> Self {
         self.playback = playback;
         self
     }
@@ -253,11 +108,11 @@ impl ViewImageSource {
         &self.image
     }
 
-    pub const fn fit(&self) -> ImageFit {
+    pub const fn fit(&self) -> ImageObjectFit {
         self.fit
     }
 
-    pub const fn alignment(&self) -> ImageAlignment {
+    pub const fn alignment(&self) -> ImageObjectAlignment {
         self.alignment
     }
 
@@ -269,7 +124,7 @@ impl ViewImageSource {
         self.transform
     }
 
-    pub const fn playback(&self) -> ImagePlayback {
+    pub const fn playback(&self) -> ImageObjectPlayback {
         self.playback
     }
 
@@ -375,11 +230,11 @@ impl<'a> ViewResolvedImageFrame<'a> {
         self.frame
     }
 
-    pub const fn fit(self) -> ImageFit {
+    pub const fn fit(self) -> ImageObjectFit {
         self.fit
     }
 
-    pub const fn alignment(self) -> ImageAlignment {
+    pub const fn alignment(self) -> ImageObjectAlignment {
         self.alignment
     }
 

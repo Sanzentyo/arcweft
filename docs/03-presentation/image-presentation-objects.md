@@ -99,6 +99,30 @@ actions, params, proxies, and playback policy. Downstream tools must preserve
 that metadata; they should not infer the object from coordinates, filenames, or
 object-id string conventions.
 
+The shared value authority is `arcweft-interaction-model::presentation`:
+`ImageObjectFit`, `ImageObjectAlignment`, `ImageObjectPlayback`, and
+`ImageObjectTransform`. Bundle objects, presentation objects, retained View image
+sources, and render submissions carry those same types directly. There is no
+separate bundle or View fit, alignment, playback, or transform representation.
+The runtime Core can use these host-neutral values without depending on a
+renderer or retained presentation state.
+
+Alignment has two checked integer milli-unit axes, each in `0..=1000`.
+Construction and decode reject values outside that interval; they do not clamp.
+Playback stores an unsigned millisecond start, a non-negative `u32` milli-unit
+rate, and optional unsigned millisecond pause and pinned-local times. Zero rate
+stops unpinned playback. Transform stores six signed `i32` milli-unit components.
+The four fit cases are `contain`, `cover`, `stretch`, and `intrinsic`.
+
+Serialized bundle image objects require explicit `fit`, `alignment`, `playback`,
+and `transform` records. Alignment requires both axes, playback requires its start
+and rate, and transform requires all six components. Optional playback times may
+be absent. Unknown value-record fields, duplicate fields, invalid types, and
+unrepresentable integers are decode errors. Rust authoring constructors may select
+centered alignment, normal playback, and identity transform; decoding never
+supplies those authoring defaults for missing required fields. This evolves the
+initial version `1` shape in place without a legacy reader.
+
 Bundle image assets record stable asset id, virtual path, encoded format
 (`png`, `jpeg`, `gif`, or `webp`), static/animated state, and intrinsic
 dimensions. Source-level `asset.image(...)`, `bg(...)`, and `image(...)`

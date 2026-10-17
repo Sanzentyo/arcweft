@@ -1,5 +1,6 @@
 use super::*;
 use arcweft_agent_protocol::action::{AgentActionDispatch, AgentActionKind};
+use arcweft_bundle::BundleImageObjectBounds;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
     ViewInputPurpose, ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
@@ -10,12 +11,11 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeControlVisualStyle, ViewRuntimeTextControl, ViewRuntimeTextControlBounds,
     ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
-use arcweft_bundle::{
-    BundleImageObjectBounds, BundleImageObjectFit, BundleImageObjectPlayback,
-    BundleImageObjectTransform,
-};
 use arcweft_id::PublicId;
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectTransform};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
+
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::{SemanticNode, SemanticTree};
@@ -435,10 +435,10 @@ fn bundle_image_object(id: &str, visible: bool) -> BundleImageObject {
         containing_scroll_region: None,
         bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
         placement: None,
-        fit: BundleImageObjectFit::Cover,
-        alignment: arcweft_bundle::BundleImageObjectAlignment::default(),
-        playback: BundleImageObjectPlayback::default(),
-        transform: BundleImageObjectTransform::default(),
+        fit: ImageObjectFit::Cover,
+        alignment: ImageObjectAlignment::default(),
+        playback: ImageObjectPlayback::default(),
+        transform: ImageObjectTransform::default(),
         depth_milli: -10_000,
         opacity_milli: 1_000,
         actions: Vec::new(),

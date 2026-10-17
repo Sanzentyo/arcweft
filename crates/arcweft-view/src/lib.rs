@@ -62,8 +62,7 @@ pub use expression_program::{
     ViewMatchProgram, ViewMatchRanges, ViewRepeatKey, ViewRepeatProgram, ViewStateFieldId,
 };
 pub use image::{
-    ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
-    ViewImageSourceTable, ViewResolvedImageFrame,
+    ViewImagePresentationMetadata, ViewImageSource, ViewImageSourceTable, ViewResolvedImageFrame,
 };
 pub use layout::{
     LayoutBox, LayoutKind, LayoutLength, LayoutNode, LayoutPoint, LayoutResults, LayoutSize,

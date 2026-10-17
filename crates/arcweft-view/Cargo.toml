@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-core = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-image = { workspace = true }
+arcweft-interaction-model.workspace = true
 arcweft-presentation = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }

@@ -60,11 +60,11 @@ fn inline_image_call_accepts_runtime_length_labels() {
     assert_eq!(object.layer.as_deref(), Some("layer.character"));
     assert_eq!(object.bounds.x_milli, 760_000);
     assert_eq!(object.bounds.height_milli, 600_000);
-    assert_eq!(object.alignment.x_milli, 1_000);
-    assert_eq!(object.alignment.y_milli, 1_000);
-    assert_eq!(object.playback.start_time_millis, 250);
-    assert_eq!(object.playback.paused_at_millis, Some(500));
-    assert_eq!(object.playback.pinned_local_time_millis, Some(750));
+    assert_eq!(object.alignment.x_milli(), 1_000);
+    assert_eq!(object.alignment.y_milli(), 1_000);
+    assert_eq!(object.playback.start_time_millis(), 250);
+    assert_eq!(object.playback.paused_at_millis(), Some(500));
+    assert_eq!(object.playback.pinned_local_time_millis(), Some(750));
 }
 
 #[test]
@@ -159,11 +159,11 @@ fn canonical_default_background_uses_stage_geometry_and_typed_options() {
         resolved.output_bbox,
         LayoutRect::from_xywh(0.0, 0.0, 960.0, 540.0)
     );
-    assert_eq!(background.fit, BundleImageObjectFit::Cover);
-    assert_eq!(background.alignment.x_milli, 250);
-    assert_eq!(background.alignment.y_milli, 750);
+    assert_eq!(background.fit, ImageObjectFit::Cover);
+    assert_eq!(background.alignment.x_milli(), 250);
+    assert_eq!(background.alignment.y_milli(), 750);
     assert_eq!(background.opacity_milli, 500);
-    assert_eq!(background.playback.pinned_local_time_millis, Some(150));
+    assert_eq!(background.playback.pinned_local_time_millis(), Some(150));
     assert_ne!(background.id, image.id);
     assert_eq!(snapshot.revision, 1);
 }
@@ -1087,10 +1087,10 @@ fn presentation_image_object(id: &str) -> BundleImageObject {
         containing_scroll_region: None,
         bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
         placement: None,
-        fit: BundleImageObjectFit::Cover,
-        alignment: BundleImageObjectAlignment::default(),
-        playback: BundleImageObjectPlayback::default(),
-        transform: BundleImageObjectTransform::default(),
+        fit: ImageObjectFit::Cover,
+        alignment: ImageObjectAlignment::default(),
+        playback: ImageObjectPlayback::default(),
+        transform: ImageObjectTransform::default(),
         depth_milli: -10_000,
         opacity_milli: 1_000,
         actions: Vec::new(),

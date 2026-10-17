@@ -39,6 +39,9 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_dialogue::CharacterDialogueGenerationDeclaration;
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
 use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
@@ -228,14 +231,10 @@ pub struct BundleImageObject {
     /// placement for image object data that has no responsive stage placement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<StagePlacement>,
-    #[serde(default)]
-    pub fit: BundleImageObjectFit,
-    #[serde(default)]
-    pub alignment: BundleImageObjectAlignment,
-    #[serde(default)]
-    pub playback: BundleImageObjectPlayback,
-    #[serde(default)]
-    pub transform: BundleImageObjectTransform,
+    pub fit: ImageObjectFit,
+    pub alignment: ImageObjectAlignment,
+    pub playback: ImageObjectPlayback,
+    pub transform: ImageObjectTransform,
     #[serde(default)]
     pub depth_milli: i32,
     #[serde(default = "default_opacity_milli")]
@@ -283,42 +282,6 @@ pub struct BundleImageObjectBounds {
     pub y_milli: i32,
     pub width_milli: u32,
     pub height_milli: u32,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BundleImageObjectFit {
-    #[default]
-    Contain,
-    Cover,
-    Stretch,
-    Intrinsic,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObjectAlignment {
-    pub x_milli: i32,
-    pub y_milli: i32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObjectPlayback {
-    pub start_time_millis: u64,
-    pub rate_milli: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub paused_at_millis: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pinned_local_time_millis: Option<u64>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleImageObjectTransform {
-    pub m11_milli: i32,
-    pub m12_milli: i32,
-    pub m21_milli: i32,
-    pub m22_milli: i32,
-    pub tx_milli: i32,
-    pub ty_milli: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1677,53 +1640,6 @@ impl BundleImageObjectBounds {
     }
 }
 
-impl Default for BundleImageObjectAlignment {
-    fn default() -> Self {
-        Self {
-            x_milli: 500,
-            y_milli: 500,
-        }
-    }
-}
-
-impl Default for BundleImageObjectPlayback {
-    fn default() -> Self {
-        Self {
-            start_time_millis: 0,
-            rate_milli: 1_000,
-            paused_at_millis: None,
-            pinned_local_time_millis: None,
-        }
-    }
-}
-
-impl BundleImageObjectPlayback {
-    pub fn local_time_millis(self, visual_time_millis: u64) -> u64 {
-        if let Some(pinned) = self.pinned_local_time_millis {
-            return pinned;
-        }
-        let sample_time = self.paused_at_millis.unwrap_or(visual_time_millis);
-        let elapsed = sample_time.saturating_sub(self.start_time_millis);
-        if self.rate_milli == 0 {
-            return 0;
-        }
-        elapsed.saturating_mul(u64::from(self.rate_milli)) / 1_000
-    }
-}
-
-impl Default for BundleImageObjectTransform {
-    fn default() -> Self {
-        Self {
-            m11_milli: 1_000,
-            m12_milli: 0,
-            m21_milli: 0,
-            m22_milli: 1_000,
-            tx_milli: 0,
-            ty_milli: 0,
-        }
-    }
-}
-
 const fn default_opacity_milli() -> u16 {
     1_000
 }
@@ -2177,18 +2093,10 @@ mod tests {
             containing_scroll_region: None,
             bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
             placement: None,
-            fit: BundleImageObjectFit::Cover,
-            alignment: BundleImageObjectAlignment {
-                x_milli: 250,
-                y_milli: 750,
-            },
-            playback: BundleImageObjectPlayback {
-                start_time_millis: 40,
-                rate_milli: 500,
-                paused_at_millis: None,
-                pinned_local_time_millis: Some(160),
-            },
-            transform: BundleImageObjectTransform {
+            fit: ImageObjectFit::Cover,
+            alignment: ImageObjectAlignment::try_new(250, 750).expect("valid fixture alignment"),
+            playback: ImageObjectPlayback::from_parts(40, 500, None, Some(160)),
+            transform: ImageObjectTransform {
                 m11_milli: 1_000,
                 m12_milli: 0,
                 m21_milli: 0,

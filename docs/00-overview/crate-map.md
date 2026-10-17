@@ -174,6 +174,11 @@ arcweft-launch
   は同じ型を使い、driver 経由の identity 定義や公開 alias を持たない。View・asset・
   image・target・layer の public ID と、実行時 occurrence の identity を区別する。
 - `arcweft-core` は runtime/data core に限定し、dialogue / presentation / syntax / verifier / CLI / LSP / wgpu / audio / Servo / DOM / filesystem / network / Cranelift / Wasmtime に依存しない。
+- `arcweft-interaction-model::presentation` は image の fit、検証済み alignment、
+  playback と fixed-point transform の共有値を所有する。Core の実行契約と
+  bundle、presentation、retained View、renderer は同じ値型を使い、各層での
+  再定義・変換・互換 alias を持たない。実行 command とその評価は Core、
+  retained state と描画処理はそれぞれの上位 owner に置く。
 - `arcweft-core::awbc` は AWBC executable-table の Sans I/O data/verifier
   境界を所有する。product encoding、filesystem、network、signing、runtime
   lowering、VM 実行、JIT/AOT backend、patch materialization は所有しない。

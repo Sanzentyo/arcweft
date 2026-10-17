@@ -1,3 +1,7 @@
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
+
 use crate::hit::HitRect;
 use crate::input::InteractionTarget;
 use crate::layer::LayerId;
@@ -15,43 +19,6 @@ pub struct ImageObjectId {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImageAssetRef {
     id: PublicId,
-}
-
-/// How an image's intrinsic pixels map into its authored presentation bounds.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ImageObjectFit {
-    #[default]
-    Contain,
-    Cover,
-    Stretch,
-    Intrinsic,
-}
-
-/// Alignment inside the authored presentation bounds, expressed in thousandths.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ImageObjectAlignment {
-    x_milli: i32,
-    y_milli: i32,
-}
-
-/// Deterministic playback policy for static and animated image objects.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ImageObjectPlayback {
-    start_time_millis: u64,
-    paused_at_millis: Option<u64>,
-    rate_milli: u32,
-    pinned_local_time_millis: Option<u64>,
-}
-
-/// Fixed-point object transform in layer-local coordinates.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ImageObjectTransform {
-    pub m11_milli: i32,
-    pub m12_milli: i32,
-    pub m21_milli: i32,
-    pub m22_milli: i32,
-    pub tx_milli: i32,
-    pub ty_milli: i32,
 }
 
 /// Typed custom parameter attached to an image presentation object.
@@ -114,115 +81,6 @@ impl ImageAssetRef {
 
     pub const fn public_id(&self) -> &PublicId {
         &self.id
-    }
-}
-
-impl ImageObjectAlignment {
-    pub const fn new(x_milli: i32, y_milli: i32) -> Self {
-        Self { x_milli, y_milli }
-    }
-
-    pub const fn center() -> Self {
-        Self::new(500, 500)
-    }
-
-    pub const fn top_left() -> Self {
-        Self::new(0, 0)
-    }
-
-    pub const fn x_milli(self) -> i32 {
-        self.x_milli
-    }
-
-    pub const fn y_milli(self) -> i32 {
-        self.y_milli
-    }
-}
-
-impl Default for ImageObjectAlignment {
-    fn default() -> Self {
-        Self::center()
-    }
-}
-
-impl ImageObjectPlayback {
-    pub const fn new(start_time_millis: u64) -> Self {
-        Self {
-            start_time_millis,
-            paused_at_millis: None,
-            rate_milli: 1_000,
-            pinned_local_time_millis: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn paused_at(mut self, visual_time_millis: u64) -> Self {
-        self.paused_at_millis = Some(visual_time_millis);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_rate_milli(mut self, rate_milli: u32) -> Self {
-        self.rate_milli = rate_milli;
-        self
-    }
-
-    #[must_use]
-    pub const fn pinned_local_time(mut self, local_time_millis: u64) -> Self {
-        self.pinned_local_time_millis = Some(local_time_millis);
-        self
-    }
-
-    pub const fn start_time_millis(self) -> u64 {
-        self.start_time_millis
-    }
-
-    pub const fn paused_at_millis(self) -> Option<u64> {
-        self.paused_at_millis
-    }
-
-    pub const fn rate_milli(self) -> u32 {
-        self.rate_milli
-    }
-
-    pub const fn pinned_local_time_millis(self) -> Option<u64> {
-        self.pinned_local_time_millis
-    }
-
-    pub fn local_time_millis(self, visual_time_millis: u64) -> u64 {
-        if let Some(pinned) = self.pinned_local_time_millis {
-            return pinned;
-        }
-        let sample_time = self.paused_at_millis.unwrap_or(visual_time_millis);
-        let elapsed = sample_time.saturating_sub(self.start_time_millis);
-        if self.rate_milli == 0 {
-            return 0;
-        }
-        elapsed.saturating_mul(u64::from(self.rate_milli)) / 1_000
-    }
-}
-
-impl ImageObjectTransform {
-    pub const fn identity() -> Self {
-        Self {
-            m11_milli: 1_000,
-            m12_milli: 0,
-            m21_milli: 0,
-            m22_milli: 1_000,
-            tx_milli: 0,
-            ty_milli: 0,
-        }
-    }
-
-    pub const fn translation_milli(
-        horizontal_offset_milli: i32,
-        vertical_offset_milli: i32,
-    ) -> Self {
-        Self {
-            tx_milli: horizontal_offset_milli,
-            ty_milli: vertical_offset_milli,
-            ..Self::identity()
-        }
     }
 }
 

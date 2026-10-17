@@ -2,8 +2,10 @@
 
 use crate::convert::{nonnegative_alpha_byte, saturating_u32_as_f32, saturating_u64_as_f32};
 use crate::geometry::{RenderImage, RenderImageFrame, RenderViewport};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectTransform,
+};
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DemoImageKind {

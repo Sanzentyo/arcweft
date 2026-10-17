@@ -5,7 +5,6 @@ use arcweft_layout::{
     stage_placement::{ResolvedStagePlacement, StagePlacement, StagePlacementContext, StageRect},
 };
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
 use arcweft_render_wgpu::geometry::{RenderImage, RenderImageFrame, RenderViewport};
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -113,19 +112,9 @@ impl BundleImageCatalog {
             containing_scroll_region: object.containing_scroll_region.clone(),
             viewport_clip: None,
             placement: Some(placement),
-            fit: render_fit(object.fit),
-            alignment: ImageObjectAlignment::new(
-                object.alignment.x_milli,
-                object.alignment.y_milli,
-            ),
-            transform: ImageObjectTransform {
-                m11_milli: object.transform.m11_milli,
-                m12_milli: object.transform.m12_milli,
-                m21_milli: object.transform.m21_milli,
-                m22_milli: object.transform.m22_milli,
-                tx_milli: object.transform.tx_milli,
-                ty_milli: object.transform.ty_milli,
-            },
+            fit: object.fit,
+            alignment: object.alignment,
+            transform: object.transform,
             opacity_milli: object.opacity_milli,
         })
     }
@@ -199,14 +188,5 @@ fn image_format(format: BundleImageFormat) -> ImageFormat {
         BundleImageFormat::Jpeg => ImageFormat::Jpeg,
         BundleImageFormat::Gif => ImageFormat::Gif,
         BundleImageFormat::WebP => ImageFormat::WebP,
-    }
-}
-
-fn render_fit(fit: arcweft_bundle::BundleImageObjectFit) -> ImageObjectFit {
-    match fit {
-        arcweft_bundle::BundleImageObjectFit::Contain => ImageObjectFit::Contain,
-        arcweft_bundle::BundleImageObjectFit::Cover => ImageObjectFit::Cover,
-        arcweft_bundle::BundleImageObjectFit::Stretch => ImageObjectFit::Stretch,
-        arcweft_bundle::BundleImageObjectFit::Intrinsic => ImageObjectFit::Intrinsic,
     }
 }

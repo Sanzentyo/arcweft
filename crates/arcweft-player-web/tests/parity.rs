@@ -1,8 +1,8 @@
-use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport};
-use arcweft_presentation::{
-    hit::HitRect,
-    image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform},
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectTransform,
 };
+use arcweft_player_web::report::{WebFrameBounds, WebFrameObservationReport};
+use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderImage,
     RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,

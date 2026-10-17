@@ -10,8 +10,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
-    BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
+    BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
     BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::awbc::schema::{
@@ -24,6 +23,9 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
 use arcweft_interaction_model::audio::{AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 
@@ -337,6 +339,32 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
     SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
+#[test]
+fn image_object_decode_requires_explicit_image_values_and_validates_alignment() {
+    let encoded = serde_json::to_value(fixture_image_object()).unwrap();
+    for field in ["fit", "alignment", "playback", "transform"] {
+        let mut missing = encoded.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        assert!(
+            serde_json::from_value::<BundleImageObject>(missing).is_err(),
+            "missing {field} must not select an authoring default"
+        );
+    }
+    for alignment in [
+        serde_json::json!({"x_milli": -1, "y_milli": 500}),
+        serde_json::json!({"x_milli": 500, "y_milli": 1_001}),
+        serde_json::json!({"x_milli": 500}),
+        serde_json::json!({"x_milli": 500, "y_milli": "center"}),
+    ] {
+        let mut malformed = encoded.clone();
+        malformed["alignment"] = alignment;
+        assert!(serde_json::from_value::<BundleImageObject>(malformed).is_err());
+    }
+    let decoded = serde_json::from_value::<BundleImageObject>(encoded.clone()).unwrap();
+    assert_eq!(decoded, fixture_image_object());
+    assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+}
+
 fn fixture_image_object() -> BundleImageObject {
     BundleImageObject {
         id: "image.hero.logo".to_owned(),
@@ -347,18 +375,10 @@ fn fixture_image_object() -> BundleImageObject {
         containing_scroll_region: None,
         bounds: BundleImageObjectBounds::from_px(10, 20, 320, 180),
         placement: None,
-        fit: BundleImageObjectFit::Cover,
-        alignment: BundleImageObjectAlignment {
-            x_milli: 250,
-            y_milli: 750,
-        },
-        playback: BundleImageObjectPlayback {
-            start_time_millis: 40,
-            rate_milli: 500,
-            paused_at_millis: None,
-            pinned_local_time_millis: Some(160),
-        },
-        transform: BundleImageObjectTransform {
+        fit: ImageObjectFit::Cover,
+        alignment: ImageObjectAlignment::try_new(250, 750).expect("valid fixture alignment"),
+        playback: ImageObjectPlayback::from_parts(40, 500, None, Some(160)),
+        transform: ImageObjectTransform {
             m11_milli: 1_000,
             m12_milli: 0,
             m21_milli: 0,

@@ -17,10 +17,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
-use arcweft_bundle::{
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
-    BundleImageObjectPlayback, BundleImageObjectTransform,
-};
+use arcweft_bundle::{BundleImageObject, BundleImageObjectBounds};
 use arcweft_character::presentation_name::{
     AcceptedCharacterPresentationCatalog, CharacterNameResolutionLocales,
 };
@@ -39,6 +36,9 @@ use arcweft_dialogue::{
     CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeSchema, CharacterDialogueType,
 };
 use arcweft_id::{DeclarationIdentityFamily, LocaleTag};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_manifest_model::ProjectLocaleSpec;
@@ -1018,7 +1018,7 @@ fn inline_image_object(
         containing_scroll_region: None,
         bounds,
         placement: Some(placement),
-        fit: presentation_image_fit_arg(call, "image", BundleImageObjectFit::Contain)?,
+        fit: presentation_image_fit_arg(call, "image", ImageObjectFit::Contain)?,
         alignment: presentation_image_alignment_arg(call, "image")?,
         playback: presentation_image_playback_arg(call, "image")?,
         transform: image_transform_arg(call)?,
@@ -1155,10 +1155,10 @@ fn background_image_object(
             StageAnchor::TopLeft,
             StageSize::new(bounds.width_milli, bounds.height_milli),
         )),
-        fit: presentation_image_fit_arg(call, "bg", BundleImageObjectFit::Cover)?,
+        fit: presentation_image_fit_arg(call, "bg", ImageObjectFit::Cover)?,
         alignment: presentation_image_alignment_arg(call, "bg")?,
         playback: presentation_image_playback_arg(call, "bg")?,
-        transform: BundleImageObjectTransform::default(),
+        transform: ImageObjectTransform::default(),
         depth_milli: 0,
         opacity_milli: presentation_opacity_arg(call, "bg")?,
         actions: Vec::new(),
@@ -1231,14 +1231,14 @@ fn background_slot_address(
 fn presentation_image_fit_arg(
     call: &RuntimeCall,
     callee: &'static str,
-    default: BundleImageObjectFit,
-) -> Result<BundleImageObjectFit, BundlePresentationUpdateError> {
+    default: ImageObjectFit,
+) -> Result<ImageObjectFit, BundlePresentationUpdateError> {
     match named_arg(&call.args, "fit").map(unquote_arg) {
         None => Ok(default),
-        Some("cover") => Ok(BundleImageObjectFit::Cover),
-        Some("contain") => Ok(BundleImageObjectFit::Contain),
-        Some("stretch") => Ok(BundleImageObjectFit::Stretch),
-        Some("intrinsic") => Ok(BundleImageObjectFit::Intrinsic),
+        Some("cover") => Ok(ImageObjectFit::Cover),
+        Some("contain") => Ok(ImageObjectFit::Contain),
+        Some("stretch") => Ok(ImageObjectFit::Stretch),
+        Some("intrinsic") => Ok(ImageObjectFit::Intrinsic),
         Some(value) => Err(BundlePresentationUpdateError::invalid_argument(
             callee,
             "fit",
@@ -1251,7 +1251,7 @@ fn presentation_image_fit_arg(
 fn presentation_image_alignment_arg(
     call: &RuntimeCall,
     callee: &'static str,
-) -> Result<BundleImageObjectAlignment, BundlePresentationUpdateError> {
+) -> Result<ImageObjectAlignment, BundlePresentationUpdateError> {
     let axis = |argument: &'static str, axis: &'static str| {
         let Some(value) = named_arg(&call.args, argument) else {
             return Ok(500);
@@ -1265,10 +1265,20 @@ fn presentation_image_alignment_arg(
             )
         })
     };
-    Ok(BundleImageObjectAlignment {
-        x_milli: axis("alignment.x", "x")?,
-        y_milli: axis("alignment.y", "y")?,
-    })
+    ImageObjectAlignment::try_new(axis("alignment.x", "x")?, axis("alignment.y", "y")?).map_err(
+        |error| {
+            let argument = match error.axis {
+                arcweft_interaction_model::presentation::ImageAlignmentAxis::X => "alignment.x",
+                arcweft_interaction_model::presentation::ImageAlignmentAxis::Y => "alignment.y",
+            };
+            BundlePresentationUpdateError::invalid_argument(
+                callee,
+                argument,
+                &error.value.to_string(),
+                "an alignment in [0, 1000] milli-units",
+            )
+        },
+    )
 }
 
 fn presentation_opacity_arg(
@@ -1291,7 +1301,7 @@ fn presentation_opacity_arg(
 fn presentation_image_playback_arg(
     call: &RuntimeCall,
     callee: &'static str,
-) -> Result<BundleImageObjectPlayback, BundlePresentationUpdateError> {
+) -> Result<ImageObjectPlayback, BundlePresentationUpdateError> {
     let duration = |argument: &'static str| {
         let Some(value) = named_arg(&call.args, argument) else {
             return Ok(None);
@@ -1316,12 +1326,12 @@ fn presentation_image_playback_arg(
             )
         })?,
     };
-    Ok(BundleImageObjectPlayback {
-        start_time_millis: duration("playback.start")?.unwrap_or_default(),
+    Ok(ImageObjectPlayback::from_parts(
+        duration("playback.start")?.unwrap_or_default(),
         rate_milli,
-        paused_at_millis: duration("playback.paused_at")?,
-        pinned_local_time_millis: duration("playback.local_time")?,
-    })
+        duration("playback.paused_at")?,
+        duration("playback.local_time")?,
+    ))
 }
 
 fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
@@ -1348,14 +1358,14 @@ fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
 
 fn image_transform_arg(
     call: &RuntimeCall,
-) -> Result<BundleImageObjectTransform, BundlePresentationUpdateError> {
+) -> Result<ImageObjectTransform, BundlePresentationUpdateError> {
     let component = |argument: &'static str,
                      default: i32,
                      parse: fn(&str) -> Option<i32>,
                      expected: &'static str| {
         optional_image_argument(call, argument, default, parse, expected)
     };
-    Ok(BundleImageObjectTransform {
+    Ok(ImageObjectTransform {
         m11_milli: component(
             "transform.m11",
             1_000,

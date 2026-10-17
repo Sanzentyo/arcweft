@@ -11,12 +11,13 @@ use arcweft_character::{
 use arcweft_image::{
     DecodedImage, ImageDecodeOptions, ImageError, ImageFormat, decode_image_bytes,
 };
+use arcweft_interaction_model::presentation::{ImageObjectAlignment, ImageObjectFit};
 use arcweft_presentation::character::{CharacterRenderLayer, CharacterRenderSpec};
 use arcweft_view::{
-    ContainerKind, FragmentKind, ImageAlignment, ImageFit, ImageId, LayoutBox, LayoutLength,
-    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeId, NodeKey, ViewError, ViewFragment,
-    ViewFragmentBuilder, ViewImageSource, ViewImageSourceTable, ViewLayerOutput,
-    ViewResolvedImageFrame, ViewSemanticFragment,
+    ContainerKind, FragmentKind, ImageId, LayoutBox, LayoutLength, LayoutPoint, LayoutResults,
+    LayoutSize, LayoutTree, NodeId, NodeKey, ViewError, ViewFragment, ViewFragmentBuilder,
+    ViewImageSource, ViewImageSourceTable, ViewLayerOutput, ViewResolvedImageFrame,
+    ViewSemanticFragment,
 };
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -172,8 +173,8 @@ impl CharacterView {
 
             let image_id = image_sources.insert(
                 ViewImageSource::new(image)
-                    .with_fit(ImageFit::Stretch)
-                    .with_alignment(ImageAlignment::top_left())
+                    .with_fit(ImageObjectFit::Stretch)
+                    .with_alignment(ImageObjectAlignment::top_left())
                     .with_opacity_milli(opacity_milli(layer.opacity())),
             )?;
             let node = fragment_builder.push_node(

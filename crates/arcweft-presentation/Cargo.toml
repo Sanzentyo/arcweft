@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-character = { workspace = true }
 arcweft-id = { workspace = true }
+arcweft-interaction-model.workspace = true
 arcweft-rich-text-schema = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }

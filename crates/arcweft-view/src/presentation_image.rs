@@ -65,11 +65,11 @@ impl ViewImagePresentationFrame {
             }
             let image_id = images.insert(
                 ViewImageSource::new(image)
-                    .with_fit(object.fit().into())
-                    .with_alignment(object.alignment().into())
+                    .with_fit(object.fit())
+                    .with_alignment(object.alignment())
                     .with_opacity_milli(object.opacity_milli())
                     .with_transform(object.transform())
-                    .with_playback(object.playback().into())
+                    .with_playback(object.playback())
                     .with_presentation(view_image_presentation_metadata(&object)),
             )?;
             let layer = object.layer().clone();
@@ -182,15 +182,15 @@ fn view_image_presentation_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ImageAlignment, ImageFit};
+    use arcweft_interaction_model::presentation::{
+        ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+    };
+
     use arcweft_id::PublicId;
     use arcweft_image::{
         DecodedImage, DecodedImageFrame, ImageDimensions, ImageFormat, ImageRepetition,
     };
-    use arcweft_presentation::image::{
-        ImageAssetRef, ImageObjectAlignment, ImageObjectFit, ImageObjectId, ImageObjectPlayback,
-        ImageObjectTransform, ImagePresentationObject,
-    };
+    use arcweft_presentation::image::{ImageAssetRef, ImageObjectId, ImagePresentationObject};
     use arcweft_presentation::input::InteractionTarget;
 
     fn public_id(value: &str) -> PublicId {
@@ -256,8 +256,8 @@ mod tests {
             .resolve_frame(crate::ImageId(0), display[0].layout(), 0)
             .unwrap();
         assert_eq!(resolved.frame().index(), 1);
-        assert_eq!(resolved.fit(), ImageFit::Cover);
-        assert_eq!(resolved.alignment(), ImageAlignment::top_left());
+        assert_eq!(resolved.fit(), ImageObjectFit::Cover);
+        assert_eq!(resolved.alignment(), ImageObjectAlignment::top_left());
         assert_eq!(resolved.opacity_milli(), 625);
         assert_eq!(resolved.transform().tx_milli, 5_000);
         assert_eq!(resolved.transform().ty_milli, 7_000);

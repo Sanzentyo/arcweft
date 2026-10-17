@@ -2,10 +2,7 @@ use super::*;
 use crate::gesture::{GestureArena, GestureKind, GestureOutcome};
 use crate::hit::{HitRecord, HitRect, HitTree};
 use crate::hover::{HoverPath, HoverTransition};
-use crate::image::{
-    ImageAssetRef, ImageObjectAlignment, ImageObjectFit, ImageObjectId, ImageObjectParam,
-    ImageObjectPlayback, ImageObjectTransform, ImagePresentationObject,
-};
+use crate::image::{ImageAssetRef, ImageObjectId, ImageObjectParam, ImagePresentationObject};
 use crate::input::{
     Action, ActionBatch, ActionTarget, AgentInput, HostEvent, HostEventBatch, HostEventSource,
     InputEpoch, InputEvent, InputEventKind, InteractionTarget, KeyPhase, KeyboardInput, PointerId,
@@ -22,6 +19,9 @@ use crate::semantic::{SemanticActionError, SemanticNode, SemanticRole, SemanticT
 use crate::text_input::{
     TextCommit, TextInput, TextInputOperation, TextInputPrivacy, TextInputSerial,
     TextInputSessionId,
+};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
 };
 
 #[test]

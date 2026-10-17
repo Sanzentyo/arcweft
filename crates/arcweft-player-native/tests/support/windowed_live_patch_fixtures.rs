@@ -3,8 +3,7 @@ use arcweft_bundle::patch::{BundlePatchArtifact, PatchCompatibility, encode_patc
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
-    BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
+    BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
     BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
@@ -24,6 +23,9 @@ use arcweft_core::value::{
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, TextKey};
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+};
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
 };
@@ -1650,18 +1652,10 @@ fn fixture_image_object() -> BundleImageObject {
             height_milli: 1000,
         },
         placement: None,
-        fit: BundleImageObjectFit::Stretch,
-        alignment: BundleImageObjectAlignment {
-            x_milli: 500,
-            y_milli: 500,
-        },
-        playback: BundleImageObjectPlayback {
-            start_time_millis: 0,
-            rate_milli: 1000,
-            paused_at_millis: None,
-            pinned_local_time_millis: None,
-        },
-        transform: BundleImageObjectTransform {
+        fit: ImageObjectFit::Stretch,
+        alignment: ImageObjectAlignment::try_new(500, 500).expect("valid fixture alignment"),
+        playback: ImageObjectPlayback::from_parts(0, 1000, None, None),
+        transform: ImageObjectTransform {
             m11_milli: 1000,
             m12_milli: 0,
             m21_milli: 0,

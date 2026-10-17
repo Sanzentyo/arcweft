@@ -1,7 +1,10 @@
 use arcweft_id::PublicId;
+use arcweft_interaction_model::presentation::{
+    ImageObjectAlignment, ImageObjectFit, ImageObjectTransform,
+};
 use arcweft_layout::{ContentRect, LayoutPoint, LayoutRect, LayoutSize, ScalePolicy};
 use arcweft_presentation::hit::HitRect;
-use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
+
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_presentation::text_input::{

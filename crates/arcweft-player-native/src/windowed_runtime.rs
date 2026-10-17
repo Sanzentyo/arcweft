@@ -801,10 +801,8 @@ mod tests {
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
         BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-        BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds,
-        BundleImageObjectFit, BundleImageObjectPlayback, BundleImageObjectTransform,
-        BundleManifest, BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileRef,
-        BundleVirtualFileSpace,
+        BundleImageObject, BundleImageObjectBounds, BundleManifest, BundleRuntimeSummary,
+        BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
     use arcweft_core::plan::{
@@ -812,6 +810,9 @@ mod tests {
         RuntimeLineId, RuntimePlanBuilder,
     };
     use arcweft_id::TextKey;
+    use arcweft_interaction_model::presentation::{
+        ImageObjectAlignment, ImageObjectFit, ImageObjectPlayback, ImageObjectTransform,
+    };
     use arcweft_render_wgpu::geometry::RenderViewport;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -1238,18 +1239,10 @@ mod tests {
                 height_milli: 1000,
             },
             placement: None,
-            fit: BundleImageObjectFit::Stretch,
-            alignment: BundleImageObjectAlignment {
-                x_milli: 500,
-                y_milli: 500,
-            },
-            playback: BundleImageObjectPlayback {
-                start_time_millis: 0,
-                rate_milli: 1000,
-                paused_at_millis: None,
-                pinned_local_time_millis: None,
-            },
-            transform: BundleImageObjectTransform {
+            fit: ImageObjectFit::Stretch,
+            alignment: ImageObjectAlignment::try_new(500, 500).expect("valid fixture alignment"),
+            playback: ImageObjectPlayback::from_parts(0, 1000, None, None),
+            transform: ImageObjectTransform {
                 m11_milli: 1000,
                 m12_milli: 0,
                 m21_milli: 0,
