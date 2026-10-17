@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use arcweft_core::awbc::{codec::AwbcDecodeBudget, schema::AwbcProgram};
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::engine::{Engine, FlowFiberStatus};
@@ -178,6 +179,43 @@ fn retained_map_prefix_can_reuse_a_copy_mapping() {
 }
 
 #[test]
+fn retained_map_prefix_reuses_an_opaque_mapping_through_checked_ingress() {
+    assert_map_source_order(
+        "return twice(map(factory()))",
+        "18",
+        &["mapping", "values", "values"],
+        6,
+    );
+}
+
+#[test]
+fn an_opaque_map_capture_does_not_invent_a_local_copy_guarantee() {
+    let source = r"
+#[pure]
+fn increment(item: i64) -> i64 { item + 1i64 }
+fn factory() -> (i64 -> i64 effects {}) { increment }
+flow main() -> i64 {
+    let mapper: Vec<i64> -> Vec<i64> effects {} = map(factory());
+    let first = mapper([1i64, 2i64, 3i64]).sum();
+    return first + mapper([1i64, 2i64, 3i64]).sum()
+}
+";
+    let error = compile_source(source)
+        .expect_err("an opaque capture needs its producer or checked ingress Copy evidence");
+    assert!(
+        matches!(
+            error.project().semantic_error(),
+            Some(
+                arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError::LocalUse(
+                    arcweft_lang_sema::final_analysis::CheckedLocalUseError::Unavailable { .. }
+                )
+            )
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn retained_map_prefix_evaluates_mapping_once_and_keeps_source_order() {
     assert_map_source_order(
         "let mapper: Vec<i64> -> Vec<i64> effects {} = map(factory()); return mapper(values()).sum()",
@@ -231,7 +269,7 @@ flow main() -> i64 {{ return root([1i64, 2i64, 3i64]).sum() }}
         }
         assert!(removed > 0);
         let error = lowered
-            .verify(Default::default(), Default::default())
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .expect_err("an opaque callback has no Copy proof without its runtime guard");
         assert!(
             error
@@ -261,6 +299,11 @@ fn increment(item: i64) -> i64 {{ item + 1i64 }}
 fn logging_increment(item: i64) -> i64 {{ log.info(item); item + 1i64 }}
 fn factory() -> (i64 -> i64 effects {{}}) {{ log.info("mapping"); increment }}
 fn values() -> Vec<i64> {{ log.info("values"); [1i64, 2i64, 3i64] }}
+fn twice(mapper: (Vec<i64> -> Vec<i64> effects {{}})) -> i64 {{
+    let first = mapper(values()).sum();
+    let second = mapper(values()).sum();
+    return first + second
+}}
 flow main() -> i64 {{ {body} }}
 "#
     );

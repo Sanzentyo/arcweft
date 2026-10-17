@@ -324,17 +324,11 @@ where
         let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
             crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error))
         })?;
-        validate_frame_registers(
-            program,
-            context.layout,
-            &unrestricted,
-            context.binding,
-            &self.registers,
-            resources,
-            view,
-            path,
-        )
-        .map_err(|error| crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error)))
+        context
+            .validate_registers(&unrestricted, resources, view, path)
+            .map_err(|error| {
+                crate::value::AwbcRuntimeValueSnapshotError::ProgramType(Box::new(error))
+            })
     }
 }
 
@@ -3623,7 +3617,7 @@ fn validate_frame(
     resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     path: &str,
 ) -> Result<(), FiberStateError> {
-    let layout = validate_frame_layout(
+    validate_frame_layout(
         program,
         frame.function,
         frame.layout,
@@ -3631,74 +3625,30 @@ fn validate_frame(
         frame.registers.len(),
         &resources.work(),
     )?;
+    let context = frame.value_context(program)?;
     let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
         FiberStateError::Snapshot(
             crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error)),
         )
     })?;
-    validate_frame_registers(
-        program,
-        layout,
-        &unrestricted,
-        frame.type_instantiation.as_deref(),
-        &frame.registers,
-        resources,
-        RuntimeValue::view,
-        path,
-    )
-    .map_err(|error| FiberStateError::InvalidRuntimeValue {
-        path: path.to_owned(),
-        reason: error.to_string(),
-    })?;
-    frame.value_context(program)?.validate_formats(
+    context
+        .validate_registers(&unrestricted, resources, RuntimeValue::view, path)
+        .map_err(|error| FiberStateError::InvalidRuntimeValue {
+            path: path.to_owned(),
+            reason: error.to_string(),
+        })?;
+    context.validate_formats(
         frame.format.as_ref(),
         &frame.format_attempts,
         resources,
         RuntimeValue::view,
     )?;
-    frame.value_context(program)?.validate_scopes(
+    context.validate_scopes(
         &frame.root_cleanups,
         &frame.scopes,
         resources,
         RuntimeValue::view,
     )?;
-    Ok(())
-}
-
-fn validate_frame_registers<'value, T>(
-    program: &AwbcProgram,
-    layout: &super::schema::AwbcFrameLayout,
-    unrestricted: &[AwbcRegisterId],
-    instantiation: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
-    registers: &'value [RuntimePlaceStorage<T>],
-    resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
-    view: impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
-    path: &str,
-) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
-    for (index, (slot, storage)) in layout.slots.iter().zip(registers).enumerate() {
-        program.runtime_types.get(slot.ty.index()).ok_or(
-            crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { ty: slot.ty },
-        )?;
-        storage
-            .validate_program_type(
-                if unrestricted
-                    .binary_search_by_key(&index, |register| register.index())
-                    .is_ok()
-                {
-                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
-                } else {
-                    crate::value::ownership::RuntimeValueOwnershipRequirement::Owned
-                },
-                crate::program_types::RuntimeProgramValueType::Awbc {
-                    program,
-                    ty: slot.ty,
-                },
-                instantiation,
-                resources,
-                &view,
-            )
-            .map_err(|error| error.within_value_path(&format!("{path}.registers[{index}]")))?;
-    }
     Ok(())
 }
 

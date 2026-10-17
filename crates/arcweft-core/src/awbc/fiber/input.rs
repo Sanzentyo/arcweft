@@ -17,6 +17,43 @@ pub(super) struct FrameValueContext<'a, V> {
     pub(super) scope_count: usize,
 }
 
+impl<'value, V> FrameValueContext<'value, V> {
+    /// Register types and bindings belong to this same original frame.
+    pub(super) fn validate_registers(
+        &self,
+        unrestricted: &[super::AwbcRegisterId],
+        resources: &mut ValueResourceAdmission,
+        view: impl Fn(&'value V) -> RuntimeValueView<'value>,
+        path: &str,
+    ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
+        for (index, (slot, storage)) in self.layout.slots.iter().zip(self.registers).enumerate() {
+            self.program.runtime_types.get(slot.ty.index()).ok_or(
+                crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { ty: slot.ty },
+            )?;
+            storage
+                .validate_program_type(
+                    if unrestricted
+                        .binary_search_by_key(&index, |register| register.index())
+                        .is_ok()
+                    {
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted
+                    } else {
+                        crate::value::ownership::RuntimeValueOwnershipRequirement::Owned
+                    },
+                    crate::program_types::RuntimeProgramValueType::Awbc {
+                        program: self.program,
+                        ty: slot.ty,
+                    },
+                    self.binding,
+                    resources,
+                    &view,
+                )
+                .map_err(|error| error.within_value_path(&format!("{path}.registers[{index}]")))?;
+        }
+        Ok(())
+    }
+}
+
 impl<V> FrameValueContext<'_, V> {
     pub(super) fn validate_scopes(
         &self,

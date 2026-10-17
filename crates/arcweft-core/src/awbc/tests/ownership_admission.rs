@@ -202,3 +202,40 @@ fn ownership_and_resources_share_one_cumulative_live_and_inert_traversal() {
         ));
     }
 }
+
+#[test]
+fn inert_frame_counts_precede_original_ownership_dataflow() {
+    let mut program = guarded_copy_program();
+    let original = RuntimeProgramOwner::Awbc(Arc::new(program.clone()));
+    let saved =
+        AwbcFiberStateSnapshot::from_live(&owned_sequence(&program, false), &original).unwrap();
+    program.instructions[0] = AwbcInstruction::Nop;
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(program));
+    for (maximum, resource_first) in [(1, true), (2, false)] {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits {
+                max_sequence_items: maximum,
+                ..RuntimeSchemaLimits::engine_default()
+            },
+        );
+        let error = saved.admit_retained(&mut admission).unwrap_err();
+        if resource_first {
+            assert!(
+                matches!(
+                    error,
+                    crate::value::AwbcRuntimeValueSnapshotError::Resource(_)
+                ),
+                "{error:?}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    error,
+                    crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(_)
+                ),
+                "{error:?}"
+            );
+        }
+    }
+}

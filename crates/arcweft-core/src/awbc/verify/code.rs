@@ -2366,6 +2366,7 @@ fn apply_instruction_copy_and_move_effects(
         | AwbcInstruction::FormatOperandAttempt { .. }
         | AwbcInstruction::AbandonFormatAttempt { .. }
         | AwbcInstruction::CancelCleanup { .. }
+        | AwbcInstruction::Drop { .. }
         | AwbcInstruction::StreamClose { .. } => return Ok(()),
         AwbcInstruction::LoadConst { .. } | AwbcInstruction::SequenceLen { .. } => {}
         AwbcInstruction::MakeTuple { dst, items } => {
@@ -2810,7 +2811,6 @@ fn apply_instruction_copy_and_move_effects(
                 }
             }
         }
-        AwbcInstruction::Drop { .. } => return Ok(()),
     }
 
     let mut unique = BTreeSet::new();

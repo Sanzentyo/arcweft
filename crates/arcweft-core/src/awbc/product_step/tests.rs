@@ -2937,17 +2937,14 @@ fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
                             // under the admitted schema. Corrupt only the next
                             // Schedule boundary; resume admission must preserve
                             // those same owned values and ledger leases.
-                            let operation =
-                                match &mut std::sync::Arc::make_mut(&mut executor.program)
-                                    .line_operations[2]
-                                {
-                                    crate::awbc::schema::AwbcLineOperation::Schedule {
-                                        captures,
-                                        ..
-                                    } => captures,
-                                    _ => unreachable!("fixture Schedule remains present"),
-                                };
-                            operation[1].local = operation[0].local;
+                            let crate::awbc::schema::AwbcLineOperation::Schedule {
+                                captures, ..
+                            } = &mut std::sync::Arc::make_mut(&mut executor.program)
+                                .line_operations[2]
+                            else {
+                                unreachable!("fixture Schedule remains present");
+                            };
+                            captures[1].local = captures[0].local;
                         }
                         other => panic!("unexpected schedule fixture command: {other:?}"),
                     }
