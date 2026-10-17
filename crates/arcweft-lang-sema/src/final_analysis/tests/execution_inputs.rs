@@ -1332,6 +1332,40 @@ fn binding_export_retains_dynamic_call_suspension_refusal() {
 }
 
 #[test]
+fn immutable_environment_aliases_retain_the_checked_invocation_suspension() {
+    let world = super::environment_overload_fixture(
+        "fn root(value: i64) -> i64 { let selected: i64 -> i64 effects {} = choose; let alias = selected; alias(value = value) }",
+    );
+    let report = analyze(&world).unwrap();
+    let source = declaration_body(&report, "root");
+    let context = report
+        .checked_execution_context(
+            world.project.analysis_view().unwrap(),
+            &world.symbols,
+            source.clone(),
+            None,
+        )
+        .unwrap();
+    let admitted = context
+        .checked_deterministic_program(source)
+        .expect("exact environment declaration aliases preserve non-suspending invocation");
+    assert_eq!(
+        admitted.input_abi().suspension(),
+        crate::final_analysis::CheckedSuspensionRole::NonSuspending,
+    );
+    assert_eq!(
+        admitted.input_abi().control(),
+        crate::final_analysis::CheckedExecutableControlRole::FlowRequired,
+    );
+    assert!(admitted.input_abi().effects().is_empty());
+    assert_eq!(admitted.input_abi().parameters().len(), 1);
+    assert_eq!(
+        admitted.input_abi().result().value_type(),
+        Some(&TypeKind::I64)
+    );
+}
+
+#[test]
 fn immutable_project_function_aliases_use_the_checked_body_suspension() {
     let world = fixture(
         "fn pure(value: i64) -> i64 { value }\nfn root() -> i64 { let first = pure; let second = first; second(41i64) }",

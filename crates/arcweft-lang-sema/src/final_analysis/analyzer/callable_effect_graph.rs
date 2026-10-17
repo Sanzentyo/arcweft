@@ -188,6 +188,19 @@ impl<'a> CallableEffectGraph<'a> {
                         expressions: closure.expressions().collect(),
                     });
                 IndexedCallableSuspension::Closure(producer)
+            } else if !immediate_map
+                && matches!(
+                    known_target.as_ref().map(CheckedCallableId::declaration),
+                    Some(
+                        CheckedCallableDeclaration::Environment(_)
+                            | CheckedCallableDeclaration::Standard(_)
+                    )
+                )
+            {
+                // Value dispatch still evaluates its callee, but preserves
+                // the exact accepted declaration's non-suspending invocation.
+                // Immediate Map must retain its independent callback proof.
+                IndexedCallableSuspension::NonSuspending
             } else if immediate_map
                 || selected.requires_value_callee()
                 || matches!(
