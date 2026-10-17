@@ -1,10 +1,10 @@
 //! Public session facade for root View logical-axis host seeds.
 
 use super::BundleSession;
-use crate::presentation_handles::PresentationHandleId;
 use crate::view_runtime::{
     BundleViewAxisSeedError, BundleViewAxisSeedUpdate, BundleViewAxisSeedUpdateOutcome,
 };
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_view::{ViewBoxAxisHostSeed, ViewInheritedBoxAxes};
 
 impl BundleSession {

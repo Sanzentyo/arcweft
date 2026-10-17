@@ -20,6 +20,7 @@ use arcweft_core::{
     pure::{RuntimePureCallBackend, VmRuntimePureCallBackend},
 };
 use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_id::{PublicId, TextKey};
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
@@ -36,8 +37,7 @@ use arcweft_runtime_driver::dialogue::{
     DialogueViewReveal, DialogueViewStage, DialogueViewState,
 };
 use arcweft_runtime_driver::presentation_handles::{
-    PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
-    PresentationResourceState,
+    PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewEventDispatchError, BundleViewInstancePath,

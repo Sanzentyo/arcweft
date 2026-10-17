@@ -82,6 +82,15 @@ nominal header はその型グラフで検証する。View の in-memory snapsho
 serde reader を残さず、mount identity・型付き slot・axis seed の検証を既存 View
 restore で実行してから session を公開する。
 
+presentation occurrence の identity は `arcweft-id::presentation::PresentationHandleId`
+を共有する。snapshot の文字列からも通常の生成と同じ検証を通し、空文字、非 ASCII
+文字、許可されない byte を拒否する。canonical text は ASCII 英数字と `. _ - / :`
+で構成し、reference marker の除去や表記の正規化は行わない。borrowed text は検証後に
+保持用の copy を行い、owned text は元の storage を再利用する。これは resource の
+public ID とは別の occurrence identity であり、`dialogue.41` や `view.scope.3` のような
+既存の有効な文字列と version `1` の wire shape を保持する。enclosing codec の byte・
+string・collection 上限と、元の View/program に対する復元時の照合は別途維持する。
+
 Core の inert value graph は、live/inert 共通の borrowed logical view と
 canonical visitor の counting sink を使い、live value を構築する前に
 depth・node・collection・string・validation-work・encoded-byte を検証する。

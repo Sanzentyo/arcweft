@@ -1705,7 +1705,7 @@ mod view_handler_queue_tests {
             DialogueRevision::new(1),
         );
         let input = crate::dialogue::DialogueViewInput {
-            handle: crate::presentation_handles::PresentationHandleId::try_new(
+            handle: arcweft_id::presentation::PresentationHandleId::try_new(
                 "dialogue.session.handler",
             )
             .expect("dialogue handle"),

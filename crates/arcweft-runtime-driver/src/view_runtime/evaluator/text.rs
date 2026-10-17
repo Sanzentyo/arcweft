@@ -1,6 +1,5 @@
 use super::support::resolve_mount_path;
 use super::{EvaluationFailure, ViewEvaluator};
-use crate::presentation_handles::PresentationHandleId;
 use crate::view_runtime::value::runtime_scalar_text;
 use crate::view_runtime::{
     BundleViewDiagnosticCode, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
@@ -11,6 +10,7 @@ use arcweft_bundle::resource_codec::ViewRuntimeControlVisualStyle;
 use arcweft_bundle::resource_codec::view::{
     DialogueTextProjection, ViewParameterRole, ViewTextSourceKind,
 };
+use arcweft_id::presentation::PresentationHandleId;
 
 impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
     pub(super) fn resolve_text(

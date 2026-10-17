@@ -700,11 +700,11 @@ mod tests {
     use arcweft_bundle::resource_codec::view::{
         ViewRuntimeControlBorderStyle, ViewRuntimeControlVisualStyle,
     };
+    use arcweft_id::presentation::PresentationHandleId;
     use arcweft_presentation::appearance::PresentationColor;
     use arcweft_presentation::hit::HitRect;
     use arcweft_render_wgpu::geometry::PreparedViewSceneResources;
     use arcweft_render_wgpu::view_scene::{PreparedTextId, ViewPrimitive, ViewScene};
-    use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
     use arcweft_runtime_driver::view_runtime::{
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     };

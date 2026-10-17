@@ -390,9 +390,9 @@ mod tests {
         DialoguePageIndex, DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal,
         DialogueViewStage,
     };
-    use crate::presentation_handles::PresentationHandleId;
     use crate::view_runtime::{BundleViewInstancePath, BundleViewMountOutput};
     use arcweft_bundle::resource_codec::{ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle};
+    use arcweft_id::presentation::PresentationHandleId;
     use arcweft_view::{
         DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, ViewId,
         ViewMountId,

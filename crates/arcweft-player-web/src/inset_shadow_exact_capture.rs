@@ -3,6 +3,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
     ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
 };
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
 use arcweft_player_scene::input::InputController;
@@ -13,7 +14,6 @@ use arcweft_render_wgpu::geometry::{PreparedFrame, RenderPreferences, RenderView
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_render_wgpu::view_effects::ViewTextureExtent;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
-use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     BundleViewStyleNode, BundleViewStyleNodeKind,

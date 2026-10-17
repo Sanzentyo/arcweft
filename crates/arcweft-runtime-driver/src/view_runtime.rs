@@ -20,7 +20,7 @@ mod style_scope;
 mod value;
 
 use crate::dialogue::{BundlePresentationInput, DialogueViewInput, DialogueViewState};
-use crate::presentation_handles::{PresentationHandleId, PresentationHandleRecord};
+use crate::presentation_handles::PresentationHandleRecord;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{
     DialogueViewContractError, ValidatedViewProduct, ViewObserveClassification,
@@ -37,6 +37,7 @@ use arcweft_core::{
     },
 };
 use arcweft_id::PublicId;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxInstanceIdentity, FxLogicalTime, FxRuntimeType,
 };

@@ -3,6 +3,7 @@
 mod support;
 mod text;
 
+use arcweft_id::presentation::PresentationHandleId;
 use support::{
     branch_bounds, control_flow_failure, derive_fx_instance, instruction_ordinal, resolve_path,
 };
@@ -27,8 +28,7 @@ use super::{
 };
 use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{
-    PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
-    PresentationResourceState,
+    PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
 };
 use arcweft_bundle::resource_codec::view::{ViewParameterRole, ViewProgramInstruction};
 use arcweft_bundle::resource_codec::{
@@ -219,7 +219,7 @@ struct ViewEvaluator<'a, B> {
     allocator: &'a mut arcweft_view::ViewMountAllocator,
     view_root_bindings: &'a BTreeMap<String, RuntimeValue>,
     dialogue_inputs:
-        BTreeMap<crate::presentation_handles::PresentationHandleId, DialogueTextInput<'a>>,
+        BTreeMap<arcweft_id::presentation::PresentationHandleId, DialogueTextInput<'a>>,
     mounts: &'a mut BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: &'a mut super::axis_seed::BundleViewAxisSeedRegistry,
     reduce_motion: bool,

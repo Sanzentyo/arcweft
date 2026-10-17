@@ -1,9 +1,8 @@
 //! Host-owned logical-axis seed lifecycle for root View mounts.
 
 use super::BundleViewRuntimeError;
-use crate::presentation_handles::{
-    PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
-};
+use crate::presentation_handles::{PresentationHandleKind, PresentationHandleRecord};
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_view::{
     ViewBoxAxisHostSeed, ViewBoxAxisRevision, ViewBoxAxisSeedGeneration, ViewBoxAxisSeedSource,
     ViewInheritedBoxAxes, ViewMountId,

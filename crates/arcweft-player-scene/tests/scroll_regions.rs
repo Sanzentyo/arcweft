@@ -16,6 +16,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_player_scene::{
     fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -30,7 +31,6 @@ use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::view_scene::ViewPrimitive;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
-use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
     BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,

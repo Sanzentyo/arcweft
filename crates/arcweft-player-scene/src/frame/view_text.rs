@@ -9,6 +9,7 @@ use crate::input::InputController;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::ViewTextSelectionPolicy;
 use arcweft_id::PublicId;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::fx::{
@@ -33,7 +34,6 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_runtime_driver::{
     dialogue::{DialogueEntryState, DialoguePresentation},
     display::BundlePresentationSnapshot,
-    presentation_handles::PresentationHandleId,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
 use arcweft_text_model::{LineDisplayFrame, LineDisplayStage, RichTextPresentation, RichTextRange};

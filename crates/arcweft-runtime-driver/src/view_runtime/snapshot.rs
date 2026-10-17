@@ -148,7 +148,7 @@ struct BindingSnapshot {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct MountSnapshot {
-    handle: crate::presentation_handles::PresentationHandleId,
+    handle: arcweft_id::presentation::PresentationHandleId,
     path: super::BundleViewInstancePath,
     owner: super::SavedViewOwner,
     activation_logical_time: arcweft_presentation::fx::FxLogicalTime,

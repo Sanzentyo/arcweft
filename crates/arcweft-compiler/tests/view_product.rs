@@ -1,3 +1,4 @@
+use arcweft_id::presentation::PresentationHandleId;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 #[path = "view_product/match_source.rs"]
@@ -41,7 +42,6 @@ use arcweft_runtime_driver::{
         DialoguePageIndex, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
         DialogueViewReveal, DialogueViewStage, DialogueViewState,
     },
-    presentation_handles::PresentationHandleId,
     view_runtime::BundleViewRuntime,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;

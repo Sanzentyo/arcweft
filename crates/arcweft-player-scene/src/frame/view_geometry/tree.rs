@@ -10,7 +10,7 @@ use arcweft_bundle::resource_codec::view::ViewInputKind;
 use arcweft_bundle::resource_codec::{
     ViewRuntimeGeometryOwner, ViewRuntimeGeometryParticipation, ViewRuntimeNodeStyle,
 };
-use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewStyleNode,
     BundleViewStyleNodeKind,

@@ -4,46 +4,9 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
+use arcweft_id::presentation::PresentationHandleId;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
-/// Stable, serializable identity for a scoped presentation handle.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
-pub struct PresentationHandleId(String);
-
-impl PresentationHandleId {
-    /// Creates a handle id from a runtime/lowering supplied public-id-like value.
-    pub fn try_new(value: impl Into<String>) -> Result<Self, PresentationHandleDiagnostic> {
-        let value = value.into();
-        if is_valid_handle_token(&value) {
-            Ok(Self(value))
-        } else {
-            Err(PresentationHandleDiagnostic::new(
-                PresentationHandleDiagnosticCode::InvalidCall,
-                None,
-                format!("invalid presentation handle id `{value}`"),
-            ))
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for PresentationHandleId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl From<PresentationHandleId> for String {
-    fn from(value: PresentationHandleId) -> Self {
-        value.0
-    }
-}
 
 /// Typed runtime family for scoped presentation handles.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -788,7 +751,13 @@ fn handle_id_arg(call: &RuntimeCall) -> Result<PresentationHandleId, Presentatio
             format!("{} requires handle = @handle...", call.callee),
         ));
     };
-    PresentationHandleId::try_new(value)
+    PresentationHandleId::try_new(value).map_err(|error| {
+        PresentationHandleDiagnostic::new(
+            PresentationHandleDiagnosticCode::InvalidCall,
+            None,
+            error.to_string(),
+        )
+    })
 }
 
 fn named_runtime_arg<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
@@ -857,6 +826,23 @@ mod tests {
 
     fn handle(value: &str) -> PresentationHandleId {
         PresentationHandleId::try_new(value).expect("valid handle id")
+    }
+
+    #[test]
+    fn invalid_handle_identity_cannot_enter_a_presentation_snapshot() {
+        for value in ["", "bad handle", "@handle.bad", "handle.\n", "handle.雪"] {
+            let original = view_handle(
+                "handle.valid",
+                "view.Main",
+                PresentationResourceState::Mounted,
+            );
+            let mut wire = serde_json::to_value(original).expect("presentation record wire");
+            wire["id"] = serde_json::Value::String(value.to_owned());
+            assert!(
+                serde_json::from_value::<PresentationHandleRecord>(wire).is_err(),
+                "invalid identity {value:?} must not bypass construction through serde"
+            );
+        }
     }
 
     fn view_handle(

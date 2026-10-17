@@ -1568,7 +1568,7 @@ mod dynamic_character_dialogue_context_tests {
                 .view
                 .mounts
                 .push(crate::view_runtime::BundleViewMountOutput {
-                    handle: crate::presentation_handles::PresentationHandleId::try_new("capture.view")
+                    handle: arcweft_id::presentation::PresentationHandleId::try_new("capture.view")
                         .unwrap(),
                     mount: arcweft_view::ViewMountId::from_raw(1),
                     view: retained.effective.view().clone(),

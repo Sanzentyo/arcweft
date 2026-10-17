@@ -10,6 +10,7 @@ use arcweft_bundle::resource_codec::{
     ViewTextBlockBounds,
 };
 use arcweft_id::PublicId;
+use arcweft_id::presentation::PresentationHandleId;
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationColor, PresentationEnvironment,
     PresentationEnvironmentField, PresentationEnvironmentFieldSet,
@@ -21,7 +22,6 @@ use arcweft_presentation::input::{InteractionTarget, PointerId};
 use arcweft_presentation::interaction::{FocusState, InteractionState};
 use arcweft_presentation::layer::LayerId;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
-use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::SessionEnvironmentState;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeId,
