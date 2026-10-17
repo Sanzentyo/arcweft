@@ -168,6 +168,7 @@ pub use type_table::{
     MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
     RuntimePlanTypeSeed, RuntimePlanTypeTable, RuntimePlanTypeTableError,
 };
+pub(crate) use value_admission::RuntimePlanLiteralMaterialization;
 pub use value_admission::RuntimePlanValueAdmissionError;
 pub use variant_case::{RuntimePlanVariantCase, RuntimePlanVariantCaseError};
 pub use variant_domains::{

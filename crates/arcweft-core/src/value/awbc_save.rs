@@ -20,6 +20,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::VecDeque;
 use thiserror::Error;
 
+mod materialization;
+use materialization::SnapshotMaterialization;
+
 #[cfg(test)]
 pub(super) mod tests;
 
@@ -698,7 +701,7 @@ impl AwbcRuntimeValueSnapshot {
                 "rollback image does not contain an iterator",
             ));
         };
-        Self::iterator_into_live(iterator, Some(owner))
+        Self::iterator_into_live(iterator, Some(owner).into())
     }
 
     /// Projects a borrowed value only after its enclosing retained owner has
@@ -772,7 +775,14 @@ impl AwbcRuntimeValueSnapshot {
 
     fn into_live_with_owner(
         self,
-        program_owner: Option<&RuntimeProgramOwner>,
+        owner: Option<&RuntimeProgramOwner>,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.into_live_with_context(owner.into())
+    }
+
+    fn into_live_with_context(
+        self,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         Ok(match self {
             Self::Unit => RuntimeValue::Unit,
@@ -786,7 +796,7 @@ impl AwbcRuntimeValueSnapshot {
             Self::String(value) => RuntimeValue::String(value),
             Self::Color(value) => RuntimeValue::Color(value),
             Self::NeedHandle(value) => RuntimeValue::NeedHandle(value.into_live_admitted(
-                program_owner.ok_or_else(|| {
+                context.program().ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "Need values require a program-bound snapshot",
                     )
@@ -804,16 +814,16 @@ impl AwbcRuntimeValueSnapshot {
             }
             Self::Range(value) => RuntimeValue::Range(value),
             Self::Iterator(value) => {
-                RuntimeValue::Iterator(Self::iterator_into_live(value, program_owner)?)
+                RuntimeValue::Iterator(Self::iterator_into_live(value, context)?)
             }
             Self::EntityRef(value) => RuntimeValue::EntityRef(value),
             Self::Tuple(values) => RuntimeValue::Tuple(
                 values
                     .into_iter()
-                    .map(|value| value.into_live_with_owner(program_owner))
+                    .map(|value| value.into_live_with_context(context))
                     .collect::<Result<_, _>>()?,
             ),
-            Self::Seq(value) => RuntimeValue::Seq(Self::sequence_into_live(value, program_owner)?),
+            Self::Seq(value) => RuntimeValue::Seq(Self::sequence_into_live(value, context)?),
             Self::Record(fields) => {
                 let fields = fields
                     .into_iter()
@@ -821,7 +831,7 @@ impl AwbcRuntimeValueSnapshot {
                         Ok(super::RuntimeFieldValue::new_accepted(
                             field.field,
                             field.name,
-                            field.value.into_live_with_owner(program_owner)?,
+                            field.value.into_live_with_context(context)?,
                         ))
                     })
                     .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
@@ -831,23 +841,23 @@ impl AwbcRuntimeValueSnapshot {
                 )
             }
             Self::NominalRecord(value) => {
-                RuntimeValue::NominalRecord(Self::nominal_into_live(value, program_owner)?)
+                RuntimeValue::NominalRecord(Self::nominal_into_live(value, context)?)
             }
-            Self::Opaque(value) => Self::opaque_into_live(value, program_owner)?,
+            Self::Opaque(value) => Self::opaque_into_live(value, context)?,
             Self::Reduction(value) => {
-                RuntimeValue::Reduction(Self::reduction_into_live(value, program_owner)?)
+                RuntimeValue::Reduction(Self::reduction_into_live(value, context)?)
             }
-            Self::Agent(value) => RuntimeValue::Agent(Self::agent_into_live(value, program_owner)?),
+            Self::Agent(value) => RuntimeValue::Agent(Self::agent_into_live(value, context)?),
             Self::Callable(value) => {
-                RuntimeValue::Callable(Self::callable_into_live(value, program_owner)?)
+                RuntimeValue::Callable(Self::callable_into_live(value, context)?)
             }
-            value @ Self::Variant { .. } => value.variant_into_live(program_owner)?,
+            value @ Self::Variant { .. } => value.variant_into_live(context)?,
         })
     }
 
     fn variant_into_live(
         self,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let Self::Variant {
             owner,
@@ -863,7 +873,18 @@ impl AwbcRuntimeValueSnapshot {
             semantic_identity, ..
         } = &owner
         {
-            let authority = program_owner
+            if let SnapshotMaterialization::Literal(authority) = context {
+                return Ok(authority.variant(
+                    *semantic_identity,
+                    ordinal,
+                    payload
+                        .map(|value| value.into_live_with_context(context))
+                        .transpose()?,
+                    type_instantiation,
+                ));
+            }
+            let authority = context
+                .program()
                 .ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "nominal values require a program-bound snapshot",
@@ -885,7 +906,7 @@ impl AwbcRuntimeValueSnapshot {
                     *semantic_identity,
                     ordinal,
                     payload
-                        .map(|value| value.into_live_with_owner(program_owner))
+                        .map(|value| value.into_live_with_context(context))
                         .transpose()?,
                     type_instantiation.map(std::sync::Arc::new),
                     crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -915,7 +936,7 @@ impl AwbcRuntimeValueSnapshot {
                 let Self::Tuple(mut fields) = *payload else {
                     unreachable!()
                 };
-                Some(fields.remove(0).into_live_with_owner(program_owner)?)
+                Some(fields.remove(0).into_live_with_context(context)?)
             }
             None => None,
         };
@@ -961,13 +982,13 @@ impl AwbcRuntimeValueSnapshot {
 
     fn iterator_into_live(
         value: AwbcRuntimeIteratorSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeIterator, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeIteratorSnapshot::Values { items } => RuntimeIterator::Values {
                 items: items
                     .into_iter()
-                    .map(|value| value.into_live_with_owner(program_owner))
+                    .map(|value| value.into_live_with_context(context))
                     .collect::<Result<VecDeque<_>, _>>()?,
             },
             AwbcRuntimeIteratorSnapshot::Range(value) => {
@@ -979,7 +1000,7 @@ impl AwbcRuntimeValueSnapshot {
                 RuntimeIterator::Range(value)
             }
             AwbcRuntimeIteratorSnapshot::Witness { state, next } => {
-                let owner = program_owner.ok_or_else(|| {
+                let owner = context.program().ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "iterator witnesses require their original executable program",
                     )
@@ -989,7 +1010,8 @@ impl AwbcRuntimeValueSnapshot {
                         "iterator witness has no matching original next signature",
                     )
                 })?;
-                let state = state.into_live_with_owner(Some(owner))?;
+                let state =
+                    state.into_live_with_context(SnapshotMaterialization::Program(owner))?;
                 RuntimeIterator::try_witness(owner.clone(), state, next)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?
             }
@@ -1043,13 +1065,13 @@ impl AwbcRuntimeValueSnapshot {
 
     fn sequence_into_live(
         value: AwbcRuntimeSeqSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeSeq, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeSeqSnapshot::Values(values) => RuntimeSeq::Values(
                 values
                     .into_iter()
-                    .map(|value| value.into_live_with_owner(program_owner))
+                    .map(|value| value.into_live_with_context(context))
                     .collect::<Result<_, _>>()?,
             ),
             AwbcRuntimeSeqSnapshot::Dense(value) => RuntimeSeq::Dense(value),
@@ -1062,7 +1084,7 @@ impl AwbcRuntimeValueSnapshot {
                     })?,
                     columns
                         .into_iter()
-                        .map(|value| Self::sequence_into_live(value, program_owner))
+                        .map(|value| Self::sequence_into_live(value, context))
                         .collect::<Result<_, _>>()?,
                 )
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
@@ -1080,7 +1102,7 @@ impl AwbcRuntimeValueSnapshot {
                             Ok(super::RecordSeqField::new_accepted(
                                 field.field,
                                 field.name,
-                                Self::sequence_into_live(field.values, program_owner)?,
+                                Self::sequence_into_live(field.values, context)?,
                             ))
                         })
                         .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
@@ -1117,9 +1139,18 @@ impl AwbcRuntimeValueSnapshot {
 
     fn nominal_into_live(
         value: AwbcRuntimeNominalRecordSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeNominalRecordValue, AwbcRuntimeValueSnapshotError> {
-        let authority = program_owner
+        if let SnapshotMaterialization::Literal(authority) = context {
+            let fields = value
+                .fields
+                .into_iter()
+                .map(|field| field.value.into_live_with_context(context))
+                .collect::<Result<_, _>>()?;
+            return Ok(authority.record(value.semantic_identity, fields, value.type_instantiation));
+        }
+        let authority = context
+            .program()
             .ok_or_else(|| {
                 AwbcRuntimeValueSnapshotError::new(
                     "nominal values require a program-bound snapshot",
@@ -1151,7 +1182,7 @@ impl AwbcRuntimeValueSnapshot {
                 value
                     .fields
                     .into_iter()
-                    .map(|field| field.value.into_live_with_owner(program_owner))
+                    .map(|field| field.value.into_live_with_context(context))
                     .collect::<Result<_, _>>()?,
                 value.type_instantiation.map(std::sync::Arc::new),
                 crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -1174,7 +1205,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn opaque_into_live(
         value: AwbcRuntimeOpaqueSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
         let owner = RuntimeOpaqueTypeOwner::exact_with(
             value.producer,
@@ -1183,7 +1214,7 @@ impl AwbcRuntimeValueSnapshot {
             value.persistence,
         );
         owner
-            .try_wrap((*value.payload).into_live_with_owner(program_owner)?)
+            .try_wrap((*value.payload).into_live_with_context(context)?)
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
@@ -1213,7 +1244,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn reduction_into_live(
         value: AwbcRuntimeReductionSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeReductionValue, AwbcRuntimeValueSnapshotError> {
         let commands = value
             .commands
@@ -1222,13 +1253,13 @@ impl AwbcRuntimeValueSnapshot {
                 Ok(RuntimeCommand::new_accepted(
                     command.constructor,
                     command.target,
-                    RuntimePayload::new((*command.payload).into_live_with_owner(program_owner)?),
+                    RuntimePayload::new((*command.payload).into_live_with_context(context)?),
                 ))
             })
             .collect::<Result<Vec<_>, AwbcRuntimeValueSnapshotError>>()?;
         RuntimeReductionValue::try_from_admitted_parts(
             value.owner,
-            (*value.state).into_live_with_owner(program_owner)?,
+            (*value.state).into_live_with_context(context)?,
             commands,
         )
         .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
@@ -1281,7 +1312,7 @@ impl AwbcRuntimeValueSnapshot {
 
     fn agent_into_live(
         value: AwbcRuntimeAgentSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeAgentValue, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeAgentSnapshot::ActionTarget(value) => RuntimeAgentValue::ActionTarget(value),
@@ -1297,7 +1328,7 @@ impl AwbcRuntimeValueSnapshot {
             AwbcRuntimeAgentSnapshot::Probe(value) => RuntimeAgentValue::Probe(value),
             AwbcRuntimeAgentSnapshot::Diagnostics => RuntimeAgentValue::Diagnostics,
             AwbcRuntimeAgentSnapshot::Predicate(value) => {
-                RuntimeAgentValue::Predicate(Self::predicate_into_live(value, program_owner)?)
+                RuntimeAgentValue::Predicate(Self::predicate_into_live(value, context)?)
             }
             AwbcRuntimeAgentSnapshot::ViewportPoint { x, y } => {
                 RuntimeAgentValue::ViewportPoint { x, y }
@@ -1307,15 +1338,15 @@ impl AwbcRuntimeValueSnapshot {
                 shape_type,
                 value_type,
             } => {
-                let program_owner = program_owner.ok_or_else(|| {
+                let context = context.program().ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "DataShape values require a program-bound snapshot",
                     )
                 })?;
-                let shape = super::RuntimeDataShape::bind(program_owner.clone(), shape_type)
+                let shape = super::RuntimeDataShape::bind(context.clone(), shape_type)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
                 shape
-                    .validate_for(program_owner, shape_type, value_type)
+                    .validate_for(context, shape_type, value_type)
                     .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
                 RuntimeAgentValue::DataShape(shape)
             }
@@ -1371,14 +1402,14 @@ impl AwbcRuntimeValueSnapshot {
 
     fn predicate_into_live(
         value: AwbcRuntimeAgentPredicateSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeAgentPredicate, AwbcRuntimeValueSnapshotError> {
         Ok(match value {
             AwbcRuntimeAgentPredicateSnapshot::Compare { probe, op, value } => {
                 RuntimeAgentPredicate::Compare {
                     probe,
                     op,
-                    value: Box::new((*value).into_live_with_owner(program_owner)?),
+                    value: Box::new((*value).into_live_with_context(context)?),
                 }
             }
             AwbcRuntimeAgentPredicateSnapshot::Exists { probe } => {
@@ -1394,7 +1425,7 @@ impl AwbcRuntimeValueSnapshot {
                 RuntimeAgentPredicate::try_all(
                     predicates
                         .into_iter()
-                        .map(|value| Self::predicate_into_live(value, program_owner))
+                        .map(|value| Self::predicate_into_live(value, context))
                         .collect::<Result<_, _>>()?,
                 )?
             }
@@ -1402,12 +1433,12 @@ impl AwbcRuntimeValueSnapshot {
                 RuntimeAgentPredicate::try_any(
                     predicates
                         .into_iter()
-                        .map(|value| Self::predicate_into_live(value, program_owner))
+                        .map(|value| Self::predicate_into_live(value, context))
                         .collect::<Result<_, _>>()?,
                 )?
             }
             AwbcRuntimeAgentPredicateSnapshot::Not { predicate } => RuntimeAgentPredicate::Not {
-                predicate: Box::new(Self::predicate_into_live(*predicate, program_owner)?),
+                predicate: Box::new(Self::predicate_into_live(*predicate, context)?),
             },
         })
     }
@@ -1441,15 +1472,16 @@ impl AwbcRuntimeValueSnapshot {
 
     fn callable_into_live(
         value: AwbcRuntimeCallableSnapshot,
-        program_owner: Option<&RuntimeProgramOwner>,
+        context: SnapshotMaterialization<'_>,
     ) -> Result<RuntimeCallableValue, AwbcRuntimeValueSnapshotError> {
         let retained = value
             .retained
             .into_iter()
-            .map(|value| value.into_live_with_owner(program_owner))
+            .map(|value| value.into_live_with_context(context))
             .collect::<Result<Vec<_>, _>>()?;
         RuntimeCallableValue::try_new(
-            program_owner
+            context
+                .program()
                 .ok_or_else(|| {
                     AwbcRuntimeValueSnapshotError::new(
                         "callable values require a program-bound snapshot",

@@ -6,6 +6,7 @@
 use thiserror::Error;
 
 mod literal_source;
+pub(crate) use literal_source::RuntimePlanLiteralMaterialization;
 
 use crate::entry::schema::{
     value_budget::ValidationWork,
@@ -99,6 +100,7 @@ impl super::RuntimePlanInventory {
             work,
             origin,
             context,
+            mode: PlanValueValidationMode::Value,
         };
         match origin {
             ValueAdmissionOrigin::Live => value_encoding::validate_live_view(
@@ -152,6 +154,7 @@ impl super::RuntimePlanInventory {
                     work: context.validation_work(),
                     origin: ValueAdmissionOrigin::Live,
                     context,
+                    mode: PlanValueValidationMode::Value,
                 };
                 value_encoding::validate_live_view(
                     value,
@@ -214,6 +217,7 @@ impl super::RuntimePlanInventory {
                     work: context.validation_work(),
                     origin,
                     context,
+                    mode: PlanValueValidationMode::Value,
                 };
                 value_encoding::validate_snapshot_view(
                     value,
@@ -262,6 +266,7 @@ impl super::RuntimePlanInventory {
 }
 
 /// Borrowed phase context; every lookup uses the original admitted tables.
+#[derive(Clone, Copy)]
 pub(super) enum PlanValueAuthority<'a> {
     Inventory(&'a super::RuntimePlanInventory),
     Building {
@@ -313,7 +318,13 @@ impl<'a> PlanValueAuthority<'a> {
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
-        let mut validation = PlanValueValidation::new(self, ty, limits)?;
+        let mut validation = PlanValueValidation::with_work(
+            self,
+            ty,
+            ValidationWork::new(limits),
+            ValueAdmissionOrigin::Live,
+            PlanValueValidationMode::LiteralSource,
+        )?;
         value_encoding::validate_literal(value, limits, &mut validation, Expected::Type(ty))
             .map_err(|source| RuntimePlanValueAdmissionError::Value { ty, source })
     }
@@ -328,6 +339,7 @@ enum Expected {
         value: RuntimePlanTypeId,
     },
     Admitted,
+    LiteralAny,
 }
 
 enum Children<'a> {
@@ -365,6 +377,13 @@ struct PlanValueValidation<'a, C = ()> {
     work: ValidationWork,
     origin: ValueAdmissionOrigin,
     context: C,
+    mode: PlanValueValidationMode,
+}
+
+#[derive(Clone, Copy)]
+enum PlanValueValidationMode {
+    Value,
+    LiteralSource,
 }
 
 impl<'a> PlanValueValidation<'a> {
@@ -378,6 +397,7 @@ impl<'a> PlanValueValidation<'a> {
             ty,
             ValidationWork::new(limits),
             ValueAdmissionOrigin::Live,
+            PlanValueValidationMode::Value,
         )
     }
 
@@ -386,6 +406,7 @@ impl<'a> PlanValueValidation<'a> {
         ty: RuntimePlanTypeId,
         work: ValidationWork,
         origin: ValueAdmissionOrigin,
+        mode: PlanValueValidationMode,
     ) -> Result<Self, RuntimePlanValueAdmissionError> {
         let declaration = authority
             .get(ty)
@@ -398,6 +419,7 @@ impl<'a> PlanValueValidation<'a> {
             work,
             origin,
             context: (),
+            mode,
         })
     }
 }
@@ -822,6 +844,33 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
     ) -> Result<ValueAdmission<Children<'a>, Alternatives<'a>>, RuntimeSchemaError> {
         match expected {
             Expected::Admitted => Ok(ValueAdmission::Admitted),
+            Expected::LiteralAny => {
+                let semantic = match value {
+                    View::NominalRecord(record) => Some(record.semantic_identity()),
+                    View::Variant(variant) => match variant.owner() {
+                        crate::pattern::RuntimeVariantIdentity::Nominal {
+                            semantic_identity,
+                            ..
+                        } => Some(*semantic_identity),
+                        crate::pattern::RuntimeVariantIdentity::Builtin(_) => {
+                            if value.builtin_variant_case().is_none() {
+                                return Err(Self::mismatch(value));
+                            }
+                            None
+                        }
+                    },
+                    _ => None,
+                };
+                if let Some(semantic) = semantic {
+                    let ty = self
+                        .authority
+                        .by_semantic(semantic)
+                        .ok_or_else(|| Self::mismatch(value))?;
+                    self.enter(Expected::Type(ty), value)
+                } else {
+                    Ok(ValueAdmission::Children(Children::Any))
+                }
+            }
             Expected::Byte => {
                 if matches!(value, View::Scalar(Scalar::UInt(actual)) if actual.width() == RuntimeUnsignedIntWidth::U8)
                 {
@@ -880,7 +929,10 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
             Children::Callable(retained) => {
                 retained.get(index).map(|input| Expected::Type(input.ty))
             }
-            Children::Any | Children::Reduction(_) => Some(Expected::Admitted),
+            Children::Any | Children::Reduction(_) => Some(match self.mode {
+                PlanValueValidationMode::Value => Expected::Admitted,
+                PlanValueValidationMode::LiteralSource => Expected::LiteralAny,
+            }),
             Children::None | Children::Single(_) | Children::MapEntry { .. } => None,
         };
         child.ok_or_else(|| RuntimeSchemaError::Encoding {

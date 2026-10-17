@@ -19,6 +19,257 @@ fn inventory() -> RuntimePlanInventory {
     .unwrap()
 }
 
+fn materialization_inventory() -> RuntimePlanInventory {
+    use crate::plan::{
+        RuntimePlanSequenceKind, RuntimePlanTypeProjection as P, RuntimePlanTypeSeed,
+    };
+    let mut builder = crate::plan::type_table::source_codec::domains::tests::builder(
+        crate::entry::RuntimeNominalRecordShape::Record,
+        2,
+        true,
+    );
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(semantic(4), P::F32),
+                RuntimePlanTypeSeed::new(semantic(5), P::F64),
+                RuntimePlanTypeSeed::new(
+                    semantic(6),
+                    P::Tuple(Box::new([semantic(1), semantic(2)])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    semantic(7),
+                    P::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: semantic(1),
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    semantic(8),
+                    P::Tuple(Box::new([semantic(1), semantic(3)])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    semantic(9),
+                    P::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: semantic(8),
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    semantic(10),
+                    P::Opaque {
+                        producer: crate::pattern::RuntimeOpaqueTypeProducerId::try_new(
+                            "fixture.LiteralBox",
+                        )
+                        .unwrap(),
+                        admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                        persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                        arguments: Box::new([]),
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    builder
+        .prepare_inventory(RuntimeTaskPlanSealLimits::default(), 0)
+        .unwrap()
+}
+
+fn materialize(
+    inventory: &RuntimePlanInventory,
+    tag: u8,
+    source: AwbcRuntimeValueSnapshot,
+) -> Result<RuntimeValue, crate::value::AwbcRuntimeValueSnapshotError> {
+    inventory.materialize_literal_source_value(
+        inventory
+            .type_table()
+            .id_for_semantic(semantic(tag))
+            .unwrap(),
+        source,
+        &mut resources(RuntimeSchemaLimits::engine_default()),
+    )
+}
+
+#[test]
+fn literal_materialization_preserves_nominals_nested_containers_and_float_bits_without_a_program() {
+    let inventory = materialization_inventory();
+    let (_, record) = record_source(&inventory);
+    let variant = RuntimeProgramTypes::Plan(&inventory)
+        .try_variant_value(
+            semantic(2),
+            1,
+            Some(RuntimeValue::Bool(true)),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let variant = AwbcRuntimeValueSnapshot::from_admitted_storage(&variant, None).unwrap();
+    let opaque = crate::pattern::RuntimeOpaqueTypeOwner::exact(
+        crate::pattern::RuntimeOpaqueTypeProducerId::try_new("fixture.LiteralBox").unwrap(),
+        semantic(10),
+    )
+    .try_wrap(
+        RuntimeProgramTypes::Plan(&inventory)
+            .try_record_value(
+                semantic(1),
+                vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    let opaque = AwbcRuntimeValueSnapshot::from_admitted_storage(&opaque, None).unwrap();
+    for (tag, source) in [
+        (1, record.clone()),
+        (2, variant.clone()),
+        (
+            6,
+            AwbcRuntimeValueSnapshot::Tuple(vec![record.clone(), variant]),
+        ),
+        (
+            7,
+            serde_json::from_value(serde_json::json!({"Seq":{"Values":[record.clone(),record]}}))
+                .unwrap(),
+        ),
+        (10, opaque),
+        (4, AwbcRuntimeValueSnapshot::F32((-0.0_f32).to_bits())),
+        (4, AwbcRuntimeValueSnapshot::F32(0x7fc0_1234)),
+        (5, AwbcRuntimeValueSnapshot::F64((-0.0_f64).to_bits())),
+    ] {
+        let expected = source.clone();
+        let restored = materialize(&inventory, tag, source).unwrap();
+        assert_eq!(
+            AwbcRuntimeValueSnapshot::from_admitted_storage(&restored, None).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn literal_materialization_preserves_column_storage_containing_nominals() {
+    let inventory = materialization_inventory();
+    let (_, record) = record_source(&inventory);
+    let source: AwbcRuntimeValueSnapshot = serde_json::from_value(serde_json::json!({"Seq":{"TupleColumns":{
+        "len":2,"columns":[{"Values":[record.clone(),record]}, {"Values":[{"Bool":true},{"Bool":false}]}]
+    }}})).unwrap();
+    let expected = source.clone();
+    let restored = materialize(&inventory, 9, source).unwrap();
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_admitted_storage(&restored, None).unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn literal_materialization_validates_nominals_even_in_untyped_opaque_payloads() {
+    let inventory = materialization_inventory();
+    let (_, record) = record_source(&inventory);
+    let value = materialize(&inventory, 1, record).unwrap();
+    let opaque = crate::pattern::RuntimeOpaqueTypeOwner::exact(
+        crate::pattern::RuntimeOpaqueTypeProducerId::try_new("fixture.LiteralBox").unwrap(),
+        semantic(10),
+    )
+    .try_wrap(value)
+    .unwrap();
+    let source = AwbcRuntimeValueSnapshot::from_admitted_storage(&opaque, None).unwrap();
+    for case in 0..3 {
+        let mut changed = source.clone();
+        let AwbcRuntimeValueSnapshot::Opaque(outer) = &mut changed else {
+            unreachable!()
+        };
+        let AwbcRuntimeValueSnapshot::NominalRecord(record) = outer.payload.as_mut() else {
+            unreachable!()
+        };
+        match case {
+            0 => record.semantic_identity = semantic(77),
+            1 => record.fields[0].value = AwbcRuntimeValueSnapshot::String("wrong".into()),
+            2 => record.fields[1].field = record.fields[0].field,
+            _ => unreachable!(),
+        }
+        assert!(
+            materialize(&inventory, 10, changed).is_err(),
+            "opaque nominal mutation {case}"
+        );
+    }
+}
+
+#[test]
+fn literal_materialization_consumes_only_the_original_admission_work() {
+    let inventory = inventory();
+    let (ty, source) = record_source(&inventory);
+    let mut measured = resources(RuntimeSchemaLimits::engine_default());
+    inventory
+        .admit_literal_source_value(ty, &source, &mut measured)
+        .unwrap();
+    let work = measured.work().consumed();
+    let mut exact = resources(RuntimeSchemaLimits {
+        max_validation_work: work,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    let restored = inventory
+        .materialize_literal_source_value(ty, source.clone(), &mut exact)
+        .unwrap();
+    assert_eq!(exact.work().consumed(), work);
+    assert_eq!(
+        AwbcRuntimeValueSnapshot::from_admitted_storage(&restored, None).unwrap(),
+        source
+    );
+    let mut short = resources(RuntimeSchemaLimits {
+        max_validation_work: work - 1,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    assert!(
+        inventory
+            .materialize_literal_source_value(ty, source, &mut short)
+            .is_err()
+    );
+    assert!(short.work().failure().is_some());
+}
+
+#[test]
+fn literal_sources_and_live_literals_check_nominal_payloads_under_the_same_opaque_contract() {
+    let inventory = materialization_inventory();
+    let record = RuntimeProgramTypes::Plan(&inventory)
+        .try_record_value(
+            semantic(1),
+            vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let RuntimeValue::NominalRecord(record) = record else {
+        unreachable!()
+    };
+    let bad = record
+        .try_map_fields(|_| Ok::<_, std::convert::Infallible>(RuntimeValue::String("wrong".into())))
+        .unwrap_or_else(|never| match never {});
+    let value = crate::pattern::RuntimeOpaqueTypeOwner::exact(
+        crate::pattern::RuntimeOpaqueTypeProducerId::try_new("fixture.LiteralBox").unwrap(),
+        semantic(10),
+    )
+    .try_wrap(RuntimeValue::NominalRecord(bad))
+    .unwrap();
+    let ty = inventory
+        .type_table()
+        .id_for_semantic(semantic(10))
+        .unwrap();
+    assert!(
+        super::super::PlanValueAuthority::Inventory(&inventory)
+            .validate_literal(ty, &value, RuntimeSchemaLimits::engine_default())
+            .is_err()
+    );
+    let source = AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap();
+    assert!(
+        inventory
+            .materialize_literal_source_value(
+                ty,
+                source,
+                &mut resources(RuntimeSchemaLimits::engine_default())
+            )
+            .is_err()
+    );
+}
+
 fn record_source(
     inventory: &RuntimePlanInventory,
 ) -> (RuntimePlanTypeId, AwbcRuntimeValueSnapshot) {

@@ -66,6 +66,65 @@ fn inert_literal_sources_are_admitted_under_the_actual_building_type_domain_auth
 }
 
 #[test]
+fn materialized_building_literals_reach_the_actual_function_and_common_executable_seal() {
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    use crate::plan::value_admission::PlanValueAuthority;
+    use crate::value::AwbcRuntimeValueSnapshot;
+    let fixture = || {
+        crate::plan::type_table::source_codec::domains::tests::builder(
+            crate::entry::RuntimeNominalRecordShape::Record,
+            2,
+            true,
+        )
+    };
+    let original = fixture()
+        .prepare_inventory(crate::plan::RuntimeTaskPlanSealLimits::default(), 0)
+        .unwrap();
+    let semantic = RuntimeSemanticTypeId::from_bytes([1; 32]);
+    let value = crate::program_types::RuntimeProgramTypes::Plan(&original)
+        .try_record_value(
+            semantic,
+            vec![RuntimeValue::Bool(true), RuntimeValue::Bool(false)],
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+    let source = AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap();
+    let mut builder = fixture();
+    let ty = builder
+        .resolve_seed_type("literal source", semantic)
+        .unwrap();
+    let restored = PlanValueAuthority::Building {
+        types: &builder.types,
+        records: &builder.nominal_record_domains,
+        variants: &builder.variant_domains,
+    }
+    .materialize_literal_source_value(
+        ty,
+        source,
+        &mut ValueResourceAdmission::snapshot(
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+            ValueAdmissionOrigin::InertSnapshot,
+        ),
+    )
+    .unwrap();
+    let mut expected = fixture();
+    for (builder, value) in [(&mut builder, restored), (&mut expected, value)] {
+        builder
+            .push_function_site_seed(
+                crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity([141; 32]),
+                crate::plan::RuntimeFunctionSemanticRole::Ordinary,
+                [],
+                RuntimeExprSeed::new(semantic, RuntimeExprSeedKind::Value(value)),
+            )
+            .unwrap();
+    }
+    assert_eq!(
+        builder.finish().unwrap().executable_semantic_digest(),
+        expected.finish().unwrap().executable_semantic_digest()
+    );
+}
+
+#[test]
 fn exact_opaque_branches_keep_their_identities_under_a_producer_wide_result() {
     let producer = RuntimeOpaqueTypeProducerId::try_new("test.dialogue")
         .expect("test opaque producer identity");
