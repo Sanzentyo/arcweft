@@ -3,6 +3,77 @@ use crate::plan::{
     RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealError, RuntimeTaskPlanSealLimits,
 };
 
+mod source_declarations;
+
+fn declaration_encoding(
+    plan: &RuntimePlan,
+) -> (
+    crate::plan::type_table::source_codec::PreparedRuntimeTypeTableEncoding<'_>,
+    crate::plan::local_declarations::source_codec::PreparedRuntimeLocalEncoding<'_>,
+    crate::plan::control_effect::source_codec::PreparedRuntimeControlEncoding<'_>,
+) {
+    let limits = limits();
+    let mut meter = TaskSemanticMeter::new(1_000_000, 1_000_000);
+    let types = plan
+        .type_table()
+        .prepare_sources_encoding(
+            crate::plan::type_table::source_codec::RuntimeTypeSourceLimits {
+                rows: u32::try_from(plan.type_table().len()).unwrap(),
+                elements: limits.declaration_elements,
+                encoded_bytes: limits.encoded_bytes,
+                decoded_bytes: limits.decoded_bytes,
+                policy_depth: limits.type_policy_depth,
+            },
+            &mut meter,
+        )
+        .unwrap();
+    let locals = plan
+        .local_declarations()
+        .prepare_sources_encoding(
+            crate::plan::local_declarations::source_codec::RuntimeLocalSourceLimits {
+                rows: u32::try_from(plan.local_declarations().len()).unwrap(),
+                encoded_bytes: limits.encoded_bytes,
+                decoded_bytes: limits.decoded_bytes,
+                type_count: plan.type_table().len(),
+            },
+            &mut meter,
+        )
+        .unwrap();
+    let controls = plan
+        .control_effect_contracts()
+        .prepare_sources_encoding(
+            crate::plan::control_effect::source_codec::RuntimeControlSourceLimits {
+                rows: u32::try_from(plan.control_effect_contracts().len()).unwrap(),
+                elements: limits.declaration_elements as usize,
+                encoded_bytes: limits.encoded_bytes,
+                decoded_bytes: limits.decoded_bytes,
+                type_count: plan.type_table().len(),
+            },
+            &mut meter,
+        )
+        .unwrap();
+    (types, locals, controls)
+}
+
+fn declaration_frames(plan: &RuntimePlan) -> [Vec<u8>; 3] {
+    let (types, locals, controls) = declaration_encoding(plan);
+    let mut type_bytes = Vec::with_capacity(types.encoded_bytes());
+    types.append_to(&mut type_bytes).unwrap();
+    let mut local_bytes = Vec::with_capacity(locals.encoded_bytes());
+    locals.append_to(&mut local_bytes).unwrap();
+    let mut control_bytes = Vec::with_capacity(controls.encoded_bytes());
+    controls.append_to(&mut control_bytes).unwrap();
+    [type_bytes, local_bytes, control_bytes]
+}
+
+fn task_count_offset(input: &[u8]) -> usize {
+    let image = candidate(1);
+    let mut reader = Reader::new(input, limits(), References::original(&image.inventory), 1);
+    reader.header().unwrap();
+    let _ = super::declarations::DeclarationSourceBytes::read(&mut reader).unwrap();
+    reader.offset
+}
+
 fn limits() -> RuntimeTaskSourceCodecLimits {
     RuntimeTaskSourceCodecLimits {
         rows: 4,
@@ -10,6 +81,8 @@ fn limits() -> RuntimeTaskSourceCodecLimits {
         decoded_bytes: 100_000,
         request_roles: 32,
         path_steps: 32,
+        declaration_elements: 100_000,
+        type_policy_depth: 32,
     }
 }
 
@@ -74,6 +147,12 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap()
         .into_plan();
+    assert_eq!(sealed.type_table(), original.type_table());
+    assert_eq!(sealed.local_declarations(), original.local_declarations());
+    assert_eq!(
+        sealed.control_effect_contracts(),
+        original.control_effect_contracts()
+    );
     assert_eq!(sealed.task_plan(&coordinate).unwrap().key(), expected);
     assert!(sealed.task_plan(&original_coordinate).is_none());
     assert!(original.task_plan(&coordinate).is_none());
@@ -84,8 +163,12 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
 fn task_source_frame_has_one_canonical_version_one_wire_shape() {
     let (original, coordinate) = published();
     let mut expected = b"arcweft.runtime.task-sources.v1\0".to_vec();
+    expected.push(1);
+    for frame in declaration_frames(&original) {
+        expected.extend_from_slice(&u32::try_from(frame.len()).unwrap().to_le_bytes());
+        expected.extend(frame);
+    }
     expected.extend_from_slice(&[
-        1, // version
         1, 0, 0, 0, // source row count
         0, 0, 0, 0, // dense source ordinal
         1, 0, 0, 0, // original function coordinate
@@ -131,7 +214,8 @@ fn task_source_codec_retains_zero_expected_bytes_without_issuing_a_key() {
 fn task_source_codec_rejects_noncanonical_frames_before_publication() {
     let (original, _) = published();
     let encoded = bytes(&original);
-    let row = DOMAIN.len() + 1 + 4;
+    let count = task_count_offset(&encoded);
+    let row = count + 4;
     let request_length =
         u32::from_le_bytes(encoded[row + 10..row + 14].try_into().unwrap()) as usize;
     let control = row + 14 + request_length;
@@ -152,7 +236,7 @@ fn task_source_codec_rejects_noncanonical_frames_before_publication() {
                 changed.pop();
             }
             11 => changed.push(0),
-            12 => changed[DOMAIN.len() + 1..row].fill(0),
+            12 => changed[count..row].fill(0),
             13 => changed[row + 4..row + 8].copy_from_slice(&u32::MAX.to_le_bytes()),
             14 => changed[control..control + 4].copy_from_slice(&u32::MAX.to_le_bytes()),
             _ => unreachable!(),
@@ -172,14 +256,18 @@ fn task_source_codec_rejects_noncanonical_frames_before_publication() {
 fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
     let (original, _) = published();
     let encoded = bytes(&original);
-    let row = DOMAIN.len() + 1 + 4;
+    let count = task_count_offset(&encoded);
+    let row = count + 4;
     let mut doubled = encoded.clone();
-    doubled[DOMAIN.len() + 1..row].copy_from_slice(&2_u32.to_le_bytes());
+    doubled[count..row].copy_from_slice(&2_u32.to_le_bytes());
     let mut second = encoded[row..].to_vec();
     second[..4].copy_from_slice(&1_u32.to_le_bytes());
     doubled.extend(second);
-    let required =
-        2 * (std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<ExpectedTaskPlanKey>());
+    let (types, locals, controls) = declaration_encoding(&original);
+    let required = types.storage_bytes()
+        + locals.storage_bytes()
+        + controls.storage_bytes()
+        + 2 * (std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<ExpectedTaskPlanKey>());
     let exact = RuntimeTaskSourceCodecLimits {
         decoded_bytes: required,
         ..limits()
@@ -215,7 +303,20 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
 fn task_source_codec_shares_the_exact_work_bank_with_the_common_seal() {
     let (original, _) = published();
     let encoded = bytes(&original);
-    let charged = 3 * encoded.len() as u64;
+    let (baseline, _) = decode(
+        &encoded,
+        1,
+        limits(),
+        TaskSemanticMeter::new(1_000_000, 1_000_000),
+    );
+    let charged = baseline
+        .unwrap()
+        .preparation_meter
+        .as_ref()
+        .unwrap()
+        .totals()
+        .0;
+    assert!(charged > 3 * encoded.len() as u64);
     let mut meter = TaskSemanticMeter::new(charged + 1, 1_000_000);
     meter.charge_work(1).unwrap();
     let (decoded, coordinate) = decode(&encoded, 1, limits(), meter);
@@ -244,12 +345,9 @@ fn task_source_codec_shares_the_exact_work_bank_with_the_common_seal() {
             ))
     ));
     assert!(coordinate.sealed_plan().is_none());
-    let (short, coordinate) = decode(
-        &encoded,
-        1,
-        limits(),
-        TaskSemanticMeter::new(charged - 1, 1_000_000),
-    );
+    let mut short_meter = TaskSemanticMeter::new(charged, 1_000_000);
+    short_meter.charge_work(1).unwrap();
+    let (short, coordinate) = decode(&encoded, 1, limits(), short_meter);
     assert_eq!(
         short.err().unwrap(),
         RuntimeTaskSourceCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
@@ -261,7 +359,15 @@ fn task_source_codec_shares_the_exact_work_bank_with_the_common_seal() {
 fn task_source_encoder_has_exact_shared_work_and_reserved_output_bounds() {
     let (original, _) = published();
     let encoded = bytes(&original);
-    let charged = 3 * encoded.len() as u64;
+    let mut measured = TaskSemanticMeter::new(1_000_000, 1_000_000);
+    assert_eq!(
+        original
+            .encode_task_sources(limits(), &mut measured)
+            .unwrap(),
+        encoded
+    );
+    let charged = measured.totals().0;
+    assert!(charged > 3 * encoded.len() as u64);
     let exact = RuntimeTaskSourceCodecLimits {
         encoded_bytes: encoded.len(),
         ..limits()
