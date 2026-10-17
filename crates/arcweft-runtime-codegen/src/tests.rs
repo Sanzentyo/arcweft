@@ -172,7 +172,8 @@ fn callable_project_call_program() -> AwbcProgram {
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
         ty: AwbcTypeId(2),
-        role: AwbcFrameSlotRole::Temporary,
+        // The region receives this callee as initialized runtime state.
+        role: AwbcFrameSlotRole::RuntimeState,
         scope_depth: 0,
     });
     program.frame_layouts.push(AwbcFrameLayout {

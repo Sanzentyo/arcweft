@@ -25,6 +25,8 @@ pub(super) mod tests;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum AwbcRuntimeValueSnapshotError {
+    #[error("original AWBC resume ownership verification failed: {0}")]
+    ResumeOwnership(Box<crate::awbc::verify::AwbcVerifyError>),
     #[error("{message}")]
     Message { message: String },
     #[error("invalid Agent predicate: {0}")]

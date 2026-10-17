@@ -1945,8 +1945,8 @@ impl AwbcOpcode {
             | Self::BindPattern
             | Self::RegisterCleanup
             | Self::CancelCleanup
-            | Self::RegisterDefer => AwbcOpcodeFamily::Ownership,
-            Self::RequireUnrestricted => AwbcOpcodeFamily::Ownership,
+            | Self::RegisterDefer
+            | Self::RequireUnrestricted => AwbcOpcodeFamily::Ownership,
             Self::Jump
             | Self::Branch
             | Self::Match

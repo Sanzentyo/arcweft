@@ -38,20 +38,26 @@ pub enum RuntimeValueOwnership {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeValueOwnershipRequirement {
+    /// Transfers custody without granting duplication of affine descendants.
     #[default]
     Owned,
+    /// Requires every descendant to permit duplication.
     Unrestricted,
 }
 
+/// A resource or custody failure found before constructing or copying a value.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeValueOwnershipAdmissionError {
+    /// The shared resource allowance could not admit the complete graph.
     #[error(transparent)]
     Resource(Box<crate::entry::RuntimeSchemaError>),
+    /// The graph contains an affine node in an unrestricted storage role.
     #[error("an unrestricted value graph is required")]
     AffineValue,
 }
 
 impl RuntimeValueOwnershipRequirement {
+    /// Checks an already established transitive ownership classification.
     #[must_use]
     pub const fn accepts(self, ownership: RuntimeValueOwnership) -> bool {
         match self {

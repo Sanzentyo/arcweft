@@ -50,6 +50,10 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
             .collection(self.frames.len())
             .map_err(|error| FiberStateError::Snapshot(error.into()))?;
         for frame in &self.frames {
+            resources
+                .work()
+                .collection(frame.registers.len())
+                .map_err(|error| FiberStateError::Snapshot(error.into()))?;
             validate_frame_layout(
                 program,
                 frame.function,
@@ -214,6 +218,11 @@ impl<V, O, N, B, P> FiberState<V, O, N, B, FiberReturnPoint<FiberReturnContinuat
                     V::borrowed_view,
                 )?;
             }
+        }
+        // Every pending invocation keeps its original input rows. Admit them
+        // before replaying register Copy obligations, so a malformed input
+        // remains attributed to its owning typed boundary.
+        for (index, frame) in self.frames.iter().enumerate() {
             frame.validate_retained_values(
                 program,
                 self.frame_resume_cursor(index)?,

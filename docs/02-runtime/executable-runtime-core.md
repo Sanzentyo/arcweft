@@ -468,7 +468,17 @@ not copy numeric values into feature-local tables.
 |  | `46` | `BindPattern { pattern, value, mode }` | declare/assign owned bindings or materialize proven Copy guard bindings without consuming the candidate |
 |  | `47` | `RegisterCleanup { ... }` | register cleanup ownership |
 |  | `48` | `CancelCleanup { ... }` | cancel registered cleanup |
-|  | `49..7f` | unassigned | reject |
+|  | `49` | `RegisterDefer { ... }` | register a typed scoped defer at its original instruction |
+|  | `4a` | `RequireUnrestricted { value }` | validate transitive Copy ownership without copying or consuming |
+|  | `4b..7f` | unassigned | reject |
+
+`RequireUnrestricted` checks the complete runtime graph before the verifier's
+value-dependent Copy proof may be used by `CopyValue`. A function carrier alone
+does not establish that proof. Writes and mutations update the same ownership
+dataflow; the check grants no permanent exemption to a register. Saved frames
+revalidate the original program's ownership obligations at their exact resume
+coordinates before constructing or copying retained values. Ownership observation
+shares the cumulative value-resource traversal with ordinary storage admission.
 
 `EmitEffect` is for already modeled Sans I/O effect requests. A call that must
 cross a host ABI boundary uses `HostCall` below. There is no generic “execute

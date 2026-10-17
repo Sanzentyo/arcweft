@@ -304,6 +304,24 @@ impl AwbcProgram {
         &self,
         cursor: super::fiber::FiberCursor,
     ) -> Result<Vec<super::schema::AwbcRegisterId>, AwbcVerifyError> {
+        let layout = self
+            .functions
+            .get(cursor.function.index())
+            .and_then(|function| self.frame_layouts.get(function.frame_layout.index()))
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: "frame ownership admission".to_owned(),
+                message: "original function or frame layout is absent".to_owned(),
+            })?;
+        // The caller has authenticated the cursor and frame header. Static
+        // Copy slots already receive their complete guarantee from original
+        // type admission; only value-dependent carriers require dataflow.
+        if layout
+            .slots
+            .iter()
+            .all(|slot| self.runtime_type_permits_copy(slot.ty))
+        {
+            return Ok(Vec::new());
+        }
         let verifier = structure::prepare_verifier(
             self,
             AwbcVerifyBudget::default(),

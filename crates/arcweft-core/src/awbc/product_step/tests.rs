@@ -2873,19 +2873,10 @@ fn step_actor_activation_output(
 }
 
 #[test]
-fn invalid_schedule_capture_restores_observation_before_failure_close() {
+fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
     let mut executor =
         AwbcProductStepExecutor::for_entry(scheduled_actor_look_program(), AwbcEntryId(0), 64)
             .expect("valid scheduled-capture Product executor starts");
-    // This simulates corrupted runtime schema after admission: verifier rejects
-    // duplicate capture destinations, while Product must still preserve every
-    // yielded affine operand if defensive preflight finds one.
-    let operation = match &mut std::sync::Arc::make_mut(&mut executor.program).line_operations[2] {
-        crate::awbc::schema::AwbcLineOperation::Schedule { captures, .. } => captures,
-        _ => unreachable!("fixture schedule operation remains present"),
-    };
-    operation[1].local = operation[0].local;
-
     let activation = begin_actor_look_dialogue(&mut executor);
     let mut backend = crate::pure::VmRuntimePureCallBackend::default();
     let mut actor_token = None;
@@ -2942,6 +2933,21 @@ fn invalid_schedule_capture_restores_observation_before_failure_close() {
                                     cue,
                                 },
                             );
+                            // The actor, cue and delay have all been produced
+                            // under the admitted schema. Corrupt only the next
+                            // Schedule boundary; resume admission must preserve
+                            // those same owned values and ledger leases.
+                            let operation =
+                                match &mut std::sync::Arc::make_mut(&mut executor.program)
+                                    .line_operations[2]
+                                {
+                                    crate::awbc::schema::AwbcLineOperation::Schedule {
+                                        captures,
+                                        ..
+                                    } => captures,
+                                    _ => unreachable!("fixture Schedule remains present"),
+                                };
+                            operation[1].local = operation[0].local;
                         }
                         other => panic!("unexpected schedule fixture command: {other:?}"),
                     }
@@ -2955,12 +2961,17 @@ fn invalid_schedule_capture_restores_observation_before_failure_close() {
     }
 
     let (transaction, error) = staged_error.expect("duplicate schedule local is rejected");
-    assert!(matches!(
-        &error,
-        ProductStepError::Line(
-            crate::line_task::LineRuntimeError::InvalidScheduledCaptureTransition
-        )
-    ));
+    assert!(
+        matches!(
+            &error,
+            ProductStepError::Fiber(crate::awbc::fiber::FiberStateError::Snapshot(
+                crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(source)
+            )) if matches!(source.as_ref(), crate::awbc::verify::AwbcVerifyError::InvalidInvariant {
+                message, ..
+            } if message == "Schedule capture destination local is duplicated")
+        ),
+        "{error:?}"
+    );
     let ProductDialoguePhase::Activating {
         fiber,
         pending: None,

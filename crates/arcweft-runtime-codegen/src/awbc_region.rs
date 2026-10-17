@@ -198,6 +198,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::ExecuteLineOperation
         | AwbcOpcode::CommitDialogueResult
         | AwbcOpcode::CopyValue
+        | AwbcOpcode::RequireUnrestricted
         | AwbcOpcode::RegisterCleanup
         | AwbcOpcode::CancelCleanup
         | AwbcOpcode::RegisterDefer

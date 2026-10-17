@@ -209,6 +209,7 @@ fn opaque_map_mapping_requires_an_executed_ownership_guard() {
 fn increment(item: i64) -> i64 {{ item + 1i64 }}
 fn factory() -> (i64 -> i64 effects {{}}) {{ log.info("mapping"); increment }}
 pub fn root(values: Vec<i64>) -> Vec<i64> {{ {body} }}
+entry cli @entry.main {{ goto @flow.main }}
 flow main() -> i64 {{ return root([1i64, 2i64, 3i64]).sum() }}
 "#
         );

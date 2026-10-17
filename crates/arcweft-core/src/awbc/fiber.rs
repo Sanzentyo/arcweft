@@ -321,9 +321,9 @@ where
         let context = self.value_context(program)?;
         context.validate_formats(self.format.as_ref(), &self.format_attempts, resources, view)?;
         context.validate_scopes(&self.root_cleanups, &self.scopes, resources, view)?;
-        let unrestricted = program
-            .unrestricted_registers_at(cursor)
-            .map_err(|_| FiberStateError::InvalidFrame)?;
+        let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
+            crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error))
+        })?;
         validate_frame_registers(
             program,
             context.layout,
@@ -3631,9 +3631,11 @@ fn validate_frame(
         frame.registers.len(),
         &resources.work(),
     )?;
-    let unrestricted = program
-        .unrestricted_registers_at(cursor)
-        .map_err(|_| FiberStateError::InvalidFrame)?;
+    let unrestricted = program.unrestricted_registers_at(cursor).map_err(|error| {
+        FiberStateError::Snapshot(
+            crate::value::AwbcRuntimeValueSnapshotError::ResumeOwnership(Box::new(error)),
+        )
+    })?;
     validate_frame_registers(
         program,
         layout,
@@ -3673,7 +3675,6 @@ fn validate_frame_registers<'value, T>(
     view: impl Fn(&'value T) -> crate::value::RuntimeValueView<'value>,
     path: &str,
 ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
-    resources.work().collection(registers.len())?;
     for (index, (slot, storage)) in layout.slots.iter().zip(registers).enumerate() {
         program.runtime_types.get(slot.ty.index()).ok_or(
             crate::awbc::value_admission::AwbcValueAdmissionError::UnknownType { ty: slot.ty },
@@ -5719,11 +5720,13 @@ mod tests {
 
     fn format_entry_program() -> AwbcProgram {
         let mut program = zero_parameter_entry_program();
-        program.runtime_types.push(AwbcRuntimeType::unit());
-        program.runtime_types.push(AwbcRuntimeType::new(
-            RuntimeSemanticTypeId::from_bytes([0x51; 32]),
-            AwbcRuntimeTypeShape::String,
-        ));
+        program.runtime_types = vec![
+            AwbcRuntimeType::unit(),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x51; 32]),
+                AwbcRuntimeTypeShape::String,
+            ),
+        ];
         program.frame_layouts[0].slots.push(AwbcFrameSlot {
             name: None,
             ty: AwbcTypeId(0),

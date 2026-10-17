@@ -271,6 +271,13 @@ capture／restore は元 instruction の operand manifest／function signature �
 completion instruction 検索もこの検証に含める。metadata は value node／byte として
 合成せず、frame wire 全体の byte grammar の検証とは区別する。
 
+frame register の value-dependent Copy 保証は、元 program の verifier dataflow を
+停止位置の function／block／instruction offset で照合する。最内 frame は現在の
+cursor、呼出元 frame は直下 callee の元 return point を使い、異なる function の
+cursor を受け入れない。Unrestricted を証明された register は実際の全 descendant
+が Copy であることを live／inert 共通の資源 traversal 内で再検証してから、保存用の
+複製または復元用の構築を始める。保存側の独立した Copy-proof catalog は保持しない。
+
 lexical scope・cleanup・scoped defer は一つの generic grammar を live／inert に使う。
 private codec capability は Core の inert value carrier だけに実装し、live serde
 reader／writer と別の AWBC scope DTO は持たない。scoped defer は登録した元の
