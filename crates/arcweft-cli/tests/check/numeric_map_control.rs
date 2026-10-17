@@ -426,3 +426,132 @@ fn assert_wide_map_sum_completion(path: &std::path::Path, bytes: u64, expected: 
         );
     }
 }
+
+fn assert_dense_integer_fixture_typed_execution(path: &std::path::Path) {
+    use arcweft_core::awbc::{
+        codec::AwbcDecodeBudget,
+        schema::{AwbcEntryId, AwbcProgram},
+    };
+    use arcweft_core::engine::Engine;
+    use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+    use arcweft_core::plan::{FlowOp, RuntimePlanSequenceKind, RuntimePlanTypeProjection};
+    use arcweft_core::step::{
+        RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+    };
+    use arcweft_core::value::{RuntimeSignedIntWidth as S, RuntimeUnsignedIntWidth as U};
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+
+    let compiled =
+        arcweft_compiler::source::compile_source(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let [flow] = compiled.plan.flows() else {
+        panic!("one measured flow")
+    };
+    let types = flow
+        .body()
+        .ops()
+        .iter()
+        .filter_map(|operation| {
+            let FlowOp::Let { pattern, expr } = operation else {
+                return None;
+            };
+            let row = compiled.plan.type_table().get(pattern.ty()).unwrap();
+            let RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item,
+            } = row.projection()
+            else {
+                return None;
+            };
+            assert_eq!(expr.ty(), pattern.ty());
+            Some(
+                compiled
+                    .plan
+                    .type_table()
+                    .get(*item)
+                    .unwrap()
+                    .projection()
+                    .clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(types.len(), 7);
+    for expected in [
+        RuntimePlanTypeProjection::Signed(S::I8),
+        RuntimePlanTypeProjection::Signed(S::I16),
+        RuntimePlanTypeProjection::Signed(S::I32),
+        RuntimePlanTypeProjection::Unsigned(U::U8),
+        RuntimePlanTypeProjection::Unsigned(U::U16),
+        RuntimePlanTypeProjection::Unsigned(U::U32),
+        RuntimePlanTypeProjection::Unsigned(U::U64),
+    ] {
+        assert_eq!(
+            types.iter().filter(|actual| *actual == &expected).count(),
+            1,
+            "{expected:?}"
+        );
+    }
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::OneOp,
+        budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
+    };
+    let mut native = Engine::for_flow(compiled.plan.clone(), &flow.id).unwrap();
+    assert_eq!(
+        run_dense_integer_one_op(&mut || native.step(RuntimeStepInput::default(), options)),
+        10
+    );
+    let program = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "dense-widths.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let decoded = AwbcProgram::decode_canonical(
+        &program.encode_canonical().unwrap(),
+        AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, program);
+    let mut product = ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+    run_dense_integer_one_op(&mut || product.step(RuntimeStepInput::default(), options));
+}
+
+fn run_dense_integer_one_op(
+    step: &mut dyn FnMut() -> arcweft_core::step::RuntimeStepResult,
+) -> usize {
+    use arcweft_core::effect::LineEffectRequest;
+    use arcweft_core::engine::{FlowExit, FlowFiberStatus};
+    let mut operations = 0;
+    let mut messages = Vec::new();
+    // The existing measurement budget is 64 steps * 64 ops. This additional
+    // execution keeps that total allowance and tightens every step to OneOp/1.
+    for _ in 0..(64 * 64) {
+        let result = step();
+        assert!(result.stats.executed_ops <= 1);
+        operations += result.stats.executed_ops;
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        messages.extend(result.output.effects.line.into_iter().filter_map(|effect| {
+            if let LineEffectRequest::Log(log) = effect {
+                Some(log.message)
+            } else {
+                None
+            }
+        }));
+        match result.fiber_status {
+            FlowFiberStatus::Done(FlowExit::Return(value)) => {
+                assert_eq!(value, "done");
+                assert_eq!(messages, ["3696"]);
+                return operations;
+            }
+            FlowFiberStatus::Failed(error) => panic!("typed integer fixture failed: {error:?}"),
+            _ => {}
+        }
+    }
+    panic!("typed integer fixture did not complete its original budget");
+}

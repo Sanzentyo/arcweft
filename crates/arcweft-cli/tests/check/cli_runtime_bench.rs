@@ -5580,12 +5580,7 @@ fn bench_json_measures_checked_in_dense_integer_widths_fixture() {
         !stdout.contains(&workspace_root().display().to_string()),
         "dense integer widths bench JSON must not record the workspace path: {stdout}"
     );
-    for expected in ["Vec(I8)", "Vec(I16)", "Vec(I32)", "Vec(U8)"] {
-        assert!(
-            stdout.contains(expected),
-            "dense integer widths bench should validate {expected}: {stdout}"
-        );
-    }
+    assert_dense_integer_fixture_typed_execution(&path);
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("bench output is structured JSON");
     let measurement = &json["benches"][0]["sections"][0]["measurement"];
