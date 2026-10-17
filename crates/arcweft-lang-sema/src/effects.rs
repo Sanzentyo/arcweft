@@ -4,7 +4,7 @@ pub use arcweft_id::{EffectId, EffectIdError, EffectSemanticDigest};
 use arcweft_lang_hir::{
     expr::{HirCallArgument, HirCallCallee, HirCallValue, HirExprKind, HirSelectedMember},
     identity::ExprId,
-    leaf::{HirPathRoot, HirPathSegment},
+    leaf::{HirLifetimeRegistryScope, HirPathRoot, HirPathSegment},
     module::HirModule,
 };
 use thiserror::Error;
@@ -39,8 +39,8 @@ pub(crate) enum HirEffectProjectionError {
     InvalidIdentity(#[from] EffectIdError),
 }
 
-/// Projects one final-HIR path/select chain into its canonical semantic effect
-/// identity and returns every participating expression owner.
+/// Projects one final-HIR effect path and its typed scope arguments into a
+/// canonical semantic identity, retaining every participating expression owner.
 ///
 /// Canonical identity parsing/digesting belongs to `arcweft-id`; this context
 /// owns only the final-HIR traversal needed to issue that identity.
@@ -84,7 +84,7 @@ pub(crate) fn project_hir_effect_id(
                     return Err(HirEffectProjectionError::Unsupported { owner });
                 };
                 let mut scope_segments = Vec::new();
-                collect_hir_effect_path(module, *value, &mut scope_segments, &mut owners)?;
+                collect_hir_effect_scope(module, *value, &mut scope_segments, &mut owners)?;
                 Ok(scope_segments.join("."))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -95,6 +95,43 @@ pub(crate) fn project_hir_effect_id(
         segments.join(".")
     };
     Ok((EffectId::parse(identity)?, owners))
+}
+
+fn collect_hir_effect_scope(
+    module: &HirModule,
+    owner: ExprId,
+    segments: &mut Vec<String>,
+    owners: &mut Vec<ExprId>,
+) -> Result<(), HirEffectProjectionError> {
+    let expression = module
+        .resolve_expr(owner)
+        .map_err(|_| HirEffectProjectionError::InvalidOwner { owner })?;
+    let HirExprKind::LifetimePath(value) = expression.kind() else {
+        return collect_hir_effect_path(module, owner, segments, owners);
+    };
+    let path = value
+        .as_resolved()
+        .ok_or(HirEffectProjectionError::Recovered { owner })?;
+    // Optional registry reads are executable values, not capability scopes.
+    if path.optional() {
+        return Err(HirEffectProjectionError::Unsupported { owner });
+    }
+    let scope = match path.scope() {
+        HirLifetimeRegistryScope::Frame => "frame",
+        HirLifetimeRegistryScope::Tick => "tick",
+        HirLifetimeRegistryScope::Cue => "cue",
+        HirLifetimeRegistryScope::Line => "line",
+        HirLifetimeRegistryScope::Scene => "scene",
+        HirLifetimeRegistryScope::Flow => "flow",
+        HirLifetimeRegistryScope::Session => "session",
+        HirLifetimeRegistryScope::Global => "global",
+        HirLifetimeRegistryScope::Persistent => "persistent",
+        HirLifetimeRegistryScope::Named(name) => name.as_str(),
+    };
+    segments.push(format!("'{scope}"));
+    segments.extend(path.segments().iter().map(|name| name.as_str().to_owned()));
+    owners.push(owner);
+    Ok(())
 }
 
 fn collect_hir_effect_path(

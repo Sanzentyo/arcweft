@@ -91,6 +91,8 @@ mod data_callables;
 mod dialogue_mark_authority;
 #[path = "tests/display_text.rs"]
 mod display_text;
+#[path = "tests/effect_contracts.rs"]
+mod effect_contracts;
 #[path = "tests/evaluated_effects.rs"]
 mod evaluated_effects;
 #[path = "tests/executable_ingress.rs"]

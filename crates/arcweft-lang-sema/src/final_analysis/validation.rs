@@ -936,7 +936,10 @@ fn expression_resolution_matches(
         | (HirExprKind::Select(_), CheckedExpressionResolution::Variant(_))
         | (HirExprKind::ShortVariant(_), CheckedExpressionResolution::StageLook(_))
         | (
-            HirExprKind::Path(_) | HirExprKind::Select(_) | HirExprKind::Call(_),
+            HirExprKind::Path(_)
+            | HirExprKind::Select(_)
+            | HirExprKind::Call(_)
+            | HirExprKind::LifetimePath(_),
             CheckedExpressionResolution::Effect(_),
         )
         | (
