@@ -36,6 +36,51 @@ fn build_only_checked_match(
 }
 
 #[test]
+fn presentation_slot_clear_result_has_the_complete_optional_match_transcript() {
+    let product = build_only_checked_match(
+        r"
+flow main() -> i64 {
+    let previous = clear.bg()
+    return match previous {
+        .Some(_) => 1i64
+        .None => 0i64
+    }
+}
+",
+        CheckedMatchLimits::PRODUCTION,
+    )
+    .expect("slot removal publishes a structural Option of its surface value");
+    assert!(product.coverage().exhaustive());
+    assert_eq!(product.arms().len(), 2);
+    let expected = TypeKind::Option(Box::new(TypeKind::Named("BackgroundSurface".to_owned())));
+    assert_eq!(
+        product.scrutinee_type(),
+        expected
+            .semantic_identity_digest()
+            .expect("optional surface value identity")
+    );
+}
+
+#[test]
+fn presentation_slot_clear_match_requires_the_absent_surface_case() {
+    let result = build_only_checked_match(
+        r"
+flow main() -> i64 {
+    let previous = clear.bg()
+    return match previous {
+        .Some(_) => 1i64
+    }
+}
+",
+        CheckedMatchLimits::PRODUCTION,
+    );
+    assert!(matches!(
+        result,
+        Err(SemanticTranscriptError::NonExhaustive { .. })
+    ));
+}
+
+#[test]
 fn checked_match_matrix_reports_the_deepest_redundant_or_alternative() {
     let product = build_only_checked_match(
         r"

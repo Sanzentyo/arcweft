@@ -123,6 +123,13 @@ centered alignment, normal playback, and identity transform; decoding never
 supplies those authoring defaults for missing required fields. This evolves the
 initial version `1` shape in place without a legacy reader.
 
+Slot-removal results are structural options: `clear.bg(...)` returns
+`Option<BackgroundSurface>` and `hide(...)` returns `Option<CharacterSurface>`.
+The payload is the removed slot value, distinct from the scope-owned `Handle<T>`
+returned by staging. The semantic graph retains the `Option` constructor and its
+payload type, rather than a formatted generic type name. A match on either result
+must cover both `.Some(_)` and `.None`.
+
 Bundle image assets record stable asset id, virtual path, encoded format
 (`png`, `jpeg`, `gif`, or `webp`), static/animated state, and intrinsic
 dimensions. Source-level `asset.image(...)`, `bg(...)`, and `image(...)`

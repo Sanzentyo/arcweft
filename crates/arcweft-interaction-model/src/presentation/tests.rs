@@ -35,7 +35,7 @@ fn alignment_construction_and_decode_enforce_the_same_closed_range() {
 #[test]
 fn alignment_decode_requires_both_axes_and_rejects_unknown_or_duplicate_fields() {
     for encoded in [
-        r#"{}"#,
+        r"{}",
         r#"{"x_milli":500}"#,
         r#"{"x_milli":500,"y_milli":null}"#,
         r#"{"x_milli":0.5,"y_milli":500}"#,

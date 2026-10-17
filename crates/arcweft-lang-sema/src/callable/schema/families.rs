@@ -1801,8 +1801,10 @@ fn presentation_result(id: PresentationCallableId) -> TypeKind {
         PresentationCallableId::Show => TypeKind::presentation_handle("CharacterSurface"),
         PresentationCallableId::RefBackground => named("SlotRef<BackgroundSurface>"),
         PresentationCallableId::RefShow => named("SlotRef<CharacterSurface>"),
-        PresentationCallableId::ClearBackground => named("Option<BackgroundSurface>"),
-        PresentationCallableId::Hide => named("Option<CharacterSurface>"),
+        PresentationCallableId::ClearBackground => {
+            TypeKind::Option(Box::new(named("BackgroundSurface")))
+        }
+        PresentationCallableId::Hide => TypeKind::Option(Box::new(named("CharacterSurface"))),
     }
 }
 
@@ -2304,6 +2306,18 @@ mod tests {
         );
         assert!(CallableEvaluatedEffect::EmitEvent.accepts_open_fields());
         assert!(!CallableEvaluatedEffect::Ensure.accepts_open_fields());
+    }
+
+    #[test]
+    fn presentation_slot_removals_publish_structural_optional_surface_values() {
+        for (remove, surface) in [
+            (PresentationCallableId::ClearBackground, "BackgroundSurface"),
+            (PresentationCallableId::Hide, "CharacterSurface"),
+        ] {
+            let removed = presentation_schema(remove, None, None).expect("slot removal schema");
+            let expected = TypeKind::Option(Box::new(named(surface)));
+            assert_eq!(removed.value_type(), Some(&expected));
+        }
     }
 
     #[test]
