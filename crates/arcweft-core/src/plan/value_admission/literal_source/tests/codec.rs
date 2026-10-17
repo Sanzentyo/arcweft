@@ -99,7 +99,7 @@ fn binary_literal_type_failure_poisoning_does_not_publish_a_live_value() {
 }
 
 #[test]
-fn binary_builtin_payload_wrapper_does_not_consume_an_extra_logical_value_node() {
+fn binary_builtin_payload_uses_the_original_exact_logical_node_boundary() {
     use crate::plan::{RuntimePlanTypeProjection as P, RuntimePlanTypeSeed};
     let mut builder = crate::plan::RuntimePlanBuilder::new();
     builder
@@ -125,9 +125,32 @@ fn binary_builtin_payload_wrapper_does_not_consume_an_extra_logical_value_node()
     let source = AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap();
     let bytes = encode(&source);
     let ty = inventory.type_table().id_for_semantic(semantic(3)).unwrap();
-    let bound = RuntimeSchemaLimits {
+    let short = RuntimeSchemaLimits {
         max_nodes: 2,
         ..RuntimeSchemaLimits::engine_default()
+    };
+    // The original value algebra contains Variant -> Tuple -> Bool. The source
+    // frame must preserve that exact boundary without adding its own logical
+    // accounting for the encoded slots or structural elements.
+    assert!(
+        inventory
+            .admit_literal_source_value(ty, &source, &mut resources(short))
+            .is_err()
+    );
+    assert!(
+        inventory
+            .decode_literal_source_value(
+                ty,
+                &bytes,
+                limits(),
+                &mut resources(short),
+                &mut TaskSemanticMeter::new(u64::MAX, u64::MAX)
+            )
+            .is_err()
+    );
+    let bound = RuntimeSchemaLimits {
+        max_nodes: 3,
+        ..short
     };
     inventory
         .admit_literal_source_value(ty, &source, &mut resources(bound))

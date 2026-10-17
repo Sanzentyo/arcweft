@@ -41,7 +41,7 @@ fn literal_source_retains_exact_entity_segments_public_labels_and_imported_targe
         )
         .unwrap(),
         RuntimeEntityReference::CharacterLook {
-            character: arcweft_character::id::CharacterId::try_new("hero").unwrap(),
+            character: arcweft_character::id::CharacterId::try_new("character.hero").unwrap(),
             look: arcweft_character::id::CharacterLookId::try_new("smile").unwrap(),
         },
     ];
