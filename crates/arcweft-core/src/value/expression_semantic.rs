@@ -28,7 +28,7 @@ impl RuntimeExpr {
         }
         match self.kind() {
             RuntimeExprKind::Value(value) => value.encode_static_literal(encoder)?,
-            RuntimeExprKind::EntityRef(value) => value.encode_body_identity(encoder),
+            RuntimeExprKind::EntityRef(value) => value.encode_body_identity(encoder)?,
             RuntimeExprKind::FormatContent {
                 template,
                 attempt,

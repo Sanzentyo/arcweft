@@ -385,7 +385,7 @@ impl<'a> RuntimeBodySemanticContext<'a> {
             }
             Kind::Discard => {}
             Kind::Literal(value) => value.encode_static_literal(encoder)?,
-            Kind::Entity(value) => value.encode_body_identity(encoder),
+            Kind::Entity(value) => value.encode_body_identity(encoder)?,
             Kind::Tuple(items) | Kind::Or(items) => encoder.count(items.len()),
             Kind::Sequence { items, rest } => {
                 encoder.count(items.len());

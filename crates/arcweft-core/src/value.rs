@@ -43,6 +43,8 @@ mod color;
 pub(crate) use collection::evaluate_collection_intrinsic;
 mod data_shape;
 mod dense_numeric;
+mod entity_identity;
+pub(crate) use entity_identity::RuntimeEntityIdentityVisitor;
 mod env;
 mod expression_literals;
 mod expression_locals;

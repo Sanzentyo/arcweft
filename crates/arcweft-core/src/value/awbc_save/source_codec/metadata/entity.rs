@@ -4,7 +4,9 @@ use super::super::{Reader, RuntimeLiteralSourceError as Error, Writer};
 use crate::plan::{FlowRuntimeId, RuntimeLineId};
 use crate::runtime_id::{RuntimeIdFamily, RuntimeIdPath, RuntimeIdSegment};
 use crate::value::imported_entity::ImportedProjectTarget;
-use crate::value::{RuntimeEntityReference, RuntimeImportedProjectEntityReference};
+use crate::value::{
+    RuntimeEntityIdentityVisitor, RuntimeEntityReference, RuntimeImportedProjectEntityReference,
+};
 use arcweft_character::id::{CharacterId, CharacterLookId};
 use arcweft_id::{DeclarationIdentityFamily, ProjectEntityReferenceFamily, PublicId};
 
@@ -37,24 +39,11 @@ impl Writer<'_> {
         Ok(())
     }
 
-    fn flow(&mut self, flow: &FlowRuntimeId) -> Result<(), Error> {
-        self.path(RuntimeIdFamily::Flow, flow.path())?;
-        self.string(flow.public_label_ref().as_str())
-    }
-
     pub(in crate::value::awbc_save::source_codec) fn entity(
         &mut self,
         value: &RuntimeEntityReference,
     ) -> Result<(), Error> {
         match value {
-            RuntimeEntityReference::StructuralFlow(flow) => {
-                self.tag(4)?;
-                self.flow(flow)
-            }
-            RuntimeEntityReference::DialogueLine(line) => {
-                self.tag(1)?;
-                self.path(RuntimeIdFamily::Line, line.path())
-            }
             RuntimeEntityReference::Project { family, public_id } => {
                 family
                     .validate_public_id(public_id)
@@ -62,38 +51,37 @@ impl Writer<'_> {
                         offset: self.length,
                         source,
                     })?;
-                self.tag(0)?;
-                self.tag(family.semantic_tag())?;
-                self.string(public_id.as_str())
             }
-            RuntimeEntityReference::CharacterLook { character, look } => {
-                self.tag(2)?;
+            RuntimeEntityReference::CharacterLook { character, .. } => {
                 // CharacterId's existing owner temporarily validates its public
                 // ID/local spelling through one additional owned string.
                 self.counts.scratch(character.as_str().len())?;
-                self.string(character.as_str())?;
-                self.string(look.as_str())
             }
-            RuntimeEntityReference::ImportedProject(value) => {
-                self.tag(3)?;
-                self.tag(value.family().semantic_tag())?;
-                self.string(value.public_id().as_str())?;
-                self.bytes(value.target_generation())?;
-                self.bytes(value.semantic_identity())?;
-                self.bytes(value.value_type())?;
-                match value.source_target() {
-                    ImportedProjectTarget::Public => self.tag(0),
-                    ImportedProjectTarget::Flow(flow) => {
-                        self.tag(1)?;
-                        self.flow(flow)
-                    }
-                    ImportedProjectTarget::Line(line) => {
-                        self.tag(2)?;
-                        self.path(RuntimeIdFamily::Line, line.path())
-                    }
-                }
-            }
+            RuntimeEntityReference::StructuralFlow(_)
+            | RuntimeEntityReference::DialogueLine(_)
+            | RuntimeEntityReference::ImportedProject(_) => {}
         }
+        value.visit_identity(self)
+    }
+}
+
+impl RuntimeEntityIdentityVisitor for Writer<'_> {
+    type Error = Error;
+
+    fn tag(&mut self, tag: u8) -> Result<(), Self::Error> {
+        Writer::tag(self, tag)
+    }
+
+    fn text(&mut self, text: &str) -> Result<(), Self::Error> {
+        self.string(text)
+    }
+
+    fn digest(&mut self, digest: &[u8; 32]) -> Result<(), Self::Error> {
+        self.bytes(digest)
+    }
+
+    fn path(&mut self, family: RuntimeIdFamily, path: &RuntimeIdPath) -> Result<(), Self::Error> {
+        Writer::path(self, family, path)
     }
 }
 

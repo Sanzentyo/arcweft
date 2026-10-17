@@ -3,7 +3,10 @@
 use super::identity::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash};
 use crate::canonical_varint::encode_u32;
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeVariantIdentity};
-use crate::value::{RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
+use crate::value::{
+    RuntimeEntityIdentityVisitor, RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUInt,
+    RuntimeValue,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -821,37 +824,7 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
         &mut self,
         value: &RuntimeEntityReference,
     ) -> Result<(), RuntimeSchemaError> {
-        match value {
-            RuntimeEntityReference::StructuralFlow(flow) => {
-                self.u8(4)?;
-                self.string(&flow.canonical_label())
-            }
-            RuntimeEntityReference::ImportedProject(entity) => {
-                self.u8(3)?;
-                self.u8(entity.family().semantic_tag())?;
-                self.string(entity.public_id().as_str())?;
-                self.extend(entity.target_generation())?;
-                self.extend(entity.semantic_identity())?;
-                self.extend(entity.value_type())?;
-                self.option(entity.flow(), |writer, flow| {
-                    writer.string(&flow.canonical_label())
-                })
-            }
-            RuntimeEntityReference::Project { family, public_id } => {
-                self.u8(0)?;
-                self.u8(family.semantic_tag())?;
-                self.string(public_id.as_str())
-            }
-            RuntimeEntityReference::DialogueLine(line) => {
-                self.u8(1)?;
-                self.string(&line.canonical_label())
-            }
-            RuntimeEntityReference::CharacterLook { character, look } => {
-                self.u8(2)?;
-                self.string(character.as_str())?;
-                self.string(look.as_str())
-            }
-        }
+        value.visit_identity(self)
     }
 
     fn option<T: ?Sized>(
@@ -1001,6 +974,34 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                 self.u8(owner.semantic_tag())
             }
         }
+    }
+}
+
+impl<S: CanonicalSink + ?Sized> RuntimeEntityIdentityVisitor for CanonicalWriter<'_, S> {
+    type Error = RuntimeSchemaError;
+
+    fn tag(&mut self, tag: u8) -> Result<(), Self::Error> {
+        self.u8(tag)
+    }
+
+    fn text(&mut self, text: &str) -> Result<(), Self::Error> {
+        self.string(text)
+    }
+
+    fn digest(&mut self, digest: &[u8; 32]) -> Result<(), Self::Error> {
+        self.extend(digest)
+    }
+
+    fn path(
+        &mut self,
+        _family: crate::runtime_id::RuntimeIdFamily,
+        path: &crate::runtime_id::RuntimeIdPath,
+    ) -> Result<(), Self::Error> {
+        self.len(path.segments().len())?;
+        for segment in path.segments() {
+            self.string(segment.as_str())?;
+        }
+        Ok(())
     }
 }
 

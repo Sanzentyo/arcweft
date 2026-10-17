@@ -6,10 +6,9 @@ mod traversal;
 use super::{
     RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentCaptureTarget,
     RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue,
-    RuntimeCommand, RuntimeEntityReference, RuntimeInt, RuntimeOpaquePersistence,
-    RuntimeOpaqueValueClass, RuntimeRange, RuntimeRangeIterator, RuntimeRecordView,
-    RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth, RuntimeTupleView, RuntimeUInt,
-    RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView,
+    RuntimeCommand, RuntimeInt, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+    RuntimeRangeIterator, RuntimeRecordView, RuntimeScalarView, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeTupleView, RuntimeUInt, RuntimeUnsignedIntWidth, RuntimeValue, RuntimeValueView,
 };
 use crate::plan::body_semantic::RuntimeBodySemanticError;
 use crate::task::semantic::TaskSemanticEncoder;
@@ -354,50 +353,10 @@ impl RuntimeScalarView<'_> {
             }
             Self::EntityRef(value) => {
                 encoder.tag(11);
-                value.encode_body_identity(encoder);
+                value.encode_body_identity(encoder)?;
             }
         }
         encoder.status().map_err(Into::into)
-    }
-}
-
-impl RuntimeEntityReference {
-    pub(crate) fn encode_body_identity(&self, encoder: &mut TaskSemanticEncoder<'_>) {
-        match self {
-            Self::StructuralFlow(flow) => {
-                encoder.tag(4);
-                encoder.string(&flow.canonical_label());
-            }
-            Self::ImportedProject(value) => {
-                encoder.tag(3);
-                encoder.tag(value.family().semantic_tag());
-                encoder.string(value.public_id().as_str());
-                encoder.digest(value.target_generation());
-                encoder.digest(value.semantic_identity());
-                encoder.digest(value.value_type());
-                match value.flow() {
-                    None => encoder.tag(0),
-                    Some(flow) => {
-                        encoder.tag(1);
-                        encoder.string(&flow.canonical_label());
-                    }
-                }
-            }
-            Self::Project { family, public_id } => {
-                encoder.tag(0);
-                encoder.tag(family.semantic_tag());
-                encoder.string(public_id.as_str());
-            }
-            Self::DialogueLine(line) => {
-                encoder.tag(1);
-                encoder.string(&line.canonical_label());
-            }
-            Self::CharacterLook { character, look } => {
-                encoder.tag(2);
-                encoder.string(character.as_str());
-                encoder.string(look.as_str());
-            }
-        }
     }
 }
 

@@ -35,6 +35,14 @@ not reconstruct a checked identity from label text. A selector is operational
 metadata: changing it can change target resolution and therefore changes the
 Flow executable transcript. Purely diagnostic labels remain excluded.
 
+Entity-reference value identity preserves the original runtime-path segment
+boundaries, each Flow's retained public selector, and an imported reference's
+complete Public/Flow/Line target and generation/type headers. Canonical value
+digests, executable literal transcripts and the private literal source codec
+take these fields from the same owning entity traversal. A joined path label
+does not substitute for a runtime identity, and observable selector metadata
+does not disappear when a Flow is carried as a value or pattern.
+
 If runtime-ID equality, hashing, or storage later becomes a measured hot path,
 the canonical path representation may be interned behind the typed ID API. That
 optimization must preserve the same source/runtime/public domain split and must
