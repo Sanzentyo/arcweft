@@ -2,7 +2,6 @@
 //! The target owns its ABI and body; this owner never walks that body again.
 
 use super::function::ProducerFunctionSemantic;
-use super::pure_rows::PureHelperSemantic;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::entry::{RuntimeCallableExecutableCode, RuntimeFlowParameterMode, RuntimeFlowSchema};
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
@@ -10,7 +9,6 @@ use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 /// The exhaustive semantic substrates of an admitted entry callable.
 /// Each reference is an owner-issued proof, never caller-provided hash bytes.
 pub(crate) enum ExecutableCallableCodeSemantic<'proof, 'plan> {
-    PureHelper(&'proof PureHelperSemantic<'plan>),
     FunctionSite(&'proof ProducerFunctionSemantic<'plan>),
     ControllerFlow(&'proof ProducerFunctionSemantic<'plan>),
 }
@@ -35,10 +33,6 @@ impl RuntimeBodySemanticContext<'_> {
                 }
             })?;
         let target = match (&row.code, code) {
-            (
-                RuntimeCallableExecutableCode::PureHelper(helper),
-                ExecutableCallableCodeSemantic::PureHelper(proof),
-            ) if proof.matches_helper(self, *helper) => *proof.digest().as_bytes(),
             (
                 RuntimeCallableExecutableCode::FunctionSite(function),
                 ExecutableCallableCodeSemantic::FunctionSite(proof),
@@ -143,7 +137,6 @@ impl crate::plan::FlowRuntimeId {
 impl RuntimeCallableExecutableCode {
     pub(crate) const fn semantic_tag(&self) -> u8 {
         match self {
-            Self::PureHelper(_) => 0,
             Self::FunctionSite(_) => 1,
             Self::ControllerFlow(_) => 2,
         }

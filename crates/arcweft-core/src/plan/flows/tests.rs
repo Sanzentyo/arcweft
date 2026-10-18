@@ -106,6 +106,7 @@ fn ambiguous_inert_rows_are_rejected_in_existing_structural_error_order() {
     let duplicated = RuntimeFlowTable::from_rows(duplicate_rows, schemas.clone());
     assert!(duplicated.position(&rows[0].id).is_none());
     assert!(duplicated.flow(&rows[0].id).is_none());
+    assert_eq!(duplicated.resolve_target("one").unwrap(), rows[0].id);
     let mut candidate = original.clone();
     candidate.inventory.flows = duplicated;
     assert!(matches!(

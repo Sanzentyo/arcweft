@@ -103,6 +103,10 @@ impl RuntimeNominalTypeId {
 }
 
 impl RuntimeCallableId {
+    pub(crate) fn validate_source(value: &str) -> Result<(), RuntimeIdentityError> {
+        validate_identity_source("callable", value)
+    }
+
     pub fn try_new(identity: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
         Ok(Self {
             identity: validate_identity("callable", identity.into())?,

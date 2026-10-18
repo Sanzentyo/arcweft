@@ -393,7 +393,6 @@ pub struct RuntimeCallableExecutableSeed {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeCallableExecutableSeedCode {
-    PureHelper(RuntimePureHelperSeedId),
     /// A capture-free structured function-site body. The site handle carries
     /// the final typed input-pattern prologue and body authority.
     FunctionSite(RuntimeFunctionSiteSeedId),

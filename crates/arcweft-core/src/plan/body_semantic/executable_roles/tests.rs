@@ -7,10 +7,7 @@ use crate::runtime_id::RuntimeFunctionSiteId;
 use crate::task::semantic::TaskSemanticEncodingError;
 use crate::value::RuntimeValue;
 
-fn staged_callable(
-    helper: bool,
-    value: bool,
-) -> (RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner) {
+fn staged_callable(value: bool) -> (RuntimePlanInventory, RuntimeTaskPlanCoordinateOwner) {
     let mut builder = RuntimePlanBuilder::new();
     let boolean = RuntimeSemanticTypeId::from_bytes([61; 32]);
     builder
@@ -27,32 +24,11 @@ fn staged_callable(
         RuntimeExprSeedKind::Value(RuntimeValue::Bool(value)),
     );
     let definition = RuntimeFunctionDefinitionIdentity::from_accepted_identity([71; 32]);
-    let code = if helper {
-        RuntimeCallableExecutableSeedCode::PureHelper(
-            builder
-                .push_pure_helper_seed(RuntimePureHelperSeed {
-                    definition,
-                    name: "diagnostic".into(),
-                    inputs: Box::new([]),
-                    output_abi: RuntimePureOutputType::Bool,
-                    body,
-                    scalar_eval_supported: true,
-                    origin: RuntimePureHelperOrigin::Annotated,
-                })
-                .unwrap(),
-        )
-    } else {
-        RuntimeCallableExecutableSeedCode::FunctionSite(
-            builder
-                .push_function_site_seed(
-                    definition,
-                    RuntimeFunctionSemanticRole::Ordinary,
-                    [],
-                    body,
-                )
-                .unwrap(),
-        )
-    };
+    let code = RuntimeCallableExecutableSeedCode::FunctionSite(
+        builder
+            .push_function_site_seed(definition, RuntimeFunctionSemanticRole::Ordinary, [], body)
+            .unwrap(),
+    );
     builder
         .push_callable_executable_seed(RuntimeCallableExecutableSeed {
             callable: RuntimeCallableId::from_checked_digest([81; 32]),
@@ -76,18 +52,6 @@ fn staged_row(
     let context = RuntimeBodySemanticContext::new(inventory);
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
     match inventory.callable_executables()[0].code {
-        RuntimeCallableExecutableCode::PureHelper(id) => {
-            let proof = inventory.pure_helpers()[id.0]
-                .executable_semantic(&context, &mut meter)
-                .unwrap();
-            context
-                .callable_executable_row_digest(
-                    &mut meter,
-                    0,
-                    ExecutableCallableCodeSemantic::PureHelper(&proof),
-                )
-                .unwrap()
-        }
         RuntimeCallableExecutableCode::FunctionSite(id) => {
             let proof = context
                 .producer_function(&mut meter, id, owner, RuntimeTaskPlanSealLimits::default())
@@ -106,27 +70,35 @@ fn staged_row(
 
 #[test]
 fn staged_noncontroller_rows_bind_actual_code_but_cannot_publish_without_entry_reachability() {
-    for helper in [false, true] {
-        let first = staged_callable(helper, true);
-        let changed = staged_callable(helper, false);
-        assert!(matches!(
-            first.0.verify(),
-            Err(RuntimePlanError::UnreachableCallableExecutable(_))
-        ));
-        assert!(matches!(
-            changed.0.verify(),
-            Err(RuntimePlanError::UnreachableCallableExecutable(_))
-        ));
-        assert_ne!(
-            staged_row(&first.0, &first.1),
-            staged_row(&changed.0, &changed.1)
-        );
-    }
-    let (inventory, _) = staged_callable(true, true);
+    let first = staged_callable(true);
+    let changed = staged_callable(false);
+    assert!(matches!(
+        first.0.verify(),
+        Err(RuntimePlanError::UnreachableCallableExecutable(_))
+    ));
+    assert!(matches!(
+        changed.0.verify(),
+        Err(RuntimePlanError::UnreachableCallableExecutable(_))
+    ));
+    assert_ne!(
+        staged_row(&first.0, &first.1),
+        staged_row(&changed.0, &changed.1)
+    );
+    let (inventory, owner) = first;
     let context = RuntimeBodySemanticContext::new(&inventory);
     let mut preparation = TaskSemanticMeter::new(100_000, 1_000_000);
-    let proof = inventory.pure_helpers()[0]
-        .executable_semantic(&context, &mut preparation)
+    let RuntimeCallableExecutableCode::FunctionSite(function) =
+        inventory.callable_executables()[0].code
+    else {
+        panic!("ordinary function fixture");
+    };
+    let proof = context
+        .producer_function(
+            &mut preparation,
+            function,
+            &owner,
+            RuntimeTaskPlanSealLimits::default(),
+        )
         .unwrap();
     let foreign = inventory.clone();
     let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
@@ -134,7 +106,7 @@ fn staged_noncontroller_rows_bind_actual_code_but_cannot_publish_without_entry_r
         RuntimeBodySemanticContext::new(&foreign).callable_executable_row_digest(
             &mut meter,
             0,
-            ExecutableCallableCodeSemantic::PureHelper(&proof)
+            ExecutableCallableCodeSemantic::FunctionSite(&proof)
         ),
         Err(RuntimeBodySemanticError::InvalidCallableExecutableProducer { ordinal: 0 })
     ));

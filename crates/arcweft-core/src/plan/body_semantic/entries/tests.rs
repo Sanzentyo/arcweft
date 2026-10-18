@@ -63,6 +63,15 @@ pub(crate) fn stateful_plan_with_limits(
     schema: RuntimeTypeSchema,
     limits: RootExecutionLimits,
 ) -> RuntimePlan {
+    stateful_builder_with_limits(schema, limits)
+        .finish()
+        .unwrap()
+}
+
+pub(crate) fn stateful_builder_with_limits(
+    schema: RuntimeTypeSchema,
+    limits: RootExecutionLimits,
+) -> RuntimePlanBuilder {
     let graph = RuntimeNominalSchemaGraph::try_new(
         (1..=2)
             .map(|tag| {
@@ -118,7 +127,7 @@ pub(crate) fn stateful_plan_with_limits(
             })),
         })
         .unwrap();
-    builder.finish().unwrap()
+    builder
 }
 
 fn admit_stateful_types(

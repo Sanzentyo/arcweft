@@ -632,8 +632,6 @@ pub enum RuntimePlanError {
     MissingSchemaFlow(String),
     #[error("runtime Flow `{0}` has no invocation schema")]
     MissingFlowSchema(String),
-    #[error("role-callable `{callable}` maps to missing pure-helper slot {helper}")]
-    MissingCallableHelper { callable: String, helper: usize },
     #[error("role-callable `{callable}` maps to missing controller flow `{flow}`")]
     MissingCallableControllerFlow { callable: String, flow: String },
     #[error("role-callable `{callable}` maps to missing function site `{site}`")]
@@ -819,14 +817,6 @@ impl super::RuntimePlanInventory {
                 ));
             }
             match &executable.code {
-                RuntimeCallableExecutableCode::PureHelper(helper)
-                    if !helper_ids.contains(helper) =>
-                {
-                    return Err(RuntimePlanError::MissingCallableHelper {
-                        callable: executable.callable.as_str().to_owned(),
-                        helper: helper.0,
-                    });
-                }
                 RuntimeCallableExecutableCode::ControllerFlow(flow) if !flow_ids.contains(flow) => {
                     return Err(RuntimePlanError::MissingCallableControllerFlow {
                         callable: executable.callable.as_str().to_owned(),
@@ -841,8 +831,7 @@ impl super::RuntimePlanInventory {
                         site: *site,
                     });
                 }
-                RuntimeCallableExecutableCode::PureHelper(_)
-                | RuntimeCallableExecutableCode::FunctionSite(_)
+                RuntimeCallableExecutableCode::FunctionSite(_)
                 | RuntimeCallableExecutableCode::ControllerFlow(_) => {}
             }
         }

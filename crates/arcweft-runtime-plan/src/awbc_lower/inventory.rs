@@ -2037,11 +2037,6 @@ impl AwbcInventory {
             })
         }) {
             let function = match &executable.code {
-                RuntimeCallableExecutableCode::PureHelper(helper) => self
-                    .program
-                    .pure_helpers
-                    .get(helper.0)
-                    .map(|helper| helper.function),
                 RuntimeCallableExecutableCode::FunctionSite(site) => {
                     self.function_site_function(*site)
                 }

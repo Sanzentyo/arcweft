@@ -1268,10 +1268,6 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
                 ))
             })?;
         match executable.code {
-            RuntimeCallableExecutableCode::PureHelper(helper) => self
-                .scratch
-                .evaluate_values(self.plan, helper, args)
-                .map_err(|error| RootCallableEvaluationError::new(error.to_string())),
             RuntimeCallableExecutableCode::FunctionSite(site) => self
                 .scratch
                 .evaluate_function_site(self.plan, site, args)

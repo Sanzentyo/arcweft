@@ -7,7 +7,7 @@ use super::identity::{
 };
 use super::schema::{RuntimeSchemaLimits, RuntimeTypeSchema};
 use crate::pattern::RuntimeSemanticTypeId;
-use crate::plan::{EntryRuntimeId, FlowRuntimeId, RuntimePureHelperId};
+use crate::plan::{EntryRuntimeId, FlowRuntimeId};
 use crate::runtime_id::RuntimeFunctionSiteId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -113,7 +113,7 @@ pub struct RuntimeFlowRole {
     pub contract: FlowContractHash,
 }
 
-/// Executable pure-helper mapping for one checked callable contract.
+/// Executable binding for one checked Entry callable contract.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeCallableExecutable {
     pub callable: RuntimeCallableId,
@@ -124,7 +124,6 @@ pub struct RuntimeCallableExecutable {
 /// Existing executable substrate that owns one role callable body.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeCallableExecutableCode {
-    PureHelper(RuntimePureHelperId),
     /// Capture-free structured function-site code used by project Entry
     /// initializer/reducer roles. The site owns the exact input patterns and
     /// typed expression body; callers must not reconstruct it from a helper

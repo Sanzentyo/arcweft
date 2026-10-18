@@ -4,7 +4,6 @@
 
 use super::executable_roles::ExecutableCallableCodeSemantic;
 use super::function::ProducerFunctionSemantic;
-use super::pure_rows::PureHelperSemantic;
 use super::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use crate::entry::RuntimeCallableExecutableCode;
 use crate::plan::construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
@@ -103,7 +102,6 @@ pub(super) struct RuntimeExecutableSemanticRows<'plan, 'owner> {
     records: Vec<&'plan RuntimeNominalRecordDomain>,
     variants: Vec<&'plan RuntimeVariantDomain>,
     functions: Vec<FunctionState<'plan>>,
-    helpers: Vec<Option<PureHelperSemantic<'plan>>>,
     lines: Vec<Option<super::executable_metadata::LineSemantic<'plan>>>,
 }
 
@@ -134,7 +132,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
             records: plan.nominal_record_domains().domains().collect(),
             variants: plan.variant_domains().domains().collect(),
             functions: (0..counts[4]).map(|_| FunctionState::Unvisited).collect(),
-            helpers: (0..counts[10]).map(|_| None).collect(),
             lines: (0..counts[12]).map(|_| None).collect(),
         })
     }
@@ -320,11 +317,7 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
                     .executable_flow_row_digest(&self.context, meter, ordinal)
             }
             ExecutableTable::Helpers => {
-                let proof =
-                    plan.pure_helpers()[ordinal].executable_semantic(&self.context, meter)?;
-                let digest = proof.digest();
-                self.helpers[ordinal] = Some(proof);
-                Ok(digest)
+                plan.pure_helpers()[ordinal].executable_semantic_row_digest(&self.context, meter)
             }
             ExecutableTable::Methods => {
                 plan.trait_methods()[ordinal].executable_semantic_row_digest(&self.context, meter)
@@ -416,18 +409,6 @@ impl<'plan, 'owner> RuntimeExecutableSemanticRows<'plan, 'owner> {
         let plan = self.context.plan;
         let code = &plan.callable_executables()[ordinal].code;
         match code {
-            RuntimeCallableExecutableCode::PureHelper(helper) => {
-                self.complete(ExecutableTable::Helpers, helper.0, meter)?;
-                self.context.callable_executable_row_digest(
-                    meter,
-                    ordinal,
-                    ExecutableCallableCodeSemantic::PureHelper(
-                        self.helpers[helper.0]
-                            .as_ref()
-                            .expect("completed helper proof"),
-                    ),
-                )
-            }
             RuntimeCallableExecutableCode::FunctionSite(function) => {
                 let index = function.get().get() as usize - 1;
                 self.complete(ExecutableTable::Functions, index, meter)?;

@@ -6,6 +6,8 @@ use super::RuntimePlanInventory;
 mod callable;
 mod entries;
 #[cfg(test)]
+pub(crate) use entries::tests::stateful_builder_with_limits as stateful_root_builder_fixture;
+#[cfg(test)]
 pub(crate) use entries::tests::stateful_plan_with_limits as stateful_root_fixture;
 #[cfg(test)]
 mod entry_fixtures;

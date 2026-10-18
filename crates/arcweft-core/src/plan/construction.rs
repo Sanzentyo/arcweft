@@ -2616,15 +2616,6 @@ impl RuntimePlanBuilder {
         seed: RuntimeCallableExecutableSeed,
     ) -> Result<u32, RuntimePlanBuildError> {
         let code = match seed.code {
-            RuntimeCallableExecutableSeedCode::PureHelper(helper) => {
-                let (helper, _, _) = helper
-                    .resolve(&self.issuer)
-                    .ok_or(RuntimePlanBuildError::ForeignPureHelperSeed)?;
-                if self.pure_helpers.get(helper.0).is_none() {
-                    return Err(RuntimePlanBuildError::ForeignPureHelperSeed);
-                }
-                RuntimeCallableExecutableCode::PureHelper(helper)
-            }
             RuntimeCallableExecutableSeedCode::FunctionSite(site) => {
                 let (site, _, _, _, _, _) = site
                     .resolve(&self.issuer)
