@@ -151,6 +151,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error("audio operation metadata is invalid: {0}")]
+    AudioMetadata(#[from] arcweft_interaction_model::audio::AudioValueError),
     #[error(transparent)]
     TaskPlanSeal(Box<super::RuntimeTaskPlanSealError>),
     #[error(transparent)]

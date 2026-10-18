@@ -260,6 +260,22 @@ endpoints remain distinct. Completed task digests, expected keys, generations
 and source/debug labels do not supply endpoint or task-reference authority.
 
 
+## Audio command construction and source
+
+Audio commands use one closed operation grammar parameterized by the expression
+phase. Construction seeds, borrowed source frames and admitted commands retain
+the same metadata and argument roles. The owning traversal visits each expression
+once in command ABI order and stops at the first rejection; construction,
+free-local analysis and source transport use that traversal.
+
+Loop regions must have their start before their end, and microphone constraints
+must satisfy their structural channel/rate rules before child expressions enter
+construction. These checks use the existing typed audio metadata owners. Bounds
+against decoded resource frames and actual device support remain with the runtime
+resource/adapter owner when those facts are available. Source framing and counted
+child admission do not grant a completed executable or task-plan proof; the real
+operation factory and common executable seal remain required.
+
 ## Line graph semantic evidence
 
 A Line row commits its accepted definition, result type, ordered captures and

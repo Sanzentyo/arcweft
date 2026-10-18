@@ -1286,74 +1286,8 @@ pub enum RuntimeLineEffectSeed {
     Audio(Box<RuntimeAudioCommandSeed>),
 }
 
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeAudioCommandSeed {
-    Play {
-        voice: RuntimeExprSeed,
-        resource: RuntimeExprSeed,
-        bus: RuntimeExprSeed,
-        gain_db_milli: RuntimeExprSeed,
-        pan_milli: RuntimeExprSeed,
-        loop_mode: arcweft_interaction_model::audio::AudioLoopMode,
-        start_frame: RuntimeExprSeed,
-        fade_in_millis: RuntimeExprSeed,
-    },
-    Stop {
-        voice: RuntimeExprSeed,
-        fade_out_millis: RuntimeExprSeed,
-    },
-    StopAll {
-        fade_out_millis: RuntimeExprSeed,
-    },
-    SetVoiceGain {
-        voice: RuntimeExprSeed,
-        gain_db_milli: RuntimeExprSeed,
-        transition_millis: RuntimeExprSeed,
-    },
-    SetVoicePan {
-        voice: RuntimeExprSeed,
-        pan_milli: RuntimeExprSeed,
-        transition_millis: RuntimeExprSeed,
-    },
-    SetBusGain {
-        bus: RuntimeExprSeed,
-        gain_db_milli: RuntimeExprSeed,
-        transition_millis: RuntimeExprSeed,
-    },
-    SetBusMute {
-        bus: RuntimeExprSeed,
-        muted: RuntimeExprSeed,
-    },
-    SetEffectEnabled {
-        bus: RuntimeExprSeed,
-        effect: RuntimeExprSeed,
-        enabled: RuntimeExprSeed,
-    },
-    SetEffectParameter {
-        bus: RuntimeExprSeed,
-        effect: RuntimeExprSeed,
-        parameter: arcweft_interaction_model::audio::AudioEffectParameterKind,
-        value: RuntimeExprSeed,
-        transition_millis: RuntimeExprSeed,
-    },
-    ApplySnapshot {
-        snapshot: RuntimeExprSeed,
-        transition_millis: RuntimeExprSeed,
-    },
-    RequestMicrophone {
-        capture: RuntimeExprSeed,
-        constraints: arcweft_interaction_model::audio::MicrophoneConstraints,
-    },
-    StopMicrophone {
-        capture: RuntimeExprSeed,
-    },
-    SetCaptureMonitor {
-        capture: RuntimeExprSeed,
-        bus: Option<RuntimeExprSeed>,
-        gain_db_milli: RuntimeExprSeed,
-    },
-}
+/// Construction phase of the one audio operation grammar.
+pub type RuntimeAudioCommandSeed = crate::audio::RuntimeAudioCommand<RuntimeExprSeed>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeEffectFieldSeed {
@@ -1427,96 +1361,16 @@ impl RuntimeAudioCommandSeed {
         bound: &[RuntimeLocalSeedId],
         locals: &mut Vec<RuntimeLocalSeedId>,
     ) {
-        match self {
-            Self::Play {
-                voice,
-                resource,
-                bus,
-                gain_db_milli,
-                pan_milli,
-                start_frame,
-                fade_in_millis,
-                ..
-            } => collect_expr_free_locals(
-                &[
-                    voice.clone(),
-                    resource.clone(),
-                    bus.clone(),
-                    gain_db_milli.clone(),
-                    pan_milli.clone(),
-                    start_frame.clone(),
-                    fade_in_millis.clone(),
-                ],
-                bound,
-                locals,
-            ),
-            Self::Stop {
-                voice,
-                fade_out_millis,
-            } => collect_expr_refs_free_locals(&[voice, fade_out_millis], bound, locals),
-            Self::StopAll { fade_out_millis } => {
-                fade_out_millis.collect_free_locals(bound, locals);
-            }
-            Self::SetVoiceGain {
-                voice,
-                gain_db_milli,
-                transition_millis,
-            }
-            | Self::SetVoicePan {
-                voice,
-                pan_milli: gain_db_milli,
-                transition_millis,
-            }
-            | Self::SetBusGain {
-                bus: voice,
-                gain_db_milli,
-                transition_millis,
-            } => collect_expr_refs_free_locals(
-                &[voice, gain_db_milli, transition_millis],
-                bound,
-                locals,
-            ),
-            Self::SetBusMute { bus, muted } => {
-                collect_expr_refs_free_locals(&[bus, muted], bound, locals);
-            }
-            Self::SetEffectEnabled {
-                bus,
-                effect,
-                enabled,
-            } => collect_expr_refs_free_locals(&[bus, effect, enabled], bound, locals),
-            Self::SetEffectParameter {
-                bus,
-                effect,
-                value,
-                transition_millis,
-                ..
-            } => collect_expr_refs_free_locals(
-                &[bus, effect, value, transition_millis],
-                bound,
-                locals,
-            ),
-            Self::ApplySnapshot {
-                snapshot,
-                transition_millis,
-            } => collect_expr_refs_free_locals(&[snapshot, transition_millis], bound, locals),
-            Self::RequestMicrophone { capture, .. } | Self::StopMicrophone { capture } => {
-                capture.collect_free_locals(bound, locals);
-            }
-            Self::SetCaptureMonitor {
-                capture,
-                bus,
-                gain_db_milli,
-            } => {
-                capture.collect_free_locals(bound, locals);
-                if let Some(bus) = bus {
-                    bus.collect_free_locals(bound, locals);
-                }
-                gain_db_milli.collect_free_locals(bound, locals);
-            }
+        let mapped = self.expression_refs().try_map_expressions(|expr| {
+            expr.collect_free_locals(bound, locals);
+            Ok::<_, std::convert::Infallible>(())
+        });
+        match mapped {
+            Ok(_) => {}
+            Err(never) => match never {},
         }
     }
 }
-
 impl RuntimeEvaluatedEffectSeed {
     fn collect_free_locals(
         &self,
