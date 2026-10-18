@@ -7,6 +7,13 @@ terminology, but the VM boundary does not. The boundary is Sans I/O: a host
 passes pure data into the runtime and receives pure output batches plus a stop
 reason.
 
+A flow Match guard retains its original candidate, declared result type,
+operations, optional final condition and Copy bindings in one transaction across
+construction and admitted storage. A returning guard must produce the declared
+Bool type; a guard without a final condition must declare Never. The executable
+semantic transcript commits that result type even when the guard transfers
+control, so later Source construction does not infer it from an absent value.
+
 ```rust
 pub trait RuntimeExecutor {
     fn step(

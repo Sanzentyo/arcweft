@@ -1194,15 +1194,13 @@ pub struct RuntimeFlowMatchArmSeed {
     pub ops: Vec<RuntimeFlowOpSeed>,
 }
 
-/// Executable guard transaction; the candidate remains owned by a typed slot.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeFlowMatchGuardSeed {
-    pub candidate: RuntimeLocalSeedId,
-    pub result: RuntimeSemanticTypeId,
-    pub condition: Option<RuntimeExprSeed>,
-    pub copy_locals: Box<[RuntimeLocalSeedId]>,
-    pub ops: Vec<RuntimeFlowOpSeed>,
-}
+/// Construction storage for the original guard transaction and its result type.
+pub type RuntimeFlowMatchGuardSeed = super::super::RuntimeMatchGuard<
+    RuntimeLocalSeedId,
+    RuntimeSemanticTypeId,
+    RuntimeExprSeed,
+    RuntimeFlowOpSeed,
+>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeAwaitPendingObserverSeed {

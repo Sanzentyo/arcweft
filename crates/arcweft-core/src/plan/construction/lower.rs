@@ -103,6 +103,7 @@ enum FlowOpLowerFrame {
     FinishMatchGuard {
         pattern: RuntimePattern,
         candidate: RuntimeLocalDeclarationId,
+        result: RuntimePlanTypeId,
         condition: Option<RuntimeExpr>,
         copy_locals: Box<[RuntimeLocalDeclarationId]>,
         arm_ops: Vec<RuntimeFlowOpSeed>,
@@ -3274,6 +3275,7 @@ impl RuntimePlanBodyConstruction<'_> {
                             Some(FlowOpLowerFrame::FinishMatchGuard {
                                 pattern,
                                 candidate,
+                                result,
                                 condition,
                                 copy_locals,
                                 arm_ops,
@@ -3282,6 +3284,7 @@ impl RuntimePlanBodyConstruction<'_> {
                                     pattern,
                                     guard: Some(RuntimeMatchGuard {
                                         candidate,
+                                        result,
                                         condition,
                                         copy_locals,
                                         ops: lowered,
@@ -3391,6 +3394,7 @@ impl RuntimePlanBodyConstruction<'_> {
                             frames.push(FlowOpLowerFrame::FinishMatchGuard {
                                 pattern,
                                 candidate,
+                                result,
                                 condition,
                                 copy_locals,
                                 arm_ops: ops,

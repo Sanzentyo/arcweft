@@ -17431,3 +17431,62 @@ The active goal is not complete: finish validation, then general Flow/function,
 Host/Line/Entry Sources and joint complete-program codec/consumer migration.
 Actual selected-Need runtime key parity, real registry scope/store/read/cleanup/
 restore and all other retained goal requirements remain open.
+
+## 2026-10-19 — Retain the declared Match guard result across construction
+
+Inspected main dee5d8bcb58efe6cc762e552b42cd3cd0635a388, with only the held
+fourteen tracked paths and three untracked items before this cut. Supersedes the
+preceding pending Map validation: R1301 terminated with actual 101 for the test
+imports already corrected in that publication; R1302 catalog passed with 2250
+selected, zero excluded. R1303 canonical structure gate passed. R1304 executed
+all 2250 five-owner library cases, all passed, zero skipped, 40.163s, actual 0.
+R1305 workspace all-target/all-feature locked check and R1306 corresponding
+Clippy both passed, actual 0. A post-terminal hash audit verifies all 3870 frozen
+inputs unchanged at the inspected main. These are complete library/check/lint
+results for that input, not complete 53-consumer/API or full-goal acceptance.
+
+The next complete-function Source gap is an actual loss of construction data:
+the flow Match builder resolves and validates the declared guard result, then
+discards it when publishing RuntimeMatchGuard. A diverging guard has no final
+expression from which to recover that declaration. The existing guard grammar
+now owns both construction and admitted storage, including the original result
+type. Its construction phase uses builder-issued local handles, semantic type
+identity and seed operations; its admitted phase uses resolved local/type IDs
+and operations. The former independent seed struct is replaced directly by the
+construction phase of that same owner. The iterative lowering frame transfers
+the already validated result without a second resolver or inferred Never type.
+
+The existing executable transcript now commits this exact result through its
+normal type-resolution grammar. It remains version 1. Existing Bool-result and
+Never-projection checks are preserved. Focused regressions construct original
+builder/program owners, retain two distinct admitted Never declarations in the
+same type inventory, distinguish their actual selected guard result in the
+function transcript and complete seal, and execute the real native return.
+They also compare transcript identity under arena padding, execute true/false
+Bool guards, and require wrong result declarations to reject before sealing.
+These new cases are pending execution, not claimed as current acceptance.
+R1307's initial catalog compilation reports two test-only API mistakes: direct
+access to the private executable operations field and omission of the optional
+completed result after the fallible Engine result accessor. The test now uses
+the existing ops() API and handles both result layers. Preserve the first
+command's terminal outcome; do not replace it with a success or restart its
+remaining live workers. The explicit user preference permits this coherent
+intermediate publication while final compilation and execution remain pending.
+
+No new dependency, unsafe, I/O, runtime scope authority, fallback or public
+splitting API is introduced. The existing plan facade owns the shared guard
+grammar; scoped construction owns validation and lowering; body_semantic owns
+its exhaustive transcript. Their existing large-owner cohesion dispositions
+remain applicable to these narrow changes. The focused tests own this precise
+construction/transcript/execution boundary. Current byte/physical-LOC measures
+are plan.rs 54670/1591, construction/lower.rs 251105/5907, construction/seed.rs
+97857/2988, body_semantic/flow.rs 15193/367, its test coordinator 82677/2212,
+the new match_guards.rs test owner 9361/244, and flow_ops/tests.rs 16256/538.
+R1308 canonical structure gate passes, actual 0; size/layout findings remain
+review triggers, with no forbidden dependency edge. The resolved closure is
+53 workspace packages, Core normal fan-in/out 31/7 and development 4/5; all
+99 manifest/lock inputs are unchanged. Complete
+owner tests and the affected public-contract checks remain required.
+The full goal remains active, including
+complete body/Host/Line/Entry Sources, joint codec and consumer migration,
+selected-Need key parity, real registry execution and the other retained work.

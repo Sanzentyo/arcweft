@@ -1467,13 +1467,22 @@ pub struct RuntimeMatchArm {
     pub ops: Vec<FlowOp>,
 }
 
-/// Shared flow guard: existing operations compute one final Bool condition.
+/// One flow-guard transaction in construction or admitted storage.
+///
+/// The declared result remains part of the transaction even when its operations
+/// transfer control without producing a final Bool condition.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeMatchGuard {
-    pub candidate: crate::runtime_id::RuntimeLocalDeclarationId,
-    pub condition: Option<RuntimeExpr>,
-    pub copy_locals: Box<[crate::runtime_id::RuntimeLocalDeclarationId]>,
-    pub ops: Vec<FlowOp>,
+pub struct RuntimeMatchGuard<
+    Local = crate::runtime_id::RuntimeLocalDeclarationId,
+    Type = crate::runtime_id::RuntimePlanTypeId,
+    Expression = RuntimeExpr,
+    Operation = FlowOp,
+> {
+    pub candidate: Local,
+    pub result: Type,
+    pub condition: Option<Expression>,
+    pub copy_locals: Box<[Local]>,
+    pub ops: Vec<Operation>,
 }
 
 /// One source-ordered typed observer for a Pending publication.

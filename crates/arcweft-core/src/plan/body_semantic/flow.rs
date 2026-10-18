@@ -239,6 +239,7 @@ impl RuntimeBodySemanticContext<'_> {
                     encoder.tag(u8::from(arm.guard.is_some()));
                     if let Some(guard) = &arm.guard {
                         self.write_local(encoder, guard.candidate)?;
+                        self.write_type(encoder, guard.result)?;
                         encoder.tag(u8::from(guard.condition.is_some()));
                         encoder.count(guard.copy_locals.len());
                         for local in &guard.copy_locals {

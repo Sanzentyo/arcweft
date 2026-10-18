@@ -45,6 +45,7 @@ fn roles_retain_empty_branches_and_sparse_guard_arm_ordinals() {
                 pattern: pattern(),
                 guard: Some(RuntimeMatchGuard {
                     candidate: RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+                    result: value().ty(),
                     condition: Some(value()),
                     copy_locals: Box::new([]),
                     ops: vec![marker("guard")],
@@ -257,6 +258,7 @@ fn value_roles_preserve_sparse_match_and_observer_source_positions() {
                 pattern: pattern(),
                 guard: Some(RuntimeMatchGuard {
                     candidate: RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+                    result: labelled("guard").ty(),
                     condition: Some(labelled("guard")),
                     copy_locals: Box::new([]),
                     ops: vec![],

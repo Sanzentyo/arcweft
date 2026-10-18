@@ -2,6 +2,7 @@ use super::*;
 pub(super) mod content_rows;
 mod function_rows;
 mod line_rows;
+mod match_guards;
 mod request_capture_rows;
 mod request_endpoints;
 mod request_template_codec;
