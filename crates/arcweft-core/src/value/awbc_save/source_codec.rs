@@ -393,6 +393,19 @@ impl RuntimeValue {
     }
 }
 
+impl crate::value::RuntimeEntityReference {
+    /// Borrows the original typed identity for an executable source operand.
+    pub(crate) fn prepare_literal_source_encoding<'a>(
+        &'a self,
+        limits: RuntimeLiteralSourceLimits,
+        resources: &ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<PreparedRuntimeLiteralEncoding<'a>, RuntimeLiteralSourceError> {
+        RuntimeValueView::Scalar(crate::value::RuntimeScalarView::EntityRef(self))
+            .prepare_literal_source_encoding(limits, resources, meter)
+    }
+}
+
 impl<'a> RuntimeValueView<'a> {
     fn prepare_literal_source_encoding(
         self,

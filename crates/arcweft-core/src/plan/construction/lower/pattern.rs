@@ -139,6 +139,30 @@ enum Progress {
     Complete(RuntimePatternKind),
 }
 
+/// Source admission reserves the actual iterative construction buffers before
+/// retaining seeds. Or expectations cover introduced bindings only: live first
+/// alternatives of nested frames are disjoint, so their total is bounded by
+/// the source binding occurrences, rather than prefix-size times Or depth.
+impl RuntimePlanBodyConstruction<'_> {
+    pub(in crate::plan::construction) fn pattern_source_scratch_bytes(
+        nodes: usize,
+        bindings: usize,
+        record_fields: usize,
+    ) -> Option<usize> {
+        let frames =
+            nodes.checked_mul(size_of::<Frame>() + size_of::<RuntimePatternBindingStep>())?;
+        let bindings = bindings.checked_mul(
+            size_of::<(RuntimeLocalDeclarationId, bool)>()
+                + 4 * size_of::<usize>()
+                + size_of::<RuntimeLocalDeclarationId>()
+                + size_of::<(RuntimeLocalDeclarationId, bool)>(),
+        )?;
+        let records = record_fields
+            .checked_mul(size_of::<RuntimeRecordFieldId>() + 4 * size_of::<usize>())?;
+        frames.checked_add(bindings)?.checked_add(records)
+    }
+}
+
 impl RuntimePlanBodyConstruction<'_> {
     pub(in crate::plan::construction) fn lower_pattern_seed(
         &self,

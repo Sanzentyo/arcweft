@@ -10,6 +10,8 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::task::semantic::TaskSemanticMeter;
 use std::sync::Mutex;
 
+pub(in crate::plan) mod pattern;
+
 pub(in crate::plan) struct RuntimePlanSourceConstruction {
     pub(in crate::plan) builder: RuntimePlanBuilder,
     locals: Box<[RuntimeLocalSeedId]>,
