@@ -17668,3 +17668,27 @@ integration targets, retaining their actual catalog and failures. Then continue
 general Flow/function and Line/Entry Sources, the joint codec/public consumer
 switch and the remaining retained implementation/acceptance. This evidence-only
 cut changes no Rust input and reuses the results above. Keep the full goal active.
+
+## 2026-10-19 — Current default CLI validation
+
+Inspected main f10e5e973db568cb016ffe4558db65ff48c97831 with fourteen held
+tracked paths and three held untracked items. Supersedes the preceding pending
+CLI result: R1327 catalogs the repository-default CLI library and binaries plus
+runtime_native_options, check_core_cli, native_style_parity_sample,
+release_trust_json, arcw_fixtures_check_run and
+seq04_8_4_persistent_cache_build_cli_goldens, using the actual Core reverse
+dependency predicate. It selects 213 cases, zero excluded; each of the six
+explicit integration binaries contributes cases (3, 5, 1, 5, 8 and 2).
+
+R1328 executes that exact set: actual exit 0, 213 pass, zero fail/skip, 10.344s.
+The terminal audit verifies all selected names and all 3875 frozen inputs with
+zero drift. These are current CLI execution results; the prior R1318 two
+selected-Need parity failures remain open and are not reclassified by this
+different target selection. No Cargo profile, build concurrency, test budget,
+filter, assertion or artifact location was changed. The one requested full
+cargo clean remains the previously completed operation; it is not repeated.
+
+This evidence-only cut reuses the current Host owner/workspace evidence and adds
+the actual CLI result. Continue Entry/Line and general Flow/function Source,
+the joint program codec and complete public consumer migration, then the
+remaining retained implementation and acceptance. The full goal is active.
