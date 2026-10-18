@@ -301,6 +301,16 @@ Structural value tags do not reconstruct a root type or grant an executable
 owner. Source rows share the caller's resource/work bank, and any source or
 factory rejection prevents common executable publication.
 
+Private static-effect sources retain every non-Audio request kind, including
+complete text metadata, ordered fields/arguments, optional roles, assertion
+identity/profile and original literal values. Complete framing and aggregate
+counts precede request retention. Inspection and materialization read the same
+grammar into the actual request type; no parallel request catalog is retained.
+The source returns a construction seed, with the real operation factory and
+common executable seal still required. Literal descendants share the original
+resource/work bank. Expression-carrying Audio commands use their dedicated
+Audio seed source; the static source boundaries reject raw Audio carriers.
+
 A checked execution argument slot owns its static request role identity. The
 identity is minted after the callable/schema destination is validated, then
 transported unchanged in the compiler's source-ordered runtime operand row.

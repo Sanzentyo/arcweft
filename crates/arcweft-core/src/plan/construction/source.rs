@@ -22,6 +22,7 @@ pub(in crate::plan) mod invocations;
 pub(in crate::plan) mod pattern;
 pub(in crate::plan) mod project_calls;
 pub(in crate::plan) mod pure_callables;
+pub(in crate::plan) mod static_effects;
 pub(in crate::plan) mod streams;
 
 pub(in crate::plan) struct RuntimePlanSourceConstruction {
