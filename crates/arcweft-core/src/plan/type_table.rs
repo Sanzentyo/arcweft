@@ -136,6 +136,24 @@ struct RuntimePlanTypeTableRow {
 }
 
 impl RuntimePlanTypeTable {
+    /// Moves admitted source rows back under the real construction authority.
+    /// The complete source graph and unique semantic identities were validated
+    /// before this transition. No semantic projection is reconstructed.
+    pub(super) fn into_source_builder(self) -> RuntimePlanTypeTableBuilder {
+        let maximum = u32::try_from(self.rows.len()).expect("source row count is bounded by u32");
+        let mut rows = Vec::with_capacity(self.rows.len());
+        let mut by_semantic_identity = BTreeMap::new();
+        for row in self.rows.into_vec() {
+            by_semantic_identity.insert(row.declaration.semantic_identity, row.id);
+            rows.push(row.declaration);
+        }
+        RuntimePlanTypeTableBuilder {
+            rows,
+            by_semantic_identity,
+            maximum,
+        }
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.rows.len()
@@ -401,6 +419,16 @@ pub enum RuntimePlanTypeTableError {
 }
 
 impl RuntimePlanTypeTableBuilder {
+    /// Logical construction storage in addition to source materialization:
+    /// moved declaration slots and the semantic lookup index/work links.
+    pub(super) fn source_storage_bytes(count: usize) -> Option<usize> {
+        count.checked_mul(
+            size_of::<RuntimePlanTypeDeclaration>()
+                + size_of::<(RuntimeSemanticTypeId, RuntimePlanTypeId)>()
+                + 4 * size_of::<usize>(),
+        )
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.rows.len()
     }

@@ -195,6 +195,12 @@ pub struct RuntimeVariantDomainTable {
 }
 
 impl RuntimeVariantDomainTable {
+    pub(super) fn into_source_builder(self) -> RuntimeVariantDomainTableBuilder {
+        RuntimeVariantDomainTableBuilder {
+            domains: self.domains,
+        }
+    }
+
     /// Admits an already bounded private source candidate without cloning its
     /// cases or refreshing a resource allowance.
     pub(in crate::plan) fn from_source_domains(

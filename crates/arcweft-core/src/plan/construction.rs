@@ -14,6 +14,7 @@ mod control_effect;
 mod lower;
 mod nominal_schema;
 mod seed;
+pub(super) mod source;
 pub(crate) mod task_coordinates;
 mod task_plans;
 pub use task_plans::RuntimeTaskPlanConstructionContext;

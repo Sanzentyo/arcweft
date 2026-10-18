@@ -19,6 +19,17 @@ pub struct RuntimeControlEffectContractSeedId {
 }
 
 impl RuntimeControlEffectContractSeedId {
+    pub(super) fn issued_source(
+        builder: &RuntimePlanBuilder,
+        id: RuntimeControlEffectContractId,
+    ) -> Option<Self> {
+        builder.control_effect_contracts.get(id.index())?.as_ref()?;
+        Some(Self {
+            issuer: Arc::clone(&builder.issuer),
+            id,
+        })
+    }
+
     /// Table reference for lookup after the aggregate has successfully finished.
     #[must_use]
     pub const fn id(&self) -> RuntimeControlEffectContractId {

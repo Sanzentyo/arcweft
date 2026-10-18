@@ -11,6 +11,7 @@ pub use body_semantic::{
 pub use construction::task_coordinates::RuntimeTaskPlanBuildCoordinate;
 pub(crate) use construction::task_coordinates::RuntimeTaskPlanCoordinateOwner;
 mod control_effect;
+mod declaration_sources;
 mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;

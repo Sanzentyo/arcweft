@@ -3,22 +3,20 @@
 
 use super::{Reader, RuntimeTaskSourceCodecError, RuntimeTaskSourceCodecLimits, Writer, limit};
 use crate::plan::control_effect::source_codec::{
-    PreparedRuntimeControlEncoding, PreparedRuntimeControlSources, RuntimeControlSourceLimits,
+    PreparedRuntimeControlEncoding, RuntimeControlSourceLimits,
 };
-use crate::plan::local_declarations::RuntimeLocalDeclarationTableBuilder;
+use crate::plan::declaration_sources::{
+    PreparedRuntimePlanDeclarationSources, RuntimePlanDeclarationSourceBytes,
+    RuntimePlanDeclarationSourceLimits,
+};
 use crate::plan::local_declarations::source_codec::{
-    PreparedRuntimeLocalEncoding, PreparedRuntimeLocalSources, RuntimeLocalSourceLimits,
+    PreparedRuntimeLocalEncoding, RuntimeLocalSourceLimits,
 };
-use crate::plan::type_table::source_codec::domains::{
-    PreparedRuntimeNominalEncoding, PreparedRuntimeNominalSources,
-};
+use crate::plan::type_table::source_codec::domains::PreparedRuntimeNominalEncoding;
 use crate::plan::type_table::source_codec::{
-    PreparedRuntimeTypeTableEncoding, PreparedRuntimeTypeTableSource, RuntimeTypeSourceLimits,
+    PreparedRuntimeTypeTableEncoding, RuntimeTypeSourceLimits,
 };
-use crate::plan::{
-    RuntimeControlEffectContractId, RuntimeControlEffectContractTable, RuntimePlanInventory,
-    RuntimePlanTypeTable,
-};
+use crate::plan::{RuntimeControlEffectContractId, RuntimePlanInventory};
 use crate::task::semantic::TaskSemanticMeter;
 
 #[derive(Clone, Copy)]
@@ -184,15 +182,7 @@ impl<'a> PreparedDeclarationEncoding<'a> {
     }
 }
 
-/// Immutable child extents. Reading the framing retains no decoded declaration.
-pub(super) struct DeclarationSourceBytes<'a> {
-    types: &'a [u8],
-    nominals: &'a [u8],
-    locals: &'a [u8],
-    controls: &'a [u8],
-}
-
-impl<'a> DeclarationSourceBytes<'a> {
+impl<'a> RuntimePlanDeclarationSourceBytes<'a> {
     pub(super) fn read(reader: &mut Reader<'a>) -> Result<Self, RuntimeTaskSourceCodecError> {
         let types_length = reader.u32()? as usize;
         let types = reader.slice(types_length)?;
@@ -210,42 +200,42 @@ impl<'a> DeclarationSourceBytes<'a> {
         })
     }
 
-    pub(super) fn preflight(
+    pub(super) fn preflight_original(
         self,
         inventory: &RuntimePlanInventory,
         limits: RuntimeTaskSourceCodecLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<PreparedDeclarationSources<'a>, RuntimeTaskSourceCodecError> {
+    ) -> Result<PreparedRuntimePlanDeclarationSources<'a>, RuntimeTaskSourceCodecError> {
         let counts = DeclarationCounts::original(inventory);
-        let types = RuntimePlanTypeTable::preflight_sources(
-            self.types,
-            counts.type_limits(limits)?,
+        let extents = [
+            self.types.len(),
+            self.nominals.len(),
+            self.locals.len(),
+            self.controls.len(),
+        ];
+        let prepared = self.preflight(
+            RuntimePlanDeclarationSourceLimits {
+                types: counts.type_limits(limits)?.rows,
+                nominals: counts.nominal_limits(limits)?.rows,
+                locals: counts.local_limits(limits)?.rows,
+                controls: counts.control_limits(limits)?.rows,
+                elements: limits.declaration_elements,
+                encoded_bytes: limits.encoded_bytes,
+                decoded_bytes: limits.decoded_bytes,
+                policy_depth: limits.type_policy_depth,
+            },
             meter,
         )?;
-        let nominals = RuntimePlanInventory::preflight_nominal_sources(
-            self.nominals,
-            counts.types,
-            counts.nominal_limits(limits)?,
-            meter,
-        )
-        .map_err(RuntimeTaskSourceCodecError::Nominals)?;
-        let locals = RuntimeLocalDeclarationTableBuilder::preflight_sources(
-            self.locals,
-            counts.local_limits(limits)?,
-            meter,
-        )?;
-        let controls = RuntimeControlEffectContractTable::preflight_sources(
-            self.controls,
-            counts.control_limits(limits)?,
-            meter,
-        )?;
-        for (table, expected, actual) in [
-            ("type", counts.types, types.row_count()),
-            ("nominal record", counts.records, nominals.record_count()),
-            ("nominal variant", counts.variants, nominals.variant_count()),
-            ("local", counts.locals, locals.row_count()),
-            ("control", counts.controls, controls.row_count()),
-        ] {
+        for ((table, expected), actual) in [
+            ("type", counts.types),
+            ("nominal record", counts.records),
+            ("nominal variant", counts.variants),
+            ("local", counts.locals),
+            ("control", counts.controls),
+        ]
+        .into_iter()
+        .zip(prepared.counts())
+        {
             if expected != actual {
                 return Err(RuntimeTaskSourceCodecError::DeclarationCount {
                     table,
@@ -254,50 +244,15 @@ impl<'a> DeclarationSourceBytes<'a> {
                 });
             }
         }
-        let storage_bytes = total_storage(
-            [
-                types.storage_bytes(),
-                nominals.storage_bytes(),
-                locals.storage_bytes(),
-                controls.storage_bytes(),
-            ],
-            limits,
-        )?;
-        total_elements(
-            [types.elements(), nominals.elements(), controls.elements()],
-            limits,
-        )?;
-        // The admitted executable still belongs to the original declarations.
-        // Reserve the bounded source-comparison pass before retaining tables.
-        for bytes in [self.types, self.nominals, self.locals, self.controls] {
-            super::charge_passes(meter, bytes.len(), 1)?;
+        // Existing bodies still belong to their exact original declarations.
+        for length in extents {
+            super::charge_passes(meter, length, 1)?;
         }
-        Ok(PreparedDeclarationSources {
-            types,
-            nominals,
-            locals,
-            controls,
-            storage_bytes,
-        })
+        Ok(prepared)
     }
 }
-
-/// Every child and its combined footprint has been checked. Materialization
-/// remains separate so the containing decoder can first inspect all task rows.
-pub(super) struct PreparedDeclarationSources<'a> {
-    types: PreparedRuntimeTypeTableSource<'a>,
-    nominals: PreparedRuntimeNominalSources<'a>,
-    locals: PreparedRuntimeLocalSources<'a>,
-    controls: PreparedRuntimeControlSources<'a>,
-    storage_bytes: usize,
-}
-
-impl PreparedDeclarationSources<'_> {
-    pub(super) fn storage_bytes(&self) -> usize {
-        self.storage_bytes
-    }
-
-    pub(super) fn materialize(
+impl PreparedRuntimePlanDeclarationSources<'_> {
+    pub(super) fn materialize_original(
         self,
         inventory: &mut RuntimePlanInventory,
         meter: &mut TaskSemanticMeter,

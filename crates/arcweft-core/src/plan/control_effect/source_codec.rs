@@ -132,6 +132,17 @@ impl PreparedRuntimeControlSources<'_> {
         types: &RuntimePlanTypeTable,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeControlEffectContractTable, RuntimeControlSourceError> {
+        self.materialize_definitions(types, meter)
+            .map(RuntimeControlEffectContractTable::from_definitions)
+    }
+
+    /// Retains original definitions for the actual mutable builder, without
+    /// publishing an immutable table or cloning any nested effect/child boxes.
+    pub(in crate::plan) fn materialize_definitions(
+        self,
+        types: &RuntimePlanTypeTable,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<Vec<RuntimeControlEffectContract>, RuntimeControlSourceError> {
         meter.status()?;
         let result = (|| {
             if types.len() != self.limits.type_count {
@@ -487,7 +498,7 @@ impl<'a> Reader<'a> {
     fn table(
         &mut self,
         materialize: bool,
-    ) -> Result<Option<RuntimeControlEffectContractTable>, RuntimeControlSourceError> {
+    ) -> Result<Option<Vec<RuntimeControlEffectContract>>, RuntimeControlSourceError> {
         if self.take(DOMAIN.len())? != DOMAIN {
             return Err(RuntimeControlSourceError::Domain);
         }
@@ -545,7 +556,7 @@ impl<'a> Reader<'a> {
         if self.offset != self.bytes.len() {
             return Err(RuntimeControlSourceError::Trailing);
         }
-        Ok(rows.map(RuntimeControlEffectContractTable::from_definitions))
+        Ok(rows)
     }
 }
 

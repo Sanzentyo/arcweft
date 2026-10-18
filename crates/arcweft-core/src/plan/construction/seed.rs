@@ -1591,6 +1591,37 @@ struct RuntimeLocalDeclarationRequest {
 }
 
 impl RuntimeLocalSeedId {
+    pub(super) fn source_storage_bytes(count: usize) -> Option<usize> {
+        count.checked_mul(
+            size_of::<Self>()
+                + size_of::<RuntimeLocalDeclarationRequest>()
+                + 2 * size_of::<usize>(),
+        )
+    }
+
+    pub(super) fn issued_source(
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+        table: &Arc<
+            std::sync::Mutex<super::super::local_declarations::RuntimeLocalDeclarationTableBuilder>,
+        >,
+        local: RuntimeLocalDeclarationId,
+    ) -> Option<Self> {
+        let (source, ty, context) = table
+            .lock()
+            .expect("local request table only runs checked, callback-free transitions")
+            .source_handle_parts(local)?;
+        Some(Self {
+            request: Arc::new(RuntimeLocalDeclarationRequest {
+                issuer: Arc::clone(issuer),
+                table: Arc::clone(table),
+                source,
+                ty,
+                context,
+                local: std::sync::OnceLock::from(Some(local)),
+            }),
+        })
+    }
+
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         table: &Arc<

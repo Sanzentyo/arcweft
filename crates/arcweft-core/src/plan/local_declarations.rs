@@ -153,6 +153,25 @@ pub enum RuntimeLocalDeclarationTableError {
 }
 
 impl RuntimeLocalDeclarationTableBuilder {
+    /// Source handles may bind only an already admitted, pending row. The
+    /// owning table supplies all metadata, never an independently decoded copy.
+    pub(super) fn source_handle_parts(
+        &self,
+        local: RuntimeLocalDeclarationId,
+    ) -> Option<(
+        RuntimeLocalDeclarationSource,
+        RuntimePlanTypeId,
+        Option<RuntimePlanTypeId>,
+    )> {
+        if self.sealed {
+            return None;
+        }
+        let index = usize::try_from(local.get().get() - 1).ok()?;
+        self.declarations
+            .get(index)
+            .map(|row| (row.source, row.ty, row.context))
+    }
+
     pub(crate) fn ty(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimePlanTypeId> {
         self.declarations
             .get(local.get().get() as usize - 1)

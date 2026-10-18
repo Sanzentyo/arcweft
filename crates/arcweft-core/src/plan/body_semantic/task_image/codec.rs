@@ -101,6 +101,31 @@ impl From<TaskSemanticEncodingError> for RuntimeTaskSourceCodecError {
     }
 }
 
+impl From<crate::plan::declaration_sources::RuntimePlanDeclarationSourceError>
+    for RuntimeTaskSourceCodecError
+{
+    fn from(error: crate::plan::declaration_sources::RuntimePlanDeclarationSourceError) -> Self {
+        use crate::plan::declaration_sources::RuntimePlanDeclarationSourceError as Source;
+        match error {
+            Source::Resource(error) => Self::Resource(error),
+            Source::Arithmetic => Self::Arithmetic,
+            Source::Limit {
+                kind,
+                actual,
+                maximum,
+            } => Self::Limit {
+                kind,
+                actual,
+                maximum,
+            },
+            Source::Types(error) => Self::Types(error),
+            Source::Nominals(error) => Self::Nominals(error),
+            Source::Locals(error) => Self::Locals(error),
+            Source::Controls(error) => Self::Controls(error),
+        }
+    }
+}
+
 impl RuntimeTaskSourceCodecError {
     /// Child wire/admission errors retain their context. Exhaustion belongs
     /// to the original shared bank, regardless of which child reached it.
@@ -212,9 +237,13 @@ impl UnsealedRuntimePlanImage {
             let references = References::original(&inventory);
             let mut count = Reader::new(bytes, limits, references, coordinate_owner.len());
             count.header()?;
-            let declaration_bytes = declarations::DeclarationSourceBytes::read(&mut count)?;
+            let declaration_bytes =
+                crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(
+                    &mut count,
+                )?;
             count.task_rows(false)?;
-            let declarations = declaration_bytes.preflight(&inventory, limits, &mut meter)?;
+            let declarations =
+                declaration_bytes.preflight_original(&inventory, limits, &mut meter)?;
             let declaration_storage = declarations.storage_bytes();
             storage(
                 &mut count.storage,
@@ -224,10 +253,12 @@ impl UnsealedRuntimePlanImage {
             )?;
             // Every declaration and task row has passed resource/shape preflight
             // before any source table, local placement or task row is retained.
-            declarations.materialize(&mut inventory, &mut meter)?;
+            declarations.materialize_original(&mut inventory, &mut meter)?;
             let mut reader = Reader::new(bytes, limits, references, coordinate_owner.len());
             reader.header()?;
-            let _ = declarations::DeclarationSourceBytes::read(&mut reader)?;
+            let _ = crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(
+                &mut reader,
+            )?;
             storage(
                 &mut reader.storage,
                 declaration_storage,

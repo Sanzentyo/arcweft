@@ -322,11 +322,23 @@ impl RuntimePlanBuilder {
     }
 
     pub(in crate::plan) fn prepare_task_image(
-        mut self,
+        self,
         limits: RuntimeTaskPlanSealLimits,
     ) -> Result<UnsealedRuntimePlanImage, RuntimeTaskPlanSealError> {
-        let mut meter =
-            TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes);
+        self.prepare_task_image_with_meter(
+            limits,
+            TaskSemanticMeter::new(limits.max_semantic_work, limits.max_transcript_bytes),
+        )
+    }
+
+    /// Source admission transfers its original bank into this same preparation
+    /// path. Tightening policy preserves usage and the first failure.
+    pub(in crate::plan) fn prepare_task_image_with_meter(
+        mut self,
+        limits: RuntimeTaskPlanSealLimits,
+        mut meter: TaskSemanticMeter,
+    ) -> Result<UnsealedRuntimePlanImage, RuntimeTaskPlanSealError> {
+        meter.constrain(limits.max_semantic_work, limits.max_transcript_bytes)?;
         self.ensure_usable()?;
         let definitions = {
             let mut definitions = self.task_plan_definitions.lock().map_err(|_| {

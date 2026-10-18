@@ -17,7 +17,7 @@ use crate::plan::{
 };
 use crate::value::{RuntimeLocalReadMode, RuntimeValue};
 
-fn nominal_candidate() -> UnsealedRuntimePlanImage {
+pub(super) fn nominal_candidate() -> UnsealedRuntimePlanImage {
     let mut builder = crate::plan::type_table::source_codec::domains::tests::builder(
         crate::entry::RuntimeNominalRecordShape::Record,
         2,
@@ -157,7 +157,7 @@ fn nominal_declaration_frames_cannot_replace_original_policies_or_case_names() {
     }
 }
 
-fn declaration_candidate() -> UnsealedRuntimePlanImage {
+pub(super) fn declaration_candidate() -> UnsealedRuntimePlanImage {
     declaration_candidate_with(false, RuntimeTaskControlMode::MustSuspend)
 }
 
@@ -201,31 +201,7 @@ fn declaration_candidate_with(
         )
         .unwrap();
     let local = admitted.local_ids()[0].clone();
-    let body = RuntimeExprSeed::new(
-        unit,
-        RuntimeExprSeedKind::Let {
-            binding: local.clone(),
-            expr: Box::new(RuntimeExprSeed::new(
-                unit,
-                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-            )),
-            body: Box::new(RuntimeExprSeed::new(
-                unit,
-                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
-                    local,
-                    RuntimeLocalReadMode::Copy,
-                )),
-            )),
-        },
-    );
-    builder
-        .push_function_site_seed(
-            RuntimeFunctionDefinitionIdentity::from_accepted_identity([105; 32]),
-            RuntimeFunctionSemanticRole::Ordinary,
-            [],
-            body,
-        )
-        .unwrap();
+    define_declaration_body(&mut builder, local);
     builder
         .push_control_effect_contract(RuntimeControlEffectContractDefinition {
             mode,
@@ -247,7 +223,7 @@ fn declaration_candidate_with(
         .unwrap()
 }
 
-fn scoped_declaration_candidate() -> UnsealedRuntimePlanImage {
+pub(super) fn scoped_declaration_candidate() -> UnsealedRuntimePlanImage {
     let mut builder = RuntimePlanBuilder::new();
     let binder = RuntimeTypeBinder::new(1, 0, 0);
     let scope = RuntimeTypeScope::root().enter(binder).unwrap();
@@ -285,43 +261,7 @@ fn scoped_declaration_candidate() -> UnsealedRuntimePlanImage {
         )
         .unwrap();
     let local = admitted.local_ids()[0].clone();
-    let function = builder
-        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([115; 32]),
-            role: RuntimeFunctionSemanticRole::Ordinary,
-            function_type: Some(function_type),
-            inputs: Box::new([RuntimeFunctionInputBindingSeed {
-                transfer: RuntimeFunctionInputTransfer::Formal,
-                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
-                source: RuntimeFunctionInputSource::Parameter {
-                    position: 0,
-                    passing: RuntimeFunctionParameterPassing::Affine,
-                },
-                input_local: local.clone(),
-                pattern: RuntimePatternSeed::new(
-                    parameter_type,
-                    RuntimePatternSeedKind::Bind {
-                        mutable: false,
-                        local,
-                    },
-                ),
-                ownership: RuntimeValueOwnershipRequirement::default(),
-                unrestricted_bindings: Box::new([]),
-            }]),
-            result: result_type,
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeEffectSet::empty(),
-        })
-        .unwrap();
-    builder
-        .define_function_site_seed(
-            &function,
-            RuntimeExprSeed::new(
-                result_type,
-                RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
-            ),
-        )
-        .unwrap();
+    define_scoped_declaration_body(&mut builder, local);
     builder
         .prepare_task_image(RuntimeTaskPlanSealLimits::default())
         .unwrap()
@@ -544,4 +484,83 @@ fn every_frame_preflights_before_type_admission_or_key_publication() {
         )
     ));
     assert!(coordinate.sealed_plan().is_none());
+}
+
+pub(super) fn define_declaration_body(
+    builder: &mut RuntimePlanBuilder,
+    local: crate::plan::RuntimeLocalSeedId,
+) {
+    let unit = RuntimeSemanticTypeId::from_bytes([101; 32]);
+    let body = RuntimeExprSeed::new(
+        unit,
+        RuntimeExprSeedKind::Let {
+            binding: local.clone(),
+            expr: Box::new(RuntimeExprSeed::new(
+                unit,
+                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            )),
+            body: Box::new(RuntimeExprSeed::new(
+                unit,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local,
+                    RuntimeLocalReadMode::Copy,
+                )),
+            )),
+        },
+    );
+    builder
+        .push_function_site_seed(
+            RuntimeFunctionDefinitionIdentity::from_accepted_identity([105; 32]),
+            RuntimeFunctionSemanticRole::Ordinary,
+            [],
+            body,
+        )
+        .unwrap();
+}
+
+pub(super) fn define_scoped_declaration_body(
+    builder: &mut RuntimePlanBuilder,
+    local: crate::plan::RuntimeLocalSeedId,
+) {
+    let parameter_type = RuntimeSemanticTypeId::from_bytes([111; 32]);
+    let result_type = RuntimeSemanticTypeId::from_bytes([112; 32]);
+    let function_type = RuntimeSemanticTypeId::from_bytes([113; 32]);
+    let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([114; 32]);
+    let function = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([115; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: Some(function_type),
+            inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                transfer: RuntimeFunctionInputTransfer::Formal,
+                origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                source: RuntimeFunctionInputSource::Parameter {
+                    position: 0,
+                    passing: RuntimeFunctionParameterPassing::Affine,
+                },
+                input_local: local.clone(),
+                pattern: RuntimePatternSeed::new(
+                    parameter_type,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local,
+                    },
+                ),
+                ownership: RuntimeValueOwnershipRequirement::default(),
+                unrestricted_bindings: Box::new([]),
+            }]),
+            result: result_type,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &function,
+            RuntimeExprSeed::new(
+                result_type,
+                RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+            ),
+        )
+        .unwrap();
 }

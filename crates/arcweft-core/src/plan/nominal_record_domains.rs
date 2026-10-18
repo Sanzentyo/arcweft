@@ -222,6 +222,12 @@ pub struct RuntimeNominalRecordDomainTable {
 }
 
 impl RuntimeNominalRecordDomainTable {
+    pub(super) fn into_source_builder(self) -> RuntimeNominalRecordDomainTableBuilder {
+        RuntimeNominalRecordDomainTableBuilder {
+            domains: self.domains,
+        }
+    }
+
     /// Admits an already bounded private source candidate without cloning its
     /// fields or refreshing a resource allowance.
     pub(in crate::plan) fn from_source_domains(

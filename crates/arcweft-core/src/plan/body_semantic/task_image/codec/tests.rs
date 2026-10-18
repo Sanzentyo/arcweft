@@ -3,6 +3,7 @@ use crate::plan::{
     RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealError, RuntimeTaskPlanSealLimits,
 };
 
+mod source_construction;
 mod source_declarations;
 
 fn declaration_encoding(
@@ -89,7 +90,8 @@ fn task_count_offset(input: &[u8]) -> usize {
     let image = candidate(1);
     let mut reader = Reader::new(input, limits(), References::original(&image.inventory), 1);
     reader.header().unwrap();
-    let _ = super::declarations::DeclarationSourceBytes::read(&mut reader).unwrap();
+    let _ = crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(&mut reader)
+        .unwrap();
     reader.offset
 }
 
