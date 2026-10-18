@@ -17637,3 +17637,34 @@ leaf, not complete general Flow/function, Line/Entry or joint program Source.
 Complete those owners and the joint codec/public consumer switch, repair both
 selected-Need parity failures through that authority, and continue real registry
 execution, retained View, restore/replacement and all other retained acceptance.
+
+## 2026-10-19 — Host Source execution and current workspace gates
+
+Inspected published main 5574287560eb643f59f21e6c091b304ce8c0174f, with only
+the fourteen held tracked paths and three held untracked items. Supersedes the
+preceding pending Host validation: R1323's stable five-owner all-feature library
+catalog passes, 2259 selected, zero excluded, including all six new cases.
+R1324 executes that exact set, actual 0: 2259 pass, zero fail/skip, 20.924s.
+Exact terminal names and all 3875 frozen inputs are verified unchanged.
+
+The real original/reconstructed programs now execute the Host source matrix;
+their emitted requests retain the completed task identity and source-ordered
+positional, named and spread values. The native suspension test keeps the actual
+Engine and issued Host call, supplies its real correlated reply and obtains the
+original program continuation's Unit result. Invalid result/binding types reject
+before body publication and poison construction; foreign/equal-key or reordered
+reservations, exact/one-over quotas and malformed frames also behave as required.
+These are current execution results, not inferred from Source/key equality.
+
+R1325 workspace all-target/all-feature locked check passes, actual 0, 1m58s.
+R1326 corresponding workspace Clippy passes, actual 0, 2m02s. Their final audit
+verifies all 3875 inputs unchanged. This is current owner/library and workspace
+compile/lint acceptance. It does not turn the earlier R1318 reverse run into a
+pass, execute the separate CLI surface or prove all full-goal requirements.
+Both selected-Need key failures are still open; no result/assertion is weakened.
+
+Next cover the repository's separately selected default CLI lib/bin and six
+integration targets, retaining their actual catalog and failures. Then continue
+general Flow/function and Line/Entry Sources, the joint codec/public consumer
+switch and the remaining retained implementation/acceptance. This evidence-only
+cut changes no Rust input and reuses the results above. Keep the full goal active.
