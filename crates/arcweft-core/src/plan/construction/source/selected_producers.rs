@@ -13,7 +13,7 @@ use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::pattern::RuntimePattern;
 use crate::plan::{RuntimeFlowOpSeed, RuntimePlanBuildError, RuntimeTaskPlanBuildCoordinate};
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
-use crate::task::*;
+use crate::task::{NeedProducerPlanError, NeedProducerTaskPlan, RuntimeHostArgumentTemplate};
 use crate::value::RuntimeExpr;
 
 const DOMAIN: &[u8] = b"arcweft.runtime.selected-producer-source.v1\0";
@@ -59,13 +59,13 @@ pub(in crate::plan) enum RuntimeSelectedProducerSourceError {
     #[error("selected producer source text is not UTF-8: {0}")]
     Utf8(#[from] std::str::Utf8Error),
     #[error("selected producer source expression is invalid: {0}")]
-    Expression(#[from] RuntimeExpressionSourceError),
+    Expression(#[source] Box<RuntimeExpressionSourceError>),
     #[error("selected producer source binding is invalid: {0}")]
-    Pattern(#[from] RuntimePatternSourceError),
+    Pattern(#[source] Box<RuntimePatternSourceError>),
     #[error("selected producer source request is invalid: {0}")]
     Plan(#[from] NeedProducerPlanError),
     #[error("selected producer source construction failed: {0}")]
-    Construction(#[from] RuntimePlanBuildError),
+    Construction(#[source] Box<RuntimePlanBuildError>),
     #[error(
         "selected producer source needs {required} output bytes, only {remaining} are reserved"
     )]
@@ -75,6 +75,21 @@ type Error = RuntimeSelectedProducerSourceError;
 impl From<TaskSemanticEncodingError> for Error {
     fn from(error: TaskSemanticEncodingError) -> Self {
         Self::Resource(error)
+    }
+}
+impl From<RuntimeExpressionSourceError> for Error {
+    fn from(error: RuntimeExpressionSourceError) -> Self {
+        Self::Expression(Box::new(error))
+    }
+}
+impl From<RuntimePatternSourceError> for Error {
+    fn from(error: RuntimePatternSourceError) -> Self {
+        Self::Pattern(Box::new(error))
+    }
+}
+impl From<RuntimePlanBuildError> for Error {
+    fn from(error: RuntimePlanBuildError) -> Self {
+        Self::Construction(Box::new(error))
     }
 }
 impl Error {
@@ -155,10 +170,14 @@ impl Counts {
     }
     fn expression(&self, bytes: usize) -> RuntimeExpressionSourceLimits {
         RuntimeExpressionSourceLimits {
-            nodes: (self.limits.nodes - self.footprint.nodes as u32)
-                .min(self.limits.expression.nodes),
-            elements: (self.limits.elements - self.footprint.elements as u32)
-                .min(self.limits.expression.elements),
+            nodes: (self.limits.nodes
+                - u32::try_from(self.footprint.nodes)
+                    .expect("node count is bounded by its u32 limit"))
+            .min(self.limits.expression.nodes),
+            elements: (self.limits.elements
+                - u32::try_from(self.footprint.elements)
+                    .expect("element count is bounded by its u32 limit"))
+            .min(self.limits.expression.elements),
             encoded_bytes: bytes.min(self.limits.expression.encoded_bytes),
             decoded_bytes: (self.limits.decoded_bytes - self.footprint.storage)
                 .min(self.limits.expression.decoded_bytes),

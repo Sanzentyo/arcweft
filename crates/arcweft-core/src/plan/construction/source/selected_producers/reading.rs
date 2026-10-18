@@ -3,7 +3,12 @@
 
 use super::{Counts, DOMAIN, Error, RuntimePlanSourceConstruction};
 use crate::runtime_id::RuntimePlanTypeId;
-use crate::task::*;
+use crate::task::{
+    AssetLoadKind, CancelScopeId, HostCapabilityId, HostRestartPolicy, NeedProducerContractDigest,
+    NeedProducerPlanError, NeedProducerRequestProjection, NeedProducerSiteDigest,
+    NeedProducerTaskPlan, RuntimeHostArgumentTemplate, RuntimeRequestRoleIdentity, TaskClass,
+    TaskHost, TaskPolicy, TaskPriority,
+};
 
 pub(super) enum Request<'a> {
     Asset {
@@ -80,12 +85,10 @@ impl Schema<'_> {
         };
         let types = self
             .types
-            .chunks_exact(4)
-            .map(|bytes| {
-                semantic(u32::from_le_bytes(
-                    bytes.try_into().expect("source type width"),
-                ))
-            })
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| semantic(u32::from_le_bytes(*bytes)))
             .collect();
         Ok(NeedProducerTaskPlan::try_new(
             NeedProducerContractDigest::from_bytes(self.contract),
@@ -200,36 +203,8 @@ impl<'a> Cursor<'a> {
         }
         Ok(actual)
     }
-    pub fn row(&mut self, counts: &mut Counts) -> Result<Row<'a>, Error> {
-        if self.raw(DOMAIN.len())? != DOMAIN {
-            return Err(self.invalid("domain"));
-        }
-        if self.byte()? != 1 {
-            return Err(self.invalid("version"));
-        }
-        let task = self.u32()?;
-        if task as usize >= counts.limits.task_count {
-            return Err(Error::Reference {
-                kind: "task",
-                actual: task,
-                maximum: counts.limits.task_count,
-            });
-        }
-        let contract = self.digest()?;
-        let site = self.digest()?;
-        let policy =
-            TaskPolicy::from_semantic_tag(self.byte()?).map_err(|_| self.invalid("task policy"))?;
-        let restart = match self.byte()? {
-            0 => HostRestartPolicy::MustBeQuiescent,
-            1 => HostRestartPolicy::Restartable,
-            _ => return Err(self.invalid("restart policy")),
-        };
-        let class =
-            TaskClass::from_semantic_tag(self.byte()?).ok_or_else(|| self.invalid("task class"))?;
-        let priority = self.u32()?.cast_signed();
-        let cancel_scope = self.text()?;
-        counts.text(cancel_scope.len())?;
-        let request = match self.byte()? {
+    fn request(&mut self, counts: &mut Counts, contract: [u8; 32]) -> Result<Request<'a>, Error> {
+        Ok(match self.byte()? {
             tag @ (0 | 1) => {
                 let name = self.nonempty_text()?;
                 counts.text(name.len())?;
@@ -268,7 +243,38 @@ impl<'a> Cursor<'a> {
                 }
             }
             _ => return Err(self.invalid("request family")),
+        })
+    }
+    pub fn row(&mut self, counts: &mut Counts) -> Result<Row<'a>, Error> {
+        if self.raw(DOMAIN.len())? != DOMAIN {
+            return Err(self.invalid("domain"));
+        }
+        if self.byte()? != 1 {
+            return Err(self.invalid("version"));
+        }
+        let task = self.u32()?;
+        if task as usize >= counts.limits.task_count {
+            return Err(Error::Reference {
+                kind: "task",
+                actual: task,
+                maximum: counts.limits.task_count,
+            });
+        }
+        let contract = self.digest()?;
+        let site = self.digest()?;
+        let policy =
+            TaskPolicy::from_semantic_tag(self.byte()?).map_err(|_| self.invalid("task policy"))?;
+        let restart = match self.byte()? {
+            0 => HostRestartPolicy::MustBeQuiescent,
+            1 => HostRestartPolicy::Restartable,
+            _ => return Err(self.invalid("restart policy")),
         };
+        let class =
+            TaskClass::from_semantic_tag(self.byte()?).ok_or_else(|| self.invalid("task class"))?;
+        let priority = self.u32()?.cast_signed();
+        let cancel_scope = self.text()?;
+        counts.text(cancel_scope.len())?;
+        let request = self.request(counts, contract)?;
         let payload = self.ty(counts.limits.expression.type_count)?;
         let count = self.u32()? as usize;
         counts.array(

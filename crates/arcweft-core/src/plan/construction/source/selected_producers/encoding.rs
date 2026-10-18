@@ -4,7 +4,10 @@ use super::{Counts, DOMAIN, Error, Footprint, RuntimeSelectedProducerSourceLimit
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::plan::{FlowOp, RuntimePlan};
 use crate::task::semantic::TaskSemanticMeter;
-use crate::task::*;
+use crate::task::{
+    AssetLoadKind, HostRestartPolicy, NeedProducerRequestProjection, RuntimeHostArgumentTemplate,
+    TaskHost,
+};
 
 pub(in crate::plan) struct EncodedRuntimeSelectedProducerSource {
     bytes: Vec<u8>,
@@ -133,6 +136,44 @@ impl Writer<'_> {
             })?;
         self.u32(id.get().get())
     }
+    fn request(
+        &mut self,
+        request: &NeedProducerRequestProjection,
+        counts: &mut Counts,
+    ) -> Result<(), Error> {
+        match request {
+            NeedProducerRequestProjection::AssetLoad {
+                kind,
+                argument_name,
+            } => {
+                self.byte(match kind {
+                    AssetLoadKind::Image => 0,
+                    AssetLoadKind::Voice => 1,
+                })?;
+                self.text(argument_name, counts)
+            }
+            NeedProducerRequestProjection::ExternCapability {
+                capability,
+                operation,
+                contract,
+                argument_names,
+            } => {
+                self.byte(2)?;
+                self.text(&capability.0, counts)?;
+                self.text(operation, counts)?;
+                self.raw(contract.as_bytes())?;
+                counts.array(argument_names.len(), 2 * size_of::<Option<String>>())?;
+                self.count(argument_names.len())?;
+                for name in argument_names {
+                    self.byte(u8::from(name.is_some()))?;
+                    if let Some(name) = name {
+                        self.text(name, counts)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
 }
 fn emit(
     op: &FlowOp,
@@ -162,37 +203,7 @@ fn emit(
     writer.byte(schema.class().semantic_tag())?;
     writer.u32(schema.priority().0.cast_unsigned())?;
     writer.text(&schema.cancel_scope().0, counts)?;
-    match schema.request() {
-        NeedProducerRequestProjection::AssetLoad {
-            kind,
-            argument_name,
-        } => {
-            writer.byte(match kind {
-                AssetLoadKind::Image => 0,
-                AssetLoadKind::Voice => 1,
-            })?;
-            writer.text(argument_name, counts)?;
-        }
-        NeedProducerRequestProjection::ExternCapability {
-            capability,
-            operation,
-            contract,
-            argument_names,
-        } => {
-            writer.byte(2)?;
-            writer.text(&capability.0, counts)?;
-            writer.text(operation, counts)?;
-            writer.raw(contract.as_bytes())?;
-            counts.array(argument_names.len(), 2 * size_of::<Option<String>>())?;
-            writer.count(argument_names.len())?;
-            for name in argument_names {
-                writer.byte(u8::from(name.is_some()))?;
-                if let Some(name) = name {
-                    writer.text(name, counts)?;
-                }
-            }
-        }
-    }
+    writer.request(schema.request(), counts)?;
     writer.ty(schema.payload_type(), plan, meter)?;
     counts.array(
         schema.argument_types().len(),

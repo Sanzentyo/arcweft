@@ -7,6 +7,12 @@ use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::*;
 use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::plan::*;
+use crate::task::{
+    AssetLoadKind, CancelScopeId, HostCapabilityId, HostRestartPolicy, NeedProducerContractDigest,
+    NeedProducerFamily, NeedProducerRequestProjection, NeedProducerSiteDigest,
+    NeedProducerTaskPlan, RuntimeHostArgumentTemplate, RuntimeRequestRoleIdentity, TaskClass,
+    TaskHost, TaskPolicy, TaskPriority,
+};
 use crate::value::{RuntimeEntityReference, RuntimeValue};
 
 fn unit() -> RuntimeSemanticTypeId {
@@ -113,9 +119,13 @@ fn fixture(
                 "素材",
                 value(
                     entity(),
-                    RuntimeValue::EntityRef(RuntimeEntityReference::StructuralFlow(
-                        FlowRuntimeId::canonical("asset.source").unwrap(),
-                    )),
+                    RuntimeValue::EntityRef(
+                        RuntimeEntityReference::try_project(
+                            arcweft_id::DeclarationIdentityFamily::Asset,
+                            arcweft_id::PublicId::try_new("asset.source").unwrap(),
+                        )
+                        .unwrap(),
+                    ),
                 ),
             )],
         ),
@@ -386,8 +396,8 @@ fn selected_producer_source_enforces_aggregate_shape_and_resource_limits_before_
         .encode_selected_producer_source(&plan, limits(&plan), &resources(), &mut meter())
         .unwrap();
     let mut exact = limits(&plan);
-    exact.nodes = encoded.node_count() as u32;
-    exact.elements = encoded.elements() as u32;
+    exact.nodes = u32::try_from(encoded.node_count()).unwrap();
+    exact.elements = u32::try_from(encoded.elements()).unwrap();
     exact.decoded_bytes = encoded.storage_bytes();
     exact.encoded_bytes = encoded.bytes().len();
     PreparedRuntimeSelectedProducerSource::preflight(

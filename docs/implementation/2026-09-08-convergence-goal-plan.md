@@ -17312,3 +17312,50 @@ joint complete-program preflight/codec, then the atomic fourteen-family consumer
 completion. Actual selected-Need runtime keys, real registry scope/store/read/
 cleanup/restore, broad final runtime/parity checks, Tier2 and Native/Web evidence
 remain open. No goal completion is claimed.
+
+## 2026-10-19 — Selected producer Source fixture and diagnostic repair
+
+Main remains at fbc1504c97104a5e673c9d0486cb2ee96df5e433 before this cut.
+Owned work is the four selected_producers implementation/test files and this
+note; all fourteen held tracked paths and three held untracked items remain.
+
+Supersedes the prior R1290 running status. R1290 completes with actual exit 0,
+8m41s, selecting all 2248 library cases with zero exclusions, including the four
+new Source regressions. The waiting wrapper briefly observes the Cargo process
+exit before the outer receipt is written and stops; the original session is
+recovered as successful, without restarting the build. R1291 executes the exact
+2248 terminal names: 2247 pass, one fails, zero skipped, 44.121s, actual 100.
+All 3869 inputs are unchanged. The new round-trip fixture used asset.source as a
+manual Flow path, which its reserved-family check correctly rejects before
+Source encoding. It now constructs the genuine typed Asset project reference.
+No production family validator or assertion is weakened.
+
+R1293 rebuilds the same package/feature/library matrix after that fixture-only
+repair, actual 0 in 51.64s. Its single-failure filter is not executed: all four
+new cases share the fixture, so R1294 inspects that full four-case selection,
+actual 0, 2244 explicit exclusions. R1295 passes all four in 0.098s, actual 0.
+Exact terminal names and all 3869 inputs are verified unchanged. Its coverage
+union reuses the 2244 unchanged prior cases; it does not claim one current full
+run passed. All three request projections now complete genuine Source->builder
+round trips with equal recomputed executable/task keys and canonical bytes.
+
+R1292 Core all-target/all-feature locked Clippy completes with actual exit 0 in
+1m45s; warnings remain. Review then repairs the new Source's large-error,
+unchecked-narrowing, wildcard-import and long-request-method warnings. Nested
+error causes remain typed in boxes, bounded counts use checked conversions,
+and the closed request grammar lives on its existing reader/writer context.
+R1296 preliminary final catalog returns actual 101 for one fixed-array conversion
+introduced during that cleanup. The borrowed [u8; 4] source field now enters
+u32::from_le_bytes by its exact copied array, preserving the wire grammar. That
+final edit still needs compilation, execution and lint evidence; the failure is
+retained rather than called a pass. Per the explicit user preference, publish
+this coherent intermediate repair and continue final validation on its exact
+published inputs, without requiring every intermediate commit to work.
+
+Current owner byte/physical-LOC measures are coordinator 13780/364, encoding
+9412/268, reading 11840/351 and tests 17071/508. The preceding cohesion review
+still applies: no new state owner, dependency, public splitting API, unsafe or
+I/O is introduced. Keep the full goal active. General function/executable bodies,
+Host/Line/Entry sources and the joint complete-program codec remain the next
+Source work; actual selected-Need runtime keys and the other goal acceptance
+requirements remain open.
