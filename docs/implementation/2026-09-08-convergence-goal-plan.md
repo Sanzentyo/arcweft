@@ -16785,3 +16785,57 @@ value/resource admission algorithm; these private methods reuse its canonical
 writer, sink and sticky work state without a second counter or I/O concern.
 The concrete CLI Core projection failure and actual operation/source/factory,
 Native/AWBC request, active-scope/storage and full-goal acceptance remain open.
+
+### 2026-10-19 — registry effect/source and shared effect grammar checkpoint
+
+Main delivery 3adea452c28a12e82bd6a336cf7625384f542f06 is verified against its
+normal push, fetched/advertised ref, four blobs, reviewed binary patch, 3854
+inputs and empty index. No held user edit is included.
+
+The next source migration adds RuntimeEffectExpr::RegistryWrite with the actual
+Id-owned static key and one RHS expression. Its target remains metadata rather
+than an invented value. Body metadata assigns tag 10 and commits scope, ordered
+segments and boundaries; the source domain stays version 1. The private evaluated
+effect codec now frames all eleven operation kinds, with complete borrowed key
+resource/name preflight before construction of the canonical Id key. DeclarationName
+owns the borrowed identifier rule. Neutral key serde validates the same names,
+canonicalizes builtin selectors and rejects unknown lease fields; it grants no
+program, type or active-scope authority. No context-free host descriptor can
+fabricate registry data: materialize returns RegistryContextRequired. AOT leaves
+this new context-owned operation outside fused blocks. Existing operations keep
+their fusion classification.
+
+R1242 exploratory Core check finds four incomplete exhaustive matches, all
+migrated. R1243 Core/all-target/all-feature/locked check passes, actual 0, 1m30s,
+before three new source tests. R1244 catalogs Id 49 and Core 1712, all 1761
+selected. R1245 passes all 1761, zero skips, 31.108s, actual 0; exact terminal and
+all 3855 registry-operation-owner frozen inputs are verified. This includes the
+new key serde case and three source tests: all selectors/root/Unicode keys and
+context-free refusal, malformed key/resource precedence, and key scope/order/
+boundary sensitivity of actual executable semantic identity. The expanded
+all-kinds source test replaces the old all-ten name and increases its fixture
+from 16 to 17 operations; its full semantic/byte round-trip assertions remain.
+
+After that run, the duplicate seed effect/field/drop-policy enums are removed.
+The existing seed names now identify construction-expression phases of the same
+generic Core algebra. One ordered mapping moves expressions and static data;
+the factory retains the original Ensure/Assert Bool-check conversion points.
+Borrowed operand visiting avoids allocating a temporary argument list during
+construction preflight. This removes the old field conversion helper and seed
+traversal match. R1245 is evidence for the preceding source migration, not a
+relabelled execution of this later grammar unification. R1246 exploratory Core
+check returns 0, 1m36s, while cleanup continues; final frozen validation remains
+pending. R1247 workspace check is in progress at this checkpoint preparation.
+
+AWBC inventory currently reports an explicit registry-context diagnostic instead
+of silently omitting the descriptor-free operation. Production final-HIR LifetimeSet
+lowering is still rejected as in R1219. Native/AWBC execution, typed requests,
+host active-scope/storage, generator consumers and final validation must be
+completed before enabling that production projection. This is an intermediate
+checkpoint under the user's instruction; no working-runtime or full-acceptance
+claim is made. Continue that same goal without another approval round.
+
+R1247 subsequently completes successfully on the unified effect code:
+workspace/all-target/all-feature/locked check, 4m42s, actual 0. All 3855 frozen
+inputs are audited before this prose addition; the later delta is this note.
+Owner execution of the grammar unification and final lint remain pending.

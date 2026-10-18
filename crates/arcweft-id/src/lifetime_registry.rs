@@ -1,6 +1,7 @@
 //! Semantic lifetime selectors and static registry keys, without runtime leases.
 
 use crate::{DeclarationName, DeclarationNameError};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A semantic lifetime selector. Activation identity belongs to its runtime
 /// owner; a selector alone never authorizes access to an active scope.
@@ -66,6 +67,18 @@ impl LifetimeScopeKind {
     }
 }
 
+impl Serialize for LifetimeScopeKind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for LifetimeScopeKind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        DeclarationName::deserialize(deserializer).map(Self::from)
+    }
+}
+
 impl From<DeclarationName> for LifetimeScopeKind {
     fn from(name: DeclarationName) -> Self {
         match name.as_str() {
@@ -86,7 +99,8 @@ impl From<DeclarationName> for LifetimeScopeKind {
 /// A static key within a selected lifetime. The empty path denotes that scope's
 /// root. Program identity, value schema and activation custody are separate
 /// admission obligations; this key cannot grant any of them.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct LifetimeRegistryKey {
     scope: LifetimeScopeKind,
     segments: Box<[DeclarationName]>,
@@ -183,5 +197,36 @@ mod tests {
         );
         assert_eq!(unicode.scope().as_str(), "所持品");
         assert_eq!(unicode.segments()[1].as_str(), "取得済み");
+    }
+
+    #[test]
+    fn registry_key_identity_serde_preserves_validated_names_without_scope_leases() {
+        for source in [
+            r#"{"scope":"flow","segments":["flags","seen"]}"#,
+            r#"{"scope":"所持品","segments":["鍵","取得済み"]}"#,
+            r#"{"scope":"persistent","segments":[]}"#,
+        ] {
+            let key: LifetimeRegistryKey = serde_json::from_str(source).unwrap();
+            assert_eq!(serde_json::to_string(&key).unwrap(), source);
+            assert_eq!(
+                serde_json::from_str::<LifetimeRegistryKey>(source).unwrap(),
+                key
+            );
+        }
+        let scope: LifetimeScopeKind = serde_json::from_str(r#""flow""#).unwrap();
+        assert_eq!(scope, LifetimeScopeKind::Flow);
+        for source in [
+            r#"{"scope":"'flow","segments":[]}"#,
+            r#"{"scope":"flow","segments":["a.b"]}"#,
+            r#"{"scope":"flow","segments":[""]}"#,
+            r#"{"scope":"flow","segments":["9bad"]}"#,
+            r#"{"scope":"flow","segments":[],"lease":1}"#,
+            r#"{"scope":{"Named":"flow"},"segments":[]}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<LifetimeRegistryKey>(source).is_err(),
+                "{source}"
+            );
+        }
     }
 }

@@ -8,7 +8,7 @@ use std::{fmt, sync::Arc};
 
 use thiserror::Error;
 
-use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
+use crate::effect::LineEffectRequest;
 use crate::entry::RuntimeDialogueContentTemplateDigest;
 use crate::entry::{CallableContractHash, RuntimeCallableId, RuntimeCommandTargetId};
 use crate::line_task::RuntimeDeferOutcomeFilter;
@@ -1289,59 +1289,11 @@ pub enum RuntimeLineEffectSeed {
 /// Construction phase of the one audio operation grammar.
 pub type RuntimeAudioCommandSeed = crate::audio::RuntimeAudioCommand<RuntimeExprSeed>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeEffectFieldSeed {
-    pub name: String,
-    pub value: RuntimeExprSeed,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeDropPolicySeed {
-    Default,
-    Cancel,
-    Stop { fade: RuntimeExprSeed },
-    Finish,
-    Release,
-    Detach,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeEvaluatedEffectSeed {
-    Log {
-        level: String,
-        message: RuntimeExprSeed,
-        fields: Vec<RuntimeEffectFieldSeed>,
-    },
-    SignalWrite {
-        target: RuntimeExprSeed,
-        value: RuntimeExprSeed,
-    },
-    MetricWrite {
-        target: RuntimeExprSeed,
-        value: RuntimeExprSeed,
-    },
-    EmitEvent {
-        event: RuntimeExprSeed,
-        fields: Vec<RuntimeEffectFieldSeed>,
-    },
-    Panic(RuntimeExprSeed),
-    Fail(RuntimeExprSeed),
-    Bail(RuntimeExprSeed),
-    Ensure {
-        condition: RuntimeExprSeed,
-        message: RuntimeExprSeed,
-    },
-    Drop {
-        target: RuntimeExprSeed,
-        policy: RuntimeDropPolicySeed,
-    },
-    Assert {
-        guard: RuntimeAssertionGuardId,
-        condition: RuntimeExprSeed,
-        message: String,
-        profile: RuntimeAssertionProfile,
-    },
-}
+/// Construction expressions in the same named-field, drop-policy and effect
+/// grammars used by the admitted executable. These are phases, not wire readers.
+pub type RuntimeEffectFieldSeed = crate::effect::RuntimeEffectFieldExpr<RuntimeExprSeed>;
+pub type RuntimeDropPolicySeed = crate::effect::RuntimeDropPolicyExpr<RuntimeExprSeed>;
+pub type RuntimeEvaluatedEffectSeed = crate::effect::RuntimeEffectExpr<RuntimeExprSeed>;
 
 impl RuntimeLineEffectSeed {
     fn collect_free_locals(
@@ -1377,39 +1329,9 @@ impl RuntimeEvaluatedEffectSeed {
         bound: &[RuntimeLocalSeedId],
         locals: &mut Vec<RuntimeLocalSeedId>,
     ) {
-        let collect_fields = |fields: &[RuntimeEffectFieldSeed], locals: &mut Vec<_>| {
-            for field in fields {
-                field.value.collect_free_locals(bound, locals);
-            }
-        };
-        match self {
-            Self::Log {
-                message, fields, ..
-            } => {
-                message.collect_free_locals(bound, locals);
-                collect_fields(fields, locals);
-            }
-            Self::SignalWrite { target, value } | Self::MetricWrite { target, value } => {
-                collect_expr_refs_free_locals(&[target, value], bound, locals);
-            }
-            Self::EmitEvent { event, fields } => {
-                event.collect_free_locals(bound, locals);
-                collect_fields(fields, locals);
-            }
-            Self::Panic(value) | Self::Fail(value) | Self::Bail(value) => {
-                value.collect_free_locals(bound, locals);
-            }
-            Self::Ensure { condition, message } => {
-                collect_expr_refs_free_locals(&[condition, message], bound, locals);
-            }
-            Self::Drop { target, policy } => {
-                target.collect_free_locals(bound, locals);
-                if let RuntimeDropPolicySeed::Stop { fade } = policy {
-                    fade.collect_free_locals(bound, locals);
-                }
-            }
-            Self::Assert { condition, .. } => condition.collect_free_locals(bound, locals),
-        }
+        self.visit_argument_exprs(|expression| {
+            expression.collect_free_locals(bound, locals);
+        });
     }
 }
 

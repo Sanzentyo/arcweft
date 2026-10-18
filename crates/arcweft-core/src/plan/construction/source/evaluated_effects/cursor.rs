@@ -1,5 +1,6 @@
 //! Borrowed complete framing, with no seed or executable effect retention.
 
+use super::registry_key::RegistryKeySource;
 use super::{Counts, DOMAIN, Error};
 use crate::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
@@ -9,6 +10,7 @@ pub(super) enum Kind<'a> {
     Log(&'a str),
     Signal,
     Metric,
+    Registry(RegistryKeySource<'a>),
     Event,
     Panic,
     Fail,
@@ -35,9 +37,10 @@ impl Row<'_> {
         resources: &ValueResourceAdmission,
         meter: &mut TaskSemanticMeter,
     ) -> Result<(), Error> {
-        match self.kind {
+        match &self.kind {
             Kind::Log(level) => counts.storage(level.len())?,
             Kind::Assert { message, .. } => counts.storage(message.len())?,
+            Kind::Registry(key) => key.preflight(counts)?,
             _ => {}
         }
         counts.preflight_expression(self.first, resources, meter)?;
@@ -78,7 +81,7 @@ impl<'a> Cursor<'a> {
     fn byte(&mut self) -> Result<u8, Error> {
         Ok(self.raw(1)?[0])
     }
-    fn count(&mut self) -> Result<usize, Error> {
+    pub(super) fn count(&mut self) -> Result<usize, Error> {
         Ok(u32::from_le_bytes(self.raw(4)?.try_into().expect("source u32 width")) as usize)
     }
     pub fn frame(&mut self) -> Result<&'a [u8], Error> {
@@ -162,6 +165,10 @@ impl<'a> Cursor<'a> {
                     self.frame()?,
                 )
             }
+            10 => (
+                Kind::Registry(RegistryKeySource::new(self.frame()?)),
+                self.frame()?,
+            ),
             _ => return Err(self.invalid("effect tag")),
         };
         Ok(Row {

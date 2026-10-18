@@ -138,6 +138,35 @@ impl Writer<'_> {
         }
         Ok(())
     }
+
+    fn registry_key(
+        &mut self,
+        key: &arcweft_id::LifetimeRegistryKey,
+        counts: &mut Counts,
+    ) -> Result<(), Error> {
+        counts.array(
+            key.segments().len(),
+            size_of::<arcweft_id::DeclarationName>(),
+        )?;
+        let length = key.segments().iter().try_fold(
+            8_usize
+                .checked_add(key.scope().as_str().len())
+                .ok_or(Error::Arithmetic)?,
+            |length, name| {
+                length
+                    .checked_add(4)
+                    .and_then(|n| n.checked_add(name.as_str().len()))
+                    .ok_or(Error::Arithmetic)
+            },
+        )?;
+        self.count(length)?;
+        self.text(key.scope().as_str(), counts)?;
+        self.count(key.segments().len())?;
+        for name in key.segments() {
+            self.text(name.as_str(), counts)?;
+        }
+        Ok(())
+    }
 }
 fn emit(
     effect: &Effect,
@@ -166,6 +195,11 @@ fn emit(
                 2
             })?;
             writer.expression(target, counts, resources, meter)?;
+            writer.expression(value, counts, resources, meter)?;
+        }
+        Effect::RegistryWrite { key, value } => {
+            writer.byte(10)?;
+            writer.registry_key(key, counts)?;
             writer.expression(value, counts, resources, meter)?;
         }
         Effect::EmitEvent { event, fields } => {

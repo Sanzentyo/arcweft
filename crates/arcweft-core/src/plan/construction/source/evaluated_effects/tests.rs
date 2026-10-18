@@ -29,6 +29,15 @@ fn unit() -> RuntimeExprSeed {
     value(RuntimeCheckedType::Unit, RuntimeValue::Unit)
 }
 fn fixture() -> RuntimePlan {
+    fixture_with_registry_key(arcweft_id::LifetimeRegistryKey::new(
+        arcweft_id::LifetimeScopeKind::Flow,
+        ["flags", "既読"]
+            .into_iter()
+            .map(|name| arcweft_id::DeclarationName::try_new(name).unwrap())
+            .collect(),
+    ))
+}
+fn fixture_with_registry_key(key: arcweft_id::LifetimeRegistryKey) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
@@ -98,6 +107,10 @@ fn fixture() -> RuntimePlan {
         },
         Effect::MetricWrite {
             target: string("metric"),
+            value: boolean(),
+        },
+        Effect::RegistryWrite {
+            key,
             value: boolean(),
         },
         Effect::EmitEvent {
@@ -271,10 +284,10 @@ fn finish(
     Ok(source.prepare_image(seal)?.seal(seal, None)?.into_plan())
 }
 #[test]
-fn evaluated_effect_sources_restore_all_ten_kinds_six_drop_policies_assertion_profiles_fields_and_semantics()
+fn evaluated_effect_sources_restore_all_kinds_six_drop_policies_assertion_profiles_fields_and_semantics()
  {
     let plan = fixture();
-    assert_eq!(effects(&plan).count(), 16);
+    assert_eq!(effects(&plan).count(), 17);
     let (mut source, functions) = source(&plan, meter());
     replay(&plan, &mut source, &functions, false).unwrap();
     let restored = finish(source).unwrap();
@@ -285,6 +298,128 @@ fn evaluated_effect_sources_restore_all_ten_kinds_six_drop_policies_assertion_pr
     );
     for (original, restored) in effects(&plan).zip(effects(&restored)) {
         assert_eq!(encode(original, &plan), encode(restored, &plan));
+    }
+}
+
+#[test]
+fn registry_effect_sources_preserve_all_selectors_and_refuse_context_free_execution() {
+    let plan = fixture();
+    let value = effects(&plan)
+        .find_map(|effect| match effect {
+            RuntimeEffectExpr::RegistryWrite { value, .. } => Some(value),
+            _ => None,
+        })
+        .unwrap();
+    for scope in [
+        "frame",
+        "tick",
+        "cue",
+        "line",
+        "scene",
+        "flow",
+        "session",
+        "global",
+        "persistent",
+        "章",
+    ] {
+        for parts in [vec![], vec!["旗", "既読"]] {
+            let key = arcweft_id::LifetimeRegistryKey::new(
+                arcweft_id::LifetimeScopeKind::parse(scope).unwrap(),
+                parts
+                    .into_iter()
+                    .map(|name| arcweft_id::DeclarationName::try_new(name).unwrap())
+                    .collect(),
+            );
+            let effect = RuntimeEffectExpr::RegistryWrite {
+                key: key.clone(),
+                value: value.clone(),
+            };
+            assert_eq!(effect.argument_exprs(), vec![value]);
+            assert!(effect.host_descriptor().is_none());
+            assert_eq!(
+                effect.materialize(&[RuntimeValue::Bool(true)]),
+                Err(crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired)
+            );
+            let bytes = encode(&effect, &plan);
+            let (mut source, _) = source(&plan, meter());
+            let prepared = PreparedRuntimeEvaluatedEffectSource::preflight(
+                &bytes,
+                limits(&plan),
+                &resources(),
+                &mut source.meter,
+            )
+            .unwrap();
+            let seed = prepared
+                .materialize(&mut source, &handles(), &mut resources())
+                .unwrap();
+            let RuntimeEvaluatedEffectSeed::RegistryWrite {
+                key: restored,
+                value: restored_value,
+            } = seed
+            else {
+                panic!("registry source must retain its actual operation family");
+            };
+            assert_eq!(restored, key);
+            assert_eq!(
+                restored_value.ty(),
+                RuntimeCheckedType::Bool.semantic_identity_digest()
+            );
+        }
+    }
+}
+
+#[test]
+fn registry_effect_key_preflight_preserves_identity_errors_and_resource_precedence() {
+    let plan = fixture();
+    let effect = effects(&plan)
+        .find(|effect| matches!(effect, RuntimeEffectExpr::RegistryWrite { .. }))
+        .unwrap();
+    let mut bytes = encode(effect, &plan);
+    // Domain, version, operation tag, key frame length, scope string length.
+    let scope = DOMAIN.len() + 2 + 4 + 4;
+    bytes[scope..scope + 4].copy_from_slice(b"'bad");
+    let mut bank = meter();
+    assert!(matches!(PreparedRuntimeEvaluatedEffectSource::preflight(
+        &bytes, limits(&plan), &resources(), &mut bank,
+    ), Err(Error::RegistryKey(arcweft_id::DeclarationNameError::InvalidIdentifier { value })) if value == "'bad"));
+    assert!(bank.status().is_err());
+    let short = RuntimeEvaluatedEffectSourceLimits {
+        elements: 1,
+        ..limits(&plan)
+    };
+    assert!(matches!(
+        PreparedRuntimeEvaluatedEffectSource::preflight(&bytes, short, &resources(), &mut meter(),),
+        Err(Error::Limit {
+            kind: "elements",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn registry_effect_key_scope_order_and_boundaries_are_executable_semantic_identity() {
+    let key = |scope, parts: &[&str]| {
+        arcweft_id::LifetimeRegistryKey::new(
+            scope,
+            parts
+                .iter()
+                .map(|name| arcweft_id::DeclarationName::try_new(*name).unwrap())
+                .collect(),
+        )
+    };
+    let original =
+        fixture_with_registry_key(key(arcweft_id::LifetimeScopeKind::Flow, &["flags", "seen"]));
+    for changed in [
+        key(arcweft_id::LifetimeScopeKind::Session, &["flags", "seen"]),
+        key(arcweft_id::LifetimeScopeKind::Flow, &["seen", "flags"]),
+        key(arcweft_id::LifetimeScopeKind::Flow, &["flags_seen"]),
+        key(arcweft_id::LifetimeScopeKind::Flow, &[]),
+    ] {
+        let changed = fixture_with_registry_key(changed);
+        assert_ne!(
+            original.executable_semantic_digest(),
+            changed.executable_semantic_digest()
+        );
     }
 }
 #[test]

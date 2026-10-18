@@ -4,6 +4,7 @@
 mod cursor;
 mod decoding;
 mod encoding;
+mod registry_key;
 #[cfg(test)]
 mod tests;
 
@@ -46,6 +47,8 @@ pub(in crate::plan) enum RuntimeEvaluatedEffectSourceError {
     Utf8(#[from] std::str::Utf8Error),
     #[error("evaluated-effect source identity is invalid: {0}")]
     Identity(#[from] RuntimeIdentityDecodeError),
+    #[error("evaluated-effect registry key is invalid: {0}")]
+    RegistryKey(#[from] arcweft_id::DeclarationNameError),
     #[error("evaluated-effect source expression is invalid: {0}")]
     Expression(#[from] RuntimeExpressionSourceError),
     #[error("evaluated-effect source needs {required} output bytes, only {remaining} are reserved")]

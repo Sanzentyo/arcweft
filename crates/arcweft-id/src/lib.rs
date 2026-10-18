@@ -401,6 +401,19 @@ impl DeclarationName {
         validate_declaration_identifier(value.into()).map(Self)
     }
 
+    /// Checks borrowed source before a bounded decoder copies its identity.
+    pub fn validate_source(value: &str) -> Result<(), DeclarationNameError> {
+        if value.is_empty() {
+            return Err(DeclarationNameError::Empty);
+        }
+        if !valid_declaration_identifier_source(value) {
+            return Err(DeclarationNameError::InvalidIdentifier {
+                value: value.to_owned(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

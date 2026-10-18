@@ -60,38 +60,42 @@ impl LineEffectRequest {
 /// Effect request whose value arguments are evaluated at the owning runtime
 /// instruction instead of being preserved as source-text labels.
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeEffectExpr {
+pub enum RuntimeEffectExpr<Expression = RuntimeExpr> {
     Log {
         level: String,
-        message: RuntimeExpr,
-        fields: Vec<RuntimeEffectFieldExpr>,
+        message: Expression,
+        fields: Vec<RuntimeEffectFieldExpr<Expression>>,
     },
     SignalWrite {
-        target: RuntimeExpr,
-        value: RuntimeExpr,
+        target: Expression,
+        value: Expression,
     },
     MetricWrite {
-        target: RuntimeExpr,
-        value: RuntimeExpr,
+        target: Expression,
+        value: Expression,
+    },
+    RegistryWrite {
+        key: arcweft_id::LifetimeRegistryKey,
+        value: Expression,
     },
     EmitEvent {
-        event: RuntimeExpr,
-        fields: Vec<RuntimeEffectFieldExpr>,
+        event: Expression,
+        fields: Vec<RuntimeEffectFieldExpr<Expression>>,
     },
-    Panic(RuntimeExpr),
-    Fail(RuntimeExpr),
-    Bail(RuntimeExpr),
+    Panic(Expression),
+    Fail(Expression),
+    Bail(Expression),
     Ensure {
-        condition: RuntimeExpr,
-        message: RuntimeExpr,
+        condition: Expression,
+        message: Expression,
     },
     Drop {
-        target: RuntimeExpr,
-        policy: RuntimeDropPolicyExpr,
+        target: Expression,
+        policy: RuntimeDropPolicyExpr<Expression>,
     },
     Assert {
         guard: RuntimeAssertionGuardId,
-        condition: RuntimeExpr,
+        condition: Expression,
         message: String,
         profile: RuntimeAssertionProfile,
     },
@@ -99,9 +103,9 @@ pub enum RuntimeEffectExpr {
 
 /// Named value argument of a typed log or event effect.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeEffectFieldExpr {
+pub struct RuntimeEffectFieldExpr<Expression = RuntimeExpr> {
     pub name: String,
-    pub value: RuntimeExpr,
+    pub value: Expression,
 }
 
 /// Failure to materialize a typed effect from evaluated runtime values.
@@ -111,6 +115,8 @@ pub enum RuntimeEffectMaterializeError {
     ArgumentCount { expected: usize, actual: usize },
     #[error("runtime assertion condition must evaluate to Bool")]
     AssertionConditionNotBool,
+    #[error("registry writes require their original program and owning execution context")]
+    RegistryContextRequired,
     #[error(transparent)]
     Assignment(#[from] RuntimeAssignmentError),
 }
@@ -172,16 +178,16 @@ impl RuntimeDropPolicyKind {
 /// Evaluated policy form retained in a runtime plan before a dynamic Stop fade
 /// is materialized.
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeDropPolicyExpr {
+pub enum RuntimeDropPolicyExpr<Expression = RuntimeExpr> {
     Default,
     Cancel,
-    Stop { fade: RuntimeExpr },
+    Stop { fade: Expression },
     Finish,
     Release,
     Detach,
 }
 
-impl RuntimeDropPolicyExpr {
+impl<Expression> RuntimeDropPolicyExpr<Expression> {
     #[must_use]
     pub const fn kind(&self) -> RuntimeDropPolicyKind {
         match self {
@@ -199,37 +205,58 @@ impl RuntimeDropPolicyExpr {
     }
 }
 
-impl RuntimeEffectExpr {
+impl<Expression> RuntimeEffectExpr<Expression> {
     /// Returns value expressions in the stable ABI order consumed by
     /// `materialize` and AWBC `EmitEffect.args`.
-    pub fn argument_exprs(&self) -> Vec<&RuntimeExpr> {
+    pub fn argument_exprs(&self) -> Vec<&Expression> {
+        let mut expressions = Vec::new();
+        self.visit_argument_exprs(|expression| expressions.push(expression));
+        expressions
+    }
+
+    /// Visits borrowed operands in source order without allocating an argument
+    /// list. Construction preflight can inspect a seed before granting storage.
+    pub fn visit_argument_exprs<'expression>(
+        &'expression self,
+        mut visit: impl FnMut(&'expression Expression),
+    ) {
         match self {
             Self::Log {
                 message, fields, ..
-            } => std::iter::once(message)
-                .chain(fields.iter().map(|field| &field.value))
-                .collect(),
-            Self::SignalWrite { target, value } | Self::MetricWrite { target, value } => {
-                vec![target, value]
-            }
-            Self::EmitEvent { event, fields } => std::iter::once(event)
-                .chain(fields.iter().map(|field| &field.value))
-                .collect(),
-            Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => vec![message],
-            Self::Ensure { condition, message } => vec![condition, message],
-            Self::Drop { target, policy } => {
-                let mut expressions = vec![target];
-                if let RuntimeDropPolicyExpr::Stop { fade } = policy {
-                    expressions.push(fade);
+            } => {
+                visit(message);
+                for field in fields {
+                    visit(&field.value);
                 }
-                expressions
             }
-            Self::Assert { condition, .. } => vec![condition],
+            Self::SignalWrite { target, value } | Self::MetricWrite { target, value } => {
+                visit(target);
+                visit(value);
+            }
+            Self::RegistryWrite { value, .. } => visit(value),
+            Self::EmitEvent { event, fields } => {
+                visit(event);
+                for field in fields {
+                    visit(&field.value);
+                }
+            }
+            Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => visit(message),
+            Self::Ensure { condition, message } => {
+                visit(condition);
+                visit(message);
+            }
+            Self::Drop { target, policy } => {
+                visit(target);
+                if let RuntimeDropPolicyExpr::Stop { fade } = policy {
+                    visit(fade);
+                }
+            }
+            Self::Assert { condition, .. } => visit(condition),
         }
     }
 
     /// Mutable counterpart of `argument_exprs`, preserving the same ABI order.
-    pub fn argument_exprs_mut(&mut self) -> Vec<&mut RuntimeExpr> {
+    pub fn argument_exprs_mut(&mut self) -> Vec<&mut Expression> {
         match self {
             Self::Log {
                 message, fields, ..
@@ -242,6 +269,7 @@ impl RuntimeEffectExpr {
             Self::SignalWrite { target, value } | Self::MetricWrite { target, value } => {
                 vec![target, value]
             }
+            Self::RegistryWrite { value, .. } => vec![value],
             Self::EmitEvent { event, fields } => {
                 let mut expressions = Vec::with_capacity(fields.len().saturating_add(1));
                 expressions.push(event);
@@ -261,12 +289,98 @@ impl RuntimeEffectExpr {
         }
     }
 
+    /// Maps the one effect grammar into another expression phase in ABI/source
+    /// order. Static identities and payloads are moved, never reconstructed.
+    pub fn try_map_expressions<Target, Error>(
+        self,
+        mut map: impl FnMut(Expression) -> Result<Target, Error>,
+    ) -> Result<RuntimeEffectExpr<Target>, Error> {
+        Ok(match self {
+            Self::Log {
+                level,
+                message,
+                fields,
+            } => RuntimeEffectExpr::Log {
+                level,
+                message: map(message)?,
+                fields: fields
+                    .into_iter()
+                    .map(|field| field.try_map_expression(&mut map))
+                    .collect::<Result<_, _>>()?,
+            },
+            Self::SignalWrite { target, value } => RuntimeEffectExpr::SignalWrite {
+                target: map(target)?,
+                value: map(value)?,
+            },
+            Self::MetricWrite { target, value } => RuntimeEffectExpr::MetricWrite {
+                target: map(target)?,
+                value: map(value)?,
+            },
+            Self::RegistryWrite { key, value } => RuntimeEffectExpr::RegistryWrite {
+                key,
+                value: map(value)?,
+            },
+            Self::EmitEvent { event, fields } => RuntimeEffectExpr::EmitEvent {
+                event: map(event)?,
+                fields: fields
+                    .into_iter()
+                    .map(|field| field.try_map_expression(&mut map))
+                    .collect::<Result<_, _>>()?,
+            },
+            Self::Panic(value) => RuntimeEffectExpr::Panic(map(value)?),
+            Self::Fail(value) => RuntimeEffectExpr::Fail(map(value)?),
+            Self::Bail(value) => RuntimeEffectExpr::Bail(map(value)?),
+            Self::Ensure { condition, message } => RuntimeEffectExpr::Ensure {
+                condition: map(condition)?,
+                message: map(message)?,
+            },
+            Self::Drop { target, policy } => RuntimeEffectExpr::Drop {
+                target: map(target)?,
+                policy: match policy {
+                    RuntimeDropPolicyExpr::Default => RuntimeDropPolicyExpr::Default,
+                    RuntimeDropPolicyExpr::Cancel => RuntimeDropPolicyExpr::Cancel,
+                    RuntimeDropPolicyExpr::Stop { fade } => {
+                        RuntimeDropPolicyExpr::Stop { fade: map(fade)? }
+                    }
+                    RuntimeDropPolicyExpr::Finish => RuntimeDropPolicyExpr::Finish,
+                    RuntimeDropPolicyExpr::Release => RuntimeDropPolicyExpr::Release,
+                    RuntimeDropPolicyExpr::Detach => RuntimeDropPolicyExpr::Detach,
+                },
+            },
+            Self::Assert {
+                guard,
+                condition,
+                message,
+                profile,
+            } => RuntimeEffectExpr::Assert {
+                guard,
+                condition: map(condition)?,
+                message,
+                profile,
+            },
+        })
+    }
+}
+
+impl<Expression> RuntimeEffectFieldExpr<Expression> {
+    fn try_map_expression<Target, Error>(
+        self,
+        map: &mut impl FnMut(Expression) -> Result<Target, Error>,
+    ) -> Result<RuntimeEffectFieldExpr<Target>, Error> {
+        Ok(RuntimeEffectFieldExpr {
+            name: self.name,
+            value: map(self.value)?,
+        })
+    }
+}
+
+impl RuntimeEffectExpr {
     /// Returns the host-effect descriptor for expressions that use the host
-    /// request ABI. Typed `Drop` expressions are executed by the owning
-    /// runtime instruction and therefore have no host-effect descriptor.
+    /// request ABI. Typed `Drop` and registry writes require their owning
+    /// execution context and have no context-free host-effect descriptor.
     pub fn host_descriptor(&self) -> Option<LineEffectRequest> {
         let descriptor = match self {
-            Self::Drop { .. } => return None,
+            Self::Drop { .. } | Self::RegistryWrite { .. } => return None,
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: String::new(),
@@ -312,6 +426,9 @@ impl RuntimeEffectExpr {
         &self,
         values: &[RuntimeValue],
     ) -> Result<Option<LineEffectRequest>, RuntimeEffectMaterializeError> {
+        if matches!(self, Self::RegistryWrite { .. }) {
+            return Err(RuntimeEffectMaterializeError::RegistryContextRequired);
+        }
         if self.host_descriptor().is_none() {
             return Ok(None);
         }
@@ -355,6 +472,9 @@ impl RuntimeEffectExpr {
                 message: labels[1].clone(),
             },
             Self::Drop { .. } => return Ok(None),
+            Self::RegistryWrite { .. } => {
+                return Err(RuntimeEffectMaterializeError::RegistryContextRequired);
+            }
             Self::Assert {
                 guard,
                 message,
@@ -621,6 +741,7 @@ impl RuntimeEffectExpr {
             Self::Ensure { .. } => 7,
             Self::Drop { .. } => 8,
             Self::Assert { .. } => 9,
+            Self::RegistryWrite { .. } => 10,
         });
         match self {
             Self::Log { level, fields, .. } => {
@@ -636,6 +757,14 @@ impl RuntimeEffectExpr {
                 for field in fields {
                     encoder.enter_element();
                     encoder.string(&field.name);
+                }
+            }
+            Self::RegistryWrite { key, .. } => {
+                encoder.string(key.scope().as_str());
+                encoder.count(key.segments().len());
+                for segment in key.segments() {
+                    encoder.enter_element();
+                    encoder.string(segment.as_str());
                 }
             }
             Self::Drop { policy, .. } => encoder.tag(match policy {

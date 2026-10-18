@@ -40,9 +40,7 @@ use arcweft_interaction_model::dialogue::{
 };
 
 use crate::audio::RuntimeAudioCommand;
-use crate::effect::{
-    LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectFieldExpr,
-};
+use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 use crate::pattern::{
     RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
     RuntimePatternBindingDeclaration,
@@ -74,16 +72,15 @@ use super::super::{
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeCallArgumentSeed, RuntimeChoiceOptionSeed, RuntimeDropPolicySeed,
-    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
-    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
-    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineOperationSeed,
-    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
-    RuntimePlanBuilder, RuntimeRecordFieldSeedId, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
-    RuntimeStreamPlanSeed,
+    RuntimeCallArgumentSeed, RuntimeChoiceOptionSeed, RuntimeEvaluatedEffectSeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
+    RuntimeLineEffectSeed, RuntimeLineOperationSeed, RuntimeLocalSeedId, RuntimeMutablePlaceSeed,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder, RuntimeRecordFieldSeedId,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
 };
 
 enum FlowOpLowerFrame {
@@ -4766,83 +4763,21 @@ impl RuntimePlanBodyConstruction<'_> {
         command.validate_metadata()?;
         command.try_map_expressions(|expression| self.lower_expression(expression))
     }
-    fn lower_effect_fields(
-        &self,
-        fields: Vec<super::RuntimeEffectFieldSeed>,
-    ) -> Result<Vec<RuntimeEffectFieldExpr>, RuntimePlanBuildError> {
-        fields
-            .into_iter()
-            .map(|field| {
-                Ok(RuntimeEffectFieldExpr {
-                    name: field.name,
-                    value: self.lower_expression(field.value)?,
-                })
-            })
-            .collect()
-    }
-
     fn lower_evaluated_effect(
         &self,
         effect: RuntimeEvaluatedEffectSeed,
     ) -> Result<RuntimeEffectExpr, RuntimePlanBuildError> {
-        Ok(match effect {
-            RuntimeEvaluatedEffectSeed::Log {
-                level,
-                message,
-                fields,
-            } => RuntimeEffectExpr::Log {
-                level,
-                message: self.lower_expression(message)?,
-                fields: self.lower_effect_fields(fields)?,
-            },
-            RuntimeEvaluatedEffectSeed::SignalWrite { target, value } => {
-                RuntimeEffectExpr::SignalWrite {
-                    target: self.lower_expression(target)?,
-                    value: self.lower_expression(value)?,
-                }
-            }
-            RuntimeEvaluatedEffectSeed::MetricWrite { target, value } => {
-                RuntimeEffectExpr::MetricWrite {
-                    target: self.lower_expression(target)?,
-                    value: self.lower_expression(value)?,
-                }
-            }
-            RuntimeEvaluatedEffectSeed::EmitEvent { event, fields } => {
-                RuntimeEffectExpr::EmitEvent {
-                    event: self.lower_expression(event)?,
-                    fields: self.lower_effect_fields(fields)?,
-                }
-            }
-            RuntimeEvaluatedEffectSeed::Panic(message) => {
-                RuntimeEffectExpr::Panic(self.lower_expression(message)?)
-            }
-            RuntimeEvaluatedEffectSeed::Fail(message) => {
-                RuntimeEffectExpr::Fail(self.lower_expression(message)?)
-            }
-            RuntimeEvaluatedEffectSeed::Bail(message) => {
-                RuntimeEffectExpr::Bail(self.lower_expression(message)?)
-            }
+        // Boolean policies remain at their original conversion point: failure
+        // cannot lower a later message or change the first diagnostic.
+        match effect {
             RuntimeEvaluatedEffectSeed::Ensure { condition, message } => {
                 let condition = self.lower_expression(condition)?;
                 self.require_bool("ensure condition", condition.ty())?;
-                RuntimeEffectExpr::Ensure {
+                Ok(RuntimeEffectExpr::Ensure {
                     condition,
                     message: self.lower_expression(message)?,
-                }
+                })
             }
-            RuntimeEvaluatedEffectSeed::Drop { target, policy } => RuntimeEffectExpr::Drop {
-                target: self.lower_expression(target)?,
-                policy: match policy {
-                    RuntimeDropPolicySeed::Default => RuntimeDropPolicyExpr::Default,
-                    RuntimeDropPolicySeed::Cancel => RuntimeDropPolicyExpr::Cancel,
-                    RuntimeDropPolicySeed::Stop { fade } => RuntimeDropPolicyExpr::Stop {
-                        fade: self.lower_expression(fade)?,
-                    },
-                    RuntimeDropPolicySeed::Finish => RuntimeDropPolicyExpr::Finish,
-                    RuntimeDropPolicySeed::Release => RuntimeDropPolicyExpr::Release,
-                    RuntimeDropPolicySeed::Detach => RuntimeDropPolicyExpr::Detach,
-                },
-            },
             RuntimeEvaluatedEffectSeed::Assert {
                 guard,
                 condition,
@@ -4851,16 +4786,16 @@ impl RuntimePlanBodyConstruction<'_> {
             } => {
                 let condition = self.lower_expression(condition)?;
                 self.require_bool("assert condition", condition.ty())?;
-                RuntimeEffectExpr::Assert {
+                Ok(RuntimeEffectExpr::Assert {
                     guard,
                     condition,
                     message,
                     profile,
-                }
+                })
             }
-        })
+            effect => effect.try_map_expressions(|expression| self.lower_expression(expression)),
+        }
     }
-
     pub(super) fn validate_flow_operation_locals(
         &self,
         ops: &[FlowOp],

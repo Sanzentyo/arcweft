@@ -1586,6 +1586,13 @@ impl AwbcInventory {
         effect: &RuntimeEffectExpr,
         declared_effects: &RuntimeEffectSet,
     ) -> Option<AwbcEffectPlanId> {
+        if matches!(effect, RuntimeEffectExpr::RegistryWrite { .. }) {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "effect.registry_context",
+                "registry write requires an original-program registry effect plan",
+            ));
+            return None;
+        }
         let descriptor = effect.host_descriptor()?;
         let arg_count = effect.argument_exprs().len();
         let effect_set = self.intern_effect_set(declared_effects);

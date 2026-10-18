@@ -56,6 +56,10 @@ impl PreparedRuntimeEvaluatedEffectSource<'_> {
                     target: first,
                     value: second.expect("checked second expression"),
                 },
+                Kind::Registry(key) => Effect::RegistryWrite {
+                    key: key.materialize()?,
+                    value: first,
+                },
                 Kind::Event => Effect::EmitEvent {
                     event: first,
                     fields,

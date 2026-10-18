@@ -263,6 +263,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
             | RuntimeEffectExpr::Bail(_)
             | RuntimeEffectExpr::Ensure { .. }
             | RuntimeEffectExpr::Drop { .. }
+            | RuntimeEffectExpr::RegistryWrite { .. }
             | RuntimeEffectExpr::Assert { .. } => false,
         },
         FlowOp::EnterScheduledScope { .. }
