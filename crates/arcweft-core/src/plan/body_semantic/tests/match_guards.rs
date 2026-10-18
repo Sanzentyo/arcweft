@@ -46,7 +46,7 @@ fn fixture(
     result: RuntimeSemanticTypeId,
     condition: Option<bool>,
     padding: bool,
-) -> Result<(RuntimePlan, RuntimeTaskPlanCoordinateOwner), RuntimePlanBuildError> {
+) -> Result<(RuntimePlan, RuntimeTaskPlanCoordinateOwner), Box<RuntimePlanBuildError>> {
     let mut builder = RuntimePlanBuilder::new();
     let mut types = Vec::new();
     if padding {
@@ -228,14 +228,14 @@ fn guard_result_transcripts_resolve_types_and_keep_actual_control_transfers() {
 #[test]
 fn guard_result_admission_rejects_non_never_divergence_and_mismatched_bool_before_sealing() {
     assert!(matches!(
-        fixture(boolean(), None, false),
+        fixture(boolean(), None, false).map_err(|error| *error),
         Err(RuntimePlanBuildError::InvalidTypeProjection {
             context: "non-returning guard",
             ..
         })
     ));
     assert!(matches!(
-        fixture(integer(), Some(true), false),
+        fixture(integer(), Some(true), false).map_err(|error| *error),
         Err(RuntimePlanBuildError::TypeMismatch {
             context: "flow match guard result",
             ..

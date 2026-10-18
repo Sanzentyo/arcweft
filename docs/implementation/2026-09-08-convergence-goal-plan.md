@@ -17490,3 +17490,58 @@ owner tests and the affected public-contract checks remain required.
 The full goal remains active, including
 complete body/Host/Line/Entry Sources, joint codec and consumer migration,
 selected-Need key parity, real registry execution and the other retained work.
+
+## 2026-10-19 — Match guard execution and workspace evidence
+
+Inspected published main 33aacf6ea419570b7b24f814dbd0a4fc5002d2dc; the held
+fourteen tracked paths and three untracked items remain untouched. Supersedes
+the preceding pending validation, retaining its initial failure: R1307 ended
+with actual 101 after the two new-test API mistakes, not a timeout or successful
+catalog. R1309 on the corrected published input passes, actual 0, 10m05s, with
+2253 selected and zero excluded, including all three new guard cases. R1310
+executes that exact catalog: 2253 passed, zero failed/skipped, 46.046s, actual 0.
+Exact terminal names and all 3871 frozen inputs are verified unchanged.
+
+The tests prove original guard-result retention, distinct function transcripts
+and complete executable seals for different selected result declarations in
+the same type inventory, transcript stability under type-arena padding, actual
+native non-returning guard transfer, actual true/false Bool arm selection and
+pre-seal rejection of invalid result declarations. Prior complete Map/Sum
+construction, callback execution and counter-equality regressions also pass in
+this run. This is five-owner library coverage, not all reverse consumers or
+complete Generic Match, codec, Native/AWBC or full-goal acceptance.
+
+R1311 workspace all-target/all-feature locked check passes, actual 0, 3m34s.
+R1312 corresponding workspace Clippy passes, actual 0, 4m03s. Their post-terminal
+source audit verifies all 3871 frozen inputs unchanged. The new private fixture
+returned the existing large construction-error enum directly and introduced one
+Clippy warning. It now transports that same typed cause in Box; rejection tests
+unwrap the box to retain their exact error-kind/context assertions. No production
+contract, fixture operation, expected result, test count, budget or assertion is
+weakened. R1313 Core all-target/all-feature locked Clippy passes, actual 0,
+50.91s, on that fixture-only repair. All 3871 inputs match its own freeze and
+the new fixture has no lint diagnostics. Its current size is 9414 bytes/244 LOC.
+The earlier R1310 execution is retained as evidence for its original test bytes;
+execution of the boxed-error fixture remains pending in the next matrix.
+
+All production changes, dependency directions and owner responsibilities are
+unchanged from the accepted guard publication. Reuse its workspace check/lint,
+R1308 structure gate and recorded cohesion review for those unchanged inputs;
+the diagnostic transport adjustment introduces no new ownership boundary. The
+same 99 manifest/lock inputs and resolved 53-package reverse closure remain.
+Next run the repository's default-feature library/integration surface over the
+52 non-CLI members of that closure, inspecting the actual catalog, required new
+guard cases, public-API compile suites and both still-unresolved selected-Need
+key parity cases before execution. CLI retains its separately selected surface.
+Do not exclude the known parity failures or call the prospective catalog a pass.
+
+The full goal stays active. Complete original function/Flow, Host/Line/Entry
+Sources and the joint codec/public consumer switch remain implementation work.
+The next Host Source owner is the existing RuntimeHostCallTarget grammar:
+original producer coordinate and contract/site, public ID/capability/operation,
+optional host contract, source-ordered arguments, result, mode and determinism.
+Its construction/admitted storage is already shared; retain those original
+definitions through common source preflight and the real builder rather than
+introducing another target model or copying a completed expected key. This Host
+codec is a next action, not an implemented or accepted source family. Real
+registry execution and the other retained goal requirements remain incomplete.
