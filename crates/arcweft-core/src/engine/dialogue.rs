@@ -2588,6 +2588,7 @@ impl Engine {
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Option<LineEffectRequest>, DialogueExecutionError> {
+        effect.require_context_free()?;
         if !matches!(effect, RuntimeEffectExpr::Drop { .. }) {
             let values = effect
                 .argument_exprs()

@@ -427,9 +427,7 @@ impl RuntimeEffectExpr {
         &self,
         values: &[RuntimeValue],
     ) -> Result<Option<LineEffectRequest>, RuntimeEffectMaterializeError> {
-        if matches!(self, Self::RegistryWrite { .. }) {
-            return Err(RuntimeEffectMaterializeError::RegistryContextRequired);
-        }
+        self.require_context_free()?;
         if self.host_descriptor().is_none() {
             return Ok(None);
         }
@@ -488,6 +486,26 @@ impl RuntimeEffectExpr {
                 *profile,
             )),
         }))
+    }
+
+    /// Rejects a context-dependent effect before its caller evaluates or moves
+    /// any operand. A static key does not grant an active registry scope.
+    pub(crate) fn require_context_free(&self) -> Result<(), RuntimeEffectMaterializeError> {
+        match self {
+            Self::RegistryWrite { .. } => {
+                Err(RuntimeEffectMaterializeError::RegistryContextRequired)
+            }
+            Self::Log { .. }
+            | Self::SignalWrite { .. }
+            | Self::MetricWrite { .. }
+            | Self::EmitEvent { .. }
+            | Self::Panic(_)
+            | Self::Fail(_)
+            | Self::Bail(_)
+            | Self::Ensure { .. }
+            | Self::Drop { .. }
+            | Self::Assert { .. } => Ok(()),
+        }
     }
 }
 

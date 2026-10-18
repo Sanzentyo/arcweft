@@ -675,6 +675,13 @@ grants no active-scope lease. The canonical version-one codec decodes this same
 payload grammar and admits every key name against the enclosing cumulative
 resource budget before retaining it.
 
+Context-free effect dispatch checks that requirement before evaluating or moving
+operands. A rejected write terminates execution before subsequent instructions
+or a successful return. Static cleanup packets carry no active registry owner;
+their original declaration therefore rejects registry payloads in both live and
+inert phases, before argument transfer or image construction. Registry work in
+`defer` uses an executable body with its owning execution context.
+
 Resource access stores resource ID, access mode,
 and typed conflict policy (`Error`, `Append`, priority LWW, merge patch, or a
 fixed reduce operator).

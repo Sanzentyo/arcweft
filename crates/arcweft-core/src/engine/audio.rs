@@ -16,6 +16,9 @@ use crate::pure::RuntimeCallBackend;
 use crate::value::{RuntimeExpr, RuntimeValue, runtime_value_label};
 use thiserror::Error;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone, Debug, Error, PartialEq)]
 pub(super) enum RuntimeEffectExecutionError {
     #[error(transparent)]
@@ -65,6 +68,7 @@ impl Engine {
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeEvaluatedEffectOutcome, RuntimeEffectExecutionError> {
+        effect.require_context_free()?;
         if let RuntimeEffectExpr::Drop { target, policy } = effect {
             let local = match target.kind() {
                 crate::value::RuntimeExprKind::Local(read)

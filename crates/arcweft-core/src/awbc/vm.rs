@@ -331,6 +331,8 @@ pub enum VmExit {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum VmError {
     #[error(transparent)]
+    EffectMaterialization(#[from] crate::effect::RuntimeEffectMaterializeError),
+    #[error(transparent)]
     Evaluation(#[from] crate::value::RuntimeEvalError),
     #[error("AWBC pattern did not match its runtime value")]
     PatternMismatch,
@@ -2113,6 +2115,9 @@ fn execute_instruction(
                 .set_register(*destination, value)?;
         }
         AwbcInstruction::EmitEffect { effect, args } => {
+            if let Some(plan) = program.effect_plans.get(effect.index()) {
+                plan.payload.require_context_free()?;
+            }
             let args = fiber
                 .active_frame_mut()?
                 .take_register_values(program, args)?;
@@ -5311,7 +5316,9 @@ impl VmError {
             }),
             Self::PatternMismatch => Some(AwbcTrapCode::PatternMismatch),
             Self::DynamicTarget(_) => Some(AwbcTrapCode::MissingDynamicTarget),
-            Self::Runtime(_) => Some(AwbcTrapCode::InternalInvariant),
+            Self::Runtime(_) | Self::EffectMaterialization(_) => {
+                Some(AwbcTrapCode::InternalInvariant)
+            }
             Self::Fiber(FiberStateError::RegisterOutOfBounds { .. }) => {
                 Some(AwbcTrapCode::UninitializedRegister)
             }

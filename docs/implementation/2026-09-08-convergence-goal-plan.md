@@ -17145,3 +17145,92 @@ R1277 Core/CLI all-target/all-feature locked Clippy is running. Final broader
 consumer/workspace checks remain required. Actual registry scope/store/cleanup/
 restore, both selected-Need completed-plan-key failures, the complete fourteen
 family source/public migration and remaining full-goal acceptance stay open.
+
+### 2026-10-19 — registry rejection before operand transfer and cleanup admission
+
+Delivery 96133894911a75707ba8f15340bf06a0ed21559c is normally pushed and verified
+against fetched/advertised main, all eleven blobs, reviewed raw patch, 3864
+inputs and empty index. R1277 completes successfully: Core/CLI all-target/
+all-feature locked Clippy, actual 0, 5m57s, warnings retained. Every publication
+input is hash-verified unchanged afterwards. R1278 workspace all-target/
+all-feature locked check passes on that published checkpoint, actual 0,
+3m32s. The following guard edits start after that check returns; its pass is
+not a current-guard workspace validation claim.
+
+Native's context-free typed-effect dispatcher now checks its requirement before
+evaluating/moving operands. Dialogue uses that same exhaustive native grammar
+check. AWBC's payload owns its exhaustive context-free requirement, and EmitEffect
+checks it before taking any source registers. A structured materialization error
+becomes an InternalInvariant trap, so the existing Product owner cannot continue
+to a successful return after rejecting the write. The original static key does
+not mint a scope entitlement, program or value lease.
+
+Inspection also finds a static-cleanup bypass: RegisterCleanup and restored
+cleanup records can otherwise detach arguments and later reach the context-free
+mapper without EmitEffect. Their sole original declaration now uses the same
+payload requirement. This applies before registration transfer and to both live
+and inert record validation/image construction. Its structured FiberStateError
+retains the materialization cause. Static packets carry no active registry
+owner; registry work in defer belongs to its executable callback/body context.
+The maintained AWBC contract records that boundary. There is no new scope store,
+active lease, fake scope/program, successful registry mutation, or restore-of-
+registry-state acceptance in this cut. Real scope/store/read/cleanup/restore
+integration remains required after this failure-boundary repair.
+
+Five new regressions use actual owning construction: a builder-sealed program
+invocation retains its original affine Need input slot after native rejection;
+bare AWBC retains its RHS register and stops before the suffix; canonical
+decoded Product reports Failed rather than Done; cleanup registration retains
+its operand; live/inert/JSON-decoded cleanup sources reject the same declaration
+and a valid fiber checkpoint becomes inadmissible after adding that cleanup.
+The AWBC fixture targets an absent named lexical scope, rather than assuming
+that a real Flow activation will forever lack registry support.
+
+R1279 Core all-target/all-feature check returns 101 for one test-only constructor
+mistake: VmRuntimePureCallBackend is a struct, not a unit value. It is corrected
+to default after the compiler reports it; that one post-compile edit is retained
+explicitly. R1280 preliminary five-owner all-feature library catalog builds,
+actual 0, 13m29s. While it builds, the cleanup bypass is repaired in five known
+paths. Its source audit does not call that catalog a frozen current pass. R1281
+canonical structure gate passes. R1282 rebuilds the stable final Rust sources
+for Core, RuntimePlan, Bundle, ProjectLoader and RuntimeDriver library tests,
+using rdeps(Core). It is running; five required regressions and all selected
+library cases must be inspected/executed before claiming their acceptance.
+There are 53 workspace reverse consumers; this five-owner library slice is not
+their complete final validation. No jobs/profile/feature/OS adjustment, artifact
+relocation, additional clean, branch or worktree is used.
+
+Owner review: effect.rs is 33006 bytes/971 physical LOC, native audio dispatcher
+19501/466 and new focused test owner 4781/127. Dialogue's existing 154358/3571
+coordinator receives one guard. VM 216066/5367 retains opcode dispatch and trap
+classification; Fiber 255504/6718 retains its state/error grammar. Scope cleanup
+24689/681 owns declaration/argument admission, and effect payload 5786/153 owns
+the shared requirement. Registry tests are 11087/314 before the final baseline
+checkpoint assertion. These narrow guard/cause additions do not add unrelated
+state, duplicate lookup tables, public splitting APIs, dependency or I/O owners.
+The existing large coordinators remain cohesive for this change; tests follow
+operand custody and source admission. Core fan-in/out remains 31/7, dev 4/5.
+
+Continue the same active convergence goal after publishing a coherent cut.
+The actual Native/decoded-AWBC completed selected-Need keys still fail, the full
+fourteen-family source/private-codec/public switch remains incomplete, and true
+registry writes plus broad final checks, Tier2 and Native/Web parity remain open.
+
+R1282 completes successfully, actual 0, 13m55s: 2244 library cases are selected,
+zero excluded, including all five required new regressions. R1283 executes that
+exact full set: 2240 pass, four fail, zero skipped, 51.314s, actual 100. The
+native affine-slot regression passes. Every failure is the new AWBC fixture's
+noncanonical Bool semantic row, rejected at instruction 0 before execution.
+The shared runtime fixture now uses RuntimeCheckedType::Bool's actual semantic
+identity. Production code and the 2240 passed cases do not change. R1284 rebuilds
+the same package/feature/library matrix, 41.56s, selecting exactly those four
+failures. R1285 passes all four, 0.064s, actual 0, 2240 explicit exclusions.
+Its exact terminal names and all 3865 inputs are verified with zero drift before
+this prose addition. The coverage-union audit matches all 2244 first terminal
+names and the exact failed/repaired subset, retains the first failure result,
+and records the single fixture-only input change. It reuses 2240 passes; there
+is no claim of one current frozen full-run pass. R1287 final structure gate
+passes on the complete cleanup boundary. The current registry test owner is
+11244 bytes/318 physical LOC. R1286 workspace all-target/all-feature locked
+Clippy is running. Continue required verification and publication of this cut,
+then the actual owning-context integration and complete active goal.

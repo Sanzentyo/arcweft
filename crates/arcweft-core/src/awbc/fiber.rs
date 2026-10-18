@@ -1313,6 +1313,8 @@ impl<P, V> FiberReturnContinuation<P, V> {
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum FiberStateError {
     #[error(transparent)]
+    EffectMaterialization(#[from] crate::effect::RuntimeEffectMaterializeError),
+    #[error(transparent)]
     Snapshot(#[from] crate::value::AwbcRuntimeValueSnapshotError),
     #[error(transparent)]
     RuntimeIdentity(#[from] crate::runtime_id::RuntimeIdExhausted),

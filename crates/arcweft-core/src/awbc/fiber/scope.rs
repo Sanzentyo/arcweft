@@ -139,6 +139,7 @@ impl<V> FiberScopeCleanup<V> {
             .effect_plans
             .get(effect.index())
             .ok_or(FiberStateError::InvalidFrame)?;
+        plan.payload.require_context_free()?;
         let signature = program
             .signatures
             .get(plan.signature.index())

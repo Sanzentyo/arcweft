@@ -69,6 +69,37 @@ impl TryFrom<(AwbcEffectKind, Vec<AwbcConstantId>)> for AwbcEffectPayload {
 }
 
 impl AwbcEffectPayload {
+    /// Static cleanup packets and context-free effect dispatch cannot retain
+    /// the active execution owner required by a registry operation.
+    pub(crate) fn require_context_free(
+        &self,
+    ) -> Result<(), crate::effect::RuntimeEffectMaterializeError> {
+        match self {
+            Self::RegistryWrite { .. } => {
+                Err(crate::effect::RuntimeEffectMaterializeError::RegistryContextRequired)
+            }
+            Self::Wait(_)
+            | Self::Audio(_)
+            | Self::Call(_)
+            | Self::Log(_)
+            | Self::SignalWrite(_)
+            | Self::MetricWrite(_)
+            | Self::EmitEvent(_)
+            | Self::Out(_)
+            | Self::Return(_)
+            | Self::Goto(_)
+            | Self::Panic(_)
+            | Self::Fail(_)
+            | Self::Bail(_)
+            | Self::Ensure(_)
+            | Self::Assert(_)
+            | Self::Close(_)
+            | Self::Select(_)
+            | Self::Break(_)
+            | Self::Continue(_) => Ok(()),
+        }
+    }
+
     #[must_use]
     pub const fn kind(&self) -> AwbcEffectKind {
         match self {
