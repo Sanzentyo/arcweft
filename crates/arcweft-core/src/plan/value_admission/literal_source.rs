@@ -11,7 +11,7 @@ use crate::runtime_id::RuntimePlanTypeId;
 use crate::task::semantic::TaskSemanticMeter;
 use crate::value::{
     AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeLiteralSourceError,
-    RuntimeLiteralSourceLimits, RuntimeValue,
+    RuntimeLiteralSourceLimits, RuntimeValue, RuntimeValueView,
 };
 
 impl crate::plan::RuntimePlanInventory {
@@ -46,6 +46,75 @@ impl crate::plan::RuntimePlanInventory {
 }
 
 impl PlanValueAuthority<'_> {
+    /// Static observation payloads have no selected root type. Their original
+    /// value grammar is authoritative for structural data, while every nominal
+    /// descendant must satisfy this exact plan's declared identity and domain.
+    /// The caller's resource bank admits the entire unrestricted graph first.
+    pub(in crate::plan) fn validate_static_literal(
+        self,
+        value: &RuntimeValue,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admit_static_literal_view(value.view(), resources, ValueAdmissionOrigin::Live)
+    }
+
+    pub(in crate::plan) fn decode_static_literal_source_value(
+        self,
+        bytes: &[u8],
+        limits: RuntimeLiteralSourceLimits,
+        resources: &mut ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeValue, RuntimeLiteralSourceError> {
+        let source =
+            AwbcRuntimeValueSnapshot::preflight_literal_source(bytes, limits, resources, meter)?
+                .materialize(meter)?;
+        let result = self.materialize_static_literal_source_value(source, resources);
+        if result.is_err() {
+            meter.reject_owner();
+        }
+        result.map_err(RuntimeLiteralSourceError::Value)
+    }
+
+    pub(in crate::plan) fn materialize_static_literal_source_value(
+        self,
+        source: AwbcRuntimeValueSnapshot,
+        resources: &mut ValueResourceAdmission,
+    ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
+        self.admit_static_literal_view(
+            source.view(),
+            resources,
+            ValueAdmissionOrigin::InertSnapshot,
+        )?;
+        source.materialize_admitted_plan_literal(&RuntimePlanLiteralMaterialization {
+            authority: self,
+        })
+    }
+
+    fn admit_static_literal_view(
+        self,
+        view: RuntimeValueView<'_>,
+        resources: &mut ValueResourceAdmission,
+        origin: ValueAdmissionOrigin,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        resources.set_origin(origin);
+        view.admit_ownership(
+            crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+            resources,
+            0,
+        )?;
+        let work = resources.work();
+        let limits = work.limits();
+        let mut validation = PlanValueValidation {
+            authority: self,
+            work,
+            origin,
+            context: (),
+            mode: PlanValueValidationMode::LiteralSource,
+        };
+        value_encoding::validate_literal_view(view, limits, &mut validation, Expected::LiteralAny)
+            .map_err(Into::into)
+    }
+
     pub(in crate::plan) fn decode_literal_source_value(
         self,
         ty: RuntimePlanTypeId,

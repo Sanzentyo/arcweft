@@ -291,6 +291,16 @@ meter. The Line owner issues its digest only after successful completion.
 
 ## Static request role evidence
 
+Static Signal and Metric observations carry unrestricted literal values without
+a selected root plan-type ID. Construction and private source materialization
+use the same original plan value/domain authority. The complete borrowed graph
+must pass resource and ownership admission before live mapping; every nominal
+descendant must match its declared identity, layout, field/case and payload
+types, even beneath structural containers or context-free opaque payloads.
+Structural value tags do not reconstruct a root type or grant an executable
+owner. Source rows share the caller's resource/work bank, and any source or
+factory rejection prevents common executable publication.
+
 A checked execution argument slot owns its static request role identity. The
 identity is minted after the callable/schema destination is validated, then
 transported unchanged in the compiler's source-ordered runtime operand row.

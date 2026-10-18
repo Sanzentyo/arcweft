@@ -153,6 +153,8 @@ pub enum RuntimePlanTable {
 pub enum RuntimePlanBuildError {
     #[error("audio operation metadata is invalid: {0}")]
     AudioMetadata(#[from] arcweft_interaction_model::audio::AudioValueError),
+    #[error("invalid static effect literal: {0}")]
+    StaticEffectLiteral(#[from] crate::value::AwbcRuntimeValueSnapshotError),
     #[error(transparent)]
     TaskPlanSeal(Box<super::RuntimeTaskPlanSealError>),
     #[error(transparent)]

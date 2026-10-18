@@ -29,6 +29,8 @@ mod agent_tests;
 #[cfg(test)]
 mod field_tests;
 #[cfg(test)]
+mod static_effect_tests;
+#[cfg(test)]
 mod value_tests;
 
 use std::collections::BTreeSet;
@@ -4733,7 +4735,24 @@ impl RuntimePlanBodyConstruction<'_> {
                     context: "static line effect Audio",
                 })
             }
-            RuntimeLineEffectSeed::Static(effect) => Ok(effect),
+            RuntimeLineEffectSeed::Static(effect) => {
+                if let LineEffectRequest::SignalWrite(assignment)
+                | LineEffectRequest::MetricWrite(assignment) = &effect
+                {
+                    super::super::value_admission::PlanValueAuthority::Building {
+                        types: &self.types,
+                        records: &self.nominal_record_domains,
+                        variants: &self.variant_domains,
+                    }
+                    .validate_static_literal(
+                        assignment.value(),
+                        &mut crate::entry::schema::value_encoding::ValueResourceAdmission::live(
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        ),
+                    )?;
+                }
+                Ok(effect)
+            }
             RuntimeLineEffectSeed::Audio(command) => Ok(LineEffectRequest::Audio(Box::new(
                 self.lower_audio_command(*command)?,
             ))),
