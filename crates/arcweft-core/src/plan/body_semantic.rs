@@ -2,6 +2,8 @@
 //! No public seal proof is minted by this preparation owner.
 
 use super::RuntimePlanInventory;
+#[cfg(test)]
+pub(crate) use tests::content_rows::content_source_builder as content_root_builder_fixture;
 
 mod callable;
 mod entries;

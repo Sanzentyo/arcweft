@@ -172,6 +172,16 @@ fn effect_function(
 }
 
 fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
+    content_builder(options).0.finish().unwrap()
+}
+
+pub(crate) fn content_source_builder() -> (RuntimePlanBuilder, RuntimeDialogueContentPlanSeedId) {
+    content_builder(&ContentFixture::default())
+}
+
+fn content_builder(
+    options: &ContentFixture<'_>,
+) -> (RuntimePlanBuilder, RuntimeDialogueContentPlanSeedId) {
     let mut builder = RuntimePlanBuilder::new();
     let types = builder
         .admit_type_batch(
@@ -241,8 +251,8 @@ fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
     if options.reverse_effects {
         effects.reverse();
     }
-    admit_content(&mut builder, options, value, effects);
-    builder.finish().unwrap()
+    let content = admit_content(&mut builder, options, value, effects);
+    (builder, content)
 }
 
 #[test]
@@ -266,7 +276,7 @@ fn admit_content(
     options: &ContentFixture<'_>,
     value: RuntimeFunctionSiteSeedId,
     functions: [RuntimeCallableStateSeedId; 2],
-) {
+) -> RuntimeDialogueContentPlanSeedId {
     let slot = RuntimeDialogueValueSlotId::from_zero_based(0).unwrap();
     let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
         id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
@@ -313,7 +323,7 @@ fn admit_content(
             marks: Box::new(["mark".into()]),
             effect_site_count: RuntimeDialogueEffectSiteCount::try_from_len(2).unwrap(),
         })
-        .unwrap();
+        .unwrap()
 }
 
 fn row(
