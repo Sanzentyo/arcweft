@@ -35,7 +35,8 @@ impl NormalContinuation {
         match result {
             CheckedExpressionResult::Value(value) => Some(Self::from_value_type(value.ty())),
             CheckedExpressionResult::NonValue(
-                CheckedNonValueExpressionResult::ContentEmission(_),
+                CheckedNonValueExpressionResult::ContentEmission(_)
+                | CheckedNonValueExpressionResult::RegistryAddress(_),
             ) => Some(Self::Unit),
             CheckedExpressionResult::Unavailable => None,
         }

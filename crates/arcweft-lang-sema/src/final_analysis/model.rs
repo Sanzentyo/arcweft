@@ -958,6 +958,8 @@ impl CheckedContentApplication {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExpressionResolution {
     Structural,
+    /// Metadata owned by one registry-write statement, never an eager value.
+    RegistryAddress(Arc<CheckedRegistryAddress>),
     /// The accepted lexical identity of one explicit Scope expression.
     Scope(CheckedScopeIdentity),
     Literal(HirLiteral),
@@ -1077,6 +1079,7 @@ impl CheckedExpressionResolution {
                 ),
             },
             Self::Structural
+            | Self::RegistryAddress(_)
             | Self::Scope(_)
             | Self::Literal(_)
             | Self::Value(_)
@@ -1147,6 +1150,7 @@ impl CheckedExpressionResolution {
             Self::TypeValue(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => value.original().visit_types(visitor),
             Self::Structural
+            | Self::RegistryAddress(_)
             | Self::Scope(_)
             | Self::Literal(_)
             | Self::StageLook(_)
@@ -2131,6 +2135,7 @@ impl CheckedTypedExpressionResult {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedNonValueExpressionResult {
     ContentEmission(crate::callable::ContentCallableIdentity),
+    RegistryAddress(StmtId),
 }
 
 impl CheckedNonValueExpressionResult {}
@@ -2183,6 +2188,7 @@ pub enum CheckedStructuralExecutionReason {
     ContentValue,
     PostfixBracket,
     ContextualCapability,
+    RegistryAddress,
 }
 
 /// Runtime callee mode retained by one checked call execution plan.
@@ -2473,6 +2479,25 @@ struct CheckedExpressionData {
 }
 
 impl CheckedExpression {
+    pub(crate) fn registry_address(address: Arc<CheckedRegistryAddress>) -> Self {
+        Self {
+            data: Box::new(CheckedExpressionData {
+                result: CheckedExpressionResult::NonValue(
+                    CheckedNonValueExpressionResult::RegistryAddress(address.statement()),
+                ),
+                effects: EffectSet::new(),
+                resolution: CheckedExpressionResolution::RegistryAddress(address),
+                mutable_place: None,
+                execution: Some(CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Omit,
+                    CheckedStructuralExecutionReason::RegistryAddress,
+                )),
+                evaluated_effect: None,
+                match_fact: None,
+                nested_path_evidence: None,
+            }),
+        }
+    }
     pub(crate) fn unavailable_call() -> Self {
         Self {
             data: Box::new(CheckedExpressionData {
@@ -2909,6 +2934,9 @@ pub use evaluated_effect::{
 mod place;
 pub use place::CheckedPlace;
 
+#[path = "model/registry.rs"]
+mod registry;
+pub use registry::{CheckedRegistryAddress, CheckedRegistryWrite};
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{

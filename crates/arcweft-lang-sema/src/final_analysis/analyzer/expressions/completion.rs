@@ -642,6 +642,11 @@ impl Analyzer<'_, '_, '_> {
             HirStmtEvaluationPlan::Binding { input, .. } => {
                 self.expression_body_completion_in(module, input, query)?
             }
+            HirStmtEvaluationPlan::OrderedPair {
+                kind: arcweft_lang_hir::stmt::HirStmtOrderedPairPlanKind::LifetimeSet,
+                second,
+                ..
+            } => self.expression_body_completion_in(module, second, query)?,
             HirStmtEvaluationPlan::OrderedPair { first, second, .. } => {
                 let mut result = self.expression_body_completion_in(module, first, query)?;
                 result.sequence(self.expression_body_completion_in(module, second, query)?);

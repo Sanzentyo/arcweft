@@ -180,7 +180,24 @@ impl EffectId {
     pub fn covers(&self, required: &Self) -> bool {
         self == required
             || (self.path() == required.path()
-                && (self.scope_count() == 0 || required.scope_count() == 0))
+                && (self.scope_count() == 0
+                    || required.scope_count() == 0
+                    || (self.scope_count() == required.scope_count()
+                        && self.scope_atoms().zip(required.scope_atoms()).all(
+                            |(granted, needed)| {
+                                granted == needed
+                                    || needed
+                                        .strip_prefix(granted)
+                                        .is_some_and(|suffix| suffix.starts_with('.'))
+                            },
+                        ))))
+    }
+
+    fn scope_atoms(&self) -> impl Iterator<Item = &str> {
+        self.0
+            .split_once('(')
+            .map_or("", |(_, scopes)| &scopes[..scopes.len() - 1])
+            .split(',')
     }
 }
 
@@ -350,5 +367,39 @@ mod tests {
         assert_eq!(first.semantic_digest(), same.semantic_digest());
         assert_ne!(first.semantic_digest(), other_scope.semantic_digest());
         assert_ne!(first.semantic_digest(), other_path.semantic_digest());
+    }
+
+    #[test]
+    fn scoped_effect_coverage_respects_path_boundaries_and_argument_positions() {
+        let root = EffectId::parse("state.write('flow)").expect("root grant");
+        let flags = EffectId::parse("state.write('flow.flags)").expect("key grant");
+        let seen = EffectId::parse("state.write('flow.flags.seen)").expect("required key");
+        assert!(root.covers(&seen));
+        assert!(flags.covers(&seen));
+        assert!(!seen.covers(&flags));
+        for other in [
+            "state.write('flow.flagship)",
+            "state.write('flowing.flags)",
+            "state.write('scene.flags)",
+            "state.read('flow.flags)",
+        ] {
+            assert!(
+                !flags.covers(&EffectId::parse(other).expect("other capability")),
+                "{other}"
+            );
+        }
+        let pair = EffectId::parse("state.move('flow,'session.cache)").expect("pair grant");
+        assert!(
+            pair.covers(
+                &EffectId::parse("state.move('flow.flags,'session.cache.slot)")
+                    .expect("descendant pair")
+            )
+        );
+        assert!(
+            !pair.covers(
+                &EffectId::parse("state.move('session.cache,'flow)").expect("reversed pair")
+            )
+        );
+        assert!(!pair.covers(&root));
     }
 }

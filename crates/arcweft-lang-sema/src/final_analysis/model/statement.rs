@@ -511,6 +511,7 @@ impl CheckedDefer {
 pub enum CheckedStatementPayload {
     Structural,
     Assignment(Box<CheckedAssignment>),
+    RegistryWrite(Box<super::CheckedRegistryWrite>),
     Assertion(CheckedAssertionDisposition),
     Defer(Box<CheckedDefer>),
     EvaluatedEffect(CheckedEvaluatedEffectReference),
@@ -548,6 +549,7 @@ impl CheckedStatementPayload {
             Self::Include(_) => 12,
             Self::Suspension(_) => 13,
             Self::Yield => 14,
+            Self::RegistryWrite(_) => 15,
         }
     }
 }

@@ -418,6 +418,7 @@ impl CheckedExecutableRuntimePatternFactOwner {
 pub enum CheckedExecutableRuntimeStatementFactFamily {
     Structural,
     Assignment,
+    RegistryWrite,
     Assertion,
     Defer,
     EvaluatedEffect,
@@ -845,7 +846,8 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::PostfixBracket(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
                     }
-                    CheckedExpressionResolution::CompileTimeEnum(_)
+                    CheckedExpressionResolution::RegistryAddress(_)
+                    | CheckedExpressionResolution::CompileTimeEnum(_)
                     | CheckedExpressionResolution::Effect(_)
                     | CheckedExpressionResolution::Call
                     | CheckedExpressionResolution::ImplicitParameter(_)
@@ -917,6 +919,9 @@ impl FinalAnalysisExecutionProjection<'_> {
                     .statement(owner)
                     .ok_or(FinalAnalysisExecutionProjectionError::MissingStatement { owner })?;
                 let family = match statement.payload() {
+                    super::CheckedStatementPayload::RegistryWrite(_) => {
+                        CheckedExecutableRuntimeStatementFactFamily::RegistryWrite
+                    }
                     super::CheckedStatementPayload::Structural => {
                         CheckedExecutableRuntimeStatementFactFamily::Structural
                     }

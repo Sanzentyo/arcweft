@@ -16480,3 +16480,48 @@ The source entrypoints and owning module remain private to the plan; no existing
 Ownership review (bytes / physical LOC): new production admission/counting 9,935 / 287, direct reader 8,619 / 237, counted encoder 8,545 / 247 and cohesive owner tests 21,745 / 656; existing source facade 5,254 / 130 (5,214 / 129). The new test growth receives this cohesion disposition: the complete static-effect grammar, shared original value resource/domain admission and real factory/publication behavior share the same two-function/29-row fixture. Reader inspection/retention are legitimate phases of the actual request enum rather than a second request authority. No unrelated state cluster, public facade widening, backend I/O or unsafe is added. Canonical Core normal fan-in/out remains 31/7 and development 4/5; no changed Cargo edge or blocking structural finding exists.
 
 Static effects now join complete Audio/evaluated-effect and earlier declaration/function/callable/content/expression/invocation/Stream/ProjectCall source foundations. Remaining host/request/general Flow/Line/Entry sources, joint whole-program preflight and the single all-14 atomic public producer/builder/decoder/consumer switch remain required. Selected-Need original-program keys and raw key constructor/Deserialize removal, the concrete accepted state.write CLI defect, typed Presentation, full Match/retained View/function behavior, failure-atomic restore/replacement, final workspace/Tier2 and actual Native/Web capture/image parity remain open. The older R955 failures are not claimed fixed. The full goal remains active and incomplete.
+
+### 2026-10-18 — Lifetime registry semantic migration checkpoint
+
+Inspected base: `0f772469af46f23717ca9479b72a0ef671dc61a7` on existing
+`main`. This is an explicitly authorized intermediate checkpoint, not accepted
+registry runtime support. The user's current instruction permits checkpoint
+commits without requiring each intermediate revision to work. Fourteen held
+tracked changes and three unrelated untracked paths remain outside this cut.
+
+The statement now owns a checked non-value registry address and a typed write
+payload containing the exact target, scope/key path, RHS owner/type and precise
+`state.write` identity. Address facts are published through the existing candidate
+transaction. Early and final effect folds, independent final validation, stable
+semantic transcripts, executable fact reporting and project-index validation are
+being migrated to that owner. Runtime address metadata has no fabricated Unit/Any
+value or local storage lease. Effect identity coverage now checks corresponding
+scope arguments by complete path segments, allowing a parent grant such as
+`state.write('flow)` to cover `state.write('flow.flags.seen)` without matching
+sibling prefixes or another scope. This shared identity change requires the
+actual Id reverse dependency closure, not just sema-only final acceptance.
+
+R1204's diagnostic sema compilation failed with 22 migration errors, including a
+misplaced module path attribute and exhaustive consumer matches. R1205 reduced
+that to one generic Into inference error, now repaired. R1206's sema library
+nextest catalog is still building at checkpoint preparation. These are diagnostic
+builds, not accepted execution evidence. The existing statement matrix and Match
+corpus are being changed from the invalid `() <- value` fixture to an actual
+lifetime path; remaining expected payload assertions and dedicated rejection/
+transcript cases still need completion. No test pass or CLI fix is claimed.
+
+The Core/native/AWBC registry storage, runtime-plan/compiler projection, actual
+read/registration/lifetime behavior and save/restore remain to be implemented.
+The concrete R1197 CLI state.write acceptance and the full original convergence
+goal remain open. Continue the migration after this checkpoint; do not use a
+commit boundary as a reason to return incomplete work or discard these changes.
+
+The requested one-time workspace clean was independently rechecked against its
+retained actual receipt: exit 0, 163710 files / 208.8 GiB removed, target absent
+immediately afterward, unchanged Git porcelain. Subsequent validation recreated
+target. No second clean, artifact relocation or build-profile/jobs change occurs.
+
+R1206 subsequently terminated with actual Cargo 101: two exhaustive-match
+errors remain in the existing test-only checked-to-prepared fixture projection.
+Formatting and whitespace review complete for the explicit changed Rust paths;
+owner execution and downstream acceptance remain pending at this checkpoint.

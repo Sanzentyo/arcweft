@@ -21,6 +21,7 @@ use super::{Fixture, fixture};
 enum ExpectedPayload {
     Structural,
     Assignment,
+    RegistryWrite,
     Assertion,
     Defer,
     EvaluatedEffectOrStructural,
@@ -98,7 +99,7 @@ const MATRIX: &[MatrixRow] = &[
     MatrixRow {
         name: "LifetimeSet",
         tag: 0x070A,
-        payload: ExpectedPayload::Structural,
+        payload: ExpectedPayload::RegistryWrite,
     },
     MatrixRow {
         name: "Wait",
@@ -267,7 +268,7 @@ fn expected_payload_for_kind(kind: &HirStmtKind) -> ExpectedPayload {
         HirStmtKind::Defer { .. } => ExpectedPayload::Defer,
         HirStmtKind::Yield { .. } => ExpectedPayload::Yield,
         HirStmtKind::Signal { .. } => ExpectedPayload::Structural,
-        HirStmtKind::LifetimeSet { .. } => ExpectedPayload::Structural,
+        HirStmtKind::LifetimeSet { .. } => ExpectedPayload::RegistryWrite,
         HirStmtKind::Wait { .. } => ExpectedPayload::Suspension,
         HirStmtKind::On { .. } => ExpectedPayload::Trigger,
         HirStmtKind::CancelRule { .. } => ExpectedPayload::Trigger,
@@ -296,6 +297,7 @@ fn payload_family(payload: &CheckedStatementPayload) -> ExpectedPayload {
     match payload {
         CheckedStatementPayload::Structural => ExpectedPayload::Structural,
         CheckedStatementPayload::Assignment(_) => ExpectedPayload::Assignment,
+        CheckedStatementPayload::RegistryWrite(_) => ExpectedPayload::RegistryWrite,
         CheckedStatementPayload::Assertion(_) => ExpectedPayload::Assertion,
         CheckedStatementPayload::Defer(_) => ExpectedPayload::Defer,
         CheckedStatementPayload::EvaluatedEffect(_) => ExpectedPayload::EvaluatedEffectOrStructural,
@@ -631,7 +633,9 @@ fn wrong_prepared_payload(expected: ExpectedPayload) -> PreparedStatementPayload
         | ExpectedPayload::EvaluatedEffectOrStructural => PreparedStatementPayload::Assertion(
             crate::final_analysis::CheckedAssertionDisposition::Discharged,
         ),
-        ExpectedPayload::Assignment | ExpectedPayload::Reject => PreparedStatementPayload::HirOwned,
+        ExpectedPayload::Assignment | ExpectedPayload::RegistryWrite | ExpectedPayload::Reject => {
+            PreparedStatementPayload::HirOwned
+        }
         ExpectedPayload::Trigger | ExpectedPayload::Select | ExpectedPayload::Include => {
             PreparedStatementPayload::Assertion(
                 crate::final_analysis::CheckedAssertionDisposition::Discharged,

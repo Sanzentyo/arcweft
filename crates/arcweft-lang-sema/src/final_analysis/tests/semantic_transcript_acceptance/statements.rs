@@ -68,6 +68,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
 statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, {
     CheckedStatementPayload::Structural => Structural => Accepted,
     CheckedStatementPayload::Assignment(_) => Assignment => Accepted,
+    CheckedStatementPayload::RegistryWrite(_) => RegistryWrite => Accepted,
     CheckedStatementPayload::Assertion(_) => Assertion => Accepted,
     CheckedStatementPayload::Defer(_) => Defer => Accepted,
     CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Accepted,
@@ -448,7 +449,11 @@ fn flow_match_signal_source(value: &str) -> String {
 }
 
 fn flow_match_lifetime_set_source(value: &str) -> String {
-    flow_match_statement_source(&format!("() <- {value}"))
+    flow_match_statement_source(&format!("'flow.flags.seen <- {value}")).replacen(
+        "other: bool) {",
+        "other: bool) effects { state.write('flow) } {",
+        1,
+    )
 }
 
 fn flow_match_unsafe_lifetime_source(audit: &str) -> String {

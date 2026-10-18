@@ -448,6 +448,10 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error(
+        "lifetime registry write {owner:?} requires a non-optional registry address at {target:?}"
+    )]
+    RegistryWriteTarget { owner: StmtId, target: ExprId },
     #[error("checked expression {owner:?} has no accepted eager execution region")]
     ExpressionExecutionUnavailable { owner: ExprId },
     #[error("expression input {site:?} has no checked local-access authority")]

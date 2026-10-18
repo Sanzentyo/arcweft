@@ -111,6 +111,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::HirOwned => Ok(CheckedStatementPayload::Structural),
             PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -133,6 +134,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::HirOwned
             | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::Yield
@@ -154,6 +156,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::HirOwned
             | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::Yield
@@ -175,6 +178,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::HirOwned
             | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Yield
@@ -194,6 +198,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             PreparedStatementPayload::HirOwned
             | PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -537,6 +542,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             }
             PreparedStatementPayload::Return(_)
             | PreparedStatementPayload::Assignment(_)
+            | PreparedStatementPayload::RegistryWrite(_)
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
@@ -555,7 +561,7 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
     )]
     fn seal_payload(
         &mut self,
-        _module: &HirModule,
+        module: &HirModule,
         owner: StmtId,
         statement: &HirStmtKind,
         expressions: &BTreeMap<ExprId, CheckedExpression>,
@@ -644,7 +650,31 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             }
             HirStmtKind::Yield { .. } => self.yield_statement(owner),
             HirStmtKind::Signal { .. } => self.structural(owner),
-            HirStmtKind::LifetimeSet { .. } => self.structural(owner),
+            HirStmtKind::LifetimeSet { target, value } => {
+                let PreparedStatementPayload::RegistryWrite(prepared) =
+                    self.take_prepared(owner)?
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let expected = super::CheckedRegistryAddress::from_statement(module, owner)?;
+                if prepared.address.as_ref() != &expected
+                    || prepared.value != *value
+                    || expressions
+                        .get(value)
+                        .and_then(super::CheckedExpression::value_type)
+                        != Some(&prepared.value_type)
+                    || !matches!(expressions.get(target).map(super::CheckedExpression::resolution), Some(super::CheckedExpressionResolution::RegistryAddress(address)) if address == &prepared.address)
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                Ok(CheckedStatementPayload::RegistryWrite(Box::new(
+                    super::CheckedRegistryWrite::new(
+                        prepared.address,
+                        prepared.value,
+                        prepared.value_type,
+                    ),
+                )))
+            }
             HirStmtKind::Wait { .. } => self.suspension(owner),
             HirStmtKind::On { trigger, .. } => self.trigger(owner, trigger),
             HirStmtKind::CancelRule { trigger, .. } => self.cancel_trigger(owner, trigger),

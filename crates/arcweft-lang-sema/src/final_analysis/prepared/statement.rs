@@ -16,6 +16,13 @@ use crate::{
 
 use super::PreparedEvaluatedEffect;
 
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct PreparedRegistryWrite {
+    pub(crate) address: std::sync::Arc<crate::final_analysis::CheckedRegistryAddress>,
+    pub(crate) value: ExprId,
+    pub(crate) value_type: TypeKind,
+}
+
 /// One typed assignment awaiting the final target place seal.
 ///
 /// This evidence is affine: the all-statement seal consumes it while joining
@@ -61,6 +68,7 @@ pub(crate) enum PreparedStatementPayload {
     /// latent bodies, while the complete callable fact inventory is available.
     Return(crate::final_analysis::CheckedCallableBoundary),
     Assignment(PreparedAssignmentStatement),
+    RegistryWrite(PreparedRegistryWrite),
     Assertion(CheckedAssertionDisposition),
     Iteration(Box<CheckedIteration>),
     Suspension(Box<CheckedSuspensionStatement>),
@@ -76,6 +84,7 @@ impl PreparedStatementPayload {
     ) -> Result<(), E> {
         match self {
             Self::Assignment(value) => value.visit_types(visitor),
+            Self::RegistryWrite(value) => visitor(&value.value_type),
             Self::Iteration(value) => value.visit_types(visitor),
             Self::HirOwned
             | Self::Return(_)

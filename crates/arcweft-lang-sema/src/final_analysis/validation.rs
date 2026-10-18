@@ -595,6 +595,10 @@ pub(super) fn validate_expressions(
         }
         match fact.result() {
             super::CheckedExpressionResult::Value(_) => {}
+            super::CheckedExpressionResult::NonValue(
+                super::CheckedNonValueExpressionResult::RegistryAddress(statement),
+            ) if matches!(fact.resolution(), CheckedExpressionResolution::RegistryAddress(address)
+                if address.statement() == *statement && address.target() == owner) => {}
             super::CheckedExpressionResult::NonValue(_)
                 if matches!(
                     fact.resolution(),
@@ -701,8 +705,25 @@ pub(super) fn validate_expressions(
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-        } else if matches!(fact.result(), super::CheckedExpressionResult::NonValue(_)) {
-            validate_content_application_resolution(modules, owner)?;
+        } else if let super::CheckedExpressionResult::NonValue(result) = fact.result() {
+            match result {
+                super::CheckedNonValueExpressionResult::ContentEmission(_) => {
+                    validate_content_application_resolution(modules, owner)?;
+                }
+                super::CheckedNonValueExpressionResult::RegistryAddress(statement) => {
+                    let CheckedExpressionResolution::RegistryAddress(address) = fact.resolution()
+                    else {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    };
+                    let expected = super::CheckedRegistryAddress::from_statement(
+                        resolve_module(modules, statement.module())?,
+                        *statement,
+                    )?;
+                    if address.as_ref() != &expected || !fact.effects().is_empty() {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                }
+            }
         }
         let call_backed = match fact.resolution() {
             CheckedExpressionResolution::Call
@@ -1042,6 +1063,9 @@ fn expression_resolution_matches(
             expression_resolution_matches(kind, scalar.original())
         }
         (HirExprKind::Closure(_), CheckedExpressionResolution::Closure(_)) => true,
+        (HirExprKind::LifetimePath(path), CheckedExpressionResolution::RegistryAddress(address)) => {
+            path.as_resolved() == Some(address.path())
+        }
         (HirExprKind::Pipe(authored), CheckedExpressionResolution::Pipe(checked)) => {
             authored.left() == checked.lookup_left() && authored.right() == checked.lookup_right()
         }
@@ -1173,6 +1197,9 @@ fn validate_expression_resolution(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
+        CheckedExpressionResolution::RegistryAddress(_) => {
+            Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
         CheckedExpressionResolution::Closure(closure) => {
             validate_explicit_closure(topology, owner, closure)
         }
@@ -2528,6 +2555,29 @@ pub(super) fn validate_statements(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         match fact.payload() {
+            CheckedStatementPayload::RegistryWrite(write) => {
+                let arcweft_lang_hir::stmt::HirStmtKind::LifetimeSet { target, value } =
+                    statement.kind()
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let expected = super::CheckedRegistryAddress::from_statement(
+                    resolve_module(modules, owner.module())?,
+                    owner,
+                )?;
+                if write.address() != &expected
+                    || write.value() != *value
+                    || expressions
+                        .get(value)
+                        .and_then(CheckedExpression::value_type)
+                        != Some(write.value_type())
+                    || !matches!(expressions.get(target).map(CheckedExpression::resolution),
+                        Some(CheckedExpressionResolution::RegistryAddress(address)) if address.as_ref() == write.address())
+                    || !fact.effects().contains(write.address().effect())
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
             CheckedStatementPayload::Assignment(assignment) => {
                 let place = assignment.place();
                 let valid = locals

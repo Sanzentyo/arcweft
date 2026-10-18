@@ -507,6 +507,12 @@ fn execution_plan_for_expression_with_roles(
         };
 
     let plan = match checked.resolution() {
+        CheckedExpressionResolution::RegistryAddress(_) => {
+            Ok(super::CheckedExpressionExecutionPlan::structural(
+                super::CheckedRuntimeValueDisposition::Omit,
+                CheckedStructuralExecutionReason::RegistryAddress,
+            ))
+        }
         CheckedExpressionResolution::Call
         | CheckedExpressionResolution::CharacterDialogueFactory(_)
         | CheckedExpressionResolution::CharacterDialogueReconfigure(_)

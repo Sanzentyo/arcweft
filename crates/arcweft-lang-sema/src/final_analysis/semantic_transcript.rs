@@ -1363,6 +1363,26 @@ fn write_statement_payload(
     use super::{CheckedAssertionDisposition, CheckedStatementPayload};
     match payload {
         CheckedStatementPayload::Structural => {}
+        CheckedStatementPayload::RegistryWrite(write) => {
+            transcript_update!(
+                hasher,
+                write.address().effect().semantic_digest().as_bytes()
+            );
+            write_bytes(
+                hasher,
+                &coordinates
+                    .expression(write.address().target())?
+                    .canonical_bytes()?,
+            )?;
+            write_bytes(
+                hasher,
+                &coordinates.expression(write.value())?.canonical_bytes()?,
+            )?;
+            transcript_update!(
+                hasher,
+                write.value_type().semantic_identity_digest()?.as_bytes()
+            );
+        }
         CheckedStatementPayload::Assignment(assignment) => {
             let place = assignment.place();
             write_place(hasher, place, coordinates, analysis)?;
@@ -2532,6 +2552,15 @@ fn write_resolution_payload(
     cycle_owner: Option<ExprId>,
 ) -> Result<(), SemanticTranscriptError> {
     match resolution {
+        CheckedExpressionResolution::RegistryAddress(address) => {
+            transcript_update!(hasher, address.effect().semantic_digest().as_bytes());
+            write_bytes(
+                hasher,
+                &coordinates
+                    .statement(address.statement())?
+                    .canonical_bytes()?,
+            )?;
+        }
         CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => {}
@@ -4129,6 +4158,15 @@ impl SemanticTranscriptGraph<'_, '_> {
                 super::CheckedNonValueExpressionResult::ContentEmission(callable),
             ) => {
                 transcript_update!(hasher, &[1, callable.semantic_tag()]);
+            }
+            super::CheckedExpressionResult::NonValue(
+                super::CheckedNonValueExpressionResult::RegistryAddress(statement),
+            ) => {
+                transcript_update!(hasher, &[4]);
+                write_bytes(
+                    &mut hasher,
+                    &self.coordinates.statement(*statement)?.canonical_bytes()?,
+                )?;
             }
             super::CheckedExpressionResult::Unavailable => {
                 transcript_update!(hasher, &[2]);

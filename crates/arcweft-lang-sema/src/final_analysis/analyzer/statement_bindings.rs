@@ -23,6 +23,7 @@ impl Analyzer<'_, '_, '_> {
             HirStmtKind::WhileLet(statement) => statement.scrutinee(),
             HirStmtKind::Match(statement) => statement.scrutinee(),
             HirStmtKind::For(statement) => statement.source(),
+            HirStmtKind::LifetimeSet { value, .. } => *value,
             _ => return Ok(()),
         };
         let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
@@ -41,6 +42,40 @@ impl Analyzer<'_, '_, '_> {
             .check()
             .map_err(AnalyzerExpressionError::fatal)?;
         match statement {
+            HirStmtKind::LifetimeSet { target, .. } => {
+                let module = self
+                    .module(owner.module())
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let address = std::sync::Arc::new(
+                    crate::final_analysis::CheckedRegistryAddress::from_statement(module, owner)
+                        .map_err(AnalyzerExpressionError::fatal)?,
+                );
+                if let Some(previous) = self.facts.expressions().get(target) {
+                    if matches!(previous.checked_resolution(), Some(crate::final_analysis::CheckedExpressionResolution::RegistryAddress(previous)) if previous == &address)
+                    {
+                        return Ok(());
+                    }
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    ));
+                }
+                let target = *target;
+                self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(|this, _, _| {
+                    this.facts
+                        .publish_new_expression(
+                            target,
+                            crate::final_analysis::CheckedExpression::registry_address(address),
+                        )
+                        .map_err(|_| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::WrongPayloadFamily,
+                            )
+                        })?;
+                    Ok(super::state::CandidateFactTransactionAction::Commit(()))
+                })?
+                .into_committed()
+                .map_err(AnalyzerExpressionError::fact)?;
+            }
             HirStmtKind::Let {
                 pattern,
                 annotation,

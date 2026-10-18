@@ -301,6 +301,37 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Ok(PreparedStatementPayload::Iteration(Box::new(iteration)))
             }
+            HirStmtKind::LifetimeSet { target, value } => {
+                let target_fact = self.facts.expressions().get(target).ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                )?;
+                let Some(CheckedExpressionResolution::RegistryAddress(address)) =
+                    target_fact.checked_resolution()
+                else {
+                    return Err(FinalSemanticAnalysisError::RegistryWriteTarget {
+                        owner,
+                        target: *target,
+                    });
+                };
+                if address.statement() != owner || address.target() != *target {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let value_type = self
+                    .facts
+                    .expressions()
+                    .get(value)
+                    .and_then(PreparedExpressionFact::value_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: *value,
+                    })?;
+                Ok(PreparedStatementPayload::RegistryWrite(
+                    super::super::prepared::PreparedRegistryWrite {
+                        address: std::sync::Arc::clone(address),
+                        value: *value,
+                        value_type: value_type.clone(),
+                    },
+                ))
+            }
             HirStmtKind::Assign { target, value } => {
                 return self
                     .prepared_assignment_statement(module, *target, *value)
@@ -345,7 +376,6 @@ impl Analyzer<'_, '_, '_> {
             | HirStmtKind::Goto { .. }
             | HirStmtKind::Defer { .. }
             | HirStmtKind::Signal { .. }
-            | HirStmtKind::LifetimeSet { .. }
             | HirStmtKind::On { .. }
             | HirStmtKind::CancelRule { .. }
             | HirStmtKind::UnsafeLifetime { .. }

@@ -1018,6 +1018,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
         {
             let child = match edge.child() {
+                HirStatementChild::Expression(child) if matches!(kind, HirStmtKind::LifetimeSet { target, .. } if *target == child) =>
+                {
+                    // The statement owns this address; no value is evaluated.
+                    PreparedExecutionEffectRow {
+                        expressions: BTreeSet::from([child]),
+                        ..PreparedExecutionEffectRow::default()
+                    }
+                }
                 HirStatementChild::Expression(child)
                     if matches!(kind.evaluation_plan(),
                     arcweft_lang_hir::stmt::HirStmtEvaluationPlan::OrderedPair {
@@ -1067,6 +1075,12 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 family: super::SemanticFactFamily::Statement,
             },
         )? {
+            PreparedStatementPayload::RegistryWrite(write) => {
+                let mut effects = EffectSet::new();
+                effects.insert(write.address.effect().clone());
+                row.effects =
+                    union_effect_rows(&row.effects, &EffectRow::closed(effects), self.control)?;
+            }
             PreparedStatementPayload::Suspension(_) | PreparedStatementPayload::Yield => {
                 let mut suspend_effect = EffectSet::new();
                 suspend_effect.insert(EffectId::control_suspend());
@@ -1111,6 +1125,7 @@ pub(crate) struct CompletedStatementEffectFold {
 enum CompletedStatementIntrinsicEffect {
     None,
     ControlSuspend,
+    RegistryWrite(EffectId),
     EvaluatedEffect {
         application: crate::callable::CheckedCallApplicationDigest,
         effects: EffectSet,
@@ -1153,9 +1168,16 @@ impl CompletedStatementEffectFold {
                 if !matches!(
                     payload,
                     CheckedStatementPayload::EvaluatedEffect(_)
+                        | CheckedStatementPayload::RegistryWrite(_)
                         | CheckedStatementPayload::Suspension(_)
                         | CheckedStatementPayload::Yield
                 ) => {}
+            (
+                CompletedStatementIntrinsicEffect::RegistryWrite(effect),
+                CheckedStatementPayload::RegistryWrite(write),
+            ) if &effect == write.address().effect() => {
+                effects.insert(effect);
+            }
             (
                 CompletedStatementIntrinsicEffect::ControlSuspend,
                 CheckedStatementPayload::Suspension(_) | CheckedStatementPayload::Yield,
@@ -1562,6 +1584,12 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         payload: &CheckedStatementPayload,
     ) -> Result<CompletedStatementEffectFold, FinalSemanticAnalysisError> {
         match payload {
+            CheckedStatementPayload::RegistryWrite(write) => Ok(CompletedStatementEffectFold {
+                child_effects,
+                intrinsic: CompletedStatementIntrinsicEffect::RegistryWrite(
+                    write.address().effect().clone(),
+                ),
+            }),
             CheckedStatementPayload::Suspension(_) | CheckedStatementPayload::Yield => {
                 Ok(CompletedStatementEffectFold::control_suspend(child_effects))
             }

@@ -553,11 +553,11 @@ fn summarize_flow(
                 HirStmtKind::While(_) | HirStmtKind::WhileLet(_) => summary.record_loop(),
                 HirStmtKind::Let { .. }
                 | HirStmtKind::Signal { .. }
-                | HirStmtKind::LifetimeSet { .. }
                 | HirStmtKind::Close { .. }
                 | HirStmtKind::Expression { .. }
                 | HirStmtKind::ProofCall { .. } => {}
                 HirStmtKind::Assertion { .. }
+                | HirStmtKind::LifetimeSet { .. }
                 | HirStmtKind::Return { .. }
                 | HirStmtKind::Assign { .. }
                 | HirStmtKind::Out { .. }
@@ -582,6 +582,8 @@ fn summarize_flow(
             },
             CheckedStatementPayload::Assignment(_)
                 if matches!(statement.kind(), HirStmtKind::Assign { .. }) => {}
+            CheckedStatementPayload::RegistryWrite(_)
+                if matches!(statement.kind(), HirStmtKind::LifetimeSet { .. }) => {}
             CheckedStatementPayload::Assertion(_)
                 if matches!(statement.kind(), HirStmtKind::Assertion { .. }) => {}
             CheckedStatementPayload::Defer(_)
@@ -611,6 +613,7 @@ fn summarize_flow(
             CheckedStatementPayload::Yield
                 if matches!(statement.kind(), HirStmtKind::Yield { .. }) => {}
             CheckedStatementPayload::Assignment(_)
+            | CheckedStatementPayload::RegistryWrite(_)
             | CheckedStatementPayload::Assertion(_)
             | CheckedStatementPayload::Defer(_)
             | CheckedStatementPayload::EvaluatedEffect(_)

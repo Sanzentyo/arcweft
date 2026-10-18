@@ -35,8 +35,8 @@ pub(crate) use dialogue::{
 mod statement;
 pub(crate) use statement::{
     PreparedAssignmentStatement, PreparedEventScrutineeProof, PreparedIncludeFlowProof,
-    PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof, PreparedStatementPayload,
-    PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
+    PreparedRegistryWrite, PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof,
+    PreparedStatementPayload, PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
