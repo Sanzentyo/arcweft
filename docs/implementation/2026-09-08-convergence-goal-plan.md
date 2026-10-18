@@ -16882,3 +16882,59 @@ LifetimeSet projection is not yet enabled; R1219's actual CLI failure remains.
 This intermediate checkpoint follows the user's explicit instruction to avoid
 accumulating dirty work without requiring every intermediate commit to work.
 Continue implementation and validation of the same active goal after publication.
+
+### 2026-10-19 — AWBC payload consumers and original-plan lowering evidence
+
+Delivery fe2468d74de19b85c07a03219d37dfdee5499534 is verified against its
+normal push, fetched/advertised main, 23 published blobs, the reviewed raw patch,
+3858 inputs and an empty index; held user edits remain separate.
+
+R1250's five-owner catalog build fails, actual 101, on one remaining Bundle
+test reference to the removed kind field. This checkpoint corrects that call
+to the derived kind() accessor and removes now-unused imports. R1251 then
+builds the complete five-owner catalog successfully: 2576 selected, zero
+excluded/ignored. Core has 1771 including integrations (1718 library cases),
+Bundle 327, ProjectLoader 158, RuntimeDriver 174, RuntimePlan 146. All six new
+Core cases and the new original-plan RuntimePlan lowering case are present.
+The latter builds an actual sealed plan, verifies generated AWBC, checks exact
+original RHS type/key/effect row, keeps addresses out of value operands, interns
+one typed plan for two separate RHS expressions, and rejects unadmitted original
+types instead of substituting a primitive/dynamic type. The maintained executable
+runtime chapter now documents the closed payload and removes its stale removed
+handle-effect description.
+
+R1252 canonical structure scan returns 0. Core fan-in/out remains 31/7,
+development 4/5; RuntimePlan 5/10, development 5/0. Against the full cut base
+7086576871a617f47a011b2426f02254ace5df53, schema.rs is 125041 bytes/3857 LOC
+(base 124521/3837), payload owner 4755/122 (new), wire.rs 25789/823 (23189/752),
+verifier structure.rs 151097/3784 (149538/3740), inventory.rs 99322/2394
+(98848/2390), dedicated lowering tests 5119/146 (new). Existing large owners
+remain the cohesive ABI tables, cross-table acceptance and deterministic
+original-plan inventory. The new algebra and tests follow those responsibilities.
+There is no dependency/feature/I/O/unsafe ownership change or API widening solely
+for physical splitting. The scanner and owner-review receipt retain the details.
+
+R1253 runs the entire 2576-case catalog with no-fail-fast. All seven new cases
+pass. At this checkpoint the final API-compile and IME generator integrations
+are still running, so no successful overall terminal result is claimed. Three
+failures are already observed: the migrated audio wire-reference test expected
+MalformedAudioPayload although an absent command correctly returns the precise
+audio_commands IndexOutOfBounds; and the actual Native/decoded-AWBC selected-Need
+completed-task-plan-key acceptance cases disagree with their original program
+key. The audio test is corrected here to assert all index-error fields. That
+correction is not yet reexecuted. The two Need key failures remain actual open
+goal work, not an excuse to change expected keys or reuse request-only digests.
+
+All 3859 awbc-effect-payload-final-owner frozen inputs were audited with zero
+drift while R1253 was running and before the audio expectation correction and
+this prose. R1254 workspace check was started alongside owner execution, then
+cancelled through its own session when the integrations also invoked Cargo.
+Its wrapper exit is 1; no actual Cargo success/exit code is claimed. The cancelled
+receipt records the reason. Required final workspace check/lint and full-goal
+acceptance remain pending. Do not repeat a large owner build solely to make an
+intermediate checkpoint appear fully green: the user explicitly permits such
+checkpoints. Continue actual producer/consumer implementation, retain the real
+failure evidence, and run the next required checks at a meaningful boundary.
+Native/AWBC registry execution and active-scope/storage/cleanup/restore authority,
+production final-HIR projection, all-fourteen-family source/Need migration, CLI
+acceptance, Tier2 and Native/Web parity still require completion.

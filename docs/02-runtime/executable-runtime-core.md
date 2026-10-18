@@ -654,18 +654,28 @@ struct AwbcTaskPlan {
     many: Option<{ item_binding: RegisterId, limit: u32 }>,
 }
 struct AwbcEffectPlan {
-    kind: AwbcEffectKind,
     signature: AwbcSignatureId,
     capability: Option<AwbcStringId>,
-    static_args: Vec<AwbcConstantId>,
+    payload: AwbcEffectPayload,
     resources: Vec<AwbcResourceAccess>,
 }
 ```
 
 Task classes preserve the current LocalView/Io/Cpu/GPU/shader/Wasm/asset/audio/TTS/
-BGM/LSP/background set. Effect kinds preserve register/drop handle, wait, audio,
+BGM/LSP/background set. Effect kinds preserve wait, audio,
 call, log, signal/metric/event/out, return/goto, panic/fail/bail, ensure/assert,
-close/select, and loop control. Resource access stores resource ID, access mode,
+close/select, loop control, and typed registry writes. The closed effect payload
+owns the kind and its static data. Audio carries an `AwbcAudioCommandId`;
+`RegistryWrite` carries an Id-owned `LifetimeRegistryKey` and the original RHS
+`AwbcTypeId`; other variants carry their constant operands. Kind is derived from
+the payload rather than independently stored. Registry signatures accept exactly
+that RHS type and return no value. The verifier requires the `state.write` host
+capability and declared effect coverage for the exact scoped key. A static key
+grants no active-scope lease. The canonical version-one codec decodes this same
+payload grammar and admits every key name against the enclosing cumulative
+resource budget before retaining it.
+
+Resource access stores resource ID, access mode,
 and typed conflict policy (`Error`, `Append`, priority LWW, merge patch, or a
 fixed reduce operator).
 

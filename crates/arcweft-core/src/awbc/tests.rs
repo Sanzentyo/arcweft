@@ -4781,10 +4781,17 @@ fn audio_effect_wire_round_trip_retains_and_verifies_its_command_reference() {
         .expect("decode typed Audio reference");
     assert_eq!(decoded.effect_plans[0].kind(), AwbcEffectKind::Audio);
     assert_eq!(decoded.effect_plans[0].audio(), Some(AwbcAudioCommandId(0)));
-    assert!(matches!(
-        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
-        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
-    ));
+    let error = decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("an unknown command reference must be rejected");
+    assert_eq!(
+        error,
+        AwbcVerifyError::IndexOutOfBounds {
+            table: "audio_commands",
+            index: 0,
+            at: "effect plan 0".to_owned(),
+        }
+    );
 }
 
 #[test]

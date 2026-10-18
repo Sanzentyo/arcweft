@@ -1990,7 +1990,7 @@ mod tests {
             other => panic!("assertion guard changed constant kind: {other:?}"),
         };
         assert_eq!(decoded_guard, guard);
-        assert_eq!(decoded_program.effect_plans[0].kind, AwbcEffectKind::Assert);
+        assert_eq!(decoded_program.effect_plans[0].kind(), AwbcEffectKind::Assert);
     }
 
     #[test]

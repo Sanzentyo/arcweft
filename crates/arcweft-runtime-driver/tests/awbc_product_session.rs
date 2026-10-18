@@ -11,9 +11,9 @@ use arcweft_core::{
     awbc::{
         fiber::{AwbcFiberStateSnapshot, FiberScopeCleanup, FiberState},
         schema::{
-            AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
-            AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-            AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+            AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectPlan, AwbcEffectPlanId,
+            AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+            AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
             AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
             AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape,
             AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
