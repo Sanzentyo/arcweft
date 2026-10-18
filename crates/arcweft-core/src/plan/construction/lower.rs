@@ -3919,8 +3919,6 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallRestMaterialization,
         };
 
-        self.validate_project_call_operand_positions(&seed.operands)?;
-
         let callee = self.lower_expression(seed.callee)?;
         let state = self.resolve_callable_state_seed(&seed.state)?;
         let operands = seed
@@ -4020,33 +4018,6 @@ impl RuntimePlanBodyConstruction<'_> {
         )
         .map_err(RuntimePlanBuildError::from)
     }
-    fn validate_project_call_operand_positions(
-        &self,
-        operands: &[super::super::RuntimeProjectCallOperandSeed],
-    ) -> Result<(), RuntimePlanBuildError> {
-        let mut positions = BTreeSet::new();
-        for operand in operands {
-            if !positions.insert(operand.abi_position) {
-                return Err(RuntimePlanBuildError::ProjectCall(
-                    super::super::RuntimeProjectCallPlanError::DuplicateAbiPosition {
-                        position: operand.abi_position,
-                    },
-                ));
-            }
-        }
-        for (expected, actual) in positions.iter().enumerate() {
-            let expected = u32::try_from(expected).unwrap_or(u32::MAX);
-            if expected != *actual {
-                return Err(RuntimePlanBuildError::ProjectCall(
-                    super::super::RuntimeProjectCallPlanError::NonContiguousAbiPosition {
-                        position: expected,
-                    },
-                ));
-            }
-        }
-        Ok(())
-    }
-
     fn validate_project_call_parts(
         &self,
         callee: &RuntimeExpr,

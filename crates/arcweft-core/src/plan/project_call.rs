@@ -40,12 +40,12 @@ impl RuntimeProjectCallOperand {
     }
 }
 
-/// Construction-only source-order physical operand.
+/// Construction-only source-order physical operand. Its array position is the
+/// source coordinate; logical materialization rows alone own ABI placement.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallOperandSeed {
     pub value: super::RuntimeExprSeed,
     pub mode: RuntimeCallArgumentMode,
-    pub abi_position: u32,
 }
 
 /// Five-way checked presence classification for the optional attached Content
@@ -321,10 +321,6 @@ impl RuntimeProjectCallPlanSeed {
 pub enum RuntimeProjectCallPlanError {
     #[error("project-call logical parameter rows are not dense at {parameter}")]
     NonCanonicalParameter { parameter: u32 },
-    #[error("project-call physical operand position {position} is repeated")]
-    DuplicateAbiPosition { position: u32 },
-    #[error("project-call physical operand positions are not contiguous at {position}")]
-    NonContiguousAbiPosition { position: u32 },
     #[error("project-call logical materialization references source operand {index} out of range")]
     SourceOutOfRange { index: u32 },
     #[error("project-call source operand {index} is referenced more than once")]

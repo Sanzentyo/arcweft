@@ -18,6 +18,7 @@ pub(in crate::plan) mod expression;
 pub(in crate::plan) mod functions;
 pub(in crate::plan) mod invocations;
 pub(in crate::plan) mod pattern;
+pub(in crate::plan) mod project_calls;
 pub(in crate::plan) mod pure_callables;
 pub(in crate::plan) mod streams;
 

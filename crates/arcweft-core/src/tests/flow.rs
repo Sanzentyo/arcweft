@@ -862,10 +862,9 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
             .push_flow_schema(flow_schema(&entry))
             .expect("rest flow schema admits");
         let operands = (0..source_count)
-            .map(|position| RuntimeProjectCallOperandSeed {
+            .map(|_| RuntimeProjectCallOperandSeed {
                 value: unit_value(),
                 mode: crate::value::RuntimeCallArgumentMode::Value,
-                abi_position: u32::try_from(position).expect("test source count fits u32"),
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
@@ -1170,12 +1169,10 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                                 RuntimeProjectCallOperandSeed {
                                     value: bump_state(state.clone(), 1),
                                     mode: crate::value::RuntimeCallArgumentMode::Value,
-                                    abi_position: 0,
                                 },
                                 RuntimeProjectCallOperandSeed {
                                     value: bump_state(state.clone(), 2),
                                     mode: crate::value::RuntimeCallArgumentMode::Value,
-                                    abi_position: 1,
                                 },
                             ]),
                             ordinary: Box::new([

@@ -7970,11 +7970,7 @@ impl<'a> FinalFlowLowerer<'a> {
                         RuntimeCallArgumentMode::Spread
                     }
                 };
-                Ok(RuntimeProjectCallOperandSeed {
-                    value,
-                    mode,
-                    abi_position: operand.abi_position(),
-                })
+                Ok(RuntimeProjectCallOperandSeed { value, mode })
             })
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?;
         let attached = call
@@ -8005,7 +8001,6 @@ impl<'a> FinalFlowLowerer<'a> {
                     operands.push(RuntimeProjectCallOperandSeed {
                         value,
                         mode: RuntimeCallArgumentMode::Value,
-                        abi_position: positioned.abi_position(),
                     });
                     Some(source_index)
                 } else {

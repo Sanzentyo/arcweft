@@ -290,6 +290,13 @@ identity and formal coordinate. Source names, expression values, ABI allocation
 positions, and call-site revisions do not reconstruct a fixed formal role.
 Types, source order, passing and request paths remain distinct transcript roles.
 
+A ProjectCall's physical operand array is its source evaluation order. Its
+fixed/rest logical rows and attached-presence row alone own ABI placement and
+reference those physical operands. Construction and private source transport
+retain this same mapping; they do not require or reconstruct a second ABI
+position on each physical operand. The callable-state owner still validates
+the complete parameter, attached-default and capture contract before admission.
+
 The version-one checked request-role domain is
 `arcweft.lang.checked-request-role.v1\0`. Its closed family tags are accepted
 variant payload field (0), accepted record field (1), fixed formal (2), and
