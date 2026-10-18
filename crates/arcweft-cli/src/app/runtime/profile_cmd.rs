@@ -44,7 +44,15 @@ pub(in crate::app) fn runtime_profile_command(
     let entry = selection.command_entry(options.entry.as_deref())?;
     let entry = select_runtime_entry(&plan, entry)?;
     let mut executor = run_profile_phase(&mut phases, "executor_prepare", || {
-        RuntimeExecutorInstance::new(plan, &entry, options.executor, pure_config).map_err(|error| {
+        RuntimeExecutorInstance::new(
+            plan,
+            &entry,
+            options.executor,
+            pure_config,
+            Some(runtime.bundle.product_awbc().program_lease()),
+            runtime.bundle_assets().plain_text_context_proof()?,
+        )
+        .map_err(|error| {
             eprintln!(
                 "error: failed to start entry `{}`: {error}",
                 entry.public_label()

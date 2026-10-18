@@ -26,16 +26,27 @@ pub(in crate::app) fn run_runtime_steps(
     config: RuntimeStepRunConfig,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
-    let mut executor =
-        RuntimeExecutorInstance::new(plan, entry, config.executor, config.pure_config).map_err(
-            |error| {
-                eprintln!(
-                    "error: failed to start entry `{}`: {error}",
-                    entry.public_label()
-                );
-                ExitCode::FAILURE
-            },
-        )?;
+    let mut executor = RuntimeExecutorInstance::new(
+        plan,
+        entry,
+        config.executor,
+        config.pure_config,
+        host_config
+            .bundle_assets
+            .map(|assets| assets.bundle.product_awbc().program_lease()),
+        host_config
+            .bundle_assets
+            .map(RuntimeBundleAssets::plain_text_context_proof)
+            .transpose()?
+            .flatten(),
+    )
+    .map_err(|error| {
+        eprintln!(
+            "error: failed to start entry `{}`: {error}",
+            entry.public_label()
+        );
+        ExitCode::FAILURE
+    })?;
     run_runtime_steps_with_executor(
         &mut executor,
         host_config,
@@ -56,6 +67,14 @@ pub(in crate::app) fn run_runtime_flow_steps(
         invocation,
         config.executor,
         config.pure_config,
+        host_config
+            .bundle_assets
+            .map(|assets| assets.bundle.product_awbc().program_lease()),
+        host_config
+            .bundle_assets
+            .map(RuntimeBundleAssets::plain_text_context_proof)
+            .transpose()?
+            .flatten(),
     )
     .map_err(|error| {
         eprintln!("error: failed to start explicit Flow invocation: {error}");
@@ -229,6 +248,20 @@ pub(in crate::app) struct RuntimeBundleAssets<'a> {
     pub(in crate::app) bundle: &'a std::sync::Arc<ArcweftBundle>,
     pub(in crate::app) artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) context: arcweft_core::value::RuntimeBundleAssetContext,
+}
+
+impl RuntimeBundleAssets<'_> {
+    pub(in crate::app) fn plain_text_context_proof(
+        self,
+    ) -> Result<Option<arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof>, ExitCode>
+    {
+        self.bundle
+            .validate_dialogue_content_contract()
+            .map_err(|error| {
+                eprintln!("error: source runtime dialogue contract is invalid: {error}");
+                ExitCode::FAILURE
+            })
+    }
 }
 
 #[derive(Clone, Copy)]

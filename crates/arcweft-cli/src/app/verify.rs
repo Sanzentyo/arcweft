@@ -233,15 +233,24 @@ fn verify_types_runtime_self_check(
         options.math_wgpu_min_elements,
     );
     let mut executor = run_profile_phase(&mut checked.phases, "executor_prepare", || {
-        RuntimeExecutorInstance::new(runtime_plan, entry, options.executor, pure_config).map_err(
-            |error| {
-                eprintln!(
-                    "error: failed to start entry `{}`: {error}",
-                    entry.public_label()
-                );
-                ExitCode::FAILURE
-            },
+        RuntimeExecutorInstance::new(
+            runtime_plan,
+            entry,
+            options.executor,
+            pure_config,
+            source_runtime.map(|runtime| runtime.bundle.product_awbc().program_lease()),
+            source_runtime
+                .map(|runtime| runtime.bundle_assets().plain_text_context_proof())
+                .transpose()?
+                .flatten(),
         )
+        .map_err(|error| {
+            eprintln!(
+                "error: failed to start entry `{}`: {error}",
+                entry.public_label()
+            );
+            ExitCode::FAILURE
+        })
     })?;
     let runtime = source_runtime.ok_or_else(|| {
         eprintln!("error: source runtime assets were not prepared for the runtime self-check");

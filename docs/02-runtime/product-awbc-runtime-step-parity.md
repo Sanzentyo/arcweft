@@ -40,9 +40,14 @@ parameter coordinates. Explicit low-level Flow tooling likewise resolves its
 adapter input once, emits a complete canonical coordinate inventory, and seals
 an affine `RuntimeFlowInvocation` before executor construction.
 
-Structured and AWBC executors validate the complete coordinate inventory
-against the plan-owned Flow parameter schema and initialize the first frame
-transactionally. `RuntimeStepInput` contains event/result ingress only: it does
+The structured executor validates the complete coordinate inventory against its
+plan-owned Flow parameter schema. Product execution resolves the typed Flow
+identity through its original AWBC Flow binding and revalidates the moved input
+packet against that executable's function signature. Both initialize the first
+frame transactionally. An explicit Flow starts with its actual function origin;
+it does not manufacture an Entry or select a route. The Product executor retains
+the original program Arc and any validated bundle Content template proof.
+`RuntimeStepInput` contains event/result ingress only: it does
 not carry Flow arguments, cannot overwrite parameter locals, and cannot retry a
 different invocation after execution begins. AWBC derives the expected
 parameter types from the selected target function signature; Entry and route

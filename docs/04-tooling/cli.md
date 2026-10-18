@@ -185,7 +185,7 @@ required check.
 
 ## Verify Types
 
-`arcw verify-types <file.arcw> [--mode dev|test|release] [--run] [--executor bytecode-vm|aot] [--steps N] [--max-ops N] [--json]` is the
+`arcw verify-types <file.arcw> [--mode dev|test|release] [--run] [--executor bytecode-vm|aot|awbc-product] [--steps N] [--max-ops N] [--json]` is the
 executable type-soundness inspection entry point. It runs the same checked
 source pipeline as `arcw check`, keeps the full `TypeCheckReport`, lowers the
 module to `RuntimePlan`, and validates the executable runtime IR against the
@@ -228,7 +228,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> (--entry entry.id | --flow flow.id [--value name=value]...) [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--json]` is the first
+`arcw run <file.arcw> (--entry entry.id | --flow flow.id [--value name=value]...) [--executor bytecode-vm|aot|awbc-product] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -236,8 +236,13 @@ the selected executor for up to `N` runtime steps. `bytecode-vm` is the semantic
 reference tier. `aot` builds the typed `arcweft-core::aot::AotProgram`
 dispatch-shape artifact and uses the core-local linear fast path for supported
 straight-line flow ops, falling back to the VM-compatible `RuntimeExecutor`
-state machine for unsupported or stateful cases. JSON reports
-`executor = "bytecode_vm"` or `executor = "aot"` so performance and correctness
+state machine for unsupported or stateful cases. `awbc-product` runs the source
+bundle's canonical AWBC executable through the shared Product executor. Entry
+selection uses its typed entry identity; explicit Flow inputs are checked again
+against that program's function signature before execution. Repeated bench
+invocations retain the same immutable AWBC program. Source bundle Content
+execution also carries the validated dialogue catalog/template join.
+JSON reports `executor = "bytecode_vm"`, `"aot"`, or `"awbc_product"` so performance and correctness
 runs can confirm the execution tier. `--pure-backend auto` is the default and
 lets ordinary flow code call lowered pure helpers through the runtime
 accelerator cache. Supported deterministic `i64` helpers start on the cold AOT

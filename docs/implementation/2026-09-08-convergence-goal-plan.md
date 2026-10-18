@@ -17077,3 +17077,71 @@ do not discharge the still-required broader final consumer/workspace evidence.
 Continue actual registry execution ownership and the same full convergence goal
 after this coherent checkpoint. Both completed selected-Need-key failures from
 R1253 remain unresolved; the CLI frontend repair does not fix runtime writes.
+
+### 2026-10-19 — actual CLI Product AWBC selection and explicit Flow ABI
+
+Delivery 4d5b2cf6ff290ddbfcc24b46b09c799a9f4225d1 is normally pushed and verified
+against fetched/advertised main, all twelve blobs, the reviewed raw patch,
+3863 inputs and empty index. This next cut has ten owned source/document paths
+before this note, including one new test file. Fourteen held tracked edits and
+three held untracked roots are preserved.
+
+CLI AwbcProduct now selects the actual Product executor. Entry, explicit Flow,
+profile, verify-types runtime self-check, source CLI/scenario and repeated bench
+paths pass the source bundle's original immutable AWBC Arc. Entry lookup uses
+AwbcEntry.runtime_id. Explicit Flow invocation consumes the source input carrier
+and revalidates its complete coordinate/type inventory under the selected AWBC
+function signature. The existing Product root builder owns verification, actual
+function origin and frame construction; no Entry, route, temporary program,
+second signature, or Native fallback is fabricated. Bench repetitions keep the
+same immutable executable. The bundle's validated dialogue catalog/template join
+also reaches both Entry and explicit-Flow execution. The maintained CLI and
+Product ABI contracts are synchronized.
+
+R1269 CLI all-target/all-feature locked check returns 101, 4m04s: two new test
+errors, attempting to clone affine FlowFiberStatus and passing RuntimePlan where
+the accelerator needs its exact Arc. The tests now borrow terminal status and
+use their invocation's plan Arc. R1270 builds the lib/check all-feature catalog
+successfully, 9m02s: 671 total, exactly six selected, 665 excluded. R1271 canonical
+structure gate passes. R1272 executes all six, four pass and two fail, 3.043s,
+actual 100. Both failures are the fixture's use of canonical("entry.main"), which
+rejects the reserved family segment before execution. The fixture now takes its
+actual typed entry ID from the accepted inventory. R1274 rebuilds the same
+catalog successfully, 1m05s. R1275 passes all six, 3.324s, actual 0; exact terminal
+names and all 3864 immutable inputs have zero drift. These tests assert all three
+actual tiers, exact original Product Arc, entry result, explicit named inputs,
+two repeated bench executions, missing executable rejection and foreign AWBC
+parameter-schema rejection, plus the existing AOT run/profile/bench behavior.
+
+R1273 invokes the rebuilt actual arcw.exe through Entry, explicit Flow, profile,
+verify-types --run and bench. All five processes return 0 and their actual
+runtime results pass the retained audit. The first audit incorrectly expected
+Short labels instead of FlowStatusLabelStyle::Debug; its original receipt is
+retained. The corrected audit rereads those same outputs, checks exact expected
+Return values, verify status/diagnostics, measured bench state, executable SHA
+and all 3864 unchanged inputs. It does not rerun or relabel a failed command.
+
+R1276 now exercises genuine Product AWBC on the original registry-writing entry.
+The process returns 0 and final_status is done Done, but a diagnostic reports
+that registry writes require their original program and execution context.
+runtimeSuccess is explicitly false. This exposes the actual Product mapping
+defect: an unsupported write emits only a diagnostic while the VM can continue
+to its return. Values must stay at their original instruction/frame until the
+owning context admits the write; rejection must prevent successful completion.
+This is the next integration repair, not successful registry acceptance.
+
+The changed construction owner is product_step.rs, 224872 bytes/5583 physical
+LOC (base 223457/5551); its 32-line addition reuses the existing construction
+and validation authority. The 5583-line coordinator remains cohesive for this
+narrow change; no unrelated state or traversal is added. executor.rs is
+38861/993 (base 38008/972), the CLI executor is 7361/191 (base 4262/125), and its
+new test owner is 7047/223. Core normal fan-in/out stays 31/7, dev 4/5; CLI 0/53,
+dev 0/3. R1271 records the actual Cargo graph and no blocking violation. The
+new public API remains on the existing executor facade; its lower constructor
+is crate-private. There is no new dependency, feature, root export, unsafe or
+I/O owner. Tests follow executable selection and invocation ownership.
+
+R1277 Core/CLI all-target/all-feature locked Clippy is running. Final broader
+consumer/workspace checks remain required. Actual registry scope/store/cleanup/
+restore, both selected-Need completed-plan-key failures, the complete fourteen
+family source/public migration and remaining full-goal acceptance stay open.

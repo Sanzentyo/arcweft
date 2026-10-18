@@ -1915,6 +1915,38 @@ impl AwbcProductStepExecutor {
         Ok(executor)
     }
 
+    /// Starts an explicit Flow from this exact executable's semantic inventory.
+    /// The complete moved input packet is checked by the owning Product frame
+    /// before any instruction runs. No entry or route authority is fabricated.
+    pub(crate) fn for_flow_invocation_arc_with_generation(
+        program: Arc<AwbcProgram>,
+        flow: &crate::plan::FlowRuntimeId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
+        budget_quantum: u64,
+        generation: GenerationId,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let function = program.flow_function(flow).ok_or_else(|| {
+            AwbcProductStepBuildError::InvalidProgram {
+                message: format!("Product AWBC has no Flow `{}`", flow.canonical_label()),
+            }
+        })?;
+        let mut executor = Self::for_root_arc_with_context_proof(
+            program,
+            crate::awbc::fiber::AwbcFiberRoot::Function(function),
+            budget_quantum,
+            generation,
+            proof,
+        )?;
+        executor
+            .fiber
+            .bind_flow_parameter_coordinates(&executor.program, bindings.into_iter().collect())
+            .map_err(|error| AwbcProductStepBuildError::FiberState {
+                message: error.to_string(),
+            })?;
+        Ok(executor)
+    }
+
     pub fn for_function(
         program: AwbcProgram,
         entry: AwbcEntryId,

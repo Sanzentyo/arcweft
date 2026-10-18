@@ -53,9 +53,8 @@ pub(crate) struct AwbcProductExecutor {
 
 /// Product-facing execution tier selected through the shared executor facade.
 ///
-/// These tiers currently preserve the structured runtime behavior while the
-/// product AWBC migration remains a separate cut. Keeping the variants here
-/// prevents hosts from constructing low-level executors directly.
+/// Each tier selects its actual executable representation. Product AWBC must
+/// receive its original executable; a RuntimePlan cannot initialize that tier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArcweftExecutionTier {
     RuntimePlanVm,
@@ -439,6 +438,28 @@ impl ArcweftRuntimeExecutor {
             AwbcProductStepExecutor::for_entry_arc_with_plain_text_context_proof_and_generation(
                 program, entry, 64, generation, proof,
             )?;
+        Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
+            Box::new(AwbcProductExecutor { vm }),
+        )))
+    }
+
+    /// Consumes an externally sealed Flow input packet and revalidates it under
+    /// the selected Product executable. The source plan's admission does not
+    /// authorize values or coordinates in the Product program.
+    pub fn from_awbc_product_flow_invocation(
+        program: Arc<AwbcProgram>,
+        invocation: RuntimeFlowInvocation,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let (_source_plan, flow, bindings) = invocation.into_parts();
+        let vm = AwbcProductStepExecutor::for_flow_invocation_arc_with_generation(
+            program,
+            &flow,
+            bindings,
+            64,
+            GenerationId::new(0),
+            proof,
+        )?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))

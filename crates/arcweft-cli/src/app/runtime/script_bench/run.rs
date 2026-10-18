@@ -343,7 +343,22 @@ fn run_bench_flow_section(
             }
         };
     let pure_plan = Arc::clone(invocation.plan());
-    let executor_template = RuntimeExecutorTemplate::new(invocation, options.executor);
+    let plain_text_context = match runtime.bundle_assets.plain_text_context_proof() {
+        Ok(proof) => proof,
+        Err(_) => {
+            return ScriptBenchSectionRunSummary::new(
+                &section.name,
+                ScriptBenchSectionStatus::Failed,
+                vec!["source runtime dialogue contract is invalid".to_owned()],
+            );
+        }
+    };
+    let executor_template = RuntimeExecutorTemplate::new(
+        invocation,
+        options.executor,
+        Some(runtime.bundle_assets.bundle.product_awbc().program_lease()),
+        plain_text_context,
+    );
     let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
     for (phase, count) in [
         (BenchPhase::Warmup, options.warmup),
