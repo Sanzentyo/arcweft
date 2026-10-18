@@ -104,10 +104,10 @@ pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
     RuntimeDialogueContentEffectTrigger, RuntimeDialogueContentPlan,
     RuntimeDialogueContentPlanTable, RuntimeDialogueContentPlanTableError,
-    RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest,
-    RuntimeDialogueContentTemplateManifestError, RuntimeDialogueContentTemplateManifestTable,
-    RuntimeDialogueEffectSite, RuntimeDialogueMark, RuntimeDialogueValueRole,
-    RuntimeDialogueValueSite,
+    RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateKey,
+    RuntimeDialogueContentTemplateManifest, RuntimeDialogueContentTemplateManifestError,
+    RuntimeDialogueContentTemplateManifestTable, RuntimeDialogueEffectSite, RuntimeDialogueMark,
+    RuntimeDialogueValueRole, RuntimeDialogueValueSite,
 };
 pub use executable_body::{RuntimeEffectSet, RuntimeEffectSetError, RuntimeExecutableBody};
 pub use flow_ops::{RuntimeFlowBodyRole, RuntimeFlowOwnedBodies, RuntimeFlowValueRole};

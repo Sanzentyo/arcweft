@@ -1573,6 +1573,20 @@ impl RuntimePlanBuilder {
         ))
     }
 
+    pub(super) fn require_dialogue_content_template(
+        &self,
+        key: super::RuntimeDialogueContentTemplateKey,
+    ) -> Result<&RuntimeDialogueContentTemplateManifest, RuntimePlanBuildError> {
+        let manifest = self
+            .dialogue_content
+            .template(key.id())
+            .ok_or(RuntimePlanBuildError::MissingDialogueTemplateManifest { template: key.id() })?;
+        if manifest.key() != key {
+            return Err(super::dialogue_content::RuntimeDialogueContentTemplateManifestError::IdentityConflict { id: key.id() }.into());
+        }
+        Ok(manifest)
+    }
+
     fn try_push_dialogue_content_seed(
         &mut self,
         seed: RuntimeDialogueContentPlanSeed,
@@ -1585,8 +1599,8 @@ impl RuntimePlanBuilder {
             marks: mark_seeds,
             effect_site_count,
         } = seed;
-        let template_id = template.id;
-        let manifest = self.lower_dialogue_content_template_manifest_seed(template)?;
+        let template_id = template.id();
+        let manifest = self.require_dialogue_content_template(template)?;
         let slots = manifest.slots();
         let effects = manifest.effects();
         let effect_count = RuntimeDialogueEffectSiteCount::try_from_len(effects.len()).ok_or(
@@ -1745,7 +1759,6 @@ impl RuntimePlanBuilder {
         }
         let key = super::RuntimeDialogueContentApplicationKey::new(line.clone(), template_id);
         self.dialogue_content.ensure_pushable(&key)?;
-        self.dialogue_content.intern_template(manifest)?;
         let content = self.dialogue_content.push(RuntimeDialogueContentPlan::new(
             line,
             template_id,

@@ -720,17 +720,25 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
             [],
         )
         .expect("selected dialogue result type admits");
+    let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
+        id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+            .expect("first content template identity"),
+        digest: RuntimeDialogueContentTemplateDigest::ZERO,
+        slots: Box::default(),
+        effects: Box::default(),
+    };
+    let registered_content_template = arcweft_core::plan::RuntimeDialogueContentTemplateKey::new(
+        content_template_seed.id,
+        content_template_seed.digest,
+    );
+    builder
+        .register_dialogue_content_template_seed(content_template_seed)
+        .expect("fixture template declaration admits");
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.cancel.result")
                 .expect("valid line identity"),
-            template: RuntimeDialogueContentTemplateManifestSeed {
-                id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
-                    .expect("first content template identity"),
-                digest: RuntimeDialogueContentTemplateDigest::ZERO,
-                slots: Box::default(),
-                effects: Box::default(),
-            },
+            template: registered_content_template,
             values: Box::default(),
             effect_sites: Box::default(),
             marks: Box::default(),
@@ -910,17 +918,25 @@ fn line_activation_local_is_exported_only_to_post_reveal_work() {
         )
         .expect("line result and activation local admit");
     let local = admission.local_ids()[0].clone();
+    let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
+        id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+            .expect("template identity"),
+        digest: RuntimeDialogueContentTemplateDigest::ZERO,
+        slots: Box::default(),
+        effects: Box::default(),
+    };
+    let registered_content_template = arcweft_core::plan::RuntimeDialogueContentTemplateKey::new(
+        content_template_seed.id,
+        content_template_seed.digest,
+    );
+    builder
+        .register_dialogue_content_template_seed(content_template_seed)
+        .expect("fixture template declaration admits");
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.export")
                 .expect("line identity"),
-            template: RuntimeDialogueContentTemplateManifestSeed {
-                id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
-                    .expect("template identity"),
-                digest: RuntimeDialogueContentTemplateDigest::ZERO,
-                slots: Box::default(),
-                effects: Box::default(),
-            },
+            template: registered_content_template,
             values: Box::default(),
             effect_sites: Box::default(),
             marks: Box::default(),

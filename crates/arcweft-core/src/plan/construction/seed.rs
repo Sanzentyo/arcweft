@@ -177,7 +177,8 @@ pub struct RuntimeDialogueEffectSiteSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueContentPlanSeed {
     pub line: RuntimeLineId,
-    pub template: RuntimeDialogueContentTemplateManifestSeed,
+    /// References the original registered manifest; it never owns a second ABI.
+    pub template: super::super::RuntimeDialogueContentTemplateKey,
     pub values: Box<[RuntimeDialogueValueSiteSeed]>,
     pub effect_sites: Box<[RuntimeDialogueEffectSiteSeed]>,
     pub marks: Box<[String]>,

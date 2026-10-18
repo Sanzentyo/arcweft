@@ -32,6 +32,90 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }
 
+fn empty_content_seed(
+    template: RuntimeDialogueContentTemplateKey,
+    line: &str,
+) -> RuntimeDialogueContentPlanSeed {
+    RuntimeDialogueContentPlanSeed {
+        line: RuntimeLineId::canonical(line).unwrap(),
+        template,
+        values: Box::new([]),
+        effect_sites: Box::new([]),
+        marks: Box::new([]),
+        effect_site_count: RuntimeDialogueEffectSiteCount::try_from_len(0).unwrap(),
+    }
+}
+
+fn empty_template_seed() -> RuntimeDialogueContentTemplateManifestSeed {
+    RuntimeDialogueContentTemplateManifestSeed {
+        id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        digest: RuntimeDialogueContentTemplateDigest::from_bytes([21; 32]),
+        slots: Box::new([]),
+        effects: Box::new([]),
+    }
+}
+
+#[test]
+fn content_application_requires_the_original_registered_template_before_publication() {
+    let mut builder = RuntimePlanBuilder::new();
+    let template = empty_template_seed();
+    let key = RuntimeDialogueContentTemplateKey::new(template.id, template.digest);
+    assert!(
+        matches!(builder.push_dialogue_content_seed(empty_content_seed(key, "missing")),
+        Err(RuntimePlanBuildError::MissingDialogueTemplateManifest { template }) if template == key.id())
+    );
+    assert!(builder.finish().is_err());
+}
+
+#[test]
+fn content_application_rejects_a_conflicting_digest_without_replacing_the_registered_abi() {
+    let mut builder = RuntimePlanBuilder::new();
+    let template = empty_template_seed();
+    let key = RuntimeDialogueContentTemplateKey::new(
+        template.id,
+        RuntimeDialogueContentTemplateDigest::from_bytes([22; 32]),
+    );
+    builder
+        .register_dialogue_content_template_seed(template)
+        .unwrap();
+    assert!(
+        matches!(builder.push_dialogue_content_seed(empty_content_seed(key, "conflict")),
+        Err(RuntimePlanBuildError::DialogueTemplateManifest(super::super::super::dialogue_content::RuntimeDialogueContentTemplateManifestError::IdentityConflict { id })) if id == key.id())
+    );
+    assert!(builder.finish().is_err());
+}
+
+#[test]
+fn content_applications_share_the_registered_manifest_and_keep_the_exact_template_identity() {
+    let mut builder = RuntimePlanBuilder::new();
+    let template = empty_template_seed();
+    let key = RuntimeDialogueContentTemplateKey::new(template.id, template.digest);
+    builder
+        .register_dialogue_content_template_seed(template)
+        .unwrap();
+    for line in ["first", "second"] {
+        builder
+            .push_dialogue_content_seed(empty_content_seed(key, line))
+            .unwrap();
+    }
+    let plan = builder.finish().unwrap();
+    assert_eq!(plan.dialogue_content_templates().rows().len(), 1);
+    assert_eq!(
+        plan.dialogue_content_templates()
+            .get(key.id())
+            .unwrap()
+            .key(),
+        key
+    );
+    assert_eq!(plan.dialogue_content().rows().len(), 2);
+    assert!(
+        plan.dialogue_content()
+            .rows()
+            .iter()
+            .all(|row| row.template() == key.id())
+    );
+}
+
 fn literal(value: bool) -> RuntimeExprSeed {
     RuntimeExprSeed::new(
         semantic(2),
@@ -184,25 +268,33 @@ fn admit_content(
     functions: [RuntimeCallableStateSeedId; 2],
 ) {
     let slot = RuntimeDialogueValueSlotId::from_zero_based(0).unwrap();
+    let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
+        id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        digest: RuntimeDialogueContentTemplateDigest::from_bytes([options.template; 32]),
+        slots: Box::new([RuntimeDialogueContentSlotSeed {
+            slot,
+            role: RuntimeDialogueValueRole::Interpolation,
+            semantic_type: semantic(2),
+        }]),
+        effects: (0..2)
+            .map(|index| RuntimeDialogueContentEffectSlotSeed {
+                site: RuntimeDialogueEffectSiteId::from_zero_based(index).unwrap(),
+                trigger: options.trigger,
+                capture_types: Box::new([semantic(2)]),
+            })
+            .collect(),
+    };
+    let registered_content_template = crate::plan::RuntimeDialogueContentTemplateKey::new(
+        content_template_seed.id,
+        content_template_seed.digest,
+    );
+    builder
+        .register_dialogue_content_template_seed(content_template_seed)
+        .expect("fixture template declaration admits");
     builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: RuntimeLineId::from_runtime_line_value(options.line).unwrap(),
-            template: RuntimeDialogueContentTemplateManifestSeed {
-                id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
-                digest: RuntimeDialogueContentTemplateDigest::from_bytes([options.template; 32]),
-                slots: Box::new([RuntimeDialogueContentSlotSeed {
-                    slot,
-                    role: RuntimeDialogueValueRole::Interpolation,
-                    semantic_type: semantic(2),
-                }]),
-                effects: (0..2)
-                    .map(|index| RuntimeDialogueContentEffectSlotSeed {
-                        site: RuntimeDialogueEffectSiteId::from_zero_based(index).unwrap(),
-                        trigger: options.trigger,
-                        capture_types: Box::new([semantic(2)]),
-                    })
-                    .collect(),
-            },
+            template: registered_content_template,
             values: Box::new([RuntimeDialogueValueSiteSeed {
                 slot,
                 role: RuntimeDialogueValueRole::Interpolation,

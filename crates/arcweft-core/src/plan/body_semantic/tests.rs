@@ -1679,15 +1679,23 @@ pub(super) fn actual_line_plan(
             RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(value)),
         ),
     };
+    let content_template_seed = RuntimeDialogueContentTemplateManifestSeed {
+        id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([83; 32]),
+        slots: Box::new([]),
+        effects: Box::new([]),
+    };
+    let registered_content_template = crate::plan::RuntimeDialogueContentTemplateKey::new(
+        content_template_seed.id,
+        content_template_seed.digest,
+    );
+    builder
+        .register_dialogue_content_template_seed(content_template_seed)
+        .expect("fixture template declaration admits");
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: RuntimeLineId::from_source_entity_body("line.semantic_test").unwrap(),
-            template: RuntimeDialogueContentTemplateManifestSeed {
-                id: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
-                digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([83; 32]),
-                slots: Box::new([]),
-                effects: Box::new([]),
-            },
+            template: registered_content_template,
             values: Box::new([]),
             effect_sites: Box::new([]),
             marks: Box::new([mark_name.to_owned()]),

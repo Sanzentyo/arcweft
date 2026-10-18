@@ -172,6 +172,34 @@ pub struct RuntimeDialogueContentSlot {
     semantic_type: RuntimeSemanticTypeId,
 }
 
+/// Expected identity of an already registered text-model template declaration.
+/// This is source data; the owning table must check it before admitting a use.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeDialogueContentTemplateKey {
+    id: RuntimeDialogueContentTemplateId,
+    digest: RuntimeDialogueContentTemplateDigest,
+}
+
+impl RuntimeDialogueContentTemplateKey {
+    #[must_use]
+    pub const fn new(
+        id: RuntimeDialogueContentTemplateId,
+        digest: RuntimeDialogueContentTemplateDigest,
+    ) -> Self {
+        Self { id, digest }
+    }
+
+    #[must_use]
+    pub const fn id(self) -> RuntimeDialogueContentTemplateId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn digest(self) -> RuntimeDialogueContentTemplateDigest {
+        self.digest
+    }
+}
+
 /// One immutable runtime-plan manifest row for a text-model content template.
 ///
 /// The row is the sole plan-owned copy of the template digest and canonical
@@ -186,6 +214,11 @@ pub struct RuntimeDialogueContentTemplateManifest {
 }
 
 impl RuntimeDialogueContentTemplateManifest {
+    #[must_use]
+    pub const fn key(&self) -> RuntimeDialogueContentTemplateKey {
+        RuntimeDialogueContentTemplateKey::new(self.id, self.digest)
+    }
+
     pub(crate) fn new_with_effects(
         id: RuntimeDialogueContentTemplateId,
         digest: RuntimeDialogueContentTemplateDigest,

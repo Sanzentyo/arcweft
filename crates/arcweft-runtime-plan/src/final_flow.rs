@@ -554,7 +554,7 @@ struct PendingDialogueContentDefinition<'facts> {
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     owner: ExprId,
     line: arcweft_core::plan::RuntimeLineId,
-    template: arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed,
+    template: arcweft_core::plan::RuntimeDialogueContentTemplateKey,
     values: Vec<(
         arcweft_core::runtime_id::RuntimeDialogueValueSlotId,
         arcweft_core::plan::RuntimeDialogueValueRole,
@@ -4684,7 +4684,7 @@ fn lower_dialogue_content<'facts>(
     let mut content_handles = BTreeMap::new();
     let mut assertion_sites = Vec::new();
     for definition in content_definitions {
-        let template_id = definition.template.id;
+        let template_id = definition.template.id();
         let seed = arcweft_core::plan::RuntimeDialogueContentPlanSeed {
             line: definition.line,
             template: definition.template,
@@ -5263,17 +5263,6 @@ fn lower_dialogue_application<'facts>(
         .map(|mark| mark.diagnostic_name().to_owned())
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let slots = template
-        .slots()
-        .iter()
-        .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
-            slot: slot.slot(),
-            role: slot.role(),
-            semantic_type: slot.semantic_type(),
-        })
-        .collect::<Vec<_>>()
-        .into_boxed_slice();
-    let effects = dialogue_content_effect_slot_seeds(fragment.effects());
     let effect_sites = fragment
         .effects()
         .iter()
@@ -5329,12 +5318,10 @@ fn lower_dialogue_application<'facts>(
             scope,
             owner,
             line: application.content().line().clone(),
-            template: arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
-                id: application.content().template_id(),
-                digest: application.content().template_digest(),
-                slots,
-                effects,
-            },
+            template: arcweft_core::plan::RuntimeDialogueContentTemplateKey::new(
+                application.content().template_id(),
+                application.content().template_digest(),
+            ),
             values,
             effect_sites,
             marks,

@@ -1011,15 +1011,25 @@ mod tests {
             &mut builder,
             &character,
         );
+        let content_template_seed =
+            arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
+                id: template.id(),
+                digest: template.digest(),
+                slots: Box::default(),
+                effects: Box::default(),
+            };
+        let registered_content_template =
+            arcweft_core::plan::RuntimeDialogueContentTemplateKey::new(
+                content_template_seed.id,
+                content_template_seed.digest,
+            );
+        builder
+            .register_dialogue_content_template_seed(content_template_seed)
+            .expect("fixture template declaration admits");
         let content = builder
             .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
                 line: line.clone(),
-                template: arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
-                    id: template.id(),
-                    digest: template.digest(),
-                    slots: Box::default(),
-                    effects: Box::default(),
-                },
+                template: registered_content_template,
                 values: Box::default(),
                 effect_sites: Box::default(),
                 marks: Box::default(),
