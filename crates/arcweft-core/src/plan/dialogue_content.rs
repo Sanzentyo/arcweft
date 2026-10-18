@@ -273,7 +273,6 @@ impl RuntimeDialogueContentTemplateManifest {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeDialogueContentTemplateManifestTable {
     rows: Box<[RuntimeDialogueContentTemplateManifest]>,
-    by_id: BTreeMap<RuntimeDialogueContentTemplateId, usize>,
 }
 
 impl RuntimeDialogueContentTemplateManifestTable {
@@ -282,7 +281,7 @@ impl RuntimeDialogueContentTemplateManifestTable {
         &self,
         id: RuntimeDialogueContentTemplateId,
     ) -> Option<&RuntimeDialogueContentTemplateManifest> {
-        self.by_id.get(&id).and_then(|index| self.rows.get(*index))
+        self.rows.get(id.index())
     }
 
     #[must_use]
@@ -294,7 +293,6 @@ impl RuntimeDialogueContentTemplateManifestTable {
 #[derive(Debug, Default)]
 pub(crate) struct RuntimeDialogueContentTemplateManifestTableBuilder {
     rows: Vec<RuntimeDialogueContentTemplateManifest>,
-    by_id: BTreeMap<RuntimeDialogueContentTemplateId, usize>,
 }
 
 impl RuntimeDialogueContentTemplateManifestTableBuilder {
@@ -302,11 +300,7 @@ impl RuntimeDialogueContentTemplateManifestTableBuilder {
         &mut self,
         manifest: RuntimeDialogueContentTemplateManifest,
     ) -> Result<RuntimeDialogueContentTemplateId, RuntimeDialogueContentTemplateManifestError> {
-        if let Some(index) = self.by_id.get(&manifest.id).copied() {
-            let existing = self
-                .rows
-                .get(index)
-                .expect("template manifest index remains valid");
+        if let Some(existing) = self.rows.get(manifest.id.index()) {
             if existing != &manifest {
                 return Err(
                     RuntimeDialogueContentTemplateManifestError::IdentityConflict {
@@ -327,8 +321,6 @@ impl RuntimeDialogueContentTemplateManifestTableBuilder {
             );
         }
         manifest.validate_slot_schema()?;
-        let index = self.rows.len();
-        self.by_id.insert(manifest.id, index);
         let id = manifest.id;
         self.rows.push(manifest);
         Ok(id)
@@ -337,7 +329,6 @@ impl RuntimeDialogueContentTemplateManifestTableBuilder {
     pub(crate) fn finish(self) -> RuntimeDialogueContentTemplateManifestTable {
         RuntimeDialogueContentTemplateManifestTable {
             rows: self.rows.into_boxed_slice(),
-            by_id: self.by_id,
         }
     }
 }
@@ -706,10 +697,11 @@ impl RuntimeDialogueContentPlanTableBuilder {
         &self,
         id: RuntimeDialogueContentTemplateId,
     ) -> Option<&RuntimeDialogueContentTemplateManifest> {
-        self.templates
-            .by_id
-            .get(&id)
-            .and_then(|index| self.templates.rows.get(*index))
+        self.templates.rows.get(id.index())
+    }
+
+    pub(crate) fn template_count(&self) -> usize {
+        self.templates.rows.len()
     }
 
     pub(crate) fn push(

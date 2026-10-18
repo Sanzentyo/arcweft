@@ -1410,16 +1410,18 @@ impl RuntimePlanBuilder {
                 .ok_or(RuntimePlanBuildError::FormatAttemptIdentityExhausted)?;
         debug_assert_eq!(id.get(), ordinal);
 
-        let mut seen = BTreeSet::new();
+        let mut seen = 0_u16;
         let mut primary_present = false;
         let mut failure_policy_count = 0;
         let mut operands = Vec::with_capacity(seed.operands.len());
         for operand in seed.operands.into_vec() {
-            if !seen.insert(operand.parameter) {
+            let bit = 1_u16 << operand.parameter.index();
+            if seen & bit != 0 {
                 return Err(RuntimePlanBuildError::DuplicateFormatParameter {
                     parameter: operand.parameter,
                 });
             }
+            seen |= bit;
             if operand.parameter == crate::value::RuntimeFmtParameterId::Value {
                 primary_present = true;
             }

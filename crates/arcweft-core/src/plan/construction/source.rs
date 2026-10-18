@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 pub(in crate::plan) mod callable_specializations;
 pub(in crate::plan) mod callable_states;
+pub(in crate::plan) mod content_declarations;
 pub(in crate::plan) mod functions;
 pub(in crate::plan) mod pattern;
 pub(in crate::plan) mod pure_callables;
