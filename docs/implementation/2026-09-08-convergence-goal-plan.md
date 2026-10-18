@@ -17826,3 +17826,43 @@ known selected-Need key failures. Keep actual failures and the narrower passed
 coverage distinct. Continue general Flow/function and Line Source, the joint
 codec/public consumer switch, registry execution, retained View, restore and all
 other retained acceptance. The full goal remains active.
+
+## 2026-10-19 — Current Entry execution and workspace acceptance
+
+Inspected published main bda85abc8a7317761a9ad5ae102c8faaeccf244c with only
+fourteen held tracked paths and three held untracked items. Supersedes the
+preceding pending corrected test and workspace check. R1340 current Core
+all-target/all-feature locked Clippy passes, actual 0, 21.21s. R1341 catalogs
+the four Entry cases and migrated invocation case in the Core-only all-feature
+slice; R1342 executes exactly those five, actual 0, 0.204s, 1748 filtered skips.
+The real builder returns the exact CommandLayoutMismatch entry/constructor
+asserted by the corrected negative case. No production rejection was relaxed.
+
+R1343 workspace all-target/all-feature locked check passes, actual 0, 2m08s.
+All 3883 inputs remain unchanged. The earlier R1333 workspace Clippy and R1334
+structure results retain their actual scope; only the negative test assertion
+changed after them, and R1340 covers that final Core test source. No other Rust,
+manifest, dependency, fixture or generated input changed at this evidence cut.
+
+The Core-only package selection has a different dependency feature union from
+the original five-owner slice; its five-case result is recorded separately.
+R1346 therefore catalogs the original stable five-owner all-feature library
+combination, all 2268 matched and zero excluded. R1347 executes that full exact
+set on current source: actual 0, 2268 pass, zero fail/skip, 20.884s. All terminal
+names and all 3883 frozen inputs are verified unchanged. This fresh complete
+run closes R1336's new-test failure for the same feature/package matrix; the
+earlier failed receipt remains historical evidence. It also executes all five
+schema and six Host regressions and the other existing owning/consumer cases.
+
+Publish this evidence without repeating unchanged Rust validation. Next execute
+the resolved reverse consumer/default-feature selection with its exact catalog
+and failure audit, then continue general Flow/function and Line Source, the
+joint complete-program codec/public consumer switch and the retained goal.
+R1318's two selected-Need key failures remain open; this library-only pass does
+not execute those integration cases or imply full reverse/workspace acceptance.
+The canonical operation boundary for the next Flow Source is already owned by
+the actual builder and semantic transcript: runtime Bind and continuation
+markers reject there, while source operations retain their original typed
+operands. Pending observer bodies recurse through that Flow algebra; Line
+groups also use it. No independent observer-body or synthetic Line scope is
+needed to bypass those owners. The full goal remains active.
