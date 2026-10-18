@@ -1,6 +1,44 @@
 use super::super::callable_states::tests as graph;
 use super::super::pattern::tests::meter;
 use super::*;
+
+#[test]
+fn original_expression_sources_replay_specialization_with_the_original_generic_frame_and_state_relations()
+ {
+    use super::super::expression::{RuntimeExpressionSourceHandles, tests::replay_functions};
+    let plan = fixture();
+    let bytes = encode(&plan);
+    let (mut source, functions, states) = construction(&plan);
+    let specializations = source
+        .preflight_specialization_sources(&bytes, limits(&plan))
+        .unwrap()
+        .materialize(&mut source, &states)
+        .unwrap();
+    let handles = RuntimeExpressionSourceHandles {
+        states: &states,
+        specializations: &specializations,
+        helpers: &[],
+        methods: &[],
+        attempts: &[],
+    };
+    replay_functions(&plan, &mut source, &functions, &handles);
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let restored = source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(
+        restored.callable_specializations(),
+        plan.callable_specializations()
+    );
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+}
 use crate::effect_row::{DecisionControl, DecisionWork, EffectFormula, EffectPredicate};
 use crate::pattern::RuntimeSemanticTypeId as Ty;
 use crate::plan::{

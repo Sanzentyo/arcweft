@@ -1,6 +1,257 @@
 use super::super::functions::RuntimeFunctionSourceLimits;
 use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::*;
+
+#[test]
+fn original_expression_sources_restore_inline_formatter_and_dialogue_effect_captures_with_original_states()
+ {
+    use super::super::callable_states::{RuntimeCallableSourceLimits, tests as graph};
+    use super::super::expression::{
+        RuntimeExpressionSourceHandles,
+        tests::{add_function, decode},
+    };
+    let mut original_builder = fixture_builder();
+    let unit = RuntimeSemanticTypeId::from_bytes([190; 32]);
+    let callback_type = RuntimeSemanticTypeId::from_bytes([191; 32]);
+    original_builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    callback_type,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::new(
+                            RuntimeTypeBinder::new(0, 0, 0),
+                            crate::effect_row::EffectPredicate::unconstrained(),
+                            crate::effect_row::EffectFormula::empty(),
+                        ),
+                        parameters: Box::new([]),
+                        result: unit,
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let callback = graph::reserve_executable_function(&mut original_builder, 192, &[BOOL], 1, unit);
+    original_builder
+        .define_function_site_seed(
+            &callback,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    unit,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                ))]),
+            }),
+        )
+        .unwrap();
+    let state = original_builder
+        .function_callable_state_seed(callback_type, &callback)
+        .unwrap();
+    original_builder
+        .register_dialogue_content_template_seed(RuntimeDialogueContentTemplateManifestSeed {
+            id: template(2),
+            digest: RuntimeDialogueContentTemplateDigest::from_bytes([193; 32]),
+            slots: Box::new([RuntimeDialogueContentSlotSeed {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(0).unwrap(),
+                role: RuntimeDialogueValueRole::Interpolation,
+                semantic_type: BOOL,
+            }]),
+            effects: [
+                RuntimeDialogueContentEffectTrigger::Content,
+                RuntimeDialogueContentEffectTrigger::Delay {
+                    duration: LogicalDuration::from_nanos(7),
+                },
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(index, trigger)| RuntimeDialogueContentEffectSlotSeed {
+                site: RuntimeDialogueEffectSiteId::from_zero_based(index).unwrap(),
+                trigger,
+                capture_types: Box::new([BOOL]),
+            })
+            .collect(),
+        })
+        .unwrap();
+    let boolean =
+        |value| RuntimeExprSeed::new(BOOL, RuntimeExprSeedKind::Value(RuntimeValue::Bool(value)));
+    add_function(
+        &mut original_builder,
+        194,
+        RuntimeExprSeed::format_content(
+            RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            template(1),
+            None,
+            None,
+            false,
+            [RuntimeFormatContentOperandSeed::new(
+                RuntimeFunctionDefinitionIdentity::from_accepted_identity([195; 32]),
+                Param::Value,
+                boolean(true),
+            )],
+        ),
+    );
+    add_function(
+        &mut original_builder,
+        196,
+        RuntimeExprSeed::dialogue_content_with_effects(
+            RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            template(2),
+            [boolean(true)],
+            (0..2).map(|index| RuntimeDialogueEffectSiteSeed {
+                site: RuntimeDialogueEffectSiteId::from_zero_based(index).unwrap(),
+                state: state.clone(),
+                captures: Box::new([boolean(index == 0)]),
+            }),
+        ),
+    );
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let plan = original_builder.finish().unwrap();
+    let (mut restored_source, functions) = source(&plan, meter());
+    let content_bytes = encode(&plan);
+    let attempts = PreparedRuntimeContentDeclarationSources::preflight(
+        &content_bytes,
+        limits(&plan),
+        &mut restored_source.meter,
+    )
+    .unwrap()
+    .reserve(&mut restored_source)
+    .unwrap();
+    let state_bytes = graph::encode(&plan);
+    let state_limits = RuntimeCallableSourceLimits {
+        rows: 100,
+        elements: 100_000,
+        encoded_bytes: 1 << 22,
+        decoded_bytes: 1 << 24,
+        type_count: plan.type_table().len(),
+        function_count: functions.len(),
+    };
+    let states = RuntimeCallableStateTable::preflight_sources(
+        &state_bytes,
+        state_limits,
+        &mut restored_source.meter,
+    )
+    .unwrap()
+    .materialize(&mut restored_source, &functions)
+    .unwrap();
+    let handles = RuntimeExpressionSourceHandles {
+        states: &states,
+        specializations: &[],
+        helpers: &[],
+        methods: &[],
+        attempts: &attempts,
+    };
+    restored_source
+        .builder
+        .define_function_site_seed(
+            &functions[0],
+            RuntimeFunctionSiteBodySeed::Executable(body(&attempts[2])),
+        )
+        .unwrap();
+    for (function, handle) in plan.function_sites().iter().zip(&functions).skip(1) {
+        let body = match function.body() {
+            RuntimeFunctionSiteBody::Expression(expression) => {
+                RuntimeFunctionSiteBodySeed::Expression(decode(
+                    expression,
+                    &plan,
+                    &mut restored_source,
+                    &handles,
+                ))
+            }
+            RuntimeFunctionSiteBody::Executable(body) => {
+                let [FlowOp::ReturnExpr(expression)] = body.ops() else {
+                    unreachable!("original callback has one typed return");
+                };
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(decode(
+                        expression,
+                        &plan,
+                        &mut restored_source,
+                        &handles,
+                    ))]),
+                })
+            }
+        };
+        restored_source
+            .builder
+            .define_function_site_seed(handle, body)
+            .unwrap();
+    }
+    let restored = restored_source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(restored.callable_states(), plan.callable_states());
+    assert_eq!(
+        restored.dialogue_content_templates(),
+        plan.dialogue_content_templates()
+    );
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+}
+
+#[test]
+fn original_expression_sources_restore_formatter_attempt_reference_in_its_actual_executable_body() {
+    use super::super::expression::{RuntimeExpressionSourceHandles, tests::decode};
+    let plan = fixture();
+    let bytes = encode(&plan);
+    let (mut source, functions) = source(&plan, meter());
+    let attempts = PreparedRuntimeContentDeclarationSources::preflight(
+        &bytes,
+        limits(&plan),
+        &mut source.meter,
+    )
+    .unwrap()
+    .reserve(&mut source)
+    .unwrap();
+    let handles = RuntimeExpressionSourceHandles {
+        states: &[],
+        specializations: &[],
+        helpers: &[],
+        methods: &[],
+        attempts: &attempts,
+    };
+    let RuntimeFunctionSiteBody::Executable(original) =
+        plan.function_sites().iter().next().unwrap().body()
+    else {
+        unreachable!()
+    };
+    let FlowOp::ReturnExpr(expression) = original.ops().last().unwrap() else {
+        unreachable!()
+    };
+    let decoded = decode(expression, &plan, &mut source, &handles);
+    // Operation source transport is separate work. Here the existing genuine
+    // staging operations establish the formatter's actual execution context.
+    let mut restored_body = body(&attempts[2]);
+    *restored_body.ops.last_mut().unwrap() = RuntimeFlowOpSeed::ReturnExpr(decoded);
+    source
+        .builder
+        .define_function_site_seed(
+            &functions[0],
+            RuntimeFunctionSiteBodySeed::Executable(restored_body),
+        )
+        .unwrap();
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let restored = source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(restored.format_attempts(), plan.format_attempts());
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+}
 use crate::entry::RuntimeDialogueContentTemplateDigest;
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeSemanticTypeId};
 use crate::plan::*;
@@ -121,6 +372,9 @@ fn body(attempt: &RuntimeFormatAttemptSeedId) -> RuntimeExecutableBodySeed {
     }
 }
 fn fixture() -> RuntimePlan {
+    fixture_builder().finish().unwrap()
+}
+fn fixture_builder() -> RuntimePlanBuilder {
     let mut builder = RuntimePlanBuilder::new();
     let content = RuntimeDialogueOpaqueRole::Content;
     builder
@@ -177,7 +431,7 @@ fn fixture() -> RuntimePlan {
             RuntimeFunctionSiteBodySeed::Executable(body(&attempts[2])),
         )
         .unwrap();
-    builder.finish().unwrap()
+    builder
 }
 fn limits(plan: &RuntimePlan) -> RuntimeContentDeclarationSourceLimits {
     RuntimeContentDeclarationSourceLimits {

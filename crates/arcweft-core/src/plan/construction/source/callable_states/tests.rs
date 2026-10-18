@@ -1,5 +1,80 @@
 use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::*;
+
+#[test]
+fn original_expression_sources_replay_callable_captures_and_application_through_actual_function_contexts()
+ {
+    use super::super::expression::{RuntimeExpressionSourceHandles, tests::replay_functions};
+    let plan = fixture();
+    let (mut source, functions, states) = source(&plan, &encode(&plan));
+    let handles = RuntimeExpressionSourceHandles {
+        states: &states,
+        specializations: &[],
+        helpers: &[],
+        methods: &[],
+        attempts: &[],
+    };
+    replay_functions(&plan, &mut source, &functions, &handles);
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let restored = source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(restored.callable_states(), plan.callable_states());
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+}
+
+#[test]
+fn original_expression_sources_reject_foreign_and_reordered_state_handles_before_graph_retention() {
+    use super::super::expression::{
+        RuntimeExpressionSourceError, RuntimeExpressionSourceHandles,
+        tests::limits as expression_limits,
+    };
+    let plan = fixture();
+    let crate::plan::RuntimeFunctionSiteBody::Expression(expr) =
+        plan.function_sites().iter().next().unwrap().body()
+    else {
+        unreachable!()
+    };
+    let bytes = expr
+        .encode_sources(expression_limits(&plan), &resources(), &mut meter())
+        .unwrap()
+        .into_bytes();
+    for foreign in [false, true] {
+        let (mut source, _, mut states) = source(&plan, &encode(&plan));
+        if foreign {
+            let (_, _, other) = fixture_builder();
+            states = other.into_boxed_slice();
+        } else {
+            states.swap(0, 1);
+        }
+        let prepared = crate::value::RuntimeExpr::preflight_sources(
+            &bytes,
+            expression_limits(&plan),
+            &resources(),
+            &mut source.meter,
+        )
+        .unwrap();
+        let handles = RuntimeExpressionSourceHandles {
+            states: &states,
+            specializations: &[],
+            helpers: &[],
+            methods: &[],
+            attempts: &[],
+        };
+        assert!(matches!(
+            prepared.materialize(&mut source, &handles, &mut resources()),
+            Err(RuntimeExpressionSourceError::Handle { kind: "state" })
+        ));
+        assert!(source.meter.status().is_err());
+    }
+}
 use crate::pattern::RuntimeSemanticTypeId as TypeId;
 use crate::plan::RuntimeCallArgumentSeed;
 use crate::plan::{
@@ -53,6 +128,39 @@ pub(in crate::plan::construction::source) fn reserve_function(
     inputs: &[TypeId],
     captures: usize,
     result: TypeId,
+) -> RuntimeFunctionSiteSeedId {
+    reserve_function_kind(
+        builder,
+        index,
+        inputs,
+        captures,
+        result,
+        RuntimeFunctionSiteBodyKind::Expression,
+    )
+}
+pub(in crate::plan::construction::source) fn reserve_executable_function(
+    builder: &mut RuntimePlanBuilder,
+    index: u8,
+    inputs: &[TypeId],
+    captures: usize,
+    result: TypeId,
+) -> RuntimeFunctionSiteSeedId {
+    reserve_function_kind(
+        builder,
+        index,
+        inputs,
+        captures,
+        result,
+        RuntimeFunctionSiteBodyKind::Executable,
+    )
+}
+fn reserve_function_kind(
+    builder: &mut RuntimePlanBuilder,
+    index: u8,
+    inputs: &[TypeId],
+    captures: usize,
+    result: TypeId,
+    body_kind: RuntimeFunctionSiteBodyKind,
 ) -> RuntimeFunctionSiteSeedId {
     let locals = inputs
         .iter()
@@ -129,7 +237,7 @@ pub(in crate::plan::construction::source) fn reserve_function(
             function_type: None,
             inputs,
             result,
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            body_kind,
             effects: RuntimeEffectSet::empty(),
         })
         .unwrap()

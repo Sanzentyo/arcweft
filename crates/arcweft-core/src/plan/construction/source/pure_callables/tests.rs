@@ -1,6 +1,58 @@
 use super::super::functions::RuntimeFunctionSourceLimits;
 use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::*;
+
+#[test]
+fn original_expression_sources_replay_helper_method_and_function_bodies_with_original_signatures() {
+    use super::super::expression::{
+        RuntimeExpressionSourceHandles,
+        tests::{decode, replay_functions},
+    };
+    let plan = fixture();
+    let bytes = encode(&plan);
+    let (mut source, functions) = source(&plan);
+    let callables =
+        PreparedRuntimePureCallableSources::preflight(&bytes, limits(&plan), &mut source.meter)
+            .unwrap()
+            .reserve(&mut source, &functions)
+            .unwrap();
+    let handles = RuntimeExpressionSourceHandles {
+        states: &[],
+        specializations: &[],
+        helpers: &callables.helpers,
+        methods: &callables.methods,
+        attempts: &[],
+    };
+    for (helper, handle) in plan.pure_helpers().iter().zip(&callables.helpers) {
+        let body = decode(&helper.expr, &plan, &mut source, &handles);
+        source
+            .builder
+            .define_pure_helper_seed(handle, body)
+            .unwrap();
+    }
+    for (method, handle) in plan.trait_methods().iter().zip(&callables.methods) {
+        let body = decode(&method.body, &plan, &mut source, &handles);
+        source
+            .builder
+            .define_trait_method_seed(handle, body)
+            .unwrap();
+    }
+    replay_functions(&plan, &mut source, &functions, &handles);
+    let seal = RuntimeTaskPlanSealLimits::default();
+    let restored = source
+        .prepare_image(seal)
+        .unwrap()
+        .seal(seal, None)
+        .unwrap()
+        .into_plan();
+    assert_eq!(restored.pure_helpers(), plan.pure_helpers());
+    assert_eq!(restored.trait_methods(), plan.trait_methods());
+    assert_eq!(restored.function_sites(), plan.function_sites());
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+}
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::*;
 use crate::value::{RuntimeCallArgumentMode, RuntimeLocalReadMode};
