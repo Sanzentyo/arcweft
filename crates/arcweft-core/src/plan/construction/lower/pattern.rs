@@ -116,7 +116,6 @@ enum Pending {
     },
     Tuple {
         seeds: Seeds,
-        expected: Box<[RuntimePlanTypeId]>,
         values: Vec<RuntimePattern>,
     },
     Record(RecordFrame),
@@ -224,7 +223,7 @@ impl RuntimePlanBodyConstruction<'_> {
                     return Ok(pattern);
                 };
                 path.truncate(frame.path_depth);
-                frame.accept(pattern, admission)?;
+                frame.accept(pattern, admission, self)?;
                 frames.push(frame);
             }
             let mut frame = frames
@@ -291,7 +290,7 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimePatternSeedKind::Tuple(seeds) => {
                 let expected = match self.projection(ty)? {
-                    RuntimePlanTypeProjection::Tuple(items) => items.clone(),
+                    RuntimePlanTypeProjection::Tuple(items) => items,
                     _ => return invalid_projection("tuple pattern", ty),
                 };
                 if expected.len() != seeds.len() {
@@ -300,7 +299,6 @@ impl RuntimePlanBodyConstruction<'_> {
                 Pending::Tuple {
                     values: Vec::with_capacity(seeds.len()),
                     seeds: seeds.into_vec().into_iter(),
-                    expected,
                 }
             }
             RuntimePatternSeedKind::Record { fields, rest } => {
@@ -375,6 +373,7 @@ impl Frame {
         &mut self,
         pattern: RuntimePattern,
         admission: &PatternAdmission,
+        construction: &RuntimePlanBodyConstruction<'_>,
     ) -> Result<(), RuntimePlanBuildError> {
         match &mut self.pending {
             Pending::Or {
@@ -391,9 +390,12 @@ impl Frame {
                 }
                 values.push(pattern);
             }
-            Pending::Tuple {
-                expected, values, ..
-            } => {
+            Pending::Tuple { values, .. } => {
+                let RuntimePlanTypeProjection::Tuple(expected) =
+                    construction.projection(self.ty)?
+                else {
+                    return invalid_projection("tuple pattern", self.ty);
+                };
                 require_same(
                     "tuple pattern element",
                     expected[values.len()],
