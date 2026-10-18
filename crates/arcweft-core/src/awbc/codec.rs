@@ -161,6 +161,11 @@ pub enum AwbcCodecError {
         message: String,
         offset: usize,
     },
+    #[error("AWBC registry key is invalid at byte offset {offset}: {source}")]
+    InvalidRegistryKey {
+        offset: usize,
+        source: arcweft_id::DeclarationNameError,
+    },
 }
 
 impl AwbcProgram {

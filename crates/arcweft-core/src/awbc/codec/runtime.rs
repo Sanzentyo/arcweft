@@ -3,15 +3,16 @@ use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef,
     AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceOption,
-    AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
-    AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode, AwbcIntrinsic,
-    AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineHandleSite,
-    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
-    AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
-    AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
-    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPlanKind,
-    AwbcTaskPolicy, AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTypeId,
+    AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPayload, AwbcEffectPlan,
+    AwbcEffectPlanId, AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode,
+    AwbcIntrinsic, AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineCleanupPolicy,
+    AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcParallelPolicy, AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin,
+    AwbcReduceOp, AwbcRegisterId, AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId,
+    AwbcSignatureId, AwbcStreamPlan, AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan,
+    AwbcTaskPlanId, AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection,
+    AwbcTaskRestartPolicy, AwbcTypeId,
 };
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
@@ -21,6 +22,9 @@ use arcweft_interaction_model::audio::{
 };
 use arcweft_interaction_model::input::InputActionId;
 use std::num::NonZeroU32;
+
+#[cfg(test)]
+mod effect_tests;
 
 impl Wire for AwbcIntrinsic {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -762,21 +766,39 @@ impl Wire for AwbcAudioCommand {
 
 impl Wire for AwbcEffectPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.kind.write_wire(writer)?;
+        self.kind().write_wire(writer)?;
         self.signature.write_wire(writer)?;
         self.capability.write_wire(writer)?;
-        self.audio.write_wire(writer)?;
-        self.static_args.write_wire(writer)?;
+        match &self.payload {
+            AwbcEffectPayload::Audio(command) => command.write_wire(writer)?,
+            AwbcEffectPayload::RegistryWrite { key, value_type } => {
+                writer.write_registry_key(key)?;
+                value_type.write_wire(writer)?;
+            }
+            _ => writer.write_table(self.static_args())?,
+        }
         self.resources.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let kind = AwbcEffectKind::read_wire(reader)?;
+        let signature = AwbcSignatureId::read_wire(reader)?;
+        let capability = Option::<AwbcStringId>::read_wire(reader)?;
+        let payload = match kind {
+            AwbcEffectKind::Audio => {
+                AwbcEffectPayload::Audio(AwbcAudioCommandId::read_wire(reader)?)
+            }
+            AwbcEffectKind::RegistryWrite => AwbcEffectPayload::RegistryWrite {
+                key: reader.read_registry_key()?,
+                value_type: AwbcTypeId::read_wire(reader)?,
+            },
+            kind => AwbcEffectPayload::try_from((kind, Vec::<AwbcConstantId>::read_wire(reader)?))
+                .expect("non-context effect kind has a constant payload"),
+        };
         Ok(Self {
-            kind: AwbcEffectKind::read_wire(reader)?,
-            signature: AwbcSignatureId::read_wire(reader)?,
-            capability: Option::<AwbcStringId>::read_wire(reader)?,
-            audio: Option::<AwbcAudioCommandId>::read_wire(reader)?,
-            static_args: Vec::<AwbcConstantId>::read_wire(reader)?,
+            signature,
+            capability,
+            payload,
             resources: Vec::<AwbcResourceAccess>::read_wire(reader)?,
         })
     }

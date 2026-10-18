@@ -74,11 +74,9 @@ fn program() -> AwbcProgram {
         ],
         defer_sites: vec![AwbcFunctionId(0)],
         effect_plans: vec![AwbcEffectPlan {
-            kind: AwbcEffectKind::Log,
             signature: AwbcSignatureId(0),
             capability: None,
-            audio: None,
-            static_args: vec![],
+            payload: crate::awbc::schema::AwbcEffectPayload::Log(vec![]),
             resources: vec![],
         }],
         ..AwbcProgram::default()

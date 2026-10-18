@@ -26,14 +26,14 @@ pub(super) enum MappedEffect {
     Unsupported(RuntimeDiagnostic),
 }
 
-impl AwbcEffectKind {
+impl AwbcProgram {
     #[allow(clippy::too_many_lines)]
     pub(super) fn map_product_effect(
-        self,
-        program: &AwbcProgram,
+        &self,
         effect: AwbcEffectPlanId,
         dynamic_args: &[RuntimeValue],
     ) -> MappedEffect {
+        let program = self;
         let Some(plan) = program.effect_plans.get(effect.index()) else {
             return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
                 RuntimeDiagnosticCategory::Internal,
@@ -41,7 +41,7 @@ impl AwbcEffectKind {
             ));
         };
         let static_args = plan
-            .static_args
+            .static_args()
             .iter()
             .filter_map(|constant| constant_value(program, *constant).ok())
             .collect::<Vec<_>>();
@@ -87,15 +87,21 @@ impl AwbcEffectKind {
                 .collect()
         };
         let assertion_guard = |index: usize| -> Option<RuntimeAssertionGuardId> {
-            let id = *plan.static_args.get(index)?;
+            let id = *plan.static_args().get(index)?;
             let AwbcConstant::Bytes(bytes) = program.constants.get(id.index())? else {
                 return None;
             };
             let bytes: [u8; 16] = bytes.as_slice().try_into().ok()?;
             RuntimeAssertionGuardId::try_from_bytes(bytes).ok()
         };
-        let mapped = match self {
-            Self::Wait => match static_args.first() {
+        let mapped = match plan.kind() {
+            AwbcEffectKind::RegistryWrite => {
+                return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Internal,
+                    "registry writes require their original program and execution context",
+                ));
+            }
+            AwbcEffectKind::Wait => match static_args.first() {
                 Some(RuntimeValue::Duration(duration)) => {
                     LineEffectRequest::Wait(RuntimeWaitTarget::Duration(*duration))
                 }
@@ -112,8 +118,8 @@ impl AwbcEffectKind {
                     ));
                 }
             },
-            Self::Audio => match plan
-                .audio
+            AwbcEffectKind::Audio => match plan
+                .audio()
                 .and_then(|audio| program.audio_commands.get(audio.index()))
             {
                 Some(command) => {
@@ -136,7 +142,7 @@ impl AwbcEffectKind {
                     ));
                 }
             },
-            Self::Call => LineEffectRequest::Call(RuntimeCall {
+            AwbcEffectKind::Call => LineEffectRequest::Call(RuntimeCall {
                 callee: string(0),
                 args: static_args[1..]
                     .iter()
@@ -144,7 +150,7 @@ impl AwbcEffectKind {
                     .map(runtime_value_label)
                     .collect(),
             }),
-            Self::Log => LineEffectRequest::Log(RuntimeLog {
+            AwbcEffectKind::Log => LineEffectRequest::Log(RuntimeLog {
                 level: string(0),
                 message: if dynamic_args.is_empty() {
                     string(1)
@@ -157,7 +163,7 @@ impl AwbcEffectKind {
                     dynamic_fields(2, 1)
                 },
             }),
-            Self::SignalWrite | Self::MetricWrite => {
+            AwbcEffectKind::SignalWrite | AwbcEffectKind::MetricWrite => {
                 let values = if dynamic_args.is_empty() {
                     static_args.as_slice()
                 } else {
@@ -178,13 +184,13 @@ impl AwbcEffectKind {
                         ));
                     }
                 };
-                if self == Self::SignalWrite {
+                if plan.kind() == AwbcEffectKind::SignalWrite {
                     LineEffectRequest::SignalWrite(write)
                 } else {
                     LineEffectRequest::MetricWrite(write)
                 }
             }
-            Self::EmitEvent => LineEffectRequest::EmitEvent(RuntimeEvent {
+            AwbcEffectKind::EmitEvent => LineEffectRequest::EmitEvent(RuntimeEvent {
                 event: if dynamic_args.is_empty() {
                     string(0)
                 } else {
@@ -196,28 +202,28 @@ impl AwbcEffectKind {
                     dynamic_fields(1, 1)
                 },
             }),
-            Self::Out => LineEffectRequest::Out(LineOutRequest {
+            AwbcEffectKind::Out => LineEffectRequest::Out(LineOutRequest {
                 label: optional_string(0),
                 value: string(1),
             }),
-            Self::Return => LineEffectRequest::Return(string(0)),
-            Self::Goto => LineEffectRequest::Goto(string(0)),
-            Self::Panic => LineEffectRequest::Panic(if dynamic_args.is_empty() {
+            AwbcEffectKind::Return => LineEffectRequest::Return(string(0)),
+            AwbcEffectKind::Goto => LineEffectRequest::Goto(string(0)),
+            AwbcEffectKind::Panic => LineEffectRequest::Panic(if dynamic_args.is_empty() {
                 string(0)
             } else {
                 dynamic_string(0)
             }),
-            Self::Fail => LineEffectRequest::Fail(if dynamic_args.is_empty() {
+            AwbcEffectKind::Fail => LineEffectRequest::Fail(if dynamic_args.is_empty() {
                 string(0)
             } else {
                 dynamic_string(0)
             }),
-            Self::Bail => LineEffectRequest::Bail(if dynamic_args.is_empty() {
+            AwbcEffectKind::Bail => LineEffectRequest::Bail(if dynamic_args.is_empty() {
                 string(0)
             } else {
                 dynamic_string(0)
             }),
-            Self::Ensure => LineEffectRequest::Ensure {
+            AwbcEffectKind::Ensure => LineEffectRequest::Ensure {
                 condition: if dynamic_args.is_empty() {
                     string(0)
                 } else {
@@ -229,7 +235,7 @@ impl AwbcEffectKind {
                     dynamic_string(1)
                 },
             },
-            Self::Assert => {
+            AwbcEffectKind::Assert => {
                 let Some(guard) = assertion_guard(0) else {
                     return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
                         RuntimeDiagnosticCategory::Internal,
@@ -277,13 +283,13 @@ impl AwbcEffectKind {
                     ))
                 }
             }
-            Self::Close => LineEffectRequest::Close(string(0)),
-            Self::Select => LineEffectRequest::Select(string(0)),
-            Self::Break => LineEffectRequest::Break {
+            AwbcEffectKind::Close => LineEffectRequest::Close(string(0)),
+            AwbcEffectKind::Select => LineEffectRequest::Select(string(0)),
+            AwbcEffectKind::Break => LineEffectRequest::Break {
                 label: optional_string(0),
                 value: optional_string(1),
             },
-            Self::Continue => LineEffectRequest::Continue {
+            AwbcEffectKind::Continue => LineEffectRequest::Continue {
                 label: optional_string(0),
             },
         };
@@ -520,18 +526,20 @@ mod typed_assignment_tests {
                     ],
                     constants: vec![AwbcConstant::String(AwbcStringId(0)), constant.clone()],
                     effect_plans: vec![AwbcEffectPlan {
-                        kind,
                         signature: AwbcSignatureId(0),
                         capability: None,
-                        audio: None,
-                        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+                        payload: crate::awbc::schema::AwbcEffectPayload::try_from((
+                            kind,
+                            vec![AwbcConstantId(0), AwbcConstantId(1)],
+                        ))
+                        .expect("constant effect kind has a static payload"),
                         resources: Vec::new(),
                     }],
                     ..AwbcProgram::default()
                 };
                 for dynamic in [&[][..], &args[..]] {
                     let MappedEffect::Line(awbc) =
-                        kind.map_product_effect(&program, AwbcEffectPlanId(0), dynamic)
+                        program.map_product_effect(AwbcEffectPlanId(0), dynamic)
                     else {
                         panic!("typed AWBC assignment must materialize");
                     };
@@ -565,17 +573,15 @@ mod typed_assignment_tests {
         ));
         let program = AwbcProgram {
             effect_plans: vec![AwbcEffectPlan {
-                kind: AwbcEffectKind::SignalWrite,
                 signature: AwbcSignatureId(0),
                 capability: None,
-                audio: None,
-                static_args: Vec::new(),
+                payload: crate::awbc::schema::AwbcEffectPayload::SignalWrite(Vec::new()),
                 resources: Vec::new(),
             }],
             ..AwbcProgram::default()
         };
         let MappedEffect::Unsupported(error) =
-            AwbcEffectKind::SignalWrite.map_product_effect(&program, AwbcEffectPlanId(0), &args)
+            program.map_product_effect(AwbcEffectPlanId(0), &args)
         else {
             panic!("the AWBC adapter must refuse an affine observation");
         };

@@ -35,6 +35,9 @@ use arcweft_interaction_model::dialogue::{
 use arcweft_interaction_model::input::InputActionId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+mod effect_payload;
+pub use effect_payload::{AwbcEffectPayload, AwbcEffectPayloadError};
+
 /// Defines a closed AWBC-owned one-byte enum together with its sole numeric
 /// inventory, allocation-free decoder, and numeric structured-data contract.
 macro_rules! awbc_u8_enum {
@@ -3293,14 +3296,30 @@ impl AwbcAudioCommand {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcEffectPlan {
-    pub kind: AwbcEffectKind,
     pub signature: AwbcSignatureId,
     pub capability: Option<AwbcStringId>,
-    pub audio: Option<AwbcAudioCommandId>,
-    pub static_args: Vec<AwbcConstantId>,
+    pub payload: AwbcEffectPayload,
     pub resources: Vec<AwbcResourceAccess>,
+}
+
+impl AwbcEffectPlan {
+    pub const fn kind(&self) -> AwbcEffectKind {
+        self.payload.kind()
+    }
+
+    pub fn static_args(&self) -> &[AwbcConstantId] {
+        self.payload.static_args()
+    }
+
+    pub const fn audio(&self) -> Option<AwbcAudioCommandId> {
+        match &self.payload {
+            AwbcEffectPayload::Audio(command) => Some(*command),
+            _ => None,
+        }
+    }
 }
 
 awbc_u8_enum! {
@@ -3324,10 +3343,11 @@ awbc_u8_enum! {
         Select = 16,
         Break = 17,
         Continue = 18,
+        RegistryWrite = 19,
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcResourceAccess {
     pub resource: AwbcResourceId,
     pub mode: AwbcResourceAccessMode,
@@ -3344,7 +3364,7 @@ awbc_u8_enum! {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum AwbcConflictPolicy {
     Error,
     Append,

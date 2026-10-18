@@ -143,7 +143,7 @@ pub struct AwbcInventory {
     constants: BTreeMap<String, AwbcConstantId>,
     signatures: BTreeMap<String, AwbcSignatureId>,
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
-    effects: BTreeMap<String, AwbcEffectPlanId>,
+    effects: BTreeMap<AwbcEffectPlan, AwbcEffectPlanId>,
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<AwbcTaskPlan, AwbcTaskPlanId>,
     host_calls: BTreeMap<AwbcHostCall, AwbcHostCallId>,
@@ -1556,29 +1556,21 @@ impl AwbcInventory {
     }
 
     pub fn intern_effect(&mut self, effect: &LineEffectRequest) -> AwbcEffectPlanId {
-        let key = format!("effect:{effect:?}");
-        if let Some(id) = self.effects.get(&key).copied() {
-            return id;
-        }
         if let LineEffectRequest::Audio(command) = effect {
             let command = constant_audio_command(self, command, "line_task.audio");
             return self.intern_audio_effect(command, 0);
         }
-        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let kind = effect_kind(effect);
         let signature = self.intern_unit_signature();
         let capability = effect_capability(effect).map(|capability| self.intern_string(capability));
         let static_args = effect_static_args(self, effect);
-        self.program.effect_plans.push(AwbcEffectPlan {
-            kind,
+        self.intern_effect_plan(AwbcEffectPlan {
             signature,
             capability,
-            audio: None,
-            static_args,
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::try_from((kind, static_args))
+                .expect("constant effect kind has a static payload"),
             resources: Vec::new(),
-        });
-        self.effects.insert(key, id);
-        id
+        })
     }
 
     pub fn intern_evaluated_effect(
@@ -1586,36 +1578,47 @@ impl AwbcInventory {
         effect: &RuntimeEffectExpr,
         declared_effects: &RuntimeEffectSet,
     ) -> Option<AwbcEffectPlanId> {
-        if matches!(effect, RuntimeEffectExpr::RegistryWrite { .. }) {
-            self.diagnostic(AwbcLowerDiagnostic::error(
-                "effect.registry_context",
-                "registry write requires an original-program registry effect plan",
-            ));
-            return None;
+        if let RuntimeEffectExpr::RegistryWrite { key, value } = effect {
+            let Some(value_type) = self.plan_type(value.ty()) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "effect.registry_value_type",
+                    "registry write value type was not admitted from the original runtime plan",
+                ));
+                return None;
+            };
+            let effect_set = self.intern_effect_set(declared_effects);
+            let signature = self.intern_signature(vec![value_type], None, effect_set);
+            let capability = Some(self.intern_string(arcweft_id::EffectId::STATE_WRITE_LABEL));
+            return Some(self.intern_effect_plan(AwbcEffectPlan {
+                signature,
+                capability,
+                payload: arcweft_core::awbc::schema::AwbcEffectPayload::RegistryWrite {
+                    key: key.clone(),
+                    value_type,
+                },
+                resources: Vec::new(),
+            }));
         }
         let descriptor = effect.host_descriptor()?;
         let arg_count = effect.argument_exprs().len();
         let effect_set = self.intern_effect_set(declared_effects);
-        let key = format!("effect:evaluated:{descriptor:?}:{arg_count}:{effect_set:?}");
-        if let Some(id) = self.effects.get(&key).copied() {
-            return Some(id);
-        }
-        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let kind = effect_kind(&descriptor);
         let signature = self.intern_signature(vec![self.dynamic_ty(); arg_count], None, effect_set);
         let capability =
             effect_capability(&descriptor).map(|capability| self.intern_string(capability));
         let static_args = effect_static_args(self, &descriptor);
-        self.program.effect_plans.push(AwbcEffectPlan {
-            kind,
-            signature,
-            capability,
-            audio: None,
-            static_args,
-            resources: Vec::new(),
-        });
-        self.effects.insert(key, id);
-        Some(id)
+        Some(
+            self.intern_effect_plan(AwbcEffectPlan {
+                signature,
+                capability,
+                payload: arcweft_core::awbc::schema::AwbcEffectPayload::try_from((
+                    kind,
+                    static_args,
+                ))
+                .expect("constant effect kind has a static payload"),
+                resources: Vec::new(),
+            }),
+        )
     }
 
     pub fn intern_audio_effect(
@@ -1624,23 +1627,24 @@ impl AwbcInventory {
         arg_count: usize,
     ) -> AwbcEffectPlanId {
         let audio = self.intern_audio_command(command);
-        let key = format!("effect:audio:{audio:?}:{arg_count}");
-        if let Some(id) = self.effects.get(&key).copied() {
-            return id;
-        }
-        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let signature =
             self.intern_signature(vec![self.dynamic_ty(); arg_count], None, AwbcEffectSetId(0));
         let capability = Some(self.intern_string("audio"));
-        self.program.effect_plans.push(AwbcEffectPlan {
-            kind: AwbcEffectKind::Audio,
+        self.intern_effect_plan(AwbcEffectPlan {
             signature,
             capability,
-            audio: Some(audio),
-            static_args: Vec::new(),
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Audio(audio),
             resources: Vec::new(),
-        });
-        self.effects.insert(key, id);
+        })
+    }
+
+    fn intern_effect_plan(&mut self, plan: AwbcEffectPlan) -> AwbcEffectPlanId {
+        if let Some(id) = self.effects.get(&plan).copied() {
+            return id;
+        }
+        let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
+        self.effects.insert(plan.clone(), id);
+        self.program.effect_plans.push(plan);
         id
     }
 

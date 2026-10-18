@@ -488,16 +488,12 @@ impl AwbcProductStepExecutor {
     ) -> ChoiceRuntimeOption {
         let mut effects = Vec::new();
         for effect in &option.effects {
-            if let Some(plan) = self.program.effect_plans.get(effect.index())
-                && let MappedEffect::Line(effect) =
-                    plan.kind.map_product_effect(&self.program, *effect, &[])
-            {
+            if let MappedEffect::Line(effect) = self.program.map_product_effect(*effect, &[]) {
                 effects.push(effect);
             }
         }
         let out = option.out_effect.and_then(|effect| {
-            let plan = self.program.effect_plans.get(effect.index())?;
-            match plan.kind.map_product_effect(&self.program, effect, &[]) {
+            match self.program.map_product_effect(effect, &[]) {
                 MappedEffect::Line(crate::effect::LineEffectRequest::Out(out)) => Some(out),
                 _ => None,
             }

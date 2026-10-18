@@ -982,19 +982,18 @@ fn direct_suspension_resume_points() -> Vec<AwbcResumePoint> {
 fn direct_suspension_effect_plans() -> Vec<AwbcEffectPlan> {
     vec![
         AwbcEffectPlan {
-            kind: AwbcEffectKind::Log,
             signature: AwbcSignatureId(0),
             capability: None,
-            audio: None,
-            static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Log(vec![
+                AwbcConstantId(0),
+                AwbcConstantId(1),
+            ]),
             resources: Vec::new(),
         },
         AwbcEffectPlan {
-            kind: AwbcEffectKind::Close,
             signature: AwbcSignatureId(2),
             capability: None,
-            audio: None,
-            static_args: vec![AwbcConstantId(0)],
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Close(vec![AwbcConstantId(0)]),
             resources: Vec::new(),
         },
     ]

@@ -2437,14 +2437,14 @@ impl AwbcProductStepExecutor {
         args: &[RuntimeValue],
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(plan) = self.program.effect_plans.get(effect.index()) else {
+        if self.program.effect_plans.get(effect.index()).is_none() {
             self.record_error(
                 ProductStepError::Internal(format!("missing AWBC effect plan {}", effect.0)),
                 output,
             );
             return;
-        };
-        match plan.kind.map_product_effect(&self.program, effect, args) {
+        }
+        match self.program.map_product_effect(effect, args) {
             MappedEffect::Omitted => {}
             MappedEffect::Line(effect) => output.effects.line.push(effect),
             MappedEffect::Audio(command) => output.requests.audio.push(AudioCommandEnvelope::new(

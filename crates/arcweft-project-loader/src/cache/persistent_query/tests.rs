@@ -436,16 +436,14 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }],
         effect_plans: vec![AwbcEffectPlan {
-            kind: AwbcEffectKind::Assert,
             signature: AwbcSignatureId(0),
             capability: None,
-            audio: None,
-            static_args: vec![
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Assert(vec![
                 AwbcConstantId(0),
                 AwbcConstantId(1),
                 AwbcConstantId(2),
                 AwbcConstantId(3),
-            ],
+            ]),
             resources: Vec::new(),
         }],
         ..AwbcProgram::default()

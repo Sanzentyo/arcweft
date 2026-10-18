@@ -2758,11 +2758,9 @@ fn actor_effect_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     });
     program.effect_plans = vec![AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
         signature: AwbcSignatureId(1),
         capability: None,
-        audio: None,
-        static_args: vec![level, fallback_message],
+        payload: crate::awbc::schema::AwbcEffectPayload::Log(vec![level, fallback_message]),
         resources: Vec::new(),
     }];
     program.instructions.truncate(6);
@@ -3748,16 +3746,14 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     let log_field_name = constant_string(&mut program, "source");
     let log_field_value = constant_string(&mut program, "init");
     program.effect_plans = vec![AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
         signature: AwbcSignatureId(3),
         capability: None,
-        audio: None,
-        static_args: vec![
+        payload: crate::awbc::schema::AwbcEffectPayload::Log(vec![
             log_level,
             log_fallback_message,
             log_field_name,
             log_field_value,
-        ],
+        ]),
         resources: Vec::new(),
     }];
     program.frame_layouts.extend([
@@ -5407,11 +5403,14 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
         (AwbcEffectKind::Select, true),
         (AwbcEffectKind::Break, true),
         (AwbcEffectKind::Continue, true),
+        (AwbcEffectKind::RegistryWrite, false),
     ];
+
+    assert_eq!(cases.map(|(kind, _)| kind).as_slice(), AwbcEffectKind::ALL);
 
     for (kind, should_map_to_line_effect) in cases {
         let effect = push_effect_plan(&mut program, kind);
-        let mapped = kind.map_product_effect(&program, effect, &[]);
+        let mapped = program.map_product_effect(effect, &[]);
         assert_eq!(
             matches!(mapped, MappedEffect::Line(_)),
             should_map_to_line_effect
@@ -5428,7 +5427,7 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Wait);
 
-    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    let mapped = program.map_product_effect(effect, &[]);
     assert!(matches!(
         mapped,
         MappedEffect::Line(LineEffectRequest::Wait(
@@ -5437,8 +5436,8 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
     ));
 
     let non_duration = constant_string(&mut program, ".checkpoint");
-    program.effect_plans[effect.index()].static_args[0] = non_duration;
-    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    effect_test_arguments_mut(&mut program, effect)[0] = non_duration;
+    let mapped = program.map_product_effect(effect, &[]);
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("a non-Duration wait target must not become a runtime wait request");
     };
@@ -5448,8 +5447,8 @@ fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
         "AWBC wait target must evaluate to Duration"
     );
 
-    program.effect_plans[effect.index()].static_args.clear();
-    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    effect_test_arguments_mut(&mut program, effect).clear();
+    let mapped = program.map_product_effect(effect, &[]);
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("a missing wait target must not become an empty runtime expression");
     };
@@ -5465,10 +5464,9 @@ fn assertion_effect_mapping_retains_typed_guard_and_payload() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
     let message = constant_string(&mut program, "must be ready");
-    program.effect_plans[effect.index()].static_args[2] = message;
+    effect_test_arguments_mut(&mut program, effect)[2] = message;
 
-    let mapped =
-        AwbcEffectKind::Assert.map_product_effect(&program, effect, &[RuntimeValue::Bool(false)]);
+    let mapped = program.map_product_effect(effect, &[RuntimeValue::Bool(false)]);
     let MappedEffect::Line(LineEffectRequest::Assert(assertion)) = mapped else {
         panic!("well-formed assertion effect must map to typed core assertion data");
     };
@@ -5486,9 +5484,9 @@ fn pre_materialized_assertion_effect_retains_its_condition_label() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
     let condition = constant_string(&mut program, "debug_flag");
-    program.effect_plans[effect.index()].static_args[1] = condition;
+    effect_test_arguments_mut(&mut program, effect)[1] = condition;
 
-    let mapped = AwbcEffectKind::Assert.map_product_effect(&program, effect, &[]);
+    let mapped = program.map_product_effect(effect, &[]);
     let MappedEffect::Line(LineEffectRequest::Assert(assertion)) = mapped else {
         panic!("pre-materialized assertion request must remain a typed line effect");
     };
@@ -5501,8 +5499,7 @@ fn assertion_effect_mapping_omits_true_condition() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
 
-    let mapped = AwbcEffectKind::Assert.map_product_effect(
-        &program,
+    let mapped = program.map_product_effect(
         effect,
         &[
             RuntimeValue::Bool(true),
@@ -5518,8 +5515,7 @@ fn assertion_effect_mapping_rejects_non_bool_condition() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
 
-    let mapped = AwbcEffectKind::Assert.map_product_effect(
-        &program,
+    let mapped = program.map_product_effect(
         effect,
         &[
             RuntimeValue::String("false".to_owned()),
@@ -5542,9 +5538,9 @@ fn assertion_effect_mapping_rejects_unknown_profile_without_fallback() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
     let invalid_profile = constant_string(&mut program, "legacy_profile");
-    program.effect_plans[effect.index()].static_args[3] = invalid_profile;
+    effect_test_arguments_mut(&mut program, effect)[3] = invalid_profile;
 
-    let mapped = AwbcEffectKind::Assert.map_product_effect(&program, effect, &[]);
+    let mapped = program.map_product_effect(effect, &[]);
 
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("unknown assertion profiles must not fall back to the always profile");
@@ -5554,11 +5550,11 @@ fn assertion_effect_mapping_rejects_unknown_profile_without_fallback() {
 }
 
 #[test]
-fn audio_effect_mapping_without_typed_payload_is_typed_internal_diagnostic() {
+fn audio_effect_mapping_unknown_command_reference_is_typed_internal_diagnostic() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
 
-    let mapped = AwbcEffectKind::Audio.map_product_effect(&program, effect, &[]);
+    let mapped = program.map_product_effect(effect, &[]);
 
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("malformed audio payload must not map to a line or audio request");
@@ -5573,10 +5569,10 @@ fn audio_effect_mapping_missing_arg_is_typed_internal_diagnostic() {
         fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(0)),
     });
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
-    program.effect_plans[effect.index()].audio = Some(AwbcAudioCommandId(0));
-    program.effect_plans[effect.index()].static_args.clear();
+    program.effect_plans[effect.index()].payload =
+        crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0));
 
-    let mapped = AwbcEffectKind::Audio.map_product_effect(&program, effect, &[]);
+    let mapped = program.map_product_effect(effect, &[]);
 
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("missing audio dynamic arg must not map to a request");
@@ -5593,11 +5589,10 @@ fn audio_effect_mapping_invalid_identifier_is_typed_type_diagnostic() {
         fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(0)),
     });
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
-    program.effect_plans[effect.index()].audio = Some(AwbcAudioCommandId(0));
-    program.effect_plans[effect.index()].static_args.clear();
+    program.effect_plans[effect.index()].payload =
+        crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0));
 
-    let mapped =
-        AwbcEffectKind::Audio.map_product_effect(&program, effect, &[RuntimeValue::u32(25)]);
+    let mapped = program.map_product_effect(effect, &[RuntimeValue::u32(25)]);
 
     let MappedEffect::Unsupported(diagnostic) = mapped else {
         panic!("invalid audio identifier must not map to a request");
@@ -6543,7 +6538,7 @@ fn await_many_product_program() -> AwbcProgram {
 
 fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {
     let static_arg_count = match kind {
-        AwbcEffectKind::Audio => 0,
+        AwbcEffectKind::Audio | AwbcEffectKind::RegistryWrite => 0,
         AwbcEffectKind::Call
         | AwbcEffectKind::SignalWrite
         | AwbcEffectKind::MetricWrite
@@ -6584,15 +6579,38 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
     let effect = AwbcEffectPlanId(
         u32::try_from(program.effect_plans.len()).expect("test effect table index fits u32"),
     );
+    let payload = match kind {
+        AwbcEffectKind::Audio => {
+            crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0))
+        }
+        AwbcEffectKind::RegistryWrite => crate::awbc::schema::AwbcEffectPayload::RegistryWrite {
+            key: arcweft_id::LifetimeRegistryKey::new(
+                arcweft_id::LifetimeScopeKind::Flow,
+                Box::new([]),
+            ),
+            value_type: AwbcTypeId(0),
+        },
+        kind => crate::awbc::schema::AwbcEffectPayload::try_from((kind, static_args))
+            .expect("constant effect kind has a static payload"),
+    };
     program.effect_plans.push(AwbcEffectPlan {
-        kind,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args,
+        payload,
         resources: Vec::new(),
     });
     effect
+}
+
+fn effect_test_arguments_mut(
+    program: &mut AwbcProgram,
+    effect: AwbcEffectPlanId,
+) -> &mut Vec<AwbcConstantId> {
+    match &mut program.effect_plans[effect.index()].payload {
+        crate::awbc::schema::AwbcEffectPayload::Wait(args)
+        | crate::awbc::schema::AwbcEffectPayload::Assert(args) => args,
+        payload => panic!("fixture expects a Wait or Assert argument role: {payload:?}"),
+    }
 }
 
 fn constant_duration(program: &mut AwbcProgram, nanos: u64) -> crate::awbc::schema::AwbcConstantId {

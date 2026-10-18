@@ -1950,7 +1950,7 @@ fn apply_instruction(
                 None,
                 state,
                 &at,
-                &format!("effect plan {}", effect.kind.encoded()),
+                &format!("effect plan {}", effect.kind().encoded()),
             )?;
         }
         AwbcInstruction::RegisterCleanup { key, effect, args } => {
@@ -1966,7 +1966,7 @@ fn apply_instruction(
                 None,
                 state,
                 &at,
-                &format!("cleanup effect plan {}", effect.kind.encoded()),
+                &format!("cleanup effect plan {}", effect.kind().encoded()),
             )?;
         }
         AwbcInstruction::CancelCleanup { key } => {

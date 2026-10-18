@@ -11,6 +11,7 @@ mod local_assignment;
 mod or_patterns;
 mod ownership_admission;
 mod record_shapes;
+mod registry_effect;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
     FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
@@ -2832,11 +2833,9 @@ fn add_goto_cleanup_effect(program: &mut AwbcProgram) {
     let constant = AwbcConstantId(program.constants.len().try_into().unwrap());
     program.constants.push(AwbcConstant::Unit);
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Wait,
         signature,
         capability: None,
-        audio: None,
-        static_args: vec![constant],
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![constant]),
         resources: Vec::new(),
     });
 }
@@ -2861,11 +2860,9 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     });
     program.effect_plans = vec![AwbcEffectPlan {
-        kind: AwbcEffectKind::Wait,
         signature: AwbcSignatureId(1),
         capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0)],
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![AwbcConstantId(0)]),
         resources: Vec::new(),
     }];
     program.frame_layouts = vec![
@@ -4741,24 +4738,25 @@ fn verifier_rejects_function_kind_role_mismatch_at_the_function_owner() {
 }
 
 #[test]
-fn removed_register_handle_effect_row_cannot_reenter_through_dense_tag_zero() {
+fn wait_effect_wire_round_trip_preserves_and_rejects_wrong_static_arity() {
     let mut program = minimal_program();
     program.constants = vec![AwbcConstant::Unit, AwbcConstant::Unit];
     program.effect_plans = vec![AwbcEffectPlan {
-        kind: AwbcEffectKind::Wait,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+        payload: crate::awbc::schema::AwbcEffectPayload::Wait(vec![
+            AwbcConstantId(0),
+            AwbcConstantId(1),
+        ]),
         resources: Vec::new(),
     }];
 
     let encoded = program
         .encode_canonical()
-        .expect("encode complete former RegisterHandle row shape");
+        .expect("encode typed Wait payload");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
-        .expect("dense v1 tag zero decodes only as Wait");
-    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Wait);
+        .expect("decode typed Wait payload");
+    assert_eq!(decoded.effect_plans[0].kind(), AwbcEffectKind::Wait);
     assert!(matches!(
         decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
@@ -4766,24 +4764,23 @@ fn removed_register_handle_effect_row_cannot_reenter_through_dense_tag_zero() {
 }
 
 #[test]
-fn removed_drop_handle_effect_row_cannot_reenter_through_dense_tag_one() {
+fn audio_effect_wire_round_trip_retains_and_verifies_its_command_reference() {
     let mut program = minimal_program();
     program.constants = vec![AwbcConstant::Unit];
     program.effect_plans = vec![AwbcEffectPlan {
-        kind: AwbcEffectKind::Audio,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0)],
+        payload: crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0)),
         resources: Vec::new(),
     }];
 
     let encoded = program
         .encode_canonical()
-        .expect("encode complete former DropHandle row shape");
+        .expect("encode typed Audio reference");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
-        .expect("dense v1 tag one decodes only as Audio");
-    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Audio);
+        .expect("decode typed Audio reference");
+    assert_eq!(decoded.effect_plans[0].kind(), AwbcEffectKind::Audio);
+    assert_eq!(decoded.effect_plans[0].audio(), Some(AwbcAudioCommandId(0)));
     assert!(matches!(
         decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
@@ -6206,16 +6203,14 @@ fn canonical_awbc_assertion_payload_round_trips_as_typed_identity() {
         AwbcConstant::String(AwbcStringId(0)),
     ];
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Assert,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: vec![
+        payload: crate::awbc::schema::AwbcEffectPayload::Assert(vec![
             AwbcConstantId(0),
             AwbcConstantId(1),
             AwbcConstantId(2),
             AwbcConstantId(3),
-        ],
+        ]),
         resources: Vec::new(),
     });
 
@@ -6235,7 +6230,7 @@ fn canonical_awbc_assertion_payload_round_trips_as_typed_identity() {
         other => panic!("assertion guard changed constant kind: {other:?}"),
     };
     assert_eq!(decoded_guard, guard);
-    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Assert);
+    assert_eq!(decoded.effect_plans[0].kind(), AwbcEffectKind::Assert);
 }
 
 #[test]
@@ -7237,11 +7232,12 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         effects: AwbcEffectSetId(0),
     });
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
         signature: AwbcSignatureId(1),
         capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+        payload: crate::awbc::schema::AwbcEffectPayload::Log(vec![
+            AwbcConstantId(0),
+            AwbcConstantId(1),
+        ]),
         resources: Vec::new(),
     });
     program.frame_layouts[0].scopes = vec![AwbcScopeDefinition {
@@ -7363,21 +7359,13 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
 }
 
 #[test]
-fn verifier_rejects_audio_effect_without_typed_payload() {
-    let mut program = minimal_program();
-    program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Audio,
-        signature: AwbcSignatureId(0),
-        capability: None,
-        audio: None,
-        static_args: Vec::new(),
-        resources: Vec::new(),
-    });
-
-    assert!(matches!(
-        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
-        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
-    ));
+fn typed_effect_payload_rejects_contextless_audio_and_registry_arguments() {
+    for kind in [AwbcEffectKind::Audio, AwbcEffectKind::RegistryWrite] {
+        assert_eq!(
+            crate::awbc::schema::AwbcEffectPayload::try_from((kind, Vec::new())),
+            Err(crate::awbc::schema::AwbcEffectPayloadError { kind }),
+        );
+    }
 }
 
 #[test]
@@ -7387,11 +7375,9 @@ fn verifier_rejects_audio_payload_arg_outside_effect_signature() {
         fade_out_millis: AwbcAudioValueRef::Arg(AwbcAudioArg::new(1)),
     });
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Audio,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: Some(AwbcAudioCommandId(0)),
-        static_args: Vec::new(),
+        payload: crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0)),
         resources: Vec::new(),
     });
 
@@ -7402,35 +7388,29 @@ fn verifier_rejects_audio_payload_arg_outside_effect_signature() {
 }
 
 #[test]
-fn verifier_rejects_non_audio_effect_with_typed_audio_payload() {
-    let mut program = minimal_program();
-    program.audio_commands.push(AwbcAudioCommand::StopAll {
-        fade_out_millis: AwbcAudioValueRef::Const(AwbcConstantId(0)),
-    });
-    program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
+fn typed_effect_payload_kind_cannot_be_overridden_by_separate_metadata() {
+    let plan = AwbcEffectPlan {
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: Some(AwbcAudioCommandId(0)),
-        static_args: Vec::new(),
+        payload: crate::awbc::schema::AwbcEffectPayload::Audio(AwbcAudioCommandId(0)),
         resources: Vec::new(),
-    });
-
-    assert!(matches!(
-        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
-        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
-    ));
+    };
+    assert_eq!(plan.kind(), AwbcEffectKind::Audio);
+    let mut source = serde_json::to_value(&plan).unwrap();
+    source
+        .as_object_mut()
+        .unwrap()
+        .insert("kind".to_owned(), serde_json::json!(AwbcEffectKind::Log));
+    assert!(serde_json::from_value::<AwbcEffectPlan>(source).is_err());
 }
 
 #[test]
 fn verifier_rejects_effect_static_argument_shape_that_product_mapping_cannot_read() {
     let mut program = minimal_program();
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: Vec::new(),
+        payload: crate::awbc::schema::AwbcEffectPayload::Log(Vec::new()),
         resources: Vec::new(),
     });
 
@@ -7458,11 +7438,12 @@ fn verifier_rejects_evaluated_effect_signature_with_wrong_arity() {
         effects: AwbcEffectSetId(0),
     });
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::SignalWrite,
         signature: AwbcSignatureId(1),
         capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0), AwbcConstantId(0)],
+        payload: crate::awbc::schema::AwbcEffectPayload::SignalWrite(vec![
+            AwbcConstantId(0),
+            AwbcConstantId(0),
+        ]),
         resources: Vec::new(),
     });
 
@@ -7487,16 +7468,14 @@ fn verifier_rejects_unknown_assert_profile_instead_of_defaulting_it() {
         AwbcConstant::String(AwbcStringId(3)),
     ];
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Assert,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: vec![
+        payload: crate::awbc::schema::AwbcEffectPayload::Assert(vec![
             AwbcConstantId(0),
             AwbcConstantId(1),
             AwbcConstantId(2),
             AwbcConstantId(3),
-        ],
+        ]),
         resources: Vec::new(),
     });
 
@@ -7527,16 +7506,14 @@ fn verifier_rejects_zero_assert_guard() {
         AwbcConstant::String(AwbcStringId(3)),
     ];
     program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Assert,
         signature: AwbcSignatureId(0),
         capability: None,
-        audio: None,
-        static_args: vec![
+        payload: crate::awbc::schema::AwbcEffectPayload::Assert(vec![
             AwbcConstantId(0),
             AwbcConstantId(1),
             AwbcConstantId(2),
             AwbcConstantId(3),
-        ],
+        ]),
         resources: Vec::new(),
     });
 

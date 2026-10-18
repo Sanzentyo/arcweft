@@ -100,6 +100,18 @@ impl Writer {
         Ok(())
     }
 
+    pub(super) fn write_registry_key(
+        &mut self,
+        key: &arcweft_id::LifetimeRegistryKey,
+    ) -> Result<(), AwbcCodecError> {
+        self.write_str(key.scope().as_str())?;
+        self.write_len(key.segments().len())?;
+        for name in key.segments() {
+            self.write_str(name.as_str())?;
+        }
+        Ok(())
+    }
+
     pub(super) fn write_runtime_id_path(
         &mut self,
         family: RuntimeIdFamily,
@@ -433,6 +445,65 @@ impl<'a> Reader<'a> {
                 offset,
             }
         })
+    }
+
+    pub(super) fn read_registry_key(
+        &mut self,
+    ) -> Result<arcweft_id::LifetimeRegistryKey, AwbcCodecError> {
+        let scope_offset = self.offset();
+        let scope = self.read_str()?;
+        let count = self.read_len()?;
+        self.add_collection_items(count)?;
+        count
+            .checked_mul(size_of::<arcweft_id::DeclarationName>())
+            .filter(|bytes| isize::try_from(*bytes).is_ok())
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        let start = self.offset();
+        // Bound the whole borrowed key before retaining names. The second and
+        // third passes reread only this immutable span; no quota is reset.
+        self.read_nested(|reader| {
+            for _ in 0..count {
+                reader.read_str()?;
+            }
+            Ok(())
+        })?;
+        let end = self.offset();
+        arcweft_id::DeclarationName::validate_source(scope).map_err(|source| {
+            AwbcCodecError::InvalidRegistryKey {
+                offset: scope_offset,
+                source,
+            }
+        })?;
+        self.offset = start;
+        for _ in 0..count {
+            let offset = self.offset();
+            let len = self.read_len()?;
+            let name = self.read_utf8(len)?;
+            arcweft_id::DeclarationName::validate_source(name)
+                .map_err(|source| AwbcCodecError::InvalidRegistryKey { offset, source })?;
+        }
+        self.offset = start;
+        let mut segments = Vec::with_capacity(count);
+        for _ in 0..count {
+            let offset = self.offset();
+            let len = self.read_len()?;
+            let name = self.read_utf8(len)?;
+            segments.push(
+                arcweft_id::DeclarationName::try_new(name)
+                    .map_err(|source| AwbcCodecError::InvalidRegistryKey { offset, source })?,
+            );
+        }
+        debug_assert_eq!(self.offset(), end);
+        let scope = arcweft_id::LifetimeScopeKind::parse(scope).map_err(|source| {
+            AwbcCodecError::InvalidRegistryKey {
+                offset: scope_offset,
+                source,
+            }
+        })?;
+        Ok(arcweft_id::LifetimeRegistryKey::new(
+            scope,
+            segments.into_boxed_slice(),
+        ))
     }
 
     pub(super) fn check_limit(

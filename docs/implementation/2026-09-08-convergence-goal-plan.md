@@ -16839,3 +16839,46 @@ R1247 subsequently completes successfully on the unified effect code:
 workspace/all-target/all-feature/locked check, 4m42s, actual 0. All 3855 frozen
 inputs are audited before this prose addition; the later delta is this note.
 Owner execution of the grammar unification and final lint remain pending.
+
+### 2026-10-19 — typed AWBC effect payload checkpoint
+
+Delivery 7086576871a617f47a011b2426f02254ace5df53 is verified against normal
+push, fetched/advertised ref, fourteen blobs, the reviewed raw patch, 3855 inputs
+and an empty index. This next checkpoint replaces the independent kind/audio/
+static-argument fields with one closed AwbcEffectPayload. Kind is derived from
+that payload. Audio requires its actual command identity; registry writes retain
+the Id-owned key and original RHS type. The v1 binary codec evolves in place;
+there is no legacy reader. All existing producers, mapper callers and fixture
+constructors are migrated. Impossible Rust audio/kind combinations are replaced
+with typed-construction and structured-data rejection coverage; truncated audio
+wire payload rejection is covered directly in the decoder.
+
+The AWBC key decoder charges the complete borrowed key against the existing
+Reader's cumulative string/collection/depth bank before validating or retaining
+names. It rereads only the immutable precharged span and creates no second
+Reader. The verifier requires state.write host capability, the exact one-RHS
+signature with no result, and declared effect coverage for the actual scoped
+key. Inventory now interns complete typed effect plans rather than Debug text;
+RegistryWrite uses the type admitted from the original RuntimePlan. Missing type
+admission remains an explicit diagnostic. Constant and audio interning share the
+same typed owner. AWBC/Core contract version markers remain 1.
+
+R1248 exploratory Core check fails on unmigrated consumers and obsolete invalid
+fixtures (62 diagnostics including repeated library/test diagnostics); those are
+migrated. R1249 Core/all-target/all-feature/locked check passes, actual 0, 1m23s,
+before the six new registry/decoder tests and typed inventory interner. R1250
+five-owner nextest catalog (Core, RuntimePlan, Bundle, ProjectLoader, RuntimeDriver)
+is building at this publication cut. The immutable awbc-effect-payload-owner
+freeze records 3858 inputs, 22 owned paths, 14 held tracked edits, unchanged 99
+manifest/lock inputs and 53 transitive workspace consumers from the resolved
+Cargo graph. Later fixture formatting and exhaustive kind-table cleanup are not
+claimed as executed against that earlier freeze. No test execution, final lint,
+full-consumer run, Tier2 or Native/Web parity pass is claimed for this checkpoint.
+
+The context-free mapper explicitly refuses registry writes. Actual Native/AWBC
+execution with original program/frame/scope authority and typed state-update
+requests, host storage, cleanup and restore remain open. Production final-HIR
+LifetimeSet projection is not yet enabled; R1219's actual CLI failure remains.
+This intermediate checkpoint follows the user's explicit instruction to avoid
+accumulating dirty work without requiring every intermediate commit to work.
+Continue implementation and validation of the same active goal after publication.

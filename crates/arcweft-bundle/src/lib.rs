@@ -1949,16 +1949,14 @@ mod tests {
             AwbcConstant::String(AwbcStringId(0)),
         ];
         program.effect_plans.push(AwbcEffectPlan {
-            kind: AwbcEffectKind::Assert,
             signature: AwbcSignatureId(0),
             capability: None,
-            audio: None,
-            static_args: vec![
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Assert(vec![
                 AwbcConstantId(0),
                 AwbcConstantId(1),
                 AwbcConstantId(2),
                 AwbcConstantId(3),
-            ],
+            ]),
             resources: Vec::new(),
         });
         let expected_program = crate::standard_view::install_dialogue_handler_awbc(program.clone())

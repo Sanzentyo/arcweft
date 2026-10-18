@@ -126,6 +126,11 @@ pub enum AwbcVerifyError {
     CapabilityDenied { capability: String },
     #[error("AWBC effect `{effect}` is not allowed")]
     EffectDenied { effect: String },
+    #[error("AWBC effect identifier {effect} is invalid: {source}")]
+    InvalidEffectIdentity {
+        effect: u32,
+        source: arcweft_id::EffectIdError,
+    },
     #[error("AWBC pattern graph contains a cycle at pattern {pattern}")]
     PatternCycle { pattern: usize },
     #[error("AWBC pattern graph exceeds depth {limit} at pattern {pattern}")]

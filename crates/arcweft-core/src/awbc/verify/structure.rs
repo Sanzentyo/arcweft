@@ -6,12 +6,13 @@
 use super::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::awbc::schema::{
     AWBC_ABI_VERSION, AwbcAgentTypeShape, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId,
-    AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
-    AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId,
-    AwbcFunctionKind, AwbcLineOperation, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram,
-    AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTaskPlanKind, AwbcTaskRequestProjection,
-    AwbcTraitMethod, AwbcTraitReceiverMode, AwbcTypeId,
+    AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPayload,
+    AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole,
+    AwbcFunctionId, AwbcFunctionKind, AwbcLineOperation, AwbcLineTaskNode, AwbcPattern,
+    AwbcPatternId, AwbcProgram, AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanKind, AwbcTaskRequestProjection, AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcTypeId,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{
@@ -1270,7 +1271,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             check_capability(verifier, capability, &at)?;
         }
         verify_effect_audio_payload(program, index, effect)?;
-        for constant in &effect.static_args {
+        for constant in effect.static_args() {
             check_index(program.constants.len(), constant.0, "constants", &at)?;
         }
         verify_effect_payload_shape(program, index, effect)?;
@@ -1576,26 +1577,11 @@ fn verify_effect_audio_payload(
     effect_index: usize,
     effect: &AwbcEffectPlan,
 ) -> Result<(), AwbcVerifyError> {
-    match (effect.kind, effect.audio) {
-        (AwbcEffectKind::Audio, Some(command)) => {
-            if !effect.static_args.is_empty() {
-                return Err(AwbcVerifyError::MalformedAudioPayload {
-                    effect: effect_index,
-                    message: "audio effect must use typed payload rows, not legacy static args"
-                        .to_owned(),
-                });
-            }
-            verify_audio_command_refs(program, effect_index, effect.signature, command)
+    match &effect.payload {
+        AwbcEffectPayload::Audio(command) => {
+            verify_audio_command_refs(program, effect_index, effect.signature, *command)
         }
-        (AwbcEffectKind::Audio, None) => Err(AwbcVerifyError::MalformedAudioPayload {
-            effect: effect_index,
-            message: "audio effect is missing typed payload row".to_owned(),
-        }),
-        (_, Some(_)) => Err(AwbcVerifyError::MalformedAudioPayload {
-            effect: effect_index,
-            message: "non-audio effect carries an audio payload row".to_owned(),
-        }),
-        (_, None) => Ok(()),
+        _ => Ok(()),
     }
 }
 
@@ -1604,107 +1590,165 @@ fn verify_effect_payload_shape(
     effect_index: usize,
     effect: &AwbcEffectPlan,
 ) -> Result<(), AwbcVerifyError> {
-    let static_count = effect.static_args.len();
+    let static_count = effect.static_args().len();
     let parameter_count = program.signatures[effect.signature.index()].params.len();
-    match effect.kind {
+    match effect.kind() {
         AwbcEffectKind::Audio => Ok(()),
+        AwbcEffectKind::RegistryWrite => {
+            let AwbcEffectPayload::RegistryWrite { key, value_type } = &effect.payload else {
+                unreachable!("effect kind is derived from its payload");
+            };
+            check_index(
+                program.runtime_types.len(),
+                value_type.0,
+                "runtime_types",
+                &format!("effect plan {effect_index}"),
+            )?;
+            let signature = &program.signatures[effect.signature.index()];
+            if effect
+                .capability
+                .and_then(|id| program.strings.get(id.index()))
+                .is_none_or(|name| name != EffectId::STATE_WRITE_LABEL)
+            {
+                return Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "registry write requires its state.write host capability",
+                ));
+            }
+            if signature.params.as_slice() != [*value_type] || signature.result.is_some() {
+                return Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "registry write requires exactly its original value type and no result",
+                ));
+            }
+            let required = EffectId::state_write(key);
+            let declared = &program.effect_sets[signature.effects.index()];
+            let mut covered = false;
+            for effect in &declared.effects {
+                let actual = EffectId::parse(program.strings[effect.index()].as_str()).map_err(
+                    |source| AwbcVerifyError::InvalidEffectIdentity {
+                        effect: effect.0,
+                        source,
+                    },
+                )?;
+                covered |= actual.covers(&required);
+            }
+            if !covered {
+                return Err(malformed_effect_payload(
+                    effect_index,
+                    effect.kind(),
+                    "registry key is not covered by the original declared effect row",
+                ));
+            }
+            Ok(())
+        }
         AwbcEffectKind::Call => {
-            require_effect_static_minimum(effect_index, effect.kind, static_count, 1)?;
-            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0])
+            require_effect_static_minimum(effect_index, effect.kind(), static_count, 1)?;
+            require_effect_parameter_count(effect_index, effect.kind(), parameter_count, &[0])
         }
         AwbcEffectKind::Log => {
-            require_effect_static_minimum(effect_index, effect.kind, static_count, 2)?;
+            require_effect_static_minimum(effect_index, effect.kind(), static_count, 2)?;
             if !(static_count - 2).is_multiple_of(2) {
                 return Err(malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     "log fields must use name/value static-argument pairs",
                 ));
             }
             let evaluated_count = 1 + (static_count - 2) / 2;
             require_effect_parameter_count(
                 effect_index,
-                effect.kind,
+                effect.kind(),
                 parameter_count,
                 &[0, evaluated_count],
             )
         }
         AwbcEffectKind::SignalWrite | AwbcEffectKind::MetricWrite | AwbcEffectKind::Ensure => {
-            require_effect_static_count(effect_index, effect.kind, static_count, 2)?;
-            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 2])
+            require_effect_static_count(effect_index, effect.kind(), static_count, 2)?;
+            require_effect_parameter_count(effect_index, effect.kind(), parameter_count, &[0, 2])
         }
         AwbcEffectKind::EmitEvent => {
-            require_effect_static_minimum(effect_index, effect.kind, static_count, 1)?;
+            require_effect_static_minimum(effect_index, effect.kind(), static_count, 1)?;
             if !(static_count - 1).is_multiple_of(2) {
                 return Err(malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     "event fields must use name/value static-argument pairs",
                 ));
             }
             let evaluated_count = 1 + (static_count - 1) / 2;
             require_effect_parameter_count(
                 effect_index,
-                effect.kind,
+                effect.kind(),
                 parameter_count,
                 &[0, evaluated_count],
             )
         }
         AwbcEffectKind::Panic | AwbcEffectKind::Fail | AwbcEffectKind::Bail => {
-            require_effect_static_count(effect_index, effect.kind, static_count, 1)?;
-            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 1])
+            require_effect_static_count(effect_index, effect.kind(), static_count, 1)?;
+            require_effect_parameter_count(effect_index, effect.kind(), parameter_count, &[0, 1])
         }
         AwbcEffectKind::Assert => {
-            require_effect_static_count(effect_index, effect.kind, static_count, 4)?;
-            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 1])?;
+            require_effect_static_count(effect_index, effect.kind(), static_count, 4)?;
+            require_effect_parameter_count(effect_index, effect.kind(), parameter_count, &[0, 1])?;
             let guard = effect_static_bytes(program, effect, 0).ok_or_else(|| {
                 malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     "assert guard must be a byte-array constant",
                 )
             })?;
             let guard: [u8; 16] = guard.try_into().map_err(|_| {
                 malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     "assert guard must contain exactly 16 bytes",
                 )
             })?;
             RuntimeAssertionGuardId::try_from_bytes(guard).map_err(|error| {
                 malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     format!("invalid assert guard: {error}"),
                 )
             })?;
             let profile = effect_static_string(program, effect, 3).ok_or_else(|| {
                 malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     "assert profile must be a string constant",
                 )
             })?;
             if !matches!(profile, "always" | "debug_only") {
                 return Err(malformed_effect_payload(
                     effect_index,
-                    effect.kind,
+                    effect.kind(),
                     format!("unknown assert profile `{profile}`"),
                 ));
             }
             Ok(())
         }
-        AwbcEffectKind::Out | AwbcEffectKind::Break => {
-            require_static_only_effect(effect_index, effect.kind, static_count, parameter_count, 2)
-        }
+        AwbcEffectKind::Out | AwbcEffectKind::Break => require_static_only_effect(
+            effect_index,
+            effect.kind(),
+            static_count,
+            parameter_count,
+            2,
+        ),
         AwbcEffectKind::Wait
         | AwbcEffectKind::Return
         | AwbcEffectKind::Goto
         | AwbcEffectKind::Close
         | AwbcEffectKind::Select
-        | AwbcEffectKind::Continue => {
-            require_static_only_effect(effect_index, effect.kind, static_count, parameter_count, 1)
-        }
+        | AwbcEffectKind::Continue => require_static_only_effect(
+            effect_index,
+            effect.kind(),
+            static_count,
+            parameter_count,
+            1,
+        ),
     }
 }
 
@@ -1785,7 +1829,7 @@ fn effect_static_string<'a>(
 ) -> Option<&'a str> {
     let constant = program
         .constants
-        .get(effect.static_args.get(index)?.index())?;
+        .get(effect.static_args().get(index)?.index())?;
     let AwbcConstant::String(string) = constant else {
         return None;
     };
@@ -1799,7 +1843,7 @@ fn effect_static_bytes<'a>(
 ) -> Option<&'a [u8]> {
     let constant = program
         .constants
-        .get(effect.static_args.get(index)?.index())?;
+        .get(effect.static_args().get(index)?.index())?;
     let AwbcConstant::Bytes(bytes) = constant else {
         return None;
     };

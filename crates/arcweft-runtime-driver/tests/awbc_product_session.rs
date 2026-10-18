@@ -2432,11 +2432,11 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
         ],
         entries: vec![minimal_awbc_entry(entry)],
         effect_plans: vec![AwbcEffectPlan {
-            kind: AwbcEffectKind::Log,
             signature: AwbcSignatureId(2),
             capability: None,
-            audio: None,
-            static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+            payload: arcweft_core::awbc::schema::AwbcEffectPayload::Log(vec![
+                AwbcConstantId(0), AwbcConstantId(1),
+            ]),
             resources: Vec::new(),
         }],
         ..AwbcProgram::default()

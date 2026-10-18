@@ -6525,11 +6525,9 @@ mod tests {
         program
             .effect_plans
             .push(super::super::schema::AwbcEffectPlan {
-                kind: super::super::schema::AwbcEffectKind::Log,
                 signature: program.functions[1].signature,
                 capability: None,
-                audio: None,
-                static_args: Vec::new(),
+                payload: crate::awbc::schema::AwbcEffectPayload::Log(Vec::new()),
                 resources: Vec::new(),
             });
         let cleanup_key =
