@@ -8,8 +8,7 @@ use thiserror::Error;
 use crate::entry::RuntimeSchemaLimits;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
-    RuntimeCallableAttachedContract, RuntimeCallableInputSource, RuntimeCallableParameterKind,
-    RuntimeCallableRetainedRole, RuntimeCallableTransition,
+    RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallableRetainedRole,
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
@@ -459,11 +458,15 @@ impl RuntimeCallableValue {
             return false;
         };
         plan.callable_states().get(self.state).is_some_and(|state| {
-            state.parameters.is_empty()
-                && matches!(state.attached, RuntimeCallableAttachedContract::None)
-                && matches!(plan.checked_type(state.result), Ok(Some(crate::pattern::RuntimeCheckedType::Unit)))
-                && matches!(&state.transition, RuntimeCallableTransition::Invoke { function, arguments, .. }
-                    if arguments.is_empty() && plan.function_sites().get(*function).is_some_and(|site| site.body().executable().is_some()))
+            state.zero_argument_invocation().is_some_and(|invocation| {
+                matches!(
+                    plan.checked_type(state.result),
+                    Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
+                ) && plan
+                    .function_sites()
+                    .get(*invocation.function())
+                    .is_some_and(|site| site.body().executable().is_some())
+            })
         })
     }
 }

@@ -6,6 +6,7 @@
 //! network, dynamic-library, or executable-memory operations.
 
 pub mod codec;
+mod dialogue_callback;
 pub mod fiber;
 mod identity;
 pub mod parity;

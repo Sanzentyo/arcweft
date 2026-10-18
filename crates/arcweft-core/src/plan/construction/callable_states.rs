@@ -324,6 +324,56 @@ impl RuntimeCallableStateBuilder {
 }
 
 impl RuntimePlanBuilder {
+    /// Builds an authoring state from this builder's actual function ABI.
+    /// Source replay instead supplies its pre-reserved original state handle.
+    pub fn function_callable_state_seed(
+        &self,
+        function_type: RuntimeSemanticTypeId,
+        function: &RuntimeFunctionSiteSeedId,
+    ) -> Result<RuntimeCallableStateSeedId, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let function_type = self.types.id_for_semantic(function_type).ok_or(
+            RuntimePlanBuildError::UnknownSemanticType {
+                semantic_identity: function_type,
+            },
+        )?;
+        let state = self.function_callable_state(function_type, function)?;
+        Ok(RuntimeCallableStateSeedId {
+            issuer: Arc::clone(&self.issuer),
+            state,
+        })
+    }
+
+    pub(super) fn function_callable_state(
+        &self,
+        function_type: RuntimePlanTypeId,
+        function: &RuntimeFunctionSiteSeedId,
+    ) -> Result<RuntimeCallableStateId, RuntimePlanBuildError> {
+        let (function, sources, types, result, ..) = function
+            .resolve(&self.issuer)
+            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+        match self.projection(function_type)? {
+            crate::plan::RuntimePlanTypeProjection::Function {
+                parameters,
+                result: expected,
+                ..
+            } if parameters
+                .iter()
+                .copied()
+                .eq(sources.iter().zip(types).filter_map(|(source, ty)| {
+                    matches!(source, RuntimeFunctionInputSource::Parameter { .. }).then_some(*ty)
+                }))
+                && *expected == result => {}
+            _ => {
+                return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "function expression",
+                    ty: function_type,
+                });
+            }
+        }
+        self.intern_function_callable(function_type, function, sources, types, result)
+    }
+
     /// Reserves an identity before defining mutually recursive callable origins.
     pub fn reserve_callable_state_seed(
         &mut self,

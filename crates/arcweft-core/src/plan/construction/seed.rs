@@ -165,12 +165,11 @@ pub struct RuntimeDialogueValueSiteSeed {
 }
 
 /// Construction-only mapping from one content-local effect site to its
-/// executable zero-argument callback function site.
+/// executable zero-argument callable state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueEffectSiteSeed {
     pub site: RuntimeDialogueEffectSiteId,
-    pub function: RuntimeFunctionSiteSeedId,
-    pub callable_type: RuntimeSemanticTypeId,
+    pub state: super::RuntimeCallableStateSeedId,
     pub captures: Box<[RuntimeExprSeed]>,
 }
 
@@ -2346,7 +2345,7 @@ impl RuntimeExprSeed {
         ty: RuntimeSemanticTypeId,
         template: RuntimeDialogueContentTemplateId,
         bindings: impl IntoIterator<Item = RuntimeExprSeed>,
-        effects: impl IntoIterator<Item = RuntimeDialogueContentEffectBindingSeed>,
+        effects: impl IntoIterator<Item = RuntimeDialogueEffectSiteSeed>,
     ) -> Self {
         Self::new(
             ty,
@@ -2484,7 +2483,7 @@ pub enum RuntimeExprSeedKind {
     DialogueContent {
         template: RuntimeDialogueContentTemplateId,
         values: Box<[RuntimeExprSeed]>,
-        effects: Box<[RuntimeDialogueContentEffectBindingSeed]>,
+        effects: Box<[RuntimeDialogueEffectSiteSeed]>,
     },
     /// Evaluates selected standard `fmt` operands once in authored order and
     /// constructs one exact Formatted Content binding against its template.
@@ -2600,15 +2599,6 @@ pub enum RuntimeExprSeedKind {
     ReductionUnchanged {
         state: Box<RuntimeExprSeed>,
     },
-}
-
-/// Construction-only callback binding for one content effect site.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeDialogueContentEffectBindingSeed {
-    pub site: RuntimeDialogueEffectSiteId,
-    pub function: RuntimeFunctionSiteSeedId,
-    pub callable_type: RuntimeSemanticTypeId,
-    pub captures: Box<[RuntimeExprSeed]>,
 }
 
 /// Dedicated Agent seed algebra; generic records are not an alternate input.

@@ -3,7 +3,7 @@
 
 mod reading;
 #[cfg(test)]
-pub(super) mod tests;
+pub(in crate::plan::construction) mod tests;
 mod writing;
 
 use super::RuntimePlanSourceConstruction;

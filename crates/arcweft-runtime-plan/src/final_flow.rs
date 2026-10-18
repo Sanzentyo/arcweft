@@ -48,14 +48,14 @@ use arcweft_core::entry::{
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeCallableParameterSeed, RuntimeChoiceOptionSeed, RuntimeDeferOwner,
-    RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed, RuntimeEffectFieldSeed,
-    RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
-    RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowMatchArmSeed,
-    RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatAttemptSeedId,
-    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
-    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
-    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeCallableParameterSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
+    RuntimeDeferOwner, RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed,
+    RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFlowMatchArmSeed, RuntimeFlowMatchGuardSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFormatAttemptSeedId, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource,
+    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
+    RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineId, RuntimeLocalDeclarationSeed,
     RuntimeLocalReadSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
@@ -563,8 +563,7 @@ struct PendingDialogueContentDefinition<'facts> {
     )>,
     effect_sites: Vec<(
         arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
-        RuntimeFunctionSiteSeedId,
-        RuntimeSemanticTypeId,
+        RuntimeCallableStateSeedId,
         Box<[RuntimeExprSeed]>,
     )>,
     marks: Box<[String]>,
@@ -608,7 +607,7 @@ struct FinalLoweringContext<'project, 'data> {
     function_sites: &'data BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
     defer_sites: &'data BTreeMap<StmtId, RuntimeDeferSiteId>,
     dialogue_effect_sites:
-        &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+        &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     dialogue_value_capture_input_locals:
         &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_value_result_locals:
@@ -4518,7 +4517,7 @@ fn collect_dialogue_effect_capture_specs(
 
 fn lower_dialogue_content<'facts>(
     context: &FinalLoweringContext<'_, 'facts>,
-    dialogue_effect_sites: &BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    dialogue_effect_sites: &BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> (
@@ -4705,14 +4704,13 @@ fn lower_dialogue_content<'facts>(
             effect_sites: definition
                 .effect_sites
                 .into_iter()
-                .map(|(site, function, callable_type, captures)| {
-                    arcweft_core::plan::RuntimeDialogueEffectSiteSeed {
+                .map(
+                    |(site, state, captures)| arcweft_core::plan::RuntimeDialogueEffectSiteSeed {
                         site,
-                        function,
-                        callable_type,
+                        state,
                         captures,
-                    }
-                })
+                    },
+                )
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             marks: definition.marks.clone(),
@@ -4789,7 +4787,7 @@ fn reserve_dialogue_effect_sites<'facts>(
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> (
-    BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     Vec<PendingDialogueEffectDefinition<'facts>>,
 ) {
     let mut sites = BTreeMap::new();
@@ -4933,7 +4931,11 @@ fn reserve_dialogue_effect_sites<'facts>(
                     continue;
                 }
             };
-            if sites.insert(program, site.clone()).is_some() {
+            let state = match builder.function_callable_state_seed(effect.callable_type().identity(), &site) {
+                Ok(state) => state,
+                Err(error) => { errors.push(RuntimePlanLowerError::new(error.to_string())); continue; }
+            };
+            if sites.insert(program, state).is_some() {
                 errors.push(RuntimePlanLowerError::new(format!(
                     "dialogue content template {} repeats effect site {:?}",
                     program.template(),
@@ -5081,7 +5083,7 @@ fn lower_dialogue_application<'facts>(
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     owner: ExprId,
     application: &RuntimeDialogueApplication,
-    dialogue_effect_sites: &BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    dialogue_effect_sites: &BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> Option<(
@@ -5282,7 +5284,7 @@ fn lower_dialogue_application<'facts>(
                     effect.site(),
                 ))
                 .cloned()
-                .and_then(|function| {
+                .and_then(|state| {
                     let captures = effect
                         .captures()
                         .iter()
@@ -5305,12 +5307,7 @@ fn lower_dialogue_application<'facts>(
                             })
                         })
                         .collect::<Option<Vec<_>>>()?;
-                    Some((
-                        effect.site(),
-                        function,
-                        effect.callable_type().identity(),
-                        captures.into_boxed_slice(),
-                    ))
+                    Some((effect.site(), state, captures.into_boxed_slice()))
                 })
                 .ok_or_else(|| {
                     format!(
@@ -5933,7 +5930,8 @@ struct FinalFlowLowerer<'a> {
     callable_specializations: &'a callable_states::CallableSpecializationSeeds,
     callable_applications: &'a callable_states::ProjectCallableApplicationStates,
     callable_specialization_targets: &'a callable_states::CallableSpecializationTargetStates,
-    dialogue_effect_sites: &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    dialogue_effect_sites:
+        &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     dialogue_value_result_locals: &'a BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_value_project_source_locals:
         &'a BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,

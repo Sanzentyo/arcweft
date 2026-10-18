@@ -61,7 +61,7 @@ fn effect_function(
     builder: &mut RuntimePlanBuilder,
     local: RuntimeLocalSeedId,
     definition: u8,
-) -> RuntimeFunctionSiteSeedId {
+) -> RuntimeCallableStateSeedId {
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([definition; 32]),
@@ -82,7 +82,9 @@ fn effect_function(
             }),
         )
         .unwrap();
-    site
+    builder
+        .function_callable_state_seed(semantic(3), &site)
+        .unwrap()
 }
 
 fn content_plan(options: &ContentFixture<'_>) -> RuntimePlan {
@@ -179,7 +181,7 @@ fn admit_content(
     builder: &mut RuntimePlanBuilder,
     options: &ContentFixture<'_>,
     value: RuntimeFunctionSiteSeedId,
-    functions: [RuntimeFunctionSiteSeedId; 2],
+    functions: [RuntimeCallableStateSeedId; 2],
 ) {
     let slot = RuntimeDialogueValueSlotId::from_zero_based(0).unwrap();
     builder
@@ -210,10 +212,9 @@ fn admit_content(
             effect_sites: functions
                 .into_iter()
                 .enumerate()
-                .map(|(index, function)| RuntimeDialogueEffectSiteSeed {
+                .map(|(index, state)| RuntimeDialogueEffectSiteSeed {
                     site: RuntimeDialogueEffectSiteId::from_zero_based(index).unwrap(),
-                    function,
-                    callable_type: semantic(3),
+                    state,
                     captures: Box::new([literal(options.effect)]),
                 })
                 .collect(),

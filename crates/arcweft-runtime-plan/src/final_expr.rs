@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeCallableSpecializationSeedId,
-    RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueValueRole,
+    RuntimeCallableStateSeedId, RuntimeDialogueEffectSiteSeed, RuntimeDialogueValueRole,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
     RuntimeFlowOpSeed, RuntimeFormatContentOperandSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalReadSeed, RuntimeLocalSeedId,
@@ -59,7 +59,7 @@ use arcweft_interaction_model::dialogue::{
 pub(crate) struct FinalExprSourceSites<'hir> {
     pub(crate) functions: &'hir BTreeMap<RuntimeImplicitCallableSiteKey, RuntimeFunctionSiteSeedId>,
     pub(crate) dialogue_effects:
-        &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+        &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeCallableStateSeedId>,
     pub(crate) tasks: &'hir arcweft_core::plan::RuntimeTaskPlanConstructionContext,
 }
 
@@ -2921,7 +2921,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             .map(|effect| {
                 let program =
                     RuntimeDialogueEffectProgramKey::new(fragment.template().id(), effect.site());
-                let function = self
+                let state = self
                     .source_sites
                     .dialogue_effects
                     .get(&program)
@@ -2946,10 +2946,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                         ))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                Ok(RuntimeDialogueContentEffectBindingSeed {
+                Ok(RuntimeDialogueEffectSiteSeed {
                     site: effect.site(),
-                    function,
-                    callable_type: effect.callable_type().identity(),
+                    state,
                     captures: captures.into_boxed_slice(),
                 })
             })

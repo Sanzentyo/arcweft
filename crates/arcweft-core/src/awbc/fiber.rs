@@ -11,10 +11,7 @@ use super::schema::{
 use crate::entry::FlowParameterCoordinate;
 #[cfg(test)]
 use crate::pattern::RuntimeSemanticTypeId;
-use crate::plan::{
-    RuntimeCallableAttachedContract, RuntimeCallableInputSource, RuntimeCallableTransition,
-    RuntimeDialogueValueBinding,
-};
+use crate::plan::RuntimeDialogueValueBinding;
 use crate::runtime_id::{
     RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeIdCursor, RuntimeIdNamespace,
 };
@@ -1884,7 +1881,13 @@ impl FiberState {
             crate::value::RuntimeCallableBodyReference::Awbc(actual)
                 if actual == function
         ));
-        debug_assert!(invocation.arguments.is_empty());
+        debug_assert_eq!(
+            invocation.captures.len() + invocation.arguments.len(),
+            program.signatures[program.functions[function.index()].signature.index()]
+                .params
+                .len(),
+            "the prepared callback projects the complete body input ABI",
+        );
         let mut values = invocation.captures;
         values.extend(invocation.arguments);
         Self::for_function_with_arguments_prepared(
@@ -3879,62 +3882,20 @@ pub(crate) fn validate_runtime_callable_activation(
             reason: "callback callable must invoke one AWBC function body".to_owned(),
         });
     };
-    let definition = program
-        .callable_states
-        .get(callable.state().index())
-        .ok_or_else(|| FiberStateError::InvalidRuntimeCallable {
-            reason: format!("callable state {} is absent", callable.state()),
+    let abi = program
+        .inspect_dialogue_callback(callable.state())
+        .map_err(|error| FiberStateError::InvalidRuntimeCallable {
+            reason: error.to_string(),
         })?;
-    if !definition.parameters.is_empty()
-        || !matches!(definition.attached, RuntimeCallableAttachedContract::None)
-    {
+    if abi.function() != function {
         return Err(FiberStateError::InvalidRuntimeCallable {
-            reason: "dialogue callback must have a zero-argument, unattached callable state"
-                .to_owned(),
+            reason: "dialogue callback invocation body disagrees with its proof".to_owned(),
         });
     }
-    let RuntimeCallableTransition::Invoke {
-        function: transition_function,
-        captures,
-        arguments,
-    } = &definition.transition
-    else {
-        return Err(FiberStateError::InvalidRuntimeCallable {
-            reason: "dialogue callback callable state does not invoke".to_owned(),
-        });
-    };
-    if *transition_function != function || !arguments.is_empty() {
-        return Err(FiberStateError::InvalidRuntimeCallable {
-            reason: "dialogue callback invocation projection is not zero-argument".to_owned(),
-        });
-    }
-    let function_record = program
-        .functions
-        .get(function.index())
-        .ok_or(FiberStateError::UnknownFunction(function.0))?;
-    if function_record.kind != AwbcFunctionKind::Ordinary {
-        return Err(FiberStateError::InvalidRuntimeCallable {
-            reason: "dialogue callback is not an ordinary executable callable body".to_owned(),
-        });
-    }
-    let signature = program
-        .signatures
-        .get(function_record.signature.index())
-        .ok_or(FiberStateError::InvalidFrame)?;
-    if signature.result.is_some() || signature.params.len() != captures.len() {
-        return Err(FiberStateError::InvalidRuntimeCallable {
-            reason: "dialogue callback must return Unit and accept exactly its captures".to_owned(),
-        });
-    }
-    let mut capture_values = Vec::with_capacity(captures.len());
-    for (position, (source, expected)) in captures.iter().zip(&signature.params).enumerate() {
-        let RuntimeCallableInputSource::Retained { position: retained } = source else {
-            return Err(FiberStateError::InvalidRuntimeCallable {
-                reason: "dialogue callback capture projection references a non-retained input"
-                    .to_owned(),
-            });
-        };
-        let value = callable.retained().get(*retained as usize).ok_or_else(|| {
+    let signature = abi.signature();
+    let mut input_values = Vec::with_capacity(abi.input_count());
+    for (position, (retained, expected)) in abi.positions().zip(&signature.params).enumerate() {
+        let value = callable.retained().get(retained).ok_or_else(|| {
             FiberStateError::InvalidRuntimeCallable {
                 reason: "dialogue callback capture projection is out of range".to_owned(),
             }
@@ -3946,9 +3907,9 @@ pub(crate) fn validate_runtime_callable_activation(
                 ),
             });
         }
-        capture_values.push(value);
+        input_values.push(value);
     }
-    let input_layout = validate_function_argument_value_refs(program, function, &capture_values)?;
+    let input_layout = validate_function_argument_value_refs(program, function, &input_values)?;
     Ok(PreparedCallableCallbackActivation {
         function,
         input_layout,

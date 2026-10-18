@@ -114,7 +114,7 @@ pub struct RuntimeDialogueValueSite {
 
 /// One plan-owned executable callback site for a dialogue content line.
 ///
-/// The function site is the complete static callback authority.  Its
+/// The callable state is the complete static callback authority. Its
 /// captures are evaluated when the dialogue activation is created and are
 /// retained by that activation; reveal only selects this row by its rebased
 /// effect site.
@@ -151,6 +151,16 @@ impl RuntimeDialogueEffectSite {
     #[must_use]
     pub const fn captures(&self) -> &[crate::value::RuntimeExpr] {
         &self.captures
+    }
+}
+
+impl From<RuntimeDialogueEffectSite> for crate::value::RuntimeDialogueContentEffectBindingExpr {
+    fn from(binding: RuntimeDialogueEffectSite) -> Self {
+        Self {
+            site: binding.site,
+            state: binding.state,
+            captures: binding.captures.into_vec(),
+        }
     }
 }
 

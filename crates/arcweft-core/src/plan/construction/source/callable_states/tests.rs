@@ -463,7 +463,7 @@ fn limits(plan: &RuntimePlan) -> RuntimeCallableSourceLimits {
         function_count: plan.function_sites().len(),
     }
 }
-pub(in crate::plan::construction::source) fn encode(plan: &RuntimePlan) -> Vec<u8> {
+pub(in crate::plan::construction) fn encode(plan: &RuntimePlan) -> Vec<u8> {
     let prepared = plan
         .callable_states()
         .prepare_sources_encoding(limits(plan), &mut meter())
@@ -532,7 +532,7 @@ fn preparation_with_meter<'a>(
     let functions = functions.reserve(&mut source, &mut resources()).unwrap();
     (source, functions, states)
 }
-pub(in crate::plan::construction::source) fn source(
+pub(in crate::plan::construction) fn source(
     plan: &RuntimePlan,
     bytes: &[u8],
 ) -> (

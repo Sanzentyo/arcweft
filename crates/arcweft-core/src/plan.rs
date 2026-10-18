@@ -48,6 +48,7 @@ pub use callable_specialization::{
     RuntimeCallableSpecializationError, RuntimeCallableSpecializationState,
     RuntimeFunctionSpecializationArguments,
 };
+pub(crate) use callable_states::RuntimeCallableZeroArgProjection;
 pub use callable_states::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
     RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
@@ -63,10 +64,10 @@ pub use construction::{
     RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeCallableParameterSeed,
     RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
     RuntimeCallableStateSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
-    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
-    RuntimeDialogueEffectSiteSeed, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,

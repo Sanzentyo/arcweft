@@ -28,10 +28,7 @@ use super::schema::{
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
-use crate::plan::{
-    RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
-    RuntimeFlowTargetError, RuntimeValueOwnershipRequirement,
-};
+use crate::plan::{RuntimeFlowTargetError, RuntimeValueOwnershipRequirement};
 use crate::stream::RuntimeStreamYieldCopyProof;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -174,68 +171,18 @@ pub(crate) fn dialogue_effect_callable(
             "dialogue callback owner does not lease this AWBC program".to_owned(),
         ));
     }
-    let state = program
-        .callable_states
-        .get(state_id.index())
-        .ok_or_else(|| VmError::Runtime("dialogue callback state is absent".to_owned()))?;
-    if !state.parameters.is_empty()
-        || !matches!(state.attached, RuntimeCallableAttachedContract::None)
-        || state.retained.len() != capture_types.len()
-        || captures.len() != capture_types.len()
-        || !matches!(
-            program
-                .runtime_types
-                .get(state.result.index())
-                .map(AwbcRuntimeType::shape),
-            Some(AwbcRuntimeTypeShape::Unit)
-        )
-    {
-        return Err(VmError::Runtime(
-            "dialogue callback state does not have its declared zero-argument Unit ABI".to_owned(),
-        ));
-    }
-    let RuntimeCallableTransition::Invoke {
-        function,
-        captures: capture_projection,
-        arguments,
-    } = &state.transition
-    else {
-        return Err(VmError::Runtime(
-            "dialogue callback state does not invoke an executable body".to_owned(),
-        ));
-    };
-    if !arguments.is_empty()
-        || capture_projection.len() != capture_types.len()
-        || state.retained.iter().zip(capture_types).enumerate().any(
-            |(position, (retained, expected))| {
-                retained.ty != *expected
-                    || retained.role
-                        != (RuntimeCallableRetainedRole::Capture {
-                            position: u32::try_from(position).unwrap_or(u32::MAX),
-                        })
-            },
-        )
+    let abi = program
+        .inspect_dialogue_callback(state_id)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    if captures.len() != capture_types.len()
+        || !abi
+            .retained()
+            .iter()
+            .map(|input| input.ty)
+            .eq(capture_types.iter().copied())
     {
         return Err(VmError::Runtime(
             "dialogue callback retained capture layout disagrees with its manifest".to_owned(),
-        ));
-    }
-    let target = program
-        .functions
-        .get(function.index())
-        .ok_or(VmError::MissingFunction(*function))?;
-    if target.kind != super::schema::AwbcFunctionKind::Ordinary {
-        return Err(VmError::Runtime(
-            "dialogue callback body is not an ordinary function".to_owned(),
-        ));
-    }
-    let signature = program
-        .signatures
-        .get(target.signature.index())
-        .ok_or_else(|| VmError::Runtime("dialogue callback signature is absent".to_owned()))?;
-    if signature.result.is_some() || signature.params.as_slice() != capture_types {
-        return Err(VmError::Runtime(
-            "dialogue callback body signature disagrees with its state".to_owned(),
         ));
     }
     for (position, (value, expected)) in captures.iter().zip(capture_types).enumerate() {

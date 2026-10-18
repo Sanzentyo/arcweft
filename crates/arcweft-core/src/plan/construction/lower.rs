@@ -566,10 +566,10 @@ impl RuntimePlanBodyConstruction<'_> {
                         actual: values.len(),
                     });
                 }
-                let expected_slots = manifest.slots().to_vec();
-                let expected_effects = manifest.effects().to_vec();
+                let expected_slots = manifest.slots();
+                let expected_effects = manifest.effects();
                 let mut lowered = Vec::with_capacity(values.len());
-                for (value, expected) in values.into_vec().into_iter().zip(&expected_slots) {
+                for (value, expected) in values.into_vec().into_iter().zip(expected_slots) {
                     let value = self.lower_expression(value)?;
                     let expected_ty = self
                         .resolve_seed_type("dialogue content binding", expected.semantic_type())?;
@@ -596,86 +596,7 @@ impl RuntimePlanBodyConstruction<'_> {
                             actual: effect.site,
                         });
                     }
-                    let (function, input_sources, input_types, result, body_kind, _) = effect
-                        .function
-                        .resolve(&self.issuer)
-                        .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
-                    if body_kind != RuntimeFunctionSiteBodyKind::Executable {
-                        return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
-                            site: function,
-                            expected: RuntimeFunctionSiteBodyKind::Executable,
-                            actual: body_kind,
-                        });
-                    }
-                    if !matches!(self.projection(result)?, RuntimePlanTypeProjection::Unit) {
-                        return invalid_projection(
-                            "dialogue content effect callback result",
-                            result,
-                        );
-                    }
-                    let parameter_count = input_sources
-                        .iter()
-                        .filter(|source| {
-                            matches!(source, RuntimeFunctionInputSource::Parameter { .. })
-                        })
-                        .count();
-                    if parameter_count != 0 {
-                        return Err(RuntimePlanBuildError::CallableAbiArity {
-                            context: "dialogue content effect callback",
-                            expected: 0,
-                            actual: parameter_count,
-                        });
-                    }
-                    let capture_types = input_sources
-                        .iter()
-                        .zip(input_types)
-                        .filter_map(|(source, ty)| {
-                            matches!(
-                                source,
-                                RuntimeFunctionInputSource::Capture { .. }
-                                    | RuntimeFunctionInputSource::CapturedParameter { .. }
-                            )
-                            .then_some(*ty)
-                        })
-                        .collect::<Vec<_>>();
-                    if capture_types != expected.capture_types() {
-                        return Err(RuntimePlanBuildError::DialogueEffectCaptureTypeMismatch {
-                            site: effect.site,
-                        });
-                    }
-                    if effect.captures.len() != capture_types.len() {
-                        return Err(RuntimePlanBuildError::DialogueEffectCaptureCountMismatch {
-                            site: effect.site,
-                            expected: capture_types.len(),
-                            actual: effect.captures.len(),
-                        });
-                    }
-                    let captures = effect
-                        .captures
-                        .into_vec()
-                        .into_iter()
-                        .zip(&capture_types)
-                        .map(|(capture, expected)| {
-                            let capture = self.lower_expression(capture)?;
-                            require_same(
-                                "dialogue content effect capture",
-                                *expected,
-                                capture.ty(),
-                            )?;
-                            Ok(capture)
-                        })
-                        .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
-                    lowered_effects.push(crate::value::RuntimeDialogueContentEffectBindingExpr {
-                        site: effect.site,
-                        state: self.intern_function_callable(
-                            self.resolve_seed_type("content callback type", effect.callable_type)?,
-                            function,
-                            input_sources,
-                            input_types,
-                            result,
-                        )?,
-                        captures,
-                    });
+                    lowered_effects.push(self.lower_dialogue_effect_site(effect, expected)?.into());
                 }
                 return Ok(RuntimeExpr::dialogue_content_with_effects(
                     ty,
@@ -1076,7 +997,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 RuntimeExprKind::Call { callee, args }
             }
             RuntimeExprSeedKind::Function { site, captures } => {
-                let (site, input_sources, input_types, result, _, _) =
+                let (_, input_sources, input_types, ..) =
                     site.resolve(&self.issuer)
                         .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
                 let capture_types = input_sources
@@ -1108,26 +1029,7 @@ impl RuntimePlanBodyConstruction<'_> {
                         Ok(capture)
                     })
                     .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
-                match self.projection(ty)? {
-                    RuntimePlanTypeProjection::Function {
-                        parameters: expected,
-                        result: expected_result,
-                        ..
-                    } if expected.as_ref()
-                        == input_sources
-                            .iter()
-                            .zip(input_types)
-                            .filter_map(|(source, ty)| {
-                                matches!(source, RuntimeFunctionInputSource::Parameter { .. })
-                                    .then_some(*ty)
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice()
-                        && *expected_result == result => {}
-                    _ => return invalid_projection("function expression", ty),
-                }
-                let state =
-                    self.intern_function_callable(ty, site, input_sources, input_types, result)?;
+                let state = self.function_callable_state(ty, &site)?;
                 RuntimeExprKind::MakeCallable { state, captures }
             }
             RuntimeExprSeedKind::MakeCallable { state, captures } => {
@@ -1465,6 +1367,15 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 semantic_identity,
             },
         )?;
+        self.validate_value_type_scope(context, ty)?;
+        Ok(ty)
+    }
+
+    pub(super) fn validate_value_type_scope(
+        &self,
+        context: &'static str,
+        ty: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
         if !self
             .types
             .get(ty)
@@ -1472,7 +1383,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
         {
             return invalid_projection(context, ty);
         }
-        Ok(ty)
+        Ok(())
     }
 
     pub(super) fn projection(

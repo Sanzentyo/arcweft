@@ -162,7 +162,57 @@ pub struct RuntimeCallableStateDefinition<T, F, S = RuntimeCallableStateId> {
     pub partials: Box<[RuntimeCallablePartialTransition<S>]>,
 }
 
+/// Borrowed body-input projection for an unattached zero-argument state.
+/// The containing program validates result types and executable body kinds.
+pub(crate) struct RuntimeCallableZeroArgProjection<'a, F> {
+    function: &'a F,
+    captures: &'a [RuntimeCallableInputSource],
+    arguments: &'a [RuntimeCallableInputSource],
+}
+impl<F> RuntimeCallableZeroArgProjection<'_, F> {
+    pub(crate) const fn function(&self) -> &F {
+        self.function
+    }
+    pub(crate) const fn input_count(&self) -> usize {
+        self.captures.len() + self.arguments.len()
+    }
+    pub(crate) fn retained_positions(&self) -> impl Iterator<Item = usize> + '_ {
+        self.captures
+            .iter()
+            .chain(self.arguments)
+            .map(|source| match source {
+                RuntimeCallableInputSource::Retained { position } => *position as usize,
+                _ => unreachable!("zero-argument projections contain checked retained positions"),
+            })
+    }
+}
+
 impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
+    pub(crate) fn zero_argument_invocation(
+        &self,
+    ) -> Option<RuntimeCallableZeroArgProjection<'_, F>> {
+        if !self.parameters.is_empty()
+            || !matches!(self.attached, RuntimeCallableAttachedContract::None)
+        {
+            return None;
+        }
+        let RuntimeCallableTransition::Invoke {
+            function,
+            captures,
+            arguments,
+        } = &self.transition
+        else {
+            return None;
+        };
+        if !captures.iter().chain(arguments.iter()).all(|source| matches!(source,
+            RuntimeCallableInputSource::Retained { position } if (*position as usize) < self.retained.len()
+        )) { return None; }
+        Some(RuntimeCallableZeroArgProjection {
+            function,
+            captures,
+            arguments,
+        })
+    }
     /// Ordered direct metadata list widths; no type/function/state lookup.
     pub(crate) fn try_visit_semantic_child_counts<E>(
         &self,

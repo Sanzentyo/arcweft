@@ -11,6 +11,7 @@ use thiserror::Error;
 mod callable_specialization;
 mod callable_states;
 mod control_effect;
+mod dialogue_effect;
 mod lower;
 mod nominal_schema;
 mod seed;
@@ -36,8 +37,7 @@ pub use seed::{
     RuntimeAwaitManyTargetSeed, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeBorrowedLocalSeed, RuntimeBuiltinIteratorEvidenceSeed, RuntimeCallArgumentSeed,
     RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeCallableParameterSeed,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
-    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
     RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
     RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
     RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
@@ -1585,8 +1585,8 @@ impl RuntimePlanBuilder {
         } = seed;
         let template_id = template.id;
         let manifest = self.lower_dialogue_content_template_manifest_seed(template)?;
-        let slots = manifest.slots().to_vec();
-        let effects = manifest.effects().to_vec();
+        let slots = manifest.slots();
+        let effects = manifest.effects();
         let effect_count = RuntimeDialogueEffectSiteCount::try_from_len(effects.len()).ok_or(
             RuntimePlanBuildError::TooManyRows {
                 table: RuntimePlanTable::DialogueContent,
@@ -1732,90 +1732,14 @@ impl RuntimePlanBuilder {
                     actual: effect.site,
                 });
             }
-            let (function, input_sources, input_types, result, body_kind, _) = effect
-                .function
-                .resolve(&self.issuer)
-                .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
-            if body_kind != RuntimeFunctionSiteBodyKind::Executable {
-                return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
-                    site: function,
-                    expected: RuntimeFunctionSiteBodyKind::Executable,
-                    actual: body_kind,
-                });
-            }
-            let parameter_count = input_sources
-                .iter()
-                .filter(|source| matches!(source, RuntimeFunctionInputSource::Parameter { .. }))
-                .count();
-            if parameter_count != 0 {
-                return Err(RuntimePlanBuildError::CallableAbiArity {
-                    context: "dialogue effect site",
-                    expected: 0,
-                    actual: parameter_count,
-                });
-            }
-            if !matches!(
-                self.types
-                    .get(result)
-                    .map(super::RuntimePlanTypeDeclaration::projection),
-                Some(super::RuntimePlanTypeProjection::Unit)
-            ) {
-                return Err(RuntimePlanBuildError::DialogueEffectResultMismatch {
-                    site: effect.site,
-                });
-            }
-            let Some(slot) = effects.get(index) else {
-                return Err(RuntimePlanBuildError::DialogueEffectCountMismatch {
-                    expected: effects.len(),
-                    actual: index,
-                });
-            };
-            let capture_types = input_sources
-                .iter()
-                .zip(input_types)
-                .filter_map(|(source, ty)| {
-                    matches!(
-                        source,
-                        RuntimeFunctionInputSource::Capture { .. }
-                            | RuntimeFunctionInputSource::CapturedParameter { .. }
-                    )
-                    .then_some(*ty)
-                })
-                .collect::<Vec<_>>();
-            if capture_types != slot.capture_types() {
-                return Err(RuntimePlanBuildError::DialogueEffectCaptureTypeMismatch {
-                    site: effect.site,
-                });
-            }
-            if effect.captures.len() != capture_types.len() {
-                return Err(RuntimePlanBuildError::DialogueEffectCaptureCountMismatch {
-                    site: effect.site,
-                    expected: capture_types.len(),
-                    actual: effect.captures.len(),
-                });
-            }
-            let captures = effect
-                .captures
-                .into_vec()
-                .into_iter()
-                .zip(capture_types)
-                .map(|(capture, expected)| {
-                    let capture = self.lower_expression(capture)?;
-                    require_same("dialogue effect capture expression", expected, capture.ty())?;
-                    Ok(capture)
-                })
-                .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
-            effect_sites.push(RuntimeDialogueEffectSite::new(
-                effect.site,
-                self.intern_function_callable(
-                    self.resolve_seed_type("content effect type", effect.callable_type)?,
-                    function,
-                    input_sources,
-                    input_types,
-                    result,
-                )?,
-                captures.into_boxed_slice(),
-            ));
+            let slot =
+                effects
+                    .get(index)
+                    .ok_or(RuntimePlanBuildError::DialogueEffectCountMismatch {
+                        expected: effects.len(),
+                        actual: index,
+                    })?;
+            effect_sites.push(self.lower_dialogue_effect_site(effect, slot)?);
         }
         let key = super::RuntimeDialogueContentApplicationKey::new(line.clone(), template_id);
         self.dialogue_content.ensure_pushable(&key)?;

@@ -4,6 +4,7 @@ mod agent_projection;
 mod array;
 mod callable_specialization;
 mod context_callback_execution;
+mod dialogue_callback_projection;
 mod format_content_execution;
 mod instruction_call_execution;
 mod local_assignment;
