@@ -387,6 +387,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::Assignment(assignment) => {
                 roots.push(assignment.value_type());
             }
+            Self::RegistryWrite(write) => roots.push(write.value_type()),
             Self::Defer(defer) => roots.extend(
                 defer
                     .captures()

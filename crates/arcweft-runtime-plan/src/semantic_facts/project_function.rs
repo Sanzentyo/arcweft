@@ -1139,6 +1139,7 @@ impl RuntimeProjectFunctionPatternSemanticFact {
 pub enum RuntimeProjectFunctionStatementPayload {
     Structural,
     Assignment(RuntimeAssignmentFact),
+    RegistryWrite(super::RuntimeRegistryWriteFact),
     Assertion(RuntimeAssertionAdmission),
     Defer(RuntimeDeferFact),
     EvaluatedEffect(ExprId),
@@ -1159,6 +1160,7 @@ impl RuntimeProjectFunctionStatementPayload {
         match self {
             Self::Structural => CheckedExecutableRuntimeStatementFactFamily::Structural,
             Self::Assignment(_) => CheckedExecutableRuntimeStatementFactFamily::Assignment,
+            Self::RegistryWrite(_) => CheckedExecutableRuntimeStatementFactFamily::RegistryWrite,
             Self::Assertion(_) => CheckedExecutableRuntimeStatementFactFamily::Assertion,
             Self::Defer(_) => CheckedExecutableRuntimeStatementFactFamily::Defer,
             Self::EvaluatedEffect(_) => {
@@ -2237,6 +2239,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn assignment(&self, owner: StmtId) -> Option<&RuntimeAssignmentFact> {
         match self.statement(owner)?.payload() {
             RuntimeProjectFunctionStatementPayload::Assignment(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn registry_write(&self, owner: StmtId) -> Option<&super::RuntimeRegistryWriteFact> {
+        match self.statement(owner)?.payload() {
+            RuntimeProjectFunctionStatementPayload::RegistryWrite(value) => Some(value),
             _ => None,
         }
     }

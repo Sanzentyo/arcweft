@@ -5,6 +5,8 @@ mod call_operand_sources;
 mod character_dialogue;
 #[path = "tests/dialogue_target.rs"]
 mod dialogue_target;
+#[path = "tests/registry_write.rs"]
+mod registry_write;
 #[path = "tests/scope_continuations.rs"]
 mod scope_continuations;
 use std::{collections::BTreeMap, sync::Arc};
@@ -819,9 +821,12 @@ fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<
     let analysis = executable
         .modules()
         .any(|(_, module)| {
-            module
-                .expressions()
-                .any(|(_, expression)| matches!(expression.kind(), HirExprKind::PostfixBracket(_)))
+            module.expressions().any(|(_, expression)| {
+                matches!(
+                    expression.kind(),
+                    HirExprKind::PostfixBracket(_) | HirExprKind::LifetimePath(_)
+                )
+            })
         })
         .then(|| analyze_identity_fixture(project));
     runtime_reachability_with(
@@ -836,7 +841,25 @@ fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<
             };
             Some(resolution.candidate())
         },
-        |owner| retained_runtime_projection(executable, owner),
+        |owner| {
+            if matches!(
+                analysis
+                    .as_ref()
+                    .and_then(|analysis| analysis.expression(owner))
+                    .map(arcweft_lang_sema::final_analysis::CheckedExpression::resolution),
+                Some(
+                    arcweft_lang_sema::final_analysis::CheckedExpressionResolution::RegistryAddress(
+                        _
+                    )
+                )
+            ) {
+                Some(HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Omit,
+                })
+            } else {
+                retained_runtime_projection(executable, owner)
+            }
+        },
     )
 }
 

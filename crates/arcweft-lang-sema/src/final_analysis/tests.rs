@@ -2020,6 +2020,13 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
     for (owner, fact) in report.statements() {
         let prepared = match fact.payload() {
             CheckedStatementPayload::Structural => PreparedStatementPayload::HirOwned,
+            CheckedStatementPayload::RegistryWrite(write) => {
+                PreparedStatementPayload::RegistryWrite(super::prepared::PreparedRegistryWrite {
+                    address: std::sync::Arc::new(write.address().clone()),
+                    value: write.value(),
+                    value_type: write.value_type().clone(),
+                })
+            }
             CheckedStatementPayload::Assertion(disposition) => {
                 PreparedStatementPayload::Assertion(*disposition)
             }

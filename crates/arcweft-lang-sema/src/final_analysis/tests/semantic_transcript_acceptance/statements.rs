@@ -740,7 +740,7 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             name: "LifetimeSet in Flow arm block",
             source: flow_match_lifetime_set_source("true"),
             shapes: &[StatementShapeFamily::LifetimeSet],
-            payloads: &[StatementPayloadFamily::Structural],
+            payloads: &[StatementPayloadFamily::RegistryWrite],
         },
         Row {
             name: "UnsafeLifetime in Flow arm block",
@@ -866,7 +866,7 @@ fn checked_match_direct_statement_bundle_retains_exact_payloads_and_meaning() {
             source: flow_match_lifetime_set_source("flag"),
             expected: BTreeSet::from([(
                 StatementShapeFamily::LifetimeSet,
-                StatementPayloadFamily::Structural,
+                StatementPayloadFamily::RegistryWrite,
             )]),
         },
         Row {
@@ -874,7 +874,7 @@ fn checked_match_direct_statement_bundle_retains_exact_payloads_and_meaning() {
             source: flow_match_lifetime_set_source("other"),
             expected: BTreeSet::from([(
                 StatementShapeFamily::LifetimeSet,
-                StatementPayloadFamily::Structural,
+                StatementPayloadFamily::RegistryWrite,
             )]),
         },
         Row {

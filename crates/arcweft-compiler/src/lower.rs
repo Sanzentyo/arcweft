@@ -1218,6 +1218,7 @@ fn project_runtime_semantic_fact_inventories(
                     .expression(owner, identity)?,
                 );
             }
+            CheckedExpressionResolution::RegistryAddress(_) => {}
             CheckedExpressionResolution::Structural => {
                 let module = project
                     .modules()
@@ -1625,6 +1626,14 @@ fn project_runtime_semantic_fact_inventories(
                 input.push_assignment(
                     owner,
                     runtime_assignment(owner, assignment, symbols, world, analysis)?,
+                );
+            }
+            CheckedStatementPayload::RegistryWrite(write) => {
+                input.push_registry_write(
+                    arcweft_runtime_plan::semantic_facts::RuntimeRegistryWriteFact::new(
+                        write.as_ref().clone(),
+                        runtime_type(write.value_type(), symbols, world, analysis)?,
+                    ),
                 );
             }
             CheckedStatementPayload::Assertion(disposition) => {
@@ -8618,6 +8627,21 @@ fn runtime_executable_semantic_facts<'abi>(
                 owner,
                 *disposition,
             )?),
+            (
+                CheckedExecutableRuntimeStatementFactFamily::RegistryWrite,
+                CheckedStatementPayload::RegistryWrite(write),
+            ) => RuntimeProjectFunctionStatementPayload::RegistryWrite(
+                arcweft_runtime_plan::semantic_facts::RuntimeRegistryWriteFact::new(
+                    write.as_ref().clone(),
+                    runtime_type_under(
+                        write.value_type(),
+                        lexical.types(),
+                        symbols,
+                        world,
+                        analysis,
+                    )?,
+                ),
+            ),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Defer,
                 CheckedStatementPayload::Defer(defer),

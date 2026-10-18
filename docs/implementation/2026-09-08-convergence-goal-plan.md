@@ -16525,3 +16525,82 @@ R1206 subsequently terminated with actual Cargo 101: two exhaustive-match
 errors remain in the existing test-only checked-to-prepared fixture projection.
 Formatting and whitespace review complete for the explicit changed Rust paths;
 owner execution and downstream acceptance remain pending at this checkpoint.
+
+### 2026-10-18 — Registry semantic owner and executable fact projection
+
+Inspected/published checkpoint: `905f4a1be8dcb3ac2101ac5fe5cd5cf3ad3e9f98`,
+parent `0f772469af46f23717ca9479b72a0ef671dc61a7`, tree
+`eb2eea35b4adb27269705292ac25e558100567ac`. Its 23 explicit paths, raw patch
+SHA-256 `5f74c6e9ce771cd2e4da697254d4b2077af0261b37c4ddd98250b63f6c7dc188`,
+all published blobs, fresh advertised main and 3849 frozen inputs were verified.
+The intermediate checkpoint preserved all 14 held tracked and three unrelated
+untracked paths. It was intentionally not presented as a working runtime.
+
+Correction to the preceding diagnostic note: R1206's two compile errors were the
+expression-resolution corpus inventory and the test-only checked-to-prepared
+projection, one each. Both were repaired. R1207 found one incorrect test fixture
+module path, repaired before the successful R1208 catalog (1294 sema cases).
+R1209 selected the complete Id/sema library union: 1339 cases, zero exclusions.
+R1210 executed all 1339: all passed, zero skipped, 18.588 seconds, actual exit 0.
+The exact terminal package/binary/name set and all 3849 frozen input hashes were
+verified before further runtime-plan/compiler edits. This pass covers the actual
+registry path, exact Bool RHS/type/effect, non-value address and omission plan,
+refusal to republish a registry write as Structural, and rejection of Unit/Bool/
+optional targets. The existing complete statement/Match and expression-family
+corpora now use the real LifetimePath/RegistryWrite family while retaining their
+existing assertions; the same-typed RHS mutation remains digest-sensitive.
+Id's parent-scope coverage regression also passes. The actual all-target,
+all-feature reverse tree succeeds; unchanged resolved metadata identifies 71
+Id reverse dependency workspace packages. This is graph evidence, not a claim
+that their complete test suite has executed for the new identity behavior.
+
+R1211 workspace/all-target/all-feature/locked compilation exposed the two global
+compiler projection matches for the new checked address/write. The migration
+retains the original CheckedRegistryWrite and the actual instantiated normalized
+RHS domain in RuntimeRegistryWriteFact. Both global statements and closed
+project-function instances carry it. Atomic fact admission requires all active
+writes exactly once, refuses instance-owned global facts, binds the original
+statement/target/path/value to the accepted HIR generation, requires the target
+to have no value domain and matches the original RHS domain. Global and instance
+accessors and type-dependency visitors retain the stored value domain. No new
+runtime scope lease or executable storage is issued by this source metadata.
+R1212 found one missing instance statement type-dependency visitor arm, repaired.
+R1213 workspace/all-target/all-feature/locked check then passes, actual 0,
+40.94 seconds, with warnings retained. Its source freeze is
+registry-runtime-projection-check.source-freeze.json. New dedicated runtime fact
+tests were added afterward, so R1213 is not relabeled as their compilation.
+R1214 is the current runtime-plan/compiler library catalog build. Its meaningful
+factory cases cover complete/missing/duplicate writes, an incompatible value
+domain, and an address from a different source generation. Result pending.
+
+The complete Sema owner pass is reused for unchanged Id/sema production inputs;
+new projection/factory work needs its own evidence. Core registry operations,
+actual scope/storage ownership and key registration, guaranteed/optional reads,
+Native/AWBC execution and failure-atomic save/restore remain required. The
+concrete CLI state.write case is not yet rerun or claimed fixed. Final broad
+consumer validation, public all-14 convergence and the original remaining
+acceptance remain open. The goal stays active and incomplete.
+
+R1214 completes with all 291 library cases selected, zero exclusions: compiler
+172 and runtime-plan 119. All 289 predecessor package/binary/name/ignore rows
+from R1196 remain, with exactly the two new admission tests added. R1215 passes
+all 291, zero skipped, 6.857 seconds, actual 0. The exact terminal set and all
+3851 frozen inputs are verified in its retained receipt. R1216 workspace
+all-target/all-feature/locked Clippy passes, actual 0, 2m58s; warnings remain
+visible. R1217 canonical structure passes with review triggers and no blocking
+finding. Explicit rustfmt checks on the eleven changed Rust paths and owned
+whitespace checks pass. No doctest, Tier2, full 71-package consumer execution,
+Core registry execution or final Native/Web parity is newly claimed.
+
+Ownership review: the new RuntimeRegistryWriteFact admission owner is 2467 bytes /
+69 physical LOC; its cohesive original-generation/missing/duplicate/value-domain
+factory tests are 4058 / 116. The existing semantic-fact catalog (578583 / 14799)
+and compiler projection owner (431884 / 10154) receive the mechanically related
+collection, validation, global/instance projection and type-retention entries.
+These additions belong to their complete atomic fact vocabulary and lexical
+instantiation boundary; their size triggers do not justify a second write model
+or unrelated module splitting. The retained checked source plus instantiated
+runtime domain are distinct legitimate phases, not interchangeable scope leases.
+No Cargo dependency, manifest, backend I/O, unsafe or contract-version change is
+introduced. The full registry runtime and remaining convergence acceptance above
+stay open after this next intermediate publication.

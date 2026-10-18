@@ -402,7 +402,7 @@ const CALL_FREE_ROWS: &[SourceRow] = &[
     },
     SourceRow {
         matrix: MATRIX[10],
-        source: "flow row { () <- true }\n",
+        source: "flow row effects { state.write('flow) } { 'flow.flags.seen <- true }\n",
     },
     SourceRow {
         matrix: MATRIX[11],
@@ -703,4 +703,82 @@ fn checked_statement_producer_assignment_row_n16_rejects_hir_owned_mutation() {
             .is_err(),
         "Assignment must reject a HIR-owned payload mutation"
     );
+}
+
+#[test]
+fn registry_write_keeps_non_value_address_exact_value_and_intrinsic_effect() {
+    let world = fixture(
+        "flow registry effects { state.write('flow) } { 'flow.flags.seen <- true }",
+        None,
+    );
+    let report = super::analyze(&world).expect("accepted registry write");
+    let module = root_module(&world);
+    let (owner, target, value) = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            let HirStmtKind::LifetimeSet { target, value } = statement.kind() else {
+                return None;
+            };
+            Some((owner, *target, *value))
+        })
+        .expect("registry statement");
+    let statement = report.statement(owner).expect("checked write");
+    let CheckedStatementPayload::RegistryWrite(write) = statement.payload() else {
+        panic!("typed registry payload")
+    };
+    assert_eq!(write.address().statement(), owner);
+    assert_eq!(write.address().target(), target);
+    assert_eq!(write.value(), value);
+    assert_eq!(write.value_type(), &crate::types::TypeKind::Bool);
+    assert_eq!(
+        write.address().effect().as_str(),
+        "state.write('flow.flags.seen)"
+    );
+    assert_eq!(
+        statement.effects().to_labels(),
+        ["state.write('flow.flags.seen)"]
+    );
+    let address = report.expression(target).expect("checked metadata");
+    assert_eq!(address.value_type(), None);
+    assert!(
+        matches!(address.result(), crate::final_analysis::CheckedExpressionResult::NonValue(crate::final_analysis::CheckedNonValueExpressionResult::RegistryAddress(statement)) if *statement == owner)
+    );
+    assert!(matches!(
+        address.execution_plan(),
+        Some(
+            crate::final_analysis::CheckedExpressionExecutionPlan::Structural {
+                value: crate::final_analysis::CheckedRuntimeValueDisposition::Omit,
+                reason: crate::final_analysis::CheckedStructuralExecutionReason::RegistryAddress,
+                ..
+            }
+        )
+    ));
+    assert!(address.effects().is_empty());
+    assert_eq!(
+        report
+            .expression(value)
+            .and_then(crate::final_analysis::CheckedExpression::value_type),
+        Some(&crate::types::TypeKind::Bool)
+    );
+    assert!(
+        analyze_with_statement_mutation(&world, owner, PreparedStatementPayload::HirOwned).is_err(),
+        "registry write cannot be republished as structural"
+    );
+}
+
+#[test]
+fn registry_write_rejects_value_and_optional_targets_before_publication() {
+    for target in ["()", "true", "'flow.flags.seen?"] {
+        let world = fixture(
+            &format!("flow registry effects {{ state.write('flow) }} {{ {target} <- true }}"),
+            None,
+        );
+        assert!(
+            matches!(
+                super::analyze(&world),
+                Err(FinalSemanticAnalysisError::RegistryWriteTarget { .. })
+            ),
+            "{target}"
+        );
+    }
 }

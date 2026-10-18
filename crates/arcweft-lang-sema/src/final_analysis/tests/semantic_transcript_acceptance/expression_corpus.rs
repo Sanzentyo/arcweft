@@ -129,7 +129,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Unit => Unit => Accepted,
     HirExprKind::Literal(_) => Literal => Accepted,
     HirExprKind::EntityReference(_) => EntityReference => Accepted,
-    HirExprKind::LifetimePath(_) => LifetimePath => RejectOnly,
+    HirExprKind::LifetimePath(_) => LifetimePath => Accepted,
     HirExprKind::Path(_) => Path => Accepted,
     HirExprKind::ShortVariant(_) => ShortVariant => Accepted,
     HirExprKind::Placeholder(_) => Placeholder => Accepted,
@@ -168,6 +168,7 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
 
 expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionResolution, {
     CheckedExpressionResolution::Structural => Structural => Accepted,
+    CheckedExpressionResolution::RegistryAddress(_) => RegistryAddress => Accepted,
     CheckedExpressionResolution::Scope(_) => Scope => Accepted,
     CheckedExpressionResolution::Literal(_) => Literal => Accepted,
     CheckedExpressionResolution::Value(_) => Value => Accepted,
@@ -704,6 +705,16 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::NamedBlock],
             resolutions: &[ExpressionResolutionFamily::Scope],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "statement-owned registry address",
+            exact_path_families: false,
+            source: "flow registry(flag: bool) effects { state.write('flow) } { let selected = match flag { true => { 'flow.flags.seen <- true; 1i64 }, false => 0i64 } }".to_owned(),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::LifetimePath],
+            resolutions: &[ExpressionResolutionFamily::RegistryAddress],
             values: &[],
             selects: &[],
         },

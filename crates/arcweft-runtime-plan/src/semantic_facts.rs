@@ -99,6 +99,8 @@ mod dialogue_target;
 pub use dialogue_target::RuntimeDialogueApplicationTarget;
 mod defer;
 pub use defer::RuntimeDeferFact;
+mod registry_write;
+pub use registry_write::RuntimeRegistryWriteFact;
 mod display;
 pub use display::{
     RuntimeFormatExecutableScope, RuntimeFormatTemplateFact, RuntimeFormatTemplateKey,
@@ -5559,6 +5561,7 @@ pub struct RuntimePlanSemanticFactInput {
     assertions: Vec<(StmtId, RuntimeAssertionAdmission)>,
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
+    registry_writes: Vec<(StmtId, RuntimeRegistryWriteFact)>,
     evaluated_effects: Vec<(ExprId, RuntimeEvaluatedEffectFact)>,
     defers: Vec<(StmtId, RuntimeDeferFact)>,
     choices: Vec<(ExprId, RuntimeChoiceFact)>,
@@ -5620,6 +5623,7 @@ impl RuntimePlanSemanticFactInput {
             assertions: Vec::new(),
             triggers: BTreeMap::new(),
             assignments: Vec::new(),
+            registry_writes: Vec::new(),
             evaluated_effects: Vec::new(),
             defers: Vec::new(),
             choices: Vec::new(),
@@ -5918,6 +5922,11 @@ impl RuntimePlanSemanticFactInput {
         self.assignments.push((owner, assignment));
     }
 
+    pub fn push_registry_write(&mut self, write: RuntimeRegistryWriteFact) {
+        self.registry_writes
+            .push((write.address().statement(), write));
+    }
+
     pub fn push_evaluated_effect(&mut self, owner: ExprId, effect: RuntimeEvaluatedEffectFact) {
         self.evaluated_effects.push((owner, effect));
     }
@@ -6076,6 +6085,7 @@ pub struct RuntimePlanSemanticFacts {
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
+    registry_writes: BTreeMap<StmtId, RuntimeRegistryWriteFact>,
     evaluated_effects: BTreeMap<ExprId, RuntimeEvaluatedEffectFact>,
     defers: BTreeMap<StmtId, RuntimeDeferFact>,
     choices: BTreeMap<ExprId, RuntimeChoiceFact>,
@@ -6335,6 +6345,10 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 
     pub fn assignment(self, owner: StmtId) -> Option<&'facts RuntimeAssignmentFact> {
         self.facts.assignment(owner)
+    }
+
+    pub fn registry_write(self, owner: StmtId) -> Option<&'facts RuntimeRegistryWriteFact> {
+        self.facts.registry_write(owner)
     }
 
     pub fn evaluated_effect(self, owner: ExprId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
@@ -6866,6 +6880,13 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.assignment(owner),
             Self::ProjectInstance(facts) => facts.assignment(owner),
+        }
+    }
+
+    pub fn registry_write(self, owner: StmtId) -> Option<&'facts RuntimeRegistryWriteFact> {
+        match self {
+            Self::Global(facts) => facts.registry_write(owner),
+            Self::ProjectInstance(facts) => facts.registry_write(owner),
         }
     }
 
@@ -9049,6 +9070,39 @@ impl RuntimePlanSemanticFacts {
             )?;
         }
 
+        let registry_writes = collect_unique(
+            input.registry_writes,
+            RuntimeSemanticFactFamily::RegistryWrite,
+        )?;
+        for module in modules.values() {
+            for (owner, statement) in module.statements() {
+                if runtime_owners.contains_statement(owner)
+                    && !instance_statement_owners.contains(&owner)
+                    && matches!(statement.kind(), HirStmtKind::LifetimeSet { .. })
+                    && !registry_writes.contains_key(&owner)
+                {
+                    return Err(RuntimeSemanticFactsError::MissingRegistryWriteFact {
+                        statement: owner,
+                    });
+                }
+            }
+        }
+        for (owner, write) in &registry_writes {
+            if instance_statement_owners.contains(owner) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::RegistryWrite,
+                });
+            }
+            require_stmt_family(
+                &modules,
+                runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::RegistryWrite,
+                |kind| matches!(kind, HirStmtKind::LifetimeSet { .. }),
+            )?;
+            write.validate(&modules, &expression_types, *owner)?;
+        }
+
         let mut captures = BTreeMap::new();
         for checked in input.captures {
             let id = checked.capture();
@@ -9305,6 +9359,7 @@ impl RuntimePlanSemanticFacts {
             assertions,
             triggers,
             assignments,
+            registry_writes,
             evaluated_effects,
             defers,
             choices,
@@ -9953,6 +10008,11 @@ impl RuntimePlanSemanticFacts {
         for assignment in self.assignments.values() {
             roots.push(assignment.value_type());
         }
+        roots.extend(
+            self.registry_writes
+                .values()
+                .map(RuntimeRegistryWriteFact::value_type),
+        );
         for tried in self.tries.values() {
             tried.append_normalized_types(&mut roots);
         }
@@ -10235,6 +10295,10 @@ impl RuntimePlanSemanticFacts {
     /// Returns the sole compiler-admitted writable place for an assignment.
     pub fn assignment(&self, statement: StmtId) -> Option<&RuntimeAssignmentFact> {
         self.assignments.get(&statement)
+    }
+
+    pub fn registry_write(&self, statement: StmtId) -> Option<&RuntimeRegistryWriteFact> {
+        self.registry_writes.get(&statement)
     }
 
     pub fn evaluated_effect(&self, expression: ExprId) -> Option<&RuntimeEvaluatedEffectFact> {
@@ -10651,6 +10715,10 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("accepted runtime semantic facts omit an assignment fact for {statement:?}")]
     MissingAssignmentFact { statement: StmtId },
+    #[error("accepted runtime semantic facts omit a registry write for {statement:?}")]
+    MissingRegistryWriteFact { statement: StmtId },
+    #[error("registry write for {statement:?} disagrees with its checked address or value domain")]
+    InvalidRegistryWriteFact { statement: StmtId },
     #[error("accepted runtime semantic facts omit a Trigger fact for {statement:?}")]
     MissingTriggerFact { statement: StmtId },
     #[error("Trigger fact for {statement:?} does not match its checked runtime authority")]
@@ -10866,6 +10934,7 @@ pub enum RuntimeSemanticFactFamily {
     Assertion,
     Trigger,
     Assignment,
+    RegistryWrite,
     EvaluatedEffect,
     Defer,
     Choice,
@@ -13653,6 +13722,9 @@ fn validate_project_function_semantic_catalog(
                     row.owner(),
                     fact,
                 )?;
+            }
+            RuntimeProjectFunctionStatementPayload::RegistryWrite(fact) => {
+                fact.validate(modules, &expression_types, row.owner())?;
             }
             RuntimeProjectFunctionStatementPayload::EvaluatedEffect(site) => {
                 if !matches!(
