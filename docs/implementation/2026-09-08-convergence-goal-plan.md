@@ -17692,3 +17692,59 @@ This evidence-only cut reuses the current Host owner/workspace evidence and adds
 the actual CLI result. Continue Entry/Line and general Flow/function Source,
 the joint program codec and complete public consumer migration, then the
 remaining retained implementation and acceptance. The full goal is active.
+
+## 2026-10-19 — Complete schema data Source for Entry construction
+
+Inspected main 83d4edda310ee6307c9739a30420b239abe75721 with fourteen held
+tracked paths and three held untracked items. The new private schema Source
+belongs to the existing Core entry/schema owner. Entry roles retain arbitrary
+command payload schemas; a layout hash cannot reconstruct those declarations.
+The version-1 schema-source grammar retains the complete existing schema
+algebra, names, field/default/skip/bytes policies, variant payloads, discriminants,
+tag/repr policies, builtin owner/payload inventory, opaque producer/admission/
+ownership/persistence, nominal and executable references and dense shapes.
+References remain data requiring the actual program's owning admission.
+
+Before allocating an owned schema or copied string, the reader scans the full
+immutable framing and checks UTF-8, closed tags, field coordinates, builtin
+arity, all descendants and aggregate node/depth/element/encoded/decoded limits.
+Decoded storage conservatively includes final nodes, child scratch slots,
+construction frames, borrowed scan counters and aggregate metadata slots.
+The counted encoder uses the schema owner's existing iterative child traversal;
+reader and reconstruction also use explicit bounded work state. Output capacity
+is checked before append. One supplied semantic bank remains sticky across
+failure and reconstruction; no schema issues a program, nominal or layout proof.
+No existing wire reader, public API or executable behavior is switched here.
+
+R1329 Core all-target/all-feature locked Clippy passes, actual 0, 43.39s.
+R1330's stable five-owner all-feature library catalog passes, 2264 selected,
+zero excluded, including all five new cases. R1331 executes the exact set:
+actual 0, 2264 pass, zero fail/skip, 21.494s. Terminal names and all 3879 frozen
+inputs are verified unchanged. The new cases cover the complete grammar/policy
+matrix, the actual stateful Entry builder and common executable seal with equal
+entry data/executable digest, exact/one-over aggregate resources and sticky
+failure, every truncation and malformed domain/version/tag/UTF-8/field/trailing
+input, untouched output on insufficient capacity, and depth-4097 reconstruction.
+Deep test teardown uses the original schema owner's iterative disposal.
+
+Ownership review: schema.rs is 44241 bytes/1374 physical LOC, a one-line private
+module registration. New source.rs is 7050/214, encoding.rs 9982/271, reading.rs
+18442/527, tests.rs 13742/408. The reader and focused tests exceed 300-line
+growth; they own one complete schema framing/construction law and its observed
+resource, malformed-input and real Entry consequences. Exhaustive schema
+dispatch remains cohesive. No unrelated state, dependency, I/O, unsafe, new
+schema algebra or public splitting API is introduced. Core fan-in/out remains
+31/7 (development 4/5), all 99 manifest/lock inputs and the resolved 53-package
+reverse closure unchanged. New Clippy diagnostics are nonblocking exhaustive
+function-length/style/test-cast suggestions and expected private unused paths;
+no lint suppression is added. Those suggestions do not invalidate exit 0.
+
+This private leaf cut runs Core lint and the five explicit owning/consumer
+libraries; it does not claim another full 53-consumer execution or fresh
+workspace check/Clippy. The prior Host shared-boundary and CLI receipts remain
+their original evidence. General Entry/Line and Flow/function transport, the
+joint codec/public switch and both selected-Need parity failures remain open.
+Two new unregistered Entry reader/coordinator drafts are in progress and are
+excluded from this publication and from the 3879-input execution claim. Complete
+their writer, original owner route validation, role/route/schema tests and actual
+Source integration next. The full goal remains active.

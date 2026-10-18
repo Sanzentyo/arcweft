@@ -17,6 +17,7 @@ mod data;
 mod encoding;
 mod nominal;
 mod record_shape;
+pub(crate) mod source;
 pub(crate) mod traversal;
 pub(crate) mod value_budget;
 pub(crate) mod value_encoding;
