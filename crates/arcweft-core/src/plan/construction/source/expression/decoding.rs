@@ -21,7 +21,7 @@ pub(in crate::plan) struct RuntimeExpressionSourceHandles<'a> {
     pub attempts: &'a [RuntimeFormatAttemptSeedId],
 }
 impl RuntimeExpressionSourceHandles<'_> {
-    fn validate(
+    pub(in crate::plan::construction::source) fn validate(
         &self,
         source: &mut RuntimePlanSourceConstruction,
         limits: RuntimeExpressionSourceLimits,

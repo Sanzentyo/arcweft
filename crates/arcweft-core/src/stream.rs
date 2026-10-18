@@ -254,6 +254,10 @@ impl<'a> RuntimeStreamYieldCopyProof<'a> {
 }
 
 impl StreamRuntimeId {
+    pub(crate) fn from_source_path(path: RuntimeIdPath) -> Self {
+        Self { path }
+    }
+
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
         RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Stream, value).map(|path| Self { path })
     }
