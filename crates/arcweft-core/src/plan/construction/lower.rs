@@ -2046,7 +2046,7 @@ impl<'plan> RuntimePlanBodyConstruction<'plan> {
                 callee.ty(),
                 result_type,
                 actual.len(),
-            );
+            )?;
         }
         Ok((callee, args))
     }

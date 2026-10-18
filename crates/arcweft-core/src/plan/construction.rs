@@ -201,6 +201,16 @@ pub enum RuntimePlanBuildError {
     },
     #[error("{count} callable-state reservations remain undefined")]
     IncompleteCallableStates { count: usize },
+    #[error("the original callable source graph cannot admit additional state definitions")]
+    CallableSourceGraphClosed,
+    #[error(
+        "callable source state {state} has no declared partial transition to {result} for {arguments} arguments"
+    )]
+    MissingSourceCallablePartial {
+        state: crate::runtime_id::RuntimeCallableStateId,
+        result: RuntimePlanTypeId,
+        arguments: usize,
+    },
     #[error(transparent)]
     DialogueContent(#[from] super::RuntimeDialogueContentPlanTableError),
     #[error(transparent)]

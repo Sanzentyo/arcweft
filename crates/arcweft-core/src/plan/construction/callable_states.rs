@@ -64,13 +64,19 @@ pub type RuntimeCallableStateSeed = RuntimeCallableStateDefinition<
 /// demands. The final program contains only the admitted state table.
 #[derive(Debug, Default)]
 pub(super) struct RuntimeCallableStateBuilder {
-    pub(super) states: Vec<Option<RuntimeCallableState>>,
+    // A lowering step may reserve more rows while borrowing one immutable
+    // definition. Snapshots share that actual payload, not a cloned graph.
+    pub(super) states: Vec<Option<Arc<RuntimeCallableState>>>,
     initial: BTreeMap<(RuntimeFunctionSiteId, RuntimePlanTypeId), RuntimeCallableStateId>,
     partials: BTreeSet<(RuntimePlanTypeId, RuntimePlanTypeId, usize)>,
+    source_complete: bool,
 }
 
 impl RuntimeCallableStateBuilder {
     fn reserve(&mut self) -> Result<RuntimeCallableStateId, RuntimePlanBuildError> {
+        if self.source_complete {
+            return Err(RuntimePlanBuildError::CallableSourceGraphClosed);
+        }
         let state = RuntimeCallableStateId::for_index(self.states.len())
             .ok_or(RuntimeCallableStateError::IdentityExhausted)?;
         self.states.push(None);
@@ -82,13 +88,73 @@ impl RuntimeCallableStateBuilder {
         source: RuntimePlanTypeId,
         result: RuntimePlanTypeId,
         arguments: usize,
-    ) {
+    ) -> Result<(), RuntimePlanBuildError> {
+        if self.source_complete {
+            for (index, row) in self.states.iter().enumerate() {
+                let row = row
+                    .as_ref()
+                    .expect("source completion requires every original row");
+                if row.function_type != source
+                    || arguments == 0
+                    || arguments >= row.parameters.len()
+                {
+                    continue;
+                }
+                let declared = row.partials.iter().any(|partial| {
+                    partial.parameters.len() == arguments
+                        && partial
+                            .parameters
+                            .iter()
+                            .copied()
+                            .eq(row.parameters[..arguments]
+                                .iter()
+                                .map(|input| input.coordinate))
+                        && self.states[partial.state.index()]
+                            .as_ref()
+                            .is_some_and(|target| target.function_type == result)
+                });
+                if !declared {
+                    return Err(RuntimePlanBuildError::MissingSourceCallablePartial {
+                        state: RuntimeCallableStateId::for_index(index)
+                            .expect("reserved source state"),
+                        result,
+                        arguments,
+                    });
+                }
+            }
+            return Ok(());
+        }
         self.partials.insert((source, result, arguments));
+        Ok(())
+    }
+
+    pub(in crate::plan::construction) fn source_storage_bytes(rows: usize) -> Option<usize> {
+        rows.checked_mul(
+            size_of::<Option<Arc<RuntimeCallableState>>>()
+                + size_of::<RuntimeCallableStateSeedId>()
+                + size_of::<RuntimeCallableStateSeed>()
+                + 2 * size_of::<RuntimeCallableState>()
+                + 2 * size_of::<usize>(),
+        )
+    }
+
+    pub(in crate::plan::construction) fn complete_source(
+        &mut self,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let count = self.states.iter().filter(|row| row.is_none()).count();
+        if count != 0 {
+            return Err(RuntimePlanBuildError::IncompleteCallableStates { count });
+        }
+        self.source_complete = true;
+        Ok(())
     }
 
     /// Makes all checked partial requests concrete before publication. No body
     /// target is discovered here: every state refers to a pre-reserved site.
     pub(super) fn seal(&mut self) -> Result<(), RuntimePlanBuildError> {
+        if self.source_complete || self.partials.is_empty() {
+            return Ok(());
+        }
         let demands = self.partials.iter().copied().collect::<Vec<_>>();
         let mut index = 0;
         while index < self.states.len() {
@@ -199,7 +265,7 @@ impl RuntimeCallableStateBuilder {
                             arguments: map_sources(arguments),
                         },
                     };
-                    self.states[target.index()] = Some(RuntimeCallableStateDefinition {
+                    self.states[target.index()] = Some(Arc::new(RuntimeCallableStateDefinition {
                         function_type,
                         origin: source.origin,
                         position,
@@ -209,7 +275,7 @@ impl RuntimeCallableStateBuilder {
                         attached,
                         transition,
                         partials: Box::new([]),
-                    });
+                    }));
                     target
                 };
                 let values = (0..source.retained.len())
@@ -228,10 +294,17 @@ impl RuntimeCallableStateBuilder {
                     values,
                 });
             }
+            drop(source);
             let current = self.states[index]
                 .as_mut()
                 .expect("source state was present");
-            current.partials = current.partials.iter().cloned().chain(partials).collect();
+            let current = Arc::get_mut(current)
+                .expect("lowering snapshots end before final graph completion");
+            current.partials = std::mem::take(&mut current.partials)
+                .into_vec()
+                .into_iter()
+                .chain(partials)
+                .collect();
             index += 1;
         }
         Ok(())
@@ -241,7 +314,10 @@ impl RuntimeCallableStateBuilder {
         RuntimeCallableStateTable::from_admitted(
             self.states
                 .into_iter()
-                .map(|state| state.expect("all states were defined before publication"))
+                .map(|state| {
+                    Arc::try_unwrap(state.expect("all states were defined before publication"))
+                        .expect("construction snapshots never escape into the final inventory")
+                })
                 .collect(),
         )
     }
@@ -268,6 +344,9 @@ impl RuntimePlanBuilder {
         definition: RuntimeCallableStateSeed,
     ) -> Result<(), RuntimePlanBuildError> {
         self.ensure_usable()?;
+        if self.callable_states.borrow().source_complete {
+            return Err(RuntimePlanBuildError::CallableSourceGraphClosed);
+        }
         let state = self.resolve_callable_state_seed(handle)?;
         if self.callable_states.borrow().states[state.index()].is_some() {
             return Err(RuntimePlanBuildError::DuplicateCallableState { state });
@@ -286,7 +365,7 @@ impl RuntimePlanBuilder {
             },
             |handle| self.resolve_callable_state_seed(&handle),
         )?;
-        self.callable_states.borrow_mut().states[state.index()] = Some(definition);
+        self.callable_states.borrow_mut().states[state.index()] = Some(Arc::new(definition));
         Ok(())
     }
 
@@ -321,6 +400,9 @@ impl RuntimePlanBuilder {
         result: RuntimePlanTypeId,
     ) -> Result<RuntimeCallableStateId, RuntimePlanBuildError> {
         let mut states = self.callable_states.borrow_mut();
+        if states.source_complete {
+            return Err(RuntimePlanBuildError::CallableSourceGraphClosed);
+        }
         if let Some(state) = states.initial.get(&(function, function_type)) {
             return Ok(*state);
         }
@@ -370,7 +452,7 @@ impl RuntimePlanBuilder {
                 position: position as u32,
             })
             .collect();
-        states.states[state.index()] = Some(RuntimeCallableStateDefinition {
+        states.states[state.index()] = Some(Arc::new(RuntimeCallableStateDefinition {
             function_type,
             origin: state,
             position: RuntimeCallablePosition::Unapplied,
@@ -384,7 +466,7 @@ impl RuntimePlanBuilder {
                 arguments,
             },
             partials: Box::new([]),
-        });
+        }));
         states.initial.insert((function, function_type), state);
         Ok(state)
     }
