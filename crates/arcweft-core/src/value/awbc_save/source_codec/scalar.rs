@@ -6,8 +6,8 @@ use crate::math::{
     RuntimeFloatWidth,
 };
 use crate::value::{
-    RuntimeInt, RuntimeRange, RuntimeRangeIterator, RuntimeSignedIntWidth, RuntimeUInt,
-    RuntimeUnsignedIntWidth,
+    RuntimeDenseNumericView, RuntimeInt, RuntimeRange, RuntimeRangeIterator, RuntimeScalarView,
+    RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
 };
 
 impl Writer<'_> {
@@ -99,26 +99,23 @@ impl Writer<'_> {
         }
     }
 
-    pub(super) fn numeric(&mut self, value: &RuntimeDenseNumericPayload) -> Result<(), Error> {
+    pub(super) fn numeric(&mut self, value: RuntimeDenseNumericView<'_>) -> Result<(), Error> {
         self.bytes(&value.ty().semantic_parts())?;
-        self.counts.array::<u64>(value.dimensions().len())?;
-        self.count(value.dimensions().len())?;
-        for dimension in value.dimensions() {
-            self.u64(*dimension)?;
+        self.counts.array::<u64>(value.rank())?;
+        self.count(value.rank())?;
+        for index in 0..value.rank() {
+            self.u64(value.dimension_u64(index).map_err(|_| Error::Arithmetic)?)?;
         }
-        self.count(value.elements().len())?;
-        match value.elements() {
-            RuntimeDenseNumericElements::F32(values) => {
-                self.counts.array::<u32>(values.len())?;
-                for value in values {
-                    self.u32(*value)?;
-                }
-            }
-            RuntimeDenseNumericElements::F64(values) => {
-                self.counts.array::<u64>(values.len())?;
-                for value in values {
-                    self.u64(*value)?;
-                }
+        self.count(value.len())?;
+        match value.ty().scalar_width() {
+            RuntimeFloatWidth::F32 => self.counts.array::<u32>(value.len())?,
+            RuntimeFloatWidth::F64 => self.counts.array::<u64>(value.len())?,
+        }
+        for scalar in value.values() {
+            match scalar {
+                RuntimeScalarView::F32(value) => self.u32(value.to_bits())?,
+                RuntimeScalarView::F64(value) => self.u64(value.to_bits())?,
+                _ => unreachable!("numeric view retains its declared scalar storage"),
             }
         }
         Ok(())

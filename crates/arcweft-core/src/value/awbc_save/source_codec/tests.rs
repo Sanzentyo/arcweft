@@ -6,6 +6,7 @@ use super::super::{
 };
 use super::*;
 
+mod live;
 mod metadata;
 use crate::entry::schema::value_encoding::ValueAdmissionOrigin;
 use crate::time::LogicalDuration;
@@ -169,9 +170,8 @@ fn literal_source_scalars_preserve_all_widths_float_bits_and_exhausted_cursors()
     }
 }
 
-#[test]
-fn literal_source_preserves_all_dense_storage_kinds_and_recursive_columns() {
-    let dense = vec![
+fn dense_values() -> Vec<DenseSeq> {
+    vec![
         DenseSeq::Units(3),
         DenseSeq::I8(DenseSeqStorage::new(vec![i8::MIN, i8::MAX])),
         DenseSeq::I16(DenseSeqStorage::new(vec![i16::MIN, i16::MAX])),
@@ -211,7 +211,12 @@ fn literal_source_preserves_all_dense_storage_kinds_and_recursive_columns() {
                 crate::plan::FlowRuntimeId::from_runtime_contract("main.child", "公開名").unwrap(),
             ),
         ])),
-    ];
+    ]
+}
+
+#[test]
+fn literal_source_preserves_all_dense_storage_kinds_and_recursive_columns() {
+    let dense = dense_values();
     assert_eq!(dense.len(), 21);
     for value in dense {
         roundtrip(Value::Seq(Sequence::Dense(value)));

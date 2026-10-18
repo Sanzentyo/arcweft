@@ -67,15 +67,27 @@ fn inert_literal_sources_are_admitted_under_the_actual_building_type_domain_auth
 
 #[test]
 fn materialized_building_literals_reach_the_actual_function_and_common_executable_seal() {
-    building_literals_reach_the_common_executable_seal(false);
+    building_literals_reach_the_common_executable_seal(LiteralSourceInput::Snapshot);
 }
 
 #[test]
 fn binary_building_literals_reach_the_actual_function_and_common_executable_seal() {
-    building_literals_reach_the_common_executable_seal(true);
+    building_literals_reach_the_common_executable_seal(LiteralSourceInput::BinarySnapshot);
 }
 
-fn building_literals_reach_the_common_executable_seal(binary: bool) {
+#[test]
+fn borrowed_live_literal_source_reaches_the_actual_function_and_common_executable_seal() {
+    building_literals_reach_the_common_executable_seal(LiteralSourceInput::BinaryLive);
+}
+
+#[derive(Clone, Copy)]
+enum LiteralSourceInput {
+    Snapshot,
+    BinarySnapshot,
+    BinaryLive,
+}
+
+fn building_literals_reach_the_common_executable_seal(input: LiteralSourceInput) {
     use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
     use crate::plan::value_admission::PlanValueAuthority;
     use crate::value::AwbcRuntimeValueSnapshot;
@@ -97,7 +109,12 @@ fn building_literals_reach_the_common_executable_seal(binary: bool) {
             crate::entry::RuntimeSchemaLimits::engine_default(),
         )
         .unwrap();
-    let source = AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap();
+    let source = match input {
+        LiteralSourceInput::Snapshot | LiteralSourceInput::BinarySnapshot => {
+            Some(AwbcRuntimeValueSnapshot::from_admitted_storage(&value, None).unwrap())
+        }
+        LiteralSourceInput::BinaryLive => None,
+    };
     let mut builder = fixture();
     let ty = builder
         .resolve_seed_type("literal source", semantic)
@@ -111,16 +128,27 @@ fn building_literals_reach_the_common_executable_seal(binary: bool) {
         crate::entry::RuntimeSchemaLimits::engine_default(),
         ValueAdmissionOrigin::InertSnapshot,
     );
-    let restored = if binary {
+    let restored = if matches!(
+        input,
+        LiteralSourceInput::BinarySnapshot | LiteralSourceInput::BinaryLive
+    ) {
         let limits = crate::value::RuntimeLiteralSourceLimits {
             encoded_bytes: 1 << 20,
             decoded_bytes: 1 << 20,
             elements: 10_000,
         };
         let mut meter = crate::task::semantic::TaskSemanticMeter::new(1 << 24, 1 << 24);
-        let prepared = source
-            .prepare_literal_source_encoding(limits, &resources, &mut meter)
-            .unwrap();
+        let prepared = match input {
+            LiteralSourceInput::BinaryLive => {
+                value.prepare_literal_source_encoding(limits, &resources, &mut meter)
+            }
+            LiteralSourceInput::BinarySnapshot => source
+                .as_ref()
+                .unwrap()
+                .prepare_literal_source_encoding(limits, &resources, &mut meter),
+            LiteralSourceInput::Snapshot => unreachable!("inert source uses direct admission"),
+        }
+        .unwrap();
         let mut bytes = Vec::with_capacity(prepared.encoded_bytes());
         prepared.append_to(&mut bytes).unwrap();
         authority
@@ -128,7 +156,7 @@ fn building_literals_reach_the_common_executable_seal(binary: bool) {
             .unwrap()
     } else {
         authority
-            .materialize_literal_source_value(ty, source, &mut resources)
+            .materialize_literal_source_value(ty, source.unwrap(), &mut resources)
             .unwrap()
     };
     let mut expected = fixture();

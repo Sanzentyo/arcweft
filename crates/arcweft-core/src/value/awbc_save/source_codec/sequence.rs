@@ -7,7 +7,8 @@ use super::super::{
 use super::{Reader, RuntimeLiteralSourceError as Error, Writer};
 use crate::time::LogicalDuration;
 use crate::value::{
-    DenseSeq, DenseSeqStorage, RuntimeEntityReference, RuntimeISizeValue, RuntimeUSizeValue,
+    DenseSeq, DenseSeqStorage, RuntimeEntityReference, RuntimeISizeValue, RuntimeSeq,
+    RuntimeSequenceView, RuntimeUSizeValue,
 };
 
 impl Writer<'_> {
@@ -24,44 +25,71 @@ impl Writer<'_> {
         Ok(())
     }
 
-    pub(super) fn sequence(&mut self, value: &Sequence, depth: usize) -> Result<(), Error> {
+    pub(super) fn sequence(
+        &mut self,
+        value: RuntimeSequenceView<'_>,
+        depth: usize,
+    ) -> Result<(), Error> {
         self.node(depth)?;
         match value {
-            Sequence::Values(values) => {
+            value @ (RuntimeSequenceView::Live(RuntimeSeq::Values(_))
+            | RuntimeSequenceView::Snapshot(Sequence::Values(_))
+            | RuntimeSequenceView::DialogueBindings(_)
+            | RuntimeSequenceView::DialogueEffects(_)) => {
+                let count = value.len().map_err(|_| Error::Arithmetic)?;
                 self.tag(0)?;
-                self.counts.array::<Value>(values.len())?;
-                self.count(values.len())?;
-                for value in values {
-                    self.value(value, depth + 1)?;
+                self.counts.array::<Value>(count)?;
+                self.count(count)?;
+                for index in 0..count {
+                    self.value(
+                        value
+                            .value_view(index)
+                            .expect("value sequence owns every row"),
+                        depth + 1,
+                    )?;
                 }
             }
-            Sequence::Dense(value) => {
+            RuntimeSequenceView::Live(RuntimeSeq::Dense(value))
+            | RuntimeSequenceView::Snapshot(Sequence::Dense(value)) => {
                 self.tag(1)?;
                 self.dense(value)?;
             }
-            Sequence::TupleColumns { len, columns } => {
-                self.tag(2)?;
-                self.u64(*len)?;
-                self.counts
-                    .elements(usize::try_from(*len).map_err(|_| Error::Arithmetic)?)?;
-                self.counts.array::<Sequence>(columns.len())?;
-                self.count(columns.len())?;
-                for column in columns {
-                    self.sequence(column, depth + 1)?;
-                }
+            RuntimeSequenceView::Bytes(bytes) => {
+                self.tag(1)?;
+                self.tag(16)?;
+                self.dense_slice(bytes, |writer, value| {
+                    writer.bytes(std::slice::from_ref(value))
+                })?;
             }
-            Sequence::RecordColumns { len, fields } => {
-                self.tag(3)?;
-                self.u64(*len)?;
-                self.counts
-                    .elements(usize::try_from(*len).map_err(|_| Error::Arithmetic)?)?;
-                self.counts
-                    .array::<AwbcRuntimeRecordSeqFieldSnapshot>(fields.len())?;
-                self.count(fields.len())?;
-                for field in fields {
-                    self.field(field.field)?;
-                    self.string(&field.name)?;
-                    self.sequence(&field.values, depth + 1)?;
+            value @ (RuntimeSequenceView::Live(
+                RuntimeSeq::TupleColumns(_) | RuntimeSeq::RecordColumns(_),
+            )
+            | RuntimeSequenceView::Snapshot(
+                Sequence::TupleColumns { .. } | Sequence::RecordColumns { .. },
+            )) => {
+                let columns = value
+                    .columns()
+                    .expect("column storage has its physical inventory");
+                self.tag(if columns.is_record() { 3 } else { 2 })?;
+                let length = value.len().map_err(|_| Error::Arithmetic)?;
+                self.u64(u64::try_from(length).map_err(|_| Error::Arithmetic)?)?;
+                self.counts.elements(length)?;
+                if columns.is_record() {
+                    self.counts
+                        .array::<AwbcRuntimeRecordSeqFieldSnapshot>(columns.len())?;
+                } else {
+                    self.counts.array::<Sequence>(columns.len())?;
+                }
+                self.count(columns.len())?;
+                for index in 0..columns.len() {
+                    let (field, values) = columns
+                        .get(index)
+                        .expect("column inventory owns every child");
+                    if let Some((field, name)) = field {
+                        self.field(field)?;
+                        self.string(name)?;
+                    }
+                    self.sequence(values, depth + 1)?;
                 }
             }
         }

@@ -57,30 +57,45 @@ impl<'a> RuntimeDenseNumericView<'a> {
     }
 
     pub(crate) fn dimension(self, index: usize) -> Result<usize, RuntimeSchemaError> {
+        usize::try_from(self.dimension_u64(index)?).map_err(|_| RuntimeSchemaError::Encoding {
+            message: "dense numeric dimension exceeds the selected target width".to_owned(),
+        })
+    }
+
+    /// Borrows the fixed-width source header before any target-sized live
+    /// materialization. Zero-element snapshots can retain very large dimensions.
+    pub(in crate::value) fn dimension_u64(self, index: usize) -> Result<u64, RuntimeSchemaError> {
         let dimension = match self.storage {
-            NumericStorage::Live(RuntimeValue::MatrixF32(value)) => {
-                [value.rows(), value.cols()].get(index).copied()
-            }
-            NumericStorage::Live(RuntimeValue::MatrixF64(value)) => {
-                [value.rows(), value.cols()].get(index).copied()
-            }
-            NumericStorage::Live(RuntimeValue::TensorF32(value)) => {
-                value.shape().dims().get(index).copied()
-            }
-            NumericStorage::Live(RuntimeValue::TensorF64(value)) => {
-                value.shape().dims().get(index).copied()
-            }
-            NumericStorage::Snapshot(value) => value
-                .dimensions()
+            NumericStorage::Live(RuntimeValue::MatrixF32(value)) => [value.rows(), value.cols()]
                 .get(index)
                 .copied()
-                .map(usize::try_from)
-                .transpose()
-                .map_err(|_| RuntimeSchemaError::Encoding {
-                    message: "dense numeric dimension exceeds the selected target width".to_owned(),
-                })?,
+                .map(u64::try_from)
+                .transpose(),
+            NumericStorage::Live(RuntimeValue::MatrixF64(value)) => [value.rows(), value.cols()]
+                .get(index)
+                .copied()
+                .map(u64::try_from)
+                .transpose(),
+            NumericStorage::Live(RuntimeValue::TensorF32(value)) => value
+                .shape()
+                .dims()
+                .get(index)
+                .copied()
+                .map(u64::try_from)
+                .transpose(),
+            NumericStorage::Live(RuntimeValue::TensorF64(value)) => value
+                .shape()
+                .dims()
+                .get(index)
+                .copied()
+                .map(u64::try_from)
+                .transpose(),
+            NumericStorage::Snapshot(value) => Ok(value.dimensions().get(index).copied()),
             NumericStorage::Live(_) => unreachable!("numeric view retains numeric storage"),
-        };
+        }
+        .map_err(|_| RuntimeSchemaError::Encoding {
+            message: "dense numeric dimension exceeds its fixed-width source domain".to_owned(),
+        })?;
         dimension.ok_or_else(|| RuntimeSchemaError::Encoding {
             message: "dense numeric header is missing a dimension".to_owned(),
         })

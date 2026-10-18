@@ -15,6 +15,7 @@ use super::AwbcRuntimeValueSnapshot;
 use crate::entry::RuntimeSchemaLimits;
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
+use crate::value::{RuntimeValue, RuntimeValueView};
 
 const DOMAIN: &[u8] = b"arcweft.runtime.literal-source.v1\0";
 
@@ -268,7 +269,7 @@ impl Counts {
 }
 
 pub(crate) struct PreparedRuntimeLiteralEncoding<'a> {
-    value: &'a AwbcRuntimeValueSnapshot,
+    value: RuntimeValueView<'a>,
     limits: RuntimeLiteralSourceLimits,
     values: RuntimeSchemaLimits,
     encoded_bytes: usize,
@@ -349,20 +350,8 @@ impl AwbcRuntimeValueSnapshot {
         resources: &ValueResourceAdmission,
         meter: &mut TaskSemanticMeter,
     ) -> Result<PreparedRuntimeLiteralEncoding<'a>, RuntimeLiteralSourceError> {
-        meter.status()?;
-        let result = (|| {
-            let values = resources.work().limits();
-            let mut writer = Writer::new(None, Some(&mut *meter), limits, values);
-            writer.frame(self)?;
-            Ok(PreparedRuntimeLiteralEncoding {
-                value: self,
-                limits,
-                values,
-                encoded_bytes: writer.length,
-                footprint: writer.counts.footprint,
-            })
-        })();
-        result.map_err(|error: RuntimeLiteralSourceError| error.reject_in_bank(meter))
+        self.view()
+            .prepare_literal_source_encoding(limits, resources, meter)
     }
 
     pub(crate) fn preflight_literal_source<'a>(
@@ -383,6 +372,45 @@ impl AwbcRuntimeValueSnapshot {
                 limits,
                 values,
                 footprint: reader.counts.footprint,
+            })
+        })();
+        result.map_err(|error: RuntimeLiteralSourceError| error.reject_in_bank(meter))
+    }
+}
+
+impl RuntimeValue {
+    /// Borrows the original storage throughout measurement and emission. This
+    /// encodes source data; original plan/type admission remains a separate
+    /// requirement before a decoded value may enter an executable body.
+    pub(crate) fn prepare_literal_source_encoding<'a>(
+        &'a self,
+        limits: RuntimeLiteralSourceLimits,
+        resources: &ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<PreparedRuntimeLiteralEncoding<'a>, RuntimeLiteralSourceError> {
+        self.view()
+            .prepare_literal_source_encoding(limits, resources, meter)
+    }
+}
+
+impl<'a> RuntimeValueView<'a> {
+    fn prepare_literal_source_encoding(
+        self,
+        limits: RuntimeLiteralSourceLimits,
+        resources: &ValueResourceAdmission,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<PreparedRuntimeLiteralEncoding<'a>, RuntimeLiteralSourceError> {
+        meter.status()?;
+        let result = (|| {
+            let values = resources.work().limits();
+            let mut writer = Writer::new(None, Some(&mut *meter), limits, values);
+            writer.frame(self)?;
+            Ok(PreparedRuntimeLiteralEncoding {
+                value: self,
+                limits,
+                values,
+                encoded_bytes: writer.length,
+                footprint: writer.counts.footprint,
             })
         })();
         result.map_err(|error: RuntimeLiteralSourceError| error.reject_in_bank(meter))
@@ -455,7 +483,7 @@ impl<'a> Writer<'a> {
         }
         Ok(())
     }
-    fn frame(&mut self, value: &AwbcRuntimeValueSnapshot) -> Result<(), RuntimeLiteralSourceError> {
+    fn frame(&mut self, value: RuntimeValueView<'_>) -> Result<(), RuntimeLiteralSourceError> {
         self.bytes(DOMAIN)?;
         self.tag(1)?;
         self.counts.storage(size_of::<AwbcRuntimeValueSnapshot>())?;

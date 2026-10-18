@@ -6,8 +6,9 @@ use super::super::{
 use super::{Reader, RuntimeLiteralSourceError as Error, Writer};
 use crate::value::{
     AgentPredicateOperands, RuntimeAgentAction, RuntimeAgentActionDispatch,
-    RuntimeAgentActionTarget, RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentPath,
-    RuntimeAgentProbe,
+    RuntimeAgentActionTarget, RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentKind,
+    RuntimeAgentPath, RuntimeAgentProbe, RuntimeAgentView, RuntimePredicateKind,
+    RuntimePredicateView,
 };
 
 impl Writer<'_> {
@@ -40,9 +41,9 @@ impl Writer<'_> {
         }
     }
 
-    pub(super) fn agent(&mut self, agent: &Agent, depth: usize) -> Result<(), Error> {
-        match agent {
-            Agent::ActionTarget(target) => {
+    pub(super) fn agent(&mut self, agent: RuntimeAgentView<'_>, depth: usize) -> Result<(), Error> {
+        match agent.kind() {
+            RuntimeAgentKind::ActionTarget(target) => {
                 self.tag(0)?;
                 self.target(target.id())?;
                 self.target(target.target())?;
@@ -59,7 +60,7 @@ impl Writer<'_> {
                 })?;
                 self.boolean(target.enabled())
             }
-            Agent::CaptureTarget(target) => {
+            RuntimeAgentKind::CaptureTarget(target) => {
                 self.tag(1)?;
                 match target {
                     RuntimeAgentCaptureTarget::Viewport => self.tag(0),
@@ -73,43 +74,47 @@ impl Writer<'_> {
                     }
                 }
             }
-            Agent::DebugStatePath(path) => {
+            RuntimeAgentKind::DebugStatePath(path) => {
                 self.tag(2)?;
                 self.agent_path(path)
             }
-            Agent::ObservationFieldPath(path) => {
+            RuntimeAgentKind::ObservationFieldPath(path) => {
                 self.tag(3)?;
                 self.agent_path(path)
             }
-            Agent::Probe(probe) => {
+            RuntimeAgentKind::Probe(probe) => {
                 self.tag(4)?;
                 self.probe(probe)
             }
-            Agent::Diagnostics => self.tag(5),
-            Agent::Predicate(predicate) => {
+            RuntimeAgentKind::Diagnostics => self.tag(5),
+            RuntimeAgentKind::Predicate(predicate) => {
                 self.tag(6)?;
                 self.predicate(predicate, depth + 1)
             }
-            Agent::ViewportPoint { x, y } => {
+            RuntimeAgentKind::ViewportPoint { x, y } => {
                 self.tag(7)?;
-                self.u32(*x)?;
-                self.u32(*y)
+                self.u32(x)?;
+                self.u32(y)
             }
-            Agent::BinaryData(text) => {
+            RuntimeAgentKind::BinaryData(text) => {
                 self.tag(8)?;
                 self.string(text)
             }
-            Agent::DataShape { .. } => Err(Error::RuntimeCarrier {
+            RuntimeAgentKind::DataShape(_) => Err(Error::RuntimeCarrier {
                 kind: "program-bound DataShape",
                 offset: self.length,
             }),
         }
     }
 
-    fn predicate(&mut self, predicate: &Predicate, depth: usize) -> Result<(), Error> {
+    fn predicate(
+        &mut self,
+        predicate: RuntimePredicateView<'_>,
+        depth: usize,
+    ) -> Result<(), Error> {
         self.node(depth)?;
-        match predicate {
-            Predicate::Compare { probe, op, value } => {
+        match predicate.kind() {
+            RuntimePredicateKind::Compare { probe, op, value } => {
                 self.tag(0)?;
                 self.probe(probe)?;
                 self.tag(match op {
@@ -122,31 +127,38 @@ impl Writer<'_> {
                 })?;
                 self.counts
                     .array::<super::super::AwbcRuntimeValueSnapshot>(1)?;
-                self.value(value, depth + 1)
+                self.value(value.view(), depth + 1)
             }
-            Predicate::Exists { probe } => {
+            RuntimePredicateKind::Exists { probe } => {
                 self.tag(1)?;
                 self.probe(probe)
             }
-            Predicate::ActionEnabled { target } => {
+            RuntimePredicateKind::ActionEnabled { target } => {
                 self.tag(2)?;
                 self.target(target)
             }
-            Predicate::DiagnosticsHasError => self.tag(3),
-            Predicate::All { predicates } | Predicate::Any { predicates } => {
-                self.tag(if matches!(predicate, Predicate::All { .. }) {
-                    4
-                } else {
-                    5
-                })?;
+            RuntimePredicateKind::DiagnosticsHasError => self.tag(3),
+            RuntimePredicateKind::All(predicates) | RuntimePredicateKind::Any(predicates) => {
+                self.tag(
+                    if matches!(predicate.kind(), RuntimePredicateKind::All(_)) {
+                        4
+                    } else {
+                        5
+                    },
+                )?;
                 self.counts.array::<Predicate>(predicates.len())?;
                 self.count(predicates.len())?;
-                for predicate in predicates {
-                    self.predicate(predicate, depth + 1)?;
+                for index in 0..predicates.len() {
+                    self.predicate(
+                        predicates
+                            .get(index)
+                            .expect("predicate view owns each operand"),
+                        depth + 1,
+                    )?;
                 }
                 Ok(())
             }
-            Predicate::Not { predicate } => {
+            RuntimePredicateKind::Not(predicate) => {
                 self.tag(6)?;
                 self.counts.array::<Predicate>(1)?;
                 self.predicate(predicate, depth + 1)

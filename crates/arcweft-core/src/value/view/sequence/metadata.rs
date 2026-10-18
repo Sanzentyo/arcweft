@@ -8,7 +8,7 @@ use crate::value::{
 };
 
 #[derive(Clone, Copy)]
-enum Columns<'a> {
+pub(in crate::value) enum Columns<'a> {
     Tuples(&'a [RuntimeSeq]),
     SnapshotTuples(&'a [AwbcRuntimeSeqSnapshot]),
     Records(&'a [RecordSeqField]),
@@ -16,7 +16,7 @@ enum Columns<'a> {
 }
 
 impl<'a> Columns<'a> {
-    fn len(self) -> usize {
+    pub(in crate::value) fn len(self) -> usize {
         match self {
             Self::Tuples(v) => v.len(),
             Self::SnapshotTuples(v) => v.len(),
@@ -24,10 +24,10 @@ impl<'a> Columns<'a> {
             Self::SnapshotRecords(v) => v.len(),
         }
     }
-    fn is_record(self) -> bool {
+    pub(in crate::value) fn is_record(self) -> bool {
         matches!(self, Self::Records(_) | Self::SnapshotRecords(_))
     }
-    fn get(
+    pub(in crate::value) fn get(
         self,
         index: usize,
     ) -> Option<(
@@ -66,7 +66,29 @@ enum Work<'a> {
     },
 }
 
-impl RuntimeSequenceView<'_> {
+impl<'a> RuntimeSequenceView<'a> {
+    /// The original physical column inventory, borrowed by both admission and
+    /// source emission. No logical rows or copied storage are materialized.
+    pub(in crate::value) fn columns(self) -> Option<Columns<'a>> {
+        match self {
+            Self::Live(RuntimeSeq::TupleColumns(value)) => Some(Columns::Tuples(value.columns())),
+            Self::Live(RuntimeSeq::RecordColumns(value)) => Some(Columns::Records(value.fields())),
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::TupleColumns { columns, .. }) => {
+                Some(Columns::SnapshotTuples(columns))
+            }
+            Self::Snapshot(AwbcRuntimeSeqSnapshot::RecordColumns { fields, .. }) => {
+                Some(Columns::SnapshotRecords(fields))
+            }
+            Self::Bytes(_)
+            | Self::DialogueBindings(_)
+            | Self::DialogueEffects(_)
+            | Self::Live(RuntimeSeq::Values(_) | RuntimeSeq::Dense(_))
+            | Self::Snapshot(
+                AwbcRuntimeSeqSnapshot::Values(_) | AwbcRuntimeSeqSnapshot::Dense(_),
+            ) => None,
+        }
+    }
+
     pub(crate) fn validate_storage_metadata(
         self,
         depth: usize,
@@ -89,27 +111,7 @@ impl RuntimeSequenceView<'_> {
                     if expected.is_some_and(|expected| expected != length) {
                         return Err(Self::column_length_error());
                     }
-                    let columns = match sequence {
-                        Self::Live(RuntimeSeq::TupleColumns(v)) => {
-                            Some(Columns::Tuples(v.columns()))
-                        }
-                        Self::Live(RuntimeSeq::RecordColumns(v)) => {
-                            Some(Columns::Records(v.fields()))
-                        }
-                        Self::Snapshot(AwbcRuntimeSeqSnapshot::TupleColumns {
-                            columns, ..
-                        }) => Some(Columns::SnapshotTuples(columns)),
-                        Self::Snapshot(AwbcRuntimeSeqSnapshot::RecordColumns {
-                            fields, ..
-                        }) => Some(Columns::SnapshotRecords(fields)),
-                        Self::Bytes(_)
-                        | Self::DialogueBindings(_)
-                        | Self::DialogueEffects(_)
-                        | Self::Live(RuntimeSeq::Values(_) | RuntimeSeq::Dense(_))
-                        | Self::Snapshot(
-                            AwbcRuntimeSeqSnapshot::Values(_) | AwbcRuntimeSeqSnapshot::Dense(_),
-                        ) => None,
-                    };
+                    let columns = sequence.columns();
                     if let Some(columns) = columns {
                         budget.collection(columns.len())?;
                         let fields = columns

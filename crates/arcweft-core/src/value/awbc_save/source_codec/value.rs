@@ -9,56 +9,176 @@ use super::{Reader, RuntimeLiteralSourceError as Error, Writer};
 use crate::entry::TypeLayoutHash;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::time::LogicalDuration;
-use crate::value::RuntimeColor;
+use crate::value::{
+    RuntimeColor, RuntimeIteratorKind, RuntimeIteratorView, RuntimeScalarView, RuntimeValueView,
+};
 
 impl Writer<'_> {
-    pub(super) fn value(&mut self, value: &Value, depth: usize) -> Result<(), Error> {
+    pub(super) fn value(&mut self, value: RuntimeValueView<'_>, depth: usize) -> Result<(), Error> {
         self.node(depth)?;
         match value {
-            Value::Unit => self.tag(0),
-            Value::Bool(value) => {
-                self.tag(1)?;
-                self.boolean(*value)
-            }
-            Value::Int(value) => {
-                self.tag(2)?;
-                self.signed(*value)
-            }
-            Value::UInt(value) => {
-                self.tag(3)?;
-                self.unsigned(*value)
-            }
-            Value::F32(bits) => {
-                self.tag(4)?;
-                self.u32(*bits)
-            }
-            Value::F64(bits) => {
-                self.tag(5)?;
-                self.u64(*bits)
-            }
-            Value::DenseNumeric(value) => {
+            RuntimeValueView::Scalar(value) => self.scalar(value),
+            RuntimeValueView::DenseNumeric(value) => {
                 self.tag(6)?;
                 self.numeric(value)
             }
-            Value::String(value) => {
+            RuntimeValueView::Range(value) => {
+                self.tag(12)?;
+                self.range(value)
+            }
+            RuntimeValueView::Iterator(value) => {
+                self.tag(13)?;
+                self.iterator(value, depth)
+            }
+            RuntimeValueView::Tuple(values) => {
+                self.tag(15)?;
+                self.counts.array::<Value>(values.len())?;
+                self.count(values.len())?;
+                for value in values.iter() {
+                    self.value(value, depth + 1)?;
+                }
+                Ok(())
+            }
+            RuntimeValueView::Sequence(value) => {
+                self.tag(16)?;
+                self.sequence(value, depth + 1)
+            }
+            RuntimeValueView::Record(fields) => {
+                self.tag(17)?;
+                self.counts
+                    .array::<AwbcRuntimeFieldSnapshot>(fields.len())?;
+                self.count(fields.len())?;
+                for index in 0..fields.len() {
+                    let (field, name, value) =
+                        fields.get(index).expect("record view owns each field");
+                    self.field(field)?;
+                    self.string(name)?;
+                    self.value(value, depth + 1)?;
+                }
+                Ok(())
+            }
+            RuntimeValueView::NominalRecord(value) => {
+                self.tag(18)?;
+                self.nominal_id(value.type_id())?;
+                self.bytes(value.semantic_identity().as_bytes())?;
+                self.bytes(value.layout().as_bytes())?;
+                self.binding(value.type_instantiation(), depth + 1)?;
+                let fields = value.fields();
+                self.counts
+                    .array::<AwbcRuntimeNominalFieldSnapshot>(fields.len())?;
+                self.count(fields.len())?;
+                for index in 0..fields.len() {
+                    self.field(
+                        value
+                            .field_id(index)
+                            .expect("nominal view owns each field ID"),
+                    )?;
+                    self.value(
+                        fields.get(index).expect("nominal view owns each field"),
+                        depth + 1,
+                    )?;
+                }
+                Ok(())
+            }
+            RuntimeValueView::Opaque(value) => {
+                self.tag(19)?;
+                self.opaque_header(
+                    value.producer(),
+                    value.semantic_identity(),
+                    value.value_class(),
+                    value.persistence(),
+                )?;
+                self.counts.array::<Value>(1)?;
+                self.value(value.payload(), depth + 1)
+            }
+            RuntimeValueView::Reduction(value) => {
+                self.tag(20)?;
+                self.opaque_owner(value.owner())?;
+                self.counts.array::<Value>(1)?;
+                self.value(value.state(), depth + 1)?;
+                let commands = value.commands();
+                self.counts
+                    .array::<AwbcRuntimeCommandSnapshot>(commands.len())?;
+                self.count(commands.len())?;
+                for command in commands.iter() {
+                    self.constructor(command.constructor())?;
+                    self.target(command.target())?;
+                    self.counts.array::<Value>(1)?;
+                    self.value(command.payload(), depth + 1)?;
+                }
+                Ok(())
+            }
+            RuntimeValueView::Agent(value) => {
+                self.tag(21)?;
+                self.agent(value, depth)
+            }
+            RuntimeValueView::Variant(value) => {
+                self.tag(22)?;
+                self.variant_owner(value.owner())?;
+                self.u32(value.ordinal())?;
+                self.string(value.name())?;
+                self.binding(value.type_instantiation(), depth + 1)?;
+                let payload = value.payload();
+                self.boolean(payload.is_some())?;
+                if let Some(payload) = payload {
+                    self.counts.array::<Value>(1)?;
+                    self.value(payload, depth + 1)?;
+                }
+                Ok(())
+            }
+            RuntimeValueView::Need(_) => Err(Error::RuntimeCarrier {
+                kind: "Need handle",
+                offset: self.length,
+            }),
+            RuntimeValueView::Callable(_) => Err(Error::RuntimeCarrier {
+                kind: "callable",
+                offset: self.length,
+            }),
+        }
+    }
+
+    fn scalar(&mut self, value: RuntimeScalarView<'_>) -> Result<(), Error> {
+        match value {
+            RuntimeScalarView::Unit => self.tag(0),
+            RuntimeScalarView::Bool(value) => {
+                self.tag(1)?;
+                self.boolean(value)
+            }
+            RuntimeScalarView::Int(value) => {
+                self.tag(2)?;
+                self.signed(value)
+            }
+            RuntimeScalarView::UInt(value) => {
+                self.tag(3)?;
+                self.unsigned(value)
+            }
+            RuntimeScalarView::F32(value) => {
+                self.tag(4)?;
+                self.u32(value.to_bits())
+            }
+            RuntimeScalarView::F64(value) => {
+                self.tag(5)?;
+                self.u64(value.to_bits())
+            }
+            RuntimeScalarView::String(value) => {
                 self.tag(7)?;
                 self.string(value)
             }
-            Value::Color(value) => {
+            RuntimeScalarView::Color(value) => {
                 self.tag(8)?;
                 self.bytes(&value.rgba8())
             }
-            Value::Char(value) => {
+            RuntimeScalarView::Char(value) => {
                 self.tag(9)?;
-                self.u32(u32::from(*value))
+                self.u32(u32::from(value))
             }
-            Value::Duration(value) => {
+            RuntimeScalarView::Duration(value) => {
                 self.tag(10)?;
                 self.u64(value.as_nanos())
             }
-            Value::Progress { ratio, label } => {
+            RuntimeScalarView::Progress { ratio, label } => {
                 self.tag(11)?;
-                crate::value::Progress::new(*ratio).map_err(|source| Error::Progress {
+                crate::value::Progress::new(ratio).map_err(|source| Error::Progress {
                     offset: self.length,
                     source,
                 })?;
@@ -69,139 +189,29 @@ impl Writer<'_> {
                 }
                 Ok(())
             }
-            Value::Range(value) => {
-                self.tag(12)?;
-                self.range(value)
-            }
-            Value::Iterator(value) => {
-                self.tag(13)?;
-                self.iterator(value, depth)
-            }
-            Value::EntityRef(value) => {
+            RuntimeScalarView::EntityRef(value) => {
                 self.tag(14)?;
                 self.entity(value)
             }
-            Value::Tuple(values) => {
-                self.tag(15)?;
-                self.counts.array::<Value>(values.len())?;
-                self.count(values.len())?;
-                for value in values {
-                    self.value(value, depth + 1)?;
-                }
-                Ok(())
-            }
-            Value::Seq(value) => {
-                self.tag(16)?;
-                self.sequence(value, depth + 1)
-            }
-            Value::Record(fields) => {
-                self.tag(17)?;
-                self.counts
-                    .array::<AwbcRuntimeFieldSnapshot>(fields.len())?;
-                self.count(fields.len())?;
-                for field in fields {
-                    self.field(field.field)?;
-                    self.string(&field.name)?;
-                    self.value(&field.value, depth + 1)?;
-                }
-                Ok(())
-            }
-            Value::NominalRecord(value) => {
-                self.tag(18)?;
-                self.nominal_id(&value.type_id)?;
-                self.bytes(value.semantic_identity.as_bytes())?;
-                self.bytes(value.layout.as_bytes())?;
-                self.binding(value.type_instantiation.as_ref(), depth + 1)?;
-                self.counts
-                    .array::<AwbcRuntimeNominalFieldSnapshot>(value.fields.len())?;
-                self.count(value.fields.len())?;
-                for field in &value.fields {
-                    self.field(field.field)?;
-                    self.value(&field.value, depth + 1)?;
-                }
-                Ok(())
-            }
-            Value::Opaque(value) => {
-                self.tag(19)?;
-                self.opaque_header(
-                    &value.producer,
-                    value.semantic_identity,
-                    value.value_class,
-                    value.persistence,
-                )?;
-                self.counts.array::<Value>(1)?;
-                self.value(&value.payload, depth + 1)
-            }
-            Value::Reduction(value) => {
-                self.tag(20)?;
-                self.opaque_owner(&value.owner)?;
-                self.counts.array::<Value>(1)?;
-                self.value(&value.state, depth + 1)?;
-                self.counts
-                    .array::<AwbcRuntimeCommandSnapshot>(value.commands.len())?;
-                self.count(value.commands.len())?;
-                for command in &value.commands {
-                    self.constructor(&command.constructor)?;
-                    self.target(&command.target)?;
-                    self.counts.array::<Value>(1)?;
-                    self.value(&command.payload, depth + 1)?;
-                }
-                Ok(())
-            }
-            Value::Agent(value) => {
-                self.tag(21)?;
-                self.agent(value, depth)
-            }
-            Value::Variant {
-                owner,
-                ordinal,
-                name,
-                type_instantiation,
-                payload,
-            } => {
-                self.tag(22)?;
-                self.variant_owner(owner)?;
-                self.u32(*ordinal)?;
-                self.string(name)?;
-                self.binding(type_instantiation.as_ref(), depth + 1)?;
-                self.boolean(payload.is_some())?;
-                if let Some(payload) = payload {
-                    self.counts.array::<Value>(1)?;
-                    self.value(payload, depth + 1)?;
-                }
-                Ok(())
-            }
-            Value::NeedHandle(_) => Err(Error::RuntimeCarrier {
-                kind: "Need handle",
-                offset: self.length,
-            }),
-            Value::Callable(_) => Err(Error::RuntimeCarrier {
-                kind: "callable",
-                offset: self.length,
-            }),
         }
     }
 
-    fn iterator(
-        &mut self,
-        iterator: &AwbcRuntimeIteratorSnapshot,
-        depth: usize,
-    ) -> Result<(), Error> {
-        match iterator {
-            AwbcRuntimeIteratorSnapshot::Values { items } => {
+    fn iterator(&mut self, iterator: RuntimeIteratorView<'_>, depth: usize) -> Result<(), Error> {
+        match iterator.kind() {
+            RuntimeIteratorKind::Values(items) => {
                 self.tag(0)?;
                 self.counts.array::<Value>(items.len())?;
                 self.count(items.len())?;
-                for item in items {
+                for item in items.iter() {
                     self.value(item, depth + 1)?;
                 }
                 Ok(())
             }
-            AwbcRuntimeIteratorSnapshot::Range(value) => {
+            RuntimeIteratorKind::Range(value) => {
                 self.tag(1)?;
                 self.cursor(value)
             }
-            AwbcRuntimeIteratorSnapshot::Witness { .. } => Err(Error::RuntimeCarrier {
+            RuntimeIteratorKind::Witness(_) => Err(Error::RuntimeCarrier {
                 kind: "iterator witness",
                 offset: self.length,
             }),
