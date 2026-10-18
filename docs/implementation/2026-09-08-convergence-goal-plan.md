@@ -16742,3 +16742,46 @@ under the user's instruction that intermediate commits need not be runnable.
 R1219's missing Core LifetimeSet projection remains unresolved. Continue aggregate
 admission, the actual operation/source/factory, Native/AWBC requests and host
 scope/storage integration; the complete convergence goal remains active.
+
+### 2026-10-19 — aggregate registry replay-header admission
+
+Published checkpoint f4665c3b437eacd3b605ab141f48095305069be0 has been verified
+against the fetched/advertised main ref, reviewed raw patch and five blobs, all
+3854 frozen inputs and the empty index. The held fourteen plus three remain.
+
+The next change charges the complete replay-data header into the existing
+ValueResourceAdmission byte sink: canonical scope/key strings and counts,
+32-byte original semantic type, optional invocation tag/context and ordered
+declaration effect rows. The same bank then admits the actual value. It adds no
+fake value node or independent byte quota. Both capture and replay use this one
+header rule before copying. Existing unencoded metadata roles retain their
+contract; encoded metadata explicitly consumes the enclosing byte bank. This
+is header admission, not a new public packet reader or complete program codec.
+
+R1238 catalogs all 1709 Core library cases, preserving all predecessor 1707.
+R1239 fails: 425 executed, 424 passed, one failed, 1284 not run under fail-fast,
+5.637s, actual 100. The new binding fixture used invalid bare effect name log;
+it is repaired to log.write and its exact header lengths are corrected. R1240
+then passes all 1709 with no exclusions, 18.043s, actual 0, no-fail-fast. Its exact
+terminal set and all 3854 immutable registry-update-bytes-final frozen inputs
+are verified. The two new cases cover ASCII/root/Unicode exact total bytes and
+one-byte-short refusal, aggregate multi-packet capture/replay quotas, binding
+header bytes before original type resolution, and sticky failure. Assertions,
+budgets, counts and existing coverage are retained. R1241 Core/all-target/
+all-feature/locked Clippy passes, 1m16s, actual 0, with all frozen inputs audited.
+Three-path rustfmt and owned whitespace pass. R1236's unchanged non-Clone API
+compile-fail evidence is reused, not relabeled as a new run.
+
+Actual R1237 reverse-tree names and resolved metadata agree on all 53 workspace
+consumers, including the root package arcweft; 99 manifest/lock inputs remain
+unchanged. This private metadata-counting extension has only the replay-data
+owner as its new consumer. It does not claim a new full-consumer execution,
+workspace frozen lint, wasm, Tier2 or Native/Web parity. R1233 graph/structure
+evidence is reused: no new type, export, dependency edge, feature or unsafe.
+Current ownership measurements are value_encoding.rs 65043 bytes / 1766 LOC
+(base 63599 / 1724), replay owner 6680 / 172 (5161 / 138), dedicated tests
+16037 / 459 (10954 / 324). The 1766-line owner remains the cohesive iterative
+value/resource admission algorithm; these private methods reuse its canonical
+writer, sink and sticky work state without a second counter or I/O concern.
+The concrete CLI Core projection failure and actual operation/source/factory,
+Native/AWBC request, active-scope/storage and full-goal acceptance remain open.

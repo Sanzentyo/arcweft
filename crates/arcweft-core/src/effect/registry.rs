@@ -6,6 +6,7 @@
 
 use arcweft_id::{EffectId, LifetimeRegistryKey};
 
+use crate::entry::schema::value_encoding::ValueAdmissionOrigin;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::task::RuntimeProgramOwner;
@@ -47,7 +48,13 @@ impl RuntimeRegistryStateUpdate {
         value: &RuntimeValue,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<Self, AwbcRuntimeValueSnapshotError> {
-        Self::admit_key(key, admission)?;
+        Self::admit_header(
+            key,
+            expected,
+            binding,
+            ValueAdmissionOrigin::Live,
+            admission,
+        )?;
         admission.validate_typed_in_invocation(value, expected, binding)?;
         let program = admission
             .program_owner()
@@ -109,7 +116,13 @@ impl RuntimeRegistryStateUpdate {
             Err(error) => Err(error),
         };
         result.inspect_err(|error| admission.retain_failure(error.clone()))?;
-        Self::admit_key(&self.key, admission)?;
+        Self::admit_header(
+            &self.key,
+            self.expected,
+            self.binding.as_ref(),
+            ValueAdmissionOrigin::InertSnapshot,
+            admission,
+        )?;
         admission.validate_typed_snapshot_in_invocation(
             &self.value,
             self.expected,
@@ -121,16 +134,37 @@ impl RuntimeRegistryStateUpdate {
             .inspect_err(|error| admission.retain_failure(error.clone()))
     }
 
-    fn admit_key(
+    /// Version-one header: scope name, ordered key names, original semantic
+    /// type, optional invocation context and ordered declaration effect rows.
+    /// Strings and counts use the existing canonical grammar. The executable
+    /// lease is supplied by the enclosing original-program context, not bytes.
+    fn admit_header(
         key: &LifetimeRegistryKey,
+        expected: RuntimeSemanticTypeId,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        origin: ValueAdmissionOrigin,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        admission.validate_metadata_string(key.scope().as_str())?;
-        admission.validate_metadata_collection(key.segments().len())?;
-        for segment in key.segments() {
-            admission.validate_metadata_string(segment.as_str())?;
-        }
-        Ok(())
+        admission.admit_composite(origin, |_, resources| {
+            resources.encoded_metadata_string(key.scope().as_str())?;
+            resources.encoded_metadata_count(key.segments().len())?;
+            for segment in key.segments() {
+                resources.encoded_metadata_string(segment.as_str())?;
+            }
+            resources.encoded_metadata_fixed(expected.as_bytes())?;
+            resources.encoded_metadata_fixed(&[u8::from(binding.is_some())])?;
+            if let Some(binding) = binding {
+                resources.encoded_metadata_fixed(binding.context().as_bytes())?;
+                resources.encoded_metadata_count(binding.source_rows().len())?;
+                for row in binding.source_rows() {
+                    resources.encoded_metadata_count(row.len())?;
+                    for effect in row {
+                        resources.encoded_metadata_string(effect.as_str())?;
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 }
 

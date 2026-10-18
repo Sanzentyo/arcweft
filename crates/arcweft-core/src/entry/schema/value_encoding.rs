@@ -623,6 +623,48 @@ impl ValueResourceAdmission {
         result
     }
 
+    /// Counts an enclosing owner's actual canonical metadata header in the
+    /// same byte bank as its value payloads, without fabricating value nodes.
+    pub(crate) fn encoded_metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
+        self.metadata_string(text)?;
+        self.encode_metadata(|writer| writer.string(text))
+    }
+
+    pub(crate) fn encoded_metadata_count(
+        &mut self,
+        count: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.work.collection(count)?;
+        self.work.charge(0)?;
+        self.encode_metadata(|writer| writer.len(count))
+    }
+
+    pub(crate) fn encoded_metadata_fixed(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<(), RuntimeSchemaError> {
+        self.work.charge(0)?;
+        self.encode_metadata(|writer| writer.extend(bytes))
+    }
+
+    fn encode_metadata(
+        &mut self,
+        encode: impl FnOnce(
+            &mut CanonicalWriter<'_, super::CanonicalCountingSink>,
+        ) -> Result<(), RuntimeSchemaError>,
+    ) -> Result<(), RuntimeSchemaError> {
+        let limits = self.work.limits();
+        let result = encode(&mut CanonicalWriter {
+            sink: &mut self.sink,
+            max_encoded_bytes: limits.max_encoded_bytes,
+            max_string_bytes: Some(limits.max_string_bytes),
+        });
+        if let Err(error) = &result {
+            self.work.retain_failure(error.clone());
+        }
+        result
+    }
+
     pub(crate) fn partial_record(
         &mut self,
         header: &crate::value::RuntimePlaceRecordHeader,

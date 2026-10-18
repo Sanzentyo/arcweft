@@ -322,3 +322,138 @@ fn registry_update_key_bounds_are_inclusive_and_precede_unknown_type_resolution(
         assert_eq!(bank.validate(&RuntimeValue::Unit), Err(error));
     }
 }
+
+#[test]
+fn registry_update_header_and_values_share_exact_encoded_byte_limits() {
+    for owner in owners() {
+        // Canonical length-prefixed UTF-8 names, count, 32-byte type, optional
+        // binding tag, and the two-byte Bool value. Unicode counts UTF-8 bytes.
+        for (key, bytes) in [
+            (key("flow", &["seen"]), 46),
+            (key("persistent", &[]), 47),
+            (key("章", &["旗"]), 44),
+        ] {
+            let limits = RuntimeSchemaLimits {
+                max_encoded_bytes: bytes,
+                ..RuntimeSchemaLimits::engine_default()
+            };
+            let packet = RuntimeRegistryStateUpdate::try_copy(
+                &key,
+                semantic(1),
+                None,
+                &RuntimeValue::Bool(true),
+                &mut RuntimeRetainedValueAdmission::for_program(owner.clone(), limits),
+            )
+            .unwrap();
+            assert_eq!(
+                packet
+                    .materialize(&mut RuntimeRetainedValueAdmission::for_program(
+                        owner.clone(),
+                        limits,
+                    ))
+                    .unwrap(),
+                RuntimeValue::Bool(true)
+            );
+            let short = RuntimeSchemaLimits {
+                max_encoded_bytes: bytes - 1,
+                ..limits
+            };
+            let error =
+                AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                });
+            let mut capture = RuntimeRetainedValueAdmission::for_program(owner.clone(), short);
+            assert_eq!(
+                RuntimeRegistryStateUpdate::try_copy(
+                    &key,
+                    semantic(1),
+                    None,
+                    &RuntimeValue::Bool(false),
+                    &mut capture,
+                )
+                .unwrap_err(),
+                error
+            );
+            assert_eq!(capture.validate(&RuntimeValue::Unit), Err(error.clone()));
+            let mut replay = RuntimeRetainedValueAdmission::for_program(owner.clone(), short);
+            assert_eq!(packet.materialize(&mut replay), Err(error.clone()));
+            assert_eq!(replay.validate(&RuntimeValue::Unit), Err(error.clone()));
+
+            let pair = RuntimeSchemaLimits {
+                max_encoded_bytes: 2 * bytes,
+                ..limits
+            };
+            let mut bank = RuntimeRetainedValueAdmission::for_program(owner.clone(), pair);
+            for _ in 0..2 {
+                RuntimeRegistryStateUpdate::try_copy(
+                    &key,
+                    semantic(1),
+                    None,
+                    &RuntimeValue::Bool(true),
+                    &mut bank,
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                RuntimeRegistryStateUpdate::try_copy(
+                    &key,
+                    semantic(1),
+                    None,
+                    &RuntimeValue::Bool(true),
+                    &mut bank,
+                )
+                .unwrap_err(),
+                error
+            );
+            let mut bank = RuntimeRetainedValueAdmission::for_program(owner.clone(), pair);
+            for _ in 0..2 {
+                assert_eq!(
+                    packet.materialize(&mut bank).unwrap(),
+                    RuntimeValue::Bool(true)
+                );
+            }
+            assert_eq!(packet.materialize(&mut bank), Err(error));
+        }
+    }
+}
+
+#[test]
+fn registry_update_bounds_binding_header_before_its_original_type_relation() {
+    let binding = RuntimeFunctionEffectInstantiation::from_source_rows(
+        semantic(1),
+        Box::new([std::iter::once(EffectId::parse("log.write").unwrap()).collect()]),
+    );
+    for owner in owners() {
+        for bytes in [87, 90] {
+            let limits = RuntimeSchemaLimits {
+                max_encoded_bytes: bytes,
+                ..RuntimeSchemaLimits::engine_default()
+            };
+            let mut bank = RuntimeRetainedValueAdmission::for_program(owner.clone(), limits);
+            let error = RuntimeRegistryStateUpdate::try_copy(
+                &key("flow", &["seen"]),
+                semantic(1),
+                Some(&binding),
+                &RuntimeValue::Bool(true),
+                &mut bank,
+            )
+            .unwrap_err();
+            if bytes == 87 {
+                assert_eq!(
+                    error,
+                    AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
+                        budget: "encoded_bytes"
+                    },)
+                );
+            } else {
+                // All 88 header + 2 value bytes fit, but Bool is not the original
+                // function declaration required by this retained invocation.
+                assert!(matches!(
+                    error,
+                    AwbcRuntimeValueSnapshotError::ProgramType(_)
+                ));
+            }
+            assert_eq!(bank.validate(&RuntimeValue::Unit), Err(error));
+        }
+    }
+}
