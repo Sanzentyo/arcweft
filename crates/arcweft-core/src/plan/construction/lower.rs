@@ -3683,12 +3683,16 @@ impl RuntimePlanBodyConstruction<'_> {
                     pending: self.lower_line_effects(pending)?,
                 }
             }
-            RuntimeFlowOpSeed::HostCall { binding, target } => FlowOp::HostCall {
-                binding: binding
+            RuntimeFlowOpSeed::HostCall { binding, target } => {
+                let binding = binding
                     .map(|binding| self.lower_pattern_seed(binding))
-                    .transpose()?,
-                target: self.lower_host_call_target(target)?,
-            },
+                    .transpose()?;
+                let target = self.lower_host_call_target(target)?;
+                if let Some(binding) = &binding {
+                    require_same("host call binding", target.result, binding.ty())?;
+                }
+                FlowOp::HostCall { binding, target }
+            }
             RuntimeFlowOpSeed::ApplyFunction {
                 callee,
                 args,

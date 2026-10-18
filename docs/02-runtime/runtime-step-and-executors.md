@@ -285,6 +285,17 @@ signal, or metric side effects outside `arcweft-core`.
 
 ## Host requests
 
+Direct Host calls retain their original producer coordinate, request identity,
+source-ordered positional/named/spread arguments, result type, mode and
+determinism in the same target grammar through construction and admission.
+An optional result binding must have that exact admitted result type. A mismatch
+rejects the body before publication and leaves construction terminally rejected.
+The private version-1 Source codec admits the complete borrowed framing and
+aggregate argument/value storage before reconstruction. Decoding requires a
+real reservation from the receiving builder; an ordinal or equal task key does
+not grant another program's construction handle. Source carries definitions;
+the actual builder and common executable seal issue the completed task identity.
+
 ```rust
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,

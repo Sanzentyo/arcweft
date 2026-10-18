@@ -17545,3 +17545,95 @@ definitions through common source preflight and the real builder rather than
 introducing another target model or copying a completed expected key. This Host
 codec is a next action, not an implemented or accepted source family. Real
 registry execution and the other retained goal requirements remain incomplete.
+
+## 2026-10-19 — Original Host Source grammar and result-binding admission
+
+Inspected main a20a89026b317b42bfe623f057a19b426eda9028; the fourteen held
+tracked paths and three held untracked items remain untouched. R1314 compiled
+the default-feature non-CLI reverse closure in 18m13s, then test discovery
+reported Windows error 87 launching the Bundle resource-codec binary. Its
+original wrapper/terminal receipt became unavailable; retain the observed
+failure without inventing an exit code. R1316 directly lists that same original
+binary successfully, actual 0. R1317 repeats the unchanged selection, succeeds,
+and retains the initial discovery failure: 6226 catalogued, 6210 selected and
+16 existing ignored cases excluded. The selected package set has 52 members;
+49 have named host tests. arcweft, bundle-assets and render-web have no named
+tests on this host. CLI and target-specific execution are separate acceptance.
+
+R1318 executes the complete selected catalog, actual 100: 6210 run, 6208 pass,
+two fail, 16 skip, 717.430s. Exact terminal names and all 3871 frozen inputs are
+audited unchanged. The failures in RuntimePlan's awbc_product_parity suite are:
+
+- `decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`
+- `native_selected_need_uses_the_completed_program_task_plan_key`
+
+They still observe request-only producer identity instead of the completed
+program's task identity. Do not copy the expected raw digest into a spec or
+exclude these cases; the complete Source/consumer migration remains required.
+The guard regressions, API compile suites and other selected consumers pass.
+This failed run is not relabelled a full reverse-consumer pass. Host Source
+drafts were deliberately unregistered during it, so they are not covered by it.
+
+The existing RuntimeHostCallTarget grammar now has a private version-1 Source
+codec. It retains the original producer contract/site and construction ordinal,
+public ID, capability, operation, independent optional host contract, result
+type, mode, determinism, optional binding and every source-ordered argument's
+role identity, kind, name and complete expression frame. Positional, named and
+spread arguments use the existing argument grammar; there is no reconstructed
+request key, alternate Host target, invented program/scope or launch proof.
+
+Borrowed metadata inspection admits all framing, names, argument arrays and
+nested graph/storage counts before seed construction. Materialization uses the
+receiving Source builder's actual type namespace, expression handles and real
+task reservation, and checks both its issuer and exact ordinal. Equal completed
+keys do not authenticate foreign construction handles. The entire packet is
+rechecked with the current allowance before metadata/value reconstruction;
+child codecs and the same sticky semantic bank own their normal admission.
+Output appending requires pre-reserved capacity. All contract markers stay 1.
+
+Inspection also found that ordinary Host lowering admitted its result and
+optional binding independently. The actual scoped operation factory now
+requires their admitted types to agree, preserving its previous admission
+order. A mismatch returns the existing structured TypeMismatch, publishes no
+body and terminally poisons construction through the existing builder rule.
+The codec does not acquire a parallel semantic validator. The maintained Host
+request contract records this typed boundary.
+
+Six regressions are compiled but not yet executed. They restore sixteen Host
+mode/contract/binding/empty-argument combinations through actual declaration and
+function reservations, the original request endpoint and common executable
+seal; compare target data and keys; launch real native owning programs and
+check ordered arguments and their actual completed producer keys. A separate
+case retains the actual Engine across Host suspension and reply, then requires
+the original continuation result. Rejection cases cover wrong result/binding
+types before body publication, foreign/equal-key and reordered reservations,
+exact/one-over aggregate quotas and sticky failure, every truncation, bad tags,
+type/task references, UTF-8, trailing input and output capacity. No assertion,
+test amount, runtime budget, capture or copy condition is weakened.
+
+R1319 initial Core all-target/all-feature locked Clippy fails, actual 101, for
+two new-test output accesses: Host calls live under output.requests. R1320
+fails, actual 101, for a new-test access to the private producer plan field;
+the existing plan() accessor is now used. R1322 on the final corrected inputs
+passes, actual 0, 41.04s. All 3875 inputs match that frontend freeze. R1321
+canonical structure gate passes, actual 0. Its test-accessor spelling change
+does not alter ownership; unchanged graph/structure evidence is reused. These
+compile/lint results do not establish execution of the six new cases.
+
+Ownership review: source.rs 5334 bytes/132 LOC only registers the codec; the
+existing exhaustive scoped factory in lower.rs is 251303/5911 and retains the
+general result-binding rule. Host Source coordination/admission is 14619/383,
+its borrowed reader 6060/184 and counted writer 7429/206; focused tests are
+27568/746. The >300-line new coordinator/test growth owns this single Source,
+resource, issuer and actual execution boundary. No unrelated state cluster,
+dependency, I/O, unsafe, cloned authority or public splitting API is added.
+Core fan-in/out remains 31/7 (development 4/5); all 99 manifest/lock inputs and
+the resolved 53-package reverse closure are unchanged. Keep this coherent
+intermediate publication moving per the user's explicit commit preference;
+finish actual owner/consumer execution and current workspace checks next.
+
+The full goal remains active. This adds the ordinary HostAdapterTask Source
+leaf, not complete general Flow/function, Line/Entry or joint program Source.
+Complete those owners and the joint codec/public consumer switch, repair both
+selected-Need parity failures through that authority, and continue real registry
+execution, retained View, restore/replacement and all other retained acceptance.
