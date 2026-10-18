@@ -25,10 +25,10 @@ const PAYLOAD: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([35; 32
 const OPTION: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([36; 32]);
 const ENTITY: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([37; 32]);
 
-fn meter() -> TaskSemanticMeter {
+pub(in crate::plan::construction::source) fn meter() -> TaskSemanticMeter {
     TaskSemanticMeter::new(100_000_000, 100_000_000)
 }
-fn resources() -> ValueResourceAdmission {
+pub(in crate::plan::construction::source) fn resources() -> ValueResourceAdmission {
     ValueResourceAdmission::live(RuntimeSchemaLimits::engine_default())
 }
 fn limits() -> RuntimePatternSourceLimits {
@@ -102,7 +102,7 @@ fn fixture() -> (RuntimePlanBuilder, Vec<crate::plan::RuntimeLocalSeedId>) {
     (builder, locals)
 }
 
-fn frames(plan: &RuntimePlan) -> [Vec<u8>; 4] {
+pub(in crate::plan::construction::source) fn frames(plan: &RuntimePlan) -> [Vec<u8>; 4] {
     let mut bank = meter();
     let type_limits = RuntimeTypeSourceLimits {
         rows: 100,
@@ -157,7 +157,7 @@ fn frames(plan: &RuntimePlan) -> [Vec<u8>; 4] {
     result
 }
 
-fn declarations<'a>(
+pub(in crate::plan::construction::source) fn declarations<'a>(
     frames: &'a [Vec<u8>; 4],
     bank: &mut TaskSemanticMeter,
 ) -> crate::plan::declaration_sources::PreparedRuntimePlanDeclarationSources<'a> {

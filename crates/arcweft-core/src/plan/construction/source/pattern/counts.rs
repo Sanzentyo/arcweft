@@ -158,11 +158,19 @@ impl Counts {
             .ok_or(Error::Arithmetic)?;
         let encoding =
             super::encoding::scratch_bytes(f.nodes, f.literals).ok_or(Error::Arithmetic)?;
+        let declarations =
+            RuntimePattern::binding_declaration_scratch_bytes(f.nodes).ok_or(Error::Arithmetic)?;
         let lowering = crate::plan::construction::lower::RuntimePlanBodyConstruction::pattern_source_scratch_bytes(
             f.nodes, f.bindings, f.record_fields,
         ).ok_or(Error::Arithmetic)?;
         f.retained
-            .checked_add(prefix.max(decoding).max(encoding).max(lowering))
+            .checked_add(
+                prefix
+                    .max(decoding)
+                    .max(encoding)
+                    .max(lowering)
+                    .max(declarations),
+            )
             .ok_or(Error::Arithmetic)
     }
     pub(super) fn check(&self) -> Result<(), Error> {

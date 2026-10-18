@@ -50,6 +50,10 @@ pub struct RuntimePatternBindingDeclarations<'pattern> {
 }
 
 impl RuntimePattern {
+    pub(crate) fn binding_declaration_scratch_bytes(nodes: usize) -> Option<usize> {
+        nodes.checked_mul(size_of::<Visit<'_>>())
+    }
+
     #[must_use]
     pub fn binding_declarations(&self) -> RuntimePatternBindingDeclarations<'_> {
         RuntimePatternBindingDeclarations {

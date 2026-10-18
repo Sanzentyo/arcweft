@@ -8,7 +8,7 @@ mod decoding;
 mod encoding;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::pattern::RuntimePattern;
@@ -16,6 +16,7 @@ use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 use crate::value::{RuntimeLiteralSourceError, RuntimeLiteralSourceLimits};
 use counts::Counts;
 use cursor::{Cursor, Kind, Row, Tag, WireRest};
+pub(super) use encoding::PreparedRuntimePatternEncoding;
 
 const DOMAIN: &[u8] = b"arcweft.runtime.pattern-source.v1\0";
 

@@ -1827,40 +1827,9 @@ pub(crate) fn runtime_pattern_contains_binding(
     pattern: &RuntimePattern,
     local: RuntimeLocalDeclarationId,
 ) -> bool {
-    match pattern.kind() {
-        RuntimePatternKind::Or(alternatives) => alternatives
-            .first()
-            .is_some_and(|pattern| runtime_pattern_contains_binding(pattern, local)),
-        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
-            binding.local() == local
-        }
-        RuntimePatternKind::Whole { binding, pattern } => {
-            binding.local() == local || runtime_pattern_contains_binding(pattern, local)
-        }
-        RuntimePatternKind::Tuple(items) => items
-            .iter()
-            .any(|item| runtime_pattern_contains_binding(item, local)),
-        RuntimePatternKind::Record { fields, rest } => {
-            rest.binding()
-                .is_some_and(|binding| binding.local() == local)
-                || fields
-                    .iter()
-                    .any(|field| runtime_pattern_contains_binding(field.pattern(), local))
-        }
-        RuntimePatternKind::Sequence { items, rest } => {
-            rest.binding()
-                .is_some_and(|binding| binding.local() == local)
-                || items
-                    .iter()
-                    .any(|item| runtime_pattern_contains_binding(item, local))
-        }
-        RuntimePatternKind::Variant { payload, .. } => payload
-            .as_deref()
-            .is_some_and(|pattern| runtime_pattern_contains_binding(pattern, local)),
-        RuntimePatternKind::Discard
-        | RuntimePatternKind::Literal(_)
-        | RuntimePatternKind::Entity(_) => false,
-    }
+    pattern
+        .binding_declarations()
+        .any(|binding| binding.local() == local)
 }
 
 /// Borrowed handle destination preview for dialogue result publication. The

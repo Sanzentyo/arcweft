@@ -49,6 +49,9 @@ impl PreparedRuntimePatternEncoding<'_> {
     pub(in crate::plan) const fn elements(&self) -> usize {
         self.footprint.elements
     }
+    pub(in crate::plan) const fn node_count(&self) -> usize {
+        self.footprint.nodes
+    }
     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
         let remaining = output.capacity() - output.len();
         if remaining < self.encoded_bytes {

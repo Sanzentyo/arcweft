@@ -1688,6 +1688,13 @@ impl Eq for RuntimeLocalSeedId {}
 pub struct RuntimeFunctionSiteSeedId {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     site: RuntimeFunctionSiteId,
+    signature: Arc<RuntimeFunctionSiteSeedSignature>,
+}
+
+/// Immutable ABI facts issued once with the original construction handle.
+/// Reusing a function reference shares this storage, including effect labels.
+#[derive(Eq, PartialEq)]
+struct RuntimeFunctionSiteSeedSignature {
     input_sources: Box<[RuntimeFunctionInputSource]>,
     inputs: Box<[RuntimePlanTypeId]>,
     result: RuntimePlanTypeId,
@@ -1714,12 +1721,22 @@ impl RuntimeFunctionSiteSeedId {
         Self {
             issuer: Arc::clone(issuer),
             site,
-            input_sources,
-            inputs,
-            result,
-            body_kind,
-            effects,
+            signature: Arc::new(RuntimeFunctionSiteSeedSignature {
+                input_sources,
+                inputs,
+                result,
+                body_kind,
+                effects,
+            }),
         }
+    }
+
+    pub(in crate::plan::construction) fn source_signature_storage_bytes(
+        inputs: usize,
+    ) -> Option<usize> {
+        inputs
+            .checked_mul(size_of::<RuntimeFunctionInputSource>() + size_of::<RuntimePlanTypeId>())?
+            .checked_add(size_of::<RuntimeFunctionSiteSeedSignature>() + 2 * size_of::<usize>())
     }
 
     pub(super) fn resolve(
@@ -1735,11 +1752,11 @@ impl RuntimeFunctionSiteSeedId {
     )> {
         Arc::ptr_eq(&self.issuer, issuer).then_some((
             self.site,
-            self.input_sources.as_ref(),
-            self.inputs.as_ref(),
-            self.result,
-            self.body_kind,
-            &self.effects,
+            self.signature.input_sources.as_ref(),
+            self.signature.inputs.as_ref(),
+            self.signature.result,
+            self.signature.body_kind,
+            &self.signature.effects,
         ))
     }
 }
@@ -1757,15 +1774,103 @@ impl PartialEq for RuntimeFunctionSiteSeedId {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.issuer, &other.issuer)
             && self.site == other.site
-            && self.input_sources == other.input_sources
-            && self.inputs == other.inputs
-            && self.result == other.result
-            && self.body_kind == other.body_kind
-            && self.effects == other.effects
+            && self.signature == other.signature
     }
 }
 
 impl Eq for RuntimeFunctionSiteSeedId {}
+
+#[cfg(test)]
+mod function_handle_tests {
+    use super::*;
+    use crate::plan::{
+        RuntimeFunctionDefinitionIdentity, RuntimeFunctionInputOrigin,
+        RuntimeFunctionInputTransfer, RuntimeFunctionParameterIdentity,
+        RuntimeFunctionParameterPassing, RuntimeFunctionSemanticRole,
+        RuntimeLocalDeclarationSource, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimeValueOwnershipRequirement,
+    };
+
+    #[test]
+    fn issued_function_aliases_share_the_original_abi_and_release_it_after_last_use() {
+        let mut builder = RuntimePlanBuilder::new();
+        let boolean = RuntimeSemanticTypeId::from_bytes([98; 32]);
+        let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([99; 32]);
+        let admitted = builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    boolean,
+                    RuntimePlanTypeProjection::Bool,
+                )],
+                [RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Parameter(parameter),
+                    boolean,
+                )],
+            )
+            .unwrap();
+        let local = admitted.local_ids()[0].clone();
+        let handle = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([100; 32]),
+                role: RuntimeFunctionSemanticRole::Ordinary,
+                function_type: None,
+                inputs: Box::new([RuntimeFunctionInputBindingSeed {
+                    transfer: RuntimeFunctionInputTransfer::Formal,
+                    origin: RuntimeFunctionInputOrigin::Parameter(parameter),
+                    source: RuntimeFunctionInputSource::Parameter {
+                        position: 0,
+                        passing: RuntimeFunctionParameterPassing::Value,
+                    },
+                    input_local: local.clone(),
+                    pattern: RuntimePatternSeed::new(
+                        boolean,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local,
+                        },
+                    ),
+                    ownership: RuntimeValueOwnershipRequirement::Owned,
+                    unrestricted_bindings: Box::new([]),
+                }]),
+                result: boolean,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::try_from_effects([arcweft_id::EffectId::log_write()])
+                    .unwrap(),
+            })
+            .unwrap();
+        let weak = Arc::downgrade(&handle.signature);
+        let aliases = (0..128).map(|_| handle.clone()).collect::<Vec<_>>();
+        assert_eq!(weak.strong_count(), 129);
+        for alias in &aliases {
+            assert_eq!(alias, &handle);
+            assert!(Arc::ptr_eq(&alias.signature, &handle.signature));
+            assert_eq!(
+                alias.signature.inputs.as_ptr(),
+                handle.signature.inputs.as_ptr()
+            );
+            assert_eq!(
+                alias.signature.effects.as_slice()[0].as_str().as_ptr(),
+                handle.signature.effects.as_slice()[0].as_str().as_ptr()
+            );
+        }
+        drop(handle);
+        builder
+            .define_function_site_seed(
+                &aliases[0],
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        boolean,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+                    ))]),
+                }),
+            )
+            .unwrap();
+        assert_eq!(builder.finish().unwrap().function_sites().len(), 1);
+        drop(aliases);
+        assert!(weak.upgrade().is_none());
+    }
+}
 
 /// A construction-only handle for one builder-owned formatter occurrence.
 #[derive(Clone)]

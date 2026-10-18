@@ -781,6 +781,30 @@ pub struct RuntimePlanBuilder {
 }
 
 impl RuntimePlanBuilder {
+    /// Logical signature storage for original function source admission.
+    /// Input patterns and effect-label payloads are counted by their owners.
+    pub(in crate::plan::construction) fn function_source_storage_bytes(
+        rows: usize,
+        inputs: usize,
+    ) -> Option<usize> {
+        let rows = rows.checked_mul(
+            size_of::<ReservedFunctionSite>()
+                + size_of::<RuntimeFunctionSiteSeedId>()
+                + size_of::<super::RuntimeFunctionSite>()
+                + 2 * size_of::<usize>()
+                + RuntimeFunctionSiteSeedId::source_signature_storage_bytes(0)?,
+        )?;
+        let inputs = inputs.checked_mul(
+            size_of::<RuntimeFunctionInputBindingSeed>()
+                + size_of::<RuntimeFunctionInputBinding>()
+                + size_of::<RuntimeFunctionInputSource>()
+                + size_of::<RuntimePlanTypeId>()
+                + size_of::<RuntimeLocalDeclarationId>()
+                + 4 * size_of::<usize>(),
+        )?;
+        rows.checked_add(inputs)
+    }
+
     /// Supplies real callable ingress for tests that exercise a standalone
     /// pattern/env with externally provided values. This is explicit fixture
     /// construction, never a production orphan-slot fallback.
@@ -1249,13 +1273,13 @@ impl RuntimePlanBuilder {
         if reserved.effects != *effects {
             return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch { site: site_id });
         }
-        let inputs = reserved.inputs.clone();
+        let inputs = &reserved.inputs;
         let body_context = self.function_body_context(reserved.function_type)?;
         let lowered = match body {
             RuntimeFunctionSiteBodySeed::Expression(body) => {
                 let body = body_context.lower_expression(body)?;
                 require_reserved_result("function result", result, body.ty())?;
-                body_context.validate_function_body_locals(&body, &inputs)?;
+                body_context.validate_function_body_locals(&body, inputs)?;
                 RuntimeFunctionSiteBody::Expression(body)
             }
             RuntimeFunctionSiteBodySeed::Executable(body) => {
@@ -1266,7 +1290,7 @@ impl RuntimePlanBuilder {
                     });
                 }
                 let ops = body_context.lower_flow_ops(body.ops.into_vec())?;
-                let mut scope = function_input_scope(&inputs);
+                let mut scope = function_input_scope(inputs);
                 body_context.validate_flow_operation_locals_with_usage(&ops, &mut scope)?;
                 RuntimeFunctionSiteBody::Executable(RuntimeExecutableBody::new(
                     body_effects,
@@ -3050,30 +3074,57 @@ impl RuntimePlanBuilder {
             });
         }
         let site = self.reserve_function_site_seed(declaration)?;
-        let (function_site, ..) = site
-            .resolve(&self.issuer)
-            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
         self.define_function_site_seed(&site, seed::RuntimeFunctionSiteBodySeed::Executable(body))?;
-        let row = self
-            .function_sites
-            .get(function_site.get().get() as usize - 1)
-            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
-        let params = row
-            .inputs
-            .iter()
-            .filter(|input| matches!(input.source(), RuntimeFunctionInputSource::Parameter { .. }))
-            .map(RuntimeFunctionInputBinding::input_local)
-            .collect::<Box<[_]>>();
-        push_row(
-            &mut self.flows,
-            ReservedFlowRoot {
-                id,
-                function_site,
-                params,
-            },
-            RuntimePlanTable::Flows,
-        )?;
+        self.bind_flow_function_seed(id, &site)?;
         Ok(site)
+    }
+
+    /// Joins an original Flow identity to its actual reserved function. The
+    /// common seal still requires the complete body and invocation schema.
+    pub(in crate::plan::construction) fn bind_flow_function_seed(
+        &mut self,
+        id: FlowRuntimeId,
+        site: &RuntimeFunctionSiteSeedId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = (|| {
+            let (function_site, ..) = site
+                .resolve(&self.issuer)
+                .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+            let row = self
+                .function_sites
+                .get(function_site.get().get() as usize - 1)
+                .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+            if row.role != super::RuntimeFunctionSemanticRole::Flow
+                || row.body_kind != RuntimeFunctionSiteBodyKind::Executable
+            {
+                return Err(RuntimePlanBuildError::InvalidFlowFunction {
+                    flow: id.canonical_label(),
+                });
+            }
+            let params = row
+                .inputs
+                .iter()
+                .filter(|input| {
+                    matches!(input.source(), RuntimeFunctionInputSource::Parameter { .. })
+                })
+                .map(RuntimeFunctionInputBinding::input_local)
+                .collect::<Box<[_]>>();
+            push_row(
+                &mut self.flows,
+                ReservedFlowRoot {
+                    id,
+                    function_site,
+                    params,
+                },
+                RuntimePlanTable::Flows,
+            )?;
+            Ok(())
+        })();
+        if result.is_err() {
+            self.poisoned.store(true, Ordering::Release);
+        }
+        result
     }
 
     fn resolve_function_locals(
