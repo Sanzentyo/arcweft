@@ -445,6 +445,8 @@ pub enum RuntimePlanBuildError {
     ForeignTraitMethodSeed,
     #[error("invalid iterator witness signature at {context}")]
     InvalidIteratorWitness { context: &'static str },
+    #[error("standard map result {result:?} has no complete original sequence-sum consumption")]
+    InvalidStandardMapConsumption { result: RuntimeLocalDeclarationId },
     #[error("AwaitMany concurrency limit must be greater than zero")]
     ZeroAwaitManyLimit,
     #[error("invalid task producer at {context}: {source}")]

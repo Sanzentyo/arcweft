@@ -6171,20 +6171,10 @@ fn resolve_flow_tail_holes(
                     body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
                 });
             }
-            RuntimeFlowOpSeed::StandardMap {
-                family,
-                source,
-                mapping,
-                result,
-                body,
-            } => {
-                output.push(RuntimeFlowOpSeed::StandardMap {
-                    family,
-                    source,
-                    mapping,
-                    result,
-                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
-                });
+            RuntimeFlowOpSeed::StandardMap(control) => {
+                output.push(RuntimeFlowOpSeed::StandardMap(control.try_map_bodies(
+                    |body| resolve_flow_tail_holes(body, child_ids, child_cursor, resolved),
+                )?));
             }
             RuntimeFlowOpSeed::While { condition, body } => {
                 output.push(RuntimeFlowOpSeed::While {

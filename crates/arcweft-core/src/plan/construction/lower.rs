@@ -3827,16 +3827,11 @@ impl RuntimePlanBodyConstruction<'_> {
                     .collect::<Result<_, _>>()?,
                 body: self.lower_flow_ops(body)?,
             },
-            RuntimeFlowOpSeed::StandardMap {
-                family,
-                source,
-                mapping,
-                result,
-                body,
-            } => {
-                let (source, source_type) = self.resolve_local(&source)?;
-                let (mapping, mapping_type) = self.resolve_local(&mapping)?;
-                let (result, result_type) = self.resolve_local(&result)?;
+            RuntimeFlowOpSeed::StandardMap(control) => {
+                let family = control.family();
+                let (source, source_type) = self.resolve_local(control.source())?;
+                let (mapping, mapping_type) = self.resolve_local(control.mapping())?;
+                let (result, result_type) = self.resolve_local(control.result())?;
                 let (input, output) =
                     self.standard_map_item_projection(family, source_type, result_type)?;
                 match self.projection(mapping_type)? {
@@ -3845,13 +3840,30 @@ impl RuntimePlanBodyConstruction<'_> {
                     } if parameters.as_ref() == [input] && *result == output => {}
                     _ => return invalid_projection("standard map callback", mapping_type),
                 }
-                FlowOp::StandardMap(crate::plan::RuntimeStandardMapControl::new(
+                let (body, consumption) = control.into_body_parts();
+                let mut control = crate::plan::RuntimeStandardMapControl::new(
                     family,
                     source,
                     mapping,
                     result,
                     self.lower_flow_ops(body)?,
-                ))
+                );
+                if let Some(consumption) = consumption {
+                    let consumption = self.lower_flow_ops(consumption)?;
+                    let valid = super::super::sequence_sum::RuntimeSequenceSum::project(
+                        result,
+                        result_type,
+                        consumption.iter(),
+                    )
+                    .is_some_and(|sum| sum.skipped_ops == consumption.len());
+                    if !valid {
+                        return Err(RuntimePlanBuildError::InvalidStandardMapConsumption {
+                            result,
+                        });
+                    }
+                    control.append_sum(consumption);
+                }
+                FlowOp::StandardMap(control)
             }
             RuntimeFlowOpSeed::Scope { identity, body } => FlowOp::Scope {
                 identity,

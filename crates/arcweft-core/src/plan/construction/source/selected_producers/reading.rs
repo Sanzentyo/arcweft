@@ -7,7 +7,7 @@ use crate::task::{
     AssetLoadKind, CancelScopeId, HostCapabilityId, HostRestartPolicy, NeedProducerContractDigest,
     NeedProducerPlanError, NeedProducerRequestProjection, NeedProducerSiteDigest,
     NeedProducerTaskPlan, RuntimeHostArgumentTemplate, RuntimeRequestRoleIdentity, TaskClass,
-    TaskHost, TaskPolicy, TaskPriority,
+    TaskPolicy, TaskPriority,
 };
 
 pub(super) enum Request<'a> {

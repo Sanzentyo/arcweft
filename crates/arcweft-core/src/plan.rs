@@ -30,7 +30,9 @@ pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
 mod standard_map;
-pub use standard_map::{RuntimeStandardMapCompletion, RuntimeStandardMapControl};
+pub use standard_map::{
+    RuntimeStandardMapCompletion, RuntimeStandardMapControl, RuntimeStandardMapControlSeed,
+};
 mod pure_programs;
 pub(crate) mod sequence_sum;
 pub use pure_programs::RuntimePureProgramLookupError;

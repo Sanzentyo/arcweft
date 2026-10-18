@@ -134,6 +134,16 @@ An admitted fused kernel consumes one plan node but charges the original Map
 operation plus every owned continuation operation. If only mapping can batch,
 the same consuming suffix remains scheduled after the collection is bound.
 
+The complete Map schedule has one typed owner in construction and admitted
+phases. Construction retains original local handles, the mapping body and any
+owned Sum consumption. Body transformations preserve that boundary when their
+operation counts change. An explicit Sum source is definition data: the
+builder validates its entire consumption with the same sequence-Sum grammar
+used by ordinary normalization, against the actual result declaration. Missing
+consumption, another receiver, or an unmatched suffix is rejected before plan
+publication. This construction does not grant numeric-kernel admission; the
+runtime proofs and original callback/budget requirements above still apply.
+
 Numeric Map admission borrows the immutable source and every original whole
 formal before allocating physical argument storage. Its selected completion
 permits Sum only when the output domain fits i64 or conservative integer bounds

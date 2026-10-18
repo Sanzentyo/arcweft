@@ -126,13 +126,15 @@ pub(in crate::flow) fn admit_prefix_functions(
                 RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                     effects,
                     ops: vec![
-                        RuntimeFlowOpSeed::StandardMap {
-                            family: map.family().into(),
-                            source: frame.source.clone(),
-                            mapping: callable,
-                            result: frame.result.clone(),
-                            body,
-                        },
+                        RuntimeFlowOpSeed::StandardMap(
+                            arcweft_core::plan::RuntimeStandardMapControlSeed::collection(
+                                map.family().into(),
+                                frame.source.clone(),
+                                callable,
+                                frame.result.clone(),
+                                body,
+                            ),
+                        ),
                         RuntimeFlowOpSeed::ReturnExpr(local_seed(
                             result,
                             frame.result.clone(),

@@ -11,7 +11,7 @@ use crate::task::{
     AssetLoadKind, CancelScopeId, HostCapabilityId, HostRestartPolicy, NeedProducerContractDigest,
     NeedProducerFamily, NeedProducerRequestProjection, NeedProducerSiteDigest,
     NeedProducerTaskPlan, RuntimeHostArgumentTemplate, RuntimeRequestRoleIdentity, TaskClass,
-    TaskHost, TaskPolicy, TaskPriority,
+    TaskPolicy, TaskPriority,
 };
 use crate::value::{RuntimeEntityReference, RuntimeValue};
 

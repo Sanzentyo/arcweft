@@ -439,13 +439,7 @@ pub enum RuntimeFlowOpSeed {
         pattern: RuntimePatternSeed,
         expr: RuntimeExprSeed,
     },
-    StandardMap {
-        family: crate::value::RuntimeStandardMapFamily,
-        source: RuntimeLocalSeedId,
-        mapping: RuntimeLocalSeedId,
-        result: RuntimeLocalSeedId,
-        body: Vec<Self>,
-    },
+    StandardMap(super::super::RuntimeStandardMapControlSeed),
     /// Evaluates one source-ordered `fmt` operand in an inline failure
     /// boundary, then records its admitted value or recoverable failure.
     FormatOperandAttempt {
@@ -895,17 +889,14 @@ fn collect_control_flow_free_locals(
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) -> bool {
     match op {
-        RuntimeFlowOpSeed::StandardMap {
-            source,
-            mapping,
-            result,
-            body,
-            ..
-        } => {
-            push_free_local(source, bound, locals);
-            push_free_local(mapping, bound, locals);
-            collect_flow_ops_free_locals(body, bound, locals);
-            bound.push(result.clone());
+        RuntimeFlowOpSeed::StandardMap(control) => {
+            push_free_local(control.source(), bound, locals);
+            push_free_local(control.mapping(), bound, locals);
+            collect_flow_ops_free_locals(control.mapping_body(), bound, locals);
+            bound.push(control.result().clone());
+            if let Some(consumption) = control.consuming_body() {
+                collect_flow_ops_free_locals(consumption, bound, locals);
+            }
         }
         RuntimeFlowOpSeed::If {
             condition,
@@ -1040,7 +1031,7 @@ fn collect_terminal_or_effect_free_locals(
             effect.collect_free_locals(bound, locals);
         }
         RuntimeFlowOpSeed::Let { .. }
-        | RuntimeFlowOpSeed::StandardMap { .. }
+        | RuntimeFlowOpSeed::StandardMap(_)
         | RuntimeFlowOpSeed::FormatOperandAttempt { .. }
         | RuntimeFlowOpSeed::LetElse { .. }
         | RuntimeFlowOpSeed::Assign { .. }

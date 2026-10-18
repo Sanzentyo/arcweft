@@ -17359,3 +17359,75 @@ I/O is introduced. Keep the full goal active. General function/executable bodies
 Host/Line/Entry sources and the joint complete-program codec remain the next
 Source work; actual selected-Need runtime keys and the other goal acceptance
 requirements remain open.
+
+## 2026-10-19 — Complete Map schedules share the construction owner
+
+Inspected main ac3d77c121b08cf19c715887e9508ce1d029fa6d. The held fourteen
+tracked paths and three untracked items remain untouched. Supersedes only the
+prior pending final validation: R1297 Core all-target/all-feature locked Clippy
+passes, actual 0, 1m40s. R1298's stable five-owner all-feature library catalog
+passes, actual 0 in 8m11s, 2248 selected and zero excluded. R1299 executes that
+entire set: 2248 pass, zero fail/skip, 41.961s, actual 0. Exact terminal names
+and all 3869 frozen inputs are verified unchanged. This is a fresh complete
+five-owner library pass, not the earlier coverage union or all 53 consumers.
+The prior failed results remain retained. The three unused TaskHost imports
+found in the final lint output are removed with this next construction change.
+
+General executable/function Source has a real construction gap: admitted Map
+controls retain Collection or Sum completion and the entire original schedule,
+while the old construction variant carries only an unclassified body. A Sum
+cannot be re-entered directly through that contract. The one existing
+RuntimeStandardMapControl now has construction and admitted storage phases:
+original local handles/owned seed bodies, or admitted local IDs/shared immutable
+operations. Its runtime storage and behavior are unchanged. The old ad hoc seed
+variant is replaced directly; all compiler producers, free-local traversal and
+flow-tail resolution use this owner. No alternate admitted model is introduced.
+
+The construction owner can retain a complete Collection or a mapping/consumption
+Sum schedule. Transformations map the two bodies separately and recompute their
+boundary when lengths change. Free-local traversal binds the actual mapping
+result before visiting the consumption. The builder still resolves the original
+locals, callback ABI and both actual bodies. Explicit Sum input must match the
+same RuntimeSequenceSum projection as ordinary normalization, against the exact
+result declaration, and consume its entire suffix. Missing, foreign-receiver or
+partial consumption is a structured construction failure. No supplied marker
+issues numeric-kernel permission, task identity, scope/custody proof or result.
+Existing kernel, callback, ownership and budget proofs remain required.
+
+Two new regressions construct real callback/function/program owners and a full
+Vec mapping loop with its typed iterator, application and mutation schedule.
+They compare ordinary folding with explicit complete Source construction,
+including a body transformation that changes mapping-operation count; compare
+the completed bodies and executable keys; run the owning native programs and
+compare their result/counters. Invalid consumption is required to fail before
+publication. These cases are not yet behavioral acceptance until executed.
+
+R1300 Core and RuntimePlan all-target/all-feature locked check passes, actual 0,
+3m19s, on the initial production migration before adding the new test owner.
+R1301's five-owner catalog compilation reports four new-test imports from the
+wrong responsibility module. They now come from core::step. The original build
+is still finishing its other workers; retain its actual terminal receipt when
+available. R1302 is queued on the corrected inputs and the same stable library
+matrix. Do not call either current acceptance or restart a live process because
+observation timed out. Public-boundary workspace check/Clippy, consumer/API
+coverage and canonical structure validation remain required for this migration.
+The explicit intermediate-commit preference permits a reviewed checkpoint while
+those checks are pending; it does not waive final goal acceptance.
+
+Owner measurements: standard_map.rs is 8190 bytes/245 physical LOC and its
+focused new test owner is 12996/360. Existing plan.rs 54421/1582 receives the
+phase export; construction.rs 175158/4286 receives the structured error;
+lower.rs 250942/5903 retains the exhaustive scoped operation factory and common
+sum matcher. Seed grammar/free-local ownership remains in seed.rs 97970/2990.
+RuntimePlan final_flow.rs 442372/10343 changes only the existing tail-resolution
+case; standard_map.rs 16644/449 and function.rs 7119/151 remain the actual
+compiler schedule producers. The existing large coordinators stay cohesive for
+these narrow owner/producer migrations. No unrelated state cluster, dependency,
+I/O, unsafe or physical-splitting API is added. The >300-line new test fixture
+owns this one construction/execution/rejection boundary. Manifest/lock inputs
+are unchanged and the resolved reverse-consumer closure remains 53 packages.
+
+The active goal is not complete: finish validation, then general Flow/function,
+Host/Line/Entry Sources and joint complete-program codec/consumer migration.
+Actual selected-Need runtime key parity, real registry scope/store/read/cleanup/
+restore and all other retained goal requirements remain open.

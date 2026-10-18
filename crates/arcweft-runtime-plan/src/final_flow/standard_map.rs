@@ -137,13 +137,15 @@ impl FinalFlowLowerer<'_> {
         };
         let body =
             lower_standard_map_body(map.family(), map.iteration(), input, result_local.clone())?;
-        ops.push(RuntimeFlowOpSeed::StandardMap {
-            family: map.family().into(),
-            source: source_local,
-            mapping: callable,
-            result: result_local.clone(),
-            body,
-        });
+        ops.push(RuntimeFlowOpSeed::StandardMap(
+            arcweft_core::plan::RuntimeStandardMapControlSeed::collection(
+                map.family().into(),
+                source_local,
+                callable,
+                result_local.clone(),
+                body,
+            ),
+        ));
         ops.extend(self.apply_value_continuation(
             local_seed(&result, result_local, RuntimeLocalReadMode::Move),
             continuation,

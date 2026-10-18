@@ -6,7 +6,6 @@ use crate::plan::{FlowOp, RuntimePlan};
 use crate::task::semantic::TaskSemanticMeter;
 use crate::task::{
     AssetLoadKind, HostRestartPolicy, NeedProducerRequestProjection, RuntimeHostArgumentTemplate,
-    TaskHost,
 };
 
 pub(in crate::plan) struct EncodedRuntimeSelectedProducerSource {
