@@ -10,6 +10,7 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::task::semantic::TaskSemanticMeter;
 use std::sync::Mutex;
 
+pub(in crate::plan) mod callable_specializations;
 pub(in crate::plan) mod callable_states;
 pub(in crate::plan) mod functions;
 pub(in crate::plan) mod pattern;

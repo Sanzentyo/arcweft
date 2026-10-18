@@ -2,6 +2,8 @@
 //! incoming scope supplies reference admission; executable functions and task
 //! semantic proofs cannot be obtained from this data codec.
 
+pub(in crate::plan) mod formula;
+
 use super::source_codec::RuntimeTypeScopeRef;
 use super::{
     RuntimeBoundEffectReference, RuntimeFunctionTypeContract, RuntimeTypeBinder,
@@ -120,6 +122,7 @@ struct Counts {
 impl Counts {
     fn new(
         limits: RuntimeFunctionTypeSourceLimits,
+        default_graphs: usize,
     ) -> Result<Self, RuntimeFunctionTypeSourceError> {
         let mut counts = Self {
             limits,
@@ -127,8 +130,10 @@ impl Counts {
             nodes: 0,
             overrides: 0,
         };
-        // Both default graphs exist even if they have no decision nodes.
-        counts.add_storage(Decision::source_admission_storage(0).and_then(|n| n.checked_mul(2)))?;
+        // Every membership has a default graph even without decision nodes.
+        counts.add_storage(
+            Decision::source_admission_storage(0).and_then(|n| n.checked_mul(default_graphs)),
+        )?;
         Ok(counts)
     }
 
@@ -202,7 +207,7 @@ impl PreparedRuntimeFunctionTypeEncoding<'_> {
                 remaining,
             });
         }
-        let mut writer = Writer::new(Some(output), None, self.scope, self.limits)?;
+        let mut writer = Writer::new(Some(output), None, self.scope, Counts::new(self.limits, 2)?);
         writer.contract(self.contract)?;
         debug_assert_eq!(writer.length, self.encoded_bytes);
         debug_assert_eq!(writer.counts.storage, self.storage_bytes);
@@ -253,7 +258,7 @@ impl PreparedRuntimeFunctionTypeSource<'_> {
     ) -> Result<RuntimeFunctionTypeContract, RuntimeFunctionTypeSourceError> {
         meter.status()?;
         let result = (|| {
-            let mut reader = Reader::new(self.bytes, self.incoming, self.limits)?;
+            let mut reader = Reader::new(self.bytes, self.incoming, Counts::new(self.limits, 2)?);
             let contract = reader
                 .contract(true)?
                 .expect("retaining prepared function type source");
@@ -297,7 +302,8 @@ impl RuntimeFunctionTypeContract {
                 return Err(RuntimeTypeScopeError::ImpossiblePredicate.into());
             }
             let scope = FunctionScope::new(incoming, self.binder())?;
-            let mut writer = Writer::new(None, meter.as_deref_mut(), scope, limits)?;
+            let mut writer =
+                Writer::new(None, meter.as_deref_mut(), scope, Counts::new(limits, 2)?);
             writer.contract(self)?;
             let encoded_bytes = writer.length;
             let storage_bytes = writer.counts.storage;
@@ -352,7 +358,7 @@ impl RuntimeFunctionTypeContract {
     ) -> Result<PreparedRuntimeFunctionTypeSource<'a>, RuntimeFunctionTypeSourceError> {
         let incoming = incoming.into();
         limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
-        let mut reader = Reader::new(bytes, incoming, limits)?;
+        let mut reader = Reader::new(bytes, incoming, Counts::new(limits, 2)?);
         reader.contract(false)?;
         Ok(PreparedRuntimeFunctionTypeSource {
             bytes,
@@ -381,15 +387,15 @@ impl<'a, 'scope> Writer<'a, 'scope> {
         output: Option<&'a mut Vec<u8>>,
         meter: Option<&'a mut TaskSemanticMeter>,
         scope: FunctionScope<'scope>,
-        limits: RuntimeFunctionTypeSourceLimits,
-    ) -> Result<Self, RuntimeFunctionTypeSourceError> {
-        Ok(Self {
+        counts: Counts,
+    ) -> Self {
+        Self {
             output,
             meter,
             scope,
             length: 0,
-            counts: Counts::new(limits)?,
-        })
+            counts,
+        }
     }
 
     fn bytes(&mut self, bytes: &[u8]) -> Result<(), RuntimeFunctionTypeSourceError> {
@@ -461,17 +467,13 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    fn new(
-        bytes: &'a [u8],
-        incoming: RuntimeTypeScopeRef<'a>,
-        limits: RuntimeFunctionTypeSourceLimits,
-    ) -> Result<Self, RuntimeFunctionTypeSourceError> {
-        Ok(Self {
+    fn new(bytes: &'a [u8], incoming: RuntimeTypeScopeRef<'a>, counts: Counts) -> Self {
+        Self {
             bytes,
             offset: 0,
             incoming,
-            counts: Counts::new(limits)?,
-        })
+            counts,
+        }
     }
 
     fn take(&mut self, count: usize) -> Result<&'a [u8], RuntimeFunctionTypeSourceError> {

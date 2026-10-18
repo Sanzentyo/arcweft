@@ -3,7 +3,7 @@
 
 mod reading;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 mod writing;
 
 use super::RuntimePlanSourceConstruction;

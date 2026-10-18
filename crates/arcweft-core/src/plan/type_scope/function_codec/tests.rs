@@ -304,7 +304,11 @@ fn labels_are_validated_as_original_canonical_source_in_the_complete_preflight()
 fn both_membership_graphs_share_exact_node_override_and_storage_caps() {
     let (incoming, contract) = fixture();
     let bytes = encode(&contract, &incoming);
-    let mut count = Reader::new(&bytes, (&incoming).into(), limits()).unwrap();
+    let mut count = Reader::new(
+        &bytes,
+        (&incoming).into(),
+        Counts::new(limits(), 2).unwrap(),
+    );
     count.contract(false).unwrap();
     let exact = RuntimeFunctionTypeSourceLimits {
         encoded_bytes: bytes.len(),
@@ -476,4 +480,255 @@ fn source_passes_keep_the_original_work_bank_and_first_error() {
             error
         );
     }
+}
+
+fn encode_formula(
+    formula: &EffectFormula<RuntimeBoundEffectReference>,
+    scope: &RuntimeTypeScope,
+) -> Vec<u8> {
+    let prepared = formula
+        .prepare_source_encoding(scope, limits(), &mut meter())
+        .unwrap();
+    let mut output = Vec::with_capacity(prepared.encoded_bytes());
+    prepared.append_to(&mut output).unwrap();
+    output
+}
+
+#[test]
+fn effect_argument_source_preserves_the_actual_target_scope_and_original_graph() {
+    let (incoming, contract) = fixture();
+    let target = contract.child_scope(&incoming).unwrap();
+    let formula = contract.invocation();
+    let bytes = encode_formula(formula, &target);
+    let mut bank = meter();
+    let encoding = formula
+        .prepare_source_encoding(&target, limits(), &mut meter())
+        .unwrap();
+    let prepared = EffectFormula::preflight_source(&bytes, &target, limits(), &mut bank).unwrap();
+    assert_eq!(prepared.storage_bytes(), encoding.storage_bytes());
+    assert_eq!(prepared.elements(), encoding.elements());
+    let retained = prepared.materialize(&mut bank).unwrap();
+    assert_eq!(&retained, formula);
+    assert_eq!(encode_formula(&retained, &target), bytes);
+    let encoding = contract
+        .prepare_argument_source_encoding(formula, &incoming, limits(), &mut meter())
+        .unwrap();
+    let mut borrowed_context = Vec::with_capacity(encoding.encoded_bytes());
+    encoding.append_to(&mut borrowed_context).unwrap();
+    assert_eq!(borrowed_context, bytes);
+    let mut bank = meter();
+    let prepared = contract
+        .preflight_argument_source_in_frame(&bytes, &incoming, limits())
+        .unwrap();
+    assert_eq!(prepared.materialize(&mut bank).unwrap(), *formula);
+    assert!(retained.variables().any(|reference| reference.depth() == 1));
+    assert!(
+        EffectFormula::preflight_source(&bytes, &RuntimeTypeScope::root(), limits(), &mut meter())
+            .is_err()
+    );
+    assert!(
+        formula
+            .prepare_source_encoding(&RuntimeTypeScope::root(), limits(), &mut meter())
+            .is_err()
+    );
+}
+
+#[test]
+fn effect_argument_source_uses_one_real_membership_graph_and_exact_caps() {
+    let (incoming, contract) = fixture();
+    let scope = contract.child_scope(&incoming).unwrap();
+    let formula = contract.invocation();
+    let bytes = encode_formula(formula, &scope);
+    let prepared = formula
+        .prepare_source_encoding(&scope, limits(), &mut meter())
+        .unwrap();
+    let declaration = Membership::try_from(formula).unwrap();
+    let nodes = declaration.default.nodes.len()
+        + declaration
+            .overrides
+            .iter()
+            .map(|(_, graph)| graph.nodes.len())
+            .sum::<usize>();
+    let exact = RuntimeFunctionTypeSourceLimits {
+        encoded_bytes: bytes.len(),
+        decoded_bytes: prepared.storage_bytes(),
+        decision_nodes: nodes as u32,
+        overrides: declaration.overrides.len() as u32,
+    };
+    assert_eq!(prepared.elements(), nodes + declaration.overrides.len());
+    formula
+        .prepare_source_encoding(&scope, exact, &mut meter())
+        .unwrap();
+    let mut bank = meter();
+    EffectFormula::preflight_source(&bytes, &scope, exact, &mut bank)
+        .unwrap()
+        .materialize(&mut bank)
+        .unwrap();
+    for short in [
+        RuntimeFunctionTypeSourceLimits {
+            encoded_bytes: exact.encoded_bytes - 1,
+            ..exact
+        },
+        RuntimeFunctionTypeSourceLimits {
+            decoded_bytes: exact.decoded_bytes - 1,
+            ..exact
+        },
+        RuntimeFunctionTypeSourceLimits {
+            decision_nodes: exact.decision_nodes - 1,
+            ..exact
+        },
+        RuntimeFunctionTypeSourceLimits {
+            overrides: exact.overrides - 1,
+            ..exact
+        },
+    ] {
+        assert!(matches!(
+            formula.prepare_source_encoding(&scope, short, &mut meter()),
+            Err(RuntimeFunctionTypeSourceError::Limit { .. })
+        ));
+        assert!(matches!(
+            EffectFormula::preflight_source(&bytes, &scope, short, &mut meter()),
+            Err(RuntimeFunctionTypeSourceError::Limit { .. })
+        ));
+    }
+    let root = RuntimeTypeScope::root();
+    let empty = EffectFormula::empty();
+    let prepared = empty
+        .prepare_source_encoding(&root, limits(), &mut meter())
+        .unwrap();
+    assert_eq!(
+        prepared.storage_bytes(),
+        Decision::source_admission_storage(0).unwrap()
+    );
+    assert_eq!(
+        encode_formula(&empty, &root),
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    );
+}
+
+#[test]
+fn effect_argument_source_borrows_the_original_scope_frame_before_retention() {
+    let (incoming, contract) = fixture();
+    let scope = contract.child_scope(&incoming).unwrap();
+    let bytes = encode_formula(contract.invocation(), &scope);
+    let scope_limits = RuntimeTypeScopeCodecLimits {
+        encoded_bytes: 1024,
+        decoded_bytes: 1024,
+    };
+    let encoding = scope
+        .prepare_source_encoding(scope_limits, &mut meter())
+        .unwrap();
+    let mut scope_bytes = Vec::with_capacity(encoding.encoded_bytes());
+    encoding.append_to(&mut scope_bytes).unwrap();
+    let mut bank = meter();
+    let original =
+        RuntimeTypeScope::preflight_source(&scope_bytes, scope_limits, &mut bank).unwrap();
+    let prepared =
+        EffectFormula::preflight_source(&bytes, original.as_scope_ref(), limits(), &mut bank)
+            .unwrap();
+    assert_eq!(
+        prepared.materialize(&mut bank).unwrap(),
+        *contract.invocation()
+    );
+    assert_eq!(original.materialize(), scope);
+}
+
+#[test]
+fn effect_argument_source_rejects_malformed_frames_and_owning_graph_errors() {
+    let (incoming, contract) = fixture();
+    let scope = contract.child_scope(&incoming).unwrap();
+    let bytes = encode_formula(contract.invocation(), &scope);
+    for cut in 0..bytes.len() {
+        assert!(
+            EffectFormula::preflight_source(&bytes[..cut], &scope, limits(), &mut meter()).is_err()
+        );
+    }
+    for (offset, replacement) in [(0, 2), (1, 255)] {
+        let mut corrupt = bytes.clone();
+        corrupt[offset] = replacement;
+        assert!(EffectFormula::preflight_source(&corrupt, &scope, limits(), &mut meter()).is_err());
+    }
+    let mut trailing = bytes.clone();
+    trailing.push(0);
+    assert!(matches!(
+        EffectFormula::preflight_source(&trailing, &scope, limits(), &mut meter()),
+        Err(RuntimeFunctionTypeSourceError::Trailing)
+    ));
+    let label = b"state.write(flow)";
+    let offset = bytes
+        .windows(label.len())
+        .position(|part| part == label)
+        .unwrap();
+    let mut corrupt = bytes;
+    corrupt[offset] = 255;
+    assert!(matches!(
+        EffectFormula::preflight_source(&corrupt, &scope, limits(), &mut meter()),
+        Err(RuntimeFunctionTypeSourceError::EffectLabel)
+    ));
+    let root = RuntimeTypeScope::root();
+    let mut infinite = encode_formula(&EffectFormula::empty(), &root);
+    infinite[5] = 1;
+    let mut bank = meter();
+    let prepared = EffectFormula::preflight_source(&infinite, &root, limits(), &mut bank).unwrap();
+    assert!(matches!(
+        prepared.materialize(&mut bank),
+        Err(RuntimeFunctionTypeSourceError::Declaration(
+            EffectDeclarationError::InfiniteRow
+        ))
+    ));
+    assert_eq!(bank.status(), Err(TaskSemanticEncodingError::OwnerRejected));
+}
+
+#[test]
+fn effect_argument_source_keeps_parent_prefix_capacity_and_original_work_bank() {
+    let (incoming, contract) = fixture();
+    let scope = contract.child_scope(&incoming).unwrap();
+    let formula = contract.invocation();
+    let bytes = encode_formula(formula, &scope);
+    let work = 3 * bytes.len() as u64;
+    let mut bank = TaskSemanticMeter::new(work, u64::MAX);
+    let prepared = formula
+        .prepare_source_encoding(&scope, limits(), &mut bank)
+        .unwrap();
+    assert_eq!(
+        bank.charge_work(1),
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+    let mut output = Vec::with_capacity(bytes.len() + 1);
+    output.push(73);
+    let pointer = output.as_ptr();
+    prepared.append_to(&mut output).unwrap();
+    assert_eq!(output.as_ptr(), pointer);
+    assert_eq!(&output[1..], bytes);
+    let mut output = Vec::with_capacity(bytes.len() - 1);
+    output.push(73);
+    let prepared = formula
+        .prepare_source_encoding(&scope, limits(), &mut meter())
+        .unwrap();
+    assert!(matches!(
+        prepared.append_to(&mut output),
+        Err(RuntimeFunctionTypeSourceError::OutputCapacity { .. })
+    ));
+    assert_eq!(output, [73]);
+    let mut bank = TaskSemanticMeter::new(work, u64::MAX);
+    let prepared = EffectFormula::preflight_source(&bytes, &scope, limits(), &mut bank).unwrap();
+    prepared.materialize(&mut bank).unwrap();
+    assert_eq!(
+        bank.charge_work(1),
+        Err(TaskSemanticEncodingError::SemanticWork)
+    );
+    let mut short = TaskSemanticMeter::new(work - 1, u64::MAX);
+    let error = EffectFormula::preflight_source(&bytes, &scope, limits(), &mut short)
+        .err()
+        .unwrap();
+    assert_eq!(
+        error,
+        RuntimeFunctionTypeSourceError::Resource(TaskSemanticEncodingError::SemanticWork)
+    );
+    assert_eq!(
+        EffectFormula::preflight_source(&[], &scope, limits(), &mut short)
+            .err()
+            .unwrap(),
+        error
+    );
 }

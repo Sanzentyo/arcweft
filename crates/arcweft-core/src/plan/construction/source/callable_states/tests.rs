@@ -47,7 +47,7 @@ fn function_type(id: TypeId, parameters: Box<[TypeId]>, result: TypeId) -> Runti
         },
     )
 }
-fn reserve_function(
+pub(in crate::plan::construction::source) fn reserve_function(
     builder: &mut RuntimePlanBuilder,
     index: u8,
     inputs: &[TypeId],
@@ -134,7 +134,7 @@ fn reserve_function(
         })
         .unwrap()
 }
-fn define_bodies(
+pub(in crate::plan::construction::source) fn define_bodies(
     builder: &mut RuntimePlanBuilder,
     functions: &[RuntimeFunctionSiteSeedId],
     states: &[RuntimeCallableStateSeedId],
@@ -188,7 +188,7 @@ fn parameter(
 fn retained(role: Role) -> Retained<TypeId> {
     Retained { role, ty: BOOL }
 }
-fn fixture_builder() -> (
+pub(in crate::plan::construction::source) fn fixture_builder() -> (
     RuntimePlanBuilder,
     [RuntimeFunctionSiteSeedId; 8],
     Vec<RuntimeCallableStateSeedId>,
@@ -463,7 +463,7 @@ fn limits(plan: &RuntimePlan) -> RuntimeCallableSourceLimits {
         function_count: plan.function_sites().len(),
     }
 }
-fn encode(plan: &RuntimePlan) -> Vec<u8> {
+pub(in crate::plan::construction::source) fn encode(plan: &RuntimePlan) -> Vec<u8> {
     let prepared = plan
         .callable_states()
         .prepare_sources_encoding(limits(plan), &mut meter())
@@ -480,8 +480,18 @@ fn preparation<'a>(
     Box<[RuntimeFunctionSiteSeedId]>,
     PreparedRuntimeCallableSources<'a>,
 ) {
+    preparation_with_meter(plan, bytes, meter())
+}
+fn preparation_with_meter<'a>(
+    plan: &RuntimePlan,
+    bytes: &'a [u8],
+    mut bank: TaskSemanticMeter,
+) -> (
+    RuntimePlanSourceConstruction,
+    Box<[RuntimeFunctionSiteSeedId]>,
+    PreparedRuntimeCallableSources<'a>,
+) {
     let declaration_bytes = frames(plan);
-    let mut bank = meter();
     let declarations = declarations(&declaration_bytes, &mut bank);
     let prepared_functions = plan
         .function_sites()
@@ -522,7 +532,7 @@ fn preparation<'a>(
     let functions = functions.reserve(&mut source, &mut resources()).unwrap();
     (source, functions, states)
 }
-fn source(
+pub(in crate::plan::construction::source) fn source(
     plan: &RuntimePlan,
     bytes: &[u8],
 ) -> (
@@ -531,6 +541,19 @@ fn source(
     Box<[RuntimeCallableStateSeedId]>,
 ) {
     let (mut source, functions, prepared) = preparation(plan, bytes);
+    let states = prepared.materialize(&mut source, &functions).unwrap();
+    (source, functions, states)
+}
+pub(in crate::plan::construction::source) fn source_with_meter(
+    plan: &RuntimePlan,
+    bytes: &[u8],
+    bank: TaskSemanticMeter,
+) -> (
+    RuntimePlanSourceConstruction,
+    Box<[RuntimeFunctionSiteSeedId]>,
+    Box<[RuntimeCallableStateSeedId]>,
+) {
+    let (mut source, functions, prepared) = preparation_with_meter(plan, bytes, bank);
     let states = prepared.materialize(&mut source, &functions).unwrap();
     (source, functions, states)
 }
