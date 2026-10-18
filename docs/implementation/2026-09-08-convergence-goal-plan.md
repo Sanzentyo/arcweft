@@ -17748,3 +17748,81 @@ Two new unregistered Entry reader/coordinator drafts are in progress and are
 excluded from this publication and from the 3879-input execution claim. Complete
 their writer, original owner route validation, role/route/schema tests and actual
 Source integration next. The full goal remains active.
+
+## 2026-10-19 — Original Entry Source and shared route admission
+
+Inspected main 9ef5b481b8a2df02a6faa757cc12b3e40601400c with fourteen held
+tracked paths and three held untracked items. Completes the preceding two
+unregistered Entry drafts. The private version-1 Entry Source now retains exact
+Entry/Flow path segments and independent Flow labels, all nine Entry kinds,
+Flow/Routes/Controller targets, all seven HTTP methods, canonical path literals
+and capture coordinates, source-ordered route bindings, every None/Stateful/Agent
+role, binding/callable/flow/nominal/layout contracts, all Agent budget and root
+limit fields and complete command payload schema Source frames.
+
+Full borrowed inspection precedes retained Entry data. Entry/route/command,
+schema node/depth and aggregate element/encoded/decoded quotas are admitted
+before their allocations. Nested schemas receive the remaining allowance;
+reconstruction replays the already admitted resource prefix rather than granting
+another quota. The actual Source semantic bank remains shared and sticky.
+Borrowed Stateful metadata retains an extent and checked prefix instead of
+allocating a Box during preflight. Output append requires reserved capacity.
+Entries enter the original builder; symbolic role data grants neither function
+ownership nor a program seal. Existing entries cannot be silently replaced.
+
+RuntimeRoutePath now owns the borrowed literal/capture rules used by ordinary
+construction, complete-plan verification and Source decoding. Verification walks
+the original segments without cloning them. Its obsolete NonCanonical variant
+is removed: try_new never normalized the input, so the prior clone/equality
+branch could not emit it. No consumer referenced that variant. Schema Source
+exposes its counted node total and admitted-frame sizing for compound Entry
+emission, using the same writer without a fabricated fresh semantic bank.
+The earlier style/test-cast suggestions are corrected without lint suppression.
+
+The existing invocation round-trip now restores its Entry data through this
+codec; its direct entry.clone() bypass is deleted. Test fixture visibility is
+limited to the owning Source test subtree. Original function/body admission and
+the common executable seal remain real. No general Flow-body transport is
+claimed from these return/defer fixture bodies.
+
+R1332 initial Core all-target/all-feature locked Clippy passes, actual 0,
+47.21s. After narrowing production imports and retaining borrowed Stateful
+extents, R1333 workspace all-target/all-feature locked Clippy passes, actual 0,
+2m25s. R1334 canonical structural gate passes, actual 0. R1335 catalogs 2268
+five-owner all-feature library cases, zero excluded, including all four new
+Entry cases and the migrated invocation test. R1336 executes that exact set,
+actual 100: 2267 pass, one fail, zero skipped, 21.107s. Its terminal audit
+verifies all names and all 3883 frozen inputs unchanged; it is not a passing run.
+
+The sole failure is the new negative test's assumed error wrapper. The actual
+builder already rejects the tampered payload layout as
+Plan(CommandLayoutMismatch { entry: "stateful", constructor: "set" }), before
+the later task image seal. The test expected TaskPlanSeal(Verification(...)).
+Only that test now matches the actual typed owner error and both exact payload
+fields; production and rejection behavior are unchanged. This corrected test
+has not yet been rerun at this publication. The other new cases pass: complete
+kind/target/role/route/schema/budget reconstruction and executable digest parity,
+exact and one-over cumulative quotas, terminal bank failure and duplicate Entry
+inventory rejection, every truncated packet, bad framing/tags/UTF-8/capture
+order/trailing data, and untouched output on insufficient capacity. R1337
+workspace check was not run because the pipeline stopped on R1336's failure.
+
+Ownership review: entries.rs 8934 bytes/257 LOC coordinates this inventory and
+quota; counted writer 12460/325, borrowed reader/construction 21821/641 and
+focused tests 15597/427 exceed 300-line growth. Each owns this complete Entry
+Source law and its actual builder consequence. entry_inventory.rs 61088/1599
+retains the existing launch/route verification responsibility; Source registration
+is 5367/133. No unrelated owner, public splitting API, dependency, I/O, unsafe,
+duplicate role authority or alternate seal is introduced. Canonical measurements
+keep Core fan-in/out 31/7, development 4/5; 99 manifest/lock inputs and the
+resolved 53-package reverse closure are unchanged. Unchanged owner dispositions
+remain applicable. Structural size warnings are review triggers, not blockers.
+
+Publish this coherent intermediate cut under the user's explicit instruction
+that every intermediate commit need not be verified working. Next rerun the
+corrected Entry/invocation owner cases, finish workspace check and current lint,
+then exercise the complete reverse consumer selection while preserving its two
+known selected-Need key failures. Keep actual failures and the narrower passed
+coverage distinct. Continue general Flow/function and Line Source, the joint
+codec/public consumer switch, registry execution, retained View, restore and all
+other retained acceptance. The full goal remains active.

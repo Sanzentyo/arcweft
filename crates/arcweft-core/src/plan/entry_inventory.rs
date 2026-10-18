@@ -128,27 +128,49 @@ impl RuntimeRoutePath {
         segments: impl Into<Vec<RuntimeRoutePathSegment>>,
     ) -> Result<Self, RuntimeRoutePathError> {
         let segments = segments.into();
+        Self::validate_segments(&segments)?;
+        Ok(Self { segments })
+    }
+
+    fn validate_segments(
+        segments: &[RuntimeRoutePathSegment],
+    ) -> Result<(), RuntimeRoutePathError> {
         let mut capture_count = 0usize;
-        for segment in &segments {
+        for segment in segments {
             match segment {
                 RuntimeRoutePathSegment::Literal(literal) => {
-                    if literal.is_empty()
-                        || literal.starts_with(':')
-                        || literal.contains('/')
-                        || literal.chars().any(char::is_control)
-                    {
-                        return Err(RuntimeRoutePathError::InvalidLiteral);
-                    }
+                    Self::validate_source_literal(literal)?;
                 }
                 RuntimeRoutePathSegment::Capture(coordinate) => {
-                    if coordinate.index()? != capture_count {
-                        return Err(RuntimeRoutePathError::InvalidCapture);
-                    }
+                    Self::validate_source_capture(*coordinate, capture_count)?;
                     capture_count += 1;
                 }
             }
         }
-        Ok(Self { segments })
+        Ok(())
+    }
+
+    pub(crate) fn validate_source_literal(literal: &str) -> Result<(), RuntimeRoutePathError> {
+        if literal.is_empty()
+            || literal.starts_with(':')
+            || literal.contains('/')
+            || literal.chars().any(char::is_control)
+        {
+            Err(RuntimeRoutePathError::InvalidLiteral)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn validate_source_capture(
+        coordinate: RouteCaptureCoordinate,
+        expected: usize,
+    ) -> Result<(), RuntimeRoutePathError> {
+        if coordinate.index()? == expected {
+            Ok(())
+        } else {
+            Err(RuntimeRoutePathError::InvalidCapture)
+        }
     }
 
     #[must_use]
@@ -216,9 +238,7 @@ impl RuntimeRoutePath {
     }
 
     fn validate(&self) -> Result<(), RuntimeRoutePathError> {
-        (Self::try_new(self.segments.clone())? == *self)
-            .then_some(())
-            .ok_or(RuntimeRoutePathError::NonCanonical)
+        Self::validate_segments(&self.segments)
     }
 }
 
@@ -248,8 +268,6 @@ pub enum RuntimeRoutePathError {
     CaptureCapacity { index: usize },
     #[error("route capture coordinate {position} does not fit this platform")]
     CaptureCoordinate { position: u32 },
-    #[error("route path payload differs from its canonical segment inventory")]
-    NonCanonical,
 }
 
 /// Route declaration in a server-like entry.

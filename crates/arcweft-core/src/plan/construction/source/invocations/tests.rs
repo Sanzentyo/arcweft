@@ -32,7 +32,7 @@ fn limits(plan: &RuntimePlan) -> RuntimeInvocationSourceLimits {
         function_count: plan.function_sites().len(),
     }
 }
-fn fixture() -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     use super::super::callable_states::tests as graph;
     let mut builder = crate::plan::body_semantic::stateful_root_builder_fixture(
         RuntimeTypeSchema::Bool,
@@ -270,7 +270,7 @@ fn source_with_bank(
     assert!(helpers.methods.is_empty());
     (source, functions, helpers.helpers)
 }
-fn source(
+pub(in crate::plan::construction::source) fn source(
     plan: &RuntimePlan,
 ) -> (
     RuntimePlanSourceConstruction,
@@ -279,19 +279,13 @@ fn source(
 ) {
     source_with_bank(plan, meter())
 }
-fn define_bodies(
+pub(in crate::plan::construction::source) fn define_bodies(
     plan: &RuntimePlan,
     source: &mut RuntimePlanSourceConstruction,
     functions: &[RuntimeFunctionSiteSeedId],
     helpers: &[RuntimePureHelperSeedId],
     defers: &[RuntimeDeferSiteId],
 ) {
-    // Entry source transport is another owning inventory. Supply the actual
-    // accepted role declarations here; they still need these real code rows
-    // and complete bodies at the common seal.
-    for entry in plan.entries() {
-        source.builder.push_entry(entry.clone()).unwrap();
-    }
     let handles = RuntimeExpressionSourceHandles {
         states: &[],
         specializations: &[],
@@ -350,7 +344,9 @@ fn define_bodies(
             .unwrap();
     }
 }
-fn finish(source: RuntimePlanSourceConstruction) -> RuntimePlan {
+pub(in crate::plan::construction::source) fn finish(
+    source: RuntimePlanSourceConstruction,
+) -> RuntimePlan {
     let seal = RuntimeTaskPlanSealLimits::default();
     source
         .prepare_image(seal)
@@ -374,6 +370,7 @@ fn invocation_sources_restore_original_flow_schema_roles_code_links_and_defer_ca
     assert_eq!(prepared.elements(), encoded.elements());
     let defers = prepared.materialize(&mut source, &functions).unwrap();
     assert_eq!(defers.len(), plan.defer_sites().len());
+    super::super::entries::tests::restore(&plan, &mut source);
     define_bodies(&plan, &mut source, &functions, &helpers, &defers);
     let restored = finish(source);
     assert_eq!(restored.flows(), plan.flows());

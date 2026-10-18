@@ -36,18 +36,15 @@ pub(super) fn inspect(bytes: &[u8], limits: RuntimeSchemaSourceLimits) -> Result
             continue;
         }
         loop {
-            match parents.last_mut() {
-                Some(remaining) => {
-                    *remaining -= 1;
-                    if *remaining != 0 {
-                        break;
-                    }
-                    parents.pop();
+            if let Some(remaining) = parents.last_mut() {
+                *remaining -= 1;
+                if *remaining != 0 {
+                    break;
                 }
-                None => {
-                    reader.finish()?;
-                    return Ok(counts.footprint);
-                }
+                parents.pop();
+            } else {
+                reader.finish()?;
+                return Ok(counts.footprint);
             }
         }
     }
@@ -78,13 +75,12 @@ pub(super) fn materialize(
             }
             let frame = frames.pop().expect("completed source node");
             let value = frame.node.materialize(frame.children);
-            match frames.last_mut() {
-                Some(parent) => parent.children.push(value),
-                None => {
-                    reader.finish().expect("preflighted complete schema packet");
-                    debug_assert_eq!(counts.footprint, footprint);
-                    return value;
-                }
+            if let Some(parent) = frames.last_mut() {
+                parent.children.push(value);
+            } else {
+                reader.finish().expect("preflighted complete schema packet");
+                debug_assert_eq!(counts.footprint, footprint);
+                return value;
             }
         }
     }

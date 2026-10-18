@@ -273,9 +273,9 @@ fn schema_sources_admit_exact_aggregate_resources_and_keep_failure_sticky() {
     let bytes = encode(&schema);
     let prepared = PreparedRuntimeSchemaSource::preflight(&bytes, limits(), &mut meter()).unwrap();
     let exact = RuntimeSchemaSourceLimits {
-        nodes: prepared.nodes() as u32,
-        depth: prepared.footprint.depth as u32,
-        elements: prepared.elements() as u32,
+        nodes: u32::try_from(prepared.nodes()).unwrap(),
+        depth: u32::try_from(prepared.footprint.depth).unwrap(),
+        elements: u32::try_from(prepared.elements()).unwrap(),
         encoded_bytes: bytes.len(),
         decoded_bytes: prepared.storage_bytes(),
     };

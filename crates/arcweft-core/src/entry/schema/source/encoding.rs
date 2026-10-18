@@ -11,6 +11,9 @@ pub(crate) struct PreparedRuntimeSchemaSourceEncoding<'a> {
     footprint: Footprint,
 }
 impl PreparedRuntimeSchemaSourceEncoding<'_> {
+    pub(crate) const fn nodes(&self) -> usize {
+        self.footprint.nodes
+    }
     pub(crate) const fn encoded_bytes(&self) -> usize {
         self.bytes
     }
@@ -42,6 +45,25 @@ impl PreparedRuntimeSchemaSourceEncoding<'_> {
     }
 }
 impl RuntimeTypeSchema {
+    pub(crate) fn prepare_source_in_frame(
+        &self,
+        limits: RuntimeSchemaSourceLimits,
+    ) -> Result<PreparedRuntimeSchemaSourceEncoding<'_>, Error> {
+        let mut writer = Writer {
+            output: None,
+            meter: None,
+            bytes: 0,
+            limits,
+            counts: Counts::new(limits),
+        };
+        writer.emit(self)?;
+        Ok(PreparedRuntimeSchemaSourceEncoding {
+            schema: self,
+            limits,
+            bytes: writer.bytes,
+            footprint: writer.counts.footprint,
+        })
+    }
     pub(crate) fn prepare_source_encoding(
         &self,
         limits: RuntimeSchemaSourceLimits,

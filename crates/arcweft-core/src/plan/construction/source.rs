@@ -15,6 +15,7 @@ pub(in crate::plan) mod callable_specializations;
 pub(in crate::plan) mod callable_states;
 pub(in crate::plan) mod content_declarations;
 pub(in crate::plan) mod content_plans;
+pub(in crate::plan) mod entries;
 pub(in crate::plan) mod evaluated_effects;
 pub(in crate::plan) mod expression;
 pub(in crate::plan) mod functions;
