@@ -1,14 +1,98 @@
 //! Iterative construction of the single admitted pattern algebra.
 
 use super::{
-    PatternAdmission, RuntimeLocalDeclarationId, RuntimePattern, RuntimePatternBindingCoordinate,
-    RuntimePatternBindingStep, RuntimePatternKind, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlanBodyConstruction, RuntimePlanBuildError, RuntimePlanTypeId,
-    RuntimePlanTypeProjection, RuntimeRecordFieldId, RuntimeRecordPatternField, invalid_projection,
+    RuntimeLocalDeclarationId, RuntimeLocalSeedId, RuntimePattern, RuntimePatternRestSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBodyConstruction, RuntimePlanBuildError,
+    RuntimePlanTypeId, RuntimePlanTypeProjection, RuntimeRecordFieldId, invalid_projection,
     require_same, validate_sequence_length,
+};
+use crate::pattern::{
+    RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
+    RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
 };
 use crate::plan::RuntimeRecordPatternFieldSeed;
 use std::collections::{BTreeMap, BTreeSet};
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Default)]
+struct PatternAdmission {
+    bindings: BTreeMap<RuntimeLocalDeclarationId, bool>,
+    introduced: Vec<RuntimeLocalDeclarationId>,
+}
+
+impl PatternAdmission {
+    fn insert(&mut self, local: RuntimeLocalDeclarationId, mutable: bool) -> bool {
+        let std::collections::btree_map::Entry::Vacant(entry) = self.bindings.entry(local) else {
+            return false;
+        };
+        entry.insert(mutable);
+        self.introduced.push(local);
+        true
+    }
+
+    fn checkpoint(&self) -> usize {
+        self.introduced.len()
+    }
+
+    fn rewind(&mut self, checkpoint: usize) {
+        assert!(
+            checkpoint <= self.introduced.len(),
+            "a pattern scope preserves its prefix"
+        );
+        while self.introduced.len() > checkpoint {
+            let local = self
+                .introduced
+                .pop()
+                .expect("the scope has an introduced binding");
+            self.bindings.remove(&local);
+        }
+    }
+
+    fn introduced_since(&self, checkpoint: usize) -> Box<[(RuntimeLocalDeclarationId, bool)]> {
+        self.introduced[checkpoint..]
+            .iter()
+            .map(|local| {
+                (
+                    *local,
+                    *self
+                        .bindings
+                        .get(local)
+                        .expect("introduced bindings remain in their scope"),
+                )
+            })
+            .collect()
+    }
+
+    fn validate_alternative(
+        &self,
+        checkpoint: usize,
+        expected: &[(RuntimeLocalDeclarationId, bool)],
+        ty: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        if self.introduced.len() - checkpoint != expected.len() {
+            return invalid_projection("Or binding inventory", ty);
+        }
+        let mut mismatch = None;
+        for &(local, expected) in expected {
+            let Some(&actual) = self.bindings.get(&local) else {
+                return invalid_projection("Or binding inventory", ty);
+            };
+            if expected != actual && mismatch.is_none_or(|(first, _, _)| local < first) {
+                mismatch = Some((local, expected, actual));
+            }
+        }
+        if let Some((local, expected, actual)) = mismatch {
+            return Err(RuntimePlanBuildError::OrBindingMutabilityMismatch {
+                local,
+                expected,
+                actual,
+            });
+        }
+        Ok(())
+    }
+}
 
 type Seeds = std::vec::IntoIter<RuntimePatternSeed>;
 
@@ -26,9 +110,8 @@ struct Frame {
 enum Pending {
     Or {
         seeds: Seeds,
-        initial: BTreeSet<RuntimeLocalDeclarationId>,
-        shared: Option<BTreeSet<RuntimeLocalDeclarationId>>,
-        mutability: Option<BTreeMap<RuntimeLocalDeclarationId, bool>>,
+        checkpoint: usize,
+        expected: Option<Box<[(RuntimeLocalDeclarationId, bool)]>>,
         values: Vec<RuntimePattern>,
     },
     Tuple {
@@ -58,7 +141,57 @@ enum Progress {
 }
 
 impl RuntimePlanBodyConstruction<'_> {
-    pub(super) fn lower_pattern(
+    pub(in crate::plan::construction) fn lower_pattern_seed(
+        &self,
+        seed: RuntimePatternSeed,
+    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
+        self.lower_pattern(seed, &mut PatternAdmission::default(), &mut Vec::new())
+    }
+
+    fn lower_pattern_rest(
+        &self,
+        rest: RuntimePatternRestSeed,
+        whole_ty: RuntimePlanTypeId,
+        step: RuntimePatternBindingStep,
+        admission: &mut PatternAdmission,
+        path: &mut Vec<RuntimePatternBindingStep>,
+    ) -> Result<RuntimePatternRest, RuntimePlanBuildError> {
+        match rest {
+            RuntimePatternRestSeed::Exact => Ok(RuntimePatternRest::Exact),
+            RuntimePatternRestSeed::Ignore => Ok(RuntimePatternRest::Ignore),
+            RuntimePatternRestSeed::Bind(local) => {
+                path.push(step);
+                let binding = self.lower_pattern_binding(&local, whole_ty, admission, path, false);
+                path.pop();
+                Ok(RuntimePatternRest::Bind(binding?))
+            }
+        }
+    }
+
+    fn lower_pattern_binding(
+        &self,
+        seed: &RuntimeLocalSeedId,
+        expected_ty: RuntimePlanTypeId,
+        admission: &mut PatternAdmission,
+        path: &[RuntimePatternBindingStep],
+        mutable: bool,
+    ) -> Result<RuntimePatternBindingCoordinate, RuntimePlanBuildError> {
+        let (local, actual_ty) = self.resolve_local(seed)?;
+        require_same("pattern binding local", expected_ty, actual_ty)?;
+        if !admission.insert(local, mutable) {
+            return Err(RuntimePlanBuildError::DuplicatePatternBinding { local });
+        }
+        let path = if path.is_empty() {
+            RuntimePatternBindingPath::whole()
+        } else {
+            RuntimePatternBindingPath::try_from_steps(path.iter().copied())?
+        };
+        Ok(RuntimePatternBindingCoordinate::from_admitted_parts(
+            local, path,
+        ))
+    }
+
+    fn lower_pattern(
         &self,
         seed: RuntimePatternSeed,
         admission: &mut PatternAdmission,
@@ -126,7 +259,7 @@ impl RuntimePlanBodyConstruction<'_> {
             RuntimePatternSeedKind::Bind { mutable, local } => {
                 return Ok(complete(RuntimePatternKind::Bind {
                     mutable,
-                    binding: self.lower_pattern_binding(&local, ty, admission, path)?,
+                    binding: self.lower_pattern_binding(&local, ty, admission, path, mutable)?,
                 }));
             }
             RuntimePatternSeedKind::Discard => return Ok(complete(RuntimePatternKind::Discard)),
@@ -142,7 +275,7 @@ impl RuntimePlanBodyConstruction<'_> {
             }
             RuntimePatternSeedKind::Typed { local } => {
                 return Ok(complete(RuntimePatternKind::Typed {
-                    binding: self.lower_pattern_binding(&local, ty, admission, path)?,
+                    binding: self.lower_pattern_binding(&local, ty, admission, path, false)?,
                 }));
             }
             RuntimePatternSeedKind::Or(seeds) => {
@@ -152,9 +285,8 @@ impl RuntimePlanBodyConstruction<'_> {
                 Pending::Or {
                     values: Vec::with_capacity(seeds.len()),
                     seeds: seeds.into_vec().into_iter(),
-                    initial: admission.bindings.clone(),
-                    shared: None,
-                    mutability: None,
+                    checkpoint: admission.checkpoint(),
+                    expected: None,
                 }
             }
             RuntimePatternSeedKind::Tuple(seeds) => {
@@ -200,7 +332,7 @@ impl RuntimePlanBodyConstruction<'_> {
                 payload: None,
             },
             RuntimePatternSeedKind::Whole { local, pattern } => Pending::Whole(WholeFrame {
-                binding: Some(self.lower_pattern_binding(&local, ty, admission, path)?),
+                binding: Some(self.lower_pattern_binding(&local, ty, admission, path, false)?),
                 seed: Some(pattern),
                 value: None,
             }),
@@ -246,38 +378,16 @@ impl Frame {
     ) -> Result<(), RuntimePlanBuildError> {
         match &mut self.pending {
             Pending::Or {
-                shared,
-                mutability,
+                checkpoint,
+                expected,
                 values,
                 ..
             } => {
                 require_same("Or alternative", self.ty, pattern.ty())?;
-                if let Some(expected) = shared {
-                    if expected != &admission.bindings {
-                        return invalid_projection("Or binding inventory", self.ty);
-                    }
+                if let Some(expected) = expected {
+                    admission.validate_alternative(*checkpoint, expected, self.ty)?;
                 } else {
-                    *shared = Some(admission.bindings.clone());
-                }
-                let declarations = pattern
-                    .binding_declarations()
-                    .map(|declaration| (declaration.local(), declaration.is_mutable()))
-                    .collect::<BTreeMap<_, _>>();
-                if let Some(expected) = mutability {
-                    for (local, actual) in &declarations {
-                        let expected = expected
-                            .get(local)
-                            .expect("checked Or inventories have identical locals");
-                        if expected != actual {
-                            return Err(RuntimePlanBuildError::OrBindingMutabilityMismatch {
-                                local: *local,
-                                expected: *expected,
-                                actual: *actual,
-                            });
-                        }
-                    }
-                } else {
-                    *mutability = Some(declarations);
+                    *expected = Some(admission.introduced_since(*checkpoint));
                 }
                 values.push(pattern);
             }
@@ -326,16 +436,14 @@ impl Frame {
         match &mut self.pending {
             Pending::Or {
                 seeds,
-                initial,
-                shared,
+                checkpoint,
                 values,
                 ..
             } => {
                 if let Some(seed) = seeds.next() {
-                    admission.bindings.clone_from(initial);
+                    admission.rewind(*checkpoint);
                     return Ok(Progress::Child(seed, None));
                 }
-                admission.bindings = shared.take().expect("at least two admitted alternatives");
                 Ok(Progress::Complete(RuntimePatternKind::Or(
                     std::mem::take(values).into_boxed_slice(),
                 )))

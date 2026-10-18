@@ -43,8 +43,7 @@ use crate::effect::{
 };
 use crate::pattern::{
     RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
-    RuntimePatternBindingCoordinate, RuntimePatternBindingDeclaration, RuntimePatternBindingPath,
-    RuntimePatternBindingStep, RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
+    RuntimePatternBindingDeclaration,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
@@ -333,13 +332,6 @@ impl RuntimeAgentTypeContext for RuntimePlanBodyConstruction<'_> {
 }
 
 impl RuntimePlanBodyConstruction<'_> {
-    pub(super) fn lower_pattern_seed(
-        &self,
-        seed: RuntimePatternSeed,
-    ) -> Result<RuntimePattern, RuntimePlanBuildError> {
-        self.lower_pattern(seed, &mut PatternAdmission::default(), &mut Vec::new())
-    }
-
     #[allow(
         clippy::too_many_lines,
         reason = "the match is the exhaustive expression-admission authority"
@@ -1426,11 +1418,6 @@ impl RuntimePlanBodyConstruction<'_> {
             pattern, guard, value,
         ))
     }
-}
-
-#[derive(Default)]
-struct PatternAdmission {
-    bindings: BTreeSet<RuntimeLocalDeclarationId>,
 }
 
 pub(super) fn require_same(
@@ -2824,50 +2811,6 @@ impl RuntimePlanBodyConstruction<'_> {
             })?;
         RuntimeAgentExpr::try_from_admitted_constructor(constructor, choice, operands)
             .map_err(|_| RuntimePlanBuildError::InvalidAgentExpression { constructor })
-    }
-}
-
-impl RuntimePlanBodyConstruction<'_> {
-    fn lower_pattern_rest(
-        &self,
-        rest: RuntimePatternRestSeed,
-        whole_ty: RuntimePlanTypeId,
-        step: RuntimePatternBindingStep,
-        admission: &mut PatternAdmission,
-        path: &mut Vec<RuntimePatternBindingStep>,
-    ) -> Result<RuntimePatternRest, RuntimePlanBuildError> {
-        match rest {
-            RuntimePatternRestSeed::Exact => Ok(RuntimePatternRest::Exact),
-            RuntimePatternRestSeed::Ignore => Ok(RuntimePatternRest::Ignore),
-            RuntimePatternRestSeed::Bind(local) => {
-                path.push(step);
-                let binding = self.lower_pattern_binding(&local, whole_ty, admission, path);
-                path.pop();
-                Ok(RuntimePatternRest::Bind(binding?))
-            }
-        }
-    }
-
-    fn lower_pattern_binding(
-        &self,
-        seed: &RuntimeLocalSeedId,
-        expected_ty: RuntimePlanTypeId,
-        admission: &mut PatternAdmission,
-        path: &[RuntimePatternBindingStep],
-    ) -> Result<RuntimePatternBindingCoordinate, RuntimePlanBuildError> {
-        let (local, actual_ty) = self.resolve_local(seed)?;
-        require_same("pattern binding local", expected_ty, actual_ty)?;
-        if !admission.bindings.insert(local) {
-            return Err(RuntimePlanBuildError::DuplicatePatternBinding { local });
-        }
-        let path = if path.is_empty() {
-            RuntimePatternBindingPath::whole()
-        } else {
-            RuntimePatternBindingPath::try_from_steps(path.iter().copied())?
-        };
-        Ok(RuntimePatternBindingCoordinate::from_admitted_parts(
-            local, path,
-        ))
     }
 }
 
@@ -5954,7 +5897,8 @@ mod tests {
         RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema as Schema,
     };
     use crate::pattern::{
-        RuntimeOpaqueTypeProducerId, RuntimePatternBindingPathError, RuntimeSemanticTypeId,
+        RuntimeOpaqueTypeProducerId, RuntimePatternBindingPathError, RuntimePatternBindingStep,
+        RuntimePatternKind, RuntimeSemanticTypeId,
     };
     use crate::plan::{
         RuntimeLocalDeclarationSeed, RuntimeNominalRecordDomainFieldSeed,
