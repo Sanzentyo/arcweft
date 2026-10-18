@@ -300,9 +300,14 @@ impl Resolver<'_, '_> {
             HirBorrowKind::Mutable => BorrowKind::Mutable,
         };
         let lifetime = match reference.region() {
-            Some(HirTypeRegion::Named(region)) => {
-                Some(LifetimeScopeKind::parse(region.name().as_str()))
-            }
+            Some(HirTypeRegion::Named(region)) => Some(
+                LifetimeScopeKind::parse(region.name().as_str()).map_err(|reason| {
+                    TypeResolutionInputError::InvalidLifetimeScope {
+                        root: owner,
+                        reason,
+                    }
+                })?,
+            ),
             Some(HirTypeRegion::Elided(_)) | None => None,
         };
         Ok(self.finish_node(

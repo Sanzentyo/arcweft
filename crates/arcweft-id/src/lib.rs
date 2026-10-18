@@ -2,6 +2,7 @@ pub mod canonical;
 pub mod closed_enum;
 pub mod dialogue;
 mod effect;
+mod lifetime_registry;
 mod locale;
 pub mod presentation;
 pub mod runtime_program;
@@ -14,6 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 pub use effect::{EffectId, EffectIdError, EffectSemanticDigest};
+pub use lifetime_registry::{LifetimeRegistryKey, LifetimeScopeKind, NamedLifetimeScope};
 pub use locale::{LocaleSemanticDigest, LocaleTag, LocaleTagError};
 pub use semantic_type::RuntimeSemanticTypeId;
 pub use unsafe_audit::{AcceptedUnsafeAuditSemanticId, UnsafeAuditId, UnsafeAuditIdError};
@@ -544,18 +546,24 @@ impl FromStr for DeclarationName {
 }
 
 fn validate_declaration_identifier(value: String) -> Result<String, DeclarationNameError> {
-    let mut characters = value.chars();
-    let Some(first) = characters.next() else {
+    if value.is_empty() {
         return Err(DeclarationNameError::Empty);
-    };
-    if (first != '_' && !first.is_alphabetic())
-        || !characters.all(|character| {
-            character == '_' || character.is_alphabetic() || character.is_ascii_digit()
-        })
-    {
+    }
+    if !valid_declaration_identifier_source(&value) {
         return Err(DeclarationNameError::InvalidIdentifier { value });
     }
     Ok(value)
+}
+
+fn valid_declaration_identifier_source(value: &str) -> bool {
+    let mut characters = value.chars();
+    let Some(first) = characters.next() else {
+        return false;
+    };
+    (first == '_' || first.is_alphabetic())
+        && characters.all(|character| {
+            character == '_' || character.is_alphabetic() || character.is_ascii_digit()
+        })
 }
 
 fn validate_id_text(value: &str, reject_hash: bool, reject_reserved: bool) -> Result<(), IdError> {

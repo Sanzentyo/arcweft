@@ -782,3 +782,37 @@ fn registry_write_rejects_value_and_optional_targets_before_publication() {
         );
     }
 }
+
+#[test]
+fn registry_write_retains_a_core_facing_static_key_with_unicode_components() {
+    let world = fixture(
+        "flow registry effects { state.write('flow) } { 'flow.旗.既読 <- true }",
+        None,
+    );
+    let report = super::analyze(&world).expect("Unicode registry identifiers");
+    let write = report
+        .statements()
+        .find_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::RegistryWrite(write) => Some(write),
+            _ => None,
+        })
+        .expect("checked registry write");
+    assert_eq!(
+        write.address().key().scope(),
+        &arcweft_id::LifetimeScopeKind::Flow
+    );
+    assert_eq!(
+        write
+            .address()
+            .key()
+            .segments()
+            .iter()
+            .map(arcweft_id::DeclarationName::as_str)
+            .collect::<Vec<_>>(),
+        ["旗", "既読"]
+    );
+    assert_eq!(
+        write.address().effect(),
+        &arcweft_id::EffectId::parse("state.write('flow.旗.既読)").unwrap()
+    );
+}

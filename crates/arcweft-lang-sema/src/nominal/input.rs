@@ -151,6 +151,10 @@ pub enum TypeResolutionInputError {
         root: TypeId,
         reason: IdResolveError,
     },
+    InvalidLifetimeScope {
+        root: TypeId,
+        reason: arcweft_id::DeclarationNameError,
+    },
     RegisteredEnvironmentIntegrity {
         external: ExternalDeclarationId,
         reason: Box<ExternalOwnerLookupError>,

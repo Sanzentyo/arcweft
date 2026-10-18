@@ -1064,7 +1064,7 @@ fn expression_resolution_matches(
         }
         (HirExprKind::Closure(_), CheckedExpressionResolution::Closure(_)) => true,
         (HirExprKind::LifetimePath(path), CheckedExpressionResolution::RegistryAddress(address)) => {
-            path.as_resolved() == Some(address.path())
+            path.as_resolved().is_some_and(|path| address.matches_path(path))
         }
         (HirExprKind::Pipe(authored), CheckedExpressionResolution::Pipe(checked)) => {
             authored.left() == checked.lookup_left() && authored.right() == checked.lookup_right()

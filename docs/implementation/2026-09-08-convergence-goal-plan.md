@@ -16604,3 +16604,88 @@ runtime domain are distinct legitimate phases, not interchangeable scope leases.
 No Cargo dependency, manifest, backend I/O, unsafe or contract-version change is
 introduced. The full registry runtime and remaining convergence acceptance above
 stay open after this next intermediate publication.
+
+### 2026-10-18 — Exact CLI acceptance reaches the missing Core operation
+
+Published projection cut: `fef7ff55ba98c50550a1c44b2b71dbea2d2e75a7`, parent
+`905f4a1be8dcb3ac2101ac5fe5cd5cf3ad3e9f98`, tree
+`4fd1a988858b1c35e0576c7c8792e6e743038823`, raw patch SHA-256
+`efc72f22c84095a16d78b722d4788ecdbf20c563be64f989654854ec263f1119`.
+All 12 published paths/blobs, fresh advertised main and 3851 frozen inputs match;
+the index was empty and the 14 held tracked / three unrelated untracked paths
+were retained. The Id/sema/runtime-plan/compiler reverse closure remains 71.
+
+R1218 rebuilds the actual arcw binary and check integration binary, selecting
+exactly the unchanged check_accepts_state_write_effect_contract case out of
+478 cases (477 excluded by this explicit diagnostic filter). R1219 still fails:
+one executed, zero passed, one failed, 477 skipped, 2.480 seconds, actual nextest
+exit 100. Its exact terminal case, complete diagnostic and all 3851 original
+frozen inputs are authenticated in task-final-r1219-registry-cli-test.terminal-audit.json.
+The earlier sema.final_analysis missing-type error at ExprId slot 12 is gone.
+The current failure is compiler.runtime_plan_lower: LifetimeSet has no checked
+core projection. This is concrete progress through the compiler, not CLI success
+or final runtime acceptance. The held test and its success assertion were kept.
+
+The maintained runtime contract, docs/02-runtime/core.md around 570-605, says
+registry paths are typed static keys, Core remains Sans I/O, and upper-scope
+writes lower to replayable state-update events for hosts. Persistent storage is
+checked separately. Line keys require the actual line scope and cleanup owner.
+The implementation must connect that request and ownership boundary, not treat
+registry writes as unrestricted signal observations or invent live scope leases
+from selector names.
+
+The next prerequisite moves the semantic LifetimeScopeKind authority into Id,
+shared by checked types and Core-facing LifetimeRegistryKey. The existing sema
+types facade reexports the same owning enum; the duplicate semantic enum is
+removed. Raw HIR scope cases remain the source-grammar phase. Named selectors
+use a validated private name carrier that cannot alias a builtin selector.
+Static keys preserve ordered validated identifier components (including Unicode)
+and the existing empty/root path acceptance. Version-one semantic tags stay
+0..9. EffectId issues state.write directly from this typed key, while authored
+quoted scope paths use the same identifier grammar. A key is source identity,
+not a program/type domain or runtime activation authorization. No runtime
+storage, Core operation or read support is claimed for this prerequisite.
+R1220 workspace check is currently compiling this in-progress identity migration.
+
+R1220 completes successfully: workspace/all-target/all-feature/locked check,
+actual 0, 2m15s. A new Unicode registry-key semantic regression is added afterward.
+R1221 catalogs all five owner libraries: Id 48, HIR 958, sema 1295, runtime-plan
+119, compiler 172 (2592 total). Exactly eight existing ignored HIR production-
+limit Tier2 cases remain excluded; all four new key/scope/source-grammar/Unicode
+semantic cases are selected. The available 1581 predecessor owner cases in the
+R1196 inventory retain their package/binary/name and ignore states. R1222 passes
+all 2584 selected cases, one slow, eight skips, 218.833 seconds, actual 0. The
+nominal shape inclusive/exact-one-over test takes 202.631 seconds and completes
+without changing its bounds, work, timeout or assertions. The exact terminal set
+and all 3852 frozen inputs are verified. R1223 selects all 1699 Core library
+cases without exclusions; R1224 passes all 1699, zero skips, 16.739 seconds,
+actual 0, with exact terminal/frozen-input verification. These are separate fixed
+feature/package slices; their 4283 passes are not relabeled as a full 71-package
+consumer run. R1225 workspace/all-target/all-feature/locked Clippy passes,
+actual 0, 3m02s, with warnings retained. R1226 canonical structure and explicit
+fourteen-Rust-path rustfmt/owned whitespace checks pass. No new doctest, wasm,
+full Tier2 or Native/Web image-parity evidence is claimed.
+
+The old semantic LifetimeScopeKind declaration is deleted rather than retained
+as a second model. Its sema facade exposes the same Id-owned enum, as it already
+does for other shared identities. Named selectors have one validated Id name
+carrier and no builtin-alias constructor; source HIR still records its grammar.
+The checked registry address owns only the final LifetimeRegistryKey, eliminating
+its duplicate retained HIR path. Independent HIR joins authenticate that key via
+matches_path. Type semantic encoding consumes the owner's unchanged 0..9 tags;
+Id's state-write factory derives the precise capability from the same key.
+Named selectors and key components preserve valid Unicode identifiers, and
+malformed quoted lifetime paths fail through the shared borrowed/owned grammar.
+Invalid scope/key identities retain DeclarationNameError instead of dropping
+the cause. No raw snapshot reader or unvalidated runtime lease is added.
+
+Ownership/structure review: new Id lifetime_registry.rs is 5788 bytes / 187
+physical LOC including its two cohesive tests; the checked statement address/
+write owner is 3960 / 128. HIR's new method renders its source scope; semantic
+resolution is still owned by Id and its legitimate analyzer context. This moves
+identity below sema so Core can consume it without reversing the layer graph.
+No Cargo edge, manifest, unsafe or version-marker change occurs. Static key
+selection is complete at this boundary; it does not itself authorize an active
+scope or persistent storage. R1219's concrete missing Core state-update projection
+remains unresolved. Continue that actual request, ownership, Native/AWBC and host
+execution path after publication; keep the full original goal active.

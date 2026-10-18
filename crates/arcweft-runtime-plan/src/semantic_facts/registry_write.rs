@@ -57,8 +57,9 @@ impl RuntimeRegistryWriteFact {
         if self.address().statement() != statement
             || self.address().target() != *target
             || self.value() != *value
-            || path.as_resolved() != Some(self.address().path())
-            || self.address().path().optional()
+            || !path
+                .as_resolved()
+                .is_some_and(|path| self.address().matches_path(path))
             || expression_types.get(target).is_some()
             || expression_types.get(value) != Some(self.value_type())
         {

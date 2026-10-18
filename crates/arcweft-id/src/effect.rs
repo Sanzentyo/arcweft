@@ -50,6 +50,20 @@ impl EffectId {
     pub const METRIC_WRITE_LABEL: &'static str = "metric.write";
     /// Canonical engine-owned event observation effect label.
     pub const EVENT_EMIT_LABEL: &'static str = "event.emit";
+    /// Canonical operation for replayable lifetime-registry updates.
+    pub const STATE_WRITE_LABEL: &'static str = "state.write";
+
+    /// Issues the precise capability from a validated static registry key.
+    #[must_use]
+    pub fn state_write(key: &crate::LifetimeRegistryKey) -> Self {
+        let mut identity = format!("{}('{}", Self::STATE_WRITE_LABEL, key.scope().as_str());
+        for segment in key.segments() {
+            identity.push('.');
+            identity.push_str(segment.as_str());
+        }
+        identity.push(')');
+        Self(identity)
+    }
 
     /// Canonical language-owned suspension capability.
     #[must_use]
@@ -264,6 +278,11 @@ fn valid_path_segment(segment: &str) -> bool {
 }
 
 fn valid_scope_atom(scope: &str) -> bool {
+    if let Some(path) = scope.strip_prefix('\'') {
+        return path
+            .split('.')
+            .all(crate::valid_declaration_identifier_source);
+    }
     scope.chars().all(|character| {
         character.is_ascii_alphanumeric()
             || matches!(character, '_' | '-' | '.' | '/' | ':' | '@' | '*' | '\'')
@@ -273,6 +292,40 @@ fn valid_scope_atom(scope: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn state_write_factory_and_source_reader_share_complete_typed_key_grammar() {
+        for (scope, segments) in [
+            ("flow", vec!["flags", "seen"]),
+            ("persistent", vec![]),
+            ("所持品", vec!["鍵", "取得済み"]),
+        ] {
+            let key = crate::LifetimeRegistryKey::new(
+                crate::LifetimeScopeKind::parse(scope).unwrap(),
+                segments
+                    .into_iter()
+                    .map(|segment| crate::DeclarationName::try_new(segment).unwrap())
+                    .collect(),
+            );
+            let effect = EffectId::state_write(&key);
+            EffectId::validate_source(effect.as_str()).unwrap();
+            assert_eq!(effect, EffectId::parse(effect.as_str()).unwrap());
+            let root = EffectId::state_write(&crate::LifetimeRegistryKey::new(
+                key.scope().clone(),
+                Box::new([]),
+            ));
+            assert!(root.covers(&effect));
+        }
+        for source in [
+            "state.write(')",
+            "state.write('flow.)",
+            "state.write('flow..flags)",
+            "state.write('flow.1flag)",
+        ] {
+            assert!(EffectId::validate_source(source).is_err(), "{source}");
+            assert!(EffectId::parse(source).is_err(), "{source}");
+        }
+    }
 
     #[test]
     fn borrowed_source_validation_preserves_canonical_scoped_identity() {

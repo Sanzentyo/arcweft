@@ -1,11 +1,12 @@
 //! Statement-owned registry addresses are metadata, never ordinary values.
 
+use arcweft_id::{DeclarationName, LifetimeRegistryKey, LifetimeScopeKind};
 use std::sync::Arc;
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::{ExprId, StmtId},
-    leaf::{HirLifetimeRegistryPath, HirLifetimeRegistryScope},
+    leaf::HirLifetimeRegistryPath,
     module::HirModule,
     stmt::HirStmtKind,
 };
@@ -19,7 +20,7 @@ use crate::{effects::EffectId, types::TypeKind};
 pub struct CheckedRegistryAddress {
     statement: StmtId,
     target: ExprId,
-    path: HirLifetimeRegistryPath,
+    key: LifetimeRegistryKey,
     effect: EffectId,
 }
 
@@ -49,34 +50,24 @@ impl CheckedRegistryAddress {
                 target: *target,
             },
         )?;
-        let scope = match path.scope() {
-            HirLifetimeRegistryScope::Frame => "frame",
-            HirLifetimeRegistryScope::Tick => "tick",
-            HirLifetimeRegistryScope::Cue => "cue",
-            HirLifetimeRegistryScope::Line => "line",
-            HirLifetimeRegistryScope::Scene => "scene",
-            HirLifetimeRegistryScope::Flow => "flow",
-            HirLifetimeRegistryScope::Session => "session",
-            HirLifetimeRegistryScope::Global => "global",
-            HirLifetimeRegistryScope::Persistent => "persistent",
-            HirLifetimeRegistryScope::Named(name) => name.as_str(),
+        let invalid = |source| FinalSemanticAnalysisError::RegistryWriteIdentity {
+            owner,
+            target: *target,
+            source,
         };
-        let mut effect = format!("state.write('{scope}");
-        for segment in path.segments() {
-            effect.push('.');
-            effect.push_str(segment.as_str());
-        }
-        effect.push(')');
-        let effect = EffectId::parse(effect).map_err(|_| {
-            FinalSemanticAnalysisError::RegistryWriteTarget {
-                owner,
-                target: *target,
-            }
-        })?;
+        let scope = LifetimeScopeKind::parse(path.scope().as_str()).map_err(invalid)?;
+        let segments = path
+            .segments()
+            .iter()
+            .map(|segment| DeclarationName::try_new(segment.as_str()))
+            .collect::<Result<Box<[_]>, _>>()
+            .map_err(invalid)?;
+        let key = LifetimeRegistryKey::new(scope, segments);
+        let effect = EffectId::state_write(&key);
         Ok(Self {
             statement: owner,
             target: *target,
-            path: path.clone(),
+            key,
             effect,
         })
     }
@@ -87,8 +78,18 @@ impl CheckedRegistryAddress {
     pub const fn target(&self) -> ExprId {
         self.target
     }
-    pub const fn path(&self) -> &HirLifetimeRegistryPath {
-        &self.path
+    pub const fn key(&self) -> &LifetimeRegistryKey {
+        &self.key
+    }
+    pub fn matches_path(&self, path: &HirLifetimeRegistryPath) -> bool {
+        !path.optional()
+            && path.scope().as_str() == self.key.scope().as_str()
+            && path.segments().len() == self.key.segments().len()
+            && path
+                .segments()
+                .iter()
+                .zip(self.key.segments())
+                .all(|(source, key)| source.as_str() == key.as_str())
     }
     pub const fn effect(&self) -> &EffectId {
         &self.effect

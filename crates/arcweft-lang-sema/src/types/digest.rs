@@ -1345,20 +1345,9 @@ impl Encoder {
     }
 
     fn lifetime(&mut self, lifetime: &LifetimeScopeKind) {
-        match lifetime {
-            LifetimeScopeKind::Frame => self.byte(0),
-            LifetimeScopeKind::Tick => self.byte(1),
-            LifetimeScopeKind::Cue => self.byte(2),
-            LifetimeScopeKind::Line => self.byte(3),
-            LifetimeScopeKind::Scene => self.byte(4),
-            LifetimeScopeKind::Flow => self.byte(5),
-            LifetimeScopeKind::Session => self.byte(6),
-            LifetimeScopeKind::Global => self.byte(7),
-            LifetimeScopeKind::Persistent => self.byte(8),
-            LifetimeScopeKind::Named(name) => {
-                self.byte(9);
-                self.string(name);
-            }
+        self.byte(lifetime.semantic_tag());
+        if let LifetimeScopeKind::Named(name) = lifetime {
+            self.string(name.as_str());
         }
     }
 

@@ -776,6 +776,24 @@ pub enum HirLifetimeRegistryScope {
     Named(HirName),
 }
 
+impl HirLifetimeRegistryScope {
+    /// Authored selector name. Final semantic identity is admitted separately.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Frame => "frame",
+            Self::Tick => "tick",
+            Self::Cue => "cue",
+            Self::Line => "line",
+            Self::Scene => "scene",
+            Self::Flow => "flow",
+            Self::Session => "session",
+            Self::Global => "global",
+            Self::Persistent => "persistent",
+            Self::Named(name) => name.as_str(),
+        }
+    }
+}
+
 /// Operation performed against a runtime lifetime-registry path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLifetimeRegistryAccessMode {

@@ -4,7 +4,7 @@ pub use arcweft_id::{EffectId, EffectIdError, EffectSemanticDigest};
 use arcweft_lang_hir::{
     expr::{HirCallArgument, HirCallCallee, HirCallValue, HirExprKind, HirSelectedMember},
     identity::ExprId,
-    leaf::{HirLifetimeRegistryScope, HirPathRoot, HirPathSegment},
+    leaf::{HirPathRoot, HirPathSegment},
     module::HirModule,
 };
 use thiserror::Error;
@@ -116,18 +116,7 @@ fn collect_hir_effect_scope(
     if path.optional() {
         return Err(HirEffectProjectionError::Unsupported { owner });
     }
-    let scope = match path.scope() {
-        HirLifetimeRegistryScope::Frame => "frame",
-        HirLifetimeRegistryScope::Tick => "tick",
-        HirLifetimeRegistryScope::Cue => "cue",
-        HirLifetimeRegistryScope::Line => "line",
-        HirLifetimeRegistryScope::Scene => "scene",
-        HirLifetimeRegistryScope::Flow => "flow",
-        HirLifetimeRegistryScope::Session => "session",
-        HirLifetimeRegistryScope::Global => "global",
-        HirLifetimeRegistryScope::Persistent => "persistent",
-        HirLifetimeRegistryScope::Named(name) => name.as_str(),
-    };
+    let scope = path.scope().as_str();
     segments.push(format!("'{scope}"));
     segments.extend(path.segments().iter().map(|name| name.as_str().to_owned()));
     owners.push(owner);

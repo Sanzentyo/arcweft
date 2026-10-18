@@ -452,6 +452,12 @@ pub enum FinalSemanticAnalysisError {
         "lifetime registry write {owner:?} requires a non-optional registry address at {target:?}"
     )]
     RegistryWriteTarget { owner: StmtId, target: ExprId },
+    #[error("registry write {owner:?} has an invalid static key at {target:?}: {source}")]
+    RegistryWriteIdentity {
+        owner: StmtId,
+        target: ExprId,
+        source: arcweft_id::DeclarationNameError,
+    },
     #[error("checked expression {owner:?} has no accepted eager execution region")]
     ExpressionExecutionUnavailable { owner: ExprId },
     #[error("expression input {site:?} has no checked local-access authority")]

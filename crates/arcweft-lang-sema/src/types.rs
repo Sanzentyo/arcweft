@@ -73,55 +73,8 @@ pub use variant_payload::{
     VariantPayloadTupleField, VariantPayloadType, VariantPayloadTypeShape,
 };
 
-/// Runtime lifetime-registry scope retained by checked semantic types.
-///
-/// This is semantic identity, not parser syntax. Final HIR projects authored
-/// names into this owner exactly once while resolving a type region.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LifetimeScopeKind {
-    Frame,
-    Tick,
-    Cue,
-    Line,
-    Scene,
-    Flow,
-    Session,
-    Global,
-    Persistent,
-    Named(String),
-}
-
-impl LifetimeScopeKind {
-    pub fn parse(source: &str) -> Self {
-        match source {
-            "frame" => Self::Frame,
-            "tick" => Self::Tick,
-            "cue" => Self::Cue,
-            "line" => Self::Line,
-            "scene" => Self::Scene,
-            "flow" => Self::Flow,
-            "session" => Self::Session,
-            "global" => Self::Global,
-            "persistent" => Self::Persistent,
-            name => Self::Named(name.to_owned()),
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Frame => "frame",
-            Self::Tick => "tick",
-            Self::Cue => "cue",
-            Self::Line => "line",
-            Self::Scene => "scene",
-            Self::Flow => "flow",
-            Self::Session => "session",
-            Self::Global => "global",
-            Self::Persistent => "persistent",
-            Self::Named(name) => name.as_str(),
-        }
-    }
-}
+/// Shared semantic selector retained by checked types and executable keys.
+pub use arcweft_id::LifetimeScopeKind;
 
 /// Statically known or deliberately unresolved length of an array type.
 ///
