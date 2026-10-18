@@ -3063,26 +3063,42 @@ impl RuntimePlanBuilder {
 
     fn resolve_function_locals(
         &self,
-        locals: impl IntoIterator<Item = RuntimeLocalSeedId>,
+        locals: impl ExactSizeIterator<Item = RuntimeLocalSeedId>,
     ) -> Result<Vec<(RuntimeLocalDeclarationId, RuntimePlanTypeId)>, RuntimePlanBuildError> {
-        let mut resolved = Vec::new();
-        let mut unique = BTreeSet::new();
+        let mut resolved = Vec::with_capacity(locals.len());
+        let mut positions = Vec::with_capacity(locals.len());
+        let mut failure = None;
         for local in locals {
-            let (local, ty) = local
-                .resolve(&self.issuer)
-                .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+            let Some((local, ty)) = local.resolve(&self.issuer) else {
+                failure = Some(RuntimePlanBuildError::ForeignLocalSeed);
+                break;
+            };
             if !self
                 .locals
                 .lock()
                 .expect("local request table only runs checked, callback-free transitions")
                 .contains(local)
             {
-                return Err(RuntimePlanBuildError::UnknownFunctionLocal { local });
+                failure = Some(RuntimePlanBuildError::UnknownFunctionLocal { local });
+                break;
             }
-            if !unique.insert(local) {
-                return Err(RuntimePlanBuildError::DuplicateFunctionLocal { local });
-            }
+            positions.push((local, resolved.len()));
             resolved.push((local, ty));
+        }
+        // Fixed-capacity scratch keeps source admission accountable. Sorting
+        // by local then source position finds the first duplicate in input
+        // order, including one preceding a later unresolved local.
+        positions.sort_unstable();
+        if let Some((local, _)) = positions
+            .windows(2)
+            .filter(|pair| pair[0].0 == pair[1].0)
+            .map(|pair| pair[1])
+            .min_by_key(|(_, position)| *position)
+        {
+            return Err(RuntimePlanBuildError::DuplicateFunctionLocal { local });
+        }
+        if let Some(error) = failure {
+            return Err(error);
         }
         Ok(resolved)
     }

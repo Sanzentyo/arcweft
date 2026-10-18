@@ -1914,17 +1914,32 @@ impl PartialEq for RuntimeFormatAttemptSeedId {
 
 impl Eq for RuntimeFormatAttemptSeedId {}
 
-/// A construction-only pure-helper handle issued after its recursive body and
-/// signature have been admitted.
-#[derive(Clone)]
-pub struct RuntimePureHelperSeedId {
-    issuer: Arc<RuntimePlanConstructionIssuer>,
-    helper: RuntimePureHelperId,
+#[derive(PartialEq)]
+struct RuntimePureCallableSeedSignature {
     parameters: Box<[RuntimePlanTypeId]>,
     result: RuntimePlanTypeId,
 }
 
+/// A construction-only pure-helper handle issued from its original signature.
+/// Aliases share the immutable ABI; the body is defined separately.
+#[derive(Clone)]
+pub struct RuntimePureHelperSeedId {
+    issuer: Arc<RuntimePlanConstructionIssuer>,
+    helper: RuntimePureHelperId,
+    signature: Arc<RuntimePureCallableSeedSignature>,
+}
+
 impl RuntimePureHelperSeedId {
+    pub(super) fn source_storage_bytes(parameters: usize) -> Option<usize> {
+        parameters
+            .checked_mul(size_of::<RuntimePlanTypeId>())?
+            .checked_add(
+                size_of::<Self>()
+                    + size_of::<RuntimePureCallableSeedSignature>()
+                    + 2 * size_of::<usize>(),
+            )
+    }
+
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         helper: RuntimePureHelperId,
@@ -1934,8 +1949,7 @@ impl RuntimePureHelperSeedId {
         Self {
             issuer: Arc::clone(issuer),
             helper,
-            parameters,
-            result,
+            signature: Arc::new(RuntimePureCallableSeedSignature { parameters, result }),
         }
     }
 
@@ -1945,8 +1959,8 @@ impl RuntimePureHelperSeedId {
     ) -> Option<(RuntimePureHelperId, &[RuntimePlanTypeId], RuntimePlanTypeId)> {
         Arc::ptr_eq(&self.issuer, issuer).then_some((
             self.helper,
-            self.parameters.as_ref(),
-            self.result,
+            self.signature.parameters.as_ref(),
+            self.signature.result,
         ))
     }
 }
@@ -1964,8 +1978,7 @@ impl PartialEq for RuntimePureHelperSeedId {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.issuer, &other.issuer)
             && self.helper == other.helper
-            && self.parameters == other.parameters
-            && self.result == other.result
+            && self.signature == other.signature
     }
 }
 
@@ -1978,11 +1991,20 @@ pub struct RuntimeTraitMethodSeedId {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     method: RuntimeTraitMethodId,
     receiver: RuntimeReceiverMode,
-    parameters: Box<[RuntimePlanTypeId]>,
-    result: RuntimePlanTypeId,
+    signature: Arc<RuntimePureCallableSeedSignature>,
 }
 
 impl RuntimeTraitMethodSeedId {
+    pub(super) fn source_storage_bytes(parameters: usize) -> Option<usize> {
+        parameters
+            .checked_mul(size_of::<RuntimePlanTypeId>())?
+            .checked_add(
+                size_of::<Self>()
+                    + size_of::<RuntimePureCallableSeedSignature>()
+                    + 2 * size_of::<usize>(),
+            )
+    }
+
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         method: RuntimeTraitMethodId,
@@ -1994,8 +2016,7 @@ impl RuntimeTraitMethodSeedId {
             issuer: Arc::clone(issuer),
             method,
             receiver,
-            parameters,
-            result,
+            signature: Arc::new(RuntimePureCallableSeedSignature { parameters, result }),
         }
     }
 
@@ -2011,8 +2032,8 @@ impl RuntimeTraitMethodSeedId {
         Arc::ptr_eq(&self.issuer, issuer).then_some((
             self.method,
             self.receiver,
-            self.parameters.as_ref(),
-            self.result,
+            self.signature.parameters.as_ref(),
+            self.signature.result,
         ))
     }
 }
@@ -2031,8 +2052,7 @@ impl PartialEq for RuntimeTraitMethodSeedId {
         Arc::ptr_eq(&self.issuer, &other.issuer)
             && self.method == other.method
             && self.receiver == other.receiver
-            && self.parameters == other.parameters
-            && self.result == other.result
+            && self.signature == other.signature
     }
 }
 

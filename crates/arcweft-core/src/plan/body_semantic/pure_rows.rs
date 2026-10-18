@@ -10,6 +10,27 @@ use crate::plan::{
 use crate::task::semantic::{TaskSemanticEncoder, TaskSemanticMeter};
 
 impl RuntimePureInputType {
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::I8,
+            1 => Self::I16,
+            2 => Self::I32,
+            3 => Self::I64,
+            4 => Self::I128,
+            5 => Self::ISize,
+            6 => Self::U8,
+            7 => Self::U16,
+            8 => Self::U32,
+            9 => Self::U64,
+            10 => Self::U128,
+            11 => Self::USize,
+            12 => Self::F32,
+            13 => Self::F64,
+            14 => Self::Value,
+            _ => return None,
+        })
+    }
+
     pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
             Self::I8 => 0,
@@ -32,6 +53,28 @@ impl RuntimePureInputType {
 }
 
 impl RuntimePureOutputType {
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Bool,
+            1 => Self::I8,
+            2 => Self::I16,
+            3 => Self::I32,
+            4 => Self::I64,
+            5 => Self::I128,
+            6 => Self::ISize,
+            7 => Self::U8,
+            8 => Self::U16,
+            9 => Self::U32,
+            10 => Self::U64,
+            11 => Self::U128,
+            12 => Self::USize,
+            13 => Self::F32,
+            14 => Self::F64,
+            15 => Self::Value,
+            _ => return None,
+        })
+    }
+
     pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
             Self::Bool => 0,
