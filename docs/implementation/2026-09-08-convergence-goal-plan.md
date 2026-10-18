@@ -17234,3 +17234,81 @@ passes on the complete cleanup boundary. The current registry test owner is
 11244 bytes/318 physical LOC. R1286 workspace all-target/all-feature locked
 Clippy is running. Continue required verification and publication of this cut,
 then the actual owning-context integration and complete active goal.
+
+## 2026-10-19 — Selected Need start Source enters original construction
+
+Inspected main at 0f33ab9aa4a556ee455ee2b3ef030f7f37795638. The fourteen held
+tracked paths and three held untracked items remain untouched. Owned work is
+one Source module registration, its four new implementation/test files, and
+this existing task note. No manifest, feature, dependency, root export, branch,
+checkout, worktree, build profile, job count or artifact location changes.
+
+Supersedes the prior running statuses only: R1286 workspace all-target,
+all-feature locked Clippy completes with actual exit 0 in 5m49s. Its publication
+freeze has 3865 unchanged inputs. R1288 workspace check with the same target,
+feature and lock selection completes with actual exit 0 in 3m53s (receipt wall
+interval 3m58s); all 3865 post-publication frozen inputs are verified unchanged.
+The one requested whole-workspace cargo clean already completed once. It is not
+repeated; rebuilding has since recreated target artifacts.
+
+The next missing general function-body Source dependency is a selected Need
+start. The new private selected_producers Source owns its complete request
+projection (image, voice or external capability), original argument/payload type
+coordinates, policy/restart/class/priority/cancel metadata, binding pattern,
+source-ordered named/positional argument identities and expression frames.
+There is no completed task digest in this Source grammar. Encoding authenticates
+the actual completed plan coordinate. Decoding requires a genuine reservation
+from the receiving original builder, validates its namespace and exact ordinal,
+and uses the existing request constructor, expression/pattern Sources and
+RuntimeFlowOpSeed::StartNeedProducer. A source ordinal cannot mint a task handle,
+program owner, launch proof or expected-key authority. The existing builder and
+common seal still own argument/type/function/request/control validation.
+
+One borrowed metadata/frame pass precedes request strings, type arrays and body
+seed allocation. Binding/argument graphs share cumulative node, element and
+storage bounds; encoding and decoding retain the existing sticky semantic bank.
+Argument-name validation traverses the original request and call arguments once
+in source order. Child codecs retain their own depth/type/value bounds. The
+version-one Source domain rejects other versions; no legacy reader is added.
+
+The four new regressions exercise complete Source->actual builder->common seal
+round trips for all three request projections and both policy/restart choices;
+recomputed executable and task-table keys, canonical re-encoding, distinct actual
+construction issuers, foreign task rejection before body values, exact aggregate
+resource boundaries, truncation, unknown version/out-of-range task, conflicting
+contracts and mismatched source-ordered names. These are acceptance cases to run,
+not a claim that the complete source/runtime migration is finished.
+
+Current source evidence corrects an overbroad reading of the private preparation
+module comment: public RuntimePlanBuilder::finish_with_task_authority already
+calls prepare_task_image(...).seal(...), whose consuming completion uses the
+common E0..E14 and F/Q/C preparation. The remaining full Source/private-codec/
+producer-consumer migration is still incomplete; merely exposing that module is
+not the next action. This Source component supplies original definition data,
+not a workaround that installs an expected digest in a producer spec.
+
+R1289 preliminary Core all-target/all-feature locked check completes with actual
+exit 0 in 1m32s. Two subsequent source/test paths change during review, so it is
+not claimed as a frozen pass on the final inputs. R1290 uses the retained stable
+five-owner all-feature library catalog matrix (Core, RuntimePlan, Bundle,
+ProjectLoader, RuntimeDriver; rdeps(Core)). It is running on the final Rust
+inputs. Required new cases and terminal counts must be inspected before claiming
+behavioral acceptance. Per the user's explicit intermediate-commit instruction,
+this coherent private construction cut may be committed/pushed before every
+intermediate state is verified working. That does not waive final acceptance.
+
+Owner review: the new Source coordinator owns aggregate preflight and one
+construction transition; its reading child owns borrowed grammar validation;
+its encoding child owns original-program admission and counted emission. Their
+focused test child owns these same Source/custody/resource boundaries. No runtime
+scope/session state, I/O, unsafe, parallel catalog, source reconstruction fallback
+or public API for file splitting is introduced. Exact current byte/LOC measures
+are retained with the publication evidence. Core fan-in/out remains 31/7, dev
+4/5; the unchanged resolved Cargo graph has 53 workspace reverse consumers. The
+five-owner library slice is not all 53 consumers or final workspace acceptance.
+
+Continue with general executable/function bodies, Host/Line/Entry sources and
+joint complete-program preflight/codec, then the atomic fourteen-family consumer
+completion. Actual selected-Need runtime keys, real registry scope/store/read/
+cleanup/restore, broad final runtime/parity checks, Tier2 and Native/Web evidence
+remain open. No goal completion is claimed.
