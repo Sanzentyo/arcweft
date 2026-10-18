@@ -6,12 +6,17 @@ use super::{
 };
 use crate::entry::RuntimeSchemaLimits;
 use crate::entry::schema::value_budget::ValidationWork;
-use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+use crate::entry::schema::value_encoding::{
+    ValueAdmissionOrigin, ValueResourceAdmission, ValueResourceAdmissionState,
+};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
 use crate::value::RuntimeValueView;
 use crate::value::ownership::RuntimeValueOwnershipRequirement;
 
 mod metadata;
+
+#[cfg(test)]
+mod state_tests;
 
 enum RetainedTypeObligation<'binding> {
     Stored(RuntimeSemanticTypeId),
@@ -34,7 +39,47 @@ pub struct RuntimeRetainedValueAdmission {
     failure: Option<AwbcRuntimeValueSnapshotError>,
 }
 
+/// Exclusive transport of the original bank between incremental publications.
+/// It has no Clone or decoder and cannot issue a second allowance.
+pub(crate) struct RuntimeRetainedValueAdmissionState {
+    owner: Option<RuntimeProgramOwner>,
+    resources: ValueResourceAdmissionState,
+    failure: Option<AwbcRuntimeValueSnapshotError>,
+}
+
+impl RuntimeRetainedValueAdmissionState {
+    pub(crate) fn resume(self) -> RuntimeRetainedValueAdmission {
+        RuntimeRetainedValueAdmission {
+            owner: self.owner,
+            resources: self.resources.resume(),
+            failure: self.failure,
+        }
+    }
+}
+
 impl RuntimeRetainedValueAdmission {
+    /// Moves every counter, the original executable and the first failure.
+    /// A temporary validator retaining the work handle prevents this transfer.
+    pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
+        let Self {
+            owner,
+            resources,
+            failure,
+        } = self;
+        match resources.try_into_state() {
+            Ok(resources) => Ok(RuntimeRetainedValueAdmissionState {
+                owner,
+                resources,
+                failure,
+            }),
+            Err(resources) => Err(Self {
+                owner,
+                resources,
+                failure,
+            }),
+        }
+    }
+
     /// Selects the exact immutable executable for all program-owned descendants.
     #[must_use]
     pub fn for_program(owner: RuntimeProgramOwner, limits: RuntimeSchemaLimits) -> Self {

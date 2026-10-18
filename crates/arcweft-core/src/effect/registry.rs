@@ -15,6 +15,9 @@ use crate::value::{
     RuntimeRetainedValueAdmission, RuntimeValue,
 };
 
+mod journal;
+pub(crate) use journal::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
+
 /// Replayable update data admitted by the exact executable that produced it.
 ///
 /// Values are deeply unrestricted and replay requires fresh admission. There is

@@ -17024,3 +17024,56 @@ Native/AWBC registry dispatch, group admission and real active-scope/storage/
 cleanup/restore, full fourteen-family source/public switch, required workspace
 checks/lints, Tier2 and Native/Web parity remain open. Continue the same active
 goal after this coherent producer-side cut.
+
+### 2026-10-19 — exclusive retained admission and incremental registry journal
+
+Inspected main is 27d597eac276ea5bb06b4ad7b467145ba4004e5a. Eleven owned Core
+paths are dirty, including three new files; fourteen tracked user edits and
+the three held untracked roots remain preserved. The preceding checkpoint is
+normally pushed and verified against fetched/advertised main, all three blobs,
+the reviewed raw patch and 3860 frozen inputs.
+
+R1262 invokes the actual CLI on a registry-writing entry. The process returns
+0, but the runtime reports Failed with RegistryContextRequired. This is a
+runtime failure, not successful state mutation. R1263's --executor awbc-product
+source invocation reaches the same Native path: the CLI currently maps that
+selection to RuntimePlanVm. Its label is not evidence of Product AWBC execution.
+Native/AWBC dispatch and genuine scope/store/cleanup authority remain open.
+
+The retained admission bank now supports exclusive ownership between validation
+calls. Rc::try_unwrap moves the original work counter only when temporary
+validators release their handles; refusal returns the complete unchanged bank.
+The same generic resource-bank fields retain consumed nodes, bytes, work,
+program-storage obligations, exact original program and first failure. The
+exclusive state has neither Clone nor decoding and is Send. Resuming never
+resets limits or grants another allowance.
+
+The private registry journal stages deeply unrestricted immutable packets under
+that single bank. Each append checks metadata and value before copying; a later
+failure stays sticky and finish exposes no successful prefix. This is data
+staging, not an active-scope entitlement. It does not yet connect Engine,
+Product, Host, storage, save or restore. No dependency, feature, unsafe or I/O
+owner changes. Admission-state transfer belongs to retained-value validation;
+the incremental journal belongs to registry publication. Their tests follow
+those boundaries. The existing Cargo graph is unchanged: Core has 53 workspace
+reverse consumers, normal fan-in/out 31/7 and dev 4/5. The existing value/schema
+owners remain cohesive; no facade or public API is widened for physical splitting.
+Current production measurements are value_budget.rs 11577 bytes/306 physical
+LOC, value_encoding.rs 66592/1817, retained_admission.rs 17696/482 and the new
+journal.rs 3582/98. The 1817-line encoding owner keeps one resource and typed
+encoding grammar; the phase parameter changes only work-handle ownership.
+
+R1264 and R1265 Core all-target/all-feature locked checks pass. R1266 builds the
+same five-owner all-feature lib catalog: 2239 cases, exactly seven selected and
+2232 excluded. R1267 executes all seven successfully, 0.078s, actual exit 0;
+exact terminal names and all 3863 immutable source inputs have zero drift. These
+cover aggregate journal limits, original-program replay, sticky failure, no
+failed prefix, bank transfer with live validator aliases, preserved consumed
+resources and the corrected audio-command-reference assertion. R1268 Core
+all-target/all-feature locked Clippy passes, actual exit 0, 1m57s. A subsequent
+pre-note hash audit also observes no source drift. These private-owner checks
+do not discharge the still-required broader final consumer/workspace evidence.
+
+Continue actual registry execution ownership and the same full convergence goal
+after this coherent checkpoint. Both completed selected-Need-key failures from
+R1253 remain unresolved; the CLI frontend repair does not fix runtime writes.

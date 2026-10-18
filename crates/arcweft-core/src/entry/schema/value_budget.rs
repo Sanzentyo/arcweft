@@ -17,13 +17,25 @@ pub(crate) struct ValueBudget {
 #[derive(Clone)]
 pub(crate) struct ValidationWork(Rc<RefCell<ValidationWorkState>>);
 
-struct ValidationWorkState {
+pub(crate) struct ValidationWorkState {
     limits: RuntimeSchemaLimits,
     consumed: u64,
     failure: Option<RuntimeSchemaError>,
 }
 
 impl ValidationWork {
+    /// Transfers the one counter only after all temporary validator borrows end.
+    /// Failure returns the unchanged handle, so aliases cannot fork an allowance.
+    pub(crate) fn try_into_state(self) -> Result<ValidationWorkState, Self> {
+        Rc::try_unwrap(self.0)
+            .map(RefCell::into_inner)
+            .map_err(Self)
+    }
+
+    pub(crate) fn from_state(state: ValidationWorkState) -> Self {
+        Self(Rc::new(RefCell::new(state)))
+    }
+
     pub(crate) fn new(limits: RuntimeSchemaLimits) -> Self {
         Self(Rc::new(RefCell::new(ValidationWorkState {
             limits,

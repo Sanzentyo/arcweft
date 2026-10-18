@@ -352,6 +352,7 @@ mod admission;
 mod projection;
 mod retained_admission;
 pub use retained_admission::RuntimeRetainedValueAdmission;
+pub(crate) use retained_admission::RuntimeRetainedValueAdmissionState;
 
 impl RuntimeValue {
     /// Checks borrowed retained data before an enclosing publication copies

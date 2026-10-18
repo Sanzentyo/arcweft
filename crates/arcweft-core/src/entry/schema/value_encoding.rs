@@ -12,7 +12,7 @@ use crate::value::{
 
 use super::{
     CanonicalSink, CanonicalWriter, RuntimeSchemaChoiceMismatch, RuntimeSchemaError,
-    value_budget::{ValidationWork, ValueBudget},
+    value_budget::{ValidationWork, ValidationWorkState, ValueBudget},
 };
 
 struct DescriptorAdmission<'a, 'b, S: CanonicalSink + ?Sized, V: ValueValidation> {
@@ -463,16 +463,67 @@ pub(crate) fn validate_admitted_view<V: ValueValidation>(
 /// Resource ownership for an admission containing several complete values and
 /// partial places. Logical nodes, encoded complete-value bytes and relation
 /// work accumulate across descendants; visiting another value grants no quota.
-pub(crate) struct ValueResourceAdmission {
+pub(crate) struct ValueResourceAdmission<Work = ValidationWork> {
     budget: ValueBudget,
     sink: super::CanonicalCountingSink,
-    work: ValidationWork,
+    work: Work,
     origin: ValueAdmissionOrigin,
     encoding: ValueEncoding,
     program_storage_obligations: bool,
 }
 
+/// The same allowance between validation calls, with no shared local handle.
+pub(crate) type ValueResourceAdmissionState = ValueResourceAdmission<ValidationWorkState>;
+
+impl<Work> ValueResourceAdmission<Work> {
+    fn map_work<Next>(self, map: impl FnOnce(Work) -> Next) -> ValueResourceAdmission<Next> {
+        ValueResourceAdmission {
+            budget: self.budget,
+            sink: self.sink,
+            work: map(self.work),
+            origin: self.origin,
+            encoding: self.encoding,
+            program_storage_obligations: self.program_storage_obligations,
+        }
+    }
+}
+
+impl ValueResourceAdmissionState {
+    pub(crate) fn resume(self) -> ValueResourceAdmission {
+        self.map_work(ValidationWork::from_state)
+    }
+}
+
 impl ValueResourceAdmission {
+    pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
+        let Self {
+            budget,
+            sink,
+            work,
+            origin,
+            encoding,
+            program_storage_obligations,
+        } = self;
+        match work.try_into_state() {
+            Ok(work) => Ok(ValueResourceAdmission {
+                budget,
+                sink,
+                work,
+                origin,
+                encoding,
+                program_storage_obligations,
+            }),
+            Err(work) => Err(Self {
+                budget,
+                sink,
+                work,
+                origin,
+                encoding,
+                program_storage_obligations,
+            }),
+        }
+    }
+
     pub(crate) fn live(limits: super::RuntimeSchemaLimits) -> Self {
         Self::new(limits, ValueAdmissionOrigin::Live, ValueEncoding::Live)
     }

@@ -7,6 +7,8 @@ use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, Aw
 use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
 use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
 
+mod journal;
+
 fn semantic(index: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([index; 32])
 }

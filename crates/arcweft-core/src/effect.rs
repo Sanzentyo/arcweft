@@ -12,6 +12,7 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 pub use registry::RuntimeRegistryStateUpdate;
+pub(crate) use registry::{RuntimeRegistryUpdateJournal, RuntimeRegistryUpdateJournalError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {
