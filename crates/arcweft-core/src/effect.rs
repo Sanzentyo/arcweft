@@ -6,10 +6,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod assertion_identity;
+mod registry;
 
 pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
+pub use registry::RuntimeRegistryStateUpdate;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {

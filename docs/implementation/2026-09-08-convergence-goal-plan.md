@@ -16689,3 +16689,56 @@ selection is complete at this boundary; it does not itself authorize an active
 scope or persistent storage. R1219's concrete missing Core state-update projection
 remains unresolved. Continue that actual request, ownership, Native/AWBC and host
 execution path after publication; keep the full original goal active.
+
+### 2026-10-19 — typed registry replay-data checkpoint
+
+Inspected main is 928555f672c4012cc26d2cf7fc855e2da091b1ca. The fourteen
+held tracked edits and three held untracked entries remain untouched. The
+requested one-time workspace clean was already completed successfully: 163710
+files / 208.8 GiB, receipt arcweft-workspace-clean-20261017T150750Z.json in the
+retained temporary evidence directory. Its immediate target-absence and unchanged
+Git porcelain are recorded; later builds recreate target. No additional clean.
+
+Core effect::RuntimeRegistryStateUpdate now retains the exact original Plan or
+AWBC owner, expected semantic type, retained invocation binding, typed static key
+and inert value data. try_copy admits the borrowed key and deeply unrestricted
+value before copying; materialize checks the exact executable again and uses the
+same retained bank for replay. A lookalike executable with equal semantic IDs is
+rejected by ProgramOwnerMismatch. First errors remain sticky. There is no public
+packet Clone, Deserialize or raw snapshot constructor. Affine values cannot gain
+borrowed-copy custody through this data boundary. A static key grants no active
+scope lease. This is replay data, not yet an executable registry operation or a
+host storage implementation.
+
+R1227 and R1228 expose test-fixture builder API mistakes (E0599, then missing
+locals argument E0061), both repaired. R1229 catalogs 1705 Core cases and R1230
+passes all 1705, zero skips, 19.102s, actual 0 for the initial six-test form.
+Review subsequently removes unchecked Clone and adds two boundary cases.
+R1234 catalogs all 1707 final Core cases; R1235 passes all 1707, zero skips,
+16.116s, actual 0. Its exact terminal set and all 3854 frozen inputs are verified
+against registry-update-final.source-freeze.json. All predecessor 1699 cases
+remain, with no removal or ignore-state change. R1236 runs the new public API
+compile-fail doctest: one passed, 68 filtered out, actual 0. Tests cover original
+Plan/AWBC data admission and replay, not actual Native/AWBC instruction parity.
+
+R1231 workspace/all-target/all-feature/locked check passes, 1m28s, actual 0 before
+the final Clone removal. R1232 workspace Clippy returns actual 0, 5m52s, but source
+changes during that command mean it is not final frozen-input lint evidence.
+R1233 canonical structure returns 0; four explicit Rust paths pass rustfmt and
+owned tracked whitespace checks. R1237 actual all-target/all-feature Core reverse
+tree returns 0. Retained resolved metadata gives 53 workspace reverse consumers;
+99 manifest/lock inputs are unchanged. This checkpoint does not claim all 53
+consumer tests, final workspace lint, wasm, full Tier2 or visual parity.
+
+Ownership review: the new cohesive replay-data owner is 138 physical LOC / 5161
+bytes, with 324 LOC / 10954 bytes in its dedicated tests. Existing effect and value
+snapshot owners gain only the export and structured original-owner mismatch.
+Measured Core workspace fan-in/out are 31/7 (dev 4/5); no Cargo edge, unsafe or
+version change. Key and value checks share node/work allowances, but the current
+metadata-string API bounds each key component without charging aggregate header
+bytes to the value bank. Repair that aggregate accounting next, before treating
+the replay-data boundary as complete. This is an explicit intermediate checkpoint
+under the user's instruction that intermediate commits need not be runnable.
+R1219's missing Core LifetimeSet projection remains unresolved. Continue aggregate
+admission, the actual operation/source/factory, Native/AWBC requests and host
+scope/storage integration; the complete convergence goal remains active.

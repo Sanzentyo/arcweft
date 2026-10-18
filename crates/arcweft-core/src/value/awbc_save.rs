@@ -39,6 +39,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     AffineValue,
     #[error("retained type {expected:?} requires its original program owner")]
     ProgramOwnerRequired { expected: RuntimeSemanticTypeId },
+    #[error("retained type {expected:?} belongs to another original program owner")]
+    ProgramOwnerMismatch { expected: RuntimeSemanticTypeId },
     #[error(transparent)]
     Nesting(#[from] super::RuntimeValueNestingError),
     #[error(transparent)]
