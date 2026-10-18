@@ -26,7 +26,7 @@ fn check_registry_write_accepts_an_ordinary_call_rhs() {
     let path = temp_arcw(
         "registry-write-call-rhs",
         r"
-fn seen() -> Bool { return true }
+fn seen() -> bool { return true }
 flow registry effects { state.write('flow) } {
     'flow.flags.seen <- seen()
 }

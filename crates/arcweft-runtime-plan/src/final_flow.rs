@@ -6819,35 +6819,9 @@ impl<'a> FinalFlowLowerer<'a> {
                         "registry write {id:?} has no checked runtime fact"
                     ))
                 })?;
-                let source_type = self.expression_source_type(write.value())?;
-                let locals = if source_type.identity() == write.value_type().identity() {
-                    &self.control.expression_values
-                } else {
-                    &self.control.expression_final_values
-                };
-                let local = locals.get(&write.value()).cloned().ok_or_else(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "registry write {id:?} RHS has no admitted result local"
-                    ))
-                })?;
-                // Join lazy branches and resumptions through the original RHS
-                // type. This transfers the value once, without evaluating the
-                // address as a value or changing the key's value domain.
                 self.lower_flow_value(
                     write.value(),
-                    RuntimeFlowValueContinuation::Bind {
-                        pattern: bind_seed(write.value_type(), local.clone()),
-                        tail: RuntimeFlowTail::ContinueValue {
-                            value: local_seed(
-                                write.value_type(),
-                                local,
-                                RuntimeLocalReadMode::Move,
-                            ),
-                            continuation: Box::new(RuntimeFlowValueContinuation::RegistryWrite {
-                                statement: id,
-                            }),
-                        },
-                    },
+                    RuntimeFlowValueContinuation::RegistryWrite { statement: id },
                 )
             }
             HirStmtKind::LetElse {
@@ -8720,17 +8694,37 @@ impl<'a> FinalFlowLowerer<'a> {
                             "registry write {statement:?} has no checked runtime fact"
                         ))
                     })?;
-                if value.ty() != write.value_type().identity() {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "registry write {statement:?} RHS continuation changed its checked type"
-                    )));
-                }
-                vec![RuntimeFlowOpSeed::EvaluatedEffect(
+                let mut ops = Vec::new();
+                let value = if value.ty() == write.value_type().identity() {
+                    value
+                } else {
+                    // A lazy branch may return a member of the checked RHS
+                    // union. Bind that member to the already admitted join
+                    // slot; ordinary calls already supply their result slot.
+                    let source_type = self.expression_source_type(write.value())?;
+                    let locals = if source_type.identity() == write.value_type().identity() {
+                        &self.control.expression_values
+                    } else {
+                        &self.control.expression_final_values
+                    };
+                    let local = locals.get(&write.value()).cloned().ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "registry write {statement:?} RHS has no admitted result local"
+                        ))
+                    })?;
+                    ops.push(RuntimeFlowOpSeed::Let {
+                        pattern: bind_seed(write.value_type(), local.clone()),
+                        expr: value,
+                    });
+                    local_seed(write.value_type(), local, RuntimeLocalReadMode::Move)
+                };
+                ops.push(RuntimeFlowOpSeed::EvaluatedEffect(
                     RuntimeEvaluatedEffectSeed::RegistryWrite {
                         key: write.address().key().clone(),
                         value,
                     },
-                )]
+                ));
+                ops
             }
             RuntimeFlowValueContinuation::Return => {
                 vec![RuntimeFlowOpSeed::ReturnExpr(match &self.mutation_return {

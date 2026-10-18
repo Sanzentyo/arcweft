@@ -16973,3 +16973,54 @@ projection failure has not yet been rerun; do not call the CLI case fixed withou
 actual execution. Complete the same goal after this cut. Nested Cargo builds
 from R1253 continue serially within their existing configuration; no additional
 clean, artifact relocation, build/profile/OS tuning or branch/worktree is used.
+
+### 2026-10-19 — actual CLI registry projection and call-result repair
+
+Delivery 04fca6634070fb1c3b1daaed17c9a1a8a69e77a5 is normally pushed and verified
+against fetched/advertised main, four blobs, reviewed raw patch, 3860 inputs and
+empty index; held tracked edits remain fourteen. R1253 subsequently completes:
+2576 run, 2573 pass (four slow), three failures, zero skips, 1748.896s, actual
+100. The exact terminal set matches its catalog. Failures are the old audio
+expectation and the Native/decoded-AWBC completed selected-Need-key assertions.
+All seven new schema/codec/lowering tests pass. API compile and actual IME
+fixture-generator integrations pass. The terminal audit records the four
+explicit post-catalog source changes and the earlier 3859-input zero-drift
+pre-fixture-fix audit; it does not claim a frozen current overall pass.
+
+R1255 builds the 480-case CLI check catalog, selects the exact three registry
+cases and excludes 477. R1256 executes them: two pass, one fails, 2.666s, actual
+100, all 3860 inputs audited unchanged. The held original literal state.write
+case and the new lazy branch case pass, removing the actual R1219 missing Core
+projection failure. The call fixture first used invalid nominal Bool; the
+language primitive is bool. R1257 corrects that source and invokes the actual
+CLI: it reaches Core lowering but fails with a repeated local declaration.
+The ordinary-call continuation already owns an admitted result local; the new
+unconditional Bind was binding that same local again.
+
+This repair forwards an already correctly typed RHS directly. Only a branch
+member whose type differs from the original checked RHS contract uses the
+existing admitted join local before Move into RegistryWrite. The key remains
+statement-owned metadata and the original RHS type remains authority. No input
+value is copied, evaluated twice or retyped by an unchecked annotation. The
+call fixture now uses bool. Formatting and owned whitespace pass.
+
+R1258 bin-only CLI build is cancelled through its own session after it selects
+a different dependency feature union and starts fresh heavy dependency builds;
+wrapper exit 1, actual Cargo exit unknown. The unchanged all-feature nextest
+CLI slice reuses its existing graph instead. No manifest, feature, Cargo/OS/job/
+profile setting, build-artifact location, branch or worktree is changed. R1260
+then builds that exact CLI catalog successfully, 1m25s. R1261 passes all three
+selected cases, 477 explicit exclusions, 2.083s, actual 0. Exact terminal case
+matching and every one of the 3860 immutable registry-rhs-call-repair inputs are
+verified with zero drift before this prose addition.
+
+R1259 also invokes the rebuilt actual arcw.exe on independent literal, lazy
+Bool-branch and ordinary-call sources: all three return 0. Executable and source
+hashes/logs are retained. A separate exploratory Bool/i64 mixed-branch source
+returns 1 in final semantic type admission before runtime-plan lowering; no
+heterogeneous-join acceptance or execution claim is made. The corrected Core
+audio assertion has still not been reexecuted. Need key authority defects,
+Native/AWBC registry dispatch, group admission and real active-scope/storage/
+cleanup/restore, full fourteen-family source/public switch, required workspace
+checks/lints, Tier2 and Native/Web parity remain open. Continue the same active
+goal after this coherent producer-side cut.
