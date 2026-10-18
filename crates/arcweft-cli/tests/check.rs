@@ -181,6 +181,7 @@ include!("check/toolchain_jit.rs");
 mod agent_observe_native;
 
 include!("check/cli_runtime_bench.rs");
+include!("check/registry_write_lowering.rs");
 include!("check/numeric_map_packet.rs");
 include!("check/numeric_map_control.rs");
 include!("check/bench_completion.rs");

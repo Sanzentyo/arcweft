@@ -16938,3 +16938,38 @@ failure evidence, and run the next required checks at a meaningful boundary.
 Native/AWBC registry execution and active-scope/storage/cleanup/restore authority,
 production final-HIR projection, all-fourteen-family source/Need migration, CLI
 acceptance, Tier2 and Native/Web parity still require completion.
+
+### 2026-10-19 — checked registry RHS projection checkpoint
+
+Delivery bfe6b4e2854498e5fe43eed719e823f10d5d3213 is normally pushed and verified
+against fetched/advertised main, all nine blobs, the reviewed raw patch, 3859
+inputs and empty index. The corrected audio expectation remains unexecuted;
+R1253's remaining compile/API/generator integrations are still running. Its
+observed seven new cases pass, while the old audio expectation and both actual
+selected-Need completed-plan-key cases fail. The Core tests/note and now this
+new source projection changed after that run's compiled catalog; its pre-fix
+3859-input zero-drift audit is retained, not relabelled as a frozen current pass.
+
+FinalFlow lowering now consumes the checked statement-owned RegistryWrite fact.
+The target stays static metadata. The general RHS value continuation handles
+branches, ordinary calls and suspension; its existing admitted result local
+joins the original RHS type before a Move feeds RegistryWrite. Source and final
+expression locals are selected by their checked phase identities. No synthetic
+Unit/Any address, second evaluation, value copy, or path reconstruction is used.
+The final continuation requires the original checked RHS type and emits the
+Core RegistryWrite with the Id-owned key. This uses the same checked-fact view
+for global and closed executable instances. Two new CLI acceptance cases cover
+lazy RHS branches and an ordinary call RHS; the held existing state.write case
+remains unchanged. Formatting and whitespace pass; compiler/actual CLI execution
+of these new changes is pending. The final_flow owner still owns source-order
+continuations and HIR-to-Core projection; this adds no public API, dependency,
+feature, I/O owner, new control-local role or independent key/type model.
+
+This connects production projection as an intermediate producer migration.
+Native/AWBC registry request dispatch, original-program aggregate admission,
+active-scope/storage/cleanup/restore and their failure atomicity must still be
+completed before claiming usable registry execution. The original R1219 missing
+projection failure has not yet been rerun; do not call the CLI case fixed without
+actual execution. Complete the same goal after this cut. Nested Cargo builds
+from R1253 continue serially within their existing configuration; no additional
+clean, artifact relocation, build/profile/OS tuning or branch/worktree is used.

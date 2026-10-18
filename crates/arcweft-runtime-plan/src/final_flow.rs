@@ -5963,6 +5963,9 @@ enum RuntimeFlowValueContinuation {
     Assign {
         statement: StmtId,
     },
+    RegistryWrite {
+        statement: StmtId,
+    },
     Return,
     ExitScope {
         owner: ExprId,
@@ -6809,6 +6812,43 @@ impl<'a> FinalFlowLowerer<'a> {
                             .map_err(RuntimePlanLowerError::new)?,
                     ])
                 }
+            }
+            HirStmtKind::LifetimeSet { .. } => {
+                let write = self.semantic_facts.registry_write(id).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "registry write {id:?} has no checked runtime fact"
+                    ))
+                })?;
+                let source_type = self.expression_source_type(write.value())?;
+                let locals = if source_type.identity() == write.value_type().identity() {
+                    &self.control.expression_values
+                } else {
+                    &self.control.expression_final_values
+                };
+                let local = locals.get(&write.value()).cloned().ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "registry write {id:?} RHS has no admitted result local"
+                    ))
+                })?;
+                // Join lazy branches and resumptions through the original RHS
+                // type. This transfers the value once, without evaluating the
+                // address as a value or changing the key's value domain.
+                self.lower_flow_value(
+                    write.value(),
+                    RuntimeFlowValueContinuation::Bind {
+                        pattern: bind_seed(write.value_type(), local.clone()),
+                        tail: RuntimeFlowTail::ContinueValue {
+                            value: local_seed(
+                                write.value_type(),
+                                local,
+                                RuntimeLocalReadMode::Move,
+                            ),
+                            continuation: Box::new(RuntimeFlowValueContinuation::RegistryWrite {
+                                statement: id,
+                            }),
+                        },
+                    },
+                )
             }
             HirStmtKind::LetElse {
                 pattern: owner,
@@ -8671,6 +8711,27 @@ impl<'a> FinalFlowLowerer<'a> {
                     .lower_flow_assignment_value(statement, value)
                     .map_err(RuntimePlanLowerError::new)?,
             ],
+            RuntimeFlowValueContinuation::RegistryWrite { statement } => {
+                let write = self
+                    .semantic_facts
+                    .registry_write(statement)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "registry write {statement:?} has no checked runtime fact"
+                        ))
+                    })?;
+                if value.ty() != write.value_type().identity() {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "registry write {statement:?} RHS continuation changed its checked type"
+                    )));
+                }
+                vec![RuntimeFlowOpSeed::EvaluatedEffect(
+                    RuntimeEvaluatedEffectSeed::RegistryWrite {
+                        key: write.address().key().clone(),
+                        value,
+                    },
+                )]
+            }
             RuntimeFlowValueContinuation::Return => {
                 vec![RuntimeFlowOpSeed::ReturnExpr(match &self.mutation_return {
                     Some(publication) => publication.publish(value),
