@@ -63,8 +63,30 @@ pub struct ValidatedViewTaskPlanBinding(ViewTaskPlanBindingSource);
 #[serde(deny_unknown_fields)]
 pub struct ViewTaskPlanBindingAssertion {
     expected: ExpectedTaskPlanKey,
-    site: ViewMatchSiteId,
-    admission: CheckedViewMatchAdmissionDigest,
+    site: ExpectedViewTaskSite,
+    admission: ExpectedViewTaskAdmission,
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+struct ExpectedViewTaskSite([u8; 32]);
+
+impl From<ViewMatchSiteId> for ExpectedViewTaskSite {
+    fn from(site: ViewMatchSiteId) -> Self {
+        Self(*site.as_bytes())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+struct ExpectedViewTaskAdmission([u8; 32]);
+
+impl From<CheckedViewMatchAdmissionDigest> for ExpectedViewTaskAdmission {
+    fn from(admission: CheckedViewMatchAdmissionDigest) -> Self {
+        Self(*admission.as_bytes())
+    }
 }
 
 /// One publication of inert link assertions. Clones share the same publication
@@ -149,7 +171,7 @@ pub(super) struct ValidatedViewTaskPlanBindings {
 /// prefix and the same upper transcript must still pass the common seal.
 pub struct ViewTaskPlanSourceAuthority<'a> {
     program: &'a ValidatedViewProgramResource,
-    rows: BTreeMap<ExpectedTaskPlanKey, &'a ViewTaskPlanBindingAssertion>,
+    rows: BTreeMap<ExpectedTaskPlanKey, (ViewMatchSiteId, CheckedViewMatchAdmissionDigest)>,
 }
 
 impl ValidatedViewProduct {
@@ -210,12 +232,12 @@ impl ValidatedViewProgramResource {
         let mut rows = BTreeMap::new();
         let mut covered = BTreeSet::new();
         for assertion in assertions {
-            let admission = sites.get(&assertion.site).ok_or(Error::SiteMismatch)?;
-            if *admission != assertion.admission {
+            let (site, admission) = sites.get(&assertion.site).ok_or(Error::SiteMismatch)?;
+            if ExpectedViewTaskAdmission::from(*admission) != assertion.admission {
                 return Err(Error::AdmissionMismatch);
             }
-            covered.insert(assertion.site);
-            rows.insert(assertion.expected, assertion);
+            covered.insert(*site);
+            rows.insert(assertion.expected, (*site, *admission));
         }
         if covered.len() != sites.len() {
             return Err(Error::BindingSetMismatch);
@@ -256,8 +278,8 @@ impl ValidatedViewProgramResource {
                         .ok_or(Error::UnsealedBinding)?
                         .key()
                         .into(),
-                    site: binding.site(),
-                    admission: binding.admission(),
+                    site: binding.site().into(),
+                    admission: binding.admission().into(),
                 })
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -275,7 +297,10 @@ impl ValidatedViewProgramResource {
         &self,
         work: u64,
         limits: ViewProductValidationLimits,
-    ) -> Result<BTreeMap<ViewMatchSiteId, CheckedViewMatchAdmissionDigest>, Error> {
+    ) -> Result<
+        BTreeMap<ExpectedViewTaskSite, (ViewMatchSiteId, CheckedViewMatchAdmissionDigest)>,
+        Error,
+    > {
         let mut budget = MatchSourceMaterializationBudget::new(limits.match_source_bytes);
         for instruction in &self.resource().instructions {
             if let ViewProgramInstruction::Match { program, .. } = instruction {
@@ -300,7 +325,7 @@ impl ValidatedViewProgramResource {
                     .finalize();
                 let admission =
                     CheckedViewMatchAdmissionDigest::for_match_semantic_transcript(hash.as_bytes());
-                if sites.insert(site, admission).is_some() {
+                if sites.insert(site.into(), (site, admission)).is_some() {
                     return Err(Error::DuplicateBinding);
                 }
             }
@@ -375,7 +400,7 @@ impl ValidatedViewTaskPlanBindings {
             if !expected_set.contains(&source.coordinate) {
                 return Err(Error::BindingSetMismatch);
             }
-            let admission = sites.get(&source.site).ok_or(Error::SiteMismatch)?;
+            let (_, admission) = sites.get(&source.site.into()).ok_or(Error::SiteMismatch)?;
             if *admission != source.admission {
                 return Err(Error::AdmissionMismatch);
             }
@@ -427,12 +452,11 @@ impl ViewTaskPlanAuthority for ViewTaskPlanSourceAuthority<'_> {
             .base()
             .expected_key()
             .ok_or(Error::ExpectedSourceAssertion)?;
-        let binding = self
+        let (site, admission) = self
             .rows
             .get(expected)
             .ok_or(Error::MissingOriginalBinding)?;
-        self.program
-            .complete_task_plan(binding.site, binding.admission, request)
+        self.program.complete_task_plan(*site, *admission, request)
     }
 }
 

@@ -20809,3 +20809,34 @@ operation/slot/capture integration, Presentation and every preceding full
 acceptance requirement remain outstanding. Additional raw entry/Flow/host
 consumers still need the same admitted owner during that public migration; this
 cut does not declare those None-authority paths complete.
+
+### 2026-10-20 — keep serialized View identities in their inert assertion role
+
+The View/Source owner checkpoint is published at
+`bdef344943cd6b671f9970e3602b430d90acbec9`. Fresh origin/main, its full parent,
+tree, patch and all 22 published blobs match the reviewed working/index bytes;
+3930 frozen inputs have zero drift and the index is empty. Baseline advancement
+retains the fourteen tracked and three untracked held paths.
+
+R1647 actually failed catalogue construction with Cargo exit 101: the proposed
+assertion row tried to derive Serde for ViewMatchSiteId and
+CheckedViewMatchAdmissionDigest. Those issued types intentionally have no wire
+issuer. No runtime tests ran, and the intermediate publication was not claimed
+operational. This is a current change-caused compile failure, not an environment
+limitation or a reason to add Serde to the issued IDs.
+
+The assertion fields now use private ExpectedViewTaskSite and
+ExpectedViewTaskAdmission byte wrappers. Only issued-to-expected conversion is
+implemented. The common actual-source traversal indexes its real issued site and
+admission by the inert expected site; after both comparisons succeed, the Source
+authority retains those original issued IDs, never deserialized substitutes.
+This corrects the earlier description of an index over borrowed assertion rows:
+the bounded accepted index owns copied fixed-size proof coordinates and borrows
+the immutable View source owner. Both construction and decoded roles still use
+the same source traversal and completion transcript. No View crate boundary,
+domain/version, allowance, capture/copy condition or Cargo edge is weakened.
+
+R1649 is the fresh catalogue build after that correction, with the same five
+owner packages, relevant library/integration targets and explicit case filter
+as R1647. It is currently compiling; actual execution and current Clippy remain
+pending. The full goal and all remaining acceptance recorded above remain open.
