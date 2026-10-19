@@ -18,8 +18,9 @@ use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewElementKind,
     ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
     ViewLogicalRect, ViewProgramInstruction, ViewProgramResource, ViewSecureInputPolicy,
-    ViewSemanticTarget, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
-    ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
+    ViewSemanticTarget, ViewTaskPlanAssertions, ViewTextResource, ViewTextSelectionPolicy,
+    ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
+    ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::view::{
     ViewDefinitionRef, ViewDefinitionResource, ViewHandlerRef, ViewInstructionSpan, ViewProgramId,
@@ -198,6 +199,7 @@ fn view_program() -> ViewProgramResource {
         }],
         value_programs: Vec::new(),
         value_inputs: Vec::new(),
+        task_plan_bindings: ViewTaskPlanAssertions::default(),
         instructions,
         handlers: FixtureHandler::ALL
             .iter()

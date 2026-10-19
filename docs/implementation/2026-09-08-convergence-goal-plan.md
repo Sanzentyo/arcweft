@@ -21638,3 +21638,48 @@ program/input task sites. Finish that migration and its deterministic AWFB test.
 Aggregate original-allowance admission, complete Source public switching/all14
 families, Presentation, remaining semantic/execution failures, strict lint, Tier2
 and Native/Web capture/parity are still required. This does not complete the goal.
+
+### 2026-10-20 — IME producer uses typed View assertions
+
+The borrowed-input boundary is published and freshly verified at
+`d95d8b189fc7d45ddbd8279f3a92654f1f817866`, parent
+`41ee27b36655a3240b1e1f353eb012a1a6aa5a4f`, tree
+`31fe93b7fe26e58718364de0af88691a87ca8458`, patch SHA-256
+`43b75ca8a1bdff3a98407370b49a8ae736a8ca198332bcf33edabd32e12d76c9`.
+All eight blobs and 3931 inputs matched; owned0/held14, empty index and unchanged
+99 manifest/lock inputs. R1718 current workspace all-feature/all-target locked
+check has now completed with exit0 (3m07s, warnings remain). It checks workspace
+Rust; the standalone nightly generator needs its own execution evidence.
+
+The IME fixture's literal View resource now initializes ViewTaskPlanAssertions
+through its existing typed Default, matching the owner used by the other static
+View producers. The authored fixture has no View task sites, value programs or
+value inputs. It therefore introduces no link assertion or task-key authority.
+The existing shared one-publication assertion slot, bundle validation and codec
+own that state; there is no parallel vector or fallback Source. An initial local
+edit incorrectly used Vec; owner inspection corrected the carrier before this
+checkpoint. R1720 had started before that correction and is not frozen final
+acceptance. It completed with exit0, one passed case in 726.001s. Preserve that
+actual result with its input-change limitation.
+
+R1719 compiled the exact one-case IME test. R1721 independently listed that same
+compiled binary through nextest's metadata reuse, using retained Cargo metadata
+whose digest and unchanged manifest/lock footprint were checked. The executable
+itself was hashed and remains in place. R1722 is the fixed-source execution of
+that complete one-case inventory: exit0, one passed in 383.616s, zero skipped.
+It preserves both fixture
+generations, byte equality, AWFB codec/round-trip checks, text-control assertions
+and executable callbacks. Its runtime source freeze derives from the pre-run
+3931-path snapshot and includes all 3930 inputs other than this operational note;
+only that non-executable note is excluded so evidence publication can continue.
+The exact terminal case, all 3930 source hashes, reused executable and pinned
+Cargo metadata matched after execution. Held14 remained unchanged.
+No test, assertion, execution amount, budget, case filter or binary was weakened.
+
+The producer repair's execution evidence is complete for this case. The Core
+53-package R1717 catalogue handle 92249 remains live. After R1717
+terminal success, inspect its complete actual inventory, retain all default-
+excluded cases, and run the same full 53-package selection against a fresh source
+freeze. Do not use this tool's 17-package bundle-owner graph to narrow that Core
+reverse closure. Strict lint, the remaining implementation/public migrations,
+semantic/execution failures, Tier2 and Native/Web capture/parity remain open.
