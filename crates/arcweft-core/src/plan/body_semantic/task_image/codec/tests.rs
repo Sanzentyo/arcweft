@@ -212,6 +212,135 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
 }
 
 #[test]
+fn prepared_task_source_borrows_wire_and_defers_identity_publication() {
+    let (original, original_coordinate) = published();
+    let expected = original.task_plan(&original_coordinate).unwrap().key();
+    for valid_assertion in [true, false] {
+        let mut encoded = bytes(&original);
+        if !valid_assertion {
+            let key_start = encoded.len() - 32;
+            encoded[key_start..].fill(0);
+        }
+        let mut resources = resources();
+        let prepared = PreparedRuntimeTaskSource::preflight(
+            &encoded,
+            limits(),
+            RuntimeTaskPlanSealLimits::default(),
+            TaskSemanticMeter::new(1_000_000, 1_000_000),
+            &mut resources,
+        )
+        .unwrap();
+        assert_eq!(prepared.bytes(), encoded);
+        assert_eq!(prepared.bytes().as_ptr(), encoded.as_ptr());
+        assert_eq!(prepared.task_count, 1);
+        let image = prepared.materialize().unwrap();
+        let coordinate = image.coordinate_owner.resolve(0).unwrap();
+        assert!(coordinate.sealed_plan().is_none());
+        assert!(original.task_plan(&coordinate).is_none());
+        let sealed = image.seal(RuntimeTaskPlanSealLimits::default(), None);
+        if valid_assertion {
+            let restored = sealed.unwrap().into_plan();
+            assert_eq!(restored.task_plan(&coordinate).unwrap().key(), expected);
+            assert!(restored.task_plan(&original_coordinate).is_none());
+        } else {
+            assert!(matches!(
+                sealed.err().unwrap(),
+                RuntimeTaskPlanSealError::ExpectedKeyMismatch { ordinal: 0 }
+            ));
+            assert!(coordinate.sealed_plan().is_none());
+        }
+        assert_eq!(
+            original.task_plan(&original_coordinate).unwrap().key(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn prepared_task_source_carries_original_work_through_materialization() {
+    let (original, _) = published();
+    let encoded = bytes(&original);
+    let mut value_resources = resources();
+    let measured = PreparedRuntimeTaskSource::preflight(
+        &encoded,
+        limits(),
+        RuntimeTaskPlanSealLimits::default(),
+        TaskSemanticMeter::new(1_000_000, 1_000_000),
+        &mut value_resources,
+    )
+    .unwrap();
+    let preflight_work = measured.meter.totals().0;
+    let measured = measured.materialize().unwrap();
+    let complete_work = measured.preparation_meter.as_ref().unwrap().totals().0;
+    assert!(complete_work > preflight_work);
+    assert!(preflight_work >= 3 * encoded.len() as u64);
+
+    for (maximum, prefix) in [(complete_work, 0), (complete_work + 1, 1)] {
+        let mut meter = TaskSemanticMeter::new(maximum, 1_000_000);
+        meter.charge_work(prefix).unwrap();
+        let mut value_resources = resources();
+        let prepared = PreparedRuntimeTaskSource::preflight(
+            &encoded,
+            limits(),
+            RuntimeTaskPlanSealLimits::default(),
+            meter,
+            &mut value_resources,
+        )
+        .unwrap();
+        assert_eq!(prepared.meter.totals().0, preflight_work + prefix);
+        let image = prepared.materialize().unwrap();
+        assert_eq!(
+            image.preparation_meter.as_ref().unwrap().totals().0,
+            complete_work + prefix
+        );
+        assert!(
+            image
+                .coordinate_owner
+                .resolve(0)
+                .unwrap()
+                .sealed_plan()
+                .is_none()
+        );
+    }
+
+    for (maximum, prefix) in [(preflight_work, 0), (complete_work, 1)] {
+        let mut meter = TaskSemanticMeter::new(maximum, 1_000_000);
+        meter.charge_work(prefix).unwrap();
+        let mut value_resources = resources();
+        let prepared = PreparedRuntimeTaskSource::preflight(
+            &encoded,
+            limits(),
+            RuntimeTaskPlanSealLimits::default(),
+            meter,
+            &mut value_resources,
+        )
+        .unwrap();
+        assert_eq!(prepared.meter.totals().0, preflight_work + prefix);
+        let error = prepared.materialize().err().unwrap();
+        let cause = if prefix == 0 {
+            let RuntimeTaskSourceCodecError::Program(program) = error else {
+                panic!("{error:?}")
+            };
+            let RuntimeProgramSourceError::Declarations(
+                crate::plan::declaration_sources::RuntimePlanDeclarationSourceError::Resource(
+                    cause,
+                ),
+            ) = *program
+            else {
+                panic!("{program:?}")
+            };
+            cause
+        } else {
+            let RuntimeTaskSourceCodecError::Resource(cause) = error else {
+                panic!("{error:?}")
+            };
+            cause
+        };
+        assert_eq!(cause, TaskSemanticEncodingError::SemanticWork);
+    }
+}
+
+#[test]
 fn task_source_frame_has_one_canonical_version_one_wire_shape() {
     let (original, coordinate) = published();
     let mut expected = b"arcweft.runtime.task-sources.v1\0".to_vec();

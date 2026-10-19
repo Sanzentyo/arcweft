@@ -227,8 +227,37 @@ impl UnsealedRuntimePlanImage {
         bytes: &[u8],
         limits: RuntimeTaskSourceCodecLimits,
         seal_limits: RuntimeTaskPlanSealLimits,
-        mut meter: TaskSemanticMeter,
+        meter: TaskSemanticMeter,
         resources: &mut ValueResourceAdmission,
+    ) -> Result<Self, RuntimeTaskSourceCodecError> {
+        PreparedRuntimeTaskSource::preflight(bytes, limits, seal_limits, meter, resources)?
+            .materialize()
+    }
+}
+
+/// Borrows the complete original wire Source without reserving a namespace or
+/// constructing rows. Both original allowances stay with this preparation;
+/// materialization cannot replace either bank or its admitted limits.
+pub(in crate::plan) struct PreparedRuntimeTaskSource<'bytes, 'resources> {
+    bytes: &'bytes [u8],
+    limits: RuntimeTaskSourceCodecLimits,
+    seal_limits: RuntimeTaskPlanSealLimits,
+    program: PreparedRuntimeProgramSource<'bytes>,
+    references: References,
+    task_count: u32,
+    row_offset: usize,
+    task_storage: usize,
+    meter: TaskSemanticMeter,
+    resources: &'resources mut ValueResourceAdmission,
+}
+
+impl<'bytes, 'resources> PreparedRuntimeTaskSource<'bytes, 'resources> {
+    pub(in crate::plan) fn preflight(
+        bytes: &'bytes [u8],
+        limits: RuntimeTaskSourceCodecLimits,
+        seal_limits: RuntimeTaskPlanSealLimits,
+        mut meter: TaskSemanticMeter,
+        resources: &'resources mut ValueResourceAdmission,
     ) -> Result<Self, RuntimeTaskSourceCodecError> {
         meter.constrain(
             seal_limits.max_semantic_work,
@@ -298,6 +327,39 @@ impl UnsealedRuntimePlanImage {
         })();
         let (program, references, task_count, row_offset, task_storage) = checked
             .map_err(|error: RuntimeTaskSourceCodecError| error.reject_in_bank(&mut meter))?;
+        Ok(Self {
+            bytes,
+            limits,
+            seal_limits,
+            program,
+            references,
+            task_count,
+            row_offset,
+            task_storage,
+            meter,
+            resources,
+        })
+    }
+
+    pub(in crate::plan) const fn bytes(&self) -> &'bytes [u8] {
+        self.bytes
+    }
+
+    pub(in crate::plan) fn materialize(
+        self,
+    ) -> Result<UnsealedRuntimePlanImage, RuntimeTaskSourceCodecError> {
+        let Self {
+            bytes,
+            limits,
+            seal_limits,
+            program,
+            references,
+            task_count,
+            row_offset,
+            task_storage,
+            meter,
+            resources,
+        } = self;
         let mut original = program.materialize(meter, resources)?;
         let retained = (|| {
             let mut reader = Reader::new(bytes, limits, references, task_count);

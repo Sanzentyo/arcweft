@@ -18853,3 +18853,85 @@ completed-key failures remain open and are not rerun by this private cut.
 Restore/replacement atomicity, full reverse/default/workspace/Tier 2 acceptance,
 retained View and Native/Web/CLI runtime/display acceptance remain incomplete.
 The full goal remains active.
+
+### 2026-10-19 — Separate borrowed Task Source admission from construction
+
+Previous goal turn is progress: the explicitly requested complete workspace clean
+finished and preserved source/Git state. This continuation publishes the preceding
+nine-path Source-owning specification cut as
+`27d07f422f992346c3683d71556c93a2c4ef5636`, parent
+`6ec027f252174f7d8dff21b8f92d1270438d403c`, tree
+`2ccecec77c2ec4654c8cfd2061cfc6a1d0d0a420`. Fresh origin/main and advertised main,
+all nine published/index-reviewed/working blobs and the binary/full-index patch
+match; patch SHA-256 is
+`f8e130186becdfaf3b00e0772a597dfd6acf8d7d789e150d30f83a236a556d6d`.
+The advanced baseline contains 3911 inputs and zero owned changes. Fourteen held
+tracked and three held untracked paths remain separate and unchanged.
+
+The actual AWBC schema/codec has no complete original Source payload. Its selected
+Need row reconstructs request metadata; the registry still issues the request-only
+plan digest. Carrying actual Source through that artifact requires a borrowed
+admission phase before Source namespace/row construction. The existing strict
+Task codec already performs those checks internally; this change gives that
+phase its own owning type instead of introducing another parser or reader.
+
+PreparedRuntimeTaskSource borrows the original frame and its prepared program
+children, owns the original constrained TaskSemanticMeter, and retains an
+exclusive borrow of the caller's ValueResourceAdmission. No Clone, Deserialize,
+default, alternate limits or replacement-bank argument can create or resume it.
+Its consuming materialize operation reserves the genuine namespace and constructs
+the existing UnsealedRuntimePlanImage. The existing decode_task_sources entry
+delegates to exactly these two phases. Original limits, accounting order, v1 wire
+shape, expected assertions and the common seal remain unchanged. No executable
+proof or live key is published by preparation or materialization.
+
+Two new tests exercise the direct prepared boundary. The source bytes retain
+their original pointer; valid and zero expected assertions both remain inert
+until the actual common seal. Only the valid assertion publishes the recomputed
+key in a fresh namespace, with no cross-program coordinate reuse. Measured work
+is 10823 for borrowed preflight and 20766 through image construction for this
+fixture. Exact total and prefixed allowances succeed; a preflight-only allowance
+fails when construction starts, and a one-unit prefix without extra allowance
+fails later. The tests derive these bounds from the actual grammar rather than
+hardcoding those measured values.
+
+R1480 Core all-target/all-feature locked Clippy passes, actual 0, Cargo 1m14s
+after clean. R1481 builds 1804 selected Core cases, none excluded, actual 0,
+Cargo 1m47s. R1482 executes all 1804: actual 100, 1803 pass, one new test fails,
+zero skipped, 20.369s. Full terminal/source audit matches the selection and all
+3911 inputs. R1483/R1484 isolate that new assertion: actual 100, one failure,
+1803 excluded, 0.035s. The diagnostic shows the preserved declaration context,
+Program(Declarations(Resource(SemanticWork))), at the construction-start bound.
+The test had incorrectly expected an outer Resource for both phases. It now
+asserts that exact declaration context at construction start and the outer
+Resource cause at the later boundary. Production errors and all original tests,
+limits and assertions are unchanged; no flattening or blanket acceptance is used.
+
+R1485 final matching Core Clippy passes, actual 0, Cargo 18.07s. R1486 inspects
+all 1804 cases and both required new names, no exclusions, actual 0, Cargo
+26.06s. R1487 executes exactly that set with no fail-fast: 1804 pass, zero fail/
+skip, actual 0, 20.166s. Every selected name and all 3911 hashes match, with zero
+source/held drift. Changed-file rustfmt and diff checks pass. Warnings remain;
+Clippy does not use -D warnings.
+
+This is a private boundary within plan's existing Source codec, with no public
+API, wire, dependency, feature, root export or live cross-crate consumer change.
+The unchanged resolved Core closure is 53 packages and all 99 manifest/lock inputs
+match. Core's complete owner library suite and all-target Clippy are the selected
+behavior/compile evidence for this cut; no new complete reverse or workspace
+run is claimed. R1476/R1477 workspace gates, R1478 doctests and R1479 dependency
+structure evidence retain their earlier scope and source identity. No new
+structural trigger requires repeating that scanner: the production codec is
+31293 bytes/866 physical LOC (804 at base, growth 62), and its tests are
+27679/772 (643 at base, growth 129), both in arcweft-core. One grammar and its
+borrowed-preparation/consuming-construction phases remain the cohesive owner.
+No new I/O, unsafe, copied semantic table or competing key authority is added.
+
+Next connect the complete original Source frame and original row assertions in
+actual AWBC lowering/canonical decoding, then bind the actual program lease and
+View authority before common sealing and registry construction. Raw bytecode or
+an expected digest cannot substitute for original Source. The selected Need
+private specification is not yet the live registry/public switch. R1438's two
+Native/decoded-AWBC completed-key failures, all fourteen-family public migration
+and old issuer deletion, restore/replacement, retained View and complete Native/
+Web/CLI/Tier 2/workspace acceptance remain open. The full goal remains active.
