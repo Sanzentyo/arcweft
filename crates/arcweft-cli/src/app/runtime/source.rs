@@ -302,7 +302,13 @@ view SourceProbe(enabled: bool = true) {
         );
         let report = crate::run_bundle_with_native_adapters(
             &decoded,
-            &crate::BundleRunnerOptions::default(),
+            &crate::BundleRunnerOptions {
+                entry: Some(
+                    arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                        .expect("the fixture's authored entry has a valid runtime identity"),
+                ),
+                ..crate::BundleRunnerOptions::default()
+            },
             &[crate::app::desktop_native_adapter_registrar],
         )
         .expect("bundle execution retains the actual accepted Source");

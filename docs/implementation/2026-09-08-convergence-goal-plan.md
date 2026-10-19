@@ -21534,3 +21534,48 @@ ignored/default-excluded inventory and source hashes. None is yet a passing
 current-runtime claim. An evidence-only note publication changes no compilation
 input. The full goal remains active with the previously recorded implementation,
 public migration, strict lint, Tier2 and Native/Web acceptance still required.
+
+### 2026-10-20 — bundle execution evidence and authored entry repair
+
+Inspected main `3b0c44932dbf827c495d0055ded12032dc7595aa`; the only
+pre-existing tracked changes were the same held14 paths, with the same three
+untracked entries. No held changes were staged or moved. The previous cargo
+clean was successful; it was not repeated.
+
+The final joined bundle-context inputs now have completed R1700 catalogue,
+R1702 workspace all-feature/all-target locked check, R1703 five-owner ordinary
+Clippy, and R1704 player-web library wasm32-unknown-unknown all-feature locked
+check, all exit0. The last completed in 11m27s. All 3931 frozen inputs and held14
+hashes matched after all four commands. Clippy warnings, including the existing
+unused BoundTaskSpec import on Web, remain; strict -D warnings is not achieved.
+The actual 19-package catalogue has 2751 cases, 2728 selected, and 23 existing
+ignored/default-excluded cases. All three required new/expanded cases are unique.
+
+R1701 is the same complete 19-package execution with no fail-fast or test-filter
+relaxation. At this note it remains live on handle 98860; 57 failures have been
+observed, including nine explicit pending typed Presentation command ABI
+rejections. These are observations before terminal summary, not final counts.
+The expanded Source/PNG/context case already terminated with MissingEntrySelection:
+its decoded bundle has no implicit profile entry, while the fixture passed the
+default runner options. The existing runner correctly requires an authored entry.
+The fixture now supplies EntryRuntimeId for entry.main. Its Native/AWBC PNG runs,
+AWFB round trip, actual context-proof assertion, runtime result, completed/failed
+counters and eight-step/32-op settings remain intact. No production entry-selection
+fallback was introduced.
+
+Source freezing for R1701 was deliberately released only after that failing case
+had terminated. This one cfg(test) fixture edit, and this evidence note, happened
+while the remaining execution/public-API checks were still live. Preserve its
+terminal case inventory and the original source-freeze difference; do not call it
+passing final immutable-source acceptance. The separate failure-only audit refuses
+a passing exit and records every current source difference. The passing-run audit
+and all test conditions remain unchanged.
+
+R1705 standalone all-feature locked CLI library catalogue is live on handle 1656;
+its actual dependency feature selection is distinct from the 19-package union.
+After its terminal catalogue, run the complete CLI library inventory and audit
+against a fresh post-publication freeze. This repair checkpoint follows the user's
+explicit permission to publish intermediate commits without proving each one
+operational; repair validation is pending, not reported as successful. The full
+convergence goal, Source public switch/all14 families, Presentation lowering,
+strict lint, Tier2, Native/Web execution and capture/parity acceptance remain open.
