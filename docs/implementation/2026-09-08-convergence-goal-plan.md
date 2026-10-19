@@ -21502,3 +21502,35 @@ same 19-package reverse union is required, including both new ownership tests
 and the expanded real fixture. This slice continues the same full goal; complete
 Source public switching, all 14 families, Presentation lowering, strict lint,
 Tier2 and final execution/capture/parity acceptance remain open.
+
+### 2026-10-20 — fixed-input bundle-context validation handoff
+
+The joined executable/Source/text-context authority is published and freshly
+verified at `063cd6ab70ee6c7dea4ac0e1cf97bf0897d710a1`, parent
+`d971a960f9c37707e15a8a72c413fa12d1d7e235`, tree
+`3e838fbde79feb9ed79baf5e1f17096320a77950`, patch SHA-256
+`65d93fc0a4c937ee4509321cb5007d566009c912769d970d36036140a99bbbce`.
+All seven blobs, 3931 frozen inputs, advertised main and working bytes matched;
+owned0/held14, empty index, and all 99 manifest/lock inputs unchanged.
+
+R1696 ended with actual exit 101: its old dependency return type was still
+AwbcProductProgram when the changed Agent consumer called into_parts. No test
+inventory/runtime pass is claimed from that mixed-input build. R1698 workspace
+check ended with actual exit 0 (16m12s, warnings), while the joined-context edits
+were in progress; preserve that result without treating it as the final frozen
+contract's check. R1699 final-context structural audit passed, exit 0: 3154 files,
+3024 Rust files, 1718441 physical Rust lines, 97 packages, 376 review triggers,
+zero blocking violations.
+
+Rust source has been fixed since the final joined-context edit. The current
+verified live handles are R1700 current 19-package catalogue 44164, R1702 fresh
+workspace check 90961 and R1703 five-owner Clippy 31048. Continue those same
+handles; do not restart on an observation timeout. R1703 uses ordinary warnings,
+so strict -D warnings remains a separate unmet requirement. Only after R1700
+terminal exit 0, inspect its actual inventory and require the borrowed product
+admission, actual AWBC cache identity and expanded Source/PNG/context fixture.
+Then run the complete matched 19-package selection, retaining all case keys,
+ignored/default-excluded inventory and source hashes. None is yet a passing
+current-runtime claim. An evidence-only note publication changes no compilation
+input. The full goal remains active with the previously recorded implementation,
+public migration, strict lint, Tier2 and Native/Web acceptance still required.
