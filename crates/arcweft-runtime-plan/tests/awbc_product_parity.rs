@@ -1044,7 +1044,6 @@ fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results(
     use arcweft_core::awbc::product_step::{
         AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor,
     };
-    use arcweft_core::task::RuntimeProgramOwner;
 
     let f32_bits = [0x3f80_0000, 0x8000_0000, 0x7f80_0000, 0x7fc0_1234];
     let f64_bits = [

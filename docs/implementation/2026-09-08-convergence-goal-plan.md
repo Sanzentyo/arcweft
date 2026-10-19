@@ -21072,3 +21072,36 @@ timeouts, capture, copy, batch or fusion condition was changed. The same held
 inventory remains untouched. This is another user-authorized intermediate
 checkpoint, with current validation and complete reverse/workspace acceptance
 pending. The entire convergence goal remains active.
+
+### 2026-10-20 — repair the complete CLI constructor consumer set
+
+The shared Bundle/CLI admission cut is published and freshly verified at
+`0afb54bc168fd88e7cda78a702677db557efde18`, parent
+`50d7627542c2457f057d3362b0d3ebc230314b51`, tree
+`697b8136221db097677414eb84724342300df701`, complete patch SHA-256
+`5348847b2ff0a574031f8c588efccda540a81f5bbccb05291d3e7dbfc57c3135`.
+All fifteen blobs and 3931 frozen inputs matched, including the unchanged held
+inventory; the index was empty before baseline advancement.
+
+R1666 actually completed with Cargo exit 0 after 7m06s and catalogued 2393 cases
+with no filter exclusions, including the added View entry/Flow/restore case.
+Compilation spanned the next migration, so that catalogue is not runtime or
+current-source acceptance for the subsequently changed product/CLI consumers.
+R1668 structure auditing passed with 3154 files, 3024 Rust files, 1717812 physical
+Rust lines, 97 packages, 376 review triggers and zero blocking violations. Bundle's
+small admission module owns the executable/accepted-View join; Core retains one
+code/Source lease and Driver owns generation and live state. This direction adds
+no duplicate seal or catalog. Existing cohesive executor/snapshot/tests remain
+on their lifecycle owners; the prior cohesion dispositions still apply.
+
+R1667 reported two actual CLI compile errors: the native-plan Arc import was
+removed while still used, and `app::verify` outside the runtime subdirectory
+still passed the raw bundle Arc to the changed constructor. Both are corrected.
+The complete CLI constructor/template call set was inspected, and the now unused
+parity-test type-owner import was removed. R1667's remaining compiler jobs were
+still finishing when this correction was prepared; no runtime tests ran and it
+must not be reported as a passing catalogue. Collect the actual terminal receipt
+and fresh current-source catalogue/run/Clippy before accepting this slice.
+The fourteen held paths and three unrelated untracked items are preserved. No
+additional clean, branch, worktree, artifact move, feature/profile/jobs or budget
+change was made. The full convergence goal and broader acceptance remain open.

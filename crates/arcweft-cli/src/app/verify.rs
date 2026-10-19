@@ -238,7 +238,7 @@ fn verify_types_runtime_self_check(
             entry,
             options.executor,
             pure_config,
-            source_runtime.map(|runtime| runtime.bundle.product_awbc().program_lease()),
+            source_runtime.map(|runtime| runtime.product.clone()),
             source_runtime
                 .map(|runtime| runtime.bundle_assets().plain_text_context_proof())
                 .transpose()?

@@ -7,6 +7,7 @@ use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult
 use arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{RuntimeExecutorStats, runtime_executor_stats};
+use std::sync::Arc;
 
 pub(in crate::app) struct RuntimeExecutorInstance {
     executor: ArcweftRuntimeExecutor,
