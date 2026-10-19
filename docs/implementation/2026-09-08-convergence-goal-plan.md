@@ -20337,3 +20337,45 @@ invocation-binding origin, invocation-sensitive Ready, actual View, Generic
 Match, nominal/Sans-I/O, VM pre-copy admission, external multi-owner persistence,
 broader R1507 failures, real Native/Web parity and final workspace/Tier 2
 acceptance remain open. This passing slice does not complete the full goal.
+
+### 2026-10-19 — close the rollback cut's downstream and public API checks
+
+Inspected main at `aa1a8a3a7bafc5e231304b41fa7268f671b003c1`, with only
+one owned Rust documentation change and the same fourteen held tracked and
+three held untracked paths. No runtime code changes after that publication.
+Supersedes the preceding pending CLI/lint state; the full goal remains active.
+
+R1603 terminates with the already recorded pre-repair driver E0308. R1605
+retries the same CLI tensor target on the published driver save-API repair and
+passes catalogue compilation, actual 0, 2m03s, exactly one matched case and no
+exclusions. R1606 executes that exact case, one pass, no failure or skip,
+0.397 seconds, actual 0. All 3929 frozen inputs, case identity and fourteen
+held paths match with zero drift. This closes the consumer's compilation and
+actual tensor element/one-op save/restore check; it is not a complete CLI suite.
+
+R1607 Clippy passes, actual 0, 3m29s, for Core, RuntimePlan, runtime-driver and
+CLI libraries plus awbc_product_parity and environment_callable_tensor, all
+features and locked. Warnings remain; this is not workspace -D warnings evidence.
+No repeated runtime suite is needed for the subsequent Rustdoc-only change.
+The existing R1602 2009/2009 execution and R1604 structural gate remain the
+runtime and ownership evidence for unchanged implementation/dependency inputs.
+
+AwbcProductExecutorSnapshot now documents its inert values/original Source
+lease role. Two compile-fail doctests establish that it has neither direct
+Serde serialization nor deserialization; external persistence uses the explicit
+SaveSnapshot projection. R1608 runs all Core all-feature locked doctests:
+72 pass, zero fail/ignore/filter, actual 0, with all 3929 frozen inputs and held
+paths exact. The two new cases reject specifically the missing Serialize and
+Deserialize trait bounds, while all seventy existing public-boundary cases pass.
+No clean, artifact move/copy, branch, worktree, checkout, dependency, feature,
+profile, jobs, OS setting or unrelated source edit occurs.
+
+Next continue the confirmed AssetLoad source-name/canonical-binding mismatch.
+The streaming original-source decoder already accepts its positional form,
+consistent with semantic_facts; the new Source preparation and static code ABI
+checks disagree. Share one borrowed typed binding grammar between owned request
+schema, streaming decoder, semantic facts, Source and Native/AWBC consumers.
+Keep canonical transport names, source order, exact original keys, no-spread
+and original-bank preflight before value views/copies. This and every remaining
+acceptance item in the preceding notes remain required; do not mark the full
+goal complete on this passing slice.

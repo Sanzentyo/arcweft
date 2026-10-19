@@ -338,6 +338,22 @@ impl ProductChildFiberOwner {
     }
 }
 
+/// Inert Product state retaining the original Source program leases.
+/// [`AwbcProductExecutorSaveSnapshot::from_live`] creates its persistence data.
+///
+/// Retained Source authority has no direct wire encoder or decoder:
+///
+/// ```compile_fail
+/// use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
+/// fn require_wire<T: serde::Serialize>() {}
+/// require_wire::<AwbcProductExecutorSnapshot>();
+/// ```
+///
+/// ```compile_fail
+/// use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
+/// fn require_wire<T: for<'de> serde::Deserialize<'de>>() {}
+/// require_wire::<AwbcProductExecutorSnapshot>();
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductExecutorSnapshot {
     pub runtime_generation: crate::task::GenerationId,
