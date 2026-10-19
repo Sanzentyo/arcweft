@@ -44,6 +44,10 @@ uses one constrained semantic meter and one retained-value allowance across
 preflight, genuine namespace construction and the common seal. That seal compares
 the recomputed E before completing or publishing Task rows, compares each Task
 assertion, and requires the actual upper View authority for View-bound rows.
+The completed plan retains that seal's original construction namespace. A Task
+assertion resolves only an already issued row and its actual function endpoint;
+it does not recover a namespace from request metadata. Executable data equality
+does not transfer a program's Source authority.
 Execution and restore must bind their original Task rows and exact program lease
 through this admitted Source; copying an asserted digest is not admission.
 

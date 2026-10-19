@@ -1,5 +1,6 @@
 //! A completed Task and its actual original function/request source.
-//! This boundary borrows the immutable program and never accepts a key assertion.
+//! This boundary borrows the immutable program. Assertions only resolve rows
+//! already issued by its original namespace; they never grant Source authority.
 
 mod artifact;
 mod owned;
@@ -22,6 +23,10 @@ use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 pub(crate) enum RuntimeTaskSourceError {
     #[error("Task source coordinate does not belong to this completed program")]
     ForeignCoordinate,
+    #[error("Task source row does not belong to this completed program")]
+    ForeignRow,
+    #[error("Task source expected key does not resolve in this completed program")]
+    MissingExpectedKey,
     #[error("completed Task source has no request endpoint {request:?}")]
     MissingEndpoint { request: RuntimeTaskRequestSource },
     #[error("original Task function admission failed: {0}")]
@@ -35,7 +40,7 @@ pub(crate) enum RuntimeTaskSourceError {
 pub(crate) struct RuntimeTaskSourceRef<'program> {
     task: RuntimeTaskPlanRef<'program>,
     request: OriginalRequestEndpoint<'program>,
-    owner: RuntimeTaskPlanCoordinateOwner,
+    owner: &'program RuntimeTaskPlanCoordinateOwner,
 }
 
 impl RuntimePlan {
@@ -45,20 +50,52 @@ impl RuntimePlan {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceError> {
+        self.task_source_for_row(
+            self.task_plan(coordinate)
+                .ok_or(RuntimeTaskSourceError::ForeignCoordinate),
+            limits,
+            meter,
+        )
+    }
+
+    /// Assertion bytes select only a row already issued by this exact plan.
+    /// Its original namespace is retained by the common seal, never recovered
+    /// from request metadata, another program or a caller-supplied coordinate.
+    pub(crate) fn task_source_by_expected_key(
+        &self,
+        expected: &crate::task::ExpectedTaskPlanKey,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceError> {
+        self.task_source_for_row(
+            self.task_plans()
+                .by_expected_key(expected)
+                .ok_or(RuntimeTaskSourceError::MissingExpectedKey),
+            limits,
+            meter,
+        )
+    }
+
+    fn task_source_for_row<'program>(
+        &'program self,
+        task: Result<RuntimeTaskPlanRef<'program>, RuntimeTaskSourceError>,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeTaskSourceRef<'program>, RuntimeTaskSourceError> {
         meter
             .constrain(limits.max_semantic_work, limits.max_transcript_bytes)
             .map_err(RuntimeBodySemanticError::from)?;
         let result = (|| {
-            let task = self
-                .task_plan(coordinate)
-                .ok_or(RuntimeTaskSourceError::ForeignCoordinate)?;
-            let owner = RuntimeTaskPlanCoordinateOwner::from_completed(coordinate, task)
-                .ok_or(RuntimeTaskSourceError::ForeignCoordinate)?;
+            let task = task?;
+            if !task.belongs_to(self) {
+                return Err(RuntimeTaskSourceError::ForeignRow);
+            }
+            let owner = &self.task_coordinates;
             let request = RuntimeBodySemanticContext::new(&self.inventory)
                 .original_request_endpoint(
                     task.definition().producer_function(),
                     task.definition().request_template().source(),
-                    &owner,
+                    owner,
                     meter,
                     limits,
                 )?

@@ -232,11 +232,22 @@ pub use body_semantic::RuntimeBodySemanticError;
 pub use body_semantic::task_image::RuntimeTaskPlanSealError;
 pub use construction::RuntimeTaskPlanConstructionContext;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct RuntimePlan {
     pub(crate) artifact: Option<crate::effect::RuntimeArtifactFingerprint>,
     pub(crate) inventory: RuntimePlanInventory,
     semantics: Arc<task_semantic::RuntimeTaskProgramSemantics>,
+    task_coordinates: RuntimeTaskPlanCoordinateOwner,
+}
+
+impl PartialEq for RuntimePlan {
+    fn eq(&self, other: &Self) -> bool {
+        // A namespace lease is authority, not executable data. Equality never
+        // grants its ownership; source admission checks the actual program.
+        self.artifact == other.artifact
+            && self.inventory == other.inventory
+            && self.semantics == other.semantics
+    }
 }
 
 impl std::ops::Deref for RuntimePlan {

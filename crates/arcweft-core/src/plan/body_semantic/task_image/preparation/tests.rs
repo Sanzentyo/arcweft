@@ -262,6 +262,22 @@ fn function_root_seed_projects_q_inside_the_consuming_seal() {
             .map(crate::plan::RuntimeTaskPlanRef::key),
         Some(key)
     );
+    drop(coordinate);
+    let mut meter = TaskSemanticMeter::new(1_000_000, 0);
+    let resolved = plan
+        .task_source_by_expected_key(
+            &crate::task::ExpectedTaskPlanKey::new(*key.as_bytes()),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter,
+        )
+        .unwrap();
+    assert_eq!(resolved.task_plan().key(), key);
+    assert_eq!(
+        resolved.request_endpoint().request_source(),
+        crate::plan::RuntimeTaskRequestSource::FunctionRoot
+    );
+    assert!(resolved.request_endpoint().task_source().is_none());
+    assert_eq!(meter.totals().1, 0);
 }
 
 #[test]
@@ -885,9 +901,25 @@ fn completed_task_source_borrows_canonical_metadata_shared_by_distinct_rows() {
     assert!(std::ptr::eq(first_target, last_target));
     assert_eq!(last_target.producer.plan, first);
     assert_ne!(last_target.producer.plan, last);
+    let expected = crate::task::ExpectedTaskPlanKey::new(*last_source.task_plan().key().as_bytes());
+    let resolved = plan
+        .task_source_by_expected_key(&expected, RuntimeTaskPlanSealLimits::default(), &mut bank)
+        .unwrap();
+    assert_eq!(resolved.task_plan(), last_source.task_plan());
+    assert_ne!(resolved.task_plan(), first_source.task_plan());
+    assert!(matches!(
+        resolved.task_plan().definition().class(),
+        TaskClass::Cpu
+    ));
+    let Some(super::super::super::flow::RuntimeBodyTaskSource::Host(resolved_target)) =
+        resolved.request_endpoint().task_source()
+    else {
+        panic!("the assertion must resolve the same actual Host endpoint");
+    };
+    assert!(std::ptr::eq(resolved_target, first_target));
     let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan));
     let owned =
-        crate::plan::task_source::RuntimeTaskSource::from_borrowed(&last_source, &owner).unwrap();
+        crate::plan::task_source::RuntimeTaskSource::from_borrowed(&resolved, &owner).unwrap();
     assert_eq!(owned.task_plan(), plan.task_plan(&last).unwrap());
     let borrowed = owned
         .borrow(RuntimeTaskPlanSealLimits::default(), &mut bank)

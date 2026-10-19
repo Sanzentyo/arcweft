@@ -3,9 +3,19 @@
 use super::{RuntimePlanBuilder, seed::RuntimePlanConstructionIssuer};
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub(crate) struct RuntimeTaskPlanCoordinateOwner {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     rows: u32,
+}
+
+impl std::fmt::Debug for RuntimeTaskPlanCoordinateOwner {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RuntimeTaskPlanCoordinateOwner")
+            .field("rows", &self.rows)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Opaque source-order coordinate. Only the candidate owner resolves ordinals.
@@ -83,22 +93,6 @@ impl RuntimeTaskPlanBuildCoordinate {
 }
 
 impl RuntimeTaskPlanCoordinateOwner {
-    /// Projects the already completed namespace of this exact original slot.
-    /// Equal key bytes or rows in another program do not transfer ownership.
-    pub(in crate::plan) fn from_completed(
-        coordinate: &RuntimeTaskPlanBuildCoordinate,
-        task: crate::plan::RuntimeTaskPlanRef<'_>,
-    ) -> Option<Self> {
-        let semantics = coordinate.issuer.sealed_tasks.get()?;
-        if coordinate.resolve_in(semantics)? != task {
-            return None;
-        }
-        Some(Self {
-            issuer: Arc::clone(&coordinate.issuer),
-            rows: u32::try_from(semantics.task_plans.len()).ok()?,
-        })
-    }
-
     pub(super) fn new(issuer: Arc<RuntimePlanConstructionIssuer>, rows: u32) -> Self {
         Self { issuer, rows }
     }
@@ -143,5 +137,23 @@ impl RuntimePlanBuilder {
             issuer: Arc::clone(&self.issuer),
             rows,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completed_namespace_lease_is_retained_by_clones_without_an_arc_cycle() {
+        let plan = RuntimePlanBuilder::new().finish().unwrap();
+        let issuer = Arc::downgrade(&plan.task_coordinates.issuer);
+        let cloned = plan.clone();
+        assert_eq!(plan, cloned);
+        assert_eq!(plan, RuntimePlanBuilder::new().finish().unwrap());
+        drop(plan);
+        assert!(issuer.upgrade().is_some());
+        drop(cloned);
+        assert!(issuer.upgrade().is_none());
     }
 }

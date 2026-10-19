@@ -111,22 +111,17 @@ fn completed_task_source_rejects_equal_key_foreign_and_unsealed_coordinates() {
         plan.task_plan(coordinate(&plan)).unwrap().key(),
         other.task_plan(coordinate(&other)).unwrap().key()
     );
-    assert!(
-        RuntimeTaskPlanCoordinateOwner::from_completed(
-            coordinate(&plan),
-            other.task_plan(coordinate(&other)).unwrap()
-        )
-        .is_none()
-    );
+    assert!(matches!(
+        plan.task_source_for_row(
+            Ok(other.task_plan(coordinate(&other)).unwrap()),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter(),
+        ),
+        Err(RuntimeTaskSourceError::ForeignRow)
+    ));
     let mut builder = RuntimePlanBuilder::new();
     let unsealed = builder.reserve_task_plan().unwrap();
-    assert!(
-        RuntimeTaskPlanCoordinateOwner::from_completed(
-            &unsealed,
-            plan.task_plan(coordinate(&plan)).unwrap()
-        )
-        .is_none()
-    );
+    assert!(plan.task_plan(&unsealed).is_none());
     for coordinate in [coordinate(&other), &unsealed] {
         let mut bank = meter();
         assert!(matches!(
@@ -226,6 +221,87 @@ fn completed_task_source_preserves_original_work_without_rehashing_the_transcrip
         error,
         RuntimeTaskSourceError::Function(RuntimeBodySemanticError::Encoding(
             TaskSemanticEncodingError::SemanticWork
+        ))
+    ));
+}
+
+#[test]
+fn expected_task_source_resolves_the_actual_row_under_the_original_work_bank() {
+    for plan in [
+        host(),
+        selected_producers::tests::fixture(
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::MustBeQuiescent,
+            TaskClass::Io,
+        ),
+    ] {
+        let coordinate = match operation(&plan) {
+            FlowOp::HostCall { target, .. } => &target.producer.plan,
+            FlowOp::StartNeedProducer { target, .. } => target.task_plan(),
+            _ => unreachable!(),
+        };
+        let mut measured = meter();
+        let original = plan
+            .task_source(
+                coordinate,
+                RuntimeTaskPlanSealLimits::default(),
+                &mut measured,
+            )
+            .unwrap();
+        let expected =
+            crate::task::ExpectedTaskPlanKey::new(*original.task_plan().key().as_bytes());
+        let (work, bytes) = measured.totals();
+        assert!(work > 0);
+        assert_eq!(bytes, 0);
+        let mut exact = TaskSemanticMeter::new(work, bytes);
+        let resolved = plan
+            .task_source_by_expected_key(
+                &expected,
+                RuntimeTaskPlanSealLimits::default(),
+                &mut exact,
+            )
+            .unwrap();
+        assert_eq!(resolved.task_plan(), original.task_plan());
+        assert_eq!(
+            resolved.request_endpoint().request_source(),
+            original.request_endpoint().request_source()
+        );
+        assert!(resolved.request_endpoint().belongs_to(&plan));
+        assert_eq!(exact.totals(), (work, bytes));
+        let mut short = TaskSemanticMeter::new(work - 1, bytes);
+        assert!(matches!(
+            plan.task_source_by_expected_key(
+                &expected,
+                RuntimeTaskPlanSealLimits::default(),
+                &mut short
+            ),
+            Err(RuntimeTaskSourceError::Function(
+                RuntimeBodySemanticError::Encoding(TaskSemanticEncodingError::SemanticWork)
+            ))
+        ));
+        assert_eq!(short.status(), Err(TaskSemanticEncodingError::SemanticWork));
+    }
+}
+
+#[test]
+fn expected_task_source_rejects_unknown_assertions_and_preserves_the_failed_bank() {
+    let plan = host();
+    let key = plan.task_plan(coordinate(&plan)).unwrap().key();
+    let mut absent = *key.as_bytes();
+    absent[0] ^= 1;
+    let absent = crate::task::ExpectedTaskPlanKey::new(absent);
+    let mut bank = meter();
+    assert!(matches!(
+        plan.task_source_by_expected_key(&absent, RuntimeTaskPlanSealLimits::default(), &mut bank),
+        Err(RuntimeTaskSourceError::MissingExpectedKey)
+    ));
+    assert_eq!(bank.status(), Err(TaskSemanticEncodingError::OwnerRejected));
+    let present = crate::task::ExpectedTaskPlanKey::new(*key.as_bytes());
+    assert!(matches!(
+        plan.task_source_by_expected_key(&present, RuntimeTaskPlanSealLimits::default(), &mut bank),
+        Err(RuntimeTaskSourceError::Function(
+            RuntimeBodySemanticError::Encoding(TaskSemanticEncodingError::OwnerRejected)
         ))
     ));
 }

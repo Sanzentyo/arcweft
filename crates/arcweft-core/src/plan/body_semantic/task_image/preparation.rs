@@ -322,6 +322,7 @@ impl UnsealedRuntimePlanImage {
         Ok(SealedRuntimePlanImage {
             inventory,
             semantics,
+            coordinate_owner: self.coordinate_owner,
         })
     }
 
@@ -424,6 +425,7 @@ impl UnsealedRuntimePlanImage {
 pub(in crate::plan) struct SealedRuntimePlanImage {
     pub(super) inventory: crate::plan::RuntimePlanInventory,
     semantics: std::sync::Arc<crate::plan::task_semantic::RuntimeTaskProgramSemantics>,
+    coordinate_owner: crate::plan::RuntimeTaskPlanCoordinateOwner,
 }
 
 impl std::ops::Deref for SealedRuntimePlanImage {
@@ -439,6 +441,7 @@ impl SealedRuntimePlanImage {
             artifact: None,
             inventory: self.inventory,
             semantics: self.semantics,
+            task_coordinates: self.coordinate_owner,
         }
     }
 }

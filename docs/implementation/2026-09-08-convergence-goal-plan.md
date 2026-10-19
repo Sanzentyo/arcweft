@@ -19190,3 +19190,91 @@ all fourteen request-family public migration, deletion of the request-only
 issuer/old readers, retained View, failure-atomic restore/replacement, all 58
 broad failures and the remaining Native/Web/CLI and milestone acceptance stay
 open. Continue the full goal without redefining completion around this cut.
+
+### 2026-10-19 — Retain the original sealed namespace for assertion resolution
+
+The Line Source repair is published and verified as
+`cdcacf7be98840c232926fd4ee704146ab455d93`, parent
+`5dfb912a9c196a006318c6fb862ec5b16c52b7a0`, tree
+`b20a1aebd275764d3ccc8c114c25a4158031f963`. All eight published/working blobs,
+advertised origin/main, 3914 input hashes and empty index match. Raw patch
+SHA-256 is `9b784528b9e3c0faecc26c6363c10a27b3ecc2361b16c0013937744722443bba`.
+The baseline advances with zero owned changes and the same fourteen tracked/
+three untracked held paths. Work continues in the existing main checkout.
+
+The common seal formerly discarded its original coordinate owner after
+publishing the actual immutable task semantics. Source lookup reconstructed an
+owning namespace lease from a caller coordinate. This cannot serve a decoded
+assertion whose actual issued row is known without recovering a coordinate from
+canonical request metadata, which may legitimately be shared by different rows.
+The common seal now moves that same coordinate owner through SealedRuntimePlanImage
+into RuntimePlan. It allocates neither a replacement issuer nor a copied task
+table. RuntimeTaskSourceRef borrows this original namespace; its former
+from_completed reconstruction helper is deleted. Owning Source acquisition still
+checks the exact program and endpoint before retaining its original coordinate.
+
+The private expected-key entry resolves only an existing sealed row and delegates
+to the same original function/endpoint boundary as coordinate lookup. A missing
+key or foreign issued row cannot create a key or Source. The original constrained
+work bank and its first failure are preserved; lookup does not rehash E/F/Q/C or
+create child allowances. Shared metadata's launch coordinate cannot choose the
+resolved row or its class. No public expected-key interface, raw digest issuer,
+Serde implementation, source reconstruction, fallback or second catalog is added.
+Executable/wire transcripts and all version markers remain unchanged.
+
+Namespace Clone retains the same original Arc-backed issuer. RuntimePlan's
+existing data PartialEq is preserved explicitly over the same three data fields;
+namespace possession remains separate authority and equal data cannot transfer
+Source ownership. Debug prints the namespace's row count without duplicating
+its completed table. A Weak test proves that an empty completed plan's namespace
+survives its original plan while a clone lives and is released after the final
+clone drops. Existing equal-key foreign and same-table cloned-program Source
+rejections remain covered.
+
+Three new tests cover expected-key resolution of actual Host/selected rows with
+exact and short original work allowances, unknown assertions/poison preservation,
+and namespace retention/release. The actual FunctionRoot test drops its external
+coordinate before resolving its key, retains the genuine ABI root and writes zero
+transcript bytes. The existing shared-metadata regression now resolves the second
+key, preserves its distinct Cpu row/class, borrows the same canonical Host target
+whose launch coordinate is the first row, and acquires/reborrows the actual second
+owning Source under the same bank. There is no inverse metadata-to-row bijection.
+
+R1513 initial Core all-target/all-feature locked Clippy passes, actual 0, Cargo
+1m24s. R1514 catalogs 1945 all-feature cases: Core 1814, RuntimePlan 120 and eleven
+awbc_product_parity cases, no exclusions. R1515 executes all, actual 100: 1942
+pass/three fail/zero skip, 22.279s, exact terminal names and 3914 unchanged inputs.
+One extra failure is an implementation mistake in test placement: a new
+FunctionRoot assertion was inserted into an actual Operation(0) reservation
+fixture. Move the unchanged assertions to the actual FunctionRoot fixture;
+production semantics and the original Operation fixture assertions are preserved.
+The catalog selection and test names do not change.
+
+R1516 final matching Clippy passes, actual 0, Cargo 19.58s; warnings remain and
+there is no -D warnings claim. R1517 recompiles final inputs and runs all 1945
+cataloged cases: actual 100, 1943 pass, the same Native/decoded-AWBC completed-key
+failures, zero skip, 21.634s. The added and expanded Source cases all pass; terminal
+set and all 3914 frozen input hashes match. Changed Rust fmt and diff checks pass.
+This task-note addition follows auditing, with tested Rust unchanged. Receipts
+and freezes use task-final-r1513 through r1517 in the existing Temp evidence root.
+
+Owner measurements, bytes/physical LOC: plan facade 55472/1610 (growth 11),
+coordinate owner 5479/159 (growth 12, 16 lines from its embedded test module),
+common preparation 17692/450 (growth 3), Source boundary 5083/135 (growth 37),
+Source tests 10403/307 (growth 76), preparation tests 56910/1453 (growth 32).
+The large facade keeps its owning plan fields/equality; preparation still owns
+the one consuming seal, and the namespace owner retains its existing issuer.
+No additional state cluster, I/O, unsafe, dependency or broad API is introduced.
+The 99 manifest/lock inputs and resolved 53-package closure are unchanged; reuse
+the prior dependency-edge gate and ownership dispositions for unchanged edges.
+Current evidence is the owner/lowerer suite and Core all-target Clippy, not a new
+workspace or complete reverse run after these private changes.
+
+This private admission foundation does not perform the final public switch.
+Continue with the actual immutable AWBC code lease plus admitted original Source,
+explicit original-row assertions, and value admission through the actual backend
+type authority. Do not substitute a Native owner for AWBC values. Native/AWBC
+registry, template, launch, snapshot and restore consumers still require the
+complete fourteen-request-family migration and deletion of their old raw/request-
+only success routes. R1507's 58 broad failures, View/restore/replacement/display
+and the full final acceptance remain open. The full goal remains active.
