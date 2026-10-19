@@ -225,7 +225,7 @@ fn program_continuation_accepts_detached_prefix_and_retains_awbc_need_result_con
 fn program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frames() {
     use crate::program_invocation::RuntimeProgramInput;
     let (executor, id, token) = completed_handle_program();
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     let needs = executor
         .need_producers
         .inert_rollback_image(&owner)
@@ -970,7 +970,7 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
     commit_test_dialogue_transaction(&mut executor, transaction);
     let snapshot = product_snapshot(&executor);
     let mut restored = AwbcProductStepExecutor::for_entry_arc(
-        std::sync::Arc::clone(&executor.program),
+        executor.program_arc(),
         crate::awbc::schema::AwbcEntryId(0),
         64,
     )
@@ -1409,12 +1409,11 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let snapshot = product_snapshot(&executor);
     let save = AwbcProductExecutorSaveSnapshot::from_live(
         &snapshot,
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
     )
     .expect("suspended activation host call is saveable");
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
     let restored_snapshot = save
-        .into_live_for_program(&owner)
+        .into_live_for_program(executor.admitted_program())
         .expect("suspended activation host call decodes");
     executor
         .restore_snapshot(restored_snapshot)
@@ -1505,12 +1504,11 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
 
     let save = AwbcProductExecutorSaveSnapshot::from_live(
         &product_snapshot(&executor),
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
     )
     .expect("reached lexical defer packet is saveable");
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
     let restored_snapshot = save
-        .into_live_for_program(&owner)
+        .into_live_for_program(executor.admitted_program())
         .expect("reached lexical defer packet decodes");
     executor
         .restore_snapshot(restored_snapshot)
@@ -1795,30 +1793,22 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         );
         let mut unpaired = product_snapshot(executor);
         unpaired.child_fibers[0].owner = super::AwbcProductChildFiberOwnerSnapshot::Independent;
-        let mut rejected = AwbcProductStepExecutor::for_entry_arc(
-            std::sync::Arc::clone(&executor.program),
-            AwbcEntryId(0),
-            64,
-        )
-        .expect("unpaired restore candidate starts");
+        let mut rejected =
+            AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
+                .expect("unpaired restore candidate starts");
         assert!(rejected.restore_snapshot(unpaired).is_err());
 
         let save = AwbcProductExecutorSaveSnapshot::from_live(
             &product_snapshot(executor),
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+            &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
         )
         .expect("inflight defer saves with its child packet");
-        let owner =
-            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
         let restored_snapshot = save
-            .into_live_for_program(&owner)
+            .into_live_for_program(executor.admitted_program())
             .expect("inflight defer snapshot decodes");
-        let mut restored = AwbcProductStepExecutor::for_entry_arc(
-            std::sync::Arc::clone(&executor.program),
-            AwbcEntryId(0),
-            64,
-        )
-        .expect("paired restore candidate starts");
+        let mut restored =
+            AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
+                .expect("paired restore candidate starts");
         restored
             .restore_snapshot(restored_snapshot)
             .expect("inflight defer restores only with its exact child owner");
@@ -1984,7 +1974,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         64,
     )
     .expect("product executor starts");
-    let program = std::sync::Arc::make_mut(&mut executor.program);
+    let program = std::sync::Arc::make_mut(&mut executor.program.program);
     program.content_units.push(AwbcContentUnit {
         public_id: AwbcStringId(0),
         template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
@@ -2133,13 +2123,11 @@ fn save_snapshot_preserves_queued_progress_publications() {
 
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &product_snapshot(&executor),
-        &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program)),
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
     )
     .expect("queued Progress snapshots");
     let restored = saved
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::clone(&executor.program),
-        ))
+        .into_live_for_program(executor.admitted_program())
         .expect("queued Progress restores");
 
     assert_eq!(
@@ -2191,7 +2179,10 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
     assert!(serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(wire.clone()).is_err());
     wire["task_publications"] = serde_json::json!({});
     assert!(serde_json::from_value::<AwbcProductExecutorSaveSnapshot>(wire).is_err());
-    let restored = saved.clone().into_live_for_program(&owner).unwrap();
+    let restored = saved
+        .clone()
+        .into_live_for_program(executor.admitted_program())
+        .unwrap();
     assert_eq!(
         restored.queued_task_events,
         std::collections::VecDeque::from([expected])
@@ -2221,7 +2212,9 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
             }
         }
         assert!(
-            forged.into_live_for_program(&owner).is_err(),
+            forged
+                .into_live_for_program(executor.admitted_program())
+                .is_err(),
             "queued Ready edit {edit} must reject before publishing a live snapshot"
         );
         assert_eq!(
@@ -2933,7 +2926,7 @@ fn invalid_schedule_schema_preserves_admitted_captures_before_failure_close() {
                             // those same owned values and ledger leases.
                             let crate::awbc::schema::AwbcLineOperation::Schedule {
                                 captures, ..
-                            } = &mut std::sync::Arc::make_mut(&mut executor.program)
+                            } = &mut std::sync::Arc::make_mut(&mut executor.program.program)
                                 .line_operations[2]
                             else {
                                 unreachable!("fixture Schedule remains present");
@@ -3118,9 +3111,8 @@ fn dialogue_frame_joins_the_original_bank_before_capture_or_restore() {
         max_nodes,
         ..RuntimeSchemaLimits::engine_default()
     };
-    let unrelated = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
-        executor.program.as_ref().clone(),
-    ));
+    let unrelated =
+        crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(executor.program().clone()));
     let mut foreign = RuntimeRetainedValueAdmission::for_program(
         unrelated,
         RuntimeSchemaLimits::engine_default(),
@@ -4642,15 +4634,14 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
     let snapshot = product_snapshot(&executor);
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
         &snapshot,
-        &crate::task::RuntimeProgramOwner::Awbc(executor.program.clone()),
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
     )
     .expect("typed Need suspension saves");
     let encoded = serde_json::to_string(&saved).expect("typed Need suspension serializes");
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("typed Need suspension restores");
-    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program.clone());
     let restored = decoded
-        .into_live_for_program(&owner)
+        .into_live_for_program(executor.admitted_program())
         .expect("typed Need suspension converts to live state");
     assert_eq!(restored.fiber, snapshot.fiber);
 }
@@ -4827,9 +4818,7 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("save snapshot decodes");
     let restored_live = decoded
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::clone(&program),
-        ))
+        .into_live_for_program(executor.admitted_program())
         .expect("verified program and typed producer snapshot restore");
     let mut restored = AwbcProductStepExecutor::for_entry_arc_with_generation(
         std::sync::Arc::clone(&program),
@@ -5063,9 +5052,7 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("snapshot decodes");
     let restored_live = decoded
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::clone(&program),
-        ))
+        .into_live_for_program(executor.admitted_program())
         .expect("program-bound restore");
     let mut restored = await_many_executor(&program, await_many_items(), generation);
     restored
@@ -5112,7 +5099,7 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         .fiber
         .validate_for_program(&restored.program)
         .unwrap();
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&restored.program));
+    let owner = crate::task::RuntimeProgramOwner::Awbc(restored.program_arc());
     let before =
         crate::awbc::fiber::AwbcFiberStateSnapshot::from_live(&restored.fiber, &owner).unwrap();
     let rehydrated = before.clone().into_live_for_program(&owner).unwrap();
@@ -5181,9 +5168,7 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("Product save decodes");
     let restored_live = decoded
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
+        .into_live_for_program(executor.admitted_program())
         .expect("partial AwaitMany continuation restores");
     let mut restored = await_many_executor(&program, items, generation);
     restored
@@ -5251,7 +5236,7 @@ fn await_many_inert_input_and_site_failures_precede_construction_and_preserve_fi
             ..RuntimeStepOptions::default()
         },
     );
-    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     let before = AwbcFiberStateSnapshot::from_live(&executor.fiber, &owner).unwrap();
     for case in 0..4 {
         let mut forged = before.clone();
@@ -6944,9 +6929,8 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_str(&encoded).expect("version-one inert queue decodes");
     assert_eq!(decoded, save);
-    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
     let restored_snapshot = decoded
-        .into_live_for_program(&owner)
+        .into_live_for_program(executor.admitted_program())
         .expect("same-owner queue restores");
     let mut restored =
         AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)

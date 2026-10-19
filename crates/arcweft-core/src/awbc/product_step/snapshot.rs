@@ -651,29 +651,15 @@ fn save_need_producer_registry(
 
 fn restore_need_producer_registry(
     saved: AwbcNeedProducerRegistrySaveSnapshot,
-    owner: &crate::task::RuntimeProgramOwner,
+    source_program: Option<&crate::plan::task_source::RuntimeTaskSourceProgram>,
     admission: &mut crate::value::RuntimeRetainedValueAdmission,
 ) -> Result<NeedProducerRegistrySaveSnapshot, String> {
-    let crate::task::RuntimeProgramOwner::Awbc(program) = owner else {
-        return Err("AWBC Need producer state requires its actual code owner".into());
-    };
     admission
         .validate_metadata_collection(saved.task_admissions.len())
         .map_err(|error| error.to_string())?;
     admission
         .validate_metadata_collection(saved.launches.len())
         .map_err(|error| error.to_string())?;
-    let source_program = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
-        std::sync::Arc::clone(program),
-        crate::awbc::verify::AwbcVerifyBudget::default(),
-        crate::awbc::verify::AwbcVerifyContext {
-            require_entrypoint: false,
-            ..Default::default()
-        },
-        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
-        None,
-    )
-    .map_err(|error| error.to_string())?;
     let mut launches = Vec::with_capacity(saved.launches.len());
     for launch in saved.launches {
         admission
@@ -682,9 +668,8 @@ fn restore_need_producer_registry(
         admission
             .validate_metadata_collection(launch.arguments.len())
             .map_err(|error| error.to_string())?;
-        let program = source_program
-            .as_ref()
-            .ok_or("selected saved launch has no admitted original Source")?;
+        let program =
+            source_program.ok_or("selected saved launch has no admitted original Source")?;
         let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
         let mut meter = admission
             .task_source_meter(limits)
@@ -2872,8 +2857,9 @@ impl AwbcProductExecutorSaveSnapshot {
 
     pub fn into_live_for_program(
         self,
-        owner: &crate::task::RuntimeProgramOwner,
+        program: &super::AwbcProductProgram,
     ) -> Result<AwbcProductExecutorSnapshot, String> {
+        let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -2896,8 +2882,11 @@ impl AwbcProductExecutorSaveSnapshot {
         if need_publications.len() != need_publication_count {
             return Err("Need publication snapshot contains duplicate waiter/Need rows".to_owned());
         }
-        let need_producers =
-            restore_need_producer_registry(self.need_producers, owner, &mut admission)?;
+        let need_producers = restore_need_producer_registry(
+            self.need_producers,
+            program.task_source.as_ref(),
+            &mut admission,
+        )?;
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
             runtime_generation: self.runtime_generation,
@@ -3186,7 +3175,7 @@ impl AwbcProductStepExecutor {
     pub fn inert_rollback_image(
         &self,
     ) -> Result<AwbcProductExecutorRollbackImage, AwbcProductSaveError> {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let root = self
             .root
             .as_ref()
@@ -3207,7 +3196,7 @@ impl AwbcProductStepExecutor {
         &mut self,
         image: AwbcProductExecutorRollbackImage,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         // A fresh executor shell may already contain its startup root. Drop
         // that live owner before materializing the inert root rollback image.
         self.root = None;
@@ -3232,8 +3221,7 @@ impl AwbcProductStepExecutor {
         self,
         saved: AwbcProductExecutorSaveSnapshot,
     ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let saved = match saved.into_live_for_program(&owner) {
+        let saved = match saved.into_live_for_program(&self.program) {
             Ok(saved) => saved,
             Err(message) => {
                 return Err((
@@ -3263,11 +3251,8 @@ impl AwbcProductStepExecutor {
                 ));
             }
         };
-        let program = std::sync::Arc::clone(&self.program);
-        let admitted = super::AwbcProductProgram {
-            program: std::sync::Arc::clone(&program),
-            task_source: self.task_source.clone(),
-        };
+        let program = self.program_arc();
+        let admitted = self.program.clone();
         let origin = self.fiber.root;
         let budget_quantum = self.fiber.budget.quantum;
         let original_generation = self.runtime_generation;
@@ -3547,8 +3532,7 @@ impl AwbcProductStepExecutor {
         policy: crate::task::NeedProducerRestorePolicy,
     ) -> Result<(), AwbcProductStepBuildError> {
         let observations = self.validate_snapshot(&snapshot)?;
-        let program_owner =
-            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let queued_task_events = snapshot
             .queued_task_events
             .into_iter()

@@ -1207,9 +1207,8 @@ impl super::AwbcProductStepExecutor {
         // until their complete ledger/materialization preflight commits.
         let effect_site = before.cursor;
         let effect_frame = before.active_frame()?.instance;
-        let mut effect_checkpoint = Some(before.checkpoint(
-            &crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
-        )?);
+        let mut effect_checkpoint =
+            Some(before.checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))?);
         let phase = std::mem::replace(&mut frame.phase, ProductDialoguePhase::Transitioning);
         let ProductDialoguePhase::Activating {
             fiber,
@@ -1224,11 +1223,11 @@ impl super::AwbcProductStepExecutor {
             let mut host = super::ProductVmHost {
                 backend: pure_backend,
                 fallback_stats: &mut candidate_stats,
-                program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
             };
             let context = crate::awbc::vm::VmExecutionContext::for_program(
                 self.artifact_fingerprint,
-                Arc::clone(&self.program),
+                self.program_arc(),
             );
             let step = crate::awbc::vm::step_with_host_context(
                 &self.program,
@@ -1249,7 +1248,7 @@ impl super::AwbcProductStepExecutor {
                             effect_checkpoint
                                 .take()
                                 .expect("activation step retained its checkpoint"),
-                            &crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                            &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                         )
                         .expect("accepted activation checkpoint restores in its original program");
                     return Err(ProductStepError::Internal(error.to_string()));
@@ -1321,7 +1320,7 @@ impl super::AwbcProductStepExecutor {
                         effect_checkpoint
                             .take()
                             .expect("activation step retained its checkpoint"),
-                        &crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                     )
                     .expect("accepted activation checkpoint restores in its original program");
                 return Err(error);
@@ -1341,7 +1340,7 @@ impl super::AwbcProductStepExecutor {
                         effect_checkpoint
                             .take()
                             .expect("effect-producing step retained its checkpoint"),
-                        &crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                        &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                     )
                     .expect("accepted activation checkpoint restores in its original program");
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
@@ -1475,7 +1474,7 @@ impl super::AwbcProductStepExecutor {
                                 effect_checkpoint
                                     .take()
                                     .expect("effect-producing step retained its checkpoint"),
-                                &crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                                &crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                             )
                             .expect(
                                 "accepted activation checkpoint restores in its original program",

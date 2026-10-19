@@ -20996,3 +20996,41 @@ operation/slot/capture integration. Raw entry/Flow/host consumers must reuse the
 actual admitted owner. Presentation, remaining semantic/nominal/persistence work,
 the complete Core reverse closure/workspace, public API/doctest, Tier2 and actual
 Native/Web acceptance remain required. The full goal stays active.
+### 2026-10-20 — retain admitted AWBC Source through activation and replacement
+
+Inspected main `b7dc80930e49f7a43729c1bc488fbde2f99b7348` in the existing
+checkout. The fourteen held tracked paths and three unrelated untracked items
+remain unchanged. The preceding continuation only verified the already completed
+cargo-clean receipt, so it was no progress toward this goal; the current turn
+resumed implementation without another clean, checkout or approval round.
+
+The Product executor now retains `AwbcProductProgram` as its sole code/Source
+owner, rather than decomposing it into independently replaceable fields. Entry,
+selected-function and Flow activation accept that same admitted owner. The public
+facade and generation-local session construction and compatible hot-swap retain
+it with the exact code Arc and bundle context proof. A replacement rejection
+restores the entire original owner together. Continuation rollback and owned
+restore clone only this immutable lease. Inert Product save admission now requires
+the admitted owner and resolves saved Need assertions through its retained Source;
+the raw-code re-admission with no upper View authority is deleted.
+
+Type-only `RuntimeProgramOwner` remains a separate raw type authority at this cut;
+it does not grant Task Source admission. The final public Source/spec/instance/
+outcome switch, invocation-bound outcome and genuine autonomous/standalone Source
+contracts still require the broader consumer migration. This change does not
+claim those requirements complete or introduce fabricated Native sources.
+
+R1664 catalogue compilation failed (actual Cargo 101): seven production Arc-view
+call sites and additional Core tests still used the old owner/snapshot signatures.
+Those consumers were migrated; no runtime tests ran. R1665 compilation then failed
+on one disjoint-field borrow after using the whole-executor Arc accessor. It is
+corrected to borrow the owning program field; new unused owner bindings were
+removed. These failed catalogues remain evidence, not passing validation.
+
+The new real compiled View fixture covers entry activation, inert save/owned
+restore, exact generation/code identity, accepted compatible replacement, rejected
+raw replacement preserving the current state, and explicit Flow activation. Current
+catalogue/runtime/Clippy/structural and complete reverse/workspace checks are still
+pending. Per the user's explicit checkpoint instruction, this is an intermediate
+commit; operability at every intermediate commit is not claimed. The complete goal
+remains active, including CLI migration and all other retained acceptance items.

@@ -13,6 +13,7 @@ use super::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
+use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
 use arcweft_id::LocaleTag;
 use arcweft_manifest_model::ProjectLocaleSpec;
@@ -21,7 +22,7 @@ use arcweft_manifest_model::ProjectLocaleSpec;
 pub(super) struct SessionRuntime {
     pub(super) source_label: String,
     pub(super) generation: GenerationId,
-    pub(super) program: Arc<AwbcProgram>,
+    pub(super) program: AwbcProductProgram,
     pub(super) entry: AwbcEntryId,
     pub(super) plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     pub(super) dialogue_content: DialogueContentCatalog,
@@ -236,7 +237,7 @@ impl SessionRuntime {
     fn new(
         source_label: String,
         generation: GenerationId,
-        program: Arc<AwbcProgram>,
+        program: AwbcProductProgram,
         entry: AwbcEntryId,
         plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
@@ -280,20 +281,12 @@ impl SessionRuntime {
         &self,
         entry: AwbcEntryId,
     ) -> Result<ArcweftRuntimeExecutor, AwbcProductStepBuildError> {
-        let mut executor = if let Some(proof) = self.plain_text_context_proof {
-            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
-                Arc::clone(&self.program),
-                entry,
-                proof,
-                self.generation,
-            )?
-        } else {
-            ArcweftRuntimeExecutor::from_awbc_product_arc_with_generation(
-                Arc::clone(&self.program),
-                entry,
-                self.generation,
-            )?
-        };
+        let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
+            self.program.clone(),
+            entry,
+            self.generation,
+            self.plain_text_context_proof,
+        )?;
         executor.set_format_context(RuntimeFormatContext::new(self.active_locale.clone()));
         Ok(executor)
     }
@@ -397,10 +390,13 @@ pub(super) fn build_session_runtime(
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
-    let view_runtime = BundleViewRuntime::try_new_with_awbc(
+    let program = BundleViewRuntime::admit_awbc_program(&view_product, program)
+        .map_err(BundleViewRuntimeError::from)?;
+    let view_runtime = BundleViewRuntime::try_new_with_admitted_program(
         view_product,
         bundle.view_text.clone(),
-        Arc::clone(&program),
+        arcweft_view::ViewRegistry::default(),
+        program.clone(),
     )?;
     let character_dialogue_schema = bundle
         .character_dialogue_generation
@@ -428,7 +424,7 @@ pub(super) fn build_session_runtime(
                     Arc::new(view_runtime.registry().clone()),
                     characters,
                     style_digest,
-                    arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+                    arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                 )
                 .map(Arc::new)
                 .map_err(|error| BundleSessionError::CharacterDialogueGeneration {

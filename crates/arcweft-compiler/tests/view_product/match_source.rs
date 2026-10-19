@@ -346,6 +346,97 @@ fn view_source_assertions_reject_missing_duplicate_and_foreign_admissions() {
 }
 
 #[test]
+fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
+    use arcweft_core::awbc::product_step::{
+        AwbcProductExecutorSaveSnapshot, AwbcProductStepExecutor,
+    };
+    use arcweft_core::awbc::schema::AwbcEntryId;
+    use arcweft_core::executor::ArcweftRuntimeExecutor;
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    use arcweft_core::task::GenerationId;
+    use std::sync::Arc;
+
+    let compiled = super::project_view_fixture_with_entry(
+        "entry cli @entry.main { goto @flow.main }\nflow main() -> String { return \"done\" }\nview Main(enabled: bool = true) { match enabled { true => Text(\"yes\"), false => Text(\"no\") }; }",
+        "arcweft-test://view-source-entry-flow",
+    ).compile().unwrap();
+    let code = Arc::new(
+        arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+            &compiled.runtime_plan().plan,
+            &compiled.runtime_plan().dialogue_content_catalog,
+            "main.arcw",
+        )
+        .lower()
+        .unwrap()
+        .program,
+    );
+    let admitted = super::admit_view_awbc(&compiled, Arc::clone(&code));
+    let generation = GenerationId::new(7);
+    assert!(AwbcProductStepExecutor::for_entry_arc(Arc::clone(&code), AwbcEntryId(0), 64).is_err());
+    let mut entry = AwbcProductStepExecutor::for_admitted_entry(
+        admitted.clone(),
+        AwbcEntryId(0),
+        64,
+        generation,
+        None,
+    )
+    .unwrap();
+    let before = entry.snapshot().unwrap();
+    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&code));
+    let inert = AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+    let inert = serde_json::from_slice(&serde_json::to_vec(&inert).unwrap()).unwrap();
+    entry = entry
+        .restore_inert_snapshot_owned(inert)
+        .unwrap_or_else(|(_, error)| panic!("{error}"));
+    assert_eq!(entry.snapshot().unwrap(), before);
+    assert_eq!(entry.runtime_generation(), generation);
+
+    let replacement = Arc::new(code.as_ref().clone());
+    let replacement_owner = super::admit_view_awbc(&compiled, Arc::clone(&replacement));
+    entry
+        .replace_admitted_program_preserving_state(replacement_owner, None)
+        .unwrap();
+    assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
+    assert_eq!(entry.snapshot().unwrap(), before);
+    assert!(
+        entry
+            .replace_program_preserving_state_arc(Arc::clone(&code))
+            .is_err()
+    );
+    assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
+    assert_eq!(entry.snapshot().unwrap(), before);
+    let inert = AwbcProductExecutorSaveSnapshot::from_live(
+        &before,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&replacement)),
+    )
+    .unwrap();
+    entry = entry
+        .restore_inert_snapshot_owned(inert)
+        .unwrap_or_else(|(_, error)| panic!("{error}"));
+    assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
+    let output = entry.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert!(output.output.diagnostics.is_empty(), "{output:?}");
+
+    let invocation = compiled
+        .runtime_plan()
+        .plan
+        .clone()
+        .seal_flow_invocation(compiled.runtime_plan().plan.flows()[0].id.clone(), [])
+        .unwrap();
+    let mut flow = ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+        admitted, invocation, None,
+    )
+    .unwrap();
+    assert!(flow.program_owner().same_program(&owner));
+    let output = flow.step_with_pure_backend(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions::default(),
+        &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+    );
+    assert!(output.output.diagnostics.is_empty(), "{output:?}");
+}
+
+#[test]
 fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
     use arcweft_core::awbc::product_step::AwbcProductStepExecutor;
     use arcweft_core::value::RuntimeValue;

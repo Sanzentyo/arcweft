@@ -12,7 +12,7 @@ use super::AwbcProductStepBuildError;
 /// An actual AWBC program admitted with the upper authorities its original
 /// Source requires. Clones retain the same immutable executable and Source;
 /// invocation, rollback and restore do not reconstruct either owner.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductProgram {
     pub(super) program: Arc<AwbcProgram>,
     pub(super) task_source: Option<RuntimeTaskSourceProgram>,

@@ -1,7 +1,7 @@
 use crate::aot::AotProgram;
 use crate::awbc::product_step::{
-    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductSaveError,
-    AwbcProductStepBuildError, AwbcProductStepExecutor,
+    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductProgram,
+    AwbcProductSaveError, AwbcProductStepBuildError, AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{Engine, EngineStartError, FlowFiber};
@@ -414,6 +414,20 @@ impl ArcweftRuntimeExecutor {
         )))
     }
 
+    /// Starts an entry using the product's original, fully admitted owner.
+    pub fn from_admitted_awbc_product(
+        program: AwbcProductProgram,
+        entry: AwbcEntryId,
+        generation: GenerationId,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm =
+            AwbcProductStepExecutor::for_admitted_entry(program, entry, 64, generation, proof)?;
+        Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
+            Box::new(AwbcProductExecutor { vm }),
+        )))
+    }
+
     /// Starts Product AWBC with the non-serialized plain-text Content proof
     /// supplied by a validated bundle/catalog join.
     pub fn from_awbc_product_arc_with_plain_text_context_proof(
@@ -452,8 +466,27 @@ impl ArcweftRuntimeExecutor {
         invocation: RuntimeFlowInvocation,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        let program = AwbcProductProgram::admit(
+            program,
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..Default::default()
+            },
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )?;
+        Self::from_admitted_awbc_product_flow_invocation(program, invocation, proof)
+    }
+
+    /// Transfers a checked Flow packet under the actual admitted executable.
+    pub fn from_admitted_awbc_product_flow_invocation(
+        program: AwbcProductProgram,
+        invocation: RuntimeFlowInvocation,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         let (_source_plan, flow, bindings) = invocation.into_parts();
-        let vm = AwbcProductStepExecutor::for_flow_invocation_arc_with_generation(
+        let vm = AwbcProductStepExecutor::for_admitted_flow_invocation(
             program,
             &flow,
             bindings,
@@ -759,6 +792,24 @@ impl ArcweftRuntimeExecutor {
                         .to_owned(),
                 })
             }
+        }
+    }
+
+    /// Publishes an already admitted code/Source pair only if the current
+    /// state is compatible with that exact candidate executable.
+    pub fn replace_admitted_product_awbc_program(
+        &mut self,
+        program: AwbcProductProgram,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .replace_admitted_program_preserving_state(program, proof),
+            _ => Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "code-compatible Product AWBC replacement requires Product AWBC tier"
+                    .to_owned(),
+            }),
         }
     }
 

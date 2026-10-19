@@ -989,7 +989,7 @@ impl BundleViewRuntime {
         Self::try_new_with_admitted_program(product, text, registry, admitted)
     }
 
-    fn admit_awbc_program(
+    pub(crate) fn admit_awbc_program(
         product: &ValidatedViewProduct,
         awbc: Arc<AwbcProgram>,
     ) -> Result<AwbcProductProgram, ViewProgramAdmissionError> {
@@ -1026,7 +1026,7 @@ impl BundleViewRuntime {
         Ok(admitted)
     }
 
-    fn try_new_with_admitted_program(
+    pub(crate) fn try_new_with_admitted_program(
         product: ValidatedViewProduct,
         text: Option<ViewTextResource>,
         registry: ViewRegistry,

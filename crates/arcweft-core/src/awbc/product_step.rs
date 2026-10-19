@@ -1501,8 +1501,7 @@ enum AwbcProductExecutorStatus {
 /// Stateful canonical AWBC executor exposed through `RuntimeStepResult`.
 #[derive(Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
-    pub(super) program: Arc<AwbcProgram>,
-    task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
+    pub(super) program: AwbcProductProgram,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     format_context: crate::value::RuntimeFormatContext,
     plain_text_context_template_proof:
@@ -1710,16 +1709,23 @@ impl AwbcProductStepExecutor {
         program: Arc<AwbcProgram>,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
-            Arc::clone(&program),
+        let program = AwbcProductProgram::admit(
+            program,
             AwbcVerifyBudget::default(),
             AwbcVerifyContext::default(),
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
-        )
-        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-            message: error.to_string(),
-        })?;
+        )?;
+        self.replace_admitted_program_preserving_state(program, proof)
+    }
+
+    /// Replaces code and its original Source as one admitted owner. A failed
+    /// state check restores that same pair before returning to the caller.
+    pub fn replace_admitted_program_preserving_state(
+        &mut self,
+        program: AwbcProductProgram,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<(), AwbcProductStepBuildError> {
         let template = program
             .validated_plain_text_context_template()
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -1739,13 +1745,11 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
         let previous_program = std::mem::replace(&mut self.program, program);
-        let previous_source = std::mem::replace(&mut self.task_source, task_source);
         let previous_proof = std::mem::replace(&mut self.plain_text_context_template_proof, proof);
         let observations = match self.validate_snapshot(&snapshot) {
             Ok(observations) => observations,
             Err(error) => {
                 self.program = previous_program;
-                self.task_source = previous_source;
                 self.plain_text_context_template_proof = previous_proof;
                 return Err(error);
             }
@@ -1834,6 +1838,24 @@ impl AwbcProductStepExecutor {
         )
     }
 
+    /// Starts an entry with the executable and Source already admitted by its
+    /// owning product, including any required upper-layer View authority.
+    pub fn for_admitted_entry(
+        program: AwbcProductProgram,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+        generation: GenerationId,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_admitted_root(
+            program,
+            crate::awbc::fiber::AwbcFiberRoot::Entry(entry),
+            budget_quantum,
+            generation,
+            proof,
+        )
+    }
+
     fn for_root_arc_with_context_proof(
         program: Arc<AwbcProgram>,
         origin: crate::awbc::fiber::AwbcFiberRoot,
@@ -1855,16 +1877,12 @@ impl AwbcProductStepExecutor {
     }
 
     fn for_admitted_root(
-        admitted: AwbcProductProgram,
+        program: AwbcProductProgram,
         origin: crate::awbc::fiber::AwbcFiberRoot,
         budget_quantum: u64,
         generation: GenerationId,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let AwbcProductProgram {
-            program,
-            task_source,
-        } = admitted;
         let template = program
             .validated_plain_text_context_template()
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -1878,7 +1896,7 @@ impl AwbcProductStepExecutor {
             });
         }
         let mut root_startup = match origin.entry() {
-            Some(entry) => root::prepare_startup(&program, entry)?,
+            Some(entry) => root::prepare_startup(&program.program, entry)?,
             None => None,
         };
         let mut fiber = if origin == crate::awbc::fiber::AwbcFiberRoot::Empty {
@@ -1952,13 +1970,7 @@ impl AwbcProductStepExecutor {
                 })?;
         }
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(
-            program,
-            task_source,
-            fiber,
-            artifact_fingerprint,
-            generation,
-        );
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
         executor.plain_text_context_template_proof = proof;
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
@@ -1970,8 +1982,8 @@ impl AwbcProductStepExecutor {
     /// Starts an explicit Flow from this exact executable's semantic inventory.
     /// The complete moved input packet is checked by the owning Product frame
     /// before any instruction runs. No entry or route authority is fabricated.
-    pub(crate) fn for_flow_invocation_arc_with_generation(
-        program: Arc<AwbcProgram>,
+    pub(crate) fn for_admitted_flow_invocation(
+        program: AwbcProductProgram,
         flow: &crate::plan::FlowRuntimeId,
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
         budget_quantum: u64,
@@ -1983,7 +1995,7 @@ impl AwbcProductStepExecutor {
                 message: format!("Product AWBC has no Flow `{}`", flow.canonical_label()),
             }
         })?;
-        let mut executor = Self::for_root_arc_with_context_proof(
+        let mut executor = Self::for_admitted_root(
             program,
             crate::awbc::fiber::AwbcFiberRoot::Function(function),
             budget_quantum,
@@ -2035,17 +2047,32 @@ impl AwbcProductStepExecutor {
         budget_quantum: u64,
         generation: GenerationId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let program = Arc::new(program);
-        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
-            Arc::clone(&program),
+        let program = AwbcProductProgram::admit(
+            Arc::new(program),
             AwbcVerifyBudget::default(),
             AwbcVerifyContext::default(),
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
+        )?;
+        Self::for_admitted_function_invocation(
+            program,
+            entry,
+            function,
+            bindings,
+            budget_quantum,
+            generation,
         )
-        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-            message: error.to_string(),
-        })?;
+    }
+
+    /// Starts a selected function without decoding or rebinding its Source.
+    pub fn for_admitted_function_invocation(
+        program: AwbcProductProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
+        budget_quantum: u64,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         let mut fiber = FiberState::for_entry_target_function(
             &program,
             entry,
@@ -2063,20 +2090,13 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(
-            program,
-            task_source,
-            fiber,
-            artifact_fingerprint,
-            generation,
-        );
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
         executor.entry_bound = true;
         Ok(executor)
     }
 
     fn for_fiber(
-        program: Arc<AwbcProgram>,
-        task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
+        program: AwbcProductProgram,
         fiber: FiberState,
         artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
         runtime_generation: GenerationId,
@@ -2123,7 +2143,6 @@ impl AwbcProductStepExecutor {
         }
         Self {
             program,
-            task_source,
             artifact_fingerprint,
             format_context: crate::value::RuntimeFormatContext::default(),
             plain_text_context_template_proof: None,
@@ -2160,7 +2179,12 @@ impl AwbcProductStepExecutor {
 
     /// Retains the selected executable type authority across host completion.
     pub fn program_arc(&self) -> Arc<AwbcProgram> {
-        Arc::clone(&self.program)
+        self.program.program_arc()
+    }
+
+    /// Borrows the complete executable and original Source authority.
+    pub const fn admitted_program(&self) -> &AwbcProductProgram {
+        &self.program
     }
 
     pub const fn fiber(&self) -> &FlowFiber {
@@ -2532,13 +2556,10 @@ impl AwbcProductStepExecutor {
         match self.plain_text_context_template_proof {
             Some(proof) => VmExecutionContext::for_program_with_plain_text_context_proof(
                 self.artifact_fingerprint,
-                Arc::clone(&self.program),
+                self.program_arc(),
                 proof,
             ),
-            None => VmExecutionContext::for_program(
-                self.artifact_fingerprint,
-                Arc::clone(&self.program),
-            ),
+            None => VmExecutionContext::for_program(self.artifact_fingerprint, self.program_arc()),
         }
         .with_format_context(self.format_context.clone())
     }
@@ -2603,9 +2624,8 @@ impl AwbcProductStepExecutor {
             };
         let checkpoint = match self
             .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
-                &self.program,
-            ))) {
+            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(error.into(), output);
@@ -2616,7 +2636,7 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+            program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
         };
         let context = self.vm_execution_context();
         match step_with_host_context(
@@ -2736,7 +2756,7 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         executed: u64,
     ) -> usize {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program));
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
             self.fail_with_error(ProductStepError::Fiber(restore_error), output);
         } else {
@@ -2781,9 +2801,9 @@ impl AwbcProductStepExecutor {
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
-                    program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
-                        &self.program,
-                    )),
+                    program_owner: crate::task::RuntimeProgramOwner::Awbc(
+                        self.program.program_arc(),
+                    ),
                 };
                 step_with_host_context(
                     &self.program,
@@ -2866,7 +2886,7 @@ impl AwbcProductStepExecutor {
         }
         journal.rollback(self);
         child.pending_host_call = pending_host_call_before;
-        let owner = crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program));
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let restore = child.fiber.restore(checkpoint, &owner);
         self.child_fibers.push_front(child);
         if let Err(error) = restore {
@@ -2932,9 +2952,8 @@ impl AwbcProductStepExecutor {
         }
         let checkpoint = match front
             .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
-                &self.program,
-            ))) {
+            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(error.into(), output);
@@ -3037,7 +3056,7 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+            program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
         };
         let context = self.vm_execution_context();
         let terminal_exit = matches!(
@@ -4139,7 +4158,7 @@ impl AwbcProductStepExecutor {
                     ));
                 }
                 let callback = RuntimeCallableValue::try_new(
-                    crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                    crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
                     binding.state,
                     binding.captures.into_vec(),
                 )
@@ -5513,7 +5532,7 @@ impl AwbcProductStepExecutor {
         for (relative_index, option) in candidates.into_iter().enumerate() {
             if let Some(condition) = option.condition {
                 match run_function(
-                    &self.program,
+                    &self.program.program,
                     condition,
                     Vec::new(),
                     pure_backend,

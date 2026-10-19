@@ -265,16 +265,10 @@ impl BundleSession {
             compatibility,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
         ) {
-            let replacement = if let Some(proof) = next_runtime.plain_text_context_proof {
-                self.executor
-                    .replace_product_awbc_program_arc_with_plain_text_context_proof(
-                        Arc::clone(&next_runtime.program),
-                        proof,
-                    )
-            } else {
-                self.executor
-                    .replace_product_awbc_program_arc(Arc::clone(&next_runtime.program))
-            };
+            let replacement = self.executor.replace_admitted_product_awbc_program(
+                next_runtime.program.clone(),
+                next_runtime.plain_text_context_proof,
+            );
             if let Err(error) = replacement {
                 self.swap.abort_prepared();
                 return Err(BundleSessionError::from(error).into());

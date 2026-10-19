@@ -1610,7 +1610,7 @@ mod view_handler_queue_tests {
             .expect("initial generation")
             .runtime();
         assert!(session.program_owner().same_program(
-            &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&runtime.program))
+            &arcweft_core::task::RuntimeProgramOwner::Awbc(runtime.program.program_arc())
         ));
     }
 

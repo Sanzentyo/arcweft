@@ -791,7 +791,7 @@ impl AwbcProductStepExecutor {
             inputs.push(item.clone());
         }
         let value = super::run_function(
-            &self.program,
+            &self.program.program,
             function,
             inputs,
             backend,
@@ -2563,9 +2563,8 @@ impl AwbcProductStepExecutor {
         }
         let checkpoint = match self
             .fiber
-            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(
-                std::sync::Arc::clone(&self.program),
-            )) {
+            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);
@@ -2583,8 +2582,7 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                let owner =
-                    crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+                let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
                 if let Err(restore_error) = self.fiber.restore(checkpoint, &owner) {
                     self.fail_with_error(ProductStepError::Fiber(restore_error), output);
                 } else {
@@ -2649,9 +2647,10 @@ impl AwbcProductStepExecutor {
             );
             return;
         }
-        let checkpoint = match self.child_fibers[index].fiber.checkpoint(
-            &crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program)),
-        ) {
+        let checkpoint = match self.child_fibers[index]
+            .fiber
+            .checkpoint(&crate::task::RuntimeProgramOwner::Awbc(self.program_arc()))
+        {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
                 self.fail_with_error(ProductStepError::Fiber(error), output);
@@ -2674,8 +2673,7 @@ impl AwbcProductStepExecutor {
         let admission = match committed {
             Ok((admission, ())) => admission,
             Err(error) => {
-                let owner =
-                    crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
+                let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
                 if let Err(restore_error) =
                     self.child_fibers[index].fiber.restore(checkpoint, &owner)
                 {
@@ -2719,7 +2717,7 @@ impl AwbcProductStepExecutor {
                     .to_owned(),
             ));
         }
-        let source_program = self.task_source.as_ref().ok_or_else(|| {
+        let source_program = self.program.task_source.as_ref().ok_or_else(|| {
             ProductStepError::Host(
                 "selected Need producer has no admitted original Task Source".to_owned(),
             )

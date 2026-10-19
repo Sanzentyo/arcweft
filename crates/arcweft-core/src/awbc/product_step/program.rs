@@ -87,7 +87,7 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 }
             })?;
-            let owner = crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program));
+            let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
             let input_image = RuntimeProgramInputRollback::capture(&inputs, &owner)?;
             let mut next_frame_instance = self.fiber.next_frame_instance;
             let frame_instance = crate::runtime_id::RuntimeFrameInstanceId::from_allocated(
@@ -169,10 +169,7 @@ impl AwbcProductStepExecutor {
             Ok::<_, RuntimeProgramContinuationFailure>(())
         })();
         if let Err(reason) = committed {
-            let admitted = AwbcProductProgram {
-                program: Arc::clone(&self.program),
-                task_source: self.task_source.clone(),
-            };
+            let admitted = self.program.clone();
             let format_context = self.format_context.clone();
             let plain_text_proof = self.plain_text_context_template_proof;
             drop(self);

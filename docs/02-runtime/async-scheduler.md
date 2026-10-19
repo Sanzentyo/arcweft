@@ -73,8 +73,10 @@ The common seal recomputes the actual E/F/Q/C and upper View transcript, consume
 the one-use completion capability and compares the final expected key. A decoded
 assertion cannot issue a task key or rebind the construction authority to a
 foreign candidate. AWBC execution retains the admitted executable and original
-Source together; View invocation, continuation rollback and owned restore keep
-that lease instead of constructing a new Source-free executor.
+Source together. Entry and Flow activation, View invocation, compatible code
+replacement, continuation rollback and owned restore retain that complete lease.
+The saved Need registry resolves its inert Source assertions through the retained
+admitted program; a raw code/type lease cannot authorize Source reconstruction.
 
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts

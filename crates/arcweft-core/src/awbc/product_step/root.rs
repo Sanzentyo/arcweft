@@ -199,14 +199,14 @@ impl AwbcProductStepExecutor {
         };
         let result = {
             let mut evaluator = ProductRootEvaluator {
-                program: &self.program,
+                program: &self.program.program,
                 backend: pure_backend,
                 fallback_stats: &mut self.compact_pure_stats,
             };
             root.step(
                 events,
                 &mut evaluator,
-                crate::program_types::RuntimeProgramTypes::Awbc(self.program.as_ref()),
+                crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
             )
         };
         match result {
