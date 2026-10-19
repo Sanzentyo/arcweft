@@ -43,6 +43,16 @@ impl RuntimeStoredValue for RuntimeValue {
     }
 }
 
+impl<V: RuntimeStoredValue + ?Sized> RuntimeStoredValue for &V {
+    fn borrowed_view(&self) -> RuntimeValueView<'_> {
+        V::borrowed_view(*self)
+    }
+
+    fn admission_origin() -> ValueAdmissionOrigin {
+        V::admission_origin()
+    }
+}
+
 impl RuntimeStoredValue for super::RuntimePayload {
     fn borrowed_view(&self) -> RuntimeValueView<'_> {
         self.value().view()

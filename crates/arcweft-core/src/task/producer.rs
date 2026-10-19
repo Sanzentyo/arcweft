@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 
 mod source;
 pub(crate) use source::RuntimeTaskProducerSourceError;
+pub(crate) use source::RuntimeTaskTemplateArguments;
 
 /// Source-independent ordinal assigned to one launch of a producer instance.
 /// Join uses the zero ordinal; positive `AlwaysStart` candidates remain journal

@@ -175,6 +175,28 @@ impl NeedProducerTemplate {
 }
 
 impl AwaitManyTarget {
+    /// Visits the first occurrence in source order before the union retains
+    /// its ID. The caller bounds/charges each slot before either owner grows.
+    pub(crate) fn try_visit_captures<E>(
+        &self,
+        mut visit: impl FnMut(crate::runtime_id::RuntimeLocalDeclarationId) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let mut seen = std::collections::BTreeSet::new();
+        for local in self
+            .base
+            .request
+            .captures()
+            .iter()
+            .chain(self.child.request.captures())
+        {
+            if !seen.contains(local) {
+                visit(*local)?;
+                seen.insert(*local);
+            }
+        }
+        Ok(())
+    }
+
     pub fn captures(
         &self,
     ) -> impl Iterator<Item = crate::runtime_id::RuntimeLocalDeclarationId> + '_ {

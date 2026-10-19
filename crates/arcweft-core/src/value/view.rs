@@ -565,6 +565,18 @@ pub(crate) enum RuntimeValueSource<'a> {
     Snapshot(&'a super::AwbcRuntimeValueSnapshot),
 }
 impl<'a> RuntimeValueSource<'a> {
+    pub(crate) fn borrowed_value(self) -> super::RuntimeBorrowedValue<'a> {
+        super::RuntimeBorrowedValue {
+            value: self.view(),
+            origin: match self {
+                Self::Live(_) => crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+                Self::Snapshot(_) => {
+                    crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot
+                }
+            },
+        }
+    }
+
     pub(crate) fn view(self) -> RuntimeValueView<'a> {
         match self {
             Self::Live(value) => value.view(),

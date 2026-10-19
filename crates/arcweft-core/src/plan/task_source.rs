@@ -17,6 +17,8 @@ pub(crate) use program::{
 mod host_tests;
 #[cfg(test)]
 mod producer_tests;
+#[cfg(test)]
+mod template_tests;
 pub(crate) use owned::RuntimeTaskSource;
 
 use super::body_semantic::function::OriginalRequestEndpoint;

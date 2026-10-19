@@ -19766,3 +19766,123 @@ owners, actual View authority, old issuer/reader deletion, the two selected-key
 failures and R1507's 58 broader failures, Native/AWBC stop/restore, Native/Web
 capture parity and final workspace/Tier 2 acceptance. This checked private
 boundary is concrete progress; none of that remaining acceptance is complete.
+
+### 2026-10-19 — admit original Thread and AwaitMany operands before Source retention
+
+The previous goal turn made concrete implementation/validation/publication
+progress. This cut starts on main at
+`232c204acbd8d6583b98268c2d606a8749a5cae1`. Its fourteen published blobs, complete
+raw patch, parent/tree, fresh advertised origin and all 3926 frozen inputs were
+verified before advancing the baseline. Parent is
+`2fe17b65d3f2b209b3dac143861021bff46a6318`, tree is
+`982d2ce45f8f7e88f9f15d39e12555cf1f528832`, and patch SHA-256 is
+`10218a7217051ce683c24353e6b56e8446d99ad9729174a2d30be37119483945`.
+The same fourteen tracked and three untracked held paths remain outside this
+cut. No further clean, artifact move/copy, branch/worktree/checkout, job-count or
+profile change is made. The original full convergence goal remains active.
+
+The existing Source-bound producer factory now admits the closed Thread,
+AwaitMany base and AwaitMany child operand grammar. It accepts borrowed capture
+storage and actual live/inert source/item carriers. It checks the genuine
+original endpoint, matching argument kind and exact original/code owner before
+value projection; AWBC still requires the previous checked execution binding.
+Complete capture counts, original ordered locals, metadata and resource bounds
+precede capture views. Capture types use the actual backend's program bank and
+retain the existing Copy requirement. The evaluated source and child item use
+owned admission without granting Copy. The original source-container type is
+checked as a whole, including its length/scope/shape obligations; checking only
+fanout elements would lose that contract.
+
+The existing RuntimeValueSource now yields its read-only borrowed value with
+the actual live/inert provenance. Source/item storage is independent of capture
+storage: live captures with an inert source, and inert captures with a live item,
+share the same original bank. Borrowed RuntimeStoredValue references delegate
+to their actual carrier, so sparse environment captures need no value clones
+or new wrapper authority. Only logical views are collected after preflight.
+The actual code/original Source lease is retained only after all admissions and
+canonical argument hashing succeed. No request definition, value graph, fresh
+bank, quota or Task key is constructed as a substitute.
+
+Instance arguments preserve the existing canonical grammar exactly: Thread
+uses the capture tuple; base uses (capture tuple, source-item tuple); child uses
+(capture tuple, U32 index, item). Source/container and dense/inert storage remain
+borrowed while the existing codec writes that grammar. The codec's byte bound
+comes from the original bank's limits, rather than a new caller digest limit.
+Codec/resource failures remain on that same bank. Source length and target-width
+arithmetic are checked from the container header before capture or child views;
+a tiny inert virtual columnar source with length 2^32 proves that no backing
+graph is allocated or traversed to reject the fanout index overflow.
+
+AwaitManyTarget owns the fallible source-order capture-union visitor. A caller
+preflights and charges a new slot before either the visitor's set or its local
+work list grows. Code-row capture admission and value construction use that
+same owner, retaining first-source order and shared-prefix deduplication. The
+original endpoint's read-only operation accessor is visible to its legitimate
+Core producer consumer; no public or mutable operation capability is added.
+
+The AWBC static join also admits the original AwaitMany source-container type
+root through the existing backend type registry and complete type-graph
+relation. The registry's linear lookup is charged before traversal, and the
+semantic identity is only its lookup key, not a shape proof. The existing memo
+spans this root and all payload/argument/capture roots. A standalone child with
+matching payload/capture types still rejects a source container changed from
+Vec to Slice under the same semantic identity. No projected Source or duplicate
+type catalog is created.
+
+Eight new tests cover exact canonical Thread/base/child inputs and genuine
+completed keys; Native/AWBC instance-key equality; sparse borrowed captures;
+original capture count, kind and unbound-owner rejection before value views;
+specific backend type failures for captures/source/item; live, inert and mixed
+storage on one exact/sticky allowance; final original/code lease retention and
+release; the independently checked source-container root; and virtual source
+count rejection before children. The Thread fixture uses the real aggregate
+builder, local capture placement and common seal. AwaitMany reuses the existing
+real original/code fixture through test-only visibility. Serde builds only the
+small inert tamper fixture; it is not a semantic transcript. These cases do not
+claim live instructions, stop/restore or final public consumer migration.
+
+R1566 initially reports eight compile diagnostics: the sequence constructor
+spelling, the endpoint accessor's former plan-only visibility, and associated
+borrow diagnostics. The fixture now uses RuntimeSeq::values, and the owning
+borrowed accessor supports its actual Core producer consumer. No verifier or
+builder condition is weakened. R1567 catalogs all 2001 cases; R1568 executes
+1999 pass/two retained failures, zero skip, 19.646s with matching terminal names
+and all 3928 source hashes. R1569/R1570 are intermediate 2002-case catalogs as
+the count boundary and independent storage roles are completed; neither is
+presented as final execution evidence.
+
+R1571 catalogs all 2002 all-feature Core/RuntimePlan library and
+awbc_product_parity cases, zero exclusions. R1572 executes the final Rust:
+actual nextest 100, 2000 pass/two fail, zero skip, 19.344s. All eight additions
+and existing factory/type tests pass; terminal names and all 3928 frozen inputs match
+with zero held drift. The exact failure set remains equal to R1563:
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`.
+R1573 matching all-target/all-feature locked Core Clippy passes, actual 0,
+22.31s, with warnings; no -D warnings pass is claimed. R1574 canonical structural
+gate passes, actual 0. Changed-file rustfmt and whitespace checks pass. This
+record and maintained source-type prose follow terminal Rust auditing; tested
+Rust stays unchanged. No fresh full workspace, complete reverse execution,
+doctest or Tier 2 pass is claimed.
+
+Canonical bytes/physical LOC are the operand grammar/factory 12383/287, its
+real Source tests 27745/797, original operation owner 36906/937, static template
+join/tests 20710/572 and 33443/917, Source facade/context 5540/147 and 5443/152,
+producer facade/owner 8873/199 and 147259/3924, task facade 69124/2132,
+template owner 8819/257 and existing value storage/view owners 2241/74 and
+41263/961. The new >300-line test owner is cohesive around its real original/
+backend fixtures and the same capture/argument boundary. Large existing facades
+only forward the new private role; the actual algebra stays on Source and
+AwaitMany owners. No I/O, unsafe, dependency or new public wire shape is added.
+All 99 manifest/lock inputs and the retained 53-package reverse closure remain
+unchanged. Private Core owners and their existing Core/RuntimePlan consumers
+are this cut's validation scope.
+
+Continue into the complete public switch and actual runtime consumers: all
+fourteen request kinds and genuine autonomous AWBC/host owners, selected
+decoded assertions, caller/instruction source correspondence and capture/layout
+admission before runtime copying, actual View authority, old issuer/reader
+deletion, the two selected-key and R1507 broader failures, Native/AWBC stop/
+restore, Native/Web capture parity, generated outputs and final workspace/
+Tier 2 acceptance. This private constructor preparation does not complete any
+of those remaining requirements; keep the full goal active.

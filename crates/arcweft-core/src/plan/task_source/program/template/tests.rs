@@ -22,7 +22,7 @@ fn definition(marker: u8) -> RuntimeFunctionDefinitionIdentity {
     RuntimeFunctionDefinitionIdentity::from_accepted_identity([marker; 32])
 }
 
-fn original() -> RuntimePlan {
+pub(in crate::plan::task_source) fn original() -> RuntimePlan {
     original_with_other_child(false)
 }
 
@@ -219,7 +219,7 @@ fn target(plan: &RuntimePlan) -> &AwaitManyTarget {
     target
 }
 
-fn executable() -> AwbcProgram {
+pub(in crate::plan::task_source) fn executable() -> AwbcProgram {
     let original = original();
     let target = target(&original);
     let mut strings = vec![

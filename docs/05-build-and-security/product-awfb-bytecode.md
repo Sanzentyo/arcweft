@@ -69,6 +69,10 @@ function contract, and occurrence codec policy. Matching semantic type IDs alone
 does not admit a different backend shape. Correlation reads the two owning typed
 graphs under the original allowance before retaining a producer or its values.
 
+For AwaitMany this relation includes the original source-container root, even
+when its type is separate from the aggregate payload or request arguments.
+Payload-only correspondence cannot certify another shape under that source ID.
+
 AWBC executable identity includes the original E assertion, which must pass that
 admission, rather than raw Source wire spelling. Source bytes preserve diagnostic
 labels in addition to semantic declarations. An identity over assertion data is

@@ -21,6 +21,10 @@ pub(crate) use host::{RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField};
 mod selected;
 mod template;
 pub(crate) use selected::{RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField};
+#[cfg(test)]
+pub(super) use template::tests::{
+    executable as template_executable_fixture, original as template_original_fixture,
+};
 mod types;
 pub(crate) use template::{RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField};
 

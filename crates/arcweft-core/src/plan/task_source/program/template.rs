@@ -18,7 +18,7 @@ use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 use crate::task::{ExpectedTaskPlanKey, NeedProducerFamily, TaskClass, TaskPolicy};
 
 #[cfg(test)]
-mod tests;
+pub(in crate::plan::task_source) mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeAwbcTemplateSourceField {
@@ -34,6 +34,7 @@ pub(crate) enum RuntimeAwbcTemplateSourceField {
     CancelScope,
     Policy,
     Payload,
+    SourceType,
     ArgumentCount,
     ArgumentName { index: usize },
     ArgumentSpread { index: usize },
@@ -441,6 +442,23 @@ impl<'program> TemplateAdmission<'program, '_> {
                 && kernel.semantic_role == crate::plan::RuntimeFunctionSemanticRole::Ordinary,
         )?;
         self.captures(task, request_function, &source)?;
+        if let Some(FlowOp::AwaitMany { target, .. }) = source.request_endpoint().operation() {
+            self.meter
+                .charge_work(executable.runtime_types.len() as u64)?;
+            let identity = original
+                .type_table()
+                .get(target.source.ty())
+                .expect("the common seal admitted the original source container")
+                .semantic_identity();
+            let ty = executable.semantic_type_id(identity).ok_or(
+                RuntimeAwbcTemplateSourceError::Mismatch {
+                    task,
+                    field: Field::SourceType,
+                },
+            )?;
+            self.types
+                .push((task, Field::SourceType, target.source.ty(), ty));
+        }
         Ok(source)
     }
 
@@ -481,26 +499,17 @@ impl<'program> TemplateAdmission<'program, '_> {
                     target.child.request.captures.len(),
                 )?;
                 self.meter.charge_work(count as u64)?;
-                let mut seen = std::collections::BTreeSet::new();
-                for local in target
-                    .base
-                    .request
-                    .captures
-                    .iter()
-                    .chain(&target.child.request.captures)
-                {
-                    if !seen.contains(local) {
-                        let next = self.meter.checked_count_sum(inputs.len(), 1)?;
-                        self.roles(
-                            task,
-                            Field::CaptureCount,
-                            next,
-                            self.limits.max_function_roles,
-                        )?;
-                        seen.insert(*local);
-                        inputs.push(*local);
-                    }
-                }
+                target.try_visit_captures(|local| {
+                    let next = self.meter.checked_count_sum(inputs.len(), 1)?;
+                    self.roles(
+                        task,
+                        Field::CaptureCount,
+                        next,
+                        self.limits.max_function_roles,
+                    )?;
+                    inputs.push(local);
+                    Ok::<(), RuntimeAwbcTemplateSourceError>(())
+                })?;
                 if source.request_endpoint().kind()
                     == crate::plan::body_semantic::function::EndpointKind::AwaitManyChild
                 {

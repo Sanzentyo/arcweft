@@ -8,6 +8,9 @@ use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
 };
 
+mod template;
+pub(crate) use template::RuntimeTaskTemplateArguments;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum RuntimeTaskProducerSourceError {
     #[error("the completed source has a different producer request kind")]
@@ -20,6 +23,12 @@ pub(crate) enum RuntimeTaskProducerSourceError {
     ArgumentName { index: usize },
     #[error("producer argument {index} differs from its original role or spread")]
     ArgumentRole { index: usize },
+    #[error("producer capture count is {actual}; original source requires {expected}")]
+    CaptureCount { actual: usize, expected: usize },
+    #[error("AwaitMany source is not its original sequence or homogeneous tuple")]
+    SourceShape,
+    #[error("AwaitMany source length {actual} exceeds the u32 child-index domain")]
+    SourceCount { actual: usize },
     #[error(transparent)]
     Admission(#[from] AwbcRuntimeValueSnapshotError),
 }
