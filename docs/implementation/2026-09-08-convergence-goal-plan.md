@@ -17866,3 +17866,37 @@ markers reject there, while source operations retain their original typed
 operands. Pending observer bodies recurse through that Flow algebra; Line
 groups also use it. No independent observer-body or synthetic Line scope is
 needed to bypass those owners. The full goal remains active.
+
+## 2026-10-19 — Reverse consumer execution and Flow Source checkpoint
+
+Inspected main 22fcb35e8ed29b7d07006ccf9a0307a4d023d462, fourteen held
+tracked paths, three held untracked items and five newly owned, unregistered
+Flow Source files. R1348 catalogs 6241 cases: 6225 matched and sixteen excluded,
+using the resolved 52 non-CLI reverse packages with default features, library
+and integration targets. R1349 executes exactly that selection, actual 100:
+6223 pass, two fail, sixteen skipped, 669.777s. The terminal audit verifies all
+6225 selected names and all 3883 frozen source inputs with zero drift. The same
+two selected-Need completed-program-key cases fail in awbc_product_parity;
+there are no new failures. Three selected packages have no named tests on this
+host (arcweft, arcweft-bundle-assets, arcweft-render-web). This is a failed
+reverse run, not full acceptance; retain the original key failure and assertions.
+
+The Flow Source checkpoint is deliberately incomplete under the user's explicit
+instruction to commit accumulated changes without requiring every intermediate
+commit to work. It is not registered in source.rs and has no compiled coverage.
+It drafts the complete canonical field grammar and original operation-owned
+body/value-root projections, one prefix forest and cumulative child quotas.
+Runtime-only continuations reject. Host, selected producer, project call and
+effect fields delegate to their original Source owners. Observer transactions
+use the same Flow algebra. This is no evidence of complete Flow reconstruction,
+whole-program Source, an atomic consumer switch or executable acceptance.
+
+Next implement the actual seed decoder and original namespace/issuer admission,
+share borrowed CharacterId validation with its constructor, and supply the Map
+family inverse on its owning type. Then add complete grammar, malformed/quota,
+foreign-handle, common-seal and actual-execution tests before registration and
+fresh checks. Materialization must replay each row's admitted cumulative prefix,
+preserve one semantic/value-resource bank, and derive captures through the real
+factory. No function or mark namespace is invented for operations that do not
+reference those owners. Continue the remaining joint program, Line, registry,
+retained View, key, restore and final acceptance work. The full goal stays active.
