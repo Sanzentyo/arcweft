@@ -25,7 +25,7 @@ use crate::runtime_id::{
 };
 use crate::value::RuntimeFlowParameterBinding;
 
-use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId};
+use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePureHelperId};
 
 /// Runtime identifier for a source-declared entry.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -338,18 +338,8 @@ pub enum RuntimeFlowInvocationError {
         index: usize,
         parameter: FlowParameterCoordinate,
     },
-    #[error("runtime Flow `{flow}` parameter {parameter:?} has no plan-local declaration")]
-    MissingParameterLocal {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-    },
-    #[error("runtime Flow `{flow}` parameter {parameter:?} does not match its checked type")]
-    ParameterType {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-    },
     #[error(transparent)]
-    ValueType(#[from] RuntimePlanValueTypeError),
+    FunctionInputs(#[from] crate::value::RuntimeFunctionApplyError),
 }
 
 impl RuntimePlan {
@@ -360,20 +350,36 @@ impl RuntimePlan {
         flow: FlowRuntimeId,
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
     ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
+        let bindings = bindings.into_iter().collect::<Vec<_>>();
+        self.validate_flow_invocation(&flow, &bindings)?;
+        Ok(RuntimeFlowInvocation {
+            plan: Arc::new(self),
+            flow,
+            bindings: bindings.into_boxed_slice(),
+        })
+    }
+
+    /// Coordinate admission and the actual FunctionSite input ABI are one
+    /// boundary for sealing, native activation, stateful startup and goto.
+    pub(crate) fn validate_flow_invocation(
+        &self,
+        flow: &FlowRuntimeId,
+        bindings: &[RuntimeFlowParameterBinding],
+    ) -> Result<super::function_inputs::RuntimeFunctionInputAdmission<'_>, RuntimeFlowInvocationError>
+    {
         let flow_label = flow.canonical_label();
         let runtime_flow =
             self.flows
-                .flow(&flow)
+                .flow(flow)
                 .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
                     flow: flow_label.clone(),
                 })?;
         let schema =
             self.flows
-                .schema(&flow)
+                .schema(flow)
                 .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
                     flow: flow_label.clone(),
                 })?;
-        let bindings = bindings.into_iter().collect::<Vec<_>>();
         if bindings.len() != schema.parameters.len() {
             return Err(RuntimeFlowInvocationError::BindingCount {
                 flow: flow_label,
@@ -396,7 +402,7 @@ impl RuntimePlan {
                     parameter: binding.parameter,
                 });
             }
-            let parameter = schema
+            schema
                 .parameters
                 .get(index)
                 .filter(|parameter| parameter.coordinate == binding.parameter)
@@ -404,30 +410,12 @@ impl RuntimePlan {
                     flow: flow_label.clone(),
                     parameter: binding.parameter,
                 })?;
-            let local = runtime_flow.params.get(index).copied().ok_or_else(|| {
-                RuntimeFlowInvocationError::MissingParameterLocal {
-                    flow: flow_label.clone(),
-                    parameter: parameter.coordinate,
-                }
-            })?;
-            let declaration = self.local_declarations.get(local).ok_or_else(|| {
-                RuntimeFlowInvocationError::MissingParameterLocal {
-                    flow: flow_label.clone(),
-                    parameter: parameter.coordinate,
-                }
-            })?;
-            if !self.value_matches_type(declaration.ty(), &binding.value)? {
-                return Err(RuntimeFlowInvocationError::ParameterType {
-                    flow: flow_label,
-                    parameter: parameter.coordinate,
-                });
-            }
         }
-        Ok(RuntimeFlowInvocation {
-            plan: Arc::new(self),
-            flow,
-            bindings: bindings.into_boxed_slice(),
-        })
+        let arguments = bindings
+            .iter()
+            .map(|binding| &binding.value)
+            .collect::<Vec<_>>();
+        Ok(self.validate_function_site_input_refs(runtime_flow.function_site(), &[], &arguments)?)
     }
 }
 

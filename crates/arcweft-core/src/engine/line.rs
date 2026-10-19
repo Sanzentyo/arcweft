@@ -46,23 +46,35 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        let Some(flow_index) = self.flow_index(target) else {
+            self.fiber.frame.status =
+                FlowFiberStatus::Failed(format!("missing goto target {target}"));
+            return;
+        };
+        let plan = std::sync::Arc::clone(&self.plan);
+        let declaration = match plan.validate_flow_invocation(target, &[]) {
+            Ok(declaration) => declaration,
+            Err(error) => {
+                self.fiber.frame.status = FlowFiberStatus::Failed(error.to_string());
+                return;
+            }
+        };
         self.fiber.frame.pending_ops.clear();
         self.fiber.frame.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
         });
-        if let Some(flow_index) = self.flow_index(target) {
-            self.fiber.frame.cursor = Some(FlowCursor {
-                flow_index,
-                op_index: 0,
-            });
-            self.fiber.frame.status = FlowFiberStatus::Running;
-        } else {
-            self.fiber.frame.cursor = None;
-            self.fiber.frame.status =
-                FlowFiberStatus::Failed(format!("missing goto target {target}"));
-        }
+        self.fiber.frame.env.bind_root_function(
+            declaration.site(),
+            declaration.type_instantiation.clone(),
+            [],
+        );
+        self.fiber.frame.cursor = Some(FlowCursor {
+            flow_index,
+            op_index: 0,
+        });
+        self.fiber.frame.status = FlowFiberStatus::Running;
     }
 
     pub(super) fn return_value(

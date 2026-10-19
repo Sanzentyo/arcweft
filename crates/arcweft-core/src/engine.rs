@@ -2341,19 +2341,7 @@ impl Engine {
         }
         let mut engine = Self::new_with_generation(plan, generation);
         engine.need_producers = need_producers;
-        engine.start_flow_cursor(&flow)?;
-        let admitted = engine
-            .validate_current_flow_parameter_bindings(bindings.iter())
-            .map_err(|error| EngineStartError::InvalidFlowInvocation {
-                message: error.to_string(),
-            })?
-            .into_iter()
-            .zip(bindings)
-            .map(|((_, local), binding)| RuntimeLocalBinding {
-                local,
-                value: binding.value,
-            });
-        engine.fiber.frame.env.bind_all_root(admitted);
+        engine.start_flow_invocation(&flow, bindings)?;
         Ok(engine)
     }
 
@@ -2375,22 +2363,14 @@ impl Engine {
 
     /// Selects one flow before the first flow execution step.
     pub fn start_flow(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
-        let schema = self.plan.flows.schema(flow).ok_or_else(|| {
-            EngineStartError::InvalidFlowInvocation {
-                message: format!("Flow `{flow}` has no invocation schema"),
-            }
-        })?;
-        if !schema.parameters.is_empty() {
-            return Err(EngineStartError::InvalidFlowInvocation {
-                message: format!(
-                    "Flow `{flow}` requires an explicit coordinate-addressed invocation"
-                ),
-            });
-        }
-        self.start_flow_cursor(flow)
+        self.start_flow_invocation(flow, Box::new([]))
     }
 
-    fn start_flow_cursor(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
+    fn start_flow_invocation(
+        &mut self,
+        flow: &FlowRuntimeId,
+        bindings: Box<[RuntimeFlowParameterBinding]>,
+    ) -> Result<(), EngineStartError> {
         if self.main_started {
             return Err(EngineStartError::AlreadyStarted);
         }
@@ -2399,6 +2379,22 @@ impl Engine {
             .ok_or_else(|| EngineStartError::MissingFlow {
                 flow: flow.canonical_label(),
             })?;
+        let plan = Arc::clone(&self.plan);
+        let declaration = plan
+            .validate_flow_invocation(flow, &bindings)
+            .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                message: error.to_string(),
+            })?;
+        let staged = declaration
+            .stage_owned_inputs([], bindings.into_iter().map(|binding| binding.value))
+            .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                message: error.to_string(),
+            })?;
+        self.fiber.frame.env.bind_root_function(
+            declaration.site(),
+            declaration.type_instantiation.clone(),
+            staged,
+        );
         self.fiber.frame.cursor = Some(FlowCursor {
             flow_index,
             op_index: 0,
@@ -2455,35 +2451,6 @@ impl Engine {
                 entry: entry.canonical_label(),
                 message: error.to_string(),
             })?;
-            let flow_index = self.flow_index(&startup.initial_flow).ok_or_else(|| {
-                EngineStartError::MissingFlow {
-                    flow: startup.initial_flow.canonical_label(),
-                }
-            })?;
-            self.fiber.frame.cursor = Some(FlowCursor {
-                flow_index,
-                op_index: 0,
-            });
-            self.fiber.frame.status = FlowFiberStatus::Running;
-            let initial_state_local = self
-                .validate_current_flow_parameter_bindings(std::iter::once(
-                    &startup.initial_state_binding,
-                ))
-                .and_then(|mut bindings| {
-                    bindings.pop().map(|(_, local)| local).ok_or_else(|| {
-                        RuntimeEvalError::UnknownFlowBinding {
-                            flow: startup.initial_flow.canonical_label(),
-                            binding: format!(
-                                "#{}",
-                                startup.initial_state_binding.parameter.position()
-                            ),
-                        }
-                    })
-                })
-                .map_err(|error| EngineStartError::InvalidRootStartup {
-                    entry: entry.canonical_label(),
-                    message: error.to_string(),
-                })?;
             if !startup
                 .initial_state_binding
                 .value
@@ -2495,12 +2462,15 @@ impl Engine {
                     message: "root startup state must be unrestricted".to_owned(),
                 });
             }
-            self.fiber.frame.env.set_root(
-                initial_state_local,
-                startup.initial_state_binding.value.clone(),
-            );
+            self.start_flow_invocation(
+                &startup.initial_flow,
+                Box::new([startup.initial_state_binding]),
+            )
+            .map_err(|error| EngineStartError::InvalidRootStartup {
+                entry: entry.canonical_label(),
+                message: error.to_string(),
+            })?;
             self.root = Some(startup.root);
-            self.main_started = true;
             return Ok(());
         }
         self.start_flow(&flow)
@@ -2532,93 +2502,6 @@ impl Engine {
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
         self.plan.flows.position(flow)
-    }
-
-    fn validate_current_flow_parameter_bindings<'a>(
-        &self,
-        bindings: impl IntoIterator<Item = &'a RuntimeFlowParameterBinding>,
-    ) -> Result<
-        Vec<(
-            crate::entry::FlowParameterCoordinate,
-            crate::runtime_id::RuntimeLocalDeclarationId,
-        )>,
-        RuntimeEvalError,
-    > {
-        let mut bindings = bindings.into_iter().peekable();
-        let Some(first) = bindings.peek() else {
-            return Ok(Vec::new());
-        };
-        let binding_label = format!("#{}", first.parameter.position());
-        let Some(cursor) = self.fiber.frame.cursor.as_ref() else {
-            return Err(RuntimeEvalError::MissingFlowBindingTarget {
-                flow: "<none>".to_owned(),
-                binding: binding_label,
-            });
-        };
-        let Some(flow) = self.plan.flows.get(cursor.flow_index) else {
-            return Err(RuntimeEvalError::MissingFlowBindingTarget {
-                flow: format!("#{}", cursor.flow_index),
-                binding: binding_label,
-            });
-        };
-        let flow_label = flow.id.canonical_label();
-        let Some(schema) = self.plan.flows.schema(&flow.id) else {
-            return Err(RuntimeEvalError::MissingFlowBindingTarget {
-                flow: flow_label,
-                binding: binding_label,
-            });
-        };
-
-        let mut admitted = Vec::new();
-        let mut unique = BTreeSet::new();
-        for binding in bindings {
-            if !unique.insert(binding.parameter) {
-                return Err(RuntimeEvalError::DuplicateFlowParameterBinding {
-                    flow: flow_label,
-                    parameter: binding.parameter,
-                });
-            }
-            let position = binding.parameter.index().map_err(|_| {
-                RuntimeEvalError::InvalidFlowParameterCoordinate {
-                    flow: flow_label.clone(),
-                    parameter: binding.parameter,
-                }
-            })?;
-            let Some(parameter) = schema
-                .parameters
-                .get(position)
-                .filter(|parameter| parameter.coordinate == binding.parameter)
-            else {
-                return Err(RuntimeEvalError::UnknownFlowParameterBinding {
-                    flow: flow_label,
-                    parameter: binding.parameter,
-                });
-            };
-            let local = flow.params.get(position).copied().ok_or_else(|| {
-                RuntimeEvalError::MissingFlowParameterLocal {
-                    flow: flow_label.clone(),
-                    position,
-                }
-            })?;
-            let declaration = self
-                .plan
-                .local_declarations
-                .get(local)
-                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-            if !self
-                .plan
-                .value_matches_type(declaration.ty(), &binding.value)?
-            {
-                return Err(RuntimeEvalError::FlowParameterBindingType {
-                    flow: flow_label,
-                    parameter: parameter.coordinate,
-                    local,
-                    expected: declaration.ty(),
-                });
-            }
-            admitted.push((binding.parameter, local));
-        }
-        Ok(admitted)
     }
 
     pub fn child_fiber_count(&self) -> usize {

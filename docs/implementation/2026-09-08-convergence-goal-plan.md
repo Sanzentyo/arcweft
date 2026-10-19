@@ -20478,3 +20478,69 @@ whitespace pass; current check, nextest, Clippy and applicable downstream
 evidence remain pending. Continue those checks and repair their actual failures
 after the running command ends; do not repeat clean or infer a stopped process
 from a quiet log or an observation timeout.
+
+### 2026-10-20 — exact invocation evidence and Flow root activation checkpoint
+
+Inspected main at `08b08c1c1f4ea1648a8b437e33c3422d3d6eed5c`, with
+fourteen held tracked paths and three held untracked paths. The previous clean
+completed successfully once, deleting 303332 files / 371.1 GiB; no additional
+clean or artifact move/copy was performed. This checkpoint owns nine Rust paths,
+the maintained Product parity chapter and this note. Per the user's explicit
+instruction, it is an intermediate implementation commit: current compilation
+and execution of these new changes are pending.
+
+R1617 completed its mixed-source catalogue with exit 0; it is not current-code
+execution evidence. R1618 structural audit completed with exit 0 and no blocking
+finding. R1619 rebuilt/catalogued the exact frozen 08b08c1 inputs with exit 0:
+7112 discovered, 7073 matched, 39 default exclusions across the actual Core
+53-package reverse closure. The 99 manifest/lock inputs were unchanged. Core's
+1878 library tests passed in R1623 (159.183s), the RuntimePlan five-binary set's
+150 tests passed in R1625 (319.488s), and both focused original invocation
+admission cases passed in R1621 (0.051s). These executions used the actual
+freshly compiled binaries through nextest's Cargo/binary metadata reuse; exact
+binary hashes and all 3929 source hashes were checked. No artifacts were copied,
+moved, archived or remapped, and no jobs/profile/OS setting changed.
+
+R1626 preflight rejected a proposed package-level exclusion that would have
+missed 53 Core integration cases; no run was dispatched for that proposal.
+R1627 instead removed exactly the six already executed binary identities.
+The three partitions cover all 7073 selected case keys with zero overlap or
+missing cases. R1628 then executed the remaining 5045: 4976 passed, 69 failed,
+39 default exclusions, 1975.134s, actual nextest exit 100. Its wrapper process
+reported exit 1; the saved command receipt retains the actual Cargo/nextest
+exit. Terminal catalogue keys and all 3929 frozen source inputs match exactly;
+held input drift is zero. Combined execution is 7004 passed / 69 failed, not a
+passing reverse-closure acceptance. Arcweft, bundle-assets and render-web have
+no named host cases in this selection. The full failure inventory and actual
+receipts are retained under the existing temporary evidence directory.
+
+The new CLI bundled-PNG failure and other Need consumer failures expose a real
+activation bug: compiled Flow function rows have a typed function context, but
+the native root only installed values and a cursor. Strict original Source
+admission correctly rejected the missing joint instantiation. The fix keeps
+that guard. RuntimePlan now combines Flow coordinate admission with the actual
+FunctionSite input ABI; native named/direct Flow and stateful startup install
+its joint instantiation on the root environment before executing any operation.
+Actual FunctionSite formal-pattern staging is shared with ordinary calls,
+removing the copied input inventory and duplicated binding rule. Stateful
+startup moves its admitted state instead of copying it again. Goto validates
+the actual zero-argument target before changing execution state, runs old
+cleanups under the old context, then clears old root locals and installs the
+new function context. No Flow body copy, extra frame/operation, relaxed budget,
+missing-binding fallback or substitute Source owner is added. The unused weaker
+bank-only instantiation helper and replaced Flow value/error validation paths
+are removed.
+
+The existing Need parity fixture now owns a real typed function signature.
+One additional test transfers from a distinct Unit-returning typed launcher to
+the String-returning typed Need Flow and checks Image/Voice requests and the
+actual original completed key through Native and encoded/decoded AWBC. The
+existing real CLI parameterized Flow fixture remains an affected regression.
+Changed Rust formatting and whitespace checks pass; these strengthened/new
+cases, current Clippy, Core/consumer execution and structural evidence remain
+pending for this checkpoint. The current failures also include the explicit
+compiler Presentation ABI stub and View/CLI failures; their full repair is
+still required and is not discharged by this Flow cut. All previously recorded
+public Source/instance, autonomous owners, Ready, actual View, Generic Match,
+nominal/Sans-I/O, persistence, VM pre-copy, all fourteen request families and
+final workspace/Tier2/Native-Web acceptance remain open.

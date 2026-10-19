@@ -424,6 +424,28 @@ impl RuntimeEnv {
         };
     }
 
+    /// Installs an admitted Flow function after its previous root has unwound.
+    /// Old locals must not inherit the next declaration's type context.
+    pub(crate) fn bind_root_function(
+        &mut self,
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        instantiation: Option<
+            std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>,
+        >,
+        bindings: impl IntoIterator<Item = RuntimeLocalBinding>,
+    ) {
+        self.ensure_root_scope();
+        let root = self.scopes.first_mut().expect("root scope was ensured");
+        root.clear();
+        root.function_context = super::RuntimeScopeTypeContext::Function {
+            site,
+            instantiation,
+        };
+        for binding in bindings {
+            root.set(binding.local, binding.value);
+        }
+    }
+
     pub(crate) fn value_matches_type(
         &self,
         plan: &crate::plan::RuntimePlan,

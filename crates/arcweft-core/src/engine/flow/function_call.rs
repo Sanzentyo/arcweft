@@ -11,8 +11,7 @@ use crate::engine::{
     RuntimeStepOutput, runtime_value_label,
 };
 use crate::pattern::RuntimePattern;
-use crate::pattern::match_runtime_pattern_owned;
-use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
+use crate::plan::RuntimeFunctionSiteBody;
 use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 impl Engine {
@@ -59,48 +58,13 @@ impl Engine {
             return Ok(());
         }
         let body = declaration.body().clone();
-        let inputs = declaration.inputs().to_vec();
         let ops = match body {
             RuntimeFunctionSiteBody::Expression(body) => {
                 vec![crate::plan::FlowOp::ReturnExpr(body)]
             }
             RuntimeFunctionSiteBody::Executable(executable) => executable.ops().to_vec(),
         };
-        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
-        let mut args = args.into_iter().map(Some).collect::<Vec<_>>();
-        let setup = (|| {
-            let mut staged = Vec::new();
-            for input in &inputs {
-                let (values, position) = match input.source() {
-                    RuntimeFunctionInputSource::Capture { position }
-                    | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
-                        (&mut captures, position)
-                    }
-                    RuntimeFunctionInputSource::Parameter { position, .. } => (&mut args, position),
-                };
-                let value = values
-                    .get_mut(usize::try_from(position).map_err(|_| {
-                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
-                    })?)
-                    .and_then(Option::take)
-                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?;
-                let bindings = match_runtime_pattern_owned(
-                    &self.plan,
-                    input.pattern(),
-                    value,
-                    frame.type_instantiation.as_deref(),
-                )?
-                .ok_or_else(|| {
-                    RuntimeEvalError::PatternMismatch(format!(
-                        "function site {site} input {:?}",
-                        input.source()
-                    ))
-                })?;
-                staged.extend(bindings);
-            }
-            Ok::<Vec<crate::value::RuntimeLocalBinding>, RuntimeEvalError>(staged)
-        })();
-        let staged = setup?;
+        let staged = declaration.stage_owned_inputs(captures, args)?;
         if executable
             && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
             && function.scalar_eval_supported

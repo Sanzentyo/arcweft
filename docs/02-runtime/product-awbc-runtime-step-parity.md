@@ -53,6 +53,15 @@ different invocation after execution begins. AWBC derives the expected
 parameter types from the selected target function signature; Entry and route
 records do not retain a second signature copy.
 
+Native Flow roots derive their joint type/effect instantiation from the actual
+FunctionSite input ABI, including an empty parameter tuple. Formal patterns
+transfer the admitted input owners by the same rule as ordinary function calls;
+the root environment retains that exact function context through suspension and
+restore. Stateful startup uses the same boundary for its initial state input.
+A goto carrying no arguments validates the target's empty input ABI before
+unwinding. After the old Flow's cleanups finish, it discards the old root locals
+and installs the target function context before executing a target operation.
+
 Ordinary internal call frames use their own checked positional call ABI. Tail
 calls replace the active frame only after that argument validation succeeds.
 

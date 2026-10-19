@@ -136,10 +136,20 @@ fn plan_with_await_observer() -> RuntimePlan {
 }
 
 fn plan_with_observed_producer(asset: Option<arcweft_core::task::AssetLoadKind>) -> RuntimePlan {
+    plan_with_observed_producer_entry(asset, false)
+}
+
+fn plan_with_observed_producer_entry(
+    asset: Option<arcweft_core::task::AssetLoadKind>,
+    start_with_goto: bool,
+) -> RuntimePlan {
     use arcweft_core::plan::*;
     let flow = flow_id("parity.await_observer");
     let progress_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
     let need_type = RuntimeSemanticTypeId::from_bytes([5; 32]);
+    let function_type = type_id(6);
+    let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let launch_type = type_id(7);
     let contract = NeedProducerContractDigest::from_bytes([0x63; 32]);
     let entity_type =
         arcweft_core::pattern::RuntimeCheckedType::EntityReference.semantic_identity_digest();
@@ -206,6 +216,27 @@ fn plan_with_observed_producer(asset: Option<arcweft_core::task::AssetLoadKind>)
                 RuntimePlanTypeSeed::new(STRING_TYPE, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
                 RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(STRING_TYPE)),
+                RuntimePlanTypeSeed::new(
+                    function_type,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::monomorphic(
+                            arcweft_core::effect_row::EffectSet::empty(),
+                        ),
+                        parameters: Box::new([]),
+                        result: STRING_TYPE,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(unit_type, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    launch_type,
+                    RuntimePlanTypeProjection::Function {
+                        contract: RuntimeFunctionTypeContract::monomorphic(
+                            arcweft_core::effect_row::EffectSet::empty(),
+                        ),
+                        parameters: Box::new([]),
+                        result: unit_type,
+                    },
+                ),
             ],
             [RuntimeLocalDeclarationSeed::new(
                 manual_local_source(
@@ -228,7 +259,7 @@ fn plan_with_observed_producer(asset: Option<arcweft_core::task::AssetLoadKind>)
                 arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
                     [61; 32],
                 ),
-                None,
+                Some(function_type),
                 Box::new([]),
                 STRING_TYPE,
                 arcweft_core::plan::RuntimeEffectSet::empty(),
@@ -283,12 +314,35 @@ fn plan_with_observed_producer(asset: Option<arcweft_core::task::AssetLoadKind>)
             },
         ))
         .expect("Await observer flow admits");
+    let entry_flow = if start_with_goto {
+        let launch = flow_id("parity.launch");
+        admit_flow_authority(&mut builder, &launch);
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                launch.clone(),
+                RuntimeFunctionSiteDeclarationSeed::flow(
+                    RuntimeFunctionDefinitionIdentity::from_accepted_identity([62; 32]),
+                    Some(launch_type),
+                    Box::new([]),
+                    unit_type,
+                    RuntimeEffectSet::empty(),
+                ),
+                RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::Goto(flow)]),
+                },
+            ))
+            .expect("launch flow admits");
+        launch
+    } else {
+        flow
+    };
     builder
         .push_entry(RuntimeEntrySpec {
             id: entry_id(),
             kind: RuntimeEntryKind::Cli,
             binding: EntryBindingIdentity::from_bytes([2; 32]),
-            target: RuntimeEntryTarget::Flow(flow),
+            target: RuntimeEntryTarget::Flow(entry_flow),
             roles: RuntimeEntryRoles::None,
         })
         .expect("Await observer entry admits");
@@ -784,6 +838,43 @@ fn selected_producer_key(plan: &RuntimePlan) -> arcweft_core::task::TaskPlanSema
     plan.task_plan(target.task_plan())
         .expect("the actual producer belongs to the completed program")
         .key()
+}
+
+#[test]
+fn native_and_decoded_awbc_goto_use_the_target_function_instantiation() {
+    for kind in [
+        arcweft_core::task::AssetLoadKind::Image,
+        arcweft_core::task::AssetLoadKind::Voice,
+    ] {
+        let plan = plan_with_observed_producer_entry(Some(kind), true);
+        let expected = selected_producer_key(&plan);
+        let bytes = lower(&plan).encode_canonical().unwrap();
+        let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &bytes,
+            AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        let mut native =
+            ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::RuntimePlanVm)
+                .unwrap();
+        native.start_structured_entry(&entry_id()).unwrap();
+        let mut product =
+            ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+        for executor in [&mut native, &mut product] {
+            let result = executor.step(RuntimeStepInput::default(), options());
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{:?}",
+                result.output.diagnostics
+            );
+            assert_eq!(result.output.requests.tasks.len(), 1);
+            let spec = result.output.requests.tasks[0].spec();
+            assert_eq!(spec.producer.plan(), expected);
+            assert!(
+                matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+            );
+        }
+    }
 }
 
 #[test]

@@ -2737,51 +2737,6 @@ pub enum RuntimeEvalError {
     AffineLiteralCopy,
     #[error("an affine field cannot be copied by inspection")]
     AffineFieldCopy,
-    #[error(
-        "runtime flow `{flow}` cannot accept binding `{binding}` without selected flow metadata"
-    )]
-    MissingFlowBindingTarget { flow: String, binding: String },
-    #[error("runtime flow `{flow}` has no executable parameter named `{binding}`")]
-    UnknownFlowBinding { flow: String, binding: String },
-    #[error("runtime flow `{flow}` has ambiguous executable parameter name `{binding}`")]
-    AmbiguousFlowBinding { flow: String, binding: String },
-    #[error("runtime flow `{flow}` received duplicate binding `{binding}`")]
-    DuplicateFlowBinding { flow: String, binding: String },
-    #[error("runtime flow `{flow}` has no executable parameter at coordinate {parameter:?}")]
-    UnknownFlowParameterBinding {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-    },
-    #[error("runtime flow `{flow}` received duplicate binding for parameter {parameter:?}")]
-    DuplicateFlowParameterBinding {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-    },
-    #[error("runtime flow `{flow}` parameter coordinate {parameter:?} does not fit this platform")]
-    InvalidFlowParameterCoordinate {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-    },
-    #[error("runtime flow `{flow}` executable parameter {position} has no plan-local declaration")]
-    MissingFlowParameterLocal { flow: String, position: usize },
-    #[error(
-        "runtime flow `{flow}` binding `{binding}` does not match plan type {expected} for local {local}"
-    )]
-    FlowBindingType {
-        flow: String,
-        binding: String,
-        local: RuntimeLocalDeclarationId,
-        expected: RuntimePlanTypeId,
-    },
-    #[error(
-        "runtime flow `{flow}` parameter {parameter:?} does not match plan type {expected} for local {local}"
-    )]
-    FlowParameterBindingType {
-        flow: String,
-        parameter: FlowParameterCoordinate,
-        local: RuntimeLocalDeclarationId,
-        expected: RuntimePlanTypeId,
-    },
     #[error("unknown runtime plan type {0}")]
     UnknownPlanType(RuntimePlanTypeId),
     #[error("runtime plan type {0} has no nominal-record domain")]

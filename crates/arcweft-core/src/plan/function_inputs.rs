@@ -8,9 +8,62 @@ use super::{
 };
 
 pub(crate) struct RuntimeFunctionInputAdmission<'plan> {
+    plan: &'plan RuntimePlan,
+    site: RuntimeFunctionSiteId,
     declaration: &'plan RuntimeFunctionSite,
     pub(crate) type_instantiation:
         Option<std::sync::Arc<crate::program_types::RuntimeFunctionEffectInstantiation>>,
+}
+
+impl RuntimeFunctionInputAdmission<'_> {
+    pub(crate) const fn site(&self) -> RuntimeFunctionSiteId {
+        self.site
+    }
+
+    /// Transfers the admitted input owners through their actual formal patterns.
+    /// Flow roots and structured calls share this binding rule.
+    pub(crate) fn stage_owned_inputs(
+        &self,
+        captures: impl IntoIterator<Item = RuntimeValue>,
+        arguments: impl IntoIterator<Item = RuntimeValue>,
+    ) -> Result<Vec<crate::value::RuntimeLocalBinding>, crate::value::RuntimeEvalError> {
+        let site = self.site;
+        let mut captures = captures.into_iter().map(Some).collect::<Vec<_>>();
+        let mut arguments = arguments.into_iter().map(Some).collect::<Vec<_>>();
+        let mut staged = Vec::new();
+        for input in self.declaration.inputs() {
+            let (values, position) = match input.source() {
+                RuntimeFunctionInputSource::Capture { position }
+                | RuntimeFunctionInputSource::CapturedParameter { position, .. } => {
+                    (&mut captures, position)
+                }
+                RuntimeFunctionInputSource::Parameter { position, .. } => {
+                    (&mut arguments, position)
+                }
+            };
+            let value =
+                values
+                    .get_mut(usize::try_from(position).map_err(|_| {
+                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
+                    })?)
+                    .and_then(Option::take)
+                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?;
+            let bindings = crate::pattern::match_runtime_pattern_owned(
+                self.plan,
+                input.pattern(),
+                value,
+                self.type_instantiation.as_deref(),
+            )?
+            .ok_or_else(|| {
+                crate::value::RuntimeEvalError::PatternMismatch(format!(
+                    "function site {site} input {:?}",
+                    input.source()
+                ))
+            })?;
+            staged.extend(bindings);
+        }
+        Ok(staged)
+    }
 }
 
 impl std::ops::Deref for RuntimeFunctionInputAdmission<'_> {
@@ -188,6 +241,8 @@ impl RuntimePlan {
             }
         }
         Ok(RuntimeFunctionInputAdmission {
+            plan: self,
+            site,
             declaration,
             type_instantiation,
         })

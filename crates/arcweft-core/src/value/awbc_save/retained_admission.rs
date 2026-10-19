@@ -90,32 +90,6 @@ impl RuntimeRetainedValueAdmission {
         result
     }
 
-    /// Reads the actual declaration solution before copying its rows. Serde's
-    /// owned conversion is deliberately not used for this resource preflight.
-    pub(crate) fn validate_function_instantiation(
-        &mut self,
-        binding: &RuntimeFunctionEffectInstantiation,
-    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        self.admit_composite(ValueAdmissionOrigin::Live, |owner, resources| {
-            resources.function_instantiation(binding)?;
-            let valid = match owner {
-                Some(RuntimeProgramOwner::Plan(program)) => {
-                    binding.is_valid_with_work(program.as_ref(), &resources.work())
-                }
-                Some(RuntimeProgramOwner::Awbc(program)) => {
-                    binding.is_valid_with_work(program.as_ref(), &resources.work())
-                }
-                None => false,
-            };
-            if !valid {
-                return Err(AwbcRuntimeValueSnapshotError::Message {
-                    message: "function instantiation does not belong to its original executable"
-                        .into(),
-                });
-            }
-            Ok(())
-        })
-    }
     /// Source lookup shares this group's consumed work and first hard failure.
     /// Dropping the temporary meter releases its alias; no quota is issued.
     pub(crate) fn task_source_meter(
