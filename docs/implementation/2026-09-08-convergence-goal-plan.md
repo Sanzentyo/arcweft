@@ -20379,3 +20379,58 @@ Keep canonical transport names, source order, exact original keys, no-spread
 and original-bank preflight before value views/copies. This and every remaining
 acceptance item in the preceding notes remain required; do not mark the full
 goal complete on this passing slice.
+
+### 2026-10-19 — unify original scalar bindings and canonical request names
+
+Inspected main at `c9fd3c78806d72fc65fa45759c038d2a3ddcc84c`; this cut owns
+eight Rust paths and this note. Fourteen tracked and three untracked held paths
+remain separate. The preceding goal turn only confirmed the completed clean;
+continuation revalidated the current source and finished the pending lint result.
+
+AssetLoad already accepts either its declared name or a positional source
+operand. Native Source preparation rejected the latter and copied its absent
+source name; the selected AWBC ABI compared canonical transport names against
+original spelling. A borrowed NeedProducerArgumentBinding on the owning request
+schema now expresses positional, named and named-or-positional scalar roles.
+Original construction, bounded streaming decoding, semantic facts, Source
+preparation and request projection share that grammar. Native evaluates original
+expressions once in source order and uses the admitted canonical name; static
+AWBC validation checks the same canonical name against original metadata.
+Exact counts, spread rejection, full type graphs, original completed keys and
+the existing bank's pre-copy admission remain in force. No source reconstruction,
+extra quota, fallback, dependency, unsafe or contract version change is added.
+
+The actual Flow fixture uses reserve_original_source rather than a hand-written
+control/task row. Two regression cases execute Image and Voice positional loads
+through Native and encoded/decoded AWBC, checking one actual request, original
+completed key, kind and asset identity. R1609 lists exactly those two cases;
+R1610 fails both before the production fix, actual 100, with the respective
+Source ArgumentName and static AWBC ArgumentName diagnostics. R1611 then passes
+the Core/RuntimePlan library and parity-target check, all features and locked.
+R1612 lists 2011 matched cases with no exclusions; R1614 executes all 2011,
+2011 pass, zero fail/skip, 29.912 seconds, actual 0. Terminal audit checks the
+exact case set and all 3929 frozen inputs, including held paths, with zero drift.
+R1615 Core/RuntimePlan all-target/all-feature locked Clippy passes, actual 0,
+2m01s. Warnings remain; workspace -D warnings acceptance is still open.
+R1616 Core all-feature locked doctests pass, actual 0: 72 pass, zero
+fail/ignore/filter. The runtime sources remain identical to the audited 3929
+inputs; only this operational note was subsequently extended.
+
+R1613 canonical structural gate passes, actual 0; whitespace and changed-source
+format checks pass. Bytes/physical LOC/embedded-test LOC: producer registry
+152721/4079/987, borrowed Source preparation 12435/291/0, selected Source ABI
+12534/349/0, semantic facts 578060/14790/0 and parity tests 43408/1147/0.
+The registry owns request grammar; streaming decoding retains its bounded
+cursor, and Source/call consumers query that owner. Large semantic-facts and
+test owners retain their existing responsibility; this removes duplicated
+binding policy and exercises real backends without a public split facade.
+Core/RuntimePlan roots retain the same 53-package reverse closure, with all
+99 manifest/lock inputs unchanged. This slice does not establish the complete
+reverse/workspace, broader CLI failures, Tier 2 or real Native/Web parity.
+
+The full public Source switch, raw/default digest/API removal, all fourteen
+Host request kinds, autonomous/standalone owners, actual caller/instruction and
+invocation-binding origin, invocation-sensitive Ready, actual View, Generic
+Match, nominal/Sans-I/O, VM pre-copy checks, external multi-owner persistence
+and the final acceptance work recorded above remain required. Continue from
+the current typed owners rather than adding another metadata authority.

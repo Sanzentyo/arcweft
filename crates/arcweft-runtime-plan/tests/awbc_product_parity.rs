@@ -132,21 +132,54 @@ fn plan_with_return_and_entry(value: &str, include_entry: bool) -> RuntimePlan {
 }
 
 fn plan_with_await_observer() -> RuntimePlan {
+    plan_with_observed_producer(None)
+}
+
+fn plan_with_observed_producer(asset: Option<arcweft_core::task::AssetLoadKind>) -> RuntimePlan {
     use arcweft_core::plan::*;
     let flow = flow_id("parity.await_observer");
     let progress_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
     let need_type = RuntimeSemanticTypeId::from_bytes([5; 32]);
     let contract = NeedProducerContractDigest::from_bytes([0x63; 32]);
+    let entity_type =
+        arcweft_core::pattern::RuntimeCheckedType::EntityReference.semantic_identity_digest();
+    let (request, argument_types, arguments) = match asset {
+        Some(kind) => (
+            NeedProducerRequestProjection::AssetLoad {
+                kind,
+                argument_name: "素材".into(),
+            },
+            vec![entity_type],
+            vec![arcweft_core::task::RuntimeHostArgumentTemplate::positional(
+                arcweft_core::task::RuntimeRequestRoleIdentity::from_accepted_identity([0x65; 32]),
+                RuntimeExprSeed::new(
+                    entity_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::EntityRef(
+                        arcweft_core::value::RuntimeEntityReference::try_project(
+                            arcweft_id::DeclarationIdentityFamily::Asset,
+                            arcweft_id::PublicId::try_new("asset.positional").unwrap(),
+                        )
+                        .unwrap(),
+                    )),
+                ),
+            )],
+        ),
+        None => (
+            NeedProducerRequestProjection::ExternCapability {
+                capability: arcweft_core::task::HostCapabilityId("probe".to_owned()),
+                operation: "read".to_owned(),
+                contract: arcweft_core::step::HostCallContractDigest::from_bytes([0x63; 32]),
+                argument_names: Box::new([]),
+            },
+            Vec::new(),
+            Vec::new(),
+        ),
+    };
     let producer_plan = NeedProducerTaskPlan::try_new(
         contract,
         NeedProducerSiteDigest::from_bytes([0x64; 32]),
-        NeedProducerRequestProjection::ExternCapability {
-            capability: arcweft_core::task::HostCapabilityId("probe".to_owned()),
-            operation: "read".to_owned(),
-            contract: arcweft_core::step::HostCallContractDigest::from_bytes([0x63; 32]),
-            argument_names: Box::new([]),
-        },
-        Box::new([]),
+        request,
+        argument_types.into_boxed_slice(),
         STRING_TYPE,
         TaskPolicy::JoinSameKey,
         HostRestartPolicy::Restartable,
@@ -156,6 +189,17 @@ fn plan_with_await_observer() -> RuntimePlan {
     )
     .expect("Await observer producer plan is internally consistent");
     let mut builder = RuntimePlanBuilder::new();
+    if asset.is_some() {
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    entity_type,
+                    RuntimePlanTypeProjection::EntityReference,
+                )],
+                [],
+            )
+            .unwrap();
+    }
     let admitted = builder
         .admit_type_batch(
             [
@@ -173,26 +217,11 @@ fn plan_with_await_observer() -> RuntimePlan {
         .expect("Await observer facts admit");
     let need_local = admitted.local_ids()[0].clone();
     admit_flow_authority(&mut builder, &flow);
-    let coordinate = builder.reserve_task_plan().unwrap();
-    let control = builder
-        .push_control_effect_contract(RuntimeControlEffectContractDefinition {
-            mode: RuntimeTaskControlMode::RuntimeAggregate,
-            effects: Box::new([RuntimeControlEffectRow {
-                kind: RuntimeControlEffectKind::HostOperation,
-                identity: Some(RuntimeControlEffectIdentity::from_checked_digest(
-                    *contract.as_bytes(),
-                )),
-                inputs: Box::new([]),
-                output: Some(STRING_TYPE),
-                cardinality: RuntimeControlEffectCardinality::ExactlyOnce,
-                ordering: RuntimeControlEffectOrdering::SingleTerminal,
-                cancellation: RuntimeControlEffectCancellation::NotObserved,
-                terminal: RuntimeControlEffectTerminalBehavior::Value,
-            }]),
-            children: Box::new([]),
-        })
+    let coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
         .unwrap();
-    let function = builder
+    builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
@@ -218,7 +247,7 @@ fn plan_with_await_observer() -> RuntimePlan {
                         target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
                             plan: producer_plan,
                             task_plan: coordinate.clone(),
-                            arguments: Vec::new(),
+                            arguments,
                         },
                     },
                     RuntimeFlowOpSeed::Await {
@@ -254,23 +283,6 @@ fn plan_with_await_observer() -> RuntimePlan {
             },
         ))
         .expect("Await observer flow admits");
-    builder
-        .define_task_plan(
-            &coordinate,
-            RuntimeTaskPlanSeed::new(
-                function,
-                arcweft_core::task::NeedProducerFamily::SelectedCallable,
-                arcweft_core::task::TaskClass::Io,
-                RuntimeTaskRequestTemplateSeed::new(
-                    RuntimeTaskRequestSource::Operation(0),
-                    Box::new([]),
-                    Box::new([]),
-                ),
-                control,
-                RuntimeTaskSemanticBinding::Ordinary,
-            ),
-        )
-        .unwrap();
     builder
         .push_entry(RuntimeEntrySpec {
             id: entry_id(),
@@ -703,6 +715,64 @@ fn decoded_awbc_selected_need_uses_the_completed_program_task_plan_key() {
         expected,
         "decoding must preserve the original program's completed F/Q/C key"
     );
+}
+
+#[test]
+fn native_positional_asset_need_uses_canonical_binding_and_original_key() {
+    for kind in [
+        arcweft_core::task::AssetLoadKind::Image,
+        arcweft_core::task::AssetLoadKind::Voice,
+    ] {
+        let plan = plan_with_observed_producer(Some(kind));
+        let expected = selected_producer_key(&plan);
+        let mut executor =
+            ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::RuntimePlanVm)
+                .unwrap();
+        executor.start_structured_entry(&entry_id()).unwrap();
+        let result = executor.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        assert_eq!(result.output.requests.tasks.len(), 1);
+        let spec = result.output.requests.tasks[0].spec();
+        assert_eq!(spec.producer.plan(), expected);
+        assert!(
+            matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+        );
+    }
+}
+
+#[test]
+fn decoded_awbc_positional_asset_need_uses_canonical_binding_and_original_key() {
+    for kind in [
+        arcweft_core::task::AssetLoadKind::Image,
+        arcweft_core::task::AssetLoadKind::Voice,
+    ] {
+        let plan = plan_with_observed_producer(Some(kind));
+        let expected = selected_producer_key(&plan);
+        let bytes = lower(&plan).encode_canonical().unwrap();
+        let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &bytes,
+            AwbcDecodeBudget::default(),
+        )
+        .unwrap();
+        let mut executor =
+            ArcweftRuntimeExecutor::from_awbc_product(decoded, AwbcEntryId(0)).unwrap();
+        let result = executor.step(RuntimeStepInput::default(), options());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        assert_eq!(result.output.requests.tasks.len(), 1);
+        let spec = result.output.requests.tasks[0].spec();
+        assert_eq!(spec.producer.plan(), expected);
+        assert!(
+            matches!(&spec.request, arcweft_core::task::HostTaskRequest::AssetLoad(request) if request.kind == kind.as_str() && request.id == "asset.positional")
+        );
+    }
 }
 
 fn selected_producer_key(plan: &RuntimePlan) -> arcweft_core::task::TaskPlanSemanticDigest {

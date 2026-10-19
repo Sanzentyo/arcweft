@@ -1272,34 +1272,11 @@ impl RuntimeNeedProducerStartTarget {
             return Err(RuntimeNeedProducerStartTargetError::ArgumentCountMismatch);
         }
         for (ordinal, argument) in arguments.iter().enumerate() {
-            let binding_matches = match (plan.request(), argument) {
-                (
-                    crate::task::NeedProducerRequestProjection::AssetLoad { .. },
-                    crate::task::RuntimeHostArgumentTemplate::Positional(..),
-                ) => true,
-                (
-                    crate::task::NeedProducerRequestProjection::AssetLoad { argument_name, .. },
-                    crate::task::RuntimeHostArgumentTemplate::Named(_, named),
-                ) => named.name == *argument_name,
-                (
-                    crate::task::NeedProducerRequestProjection::ExternCapability {
-                        argument_names,
-                        ..
-                    },
-                    crate::task::RuntimeHostArgumentTemplate::Positional(..),
-                ) => matches!(argument_names.get(ordinal), Some(None)),
-                (
-                    crate::task::NeedProducerRequestProjection::ExternCapability {
-                        argument_names,
-                        ..
-                    },
-                    crate::task::RuntimeHostArgumentTemplate::Named(_, named),
-                ) => {
-                    argument_names.get(ordinal).and_then(Option::as_deref)
-                        == Some(named.name.as_str())
-                }
-                (_, crate::task::RuntimeHostArgumentTemplate::Spread(..)) => false,
-            };
+            let binding_matches = !argument.is_spread()
+                && plan
+                    .request()
+                    .argument_binding(ordinal)
+                    .is_some_and(|binding| binding.accepts_source_name(argument.name()));
             if !binding_matches {
                 return Err(
                     RuntimeNeedProducerStartTargetError::ArgumentBindingMismatch { ordinal },

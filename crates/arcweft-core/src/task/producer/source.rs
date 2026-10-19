@@ -67,6 +67,12 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         self.metadata.argument_types()
     }
 
+    pub(crate) fn argument_name(&self, index: usize) -> Option<&str> {
+        self.metadata
+            .argument_name(index)
+            .expect("prepared source has its exact binding count")
+    }
+
     pub(super) fn producer_spec<V: RuntimeStoredValue>(
         &mut self,
         arguments: &[NeedProducerRuntimeArgument<V>],
@@ -157,7 +163,11 @@ impl RuntimeTaskSourceRef<'_> {
         }
         for (index, argument) in target.arguments().iter().enumerate() {
             admission.validate_metadata(&argument.name())?;
-            if metadata.argument_name(index) != Some(argument.name()) {
+            if !metadata
+                .request()
+                .argument_binding(index)
+                .is_some_and(|binding| binding.accepts_source_name(argument.name()))
+            {
                 return Err(RuntimeTaskProducerSourceError::ArgumentName { index });
             }
             if argument.is_spread() {

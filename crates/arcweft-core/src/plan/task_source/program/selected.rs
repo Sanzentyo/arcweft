@@ -304,15 +304,18 @@ impl RuntimeTaskSourceProgram {
             meter,
         )?;
         for (index, (expected, actual)) in args.iter().zip(&row.arguments).enumerate() {
+            let canonical_name = metadata
+                .argument_name(index)
+                .expect("the original selected Source has its exact binding count");
             let actual_name = actual
                 .name
                 .map(|name| executable.strings[name.index()].as_str());
-            if let (Some(actual), Some(expected)) = (actual_name, expected.name()) {
+            if let (Some(actual), Some(expected)) = (actual_name, canonical_name) {
                 text(Field::ArgumentName { index }, actual, expected, meter)?;
             } else {
                 check(
                     Field::ArgumentName { index },
-                    actual_name == expected.name(),
+                    actual_name == canonical_name,
                     meter,
                 )?;
             }

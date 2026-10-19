@@ -1001,7 +1001,7 @@ impl Engine {
             }
         }
         let mut arguments = Vec::with_capacity(prepared.arguments().len());
-        for argument in prepared.arguments() {
+        for (index, argument) in prepared.arguments().iter().enumerate() {
             let expression = argument.value();
             let value = match self.evaluate_expr_with_backend(expression, pure_backend) {
                 Ok(value) => value,
@@ -1011,7 +1011,7 @@ impl Engine {
                 }
             };
             arguments.push(NeedProducerRuntimeArgument {
-                name: argument.name().map(str::to_owned),
+                name: prepared.argument_name(index).map(str::to_owned),
                 value,
             });
         }

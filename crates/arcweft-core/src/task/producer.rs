@@ -358,9 +358,55 @@ pub enum NeedProducerRequestProjection {
     },
 }
 
+/// Borrowed scalar binding grammar and its canonical request name. This is
+/// shared by declared requests and bounded source decoding before allocation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NeedProducerArgumentBinding<'a> {
+    Positional,
+    Named(&'a str),
+    NamedOrPositional(&'a str),
+}
+
+impl<'a> NeedProducerArgumentBinding<'a> {
+    #[must_use]
+    pub fn accepts_source_name(self, actual: Option<&str>) -> bool {
+        match self {
+            Self::Positional => actual.is_none(),
+            Self::Named(expected) => actual == Some(expected),
+            Self::NamedOrPositional(expected) => actual.is_none_or(|actual| actual == expected),
+        }
+    }
+
+    #[must_use]
+    pub const fn canonical_name(self) -> Option<&'a str> {
+        match self {
+            Self::Positional => None,
+            Self::Named(name) | Self::NamedOrPositional(name) => Some(name),
+        }
+    }
+}
+
+impl NeedProducerRequestProjection {
+    /// Selects one original source role without copying its binding name.
+    #[must_use]
+    pub fn argument_binding(&self, index: usize) -> Option<NeedProducerArgumentBinding<'_>> {
+        match self {
+            Self::AssetLoad { argument_name, .. } => (index == 0).then_some(
+                NeedProducerArgumentBinding::NamedOrPositional(argument_name),
+            ),
+            Self::ExternCapability { argument_names, .. } => {
+                argument_names.get(index).map(|name| match name {
+                    Some(name) => NeedProducerArgumentBinding::Named(name),
+                    None => NeedProducerArgumentBinding::Positional,
+                })
+            }
+        }
+    }
+}
+
 /// One checked, source-ordered argument evaluated for a Need producer call.
-/// Names are retained because extern requests preserve manifest argument
-/// bindings; spreads are not representable in this closed runtime row.
+/// Names use the canonical request binding after source admission; source
+/// order is preserved and spreads are absent from this scalar runtime row.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     deny_unknown_fields,
@@ -561,14 +607,9 @@ impl NeedProducerTaskPlan {
 
     #[must_use]
     pub fn argument_name(&self, index: usize) -> Option<Option<&str>> {
-        match &self.request {
-            NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
-                (index == 0).then_some(Some(argument_name.as_str()))
-            }
-            NeedProducerRequestProjection::ExternCapability { argument_names, .. } => {
-                argument_names.get(index).map(|name| name.as_deref())
-            }
-        }
+        self.request
+            .argument_binding(index)
+            .map(NeedProducerArgumentBinding::canonical_name)
     }
 
     #[must_use]
@@ -591,10 +632,8 @@ impl NeedProducerTaskPlan {
                 argument_name,
             } => {
                 if arguments.len() != 1
-                    || arguments[0]
-                        .name
-                        .as_deref()
-                        .is_some_and(|name| name != argument_name)
+                    || !NeedProducerArgumentBinding::NamedOrPositional(argument_name)
+                        .accepts_source_name(arguments[0].name.as_deref())
                 {
                     return Err(NeedProducerRequestError::ArgumentBindingMismatch);
                 }
@@ -660,10 +699,8 @@ impl NeedProducerTaskPlan {
                 HostTaskRequest::AssetLoad(saved),
             ) => {
                 if arguments.len() != 1
-                    || arguments[0]
-                        .name
-                        .as_deref()
-                        .is_some_and(|name| name != argument_name)
+                    || !NeedProducerArgumentBinding::NamedOrPositional(argument_name)
+                        .accepts_source_name(arguments[0].name.as_deref())
                 {
                     return Err(NeedProducerRequestError::ArgumentBindingMismatch);
                 }

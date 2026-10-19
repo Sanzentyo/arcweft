@@ -111,10 +111,15 @@ pub(super) enum Bindings<'a> {
 impl Bindings<'_> {
     pub fn check_next(&mut self, actual: Option<&str>) -> Result<(), Error> {
         let valid = match self {
-            Self::Asset(name) => name
-                .take()
-                .is_some_and(|expected| actual.is_none_or(|actual| actual == expected)),
-            Self::External(cursor) => actual == cursor.optional_text()?,
+            Self::Asset(name) => name.take().is_some_and(|expected| {
+                crate::task::NeedProducerArgumentBinding::NamedOrPositional(expected)
+                    .accepts_source_name(actual)
+            }),
+            Self::External(cursor) => match cursor.optional_text()? {
+                Some(name) => crate::task::NeedProducerArgumentBinding::Named(name),
+                None => crate::task::NeedProducerArgumentBinding::Positional,
+            }
+            .accepts_source_name(actual),
         };
         if valid {
             Ok(())

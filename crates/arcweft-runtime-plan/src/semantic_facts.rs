@@ -4045,6 +4045,7 @@ impl RuntimeResolvedCall {
             .zip(self.operands.iter())
             .enumerate()
         {
+            let source_ordinal = ordinal;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| RuntimeResolvedCallError::NeedProducerAdmissionCount)?;
             if !matches!(
@@ -4059,25 +4060,15 @@ impl RuntimeResolvedCall {
             if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
                 return Err(RuntimeResolvedCallError::NeedProducerAdmissionType { ordinal });
             }
-            let binding_matches = match producer.plan().request() {
-                NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
-                    match operand.binding() {
-                        RuntimeResolvedCallOperandBinding::Positional => true,
-                        RuntimeResolvedCallOperandBinding::Named(name) => {
-                            name.as_str() == argument_name
-                        }
-                    }
-                }
-                NeedProducerRequestProjection::ExternCapability { argument_names, .. } => {
-                    match (operand.binding(), argument_names.get(ordinal as usize)) {
-                        (RuntimeResolvedCallOperandBinding::Positional, Some(None)) => true,
-                        (RuntimeResolvedCallOperandBinding::Named(name), Some(Some(expected))) => {
-                            name.as_str() == expected
-                        }
-                        _ => false,
-                    }
-                }
+            let source_name = match operand.binding() {
+                RuntimeResolvedCallOperandBinding::Positional => None,
+                RuntimeResolvedCallOperandBinding::Named(name) => Some(name.as_str()),
             };
+            let binding_matches = producer
+                .plan()
+                .request()
+                .argument_binding(source_ordinal)
+                .is_some_and(|binding| binding.accepts_source_name(source_name));
             if !binding_matches {
                 return Err(RuntimeResolvedCallError::NeedProducerPlanMismatch);
             }
