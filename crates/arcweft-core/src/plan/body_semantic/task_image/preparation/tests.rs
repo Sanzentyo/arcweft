@@ -833,10 +833,12 @@ fn completed_task_source_borrows_canonical_metadata_shared_by_distinct_rows() {
     candidate.task_plans[1].class = TaskClass::Cpu;
     let first = candidate.coordinate_owner.resolve(0).unwrap();
     let last = candidate.coordinate_owner.resolve(1).unwrap();
-    let plan = candidate
-        .seal(RuntimeTaskPlanSealLimits::default(), None)
-        .unwrap()
-        .into_plan();
+    let plan = std::sync::Arc::new(
+        candidate
+            .seal(RuntimeTaskPlanSealLimits::default(), None)
+            .unwrap()
+            .into_plan(),
+    );
     let mut bank = TaskSemanticMeter::new(100_000, 0);
     let first_source = plan
         .task_source(&first, RuntimeTaskPlanSealLimits::default(), &mut bank)
@@ -871,6 +873,18 @@ fn completed_task_source_borrows_canonical_metadata_shared_by_distinct_rows() {
     assert!(std::ptr::eq(first_target, last_target));
     assert_eq!(last_target.producer.plan, first);
     assert_ne!(last_target.producer.plan, last);
+    let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan));
+    let owned =
+        crate::plan::task_source::RuntimeTaskSource::from_borrowed(&last_source, &owner).unwrap();
+    assert_eq!(owned.task_plan(), plan.task_plan(&last).unwrap());
+    let borrowed = owned
+        .borrow(RuntimeTaskPlanSealLimits::default(), &mut bank)
+        .unwrap();
+    assert_eq!(borrowed.task_plan(), plan.task_plan(&last).unwrap());
+    assert!(matches!(
+        borrowed.task_plan().definition().class(),
+        TaskClass::Cpu
+    ));
     assert_eq!(bank.totals().1, 0);
 }
 

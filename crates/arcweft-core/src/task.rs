@@ -39,8 +39,8 @@ impl GenerationId {
 }
 
 mod producer;
-pub(crate) use producer::ExpectedTaskPlanKey;
 pub use producer::*;
+pub(crate) use producer::{ExpectedTaskPlanKey, RuntimeTaskProducerSourceError};
 pub(crate) mod semantic;
 
 // Private final identity preparation. Publish only with the atomic task/Need

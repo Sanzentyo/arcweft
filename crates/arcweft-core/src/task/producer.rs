@@ -5,6 +5,9 @@ use super::*;
 use crate::entry::RuntimeValueDigest;
 use std::collections::BTreeSet;
 
+mod source;
+pub(crate) use source::RuntimeTaskProducerSourceError;
+
 /// Source-independent ordinal assigned to one launch of a producer instance.
 /// Join uses the zero ordinal; positive `AlwaysStart` candidates remain journal
 /// authority and are not exposed as raw constructors.
@@ -225,11 +228,24 @@ impl NeedProducerSpec {
 
     /// Derives the fixed producer-instance identity from this complete spec.
     pub fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
+        self.instance_key_with_plan(self.plan)
+    }
+
+    pub const fn plan(&self) -> TaskPlanSemanticDigest {
+        self.plan
+    }
+}
+
+impl<Plan> NeedProducerSpec<Plan> {
+    fn instance_key_with_plan(
+        &self,
+        plan: TaskPlanSemanticDigest,
+    ) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft.need.producer-instance.v1\0");
         hasher.update(&[self.family.semantic_tag()]);
         hasher.update(self.contract.as_bytes());
-        hasher.update(self.plan.as_bytes());
+        hasher.update(plan.as_bytes());
         hasher.update(self.producer_site.as_bytes());
         hasher.update(self.payload_type.as_bytes());
         hasher.update(self.arguments.as_bytes());
@@ -244,10 +260,6 @@ impl NeedProducerSpec {
         self.contract
     }
 
-    pub const fn plan(&self) -> TaskPlanSemanticDigest {
-        self.plan
-    }
-
     pub const fn producer_site(&self) -> NeedProducerSiteDigest {
         self.producer_site
     }
@@ -258,6 +270,16 @@ impl NeedProducerSpec {
 
     pub const fn arguments(&self) -> RuntimeValueDigest {
         self.arguments
+    }
+}
+
+impl NeedProducerSpec<crate::plan::task_source::RuntimeTaskSource> {
+    pub(crate) const fn source(&self) -> &crate::plan::task_source::RuntimeTaskSource {
+        &self.plan
+    }
+
+    pub(crate) fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
+        self.instance_key_with_plan(self.plan.task_plan().key())
     }
 }
 
@@ -543,7 +565,8 @@ impl NeedProducerTaskPlan {
         &self,
         arguments: &[NeedProducerRuntimeArgument<V>],
     ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
-        let digest = need_producer_arguments_digest(arguments)?;
+        let digest = need_producer_arguments_digest(arguments)
+            .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
         Ok(NeedProducerSpec::new(
             NeedProducerFamily::SelectedCallable,
             self.contract,
@@ -889,7 +912,7 @@ impl TaskClass {
 
 fn need_producer_arguments_digest<V: crate::value::RuntimeStoredValue>(
     arguments: &[NeedProducerRuntimeArgument<V>],
-) -> Result<RuntimeValueDigest, NeedProducerAdmissionError> {
+) -> Result<RuntimeValueDigest, crate::entry::RuntimeSchemaError> {
     const MAX_ARGUMENT_BYTES: usize = 16 * 1024 * 1024;
     let values: Vec<_> = arguments
         .iter()
@@ -899,7 +922,6 @@ fn need_producer_arguments_digest<V: crate::value::RuntimeStoredValue>(
         crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Views(&values)),
         MAX_ARGUMENT_BYTES,
     )
-    .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)
 }
 
 /// Opaque, registry-issued identity of one accepted producer-start

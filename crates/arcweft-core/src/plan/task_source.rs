@@ -1,6 +1,11 @@
 //! A completed Task and its actual original function/request source.
 //! This boundary borrows the immutable program and never accepts a key assertion.
 
+mod owned;
+#[cfg(test)]
+mod producer_tests;
+pub(crate) use owned::RuntimeTaskSource;
+
 use super::body_semantic::function::OriginalRequestEndpoint;
 use super::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
 use super::{
@@ -26,6 +31,7 @@ pub(crate) enum RuntimeTaskSourceError {
 pub(crate) struct RuntimeTaskSourceRef<'program> {
     task: RuntimeTaskPlanRef<'program>,
     request: OriginalRequestEndpoint<'program>,
+    owner: RuntimeTaskPlanCoordinateOwner,
 }
 
 impl RuntimePlan {
@@ -55,7 +61,11 @@ impl RuntimePlan {
                 .ok_or(RuntimeTaskSourceError::MissingEndpoint {
                     request: task.definition().request_template().source(),
                 })?;
-            Ok(RuntimeTaskSourceRef { task, request })
+            Ok(RuntimeTaskSourceRef {
+                task,
+                request,
+                owner,
+            })
         })();
         result.map_err(|error| {
             let cause = meter.status().err();

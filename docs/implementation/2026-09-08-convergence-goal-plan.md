@@ -18753,3 +18753,103 @@ actual program identity and failed-atomic restore/replacement. The two selected-
 Need failures remain open; this private boundary is not yet wired into them.
 Retained View and full Native/Web/CLI acceptance remain open. The complete goal
 remains active.
+
+### 2026-10-19 — Retain the actual Source in selected producer specifications
+
+Inspected existing main and freshly fetched origin/main at
+`6ec027f252174f7d8dff21b8f92d1270438d403c`, parent
+`9fc115ff3724f85636f5663b28e65a7e9b71be87`, tree
+`f50bc6a54f915e384e3c685f88c6b01b499b344e`. The previous publication's binary,
+full-index patch SHA-256 is
+`f221f0ce970b1d73cb9fd670538cdbd842df0d1b1a1c6fcd01716190e0d70959`.
+Eight owned Core paths, including three new private modules, are separate from
+fourteen held tracked and three held untracked paths. The index was empty.
+
+RuntimeTaskSource now retains an Arc of the exact original RuntimePlan and the
+coordinate of its authenticated completed row. Construction checks both the
+issuing Task table and actual request inventory before retaining the Arc. An
+equal-key program, a cloned program sharing the Task table, standalone value
+admission and raw AWBC cannot manufacture this Source. The actual completed
+coordinate owner resolves the issued row's existing digest index; no copied
+catalog, new coordinate issuer or metadata launch-coordinate fallback is added.
+The accepted shared-request/distinct-class regression now proves that owning and
+reborrowing the second Cpu row retains that row rather than the first launch
+coordinate. Program pointer identity stays outside the semantic transcript.
+
+The private selected_producer_spec boundary lives under task/producer, the owner
+of the specification's private fields. It validates the complete argument count,
+original program, canonical request metadata, names and instantiated types using
+the caller's existing retained-value bank before canonical argument hashing and
+Source retention. It accepts no caller digest, copied request definition or fresh
+allowance. Schema failures retain their actual typed context and first resource
+cause. The unchanged v1 six-field instance encoder is shared with the current
+public specification; the Source specialization derives its plan field from the
+actual completed row. Metadata getters are generic over the plan authority.
+The eventual TaskSpec must also obtain class from that row; canonical request
+metadata continues to own policy, restart, priority and cancellation scope.
+
+Ten new tests use genuine Image/Voice/Extern construction fixtures. They cover
+completed-key/canonical-argument identity, runtime argument changes, exact program
+provenance before any value view, shape/name/type rejection, whole-list/zero-work
+preflight, request-kind and invocation-effect rejection, exact and one-less work,
+first-failure retention, prefixed original work, and Source lifetime through clone
+and final drop. Equal semantic instance keys from independent programs do not
+make their Source specifications equal. Existing sharing assertions are retained.
+
+R1462 Clippy fails, actual 101, because a new fixture supplies a raw integer where
+RuntimeInt is required. The wrong-type fixture is corrected to a String. R1463,
+R1464, R1466 and R1468 Clippy pass; R1465/R1467/R1469 catalogs build intermediate
+models. Those intermediate catalogs are not executed-suite evidence. After
+moving construction into the specification owner, R1470 executes 1366 of 2317
+selected cases: actual 100, 1365 pass, one fail, zero skipped, 951 not run after
+fail-fast. Its partial terminal audit preserves that incomplete scope. R1471/
+R1472 isolate the same new exact-work assertion: actual 100, one fail, 1801
+excluded. The implementation correctly preserves nested ProgramType/PlanValue
+context; the test incorrectly expects an outer Resource variant. The correction
+asserts the original type ID, path, exact limit/consumption, retained first cause,
+unchanged retry work and identical repeated error without flattening production
+errors or weakening any resource limit.
+
+R1473 final Core all-target/all-feature locked Clippy passes, actual 0, Cargo
+17.69s. R1474 inspects 2317 selected cases, none excluded. R1475 executes that
+exact five-library selection with no fail-fast: 2317 pass, zero fail/skip, actual
+0, 26.205s. Core has 1802 cases; RuntimePlan, bundle, project loader and runtime
+driver provide the other 515. Every selected name and all 3911 frozen inputs
+match, with zero drift. Core's resolved reverse closure remains 53 packages;
+all 99 manifest/lock inputs are unchanged. This private constructor has no live
+cross-crate caller; five libraries are not the complete reverse acceptance set.
+
+R1476 workspace all-target/all-feature locked check passes, actual 0, Cargo
+1m57s; R1477 matching workspace Clippy passes, actual 0, 2m05s. Warnings remain;
+these commands do not use -D warnings. R1478 Core all-feature locked doctests
+pass: 69 passed, zero failed/ignored, actual 0, 2.77s. R1479 canonical structural
+gate passes, actual 0. Changed-file rustfmt and diff checks pass. After the
+user-requested whole-workspace clean, the same 3911 source hashes still match;
+the checks above are reused historical executions, not post-clean rebuilds.
+The clean itself returns 0, removes 303332 files/371.1 GiB in 104.859s, and
+preserves all 8321 tracked/untracked source paths and hashes plus Git status/HEAD.
+Its receipt is arcweft-workspace-clean-20261019T062939Z.json in the session Temp.
+
+Ownership review: the new source lease is 2312 bytes/70 physical LOC and the
+producer factory is 4292/92. The 15932/499 new test module grows from zero and
+cohesively exercises that one provenance/resource/identity/lifetime boundary;
+fixture visibility is not widened. Source lookup is 3541/94 and Task semantics
+20415/610. The existing producer owner is 146935/3916, with 768 embedded test
+lines reported by the scanner; its existing specification/journal/lifecycle
+responsibilities are unchanged and construction is in its legitimate child,
+with private fields and hashing helpers remaining private. task.rs is
+69087/2130 (124 scanner-reported embedded test lines), with only the crate-private
+error reexport changed. Existing preparation tests are 55078/1409. Core workspace
+fan-in/out remains 31/7 (development 4/5). No new dependency, unsafe, I/O, public
+Source constructor, wire change or second semantic hash is introduced.
+
+Publish this verified Source-owning specification boundary, then connect actual
+Source to artifacts and the live producers/registry in the single fourteen-family
+public switch. Raw AWBC still has no original Source; inventing a Native program
+from bytecode or copying an expected digest cannot satisfy that requirement.
+The existing source-free public constructor and request-only digest issuer are
+still pending deletion with their consumers. R1438's two Native/decoded-AWBC
+completed-key failures remain open and are not rerun by this private cut.
+Restore/replacement atomicity, full reverse/default/workspace/Tier 2 acceptance,
+retained View and Native/Web/CLI runtime/display acceptance remain incomplete.
+The full goal remains active.

@@ -222,6 +222,14 @@ pub struct RuntimeTaskPlanRef<'plan> {
 }
 
 impl<'plan> RuntimeTaskPlanRef<'plan> {
+    pub(crate) fn index(self) -> RuntimeTaskPlanIndex {
+        *self
+            .table
+            .by_digest
+            .get(&self.row.digest)
+            .expect("an issued row has its canonical index")
+    }
+
     #[must_use]
     pub const fn definition(self) -> &'plan RuntimeTaskPlan {
         &self.row.plan
