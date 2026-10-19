@@ -406,6 +406,7 @@ impl NeedProducerFamily {
 /// ```
 pub struct RuntimeTaskPlanDigestBase<'a> {
     issuer: &'a ViewTaskPlanSealInvocation,
+    expected: Option<&'a crate::task::ExpectedTaskPlanKey>,
     plan: &'a SourceRuntimeTaskPlan,
     executable: RuntimeExecutableSemanticDigest,
     producer_function: ProducerFunctionSemanticDigest,
@@ -414,6 +415,13 @@ pub struct RuntimeTaskPlanDigestBase<'a> {
 }
 
 impl RuntimeTaskPlanDigestBase<'_> {
+    /// Inert locator from the complete original Source codec. Construction
+    /// requests have no assertion; the common seal still recomputes and checks
+    /// the completed key after the upper owner consumes its capability.
+    #[must_use]
+    pub const fn expected_key(&self) -> Option<&crate::task::ExpectedTaskPlanKey> {
+        self.expected
+    }
     #[must_use]
     pub const fn coordinate(&self) -> &RuntimeTaskPlanBuildCoordinate {
         &self.issuer.coordinate
@@ -513,6 +521,12 @@ pub enum ViewTaskPlanValidationError {
     },
     #[error("View task-plan coordinate belongs to another candidate")]
     CoordinateOwnerMismatch,
+    #[error("View task-plan original binding has not been sealed")]
+    UnsealedBinding,
+    #[error("View task-plan Source admission requires an expected-key assertion")]
+    ExpectedSourceAssertion,
+    #[error("View task-plan expected key has no original accepted binding")]
+    MissingOriginalBinding,
     #[error("View task-plan request does not have the View marker")]
     ExpectedViewMarker,
     #[error("View task-plan request does not have the View family")]
@@ -549,6 +563,7 @@ impl ViewTaskPlanSealInvocation {
     pub(crate) fn request<'a>(
         &'a self,
         plan: &'a SourceRuntimeTaskPlan,
+        expected: Option<&'a crate::task::ExpectedTaskPlanKey>,
         executable: RuntimeExecutableSemanticDigest,
         producer_function: ProducerFunctionSemanticDigest,
         request_template: TaskRequestTemplateDigest,
@@ -557,6 +572,7 @@ impl ViewTaskPlanSealInvocation {
         ViewTaskPlanDigestRequest {
             base: RuntimeTaskPlanDigestBase {
                 issuer: self,
+                expected,
                 plan,
                 executable,
                 producer_function,

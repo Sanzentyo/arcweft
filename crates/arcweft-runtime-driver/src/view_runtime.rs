@@ -30,6 +30,7 @@ use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewTextBlockBounds, ViewTextResource,
 };
 use arcweft_core::{
+    awbc::product_step::AwbcProductProgram,
     awbc::schema::AwbcProgram,
     value::{
         AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueActionValue,
@@ -582,8 +583,19 @@ pub struct BundleViewStateFieldSnapshot {
 }
 
 /// Fatal construction or snapshot restoration failure.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ViewProgramAdmissionError {
+    #[error(transparent)]
+    TaskBinding(#[from] arcweft_core::task::ViewTaskPlanValidationError),
+    #[error(transparent)]
+    Executable(#[from] arcweft_core::awbc::product_step::AwbcProductStepBuildError),
+}
+
+/// Fatal construction or snapshot restoration failure.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
+    #[error(transparent)]
+    Admission(#[from] ViewProgramAdmissionError),
     #[error(transparent)]
     AxisSeed(BundleViewAxisSeedError),
     #[error(transparent)]
@@ -792,7 +804,7 @@ struct PublishedViewEventToken {
 #[derive(Clone, Debug)]
 enum ViewProgramRuntimeAuthority {
     CoreProgramFree,
-    Awbc(Arc<AwbcProgram>),
+    Awbc(AwbcProductProgram),
 }
 
 impl Default for BundleViewRuntime {
@@ -878,9 +890,12 @@ impl BundleViewRuntime {
         let text = self.text.clone();
         match &self.program_runtime {
             ViewProgramRuntimeAuthority::CoreProgramFree => Self::try_new(product, text),
-            ViewProgramRuntimeAuthority::Awbc(program) => {
-                Self::try_new_with_awbc(product, text, Arc::clone(program))
-            }
+            ViewProgramRuntimeAuthority::Awbc(program) => Self::try_new_with_admitted_program(
+                product,
+                text,
+                ViewRegistry::default(),
+                program.clone(),
+            ),
         }
         .map(|mut runtime| {
             runtime.dialogue_schema.clone_from(&self.dialogue_schema);
@@ -898,9 +913,9 @@ impl BundleViewRuntime {
         };
         if !schema
             .program_owner()
-            .same_program(&arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(
-                program,
-            )))
+            .same_program(&arcweft_core::task::RuntimeProgramOwner::Awbc(
+                program.program_arc(),
+            ))
         {
             return Err(BundleViewRuntimeError::ForeignDialogueSchema);
         }
@@ -967,6 +982,39 @@ impl BundleViewRuntime {
         text: Option<ViewTextResource>,
         registry: ViewRegistry,
         awbc: Arc<AwbcProgram>,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        let admitted = Self::admit_awbc_program(&product, awbc)?;
+        Self::try_new_with_admitted_program(product, text, registry, admitted)
+    }
+
+    fn admit_awbc_program(
+        product: &ValidatedViewProduct,
+        awbc: Arc<AwbcProgram>,
+    ) -> Result<AwbcProductProgram, ViewProgramAdmissionError> {
+        let authority = product
+            .program()
+            .map(|program| program.task_source_authority(ViewProductValidationLimits::default()))
+            .transpose()?;
+        let admitted = AwbcProductProgram::admit(
+            awbc,
+            arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+            arcweft_core::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..Default::default()
+            },
+            arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+            authority
+                .as_ref()
+                .map(|authority| authority as &dyn arcweft_core::task::ViewTaskPlanAuthority),
+        )?;
+        Ok(admitted)
+    }
+
+    fn try_new_with_admitted_program(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        registry: ViewRegistry,
+        awbc: AwbcProductProgram,
     ) -> Result<Self, BundleViewRuntimeError> {
         match product.program() {
             Some(program) => program
@@ -1390,7 +1438,7 @@ impl BundleViewRuntime {
         for mount in self.mounts.values() {
             for cached in mount.expression_evaluations.values() {
                 if !matches!(&self.program_runtime,
-                    ViewProgramRuntimeAuthority::Awbc(program) if Arc::ptr_eq(program, &cached.owner))
+                    ViewProgramRuntimeAuthority::Awbc(program) if Arc::ptr_eq(&program.program_arc(), &cached.owner))
                 {
                     return Err(ViewSaveError::ProgramMismatch);
                 }
@@ -1496,7 +1544,7 @@ impl BundleViewRuntime {
         match &self.program_runtime {
             ViewProgramRuntimeAuthority::Awbc(program) => {
                 arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-                    arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                    arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                     limits,
                 )
             }
@@ -1535,7 +1583,7 @@ impl BundleViewRuntime {
             let value = match &self.program_runtime {
                 ViewProgramRuntimeAuthority::Awbc(program) => binding.value
                     .copy_unrestricted_for_program_with_limits(
-                        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                        &arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                         arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
                     ).map_err(ViewSaveError::from)?,
                 ViewProgramRuntimeAuthority::CoreProgramFree =>
@@ -1664,7 +1712,7 @@ impl BundleViewRuntime {
                     .expect("borrowed name preflight admitted the declaration");
                 let value = match &self.program_runtime {
                     ViewProgramRuntimeAuthority::Awbc(program) => {
-                        let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program));
+                        let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc());
                         let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
                         if definition.parameter_contract.is_some() {
                             parameter.value.copy_unrestricted_for_program_with_limits(&owner, limits)
@@ -1697,7 +1745,7 @@ impl BundleViewRuntime {
                 let value = field
                     .value
                     .copy_unrestricted_typed_for_program_with_limits(
-                        &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(program)),
+                        &arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc()),
                         field.value_type,
                         arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
                     )

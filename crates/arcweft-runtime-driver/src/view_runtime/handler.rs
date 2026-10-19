@@ -6,7 +6,7 @@ use super::{
 };
 use crate::dialogue::BundlePresentationInput;
 use arcweft_core::{
-    awbc::product_step::evaluate_pure_program_with_backend,
+    awbc::product_step::evaluate_admitted_pure_program_with_backend,
     pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
     task::RuntimeProgramOwner,
     value::RuntimeValue,
@@ -71,7 +71,7 @@ impl BundleViewRuntime {
         if seal.captures.len() != accepted.captures().len() {
             return Err(invalid_result());
         }
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+        let owner = RuntimeProgramOwner::Awbc(program.program_arc());
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
@@ -141,11 +141,15 @@ impl BundleViewRuntime {
                 Ok(value)
             })
             .collect::<Result<Vec<_>, BundleViewEventDispatchError>>()?;
-        let result =
-            evaluate_pure_program_with_backend(program, accepted.program(), &arguments, backend)
-                .map_err(|source| BundleViewEventDispatchError::ProgramExecution {
-                    source: Box::new(source),
-                })?;
+        let result = evaluate_admitted_pure_program_with_backend(
+            program,
+            accepted.program(),
+            &arguments,
+            backend,
+        )
+        .map_err(|source| BundleViewEventDispatchError::ProgramExecution {
+            source: Box::new(source),
+        })?;
         admission
             .validate_typed(&result, result_type)
             .map_err(|_| invalid_result())?;

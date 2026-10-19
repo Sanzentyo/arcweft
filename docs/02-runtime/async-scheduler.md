@@ -58,6 +58,24 @@ specification rather than retaining an independent binding. Immutable binding
 rows may share storage; resource admission still checks every row before a
 producer or retained field copies its lease.
 
+View task construction binds the exact original Core coordinates to the accepted
+View program, source site and complete Match admission transcript. After every
+Core slot seals, the View resource publishes inert link assertions containing
+the expected task keys and those original site/admission identities. This
+publication shares one immutable slot across resource clones and does not copy
+the retained View source graph. Generated link assertions do not change the
+accepted View semantic revision.
+
+Complete Source decoding creates a fresh Core coordinate namespace. Its View
+authority checks the resource's complete current source set before indexing
+link assertions, then uses an expected key only to select an accepted binding.
+The common seal recomputes the actual E/F/Q/C and upper View transcript, consumes
+the one-use completion capability and compares the final expected key. A decoded
+assertion cannot issue a task key or rebind the construction authority to a
+foreign candidate. AWBC execution retains the admitted executable and original
+Source together; View invocation, continuation rollback and owned restore keep
+that lease instead of constructing a new Source-free executor.
+
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by

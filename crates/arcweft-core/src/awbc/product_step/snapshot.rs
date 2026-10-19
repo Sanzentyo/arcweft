@@ -3264,6 +3264,10 @@ impl AwbcProductStepExecutor {
             }
         };
         let program = std::sync::Arc::clone(&self.program);
+        let admitted = super::AwbcProductProgram {
+            program: std::sync::Arc::clone(&program),
+            task_source: self.task_source.clone(),
+        };
         let origin = self.fiber.root;
         let budget_quantum = self.fiber.budget.quantum;
         let original_generation = self.runtime_generation;
@@ -3274,8 +3278,8 @@ impl AwbcProductStepExecutor {
         drop(self);
 
         let build = |generation| {
-            let mut executor = super::AwbcProductStepExecutor::for_root_arc_with_context_proof(
-                std::sync::Arc::clone(&program),
+            let mut executor = super::AwbcProductStepExecutor::for_admitted_root(
+                admitted.clone(),
                 origin,
                 budget_quantum,
                 generation,

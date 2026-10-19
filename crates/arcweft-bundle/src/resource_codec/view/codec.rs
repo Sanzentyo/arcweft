@@ -1095,6 +1095,11 @@ impl ViewProgramResource {
         &self,
         budget: &ViewResourceBudget,
     ) -> Result<(), SectionCodecError> {
+        check_budget(
+            self.task_plan_bindings.rows().len(),
+            budget.common.items,
+            "view_task_plan_bindings",
+        )?;
         check_budget(self.handlers.len(), budget.handlers, "view_handlers")?;
         check_budget(
             self.handlers
@@ -1989,6 +1994,7 @@ impl ViewProgramResource {
 
     fn record_count(&self) -> u32 {
         saturating_u32(self.value_programs.len())
+            .saturating_add(saturating_u32(self.task_plan_bindings.rows().len()))
             .saturating_add(saturating_u32(self.definitions.len()))
             .saturating_add(saturating_u32(
                 self.definitions

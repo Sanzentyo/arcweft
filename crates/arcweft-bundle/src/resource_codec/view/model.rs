@@ -36,6 +36,13 @@ pub use style::*;
 #[serde(deny_unknown_fields)]
 pub struct ViewProgramResource {
     pub program_id: ViewProgramId,
+    /// Generated link assertions. They do not enter the accepted View semantic
+    /// revision; Core rechecks them against the complete original Source.
+    #[serde(
+        default,
+        skip_serializing_if = "super::ViewTaskPlanAssertions::is_empty"
+    )]
+    pub task_plan_bindings: super::ViewTaskPlanAssertions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_refs: Vec<ProductSourceRef>,
     pub definitions: Vec<ViewDefinitionResource>,
@@ -347,6 +354,7 @@ impl ViewDefinitionResource {
 impl Default for ViewProgramResource {
     fn default() -> Self {
         Self {
+            task_plan_bindings: super::ViewTaskPlanAssertions::default(),
             program_id: ViewProgramId::try_new("view.empty.program")
                 .expect("the built-in empty View program identity is valid"),
             source_refs: Vec::new(),

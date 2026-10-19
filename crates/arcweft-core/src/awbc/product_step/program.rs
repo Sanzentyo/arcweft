@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
-use super::{AwbcProductStepBuildError, AwbcProductStepExecutor};
+use super::{AwbcProductProgram, AwbcProductStepBuildError, AwbcProductStepExecutor};
 use crate::awbc::fiber::{
     AwbcFiberRoot, FiberState, FiberTerminalValue, validate_function_argument_values,
 };
@@ -169,12 +169,15 @@ impl AwbcProductStepExecutor {
             Ok::<_, RuntimeProgramContinuationFailure>(())
         })();
         if let Err(reason) = committed {
-            let program = Arc::clone(&self.program);
+            let admitted = AwbcProductProgram {
+                program: Arc::clone(&self.program),
+                task_source: self.task_source.clone(),
+            };
             let format_context = self.format_context.clone();
             let plain_text_proof = self.plain_text_context_template_proof;
             drop(self);
-            let mut executor = Self::for_root_arc_with_context_proof(
-                program,
+            let mut executor = Self::for_admitted_root(
+                admitted,
                 old_origin,
                 old_quantum,
                 old_generation,
@@ -203,6 +206,32 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProgramInvocationError> {
+        let admitted = match AwbcProductProgram::admit(
+            program,
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..Default::default()
+            },
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        ) {
+            Ok(admitted) => admitted,
+            Err(reason) => return Err(AwbcProgramInvocationError { reason, inputs }),
+        };
+        Self::for_admitted_program_invocation(admitted, id, inputs, generation, budget_quantum)
+    }
+
+    /// Transfers inputs only after the complete executable and original Source
+    /// have been admitted by their owning context.
+    pub fn for_admitted_program_invocation(
+        admitted: AwbcProductProgram,
+        id: RuntimePureProgramId,
+        inputs: Vec<RuntimeValue>,
+        generation: GenerationId,
+        budget_quantum: u64,
+    ) -> Result<Self, AwbcProgramInvocationError> {
+        let program = admitted.program_arc();
         let prepared = (|| {
             for (position, value) in inputs.iter().enumerate() {
                 value.validate_detached_custody().map_err(|source| {
@@ -222,8 +251,8 @@ impl AwbcProductStepExecutor {
                 .map_err(|error| AwbcProductStepBuildError::FiberState {
                     message: error.to_string(),
                 })?;
-            let executor = Self::for_root_arc_with_context_proof(
-                Arc::clone(&program),
+            let executor = Self::for_admitted_root(
+                admitted,
                 AwbcFiberRoot::Program(id),
                 budget_quantum,
                 generation,

@@ -284,9 +284,9 @@ impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
         })?;
         let owner = match self.program_runtime {
             super::ViewProgramRuntimeAuthority::CoreProgramFree => None,
-            super::ViewProgramRuntimeAuthority::Awbc(program) => Some(
-                super::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
-            ),
+            super::ViewProgramRuntimeAuthority::Awbc(program) => {
+                Some(super::RuntimeProgramOwner::Awbc(program.program_arc()))
+            }
         };
         let frame = entry
             .frame

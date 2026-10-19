@@ -1,6 +1,7 @@
 //! Exact original-coordinate bindings for the sole Core View sealing protocol.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, OnceLock};
 
 use arcweft_core::{
     pattern::{
@@ -9,7 +10,7 @@ use arcweft_core::{
     },
     plan::{RuntimeTaskPlanBuildCoordinate, RuntimeTaskSemanticBindingKind},
     task::{
-        NeedProducerFamily, TaskPlanSemanticDigest, ViewTaskPlanAuthority,
+        ExpectedTaskPlanKey, NeedProducerFamily, TaskPlanSemanticDigest, ViewTaskPlanAuthority,
         ViewTaskPlanDigestRequest, ViewTaskPlanValidationError as Error,
     },
 };
@@ -56,6 +57,67 @@ impl ViewTaskPlanBindingSource {
 #[derive(Clone, Debug)]
 pub struct ValidatedViewTaskPlanBinding(ViewTaskPlanBindingSource);
 
+/// Inert artifact assertion for one original View binding. Neither decoding
+/// this row nor its expected key issues Core task authority.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewTaskPlanBindingAssertion {
+    expected: ExpectedTaskPlanKey,
+    site: ViewMatchSiteId,
+    admission: CheckedViewMatchAdmissionDigest,
+}
+
+/// One publication of inert link assertions. Clones share the same publication
+/// slot, so linking never copies the retained View program or its Match sources.
+#[derive(Clone, Debug, Default)]
+pub struct ViewTaskPlanAssertions {
+    rows: Arc<OnceLock<Box<[ViewTaskPlanBindingAssertion]>>>,
+}
+
+impl ViewTaskPlanAssertions {
+    #[must_use]
+    pub fn rows(&self) -> &[ViewTaskPlanBindingAssertion] {
+        self.rows.get().map_or(&[], AsRef::as_ref)
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.rows().is_empty()
+    }
+
+    pub(super) fn is_published(&self) -> bool {
+        self.rows.get().is_some()
+    }
+
+    pub(super) fn publish(&self, rows: Vec<ViewTaskPlanBindingAssertion>) -> Result<(), Error> {
+        self.rows
+            .set(rows.into_boxed_slice())
+            .map_err(|_| Error::AuthorityAlreadyBound)
+    }
+}
+
+impl PartialEq for ViewTaskPlanAssertions {
+    fn eq(&self, other: &Self) -> bool {
+        self.rows() == other.rows()
+    }
+}
+impl Eq for ViewTaskPlanAssertions {}
+
+impl serde::Serialize for ViewTaskPlanAssertions {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.rows(), serializer)
+    }
+}
+impl<'de> serde::Deserialize<'de> for ViewTaskPlanAssertions {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let rows =
+            <Box<[ViewTaskPlanBindingAssertion]> as serde::Deserialize>::deserialize(deserializer)?;
+        Ok(Self {
+            rows: Arc::new(OnceLock::from(rows)),
+        })
+    }
+}
+
 impl ValidatedViewTaskPlanBinding {
     pub const fn program_id(&self) -> &ViewProgramId {
         &self.0.program
@@ -82,6 +144,14 @@ pub(super) struct ValidatedViewTaskPlanBindings {
     rows: BTreeMap<RuntimeTaskPlanBuildCoordinate, ValidatedViewTaskPlanBinding>,
 }
 
+/// A borrowed index of this accepted View product's already sealed original
+/// bindings. Expected keys only select a binding; the complete decoded Core
+/// prefix and the same upper transcript must still pass the common seal.
+pub struct ViewTaskPlanSourceAuthority<'a> {
+    program: &'a ValidatedViewProgramResource,
+    rows: BTreeMap<ExpectedTaskPlanKey, &'a ViewTaskPlanBindingAssertion>,
+}
+
 impl ValidatedViewProduct {
     /// Joins the exact original coordinates and source rows before exposing an authority.
     pub fn bind_task_plans(
@@ -103,6 +173,141 @@ impl ValidatedViewProduct {
 }
 
 impl ValidatedViewProgramResource {
+    fn current_task_bindings(&self) -> Result<&ValidatedViewTaskPlanBindings, Error> {
+        let bindings = self.task_bindings.get().ok_or(Error::StaleAuthority)?;
+        if &bindings.program != self.program_id()
+            || bindings.revision != self.accepted_revision()
+            || bindings.source_set != self.source_set_revision()
+        {
+            return Err(Error::StaleAuthority);
+        }
+        Ok(bindings)
+    }
+
+    /// Joins artifact assertions to the complete current View source set before
+    /// lending the codec authority. No construction coordinate is rebound.
+    pub fn task_source_authority(
+        &self,
+        limits: ViewProductValidationLimits,
+    ) -> Result<ViewTaskPlanSourceAuthority<'_>, Error> {
+        let assertions = self.resource().task_plan_bindings.rows();
+        let work = assertions
+            .len()
+            .checked_mul(2)
+            .and_then(|count| count.checked_add(self.resource().instructions.len()))
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(Error::ArithmeticOverflow)?;
+        if work > limits.validation_work {
+            return Err(Error::WorkLimitExceeded);
+        }
+        if assertions
+            .windows(2)
+            .any(|pair| pair[0].expected >= pair[1].expected)
+        {
+            return Err(Error::BindingSetMismatch);
+        }
+        let sites = self.task_plan_sites(work, limits)?;
+        let mut rows = BTreeMap::new();
+        let mut covered = BTreeSet::new();
+        for assertion in assertions {
+            let admission = sites.get(&assertion.site).ok_or(Error::SiteMismatch)?;
+            if *admission != assertion.admission {
+                return Err(Error::AdmissionMismatch);
+            }
+            covered.insert(assertion.site);
+            rows.insert(assertion.expected, assertion);
+        }
+        if covered.len() != sites.len() {
+            return Err(Error::BindingSetMismatch);
+        }
+        Ok(ViewTaskPlanSourceAuthority {
+            program: self,
+            rows,
+        })
+    }
+
+    pub(super) fn sealed_task_plan_assertions(
+        &self,
+        limits: ViewProductValidationLimits,
+    ) -> Result<Vec<ViewTaskPlanBindingAssertion>, Error> {
+        let bindings = self.current_task_bindings()?;
+        let count = u64::try_from(bindings.rows.len())
+            .ok()
+            .and_then(|count| count.checked_mul(2))
+            .ok_or(Error::ArithmeticOverflow)?;
+        if count > limits.validation_work {
+            return Err(Error::WorkLimitExceeded);
+        }
+        if bindings
+            .rows
+            .values()
+            .any(|binding| binding.coordinate().sealed_plan().is_none())
+        {
+            return Err(Error::UnsealedBinding);
+        }
+        let mut assertions = bindings
+            .rows
+            .values()
+            .map(|binding| {
+                Ok(ViewTaskPlanBindingAssertion {
+                    expected: binding
+                        .coordinate()
+                        .sealed_plan()
+                        .ok_or(Error::UnsealedBinding)?
+                        .key()
+                        .into(),
+                    site: binding.site(),
+                    admission: binding.admission(),
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        assertions.sort_by_key(|assertion| assertion.expected);
+        if assertions
+            .windows(2)
+            .any(|pair| pair[0].expected == pair[1].expected)
+        {
+            return Err(Error::DuplicateBinding);
+        }
+        Ok(assertions)
+    }
+
+    fn task_plan_sites(
+        &self,
+        work: u64,
+        limits: ViewProductValidationLimits,
+    ) -> Result<BTreeMap<ViewMatchSiteId, CheckedViewMatchAdmissionDigest>, Error> {
+        let mut budget = MatchSourceMaterializationBudget::new(limits.match_source_bytes);
+        for instruction in &self.resource().instructions {
+            if let ViewProgramInstruction::Match { program, .. } = instruction {
+                program
+                    .source
+                    .preflight_source(&mut budget)
+                    .map_err(source_storage_error)?;
+            }
+        }
+        preflight_hash_work(self, work, limits.validation_work)?;
+        let mut sites = BTreeMap::new();
+        for instruction in &self.resource().instructions {
+            if let ViewProgramInstruction::Match { program, .. } = instruction {
+                let site = ViewMatchSiteId::for_source_coordinate(program.source.coordinate())
+                    .map_err(|_| Error::ArithmeticOverflow)?;
+                let mut writer = MatchSourceWriter::new(MatchHash(blake3::Hasher::new()));
+                let encoded = program.source.write_semantic(&mut writer);
+                let hash = writer
+                    .finish(encoded)
+                    .map_err(|_| Error::ArithmeticOverflow)?
+                    .0
+                    .finalize();
+                let admission =
+                    CheckedViewMatchAdmissionDigest::for_match_semantic_transcript(hash.as_bytes());
+                if sites.insert(site, admission).is_some() {
+                    return Err(Error::DuplicateBinding);
+                }
+            }
+        }
+        Ok(sites)
+    }
+
     pub fn task_plan_binding(
         &self,
         coordinate: &RuntimeTaskPlanBuildCoordinate,
@@ -153,35 +358,7 @@ impl ValidatedViewTaskPlanBindings {
         {
             return Err(Error::CoordinateOwnerMismatch);
         }
-        let mut budget = MatchSourceMaterializationBudget::new(limits.match_source_bytes);
-        for instruction in &current.resource().instructions {
-            if let ViewProgramInstruction::Match { program, .. } = instruction {
-                program
-                    .source
-                    .preflight_source(&mut budget)
-                    .map_err(source_storage_error)?;
-            }
-        }
-        preflight_hash_work(current, work, limits.validation_work)?;
-        let mut sites = BTreeMap::new();
-        for instruction in &current.resource().instructions {
-            if let ViewProgramInstruction::Match { program, .. } = instruction {
-                let site = ViewMatchSiteId::for_source_coordinate(program.source.coordinate())
-                    .map_err(|_| Error::ArithmeticOverflow)?;
-                let mut writer = MatchSourceWriter::new(MatchHash(blake3::Hasher::new()));
-                let encoded = program.source.write_semantic(&mut writer);
-                let hash = writer
-                    .finish(encoded)
-                    .map_err(|_| Error::ArithmeticOverflow)?
-                    .0
-                    .finalize();
-                let admission =
-                    CheckedViewMatchAdmissionDigest::for_match_semantic_transcript(hash.as_bytes());
-                if sites.insert(site, admission).is_some() {
-                    return Err(Error::DuplicateBinding);
-                }
-            }
-        }
+        let sites = current.task_plan_sites(work, limits)?;
         #[expect(
             clippy::mutable_key_type,
             reason = "Coordinate equality/order use only immutable original issuer identity and ordinal; sealed publication never changes either."
@@ -228,13 +405,7 @@ impl ViewTaskPlanAuthority for ValidatedViewProgramResource {
         &self,
         request: ViewTaskPlanDigestRequest<'_>,
     ) -> Result<TaskPlanSemanticDigest, Error> {
-        let bindings = self.task_bindings.get().ok_or(Error::StaleAuthority)?;
-        if &bindings.program != self.program_id()
-            || bindings.revision != self.accepted_revision()
-            || bindings.source_set != self.source_set_revision()
-        {
-            return Err(Error::StaleAuthority);
-        }
+        let bindings = self.current_task_bindings()?;
         let base = request.base();
         let binding =
             bindings
@@ -243,6 +414,36 @@ impl ViewTaskPlanAuthority for ValidatedViewProgramResource {
                 .ok_or_else(|| Error::MissingBinding {
                     coordinate: base.coordinate().clone(),
                 })?;
+        self.complete_task_plan(binding.site(), binding.admission(), request)
+    }
+}
+
+impl ViewTaskPlanAuthority for ViewTaskPlanSourceAuthority<'_> {
+    fn task_plan_semantic_digest(
+        &self,
+        request: ViewTaskPlanDigestRequest<'_>,
+    ) -> Result<TaskPlanSemanticDigest, Error> {
+        let expected = request
+            .base()
+            .expected_key()
+            .ok_or(Error::ExpectedSourceAssertion)?;
+        let binding = self
+            .rows
+            .get(expected)
+            .ok_or(Error::MissingOriginalBinding)?;
+        self.program
+            .complete_task_plan(binding.site, binding.admission, request)
+    }
+}
+
+impl ValidatedViewProgramResource {
+    fn complete_task_plan(
+        &self,
+        site: ViewMatchSiteId,
+        admission: CheckedViewMatchAdmissionDigest,
+        request: ViewTaskPlanDigestRequest<'_>,
+    ) -> Result<TaskPlanSemanticDigest, Error> {
+        let base = request.base();
         if base.binding_marker() != RuntimeTaskSemanticBindingKind::View {
             return Err(Error::ExpectedViewMarker);
         }
@@ -261,12 +462,12 @@ impl ViewTaskPlanAuthority for ValidatedViewProgramResource {
         hash.update(base.request_template_digest().as_bytes());
         hash.update(base.control_effect_contract_digest().as_bytes());
         hash.update(&[1]);
-        let program = binding.program_id().as_str().as_bytes();
+        let program = self.program_id().as_str().as_bytes();
         let length = u32::try_from(program.len()).map_err(|_| Error::ArithmeticOverflow)?;
         hash.update(&length.to_le_bytes());
         hash.update(program);
-        hash.update(binding.site().as_bytes());
-        hash.update(binding.admission().as_bytes());
+        hash.update(site.as_bytes());
+        hash.update(admission.as_bytes());
         Ok(request.finish_authority_transcript(hash))
     }
 }

@@ -42,6 +42,7 @@ pub struct PreparedViewProgramReplacement {
 
 #[derive(Clone)]
 struct ExpectedViewRuntimeState {
+    program_runtime: super::ViewProgramRuntimeAuthority,
     program: ViewProgramId,
     revision: AcceptedViewProgramRevision,
     source_revision: SourceSetRevision,
@@ -63,11 +64,13 @@ enum PreparedViewPublication {
 }
 
 struct PreparedSourceOnlyPublication {
+    program_runtime: super::ViewProgramRuntimeAuthority,
     product: ValidatedViewProduct,
     catalog: ViewProgramCatalog,
 }
 
 struct PreparedSemanticPublication {
+    program_runtime: super::ViewProgramRuntimeAuthority,
     product: ValidatedViewProduct,
     catalog: ViewProgramCatalog,
     registry: ViewRegistry,
@@ -94,6 +97,8 @@ pub enum ViewProgramReplacementOutcome {
 /// Failure to prepare or atomically publish a View-program replacement.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ViewProgramReplacementError {
+    #[error(transparent)]
+    Admission(#[from] super::ViewProgramAdmissionError),
     #[error("replacement program identity does not match the accepted program")]
     ProgramIdentityMismatch,
     #[error("replacement changes the accepted native Style program")]
@@ -165,6 +170,17 @@ impl BundleViewRuntime {
             .catalog
             .as_ref()
             .ok_or(ViewProgramReplacementError::ProgramIdentityMismatch)?;
+        let candidate_runtime = match &self.program_runtime {
+            super::ViewProgramRuntimeAuthority::CoreProgramFree => {
+                super::ViewProgramRuntimeAuthority::CoreProgramFree
+            }
+            super::ViewProgramRuntimeAuthority::Awbc(awbc) => {
+                super::ViewProgramRuntimeAuthority::Awbc(Self::admit_awbc_program(
+                    &candidate,
+                    awbc.program_arc(),
+                )?)
+            }
+        };
         let candidate_catalog = match &self.program_runtime {
             super::ViewProgramRuntimeAuthority::CoreProgramFree => {
                 ViewProgramCatalog::try_from_validated(&candidate, self.text.as_ref())?
@@ -195,6 +211,7 @@ impl BundleViewRuntime {
                 candidate,
                 candidate_catalog,
                 expected,
+                candidate_runtime,
             ));
         }
 
@@ -242,6 +259,7 @@ impl BundleViewRuntime {
         Ok(PreparedViewProgramReplacement {
             expected,
             candidate: PreparedViewPublication::Semantic(Box::new(PreparedSemanticPublication {
+                program_runtime: candidate_runtime,
                 product: candidate,
                 catalog: candidate_catalog,
                 registry,
@@ -262,6 +280,7 @@ impl BundleViewRuntime {
         candidate: ValidatedViewProduct,
         candidate_catalog: ViewProgramCatalog,
         expected: ExpectedViewRuntimeState,
+        program_runtime: super::ViewProgramRuntimeAuthority,
     ) -> PreparedViewProgramReplacement {
         let source_or_provenance_changed = current.source_revision()
             != candidate_catalog.source_revision()
@@ -273,6 +292,7 @@ impl BundleViewRuntime {
         let (candidate, outcome) = if source_or_provenance_changed {
             (
                 PreparedViewPublication::SourceOnly(Box::new(PreparedSourceOnlyPublication {
+                    program_runtime,
                     product: candidate,
                     catalog: candidate_catalog,
                 })),
@@ -302,6 +322,7 @@ impl BundleViewRuntime {
         match prepared.candidate {
             PreparedViewPublication::Unchanged => {}
             PreparedViewPublication::SourceOnly(publication) => {
+                self.program_runtime = publication.program_runtime;
                 self.style_program = publication
                     .product
                     .style()
@@ -311,6 +332,7 @@ impl BundleViewRuntime {
             }
             PreparedViewPublication::Semantic(publication) => {
                 let PreparedSemanticPublication {
+                    program_runtime,
                     product,
                     catalog,
                     registry,
@@ -322,6 +344,7 @@ impl BundleViewRuntime {
                     invalidation,
                 } = *publication;
                 self.style_program = product.style().map(|style| style.program().clone());
+                self.program_runtime = program_runtime;
                 self.product = product;
                 self.catalog = Some(catalog);
                 self.registry = registry;
@@ -354,6 +377,7 @@ impl BundleViewRuntime {
 
     fn expected_replacement_state(&self, catalog: &ViewProgramCatalog) -> ExpectedViewRuntimeState {
         ExpectedViewRuntimeState {
+            program_runtime: self.program_runtime.clone(),
             program: catalog.program_id().clone(),
             revision: catalog.revision(),
             source_revision: catalog.source_revision(),
@@ -373,7 +397,19 @@ impl BundleViewRuntime {
         let Some(catalog) = &self.catalog else {
             return false;
         };
-        catalog.program_id() == &expected.program
+        let same_executable = match (&self.program_runtime, &expected.program_runtime) {
+            (
+                super::ViewProgramRuntimeAuthority::CoreProgramFree,
+                super::ViewProgramRuntimeAuthority::CoreProgramFree,
+            ) => true,
+            (
+                super::ViewProgramRuntimeAuthority::Awbc(left),
+                super::ViewProgramRuntimeAuthority::Awbc(right),
+            ) => std::sync::Arc::ptr_eq(&left.program_arc(), &right.program_arc()),
+            _ => false,
+        };
+        same_executable
+            && catalog.program_id() == &expected.program
             && catalog.revision() == expected.revision
             && catalog.source_revision() == expected.source_revision
             && self

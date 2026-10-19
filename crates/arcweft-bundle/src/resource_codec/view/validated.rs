@@ -222,6 +222,22 @@ impl ValidatedViewProduct {
         &self.source_map
     }
 
+    /// Publishes artifact assertions only after every original Core task slot
+    /// has sealed. The original construction bindings remain immutable.
+    pub fn seal_task_plan_bindings(
+        &self,
+        limits: ViewProductValidationLimits,
+    ) -> Result<(), arcweft_core::task::ViewTaskPlanValidationError> {
+        let Some(program) = self.program.as_ref() else {
+            return Ok(());
+        };
+        if program.resource().task_plan_bindings.is_published() {
+            return Err(arcweft_core::task::ViewTaskPlanValidationError::AuthorityAlreadyBound);
+        }
+        let assertions = program.sealed_task_plan_assertions(limits)?;
+        program.resource().task_plan_bindings.publish(assertions)
+    }
+
     pub fn program(&self) -> Option<&ValidatedViewProgramResource> {
         self.program.as_deref()
     }

@@ -36,7 +36,7 @@ use arcweft_bundle::resource_codec::{
     ViewValueInputSource,
 };
 use arcweft_core::{
-    awbc::product_step::evaluate_pure_program_with_backend,
+    awbc::product_step::evaluate_admitted_pure_program_with_backend,
     pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
     task::RuntimeProgramOwner,
     value::{
@@ -874,7 +874,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     )
                     .map_err(|error| failure(error.to_string()))?;
             } else {
-                let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+                let owner = RuntimeProgramOwner::Awbc(program.program_arc());
                 for (parameter, value) in supplied {
                     value
                         .validate_unrestricted_typed_for_program_with_limits(
@@ -1146,7 +1146,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let ViewProgramRuntimeAuthority::Awbc(program) = self.program_runtime else {
             return Err(failure("no admitted Core program authority".to_owned()));
         };
-        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program));
+        let owner = RuntimeProgramOwner::Awbc(program.program_arc());
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
@@ -1183,7 +1183,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             )
         };
         if let Some(cached) = mounted.expression_evaluations.get(&expression.program)
-            && std::sync::Arc::ptr_eq(&cached.owner, program)
+            && std::sync::Arc::ptr_eq(&cached.owner, &program.program_arc())
             && cached.program == expression.program
             && cached.inputs.as_ref() == snapshots.as_slice()
         {
@@ -1212,8 +1212,8 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 .map_err(budget_failure)?;
         }
         let mut executor =
-            arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
-                std::sync::Arc::clone(program),
+            arcweft_core::awbc::product_step::AwbcProductStepExecutor::for_admitted_program_invocation(
+                program.clone(),
                 expression.program,
                 inputs,
                 arcweft_core::task::GenerationId::new(0),
@@ -1283,7 +1283,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         mounted.expression_evaluations.insert(
             expression.program,
             super::MountedViewExpressionEvaluation {
-                owner: std::sync::Arc::clone(program),
+                owner: program.program_arc(),
                 program: expression.program,
                 inputs: snapshots.into_boxed_slice(),
                 type_instantiation,
@@ -1336,7 +1336,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             }),
             None => value
                 .validate_unrestricted_typed_for_program_with_limits(
-                    &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+                    &RuntimeProgramOwner::Awbc(program.program_arc()),
                     parameter.semantic_type,
                     arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
                 )
@@ -1965,7 +1965,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         };
                         value
                             .copy_unrestricted_typed_for_program_with_limits(
-                                &RuntimeProgramOwner::Awbc(std::sync::Arc::clone(program)),
+                                &RuntimeProgramOwner::Awbc(program.program_arc()),
                                 expected,
                                 arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
                             )
@@ -2485,7 +2485,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             ));
         }
 
-        let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
+        let program_owner = RuntimeProgramOwner::Awbc(awbc.program_arc());
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
             program_owner.clone(),
             arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
@@ -2560,7 +2560,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     .ok_or_else(|| failure("View handler seal revision is exhausted".to_owned()))?;
                 let publication = match accepted.result().role() {
                     arcweft_view::ViewHandlerResultRole::DialogueAction => {
-                        let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
+                        let program_owner = RuntimeProgramOwner::Awbc(awbc.program_arc());
                         let arguments = capture_snapshots
                             .iter()
                             .map(|input| {
@@ -2573,7 +2573,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             })
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(|error| failure(error.to_string()))?;
-                        let value = evaluate_pure_program_with_backend(
+                        let value = evaluate_admitted_pure_program_with_backend(
                             awbc,
                             program_id,
                             &arguments,

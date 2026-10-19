@@ -3881,8 +3881,8 @@ fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
             let mut product_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
             assert_eq!(
                 selected,
-                arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
-                    &awbc,
+                arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
+                    &admit_view_awbc(&compiled, Arc::clone(&awbc)),
                     selection.execution.program,
                     &core_inputs,
                     &mut product_backend
@@ -4414,8 +4414,8 @@ view Main(reverse: bool) {
         let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
         assert_eq!(
             values,
-            arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
-                &awbc,
+            arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
+                &admit_view_awbc(&compiled, Arc::clone(&awbc)),
                 repeat.source.execution.program,
                 &core_inputs,
                 &mut backend
@@ -5702,13 +5702,14 @@ view Main() {
         }
     }
     let native_result = native_result.expect("native transition must terminate");
-    let decoded_result = arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
-        &awbc,
-        program,
-        &[initial],
-        &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
-    )
-    .unwrap();
+    let decoded_result =
+        arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
+            &admit_view_awbc(&compiled, Arc::clone(&awbc)),
+            program,
+            &[initial],
+            &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+        )
+        .unwrap();
     let arcweft_core::value::RuntimeValue::Tuple(outputs) = &decoded_result else {
         panic!("transition must return its publication tuple");
     };
@@ -6036,4 +6037,30 @@ fn view_match_catalog_distinguishes_equal_authored_sites_in_one_program() {
         )
         .unwrap();
     }
+}
+
+fn admit_view_awbc(
+    compiled: &CompiledProject,
+    awbc: std::sync::Arc<arcweft_core::awbc::schema::AwbcProgram>,
+) -> arcweft_core::awbc::product_step::AwbcProductProgram {
+    let authority = compiled
+        .view_product()
+        .product()
+        .program()
+        .map(|program| program.task_source_authority(ViewProductValidationLimits::default()))
+        .transpose()
+        .unwrap();
+    arcweft_core::awbc::product_step::AwbcProductProgram::admit(
+        awbc,
+        arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+        arcweft_core::awbc::verify::AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+        authority
+            .as_ref()
+            .map(|authority| authority as &dyn arcweft_core::task::ViewTaskPlanAuthority),
+    )
+    .unwrap()
 }

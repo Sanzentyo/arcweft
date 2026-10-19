@@ -17,7 +17,10 @@ mod semantic;
 mod style_contract;
 mod task_plans;
 mod validated;
-pub use task_plans::{ValidatedViewTaskPlanBinding, ViewTaskPlanBindingSource};
+pub use task_plans::{
+    ValidatedViewTaskPlanBinding, ViewTaskPlanAssertions, ViewTaskPlanBindingAssertion,
+    ViewTaskPlanBindingSource, ViewTaskPlanSourceAuthority,
+};
 
 pub use codec::{
     ViewExportValidationError, ViewResourceBudget, ViewResourceExport,

@@ -1022,6 +1022,9 @@ where
                 )
             })?;
 
+            view_product.seal_runtime_task_plans(arcweft_bundle::resource_codec::ViewProductValidationLimits::default())
+                .map_err(|error| linked_error(ProjectCompileStage::ViewLower, [error.diagnostic()]))?;
+
             Ok(CompiledProject {
                 analysis: Arc::clone(&analysis),
                 verification,

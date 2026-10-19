@@ -20717,3 +20717,95 @@ on 2026-10-19 at 06:32:01 UTC, removing 303332 files and 371.1 GiB. Its recorded
 8321 source hashes, path inventory, Git HEAD and status were unchanged. This
 continuation verified that receipt and did not run another clean or move/copy
 build artifacts.
+
+### 2026-10-20 — connect View link assertions to the admitted AWBC owner
+
+Inspected main at `9131a776bc9d25beb20653e7b02b7b0c295ddfee`, the published
+evidence checkpoint. Fourteen tracked and three untracked held paths remain
+outside this cut. The preceding turn made progress by recovering current owner
+execution and publishing its actual evidence. The full goal remains active.
+
+The actual View failures have two connected causes: Product construction passes
+no upper View authority to complete original Source admission, and a decoded
+Source issues fresh coordinates which cannot use the original construction
+authority. The latter remains deliberately strict. The common View completion
+request now exposes an optional inert expected-key locator only for Source
+decoding. Construction still requires its exact original coordinates; decoded
+assertions do not rebind that authority or issue a Core task key.
+
+The compiler publishes link assertions into the View resource only after every
+original Core slot has sealed. Each assertion retains the original completed
+expected key and its accepted View site/admission identity. The publication is
+one shared OnceLock of inert rows, including across resource clones, so linking
+does not clone the retained View/Match source graph. These generated assertions
+are excluded from the existing accepted View semantic transcript. The compact
+resource count and metadata budget include their rows. Contract domains and
+versions remain 1; no legacy reader or ordinal-based Source reconstruction is
+introduced.
+
+The decoded authority preflights the complete current Match source set and its
+hash work, checks canonical expected-key order and exact site/admission coverage,
+then builds a bounded lookup index over borrowed inert rows. Both construction
+and Source admission use the same existing upper completion transcript. Core
+still computes E/F/Q/C, verifies the one-use capability completion and compares
+the expected final key before publishing any completed table. Expected bytes
+are a locator/assertion, never the supplied live key.
+
+AwbcProductProgram now owns the actual verified AWBC Arc and its admitted
+original Source lease. View construction admits that complete pair before frame
+input projection; evaluation and handler dispatch reuse it. The ordinary pure
+entry delegates to the same admitted-program implementation and performs Source
+admission before argument copies. Owned restore and continuation rollback retain
+the original admitted pair instead of constructing a Source-free shell. View
+replacement admits the candidate pair before publication, retains it in the
+prepared candidate and checks the original executable lease for stale commit.
+No fixture body, fake Native owner, new allowance, capture/copy weakening or
+backend-specific fallback is added.
+
+New real-project coverage exercises complete Core Source plus compact View
+resource round trips, fresh coordinate namespaces, strict construction-authority
+rejection during decoding, exact source/index resource limits, changed-product
+rejection, missing/duplicate/foreign assertion admission and owned Product
+restore with retained original Source. Existing direct View pure-program tests
+use their actual compiled View authority. These are implemented cases, not
+passed execution evidence at this intermediate publication.
+
+R1646 ended with Cargo exit 101 after reporting that the previously compiled
+Bundle interface lacked seal_task_plan_bindings. Source edits continued during
+that initial catalogue build; it is mixed-source investigation, not acceptance
+or a claimed current-source regression result. R1647 is the fresh stable-source
+catalogue over the five affected owners, their library targets and the actual
+View/parity integration binaries. It is still running at this checkpoint;
+record its actual receipt and case selection before executing those binaries.
+The code inputs are frozen under task-view-source-authority-20261020-candidate;
+this note/publication changes no Cargo/Rust inputs to that catalogue.
+
+R1648 structural auditing passed with exit 0: 3153 files, 3023 Rust files,
+1717569 Rust physical lines, 97 packages, 376 review triggers, zero blocking
+violations. Relevant bytes/physical-lines/embedded-test-lines:
+admission.rs 1777/56/0, product_step.rs 227248/5648/0, program.rs 12452/302/0,
+snapshot.rs 169839/4024/180, Bundle task_plans.rs 19693/543/0, Driver
+view_runtime.rs 81474/2058/0, evaluator.rs 117776/2746/0, Compiler
+view_product.rs 235056/6066/0 and its match_source.rs 26105/710/0.
+The new admission module owns the immutable executable/Source pair. Existing
+Product activation and snapshot owners retain that pair at their actual
+transaction boundaries. Bundle task_plans owns the construction/source roles of
+one View capability and shares its source/transcript law; Driver owns runtime
+and prepared publication state. New source-contract tests live with the existing
+Match source integration owner rather than extending the large View test root
+with another independent suite. No Cargo edge changes; the retained resolved
+graph and all 99 manifest/lock inputs remain unchanged, with Core reverse closure
+53 and held drift zero.
+
+Current compilation/execution, affected all-target Clippy and downstream evidence
+are pending. This intermediate commit follows the user's explicit instruction
+to commit/push accumulated work without first proving every intermediate state
+operational. Fix actual change-caused failures and continue the same goal after
+publication. In particular, all four observed View regressions still require
+current execution, along with Bundle codec/validation and Driver replacement
+coverage. The final public Source/instance switch, invocation-sensitive outcomes,
+genuine standalone/autonomous owners, all fourteen request kinds, complete View
+operation/slot/capture integration, Presentation and every preceding full
+acceptance requirement remain outstanding. Additional raw entry/Flow/host
+consumers still need the same admitted owner during that public migration; this
+cut does not declare those None-authority paths complete.

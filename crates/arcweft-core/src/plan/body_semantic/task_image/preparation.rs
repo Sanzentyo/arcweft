@@ -194,6 +194,7 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
                 let children = &self.rows.tasks[ordinal];
                 let request = invocation.request(
                     children.row,
+                    self.image.expected_key(ordinal),
                     self.rows.executable,
                     children.function,
                     children.request,

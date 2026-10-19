@@ -302,6 +302,14 @@ impl CompiledViewProduct {
         &self.product
     }
 
+    pub(crate) fn seal_runtime_task_plans(
+        &self,
+        limits: ViewProductValidationLimits,
+    ) -> Result<(), ViewProjectLowerError> {
+        self.product.seal_task_plan_bindings(limits)?;
+        Ok(())
+    }
+
     pub const fn text(&self) -> Option<&ViewTextResource> {
         self.text.as_ref()
     }

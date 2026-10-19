@@ -4,7 +4,9 @@
 //! the shared `RuntimeStepResult` boundary. It is Sans I/O: every host action is
 //! returned as typed data and no structured bytecode fallback is reachable.
 
+mod admission;
 mod audio;
+pub use admission::AwbcProductProgram;
 mod control;
 mod dialogue;
 mod execution;
@@ -97,6 +99,29 @@ pub fn evaluate_pure_program_with_backend(
     args: &[RuntimeValue],
     backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
+    let admitted = AwbcProductProgram::admit(
+        Arc::clone(program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..AwbcVerifyContext::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .map_err(|error| crate::awbc::vm::VmError::Runtime(error.to_string()))?;
+    evaluate_admitted_pure_program_with_backend(&admitted, pure_program, args, backend)
+}
+
+/// Executes through an already admitted executable/Source lease. This is the
+/// same invocation and result boundary as standalone pure-program evaluation.
+pub fn evaluate_admitted_pure_program_with_backend(
+    admitted: &AwbcProductProgram,
+    pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
+    args: &[RuntimeValue],
+    backend: &mut impl RuntimeCallBackend,
+) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
+    let program = &admitted.program;
     let binding = program.pure_program_binding(pure_program).ok_or_else(|| {
         crate::awbc::vm::VmError::Runtime(format!(
             "missing verified AWBC pure program {pure_program}"
@@ -143,8 +168,8 @@ pub fn evaluate_pure_program_with_backend(
         }
     }
     backend.record_awbc_pure_program_call();
-    let mut executor = AwbcProductStepExecutor::for_program_invocation(
-        Arc::clone(program),
+    let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
+        admitted.clone(),
         pure_program,
         args.to_vec(),
         GenerationId::new(0),
@@ -1816,8 +1841,8 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
-            Arc::clone(&program),
+        let admitted = AwbcProductProgram::admit(
+            program,
             AwbcVerifyBudget::default(),
             AwbcVerifyContext {
                 require_entrypoint: origin.entry().is_some(),
@@ -1825,10 +1850,21 @@ impl AwbcProductStepExecutor {
             },
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
-        )
-        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-            message: error.to_string(),
-        })?;
+        )?;
+        Self::for_admitted_root(admitted, origin, budget_quantum, generation, proof)
+    }
+
+    fn for_admitted_root(
+        admitted: AwbcProductProgram,
+        origin: crate::awbc::fiber::AwbcFiberRoot,
+        budget_quantum: u64,
+        generation: GenerationId,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let AwbcProductProgram {
+            program,
+            task_source,
+        } = admitted;
         let template = program
             .validated_plain_text_context_template()
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {

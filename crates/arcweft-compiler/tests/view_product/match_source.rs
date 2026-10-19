@@ -26,6 +26,38 @@ impl arcweft_core::pattern::MatchSourceSink for SourceByteCount {
     }
 }
 
+fn exact_binding_limits(compiled: &CompiledProject) -> ViewProductValidationLimits {
+    use arcweft_core::pattern::{CanonicalMatchSource, MatchSourceWriter};
+    let program = compiled.view_product().product().program().unwrap();
+    let mut storage = MatchSourceMaterializationBudget::new(u64::MAX);
+    let mut writer = MatchSourceWriter::new(SourceByteCount);
+    for instruction in &program.resource().instructions {
+        if let ViewProgramInstruction::Match { program, .. } = instruction {
+            program.source.preflight_source(&mut storage).unwrap();
+            writer.extend_from_slice(arcweft_view::ViewMatchSiteId::DOMAIN);
+            program
+                .source
+                .coordinate()
+                .write_source(&mut writer)
+                .unwrap();
+            program.source.write_semantic(&mut writer).unwrap();
+            writer.extend_from_slice(arcweft_view::CheckedViewMatchAdmissionDigest::DOMAIN);
+            writer.extend_from_slice(&[0; 32]);
+        }
+    }
+    let bytes = writer.byte_len();
+    writer.finish(Ok(())).unwrap();
+    ViewProductValidationLimits {
+        validation_work: u64::try_from(
+            program.task_plan_bindings().count() * 2 + program.resource().instructions.len(),
+        )
+        .unwrap()
+            + bytes,
+        match_source_bytes: storage.used_bytes(),
+        ..ViewProductValidationLimits::default()
+    }
+}
+
 #[test]
 fn view_binding_limits_cover_all_source_bytes_and_failure_leaves_the_slot_unbound() {
     use arcweft_core::pattern::{CanonicalMatchSource, MatchSourceWriter};
@@ -147,6 +179,233 @@ fn view_task_bindings_resolve_only_in_the_original_completed_core_plan() {
                 .is_none()
         );
     }
+}
+
+#[test]
+fn decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace() {
+    use arcweft_core::plan::{
+        RuntimeTaskPlanSealError, RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactLimits,
+    };
+
+    let compiled = compile();
+    let plan = &compiled.runtime_plan().plan;
+    let view = compiled.view_product().product().program().unwrap();
+    let limits = RuntimeTaskSourceArtifactLimits::default();
+    let artifact = plan.task_source_artifact(limits).unwrap();
+    let bytes = serde_json::to_vec(&artifact).unwrap();
+    let artifact: RuntimeTaskSourceArtifact = serde_json::from_slice(&bytes).unwrap();
+
+    assert!(matches!(
+        artifact.admit(limits, None).unwrap_err().seal_error(),
+        Some(RuntimeTaskPlanSealError::MissingViewAuthority { .. })
+    ));
+    // The construction authority remains tied to its original coordinates.
+    assert!(matches!(
+        artifact.admit(limits, Some(view)).unwrap_err().seal_error(),
+        Some(RuntimeTaskPlanSealError::ViewAuthority {
+            source: ViewTaskPlanValidationError::MissingBinding { .. },
+            ..
+        })
+    ));
+
+    let authority = view
+        .task_source_authority(ViewProductValidationLimits::default())
+        .unwrap();
+    let decoded = artifact.admit(limits, Some(&authority)).unwrap();
+    assert_eq!(
+        plan.executable_semantic_digest(),
+        decoded.executable_semantic_digest()
+    );
+    let keys = |plan: &arcweft_core::plan::RuntimePlan| {
+        (0..plan.task_plans().len())
+            .map(|index| {
+                plan.task_plans()
+                    .by_index(arcweft_core::plan::RuntimeTaskPlanIndex(
+                        u32::try_from(index).unwrap(),
+                    ))
+                    .unwrap()
+                    .key()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(keys(plan), keys(&decoded));
+    for binding in view.task_plan_bindings() {
+        assert!(plan.task_plan(binding.coordinate()).is_some());
+        assert!(decoded.task_plan(binding.coordinate()).is_none());
+    }
+    // The same accepted original bindings can check another complete decode;
+    // neither successful admission mutates the original construction authority.
+    artifact.admit(limits, Some(&authority)).unwrap();
+
+    let resource = arcweft_bundle::resource_codec::ViewProgramResource::decode_canonical_section(
+        &view.resource().encode_canonical_section().unwrap(),
+    )
+    .unwrap();
+    let decoded_product = ValidatedViewProduct::try_new(
+        Some(compiled.view_product().product().source_map().clone()),
+        Some(resource),
+        compiled
+            .view_product()
+            .product()
+            .style()
+            .map(|style| style.resource().clone()),
+        ViewProductValidationLimits::default(),
+    )
+    .unwrap();
+    let decoded_view = decoded_product.program().unwrap();
+    assert_eq!(decoded_view.task_plan_bindings().count(), 0);
+    assert_eq!(decoded_view.accepted_revision(), view.accepted_revision());
+    let decoded_authority = decoded_view
+        .task_source_authority(ViewProductValidationLimits::default())
+        .unwrap();
+    artifact.admit(limits, Some(&decoded_authority)).unwrap();
+}
+
+#[test]
+fn decoded_view_source_binding_index_is_bounded_and_rejects_a_changed_product() {
+    let compiled = compile();
+    let view = compiled.view_product().product().program().unwrap();
+    let exact = exact_binding_limits(&compiled);
+    assert!(matches!(
+        view.task_source_authority(ViewProductValidationLimits {
+            validation_work: exact.validation_work - 1,
+            ..exact
+        }),
+        Err(ViewTaskPlanValidationError::WorkLimitExceeded)
+    ));
+    view.task_source_authority(exact).unwrap();
+
+    let changed = project_view_fixture(
+        "view Main(enabled: bool = true) { match enabled { true => Text(\"changed\"), false => Text(\"no\") }; }",
+        "arcweft-test://retained-match-source",
+    )
+    .compile()
+    .unwrap();
+    let authority = changed
+        .view_product()
+        .product()
+        .program()
+        .unwrap()
+        .task_source_authority(ViewProductValidationLimits::default())
+        .unwrap();
+    let limits = arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default();
+    let artifact = compiled
+        .runtime_plan()
+        .plan
+        .task_source_artifact(limits)
+        .unwrap();
+    assert!(matches!(
+        artifact
+            .admit(limits, Some(&authority))
+            .unwrap_err()
+            .seal_error(),
+        Some(
+            arcweft_core::plan::RuntimeTaskPlanSealError::ViewAuthority {
+                source: ViewTaskPlanValidationError::MissingOriginalBinding,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn view_source_assertions_reject_missing_duplicate_and_foreign_admissions() {
+    let compiled = compile();
+    let product = compiled.view_product().product();
+    let view = product.program().unwrap();
+    let original = serde_json::to_value(view.resource()).unwrap();
+    for forgery in 0..4 {
+        let mut candidate = original.clone();
+        let rows = candidate["task_plan_bindings"].as_array_mut().unwrap();
+        assert_eq!(rows.len(), 2);
+        match forgery {
+            0 => {
+                rows.pop();
+            }
+            1 => {
+                rows[0]["expected"] = rows[1]["expected"].clone();
+            }
+            2 => {
+                rows[0]["admission"] = rows[1]["admission"].clone();
+            }
+            _ => {
+                rows.clear();
+            }
+        }
+        let resource = serde_json::from_value(candidate).unwrap();
+        let candidate = ValidatedViewProduct::try_new(
+            Some(product.source_map().clone()),
+            Some(resource),
+            product.style().map(|style| style.resource().clone()),
+            ViewProductValidationLimits::default(),
+        )
+        .unwrap();
+        assert!(
+            candidate
+                .program()
+                .unwrap()
+                .task_source_authority(ViewProductValidationLimits::default())
+                .is_err(),
+            "forgery {forgery}"
+        );
+    }
+    assert!(matches!(
+        product.seal_task_plan_bindings(ViewProductValidationLimits::default()),
+        Err(ViewTaskPlanValidationError::AuthorityAlreadyBound)
+    ));
+}
+
+#[test]
+fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
+    use arcweft_core::awbc::product_step::AwbcProductStepExecutor;
+    use arcweft_core::value::RuntimeValue;
+    use std::sync::Arc;
+
+    let compiled = super::project_view_fixture_with_entry(
+        "entry cli @entry.main { goto @flow.main } flow main() -> String { return \"done\" } view Main(enabled: bool = true) { match enabled { true => Text(\"yes\"), false => Text(\"no\") }; }",
+        "arcweft-test://view-source-owned-restore",
+    ).compile().unwrap();
+    let code = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let code = Arc::new(
+        arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &code.encode_canonical().unwrap(),
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .unwrap(),
+    );
+    let admitted = super::admit_view_awbc(&compiled, Arc::clone(&code));
+    let program = matches(&compiled)[0].execution.program;
+    let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
+        admitted,
+        program,
+        vec![RuntimeValue::Bool(true)],
+        arcweft_core::task::GenerationId::new(0),
+        64,
+    )
+    .unwrap();
+    let saved = executor.snapshot().unwrap();
+    executor = executor
+        .restore_snapshot_owned(saved)
+        .unwrap_or_else(|(_, error)| panic!("{error}"));
+    let output = executor.step(Default::default(), Default::default());
+    assert!(output.output.diagnostics.is_empty(), "{output:?}");
+    let saved = executor.snapshot().unwrap();
+    executor = executor
+        .restore_snapshot_owned(saved)
+        .unwrap_or_else(|(_, error)| panic!("{error}"));
+    let (_, result) = executor.take_program_result().unwrap().unwrap();
+    assert_eq!(
+        result,
+        RuntimeValue::Tuple(vec![RuntimeValue::u32(0), RuntimeValue::Unit])
+    );
+    assert!(Arc::ptr_eq(&executor.program_arc(), &code));
 }
 
 #[test]
