@@ -6,11 +6,12 @@ use crate::native_task::{
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterManifest, BundleArtifactIdentity, BundleImageAnimation,
-    BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
+    AdmittedBundleProgram, ArcweftBundle, BundleAdapterManifest, BundleArtifactIdentity,
+    BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleKind,
+    BundleVirtualFile,
 };
 use arcweft_core::awbc::{
-    product_step::{AwbcProductProgram, AwbcProductStepBuildError},
+    product_step::AwbcProductStepBuildError,
     schema::{AwbcEntryId, AwbcProgram},
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
@@ -420,7 +421,7 @@ fn run_bundle_runner_phase<T>(
 }
 
 struct BundleRunnerRuntimeProgram {
-    program: AwbcProductProgram,
+    program: AdmittedBundleProgram,
     entry: AwbcEntryId,
 }
 
@@ -431,7 +432,7 @@ fn bundle_runner_runtime_program(
     let program = bundle
         .admit_runtime_program()
         .map_err(BundleRunnerError::ProgramAdmission)?;
-    let entry = selected_awbc_entry(&program, bundle, options)?;
+    let entry = selected_awbc_entry(program.program(), bundle, options)?;
     Ok(BundleRunnerRuntimeProgram { program, entry })
 }
 
@@ -640,16 +641,17 @@ impl RuntimeExecutorInstance {
         program: BundleRunnerRuntimeProgram,
         active_locale: LocaleTag,
     ) -> Result<Self, BundleRunnerError> {
-        let mut pure = RuntimePureAccelerator::with_awbc_program(
-            RuntimePureAcceleratorConfig::default(),
-            program.program.clone(),
-        );
+        let (executable, plain_text_context) = program.program.into_parts();
         let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
-            program.program,
+            executable.clone(),
             program.entry,
             GenerationId::new(0),
-            None,
+            plain_text_context,
         )?;
+        let mut pure = RuntimePureAccelerator::with_awbc_program(
+            RuntimePureAcceleratorConfig::default(),
+            executable,
+        );
         let format_context = RuntimeFormatContext::new(active_locale);
         executor.set_format_context(format_context.clone());
         pure.set_format_context(format_context);

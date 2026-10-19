@@ -10,6 +10,7 @@ pub mod logical_identity;
 pub mod patch;
 mod product;
 pub mod product_awbc;
+pub use product_awbc::AdmittedBundleProgram;
 pub mod release;
 pub mod resource_codec;
 pub mod resource_type_manifests;
@@ -920,11 +921,10 @@ impl ArcweftBundle {
 
     /// Admits the exact executable and its original Source against this
     /// bundle's complete View product. Callers retain the returned authority.
-    pub fn admit_runtime_program(
-        &self,
-    ) -> Result<arcweft_core::awbc::product_step::AwbcProductProgram, BundleCodecError> {
-        let product = self.validate_schema_and_kind()?;
-        Ok(product.admit_awbc_program(self.product_awbc.program_lease())?)
+    pub fn admit_runtime_program(&self) -> Result<AdmittedBundleProgram, BundleCodecError> {
+        let (product, plain_text_context) = self.validate_schema_and_kind()?;
+        let program = product.admit_awbc_program(self.product_awbc.program_lease())?;
+        Ok(AdmittedBundleProgram::new(program, plain_text_context))
     }
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
@@ -1381,7 +1381,15 @@ impl ArcweftBundle {
         .map_err(Into::into)
     }
 
-    fn validate_schema_and_kind(&self) -> Result<ValidatedViewProduct, BundleCodecError> {
+    fn validate_schema_and_kind(
+        &self,
+    ) -> Result<
+        (
+            ValidatedViewProduct,
+            Option<arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof>,
+        ),
+        BundleCodecError,
+    > {
         if self.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
             return Err(BundleCodecError::UnsupportedSchema {
                 actual: self.schema_version,
@@ -1389,8 +1397,8 @@ impl ArcweftBundle {
             });
         }
         let product = self.validate_kind()?;
-        self.validate_dialogue_content_contract()?;
-        Ok(product)
+        let plain_text_context = self.validate_dialogue_content_contract()?;
+        Ok((product, plain_text_context))
     }
 
     #[cfg(feature = "format-avro")]

@@ -95,7 +95,10 @@ The saved Need registry resolves its inert Source assertions through the retaine
 admitted program; a raw code/type lease cannot authorize Source reconstruction.
 
 Bundle admission returns that executable authority using the complete View
-product accepted by the same bundle validation. Borrowed View candidates enter
+product accepted by the same bundle validation. Its admitted bundle-program
+authority also retains the plain-text context proof checked against the actual
+dialogue catalog and transfers both inputs to runtime activation. Borrowed View
+candidates enter
 source and resource validation before canonical codec materialization. Agent
 controllers and native bundle runners retain the returned executable/Source
 lease through activation. The pure accelerator's cache owns either its exact

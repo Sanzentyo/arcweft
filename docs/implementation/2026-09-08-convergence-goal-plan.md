@@ -21463,3 +21463,42 @@ a restart condition. Current-slice runtime, public API and strict lint evidence
 remain pending. Core source is unchanged, so the earlier 1880-case/73-doctest
 proof remains attributed to its actual Core inputs. The full goal and all
 previously listed remaining requirements stay active.
+
+### 2026-10-20 — retain the actual bundle text-context proof
+
+The CLI classification correction is published and verified at
+`d971a960f9c37707e15a8a72c413fa12d1d7e235`, parent
+`c916f0623d0656cc88391e5666dba42c0f6c3911`, tree
+`4928f015a29a971162b02b150fdefac6b435810b`, patch SHA-256
+`03009d4fac151444c7d753634c14bba13478f913dbd98df0f3ac69895f22896a`.
+All published/working blobs and 3931 inputs matched; owned0/held14 and empty
+index. R1694 five-owner all-target/all-feature locked check completed with exit0
+(14m13s, warnings remain). It predates this next joined-context contract and is
+not evidence for the new contract below.
+
+Inspection of the existing bundle contract found another discarded admission
+result: validate_dialogue_content_contract returns a proof checked against the
+actual text catalog, but bundle program activation still passed None. A bare
+Core AWBC program can legitimately authorize pure execution without an external
+text catalog. The joined artifact boundary therefore now returns one private-
+field AdmittedBundleProgram containing the admitted Core executable/Source and
+its actual optional text-context proof. The private bundle validation stage
+returns both checked facts once; there is no second catalog lookup or invented
+proof. The previous unreleased return shape is replaced directly.
+
+Agent runner and bundle runner transfer that admitted pair to the existing Core
+activation owner. The accelerator retains its actual executable; bundle entry
+admission precedes accelerator scratch/math construction. The data-only bundle
+layer does not acquire runtime stepping or host-I/O responsibilities. The
+existing real View/PNG fixture now includes an eager Result.context Err in its
+bundle entry, asserts that the actual bundle declares the context proof, and
+checks the same entry return. Its Native/AWBC asset runs, eight-step/32-op limits,
+and all completed/failed assertions remain intact.
+
+R1696 catalogue and R1698 workspace check were live when this joined context
+change began. Retain their eventual actual results without treating mixed-input
+commands as proof of this final contract. A fresh current-code catalogue of the
+same 19-package reverse union is required, including both new ownership tests
+and the expanded real fixture. This slice continues the same full goal; complete
+Source public switching, all 14 families, Presentation lowering, strict lint,
+Tier2 and final execution/capture/parity acceptance remain open.

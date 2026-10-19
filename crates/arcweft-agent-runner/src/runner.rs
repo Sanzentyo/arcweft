@@ -716,11 +716,12 @@ where
         let program = bundle
             .admit_runtime_program()
             .map_err(AgentRunError::BundleProductAwbc)?;
+        let (program, plain_text_context) = program.into_parts();
         let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
             program,
             entry,
             arcweft_core::task::GenerationId::new(0),
-            None,
+            plain_text_context,
         )
         .map_err(AgentRunError::ProductAwbcExecutor)?;
         let authorization = AgentEffectRegistry::canonical()

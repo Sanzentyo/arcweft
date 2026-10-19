@@ -188,7 +188,12 @@ entry cli @entry.main {
 }
 
 flow launch() -> String {
-    return "unused_entry"
+    let input: Result<String, String> = .Err("bundle cause")
+    let contextual = input.context("bundle context")
+    return match contextual {
+        .Err(_) => "unused_entry"
+        .Ok(_) => "unexpected_success"
+    }
 }
 
 flow main(background: Ref<Asset>) -> String effects { asset.read } {
@@ -280,6 +285,13 @@ view SourceProbe(enabled: bool = true) {
             &encoded,
         )
         .expect("the original Source and its View assertions decode together");
+        assert!(
+            decoded
+                .validate_dialogue_content_contract()
+                .unwrap()
+                .is_some(),
+            "the bundle entry requires its actual plain-text context proof"
+        );
         assert!(
             arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product_arc(
                 decoded.product_awbc().program_lease(),
