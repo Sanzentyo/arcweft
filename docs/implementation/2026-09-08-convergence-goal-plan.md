@@ -18668,3 +18668,88 @@ endpoint belongs to another slot; if demonstrated, repair the common owner
 before relying on source lookup in live consumers. Continue the fourteen-family
 atomic migration, artifact Source attachment, restore/replacement, retained View
 and complete runtime/display acceptance. The full goal remains active.
+
+### 2026-10-19 — Preserve canonical request sharing in completed Source lookup
+
+Inspected existing main and origin/main at
+`9fc115ff3724f85636f5663b28e65a7e9b71be87`, parent
+`2e5ab407428ad69a629988058a40f429b5d4c6f2`, tree
+`2bbe0bbce471a54f64cdbd72e8eb1989c14a8ef1`. Fresh publication verification
+matches all eight published/working blobs and the binary/full-index patch,
+SHA-256 `482142cd0e17907188d80e8dca62372406755ec33a6ffe45957964bcfed51b64`.
+The baseline has 3908 inputs; fourteen tracked and three untracked held paths
+remain excluded and unchanged.
+
+Supersedes the previous section's endpoint-coordinate equality restriction and
+the proposed universal source-occurrence check. The accepted child seal contract
+FINAL_CONTRACT.md section 9 explicitly permits identical static producer sites
+to reference a shared row. An OriginalSource reservation requests derivation
+from one unique occurrence; that construction mode does not impose a bijection
+on every explicit definition and launch site. Completed Task rows remain the
+authority for plan identity/class. Their canonical request metadata is borrowed
+from the actual original function; a launch coordinate within that metadata
+does not replace the authenticated row.
+
+R1446/R1447 build and execute a proposed rejection test on two distinct-class
+rows sharing one original request. Actual 100, one fail, 1791 skipped, 0.030s:
+the common seal succeeds. This initially prompted an overly strict prototype.
+R1448/R1449/R1450 Core Clippy fail, actual 101, on new fixture code attempting
+to clone a non-Clone binding, using a completed Line binding alias for a seed,
+and moving a non-Copy class. Those fixture errors are repaired; R1451 Clippy
+passes, actual 0, 18.19s.
+
+R1452 builds the default-feature, non-CLI workspace library/integration catalog,
+actual 0; Cargo reports 12m51s. It selects 6266 cases and excludes 16 ignored
+cases. The 49 packages with named cases are all inside Core's resolved reverse
+closure of 53. CLI is explicitly excluded; arcweft, bundle-assets and render-web
+have no named cases on this host. R1453 executes the complete selection with
+no fail-fast: actual 100, 6262 pass, four fail, 16 skipped, 686.232s. Every name
+and all 3908 frozen inputs match, with zero drift.
+
+Two failures reject accepted sharing: the existing Core FunctionRoot completion
+and RuntimePlan host-descriptor interning with distinct call-site values. They
+are evidence against the proposed global bijection, not obsolete assertions.
+The other two failures are the known Native/decoded-AWBC selected-Need completed-
+key assertions from R1438. After checking the accepted contract, the entire
+unpublished three-path prototype is withdrawn, preserving its patch/evidence.
+Patch SHA-256 is
+`b4631acf9003b27ca2a2a892562d074151517c28f2850a86ef54703c0996c994`.
+The withdrawal checkpoint proves zero owned changes and zero held/outside drift.
+No common-seal, function-proof or consumer restriction from that prototype is
+published, and no original assertion or coverage is weakened.
+
+A genuine valid-seal regression instead isolates the private lookup defect:
+two distinct-class definitions retain different issued keys while borrowing the
+same actual Host metadata. R1454/R1455 select and run exactly this case: actual
+100, one fail, 1791 skipped, 0.040s, EndpointCoordinateMismatch after successful
+seal. The lookup's redundant equality branch/error are removed. It still
+authenticates the exact issued row and original namespace; it does not fall back
+to the launch coordinate's row or key. The regression proves both row identities,
+different keys, the Cpu class, identical metadata pointers and zero new transcript
+bytes. Existing FunctionRoot completion also now exercises the borrowed lookup
+and preserves its issued key without projecting a Host request.
+
+R1456 Core all-target/all-feature locked Clippy passes, actual 0, 21.64s;
+R1457's intermediate five-library catalog passes. After adding FunctionRoot
+lookup assertions, R1458 final matching Clippy passes, actual 0, 17.53s. R1459
+inspects 2307 selected cases, none excluded. R1460 executes exactly that set:
+2307 pass, zero fail/skip, actual 0, 21.961s. Both previously rejected sharing
+cases and all foreign/unsealed, equal-key identity and exact original-bank tests
+pass. Terminal audit matches every name and all 3908 inputs with zero drift.
+R1461 canonical structural gate and changed-file rustfmt/diff checks pass.
+
+The final production change is private Source lookup only, with no cross-crate
+caller, wire/public API change, new dependency, unsafe, allocation of a semantic
+catalog or new digest issuer. The source owner is 3344 bytes/84 physical LOC;
+preparation-focused behavioral tests are 54479/1395. The existing owner/test
+boundaries remain cohesive. The final cut does not change common sealing or the
+Host interner; the five-library all-feature slice is not full reverse, CLI,
+workspace, Tier 2 or display acceptance. R1453 remains failed exploratory
+evidence, not a passing final whole-workspace result.
+
+Continue the actual fourteen-family public switch: original Source attachment
+in artifacts, source-bound producer/registry construction, inert expected keys,
+actual program identity and failed-atomic restore/replacement. The two selected-
+Need failures remain open; this private boundary is not yet wired into them.
+Retained View and full Native/Web/CLI acceptance remain open. The complete goal
+remains active.

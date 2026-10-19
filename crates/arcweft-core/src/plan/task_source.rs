@@ -15,14 +15,14 @@ pub(crate) enum RuntimeTaskSourceError {
     ForeignCoordinate,
     #[error("completed Task source has no request endpoint {request:?}")]
     MissingEndpoint { request: RuntimeTaskRequestSource },
-    #[error("completed Task request endpoint names another original Task slot")]
-    EndpointCoordinateMismatch,
     #[error("original Task function admission failed: {0}")]
     Function(#[from] RuntimeBodySemanticError),
 }
 
 /// The row is already sealed. Request metadata borrows that same immutable
-/// program. No digest is recomputed and no second Task table exists.
+/// program and may be shared. The authenticated row retains plan identity and
+/// class independently of a launch coordinate inside that metadata.
+/// No digest is recomputed and no second Task table exists.
 pub(crate) struct RuntimeTaskSourceRef<'program> {
     task: RuntimeTaskPlanRef<'program>,
     request: OriginalRequestEndpoint<'program>,
@@ -55,12 +55,6 @@ impl RuntimePlan {
                 .ok_or(RuntimeTaskSourceError::MissingEndpoint {
                     request: task.definition().request_template().source(),
                 })?;
-            if request
-                .task_source()
-                .is_some_and(|source| source.coordinate() != coordinate)
-            {
-                return Err(RuntimeTaskSourceError::EndpointCoordinateMismatch);
-            }
             Ok(RuntimeTaskSourceRef { task, request })
         })();
         result.map_err(|error| {
