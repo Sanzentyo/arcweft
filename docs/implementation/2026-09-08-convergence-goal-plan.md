@@ -20996,6 +20996,7 @@ operation/slot/capture integration. Raw entry/Flow/host consumers must reuse the
 actual admitted owner. Presentation, remaining semantic/nominal/persistence work,
 the complete Core reverse closure/workspace, public API/doctest, Tier2 and actual
 Native/Web acceptance remain required. The full goal stays active.
+
 ### 2026-10-20 — retain admitted AWBC Source through activation and replacement
 
 Inspected main `b7dc80930e49f7a43729c1bc488fbde2f99b7348` in the existing
@@ -21034,3 +21035,40 @@ catalogue/runtime/Clippy/structural and complete reverse/workspace checks are st
 pending. Per the user's explicit checkpoint instruction, this is an intermediate
 commit; operability at every intermediate commit is not claimed. The complete goal
 remains active, including CLI migration and all other retained acceptance items.
+
+### 2026-10-20 — pass the admitted product through CLI consumers
+
+The preceding seventeen-path cut is published and freshly verified at
+`50d7627542c2457f057d3362b0d3ebc230314b51`, parent
+`b7dc80930e49f7a43729c1bc488fbde2f99b7348`, tree
+`520936a340308f1bc58b595eddffb626afb7e09e`, complete patch SHA-256
+`60970d9296780948eb553611ffe3fcd077933447d9032085083161f28d702238`.
+All published blobs and 3930 frozen inputs matched; the index was empty and the
+same fourteen held tracked paths remained. The baseline was advanced afterward.
+
+The actual executable/View Source join now belongs to `ValidatedViewProduct` in
+Bundle, which owns the upper capability and accepted retained resource. The
+Driver-only constructor and error definition are removed; session construction,
+View runtime construction and replacement use this same product method. This is
+one Source admission law, shared with CLI rather than copied into its runner.
+The CLI source-runtime owner admits the bundle's exact code Arc once under its
+compiled View product, then retains that complete owner for entry/Flow runs,
+profile and repeated bench templates. Template repetition retains the admitted
+Source and does not rebuild it from a raw program or request metadata.
+
+The CLI PNG fixture now contains a real View Match and executes both Native and
+Product AWBC through the actual native asset adapter, keeping the original eight
+steps/32-operation limits and exact completed-task/result assertions. The direct
+entry/Flow regression now requires actual terminal return `done` within its
+existing 64-operation allowance, not merely diagnostic-free first-step startup.
+The remaining external activation-save caller uses the admitted snapshot API;
+no public raw snapshot reader is retained as a compatibility alternative.
+
+R1666 was started for the first cut and compilation was still active when this
+next source migration began. Its eventual catalogue alone is not current-source
+acceptance for this second cut. Collect the actual terminal receipt, then a fresh
+catalogue and run for the current owners/consumers. No Cargo jobs, profiles,
+timeouts, capture, copy, batch or fusion condition was changed. The same held
+inventory remains untouched. This is another user-authorized intermediate
+checkpoint, with current validation and complete reverse/workspace acceptance
+pending. The entire convergence goal remains active.

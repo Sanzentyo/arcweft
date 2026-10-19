@@ -1,11 +1,13 @@
 use super::*;
 use crate::app::runtime::invocation::seal_named_flow_invocation;
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
+use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::engine::{FlowExit, FlowFiberStatus};
 use arcweft_core::step::{RuntimeStepBudget, RuntimeStepMode};
 use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use std::sync::Arc;
 
 const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.launch }
@@ -15,7 +17,7 @@ flow selected(message: String, enabled: bool) -> String {
 }
 "#;
 
-fn compile(source: &str) -> (RuntimePlan, Arc<AwbcProgram>) {
+fn compile(source: &str) -> (RuntimePlan, AwbcProductProgram) {
     let compiled = arcweft_compiler::source::compile_source(source).unwrap();
     let program = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "executor.arcw")
         .lower()
@@ -26,7 +28,15 @@ fn compile(source: &str) -> (RuntimePlan, Arc<AwbcProgram>) {
         AwbcDecodeBudget::default(),
     )
     .unwrap();
-    (compiled.plan, Arc::new(decoded))
+    let program = AwbcProductProgram::admit(
+        Arc::new(decoded),
+        arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+        arcweft_core::awbc::verify::AwbcVerifyContext::default(),
+        arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+    (compiled.plan, program)
 }
 
 fn options() -> RuntimeStepOptions {
@@ -96,7 +106,7 @@ fn runtime_executor_selection_starts_the_actual_tier_and_original_product_entry(
             &entry,
             tier,
             RuntimePureAcceleratorConfig::default(),
-            Some(Arc::clone(&product)),
+            Some(product.clone()),
             None,
         )
         .unwrap();
@@ -105,7 +115,7 @@ fn runtime_executor_selection_starts_the_actual_tier_and_original_product_entry(
             assert!(
                 executor
                     .program_owner()
-                    .same_program(&RuntimeProgramOwner::Awbc(Arc::clone(&product)))
+                    .same_program(&RuntimeProgramOwner::Awbc(product.program_arc()))
             );
         }
         assert_eq!(
@@ -122,11 +132,11 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
         invocation(plan.clone()),
         CliRuntimeExecutorTier::AwbcProduct,
         RuntimePureAcceleratorConfig::default(),
-        Some(Arc::clone(&product)),
+        Some(product.clone()),
         None,
     )
     .unwrap();
-    let owner = RuntimeProgramOwner::Awbc(Arc::clone(&product));
+    let owner = RuntimeProgramOwner::Awbc(product.program_arc());
     assert_eq!(executor.executor.tier(), ArcweftExecutionTier::AwbcProduct);
     assert!(executor.program_owner().same_program(&owner));
     assert_eq!(

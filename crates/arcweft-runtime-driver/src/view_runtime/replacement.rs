@@ -175,10 +175,9 @@ impl BundleViewRuntime {
                 super::ViewProgramRuntimeAuthority::CoreProgramFree
             }
             super::ViewProgramRuntimeAuthority::Awbc(awbc) => {
-                super::ViewProgramRuntimeAuthority::Awbc(Self::admit_awbc_program(
-                    &candidate,
-                    awbc.program_arc(),
-                )?)
+                super::ViewProgramRuntimeAuthority::Awbc(
+                    candidate.admit_awbc_program(awbc.program_arc())?,
+                )
             }
         };
         let candidate_catalog = match &self.program_runtime {

@@ -1073,7 +1073,6 @@ fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results(
         .unwrap();
     assert_eq!(decoded.encode_canonical().unwrap(), encoded);
     let program = Arc::new(decoded);
-    let owner = RuntimeProgramOwner::Awbc(Arc::clone(&program));
     for (id, ty) in cases {
         let mut native_backend = VmRuntimePureCallBackend::default();
         let native = arcweft_core::pure::evaluate_pure_program_with_backend(

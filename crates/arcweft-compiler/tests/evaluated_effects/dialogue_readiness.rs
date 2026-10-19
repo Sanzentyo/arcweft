@@ -481,9 +481,8 @@ fn decoded_awbc_activation_quantum_and_portable_restore_resume_once_at_the_next_
     let decoded: AwbcProductExecutorSaveSnapshot =
         serde_json::from_slice(&bytes).expect("save DTO decodes");
     assert_eq!(decoded, inert);
-    let owner = RuntimeProgramOwner::Awbc(original.program_arc());
     let live = decoded
-        .into_live_for_program(&owner)
+        .into_live_for_program(original.admitted_program())
         .expect("current program reconstructs the owner");
     let mut restored =
         AwbcProductStepExecutor::for_entry_arc(original.program_arc(), AwbcEntryId(0), 2)

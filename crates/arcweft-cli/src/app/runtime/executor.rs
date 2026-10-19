@@ -1,12 +1,12 @@
 use super::options::CliRuntimeExecutorTier;
-use arcweft_core::awbc::schema::{AwbcEntryId, AwbcProgram};
+use arcweft_core::awbc::product_step::AwbcProductProgram;
+use arcweft_core::awbc::schema::AwbcEntryId;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{RuntimeExecutorStats, runtime_executor_stats};
-use std::sync::Arc;
 
 pub(in crate::app) struct RuntimeExecutorInstance {
     executor: ArcweftRuntimeExecutor,
@@ -20,7 +20,7 @@ pub(in crate::app) struct RuntimeExecutorCore {
 pub(in crate::app) struct RuntimeExecutorTemplate {
     invocation: RuntimeFlowInvocation,
     tier: ArcweftExecutionTier,
-    product: Option<Arc<AwbcProgram>>,
+    product: Option<AwbcProductProgram>,
     plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
 }
 
@@ -28,7 +28,7 @@ impl RuntimeExecutorTemplate {
     pub(in crate::app) fn new(
         invocation: RuntimeFlowInvocation,
         tier: CliRuntimeExecutorTier,
-        product: Option<Arc<AwbcProgram>>,
+        product: Option<AwbcProductProgram>,
         plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Self {
         Self {
@@ -46,8 +46,8 @@ impl RuntimeExecutorTemplate {
             .map_err(|error| error.to_string())?;
         let executor = match self.tier {
             ArcweftExecutionTier::AwbcProduct => {
-                ArcweftRuntimeExecutor::from_awbc_product_flow_invocation(
-                    self.product.as_ref().map(Arc::clone).ok_or_else(|| {
+                ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+                    self.product.clone().ok_or_else(|| {
                         "Product AWBC execution requires the compiled executable".to_owned()
                     })?,
                     invocation,
@@ -91,7 +91,7 @@ impl RuntimeExecutorInstance {
         entry: &EntryRuntimeId,
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
-        product: Option<Arc<AwbcProgram>>,
+        product: Option<AwbcProductProgram>,
         plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, String> {
         let plan = Arc::new(plan);
@@ -110,18 +110,12 @@ impl RuntimeExecutorInstance {
                     })?;
                 let index = u32::try_from(index)
                     .map_err(|_| "Product AWBC entry index exceeds u32".to_owned())?;
-                match plain_text_context {
-                    Some(proof) => {
-                        ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof(
-                            product,
-                            AwbcEntryId(index),
-                            proof,
-                        )
-                    }
-                    None => {
-                        ArcweftRuntimeExecutor::from_awbc_product_arc(product, AwbcEntryId(index))
-                    }
-                }
+                ArcweftRuntimeExecutor::from_admitted_awbc_product(
+                    product,
+                    AwbcEntryId(index),
+                    arcweft_core::task::GenerationId::new(0),
+                    plain_text_context,
+                )
                 .map_err(|error| error.to_string())?
             }
             tier => {
@@ -140,13 +134,13 @@ impl RuntimeExecutorInstance {
         invocation: RuntimeFlowInvocation,
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
-        product: Option<Arc<AwbcProgram>>,
+        product: Option<AwbcProductProgram>,
         plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, String> {
         let pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
         let executor = match arcweft_execution_tier(tier) {
             ArcweftExecutionTier::AwbcProduct => {
-                ArcweftRuntimeExecutor::from_awbc_product_flow_invocation(
+                ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
                     product.ok_or_else(|| {
                         "Product AWBC execution requires the compiled executable".to_owned()
                     })?,

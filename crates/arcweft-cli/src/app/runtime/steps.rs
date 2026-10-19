@@ -33,7 +33,7 @@ pub(in crate::app) fn run_runtime_steps(
         config.pure_config,
         host_config
             .bundle_assets
-            .map(|assets| assets.bundle.product_awbc().program_lease()),
+            .map(|assets| assets.product.clone()),
         host_config
             .bundle_assets
             .map(RuntimeBundleAssets::plain_text_context_proof)
@@ -69,7 +69,7 @@ pub(in crate::app) fn run_runtime_flow_steps(
         config.pure_config,
         host_config
             .bundle_assets
-            .map(|assets| assets.bundle.product_awbc().program_lease()),
+            .map(|assets| assets.product.clone()),
         host_config
             .bundle_assets
             .map(RuntimeBundleAssets::plain_text_context_proof)
@@ -246,6 +246,7 @@ pub(in crate::app) struct NativeRunHost<'a> {
 #[derive(Clone, Copy)]
 pub(in crate::app) struct RuntimeBundleAssets<'a> {
     pub(in crate::app) bundle: &'a std::sync::Arc<ArcweftBundle>,
+    pub(in crate::app) product: &'a arcweft_core::awbc::product_step::AwbcProductProgram,
     pub(in crate::app) artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) context: arcweft_core::value::RuntimeBundleAssetContext,
 }

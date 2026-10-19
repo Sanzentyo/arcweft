@@ -414,8 +414,19 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
         .restore_inert_snapshot_owned(inert)
         .unwrap_or_else(|(_, error)| panic!("{error}"));
     assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
-    let output = entry.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    let options = RuntimeStepOptions {
+        mode: arcweft_core::step::RuntimeStepMode::Drain,
+        budget: arcweft_core::step::RuntimeStepBudget { max_ops: 64 },
+        max_new_task_requests: 0,
+    };
+    let output = entry.step(RuntimeStepInput::default(), options);
     assert!(output.output.diagnostics.is_empty(), "{output:?}");
+    assert_eq!(
+        output.fiber_status,
+        arcweft_core::engine::FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Return(
+            "done".to_owned()
+        ),)
+    );
 
     let invocation = compiled
         .runtime_plan()
@@ -430,10 +441,16 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
     assert!(flow.program_owner().same_program(&owner));
     let output = flow.step_with_pure_backend(
         RuntimeStepInput::default(),
-        RuntimeStepOptions::default(),
+        options,
         &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
     );
     assert!(output.output.diagnostics.is_empty(), "{output:?}");
+    assert_eq!(
+        output.fiber_status,
+        arcweft_core::engine::FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Return(
+            "done".to_owned()
+        ),)
+    );
 }
 
 #[test]
@@ -471,7 +488,7 @@ fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
             Arc::new(erased_source),
         ),
         Err(arcweft_runtime_driver::view_runtime::BundleViewRuntimeError::Admission(
-            arcweft_runtime_driver::view_runtime::ViewProgramAdmissionError::MissingOriginalSource,
+            arcweft_bundle::resource_codec::view::ViewProgramAdmissionError::MissingOriginalSource,
         ))
     ));
     let program = matches(&compiled)[0].execution.program;

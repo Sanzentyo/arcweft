@@ -356,7 +356,7 @@ fn run_bench_flow_section(
     let executor_template = RuntimeExecutorTemplate::new(
         invocation,
         options.executor,
-        Some(runtime.bundle_assets.bundle.product_awbc().program_lease()),
+        Some(runtime.bundle_assets.product.clone()),
         plain_text_context,
     );
     let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);

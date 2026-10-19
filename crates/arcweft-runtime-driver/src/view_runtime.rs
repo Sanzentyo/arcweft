@@ -24,7 +24,8 @@ use crate::presentation_handles::PresentationHandleRecord;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{
     DialogueViewContractError, ValidatedViewProduct, ViewObserveClassification,
-    ViewProductValidationLimits, ViewTextSelectionPolicy, ViewTextSourceKind,
+    ViewProductValidationLimits, ViewProgramAdmissionError, ViewTextSelectionPolicy,
+    ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewTextBlockBounds, ViewTextResource,
@@ -583,17 +584,6 @@ pub struct BundleViewStateFieldSnapshot {
 }
 
 /// Fatal construction or snapshot restoration failure.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum ViewProgramAdmissionError {
-    #[error("linked View task assertions require their original executable Source")]
-    MissingOriginalSource,
-    #[error(transparent)]
-    TaskBinding(#[from] arcweft_core::task::ViewTaskPlanValidationError),
-    #[error(transparent)]
-    Executable(#[from] arcweft_core::awbc::product_step::AwbcProductStepBuildError),
-}
-
-/// Fatal construction or snapshot restoration failure.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
     #[error(transparent)]
@@ -985,45 +975,8 @@ impl BundleViewRuntime {
         registry: ViewRegistry,
         awbc: Arc<AwbcProgram>,
     ) -> Result<Self, BundleViewRuntimeError> {
-        let admitted = Self::admit_awbc_program(&product, awbc)?;
+        let admitted = product.admit_awbc_program(awbc)?;
         Self::try_new_with_admitted_program(product, text, registry, admitted)
-    }
-
-    pub(crate) fn admit_awbc_program(
-        product: &ValidatedViewProduct,
-        awbc: Arc<AwbcProgram>,
-    ) -> Result<AwbcProductProgram, ViewProgramAdmissionError> {
-        let authority = if awbc.original_source.is_some() {
-            product
-                .program()
-                .map(|program| {
-                    program.task_source_authority(ViewProductValidationLimits::default())
-                })
-                .transpose()?
-        } else {
-            if product
-                .program()
-                .is_some_and(|program| !program.resource().task_plan_bindings.is_empty())
-            {
-                return Err(ViewProgramAdmissionError::MissingOriginalSource);
-            }
-            // A genuinely Source-free executable grants no original Task
-            // authority. Its actual code and View program ABI are still checked.
-            None
-        };
-        let admitted = AwbcProductProgram::admit(
-            awbc,
-            arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
-            arcweft_core::awbc::verify::AwbcVerifyContext {
-                require_entrypoint: false,
-                ..Default::default()
-            },
-            arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
-            authority
-                .as_ref()
-                .map(|authority| authority as &dyn arcweft_core::task::ViewTaskPlanAuthority),
-        )?;
-        Ok(admitted)
     }
 
     pub(crate) fn try_new_with_admitted_program(

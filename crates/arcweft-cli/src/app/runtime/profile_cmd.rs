@@ -49,7 +49,7 @@ pub(in crate::app) fn runtime_profile_command(
             &entry,
             options.executor,
             pure_config,
-            Some(runtime.bundle.product_awbc().program_lease()),
+            Some(runtime.product.clone()),
             runtime.bundle_assets().plain_text_context_proof()?,
         )
         .map_err(|error| {

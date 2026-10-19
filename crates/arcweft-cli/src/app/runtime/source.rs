@@ -26,6 +26,7 @@ pub(in crate::app) struct SourceRuntimeProgram {
         Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
     pub(in crate::app) plan: arcweft_core::plan::RuntimePlan,
     pub(in crate::app) bundle: Arc<ArcweftBundle>,
+    pub(in crate::app) product: arcweft_core::awbc::product_step::AwbcProductProgram,
     pub(in crate::app) bundle_artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) bundle_asset_context: arcweft_core::value::RuntimeBundleAssetContext,
     pub(in crate::app) host_policy: HostCallPolicy,
@@ -38,6 +39,7 @@ impl SourceRuntimeProgram {
     pub(in crate::app) fn bundle_assets(&self) -> RuntimeBundleAssets<'_> {
         RuntimeBundleAssets {
             bundle: &self.bundle,
+            product: &self.product,
             artifact_identity: self.bundle_artifact_identity,
             context: self.bundle_asset_context,
         }
@@ -81,6 +83,14 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         adapter_override,
     )?
     .bundle;
+    let product = compiled_project
+        .view_product()
+        .product()
+        .admit_awbc_program(bundle.product_awbc().program_lease())
+        .map_err(|error| {
+            eprintln!("error: source runtime executable admission failed: {error}");
+            ExitCode::FAILURE
+        })?;
     let bundle_artifact_identity = bundle
         .logical_identity()
         .map(|identity| BundleArtifactIdentity::LogicalBundle { identity })
@@ -113,6 +123,7 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         execution_diagnostics,
         plan,
         bundle: Arc::new(bundle),
+        product,
         bundle_artifact_identity,
         bundle_asset_context,
         host_policy,
@@ -166,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn source_headless_run_resolves_a_bundled_png_asset_load() {
+    fn source_headless_run_resolves_bundled_png_with_view_source_in_both_tiers() {
         let project = TempProject::new();
         let source_path = project.path().join("asset_load.arcw");
         fs::write(
@@ -186,6 +197,10 @@ flow main(background: Ref<Asset>) -> String effects { asset.read } {
         .Err(_) => "asset_error"
     }
 }
+view SourceProbe(enabled: bool = true) {
+    match enabled { true => Text("yes"), false => Text("no") };
+}
+
 "#,
         )
         .expect("source program is written");
@@ -198,48 +213,63 @@ flow main(background: Ref<Asset>) -> String effects { asset.read } {
         let mut phases = Vec::new();
         let runtime = compile_source_runtime_program(&selection, None, &mut phases)
             .expect("source runtime plan and bundle compile");
-        let invocation = seal_named_flow_invocation(
-            runtime.plan.clone(),
-            "flow.main",
-            &[RuntimeBinding {
-                name: "background".to_owned(),
-                value: RuntimeValue::EntityRef(
-                    RuntimeEntityReference::try_project(
-                        DeclarationIdentityFamily::Asset,
-                        PublicId::try_new("asset.bg.room").expect("asset reference ID is valid"),
-                    )
-                    .expect("asset reference has the Asset identity family"),
-                ),
-            }],
-        )
-        .expect("runtime flow invocation binds the logical asset reference");
-        let file_roots = selection.native_file_roots();
-        let trace = run_runtime_flow_steps(
-            invocation,
-            NativeRunHost {
-                source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-                bundle_assets: Some(runtime.bundle_assets()),
-                policy: &runtime.host_policy,
-                adapter_registrars: &[crate::app::desktop_native_adapter_registrar],
-                cli_args: &[],
-            },
-            RuntimeStepRunConfig {
-                steps: 8,
-                mode: CliRuntimeStepMode::Drain,
-                max_ops: 32,
-                executor: CliRuntimeExecutorTier::BytecodeVm,
-                pure_config: RuntimePureAcceleratorConfig::default(),
-            },
-            &runtime.execution_diagnostics,
-        )
-        .expect("native source host completes the asset task");
-
-        assert_eq!(
-            trace.final_status,
-            FlowFiberStatus::Done(FlowExit::Return("asset_ready".to_owned()))
+        assert!(
+            !runtime
+                .bundle
+                .view_program
+                .as_ref()
+                .unwrap()
+                .task_plan_bindings
+                .is_empty()
         );
-        assert_eq!(trace.native_io.completed_tasks, 1);
-        assert_eq!(trace.native_io.failed_tasks, 0);
+        for tier in [
+            CliRuntimeExecutorTier::BytecodeVm,
+            CliRuntimeExecutorTier::AwbcProduct,
+        ] {
+            let invocation = seal_named_flow_invocation(
+                runtime.plan.clone(),
+                "flow.main",
+                &[RuntimeBinding {
+                    name: "background".to_owned(),
+                    value: RuntimeValue::EntityRef(
+                        RuntimeEntityReference::try_project(
+                            DeclarationIdentityFamily::Asset,
+                            PublicId::try_new("asset.bg.room")
+                                .expect("asset reference ID is valid"),
+                        )
+                        .expect("asset reference has the Asset identity family"),
+                    ),
+                }],
+            )
+            .expect("runtime flow invocation binds the logical asset reference");
+            let file_roots = selection.native_file_roots();
+            let trace = run_runtime_flow_steps(
+                invocation,
+                NativeRunHost {
+                    source: Some(NativeRunSource::new(selection.path(), &file_roots)),
+                    bundle_assets: Some(runtime.bundle_assets()),
+                    policy: &runtime.host_policy,
+                    adapter_registrars: &[crate::app::desktop_native_adapter_registrar],
+                    cli_args: &[],
+                },
+                RuntimeStepRunConfig {
+                    steps: 8,
+                    mode: CliRuntimeStepMode::Drain,
+                    max_ops: 32,
+                    executor: tier,
+                    pure_config: RuntimePureAcceleratorConfig::default(),
+                },
+                &runtime.execution_diagnostics,
+            )
+            .expect("native source host completes the asset task");
+
+            assert_eq!(
+                trace.final_status,
+                FlowFiberStatus::Done(FlowExit::Return("asset_ready".to_owned()))
+            );
+            assert_eq!(trace.native_io.completed_tasks, 1);
+            assert_eq!(trace.native_io.failed_tasks, 0);
+        }
     }
 
     fn one_pixel_png() -> Vec<u8> {

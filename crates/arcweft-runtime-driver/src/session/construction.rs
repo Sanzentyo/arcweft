@@ -390,7 +390,8 @@ pub(super) fn build_session_runtime(
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
-    let program = BundleViewRuntime::admit_awbc_program(&view_product, program)
+    let program = view_product
+        .admit_awbc_program(program)
         .map_err(BundleViewRuntimeError::from)?;
     let view_runtime = BundleViewRuntime::try_new_with_admitted_program(
         view_product,

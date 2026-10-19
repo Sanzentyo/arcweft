@@ -7,6 +7,7 @@
 //! families; JSON exists only as deterministic transcript bytes and human
 //! inspection/export output.
 
+mod admission;
 mod codec;
 mod compat;
 mod dialogue_contract;
@@ -17,6 +18,7 @@ mod semantic;
 mod style_contract;
 mod task_plans;
 mod validated;
+pub use admission::ViewProgramAdmissionError;
 pub use task_plans::{
     ValidatedViewTaskPlanBinding, ViewTaskPlanAssertions, ViewTaskPlanBindingAssertion,
     ViewTaskPlanBindingSource, ViewTaskPlanSourceAuthority,
