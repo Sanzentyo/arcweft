@@ -81,8 +81,7 @@ impl RuntimeTaskSourceProgram {
                     self.awbc_template_source(task, limits, meter)?
                 }
                 Some(RuntimeTaskExecutionRow::Selected(task)) => {
-                    let source = self.original().task_source(coordinate, limits, meter)?;
-                    self.awbc_selected_source(task, source, limits, meter)?
+                    self.awbc_selected_source(task, limits, meter)?
                 }
             };
             if self.original().task_plan(coordinate) != Some(source.task_plan()) {

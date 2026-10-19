@@ -100,6 +100,7 @@ pub(in crate::plan::task_source) fn executable(request: u8) -> AwbcProgram {
             })
             .collect(),
         kind: AwbcTaskPlanKind::NeedProducer {
+            plan: original.task_plan(target.task_plan()).unwrap().key().into(),
             contract: metadata.contract(),
             site: metadata.site(),
             restart: AwbcTaskRestartPolicy::MustBeQuiescent,
@@ -185,7 +186,6 @@ fn awbc_selected_construction_joins_all_original_selected_projections_after_deco
         let bound = program
             .awbc_selected_source(
                 AwbcTaskPlanId(0),
-                raw,
                 RuntimeTaskPlanSealLimits::default(),
                 &mut work,
             )
@@ -204,23 +204,11 @@ fn awbc_selected_construction_joins_all_original_selected_projections_after_deco
 }
 
 #[test]
-fn awbc_selected_construction_rejects_foreign_sources_and_missing_or_native_rows() {
-    let code = Arc::new(executable(2));
-    let program = admit(Arc::clone(&code));
-    let other = admit(Arc::clone(&code));
-    assert!(matches!(
-        program.awbc_selected_source(
-            AwbcTaskPlanId(0),
-            source(&other),
-            RuntimeTaskPlanSealLimits::default(),
-            &mut meter()
-        ),
-        Err(RuntimeAwbcSelectedSourceError::ForeignSource { .. })
-    ));
+fn awbc_selected_assertion_rejects_missing_or_native_rows() {
+    let program = admit(Arc::new(executable(2)));
     assert!(matches!(
         program.awbc_selected_source(
             AwbcTaskPlanId(1),
-            source(&program),
             RuntimeTaskPlanSealLimits::default(),
             &mut meter()
         ),
@@ -235,12 +223,57 @@ fn awbc_selected_construction_rejects_foreign_sources_and_missing_or_native_rows
     assert!(matches!(
         native.awbc_selected_source(
             AwbcTaskPlanId(0),
-            source(&native),
             RuntimeTaskPlanSealLimits::default(),
             &mut meter()
         ),
         Err(RuntimeAwbcSelectedSourceError::Backend)
     ));
+}
+
+#[test]
+fn decoded_selected_assertions_cannot_fall_back_to_matching_request_metadata() {
+    let foreign = selected_producers::tests::fixture(
+        0,
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::MustBeQuiescent,
+        TaskClass::Io,
+    );
+    let foreign = foreign
+        .task_plans()
+        .by_index(RuntimeTaskPlanIndex(0))
+        .unwrap()
+        .key();
+    for assertion in [ExpectedTaskPlanKey::new([0; 32]), foreign.into()] {
+        let mut code = executable(2);
+        let AwbcTaskPlanKind::NeedProducer { plan, .. } = &mut code.task_plans[0].kind else {
+            unreachable!()
+        };
+        *plan = assertion;
+        let encoded = code.encode_canonical().unwrap();
+        let code = Arc::new(
+            AwbcProgram::decode_canonical(
+                &encoded,
+                crate::awbc::codec::AwbcDecodeBudget::default(),
+            )
+            .unwrap(),
+        );
+        let program = admit(Arc::clone(&code));
+        let leases = Arc::strong_count(&code);
+        let mut work = meter();
+        assert!(matches!(
+            program.awbc_selected_source(
+                AwbcTaskPlanId(0),
+                RuntimeTaskPlanSealLimits::default(),
+                &mut work,
+            ),
+            Err(RuntimeAwbcSelectedSourceError::Source {
+                source: crate::plan::task_source::RuntimeTaskSourceError::MissingExpectedKey,
+                ..
+            })
+        ));
+        assert_eq!(work.status(), Err(TaskSemanticEncodingError::OwnerRejected));
+        assert_eq!(Arc::strong_count(&code), leases);
+    }
 }
 
 #[test]
@@ -267,6 +300,7 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
             contract,
             site,
             restart,
+            ..
         } = &mut row.kind
         else {
             unreachable!()
@@ -308,7 +342,7 @@ fn awbc_selected_construction_checks_verified_metadata_changes_without_reconstru
         let program = admit(Arc::new(code));
         let mut work = meter();
         assert!(
-            matches!(program.awbc_selected_source(AwbcTaskPlanId(0), source(&program), RuntimeTaskPlanSealLimits::default(), &mut work), Err(RuntimeAwbcSelectedSourceError::Mismatch { field: actual, .. }) if actual == field),
+            matches!(program.awbc_selected_source(AwbcTaskPlanId(0), RuntimeTaskPlanSealLimits::default(), &mut work), Err(RuntimeAwbcSelectedSourceError::Mismatch { field: actual, .. }) if actual == field),
             "{field:?}"
         );
         assert_eq!(work.status(), Err(TaskSemanticEncodingError::OwnerRejected));
@@ -327,7 +361,6 @@ fn awbc_selected_construction_rejects_same_identity_with_another_executable_shap
     assert!(matches!(
         program.awbc_selected_source(
             AwbcTaskPlanId(0),
-            source(&program),
             RuntimeTaskPlanSealLimits::default(),
             &mut work
         ),
@@ -345,20 +378,20 @@ fn awbc_selected_construction_and_reborrow_share_exact_and_sticky_work() {
     let limits = RuntimeTaskPlanSealLimits::default();
     let mut measured = meter();
     let bound = program
-        .awbc_selected_source(AwbcTaskPlanId(0), source(&program), limits, &mut measured)
+        .awbc_selected_source(AwbcTaskPlanId(0), limits, &mut measured)
         .unwrap();
     let (work, bytes) = measured.totals();
     assert!(work > 1);
     assert_eq!(bytes, 0);
     let mut exact = TaskSemanticMeter::new(work, 0);
     program
-        .awbc_selected_source(AwbcTaskPlanId(0), source(&program), limits, &mut exact)
+        .awbc_selected_source(AwbcTaskPlanId(0), limits, &mut exact)
         .unwrap();
     assert_eq!(exact.totals(), (work, 0));
     let mut short = TaskSemanticMeter::new(work - 1, 0);
     for _ in 0..2 {
         assert!(matches!(
-            program.awbc_selected_source(AwbcTaskPlanId(0), source(&program), limits, &mut short),
+            program.awbc_selected_source(AwbcTaskPlanId(0), limits, &mut short),
             Err(RuntimeAwbcSelectedSourceError::Encoding(
                 TaskSemanticEncodingError::SemanticWork
             ))
@@ -370,8 +403,8 @@ fn awbc_selected_construction_and_reborrow_share_exact_and_sticky_work() {
     owned.borrow(limits, &mut measured).unwrap();
     let total = measured.totals().0;
     assert!(
-        total > work,
-        "reborrow also charges the original Source resolution"
+        total == work,
+        "reborrow repeats the same assertion and original Source resolution"
     );
     let mut exact = TaskSemanticMeter::new(total, 0);
     owned.borrow(limits, &mut exact).unwrap();
@@ -427,7 +460,6 @@ fn awbc_selected_factory_requires_a_checked_code_binding_before_value_views_or_l
     let bound = program
         .awbc_selected_source(
             AwbcTaskPlanId(0),
-            raw,
             RuntimeTaskPlanSealLimits::default(),
             &mut meter(),
         )

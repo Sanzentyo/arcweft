@@ -6201,6 +6201,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             payload_type: item_ty,
             arguments: Vec::<AwbcHostArgument>::new(),
             kind: AwbcTaskPlanKind::NeedProducer {
+                plan: crate::task::ExpectedTaskPlanKey::new([0; 32]),
                 contract,
                 site,
                 restart,

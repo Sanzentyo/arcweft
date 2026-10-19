@@ -635,6 +635,27 @@ fn decoded_awbc_carries_the_complete_original_program_source() {
 }
 
 #[test]
+fn decoded_selected_code_asserts_the_original_completed_task_key() {
+    let original = plan_with_await_observer();
+    let expected = selected_producer_key(&original);
+    let bytes = lower(&original).encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let assertions: Vec<_> = decoded
+        .task_plans
+        .iter()
+        .filter_map(|row| match &row.kind {
+            arcweft_core::awbc::schema::AwbcTaskPlanKind::NeedProducer { plan, .. } => Some(*plan),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(assertions, [expected.into()]);
+}
+
+#[test]
 fn native_selected_need_uses_the_completed_program_task_plan_key() {
     let plan = plan_with_await_observer();
     let expected = selected_producer_key(&plan);

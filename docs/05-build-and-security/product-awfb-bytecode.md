@@ -63,6 +63,14 @@ producer requires a checked binding to the exact immutable original/code pair
 and code-local row. An owning Source preserves that binding and revalidates the
 same row under the caller's allowance when borrowed again.
 
+Each selected NeedProducer code row carries an inert `ExpectedTaskPlanKey`.
+Lowering obtains it from the target's actual completed original Task row;
+canonical AWBC v1 retains its 32 assertion bytes before the selected contract,
+site and restart fields. Source admission resolves that assertion only in this
+executable's admitted original table, then checks the complete selected ABI.
+An absent or foreign key cannot fall back to matching request metadata or site.
+The assertion has no conversion into a completed key or producer authority.
+
 An asserted type identity also requires correspondence with the original
 executable shape, lexical scope, declaration/layout and field/case bindings,
 function contract, and occurrence codec policy. Matching semantic type IDs alone

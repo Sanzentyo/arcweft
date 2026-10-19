@@ -264,11 +264,13 @@ impl Wire for AwbcTaskPlanKind {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
             Self::NeedProducer {
+                plan,
                 contract,
                 site,
                 restart,
             } => {
                 writer.write_u8(0);
+                plan.bytes().write_wire(writer)?;
                 contract.write_wire(writer)?;
                 site.write_wire(writer)?;
                 restart.write_wire(writer)?;
@@ -315,6 +317,7 @@ impl Wire for AwbcTaskPlanKind {
         let offset = reader.offset();
         match reader.read_u8()? {
             0 => Ok(Self::NeedProducer {
+                plan: crate::task::ExpectedTaskPlanKey::new(<[u8; 32]>::read_wire(reader)?),
                 contract: crate::task::NeedProducerContractDigest::read_wire(reader)?,
                 site: crate::task::NeedProducerSiteDigest::read_wire(reader)?,
                 restart: AwbcTaskRestartPolicy::read_wire(reader)?,

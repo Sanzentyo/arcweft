@@ -2829,6 +2829,9 @@ pub enum AwbcTaskRequestProjection {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum AwbcTaskPlanKind {
     NeedProducer {
+        /// Inert assertion selecting an already completed original Task row.
+        /// It cannot issue a producer or reconstruct its original Source.
+        plan: crate::task::ExpectedTaskPlanKey,
         contract: NeedProducerContractDigest,
         site: NeedProducerSiteDigest,
         restart: AwbcTaskRestartPolicy,
@@ -2986,6 +2989,7 @@ impl AwbcTaskPlan {
             contract,
             site,
             restart,
+            ..
         } = &self.kind
         else {
             return Err("task plan is not a NeedProducer row".to_owned());

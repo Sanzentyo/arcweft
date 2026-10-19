@@ -66,9 +66,17 @@ semantic_digest!(NeedTimeoutContractDigest);
 
 /// Untrusted codec assertion. Even all-zero bytes are ordinary input data;
 /// only an already sealed original table can supply the corresponding key.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// A completed key may be projected into this inert role, never the reverse.
+///
+/// ```compile_fail
+/// use arcweft_core::task::{ExpectedTaskPlanKey, TaskPlanSemanticDigest};
+/// fn untrusted(expected: ExpectedTaskPlanKey) -> TaskPlanSemanticDigest {
+///     expected.into()
+/// }
+/// ```
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub(crate) struct ExpectedTaskPlanKey([u8; 32]);
+pub struct ExpectedTaskPlanKey([u8; 32]);
 
 impl ExpectedTaskPlanKey {
     pub(crate) const fn new(bytes: [u8; 32]) -> Self {
@@ -76,6 +84,12 @@ impl ExpectedTaskPlanKey {
     }
     pub(crate) const fn bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+impl From<TaskPlanSemanticDigest> for ExpectedTaskPlanKey {
+    fn from(key: TaskPlanSemanticDigest) -> Self {
+        Self(*key.as_bytes())
     }
 }
 

@@ -68,7 +68,6 @@ fn source(program: &RuntimeTaskSourceProgram) -> RuntimeTaskSourceRef<'_> {
         RuntimeTaskSourceProgramData::Awbc { .. } => program
             .awbc_selected_source(
                 crate::awbc::schema::AwbcTaskPlanId(0),
-                source,
                 RuntimeTaskPlanSealLimits::default(),
                 &mut TaskSemanticMeter::new(1_000_000, 0),
             )

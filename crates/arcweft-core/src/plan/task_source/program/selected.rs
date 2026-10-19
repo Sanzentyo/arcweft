@@ -1,6 +1,5 @@
-//! Construction joins a genuine original selected Source to an actual code row.
-//! Decoded NeedProducer rows still need their explicit expected-key assertion
-//! in the atomic public switch. Metadata never selects or reconstructs Source.
+//! Selected code assertions resolve only in their actual original namespace.
+//! Metadata never selects or reconstructs Source, including after decoding.
 
 use super::types::{RuntimeAwbcSourceTypeError, RuntimeAwbcSourceTypeRelation};
 use super::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramData};
@@ -10,7 +9,7 @@ use crate::awbc::schema::{
 };
 use crate::plan::RuntimeTaskPlanSealLimits;
 use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
-use crate::plan::task_source::RuntimeTaskSourceRef;
+use crate::plan::task_source::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 use crate::task::{
     HostRestartPolicy, NeedProducerFamily, NeedProducerRequestProjection, TaskClass, TaskPolicy,
@@ -48,8 +47,12 @@ pub(crate) enum RuntimeAwbcSelectedSourceError {
     Backend,
     #[error("AWBC selected row {task:?} is absent from its actual executable")]
     MissingTask { task: AwbcTaskPlanId },
-    #[error("AWBC selected row {task:?} received Source from another original program")]
-    ForeignSource { task: AwbcTaskPlanId },
+    #[error("AWBC selected row {task:?} cannot resolve its original Source: {source}")]
+    Source {
+        task: AwbcTaskPlanId,
+        #[source]
+        source: RuntimeTaskSourceError,
+    },
     #[error("AWBC selected row {task:?} has {actual} argument roles; limit is {maximum}")]
     Roles {
         task: AwbcTaskPlanId,
@@ -96,18 +99,17 @@ impl RuntimeAwbcSelectedSourceError {
 }
 
 impl RuntimeTaskSourceProgram {
-    /// This construction capability is an actual borrowed Source, never a raw
-    /// digest, site lookup or caller-produced request clone. The complete code
-    /// ABI is checked before the borrowed execution binding becomes available.
+    /// Resolves the decoded assertion in this executable's actual original
+    /// table. No caller Source, site lookup or reconstructed request selects
+    /// a row. Its complete ABI precedes the borrowed execution capability.
     pub(crate) fn awbc_selected_source<'program>(
         &'program self,
         task: AwbcTaskPlanId,
-        source: RuntimeTaskSourceRef<'program>,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'program>, RuntimeAwbcSelectedSourceError> {
         let result = self
-            .admit_awbc_selected_source(task, source, limits, meter)
+            .admit_awbc_selected_source(task, limits, meter)
             .map(|source| self.bind_source(source, super::RuntimeTaskExecutionRow::Selected(task)));
         if result.is_err() {
             meter.reject_owner();
@@ -122,7 +124,6 @@ impl RuntimeTaskSourceProgram {
     fn admit_awbc_selected_source<'program>(
         &'program self,
         task: AwbcTaskPlanId,
-        source: RuntimeTaskSourceRef<'program>,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'program>, RuntimeAwbcSelectedSourceError> {
@@ -153,12 +154,8 @@ impl RuntimeTaskSourceProgram {
             }
         };
         roles(row.arguments.len(), meter)?;
-        if !source.task_plan().belongs_to(original)
-            || !source.request_endpoint().belongs_to(original)
-        {
-            return Err(RuntimeAwbcSelectedSourceError::ForeignSource { task });
-        }
         let AwbcTaskPlanKind::NeedProducer {
+            plan,
             contract,
             site,
             restart,
@@ -169,6 +166,9 @@ impl RuntimeTaskSourceProgram {
                 field: Field::RequestKind,
             });
         };
+        let source = original
+            .task_source_by_expected_key(plan, limits, meter)
+            .map_err(|source| RuntimeAwbcSelectedSourceError::Source { task, source })?;
         let Some(RuntimeBodyTaskSource::Start(target)) = source.request_endpoint().task_source()
         else {
             return Err(RuntimeAwbcSelectedSourceError::Mismatch {

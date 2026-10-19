@@ -37,8 +37,8 @@ use arcweft_core::runtime_id::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{
-    HostRestartPolicy, NeedProducerRequestProjection, NeedProducerTaskPlan,
-    RuntimeHostArgumentTemplate, TaskClass, TaskPolicy,
+    HostRestartPolicy, NeedProducerRequestProjection, RuntimeHostArgumentTemplate, TaskClass,
+    TaskPolicy,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_text_model::DialogueContentCatalog;
@@ -1769,9 +1769,12 @@ impl AwbcInventory {
     /// source-order expressions lowered by the caller.
     pub fn intern_need_producer_task(
         &mut self,
-        plan: &NeedProducerTaskPlan,
-        expressions: &[arcweft_core::task::RuntimeHostArgumentTemplate],
+        original: &RuntimePlan,
+        target: &arcweft_core::plan::RuntimeNeedProducerStartTarget,
     ) -> Option<AwbcTaskPlanId> {
+        let key = self.original_task_plan_key(original, target.task_plan())?;
+        let plan = target.plan();
+        let expressions = target.arguments();
         let names = match plan.request() {
             NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
                 vec![Some(argument_name.clone())]
@@ -1858,6 +1861,7 @@ impl AwbcInventory {
             payload_type,
             arguments,
             kind: AwbcTaskPlanKind::NeedProducer {
+                plan: key.into(),
                 contract: plan.contract(),
                 site: plan.site(),
                 restart: match plan.restart() {

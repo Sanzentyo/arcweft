@@ -1499,10 +1499,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
             }
             FlowOp::StartNeedProducer { binding, target } => {
-                let Some(plan) = self
-                    .inventory
-                    .intern_need_producer_task(target.plan(), target.arguments())
-                else {
+                let Some(plan) = self.inventory.intern_need_producer_task(self.plan, target) else {
                     return;
                 };
                 let arguments = target

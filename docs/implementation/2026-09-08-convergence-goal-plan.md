@@ -19886,3 +19886,89 @@ deletion, the two selected-key and R1507 broader failures, Native/AWBC stop/
 restore, Native/Web capture parity, generated outputs and final workspace/
 Tier 2 acceptance. This private constructor preparation does not complete any
 of those remaining requirements; keep the full goal active.
+
+### 2026-10-19 — resolve selected AWBC assertions in the actual original namespace
+
+The previous goal turn made publication-verification progress at
+`e58fed789977965d00994404bd65d1ba215ca7b9`. Its fifteen published blobs,
+parent/tree, raw patch, fresh advertised origin and all 3928 frozen inputs were
+verified before the baseline advanced. Parent is
+`232c204acbd8d6583b98268c2d606a8749a5cae1`, tree is
+`c39a6d3dd8e9ebfa1653c4b5c7b51ac885c6a830`, and raw-patch SHA-256 is
+`96f6000aa3d9040e4c4600029feed25958db4fb2b319e711a34efa2d5127d257`.
+This cut starts on that main with empty index, the same fourteen held tracked
+and three held untracked paths, and no owned source changes. No further clean,
+artifact move/copy, branch/worktree/checkout, job-count or profile change occurs.
+The full convergence goal remains active.
+
+The actual selected NeedProducer code row now carries an ExpectedTaskPlanKey.
+Lowering accepts the actual RuntimePlan and original StartNeed target, resolves
+its owner-bound coordinate through the existing completed table, and projects
+that issued key into the inert assertion role. It no longer accepts just a
+copied request plan and detached expressions as sufficient lowering input.
+Canonical AWBC version one evolves in place: tag zero writes the 32 assertion
+bytes before contract, site and restart. Its one strict reader retains those
+bytes as ExpectedTaskPlanKey, never TaskPlanSemanticDigest. No old reader,
+optional legacy field, version increment, new Task issuer or second catalog is
+added. The existing unadmitted AWBC schema needs the expected role publicly;
+its fields and raw constructor stay private, and From accepts only an already
+completed key. There is no reverse conversion or live producer issuer on it.
+
+Selected Source admission now resolves this decoded assertion only in the
+actual executable's admitted original table. The caller-supplied Source
+parameter and its foreign-Source branch are deleted. The same original/code
+pair then checks all selected request metadata, payload and argument
+type graphs before installing the existing execution binding. A missing key
+does not search sites or reconstruct Source from matching request metadata.
+Owning Source reborrow repeats that same assertion resolution and ABI admission
+on the caller's existing meter; it no longer performs a separate preliminary
+coordinate lookup. The final retained-coordinate comparison remains in place.
+Exact/one-short/sticky tests now include original resolution on both initial
+admission and reborrow with equal charged work.
+
+The two new tests independently check real lowering/canonical decode against
+the original completed key, and decoded zero/foreign assertions against an
+otherwise unchanged valid selected request. Both tamper cases reject the exact
+missing-key boundary, poison the original meter and retain no extra code lease.
+Existing metadata/type, live/inert factory, checked-code binding and reborrow
+cases pass after their direct consumer migration. The two existing source-free
+AWBC fixtures spell zero as inert assertion data only; absence of Source still
+grants no original authority. Their old execution route is not proof of
+autonomous-owner or new Source-bound runtime admission.
+
+R1575 catalogs 2004 all-feature locked Core/RuntimePlan library and
+awbc_product_parity cases, with zero exclusions. R1577 executes those exact
+2004 terminal names: actual nextest 100, 2002 pass/two fail, zero skip, 19.881s.
+All 3928 frozen source hashes and fourteen held paths match. The failure set
+is exactly R1572's retained pair:
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`.
+R1578 matching Core plus RuntimePlan all-target/all-feature locked Clippy passes,
+actual 0, with warnings; no -D warnings pass is claimed. R1579 all-feature locked
+Core doctests pass, actual 0: 70 pass, zero fail/ignore/filter, including the new
+compile-fail expected-to-completed-key conversion case. R1576 canonical
+structural gate passes, actual 0. Changed-file rustfmt and whitespace pass.
+Only these two documentation files follow terminal Rust validation; tested Rust
+is unchanged. No fresh full workspace, complete reverse execution, generated
+artifact/Tier 2 or end-to-end stop/restore/display parity pass is claimed.
+
+Canonical bytes/physical LOC are selected admission/tests 12371/346 and
+16210/472, reborrow 3675/97, existing factory tests 13049/387, producer owner
+147716/3938, task facade 69096/2130, AWBC schema/codec 125604/3867 and
+52661/1490, existing Product/custody tests 272221/6916 and 23074/622,
+runtime-plan flow/inventory 159397/4104 and 99483/2398, and actual product parity
+40483/1067. The changed large owners retain their existing schema, codec,
+lowering and real-fixture responsibilities; no new parallel authority or
+source-spelling acceptance gate is introduced. All 99 manifest/lock inputs and
+the resolved 53-package reverse closure are unchanged.
+
+Continue the complete public switch into actual producer instances, registry
+and restore: retain genuine Source, delete the request-only key issuer and AWBC
+metadata-to-Core reconstruction, migrate other decoded assertion roles and
+public raw-key APIs, and finish caller/instruction correspondence. All fourteen
+Host request kinds and the genuine autonomous AWBC/host owners remain required;
+they are not fourteen new NeedProducerFamily variants. The retained View,
+Generic Match, nominal/Sans-I/O, broader R1507 failures, generated artifacts,
+Native/AWBC stop/restore, Native/Web capture parity and final workspace/Tier 2
+acceptance remain open. The selected wire/assertion boundary is concrete
+progress, not completion of those runtime or full-goal requirements.

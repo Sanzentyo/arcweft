@@ -399,6 +399,7 @@ pub(crate) fn awbc_handle_program(
         payload_type: AwbcTypeId(0),
         arguments: Vec::new(),
         kind: AwbcTaskPlanKind::NeedProducer {
+            plan: crate::task::ExpectedTaskPlanKey::new([0; 32]),
             contract: crate::task::NeedProducerContractDigest::from_bytes([7; 32]),
             site: need_plan.site(),
             restart: AwbcTaskRestartPolicy::Restartable,
