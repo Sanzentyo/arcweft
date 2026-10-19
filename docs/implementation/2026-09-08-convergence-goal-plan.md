@@ -21334,3 +21334,37 @@ all-target/all-feature Clippy are still live at this record. Their eventual
 terminal results, the 53-package reverse closure, strict workspace checks and
 the previously listed full-goal requirements remain to be established. No
 completion or validation-unavailability claim follows from this Core pass.
+
+### 2026-10-20 — public API evidence and dependent build handoff
+
+The descriptor correction is published and freshly verified at
+`002a7c71304b8da389d40ed08711fa9bb793c408`, parent
+`75089ee0751e644c239f87b4ffe1128e1b544900`, tree
+`57ca84d9dd4d1e9a45f79c6e5293796a05eb218f`, raw patch SHA-256
+`85a957c96d7e5b9019c420bfd90fec9dcda68f62e1d21e55e717adf85a258e7e`.
+All four published and working blobs, 3931 frozen inputs and the held inventory
+matched; baseline owned paths returned to zero with held14 and an empty index.
+
+R1689 full Core doctests completed with actual exit 0: all 73 passed, none failed,
+ignored or filtered (2.05s test execution). This includes the three one-use View
+capability compile-fail examples at the actual current API. R1690 all-feature,
+all-target, locked Core Clippy completed with actual exit 0 (4m17s), with warnings:
+2507 for the lib and 2917 for lib tests, including 2391 duplicates. This was not
+`-D warnings`; strict warning-free acceptance remains unachieved. Doctest and
+Clippy source audits each matched all 3931 inputs at the published code above.
+The first attempt to write the Clippy audit JSON had a PowerShell boolean literal
+error; the corrected receipt was regenerated from the terminal Cargo receipt and
+actual warning summaries, without rerunning or replacing the Clippy process.
+
+R1692 is the fresh 53-package transitive Core reverse-dependency catalogue from
+the unchanged resolved Cargo graph: locked all-feature lib/tests selection.
+Its verified live shell handle is 63275. R1693 is locked all-feature/all-target
+workspace check, live handle 18095, queued behind the existing build. Neither
+has a terminal result or a passing runtime claim at this record. Continue the
+same handles; parse the catalogue only after terminal exit 0, then run its full
+matched case inventory and audit exact cases and frozen source inputs. Do not
+restart either process because an observation window expires. The code is fixed
+at the published descriptor correction; this evidence-only note changes no
+Rust/Cargo/test input. The broader current-source runtime, strict lint, final
+Source/owner/public switch and all previously recorded acceptance remain open.
+The complete goal stays active, with no genuine external blocker.
