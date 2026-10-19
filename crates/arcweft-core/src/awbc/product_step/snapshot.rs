@@ -24,7 +24,7 @@ use crate::task::{
     HostRestartPolicy, NeedProducerInvocationFrontier, NeedProducerInvocationToken,
     NeedProducerLaunchFrontier, NeedProducerLaunchRestore, NeedProducerRegistry,
     NeedProducerRegistrySaveSnapshot, NeedProducerRuntimeArgument, NeedProducerSiteDigest,
-    RuntimeNeedProducerState, TaskId, TaskPlanSemanticDigest, TaskPublicationCursor,
+    RuntimeNeedProducerState, TaskId, TaskPublicationCursor,
 };
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload, RuntimeValue};
 use std::cmp::Ordering;
@@ -465,8 +465,8 @@ impl AwbcNeedProducerRegistrySaveSnapshot {
 #[serde(deny_unknown_fields)]
 pub struct AwbcNeedProducerLaunchSaveSnapshot {
     pub invocation: NeedProducerInvocationToken,
-    pub producer_site: NeedProducerSiteDigest,
-    pub plan_digest: TaskPlanSemanticDigest,
+    pub source: crate::plan::RuntimeTaskSourceAssertion,
+    pub binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     pub arguments: Vec<AwbcNeedProducerArgumentSaveSnapshot>,
     pub correlation: crate::task::TaskCorrelation,
     pub task_spec: crate::task::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>,
@@ -579,13 +579,11 @@ fn save_need_producer_registry(
             .map(|launch| {
                 Ok(AwbcNeedProducerLaunchSaveSnapshot {
                     invocation: launch.invocation,
-                    producer_site: launch.plan.site(),
-                    plan_digest: launch
-                        .plan
-                        .semantic_digest()
-                        .map_err(|error| error.to_string())?,
+                    source: launch.start.source().assertion(),
+                    binding: launch.start.binding().cloned(),
                     arguments: launch
-                        .arguments
+                        .start
+                        .arguments()
                         .iter()
                         .map(|argument| {
                             Ok(AwbcNeedProducerArgumentSaveSnapshot {
@@ -595,7 +593,7 @@ fn save_need_producer_registry(
                         })
                         .collect::<Result<_, String>>()?,
                     correlation: launch.correlation,
-                    task_spec: launch.task_spec.clone(),
+                    task_spec: launch.start.task_spec().clone(),
                     state: launch.state.clone(),
                     publication: launch.publication,
                     task_submitted: launch.task_submitted,
@@ -635,86 +633,80 @@ fn save_need_producer_registry(
     })
 }
 
-fn restore_need_producer_plan(
-    program: &crate::awbc::schema::AwbcProgram,
-    site: NeedProducerSiteDigest,
-    plan_digest: TaskPlanSemanticDigest,
-) -> Result<crate::task::NeedProducerTaskPlan, String> {
-    let mut selected = None;
-    for row in &program.task_plans {
-        if !matches!(
-            &row.kind,
-            crate::awbc::schema::AwbcTaskPlanKind::NeedProducer {
-                site: row_site,
-                ..
-            } if *row_site == site
-        ) {
-            continue;
-        }
-        let plan = row.need_producer_plan(program)?;
-        if plan.semantic_digest().map_err(|error| error.to_string())? != plan_digest {
-            continue;
-        }
-        if selected.replace(plan).is_some() {
-            return Err(
-                "saved Need producer plan locator is ambiguous in the verified AWBC program"
-                    .to_owned(),
-            );
-        }
-    }
-    selected.ok_or_else(|| {
-        "saved Need producer plan does not exist in the verified AWBC program".to_owned()
-    })
-}
-
 fn restore_need_producer_registry(
     saved: AwbcNeedProducerRegistrySaveSnapshot,
     owner: &crate::task::RuntimeProgramOwner,
+    admission: &mut crate::value::RuntimeRetainedValueAdmission,
 ) -> Result<NeedProducerRegistrySaveSnapshot, String> {
-    let program = match owner {
-        crate::task::RuntimeProgramOwner::Awbc(program) => program,
-        crate::task::RuntimeProgramOwner::Plan(_) => {
-            return Err("AWBC Need producer save state requires an AWBC program owner".to_owned());
-        }
+    let crate::task::RuntimeProgramOwner::Awbc(program) = owner else {
+        return Err("AWBC Need producer state requires its actual code owner".into());
     };
-    program
-        .verify(
-            crate::awbc::verify::AwbcVerifyBudget::default(),
-            crate::awbc::verify::AwbcVerifyContext {
-                require_entrypoint: false,
-                ..crate::awbc::verify::AwbcVerifyContext::default()
-            },
-        )
-        .map_err(|error| format!("Need producer restore program failed verification: {error}"))?;
-    let launches = saved
-        .launches
-        .into_iter()
-        .map(|launch| {
-            let plan =
-                restore_need_producer_plan(program, launch.producer_site, launch.plan_digest)?;
-            let arguments = launch
-                .arguments
-                .into_iter()
-                .map(|argument| {
-                    Ok(NeedProducerRuntimeArgument {
-                        name: argument.name,
-                        value: argument.value,
-                    })
-                })
-                .collect::<Result<_, String>>()?;
-            Ok(NeedProducerLaunchRestore {
-                invocation: launch.invocation,
-                plan,
-                arguments,
-                correlation: launch.correlation,
-                task_spec: launch.task_spec,
-                state: launch.state,
-                publication: launch.publication,
-                task_submitted: launch.task_submitted,
-                task_terminal: launch.task_terminal,
+    admission
+        .validate_metadata_collection(saved.task_admissions.len())
+        .map_err(|error| error.to_string())?;
+    admission
+        .validate_metadata_collection(saved.launches.len())
+        .map_err(|error| error.to_string())?;
+    let source_program = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
+        std::sync::Arc::clone(program),
+        crate::awbc::verify::AwbcVerifyBudget::default(),
+        crate::awbc::verify::AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .map_err(|error| error.to_string())?;
+    let mut launches = Vec::with_capacity(saved.launches.len());
+    for launch in saved.launches {
+        admission
+            .validate_metadata(&launch.source)
+            .map_err(|error| error.to_string())?;
+        admission
+            .validate_metadata_collection(launch.arguments.len())
+            .map_err(|error| error.to_string())?;
+        let program = source_program
+            .as_ref()
+            .ok_or("selected saved launch has no admitted original Source")?;
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = admission
+            .task_source_meter(limits)
+            .map_err(|error| error.to_string())?;
+        let source = program
+            .borrow_assertion(&launch.source, limits, &mut meter)
+            .map_err(|error| error.to_string())?;
+        let prepared = source
+            .prepare_selected_producer(program, admission)
+            .map_err(|error| error.to_string())?;
+        if launch.arguments.len() != prepared.arguments().len() {
+            return Err(crate::task::RuntimeTaskProducerSourceError::ArgumentCount {
+                actual: launch.arguments.len(),
+                expected: prepared.arguments().len(),
+            }
+            .to_string());
+        }
+        let arguments = launch
+            .arguments
+            .into_iter()
+            .map(|argument| NeedProducerRuntimeArgument {
+                name: argument.name,
+                value: argument.value,
             })
-        })
-        .collect::<Result<_, String>>()?;
+            .collect();
+        let start = prepared
+            .restore_start(arguments, launch.task_spec, launch.binding)
+            .map_err(|error| error.to_string())?;
+        launches.push(NeedProducerLaunchRestore {
+            invocation: launch.invocation,
+            start,
+            correlation: launch.correlation,
+            state: launch.state,
+            publication: launch.publication,
+            task_submitted: launch.task_submitted,
+            task_terminal: launch.task_terminal,
+        });
+    }
     Ok(NeedProducerRegistrySaveSnapshot {
         task_admissions: saved.task_admissions,
         launches,
@@ -1792,28 +1784,7 @@ impl AwbcProductExecutorSnapshot {
             .admit_retained(admission)
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         validate_need_publication_cursors(snapshot, &snapshot.need_producers)?;
-        for launch in &snapshot.need_producers.launches {
-            let projected = restore_need_producer_plan(
-                program,
-                launch.plan.site(),
-                launch.plan.semantic_digest().map_err(|error| {
-                    AwbcProductStepBuildError::RestoreSnapshot {
-                        message: error.to_string(),
-                    }
-                })?,
-            )
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-            if projected != launch.plan {
-                return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "Need producer launch plan differs from its verified AWBC row"
-                        .to_owned(),
-                });
-            }
-            owner.types().value_type(launch.plan.payload_type()).map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: "Need producer payload type is absent or ambiguous in the AWBC runtime type table"
-                        .to_owned(),
-                })?;
-        }
+
         snapshot.fiber.admit_retained(admission).map_err(|error| {
             AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
@@ -2780,7 +2751,7 @@ impl AwbcProductExecutorSaveSnapshot {
             .launches
             .iter()
             .filter(|launch| {
-                launch.plan.restart() == HostRestartPolicy::MustBeQuiescent
+                launch.start.restart() == HostRestartPolicy::MustBeQuiescent
                     && !launch.task_terminal
                     && !launch.state.is_terminal()
                     && !matches!(
@@ -2874,7 +2845,8 @@ impl AwbcProductExecutorSaveSnapshot {
         if need_publications.len() != need_publication_count {
             return Err("Need publication snapshot contains duplicate waiter/Need rows".to_owned());
         }
-        let need_producers = restore_need_producer_registry(self.need_producers, owner)?;
+        let need_producers =
+            restore_need_producer_registry(self.need_producers, owner, &mut admission)?;
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
             runtime_generation: self.runtime_generation,
@@ -3680,7 +3652,7 @@ impl AwbcProductStepExecutor {
         self.need_publications = snapshot.need_publications;
         self.need_producers = NeedProducerRegistry::default();
         self.need_producers
-            .restore_registry_with_policy(need_producers, policy)
+            .restore_admitted_registry_with_policy(need_producers, policy)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
             })?;

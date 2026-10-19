@@ -17,7 +17,31 @@ pub struct RuntimeTaskSource {
     execution: Option<RuntimeTaskExecutionRow>,
 }
 
+/// Inert locator for an already completed Source and its exact execution row.
+/// Decoding this value grants no Source lease or producer authority.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeTaskSourceAssertion {
+    pub(in crate::plan::task_source) expected: crate::task::ExpectedTaskPlanKey,
+    pub(in crate::plan::task_source) execution: RuntimeTaskSourceExecutionAssertion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(in crate::plan::task_source) enum RuntimeTaskSourceExecutionAssertion {
+    Native,
+    Awbc(RuntimeTaskExecutionRow),
+}
+
 impl RuntimeTaskSource {
+    pub(crate) fn assertion(&self) -> RuntimeTaskSourceAssertion {
+        RuntimeTaskSourceAssertion {
+            expected: self.task_plan().key().into(),
+            execution: match self.execution {
+                Some(row) => RuntimeTaskSourceExecutionAssertion::Awbc(row),
+                None => RuntimeTaskSourceExecutionAssertion::Native,
+            },
+        }
+    }
     pub(crate) fn from_borrowed(
         source: &RuntimeTaskSourceRef<'_>,
         program: &RuntimeTaskSourceProgram,
@@ -59,6 +83,10 @@ impl RuntimeTaskSource {
 
     pub(crate) fn program_owner(&self) -> RuntimeProgramOwner {
         self.program.program_owner()
+    }
+
+    pub(crate) fn program(&self) -> &RuntimeTaskSourceProgram {
+        &self.program
     }
 }
 

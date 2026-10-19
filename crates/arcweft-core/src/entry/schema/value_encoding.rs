@@ -495,6 +495,12 @@ impl ValueResourceAdmissionState {
 }
 
 impl ValueResourceAdmission {
+    pub(crate) fn function_instantiation(
+        &mut self,
+        binding: &crate::program_types::RuntimeFunctionEffectInstantiation,
+    ) -> Result<(), RuntimeSchemaError> {
+        binding.validate_resource_limits(0, &self.budget, &mut self.work)
+    }
     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
         let Self {
             budget,

@@ -914,10 +914,7 @@ impl NeedProducerInvocationToken {
 pub struct RuntimeNeedProducerLaunch {
     correlation: TaskCorrelation,
     invocation: NeedProducerInvocationToken,
-    restart: HostRestartPolicy,
-    producer: NeedProducerSpec<crate::plan::RuntimeTaskSource>,
-    arguments: Vec<NeedProducerRuntimeArgument>,
-    task_spec: TaskSpec,
+    start: RuntimeNeedProducerStart,
     state: RuntimeNeedProducerState,
     publication: Option<TaskPublicationCursor>,
     task_submitted: bool,
@@ -940,16 +937,16 @@ impl RuntimeNeedProducerLaunch {
 
     #[must_use]
     pub const fn producer(&self) -> &NeedProducerSpec<crate::plan::RuntimeTaskSource> {
-        &self.producer
+        &self.start.producer
     }
 
     #[must_use]
     pub const fn source(&self) -> &crate::plan::RuntimeTaskSource {
-        self.producer.source()
+        self.start.producer.source()
     }
 
     pub fn payload_type(&self) -> RuntimeSemanticTypeId {
-        match self.task_spec.outcome {
+        match self.start.task_spec.outcome {
             TaskOutcomeContract::Program { payload } => payload,
             TaskOutcomeContract::Standalone { .. } => {
                 unreachable!("a selected original Source has a program-owned Ready contract")
@@ -959,7 +956,7 @@ impl RuntimeNeedProducerLaunch {
 
     #[must_use]
     pub fn arguments(&self) -> &[NeedProducerRuntimeArgument] {
-        &self.arguments
+        &self.start.arguments
     }
 
     #[must_use]
@@ -984,12 +981,12 @@ impl RuntimeNeedProducerLaunch {
 
     #[must_use]
     pub const fn task_spec(&self) -> &TaskSpec {
-        &self.task_spec
+        &self.start.task_spec
     }
 
     #[must_use]
     pub const fn restart(&self) -> HostRestartPolicy {
-        self.restart
+        self.start.restart
     }
 
     #[must_use]
@@ -1273,6 +1270,8 @@ struct NeedProducerLaunchKey {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum NeedProducerAdmissionError {
+    #[error(transparent)]
+    Admission(#[from] crate::value::AwbcRuntimeValueSnapshotError),
     #[error("the original task-plan namespace has not completed sealing")]
     UnsealedTaskPlan,
     #[error(transparent)]
@@ -1389,10 +1388,8 @@ impl NeedProducerOwnedTaskEventError {
 #[derive(Debug, PartialEq)]
 pub struct NeedProducerLaunchRestore<V = RuntimeValue, P = RuntimePayload> {
     pub invocation: NeedProducerInvocationToken,
-    pub plan: NeedProducerTaskPlan,
-    pub arguments: Vec<NeedProducerRuntimeArgument<V>>,
+    pub start: RuntimeNeedProducerStart<V, P>,
     pub correlation: TaskCorrelation,
-    pub task_spec: TaskSpec<P>,
     pub state: RuntimeNeedProducerState<P>,
     pub publication: Option<TaskPublicationCursor>,
     pub task_submitted: bool,
@@ -1408,10 +1405,8 @@ impl Clone for NeedProducerLaunchSaveSnapshot {
     fn clone(&self) -> Self {
         Self {
             invocation: self.invocation,
-            plan: self.plan.clone(),
-            arguments: self.arguments.clone(),
+            start: self.start.clone(),
             correlation: self.correlation,
-            task_spec: self.task_spec.clone(),
             state: self.state.clone(),
             publication: self.publication,
             task_submitted: self.task_submitted,
@@ -1559,43 +1554,14 @@ impl<V, P> NeedProducerLaunchRestore<V, P> {
             self.task_submitted,
             self.task_terminal,
         ))?;
-        self.plan.admit_retained_metadata(admission)?;
-        admission.validate_metadata_collection(self.arguments.len())?;
-        if self.arguments.len() != self.plan.argument_types.len() {
-            return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                message: "Need producer argument arity differs from its original signature".into(),
-            });
-        }
-        for (argument, expected) in self.arguments.iter().zip(&self.plan.argument_types) {
-            admission.validate_metadata(&argument.name)?;
-            admission.admit_composite(V::admission_origin(), |owner, resources| {
-                let view = argument.value.borrowed_view();
-                view.admit_ownership(
-                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                    resources,
-                    0,
-                )?;
-                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                    view, owner, resources,
-                )?;
-                let owner = owner.ok_or(
-                    crate::value::AwbcRuntimeValueSnapshotError::ProgramOwnerRequired {
-                        expected: *expected,
-                    },
-                )?;
-                owner
-                    .types()
-                    .value_type(*expected)?
-                    .validate_snapshot_storage(view, &resources.work(), V::admission_origin())?;
-                Ok(())
-            })?;
-        }
-        self.task_spec.admit_retained(admission)?;
-        self.state
-            .admit_retained(&self.task_spec.outcome, self.task_spec.policy, admission)
+        self.start.admit_retained(admission)?;
+        self.state.admit_retained(
+            &self.start.task_spec.outcome,
+            self.start.task_spec.policy,
+            admission,
+        )
     }
 }
-
 impl NeedProducerRegistrySaveSnapshot {
     pub(crate) fn into_admitted_live(
         self,
@@ -1619,19 +1585,8 @@ impl NeedProducerRegistrySaveSnapshot {
                 .map(|launch| {
                     Ok(NeedProducerLaunchRestore {
                         invocation: launch.invocation,
-                        plan: launch.plan,
-                        arguments: launch
-                            .arguments
-                            .into_iter()
-                            .map(|argument| {
-                                Ok(NeedProducerRuntimeArgument {
-                                    name: argument.name,
-                                    value: argument.value.into_admitted_runtime_value(owner)?,
-                                })
-                            })
-                            .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+                        start: launch.start.into_admitted_live(owner)?,
                         correlation: launch.correlation,
-                        task_spec: launch.task_spec.into_admitted_live(owner)?,
                         state: launch.state.into_admitted_live(owner)?,
                         publication: launch.publication,
                         task_submitted: launch.task_submitted,
@@ -1650,7 +1605,6 @@ impl NeedProducerRegistrySaveSnapshot {
 pub(crate) type NeedProducerRegistryRollbackImage = NeedProducerRegistrySaveSnapshot;
 
 struct ValidatedRestoreLaunch {
-    producer: NeedProducerSpec,
     instance_key: NeedProducerInstanceKey,
     key: NeedProducerLaunchKey,
     invocation_key: (
@@ -1669,39 +1623,30 @@ fn validate_restore_launch<
     restore: &NeedProducerLaunchRestore<V, P>,
 ) -> Result<ValidatedRestoreLaunch, NeedProducerAdmissionError> {
     let generation = restore.invocation.generation;
-    let producer = restore.plan.borrowed_producer_spec(&restore.arguments)?;
-    let instance_key = producer.instance_key()?;
-    let saved_spec = &restore.task_spec;
+    let input = &restore.start;
+    let instance_key = input.producer.instance_key()?;
+    let saved_spec = &input.task_spec;
     let correlation = saved_spec.correlation(restore.correlation.launch_ordinal)?;
     if restore.correlation != correlation
         || saved_spec.generation != generation
-        || saved_spec.producer != super::NeedProducerInstance::try_from(&producer)?
-        || saved_spec.class != restore.plan.class
-        || saved_spec.priority != restore.plan.priority
-        || saved_spec.cancel_scope != restore.plan.cancel_scope
-        || saved_spec.policy != restore.plan.policy
-        || saved_spec.outcome != restore.plan.outcome()
-        || saved_spec.debug_label != saved_spec.request.debug_label()
-        || !restore
-            .plan
-            .request_matches(&restore.arguments, &saved_spec.request)?
-        || restore.invocation.producer_site != restore.plan.site
-        || (restore.plan.policy == TaskPolicy::JoinSameKey
+        || saved_spec.producer != super::NeedProducerInstance::try_from(&input.producer)?
+        || restore.invocation.producer_site != input.producer.producer_site()
+        || (saved_spec.policy == TaskPolicy::JoinSameKey
             && restore.correlation.launch_ordinal != TaskLaunchOrdinal::JOIN)
-        || (restore.plan.policy == TaskPolicy::AlwaysStart
+        || (saved_spec.policy == TaskPolicy::AlwaysStart
             && restore.correlation.launch_ordinal == TaskLaunchOrdinal::JOIN)
         || !restored_need_state_is_valid(
             &restore.state,
             restore.publication,
             restore.task_submitted,
             restore.task_terminal,
-            restore.plan.restart,
-            restore.plan.policy,
+            input.restart,
+            saved_spec.policy,
         )
     {
         return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
     }
-    let launch_next = if restore.plan.policy == TaskPolicy::AlwaysStart {
+    let launch_next = if saved_spec.policy == TaskPolicy::AlwaysStart {
         Some((
             (generation, instance_key),
             restore
@@ -1720,7 +1665,6 @@ fn validate_restore_launch<
         .checked_add(1)
         .ok_or(NeedProducerAdmissionError::InvocationSequenceExhausted)?;
     Ok(ValidatedRestoreLaunch {
-        producer,
         instance_key,
         key: NeedProducerLaunchKey {
             generation,
@@ -1749,7 +1693,6 @@ impl NeedProducerRegistry {
             admission.validate_metadata(&handle)?;
         }
         for launch in self.launches.values() {
-            launch.plan.admit_retained_metadata(admission)?;
             admission.validate_metadata(&(
                 launch.invocation,
                 launch.correlation,
@@ -1757,21 +1700,10 @@ impl NeedProducerRegistry {
                 launch.task_submitted,
                 launch.task_terminal,
             ))?;
-            admission.validate_metadata_collection(launch.arguments.len())?;
-            if launch.arguments.len() != launch.plan.argument_types.len() {
-                return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
-                    message: "Need producer argument arity differs from its original signature"
-                        .into(),
-                });
-            }
-            for (argument, expected) in launch.arguments.iter().zip(&launch.plan.argument_types) {
-                admission.validate_metadata(&argument.name)?;
-                admission.validate_typed(&argument.value, *expected)?;
-            }
-            launch.task_spec.admit_retained(admission)?;
+            launch.start.admit_retained(admission)?;
             launch.state.admit_retained(
-                &launch.task_spec.outcome,
-                launch.task_spec.policy,
+                &launch.start.task_spec.outcome,
+                launch.start.task_spec.policy,
                 admission,
             )?;
         }
@@ -1803,11 +1735,8 @@ impl NeedProducerRegistry {
             }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
             launches: self.launches.values().map(|launch| {
                 Ok(NeedProducerLaunchSaveSnapshot {
-                    invocation: launch.invocation, plan: launch.plan.clone(),
-                    arguments: launch.arguments.iter().map(|argument| {
-                        Ok(NeedProducerRuntimeArgument { name: argument.name.clone(), value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(&argument.value, owner)? })
-                    }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
-                    correlation: launch.correlation, task_spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(&launch.task_spec, owner)?,
+                    invocation: launch.invocation, start: launch.start.snapshot_admitted(owner)?,
+                    correlation: launch.correlation,
                     state: RuntimeNeedProducerState::from_admitted_live(&launch.state, owner)?, publication: launch.publication,
                     task_submitted: launch.task_submitted, task_terminal: launch.task_terminal,
                 })
@@ -1855,7 +1784,7 @@ impl NeedProducerRegistry {
             .map_err(|error| error.to_string())?;
         let mut registry = Self::default();
         registry
-            .restore_registry_with_policy(restore, NeedProducerRestorePolicy::Rollback)
+            .restore_admitted_registry_with_policy(restore, NeedProducerRestorePolicy::Rollback)
             .map_err(|error| error.to_string())?;
         Ok(registry)
     }
@@ -2005,12 +1934,10 @@ impl NeedProducerRegistry {
         start: RuntimeNeedProducerStart,
     ) -> Result<(NeedProducerAdmission, NeedProducerStartDecision), NeedProducerAdmissionError>
     {
-        let RuntimeNeedProducerStart {
-            producer,
-            arguments,
-            task_spec,
-            restart,
-        } = start;
+        let producer = &start.producer;
+        let arguments = &start.arguments;
+        let task_spec = &start.task_spec;
+        let restart = start.restart;
         if invocation.producer_site != producer.producer_site() {
             return Err(NeedProducerAdmissionError::InvocationSiteMismatch);
         }
@@ -2041,7 +1968,7 @@ impl NeedProducerRegistry {
             return Ok((
                 NeedProducerAdmission {
                     correlation: existing.correlation,
-                    task_spec: existing.task_spec.clone(),
+                    task_spec: existing.start.task_spec.clone(),
                     invocation,
                     disposition,
                 },
@@ -2073,7 +2000,7 @@ impl NeedProducerRegistry {
                 return Ok((
                     NeedProducerAdmission {
                         correlation: existing.correlation,
-                        task_spec: existing.task_spec.clone(),
+                        task_spec: existing.start.task_spec.clone(),
                         invocation,
                         disposition,
                     },
@@ -2097,10 +2024,7 @@ impl NeedProducerRegistry {
         let launch = RuntimeNeedProducerLaunch {
             correlation,
             invocation,
-            restart,
-            producer,
-            arguments,
-            task_spec,
+            start,
             state: RuntimeNeedProducerState::NotStarted,
             publication: None,
             task_submitted: true,
@@ -2114,7 +2038,7 @@ impl NeedProducerRegistry {
         }
         let admission = NeedProducerAdmission {
             correlation: launch.correlation,
-            task_spec: launch.task_spec.clone(),
+            task_spec: launch.start.task_spec.clone(),
             invocation,
             disposition: NeedProducerTaskDisposition::Ensure,
         };
@@ -2159,7 +2083,7 @@ impl NeedProducerRegistry {
                 launch,
                 invocation,
             } => {
-                if launch.task_spec.policy == TaskPolicy::JoinSameKey {
+                if launch.start.task_spec.policy == TaskPolicy::JoinSameKey {
                     self.joined.insert((key.generation, key.instance_key), key);
                 }
                 self.launches.insert(key, launch);
@@ -2228,7 +2152,7 @@ impl NeedProducerRegistry {
         self.launches
             .values()
             .filter(|launch| {
-                launch.restart == HostRestartPolicy::Restartable
+                launch.start.restart == HostRestartPolicy::Restartable
                     && !launch.task_terminal
                     && !launch.state.is_terminal()
             })
@@ -2239,7 +2163,7 @@ impl NeedProducerRegistry {
                         correlation: launch.correlation,
                     })
                     .expect("active launch retains its accepted journal receipt"),
-                restart: launch.restart,
+                restart: launch.start.restart,
                 publication: launch.publication,
                 needs_reensure: !launch.task_submitted,
             })
@@ -2253,7 +2177,7 @@ impl NeedProducerRegistry {
         self.launches
             .values()
             .filter(|launch| {
-                launch.restart() == HostRestartPolicy::MustBeQuiescent
+                launch.start.restart() == HostRestartPolicy::MustBeQuiescent
                     && !launch.task_terminal()
                     && !launch.state().is_terminal()
                     && launch.task_fault().is_none()
@@ -2366,7 +2290,7 @@ impl NeedProducerRegistry {
     ) -> Option<&RuntimeNeedProducerLaunch> {
         let correlation = handle.correlation();
         self.launch_for_correlation(&correlation)
-            .filter(|launch| handle.matches_spec(&launch.task_spec))
+            .filter(|launch| handle.matches_spec(&launch.start.task_spec))
     }
 
     pub fn need_for_task(&self, task: &TaskId) -> Option<&NeedId> {
@@ -2406,11 +2330,13 @@ impl NeedProducerRegistry {
     pub fn restore_registry(
         &mut self,
         restore: NeedProducerRegistryRestore,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), NeedProducerAdmissionError> {
-        self.restore_registry_with_policy(restore, NeedProducerRestorePolicy::Resume)
+        restore.admit_retained(admission)?;
+        self.restore_admitted_registry_with_policy(restore, NeedProducerRestorePolicy::Resume)
     }
 
-    pub(crate) fn restore_registry_with_policy(
+    pub(crate) fn restore_admitted_registry_with_policy(
         &mut self,
         restore: NeedProducerRegistryRestore,
         policy: NeedProducerRestorePolicy,
@@ -2423,11 +2349,13 @@ impl NeedProducerRegistry {
         {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
-        Self::validate_restore(&restore)?;
+        Self::validate_restore_journal(&restore)?;
         let mut candidate = Self::default();
         for row in restore.task_admissions {
             let (spec, handle) = row.into_parts();
-            candidate.task_journal.restore_accepted(spec, handle)?;
+            candidate
+                .task_journal
+                .restore_admitted_accepted(spec, handle)?;
         }
         for launch in restore.launches {
             candidate.insert_validated_restore_launch(launch, policy);
@@ -2453,45 +2381,11 @@ impl NeedProducerRegistry {
     /// must not copy it into a temporary live registry.
     pub fn validate_restore(
         restore: &NeedProducerRegistryRestore,
+        admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), NeedProducerAdmissionError> {
-        super::TaskAdmissionJournal::validate_submissions(&restore.task_admissions)?;
-        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::live(
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        for launch in &restore.launches {
-            for argument in &launch.arguments {
-                argument
-                    .value
-                    .view()
-                    .admit_ownership(
-                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                        &mut resources,
-                        0,
-                    )
-                    .map_err(|error| match error {
-                        crate::value::AwbcRuntimeValueSnapshotError::AffineValue => {
-                            NeedProducerAdmissionError::AffineHostProducerArgument
-                        }
-                        _ => NeedProducerAdmissionError::InvalidProducerArguments,
-                    })?;
-            }
-            if launch.task_spec.policy == TaskPolicy::JoinSameKey
-                && let RuntimeNeedProducerState::Ready(value) = &launch.state
-            {
-                value
-                    .value()
-                    .view()
-                    .admit_ownership(
-                        crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                        &mut resources,
-                        0,
-                    )
-                    .map_err(|_| NeedProducerAdmissionError::InvalidRestoredLaunch)?;
-            }
-        }
-        Self::validate_restore_journal(restore)
+        restore.admit_retained(admission)?;
+        Ok(())
     }
-
     fn validate_restore_journal<
         V: crate::value::RuntimeStoredValue,
         P: crate::value::RuntimeStoredValue + PartialEq,
@@ -2503,18 +2397,26 @@ impl NeedProducerRegistry {
         let mut invocations = BTreeMap::new();
         let mut next_launch_ordinal =
             super::TaskAdmissionJournal::validate_submission_journal(&restore.task_admissions)?;
+        let task_admissions = restore
+            .task_admissions
+            .iter()
+            .map(|row| (row.task_id(), row))
+            .collect::<BTreeMap<_, _>>();
         let mut next_invocation_sequence = BTreeMap::new();
         for launch in &restore.launches {
             let checked = validate_restore_launch(launch)?;
-            if !restore.task_admissions.iter().any(|row| {
-                row.handle().correlation == launch.correlation
-                    && row.spec().same_join_contract(&launch.task_spec)
-            }) {
+            if !task_admissions
+                .get(&launch.correlation.task_id)
+                .is_some_and(|row| {
+                    row.handle().correlation == launch.correlation
+                        && row.spec().same_join_contract(&launch.start.task_spec)
+                })
+            {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             }
             if launches.insert(checked.key, launch).is_some()
                 || invocations.insert(launch.invocation, checked.key).is_some()
-                || (launch.task_spec.policy == TaskPolicy::JoinSameKey
+                || (launch.start.task_spec.policy == TaskPolicy::JoinSameKey
                     && !joined.insert((launch.invocation.generation, checked.instance_key)))
             {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
@@ -2545,8 +2447,8 @@ impl NeedProducerRegistry {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             };
             if invocation.generation != launch.invocation.generation
-                || invocation.producer_site != launch.plan.site
-                || launch.task_spec.policy != TaskPolicy::JoinSameKey
+                || invocation.producer_site != launch.start.producer.producer_site()
+                || launch.start.task_spec.policy != TaskPolicy::JoinSameKey
             {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             }
@@ -2671,7 +2573,7 @@ impl NeedProducerRegistry {
             ));
         }
         if let TaskEventKind::Ready(value) = &event.kind
-            && launch.task_spec.policy == TaskPolicy::JoinSameKey
+            && launch.start.task_spec.policy == TaskPolicy::JoinSameKey
             && !value.value().ownership().permits_copy()
         {
             return Err(reject(
@@ -2748,7 +2650,7 @@ impl NeedProducerRegistry {
         let RuntimeNeedProducerState::Ready(value) = &launch.state else {
             return Err(NeedProducerAdmissionError::ReadyUnavailable);
         };
-        if launch.task_spec.policy == TaskPolicy::JoinSameKey
+        if launch.start.task_spec.policy == TaskPolicy::JoinSameKey
             && !value.value().ownership().permits_copy()
         {
             return Err(NeedProducerAdmissionError::AffineJoinedReadyPublication);
@@ -2759,7 +2661,7 @@ impl NeedProducerRegistry {
         Ok(NeedProducerReadyTakeProof {
             key: *key,
             publication,
-            policy: launch.task_spec.policy,
+            policy: launch.start.task_spec.policy,
         })
     }
 
@@ -2773,7 +2675,7 @@ impl NeedProducerRegistry {
             .expect("prepared Ready take launch exists");
         assert!(
             launch.publication == Some(proof.publication)
-                && launch.task_spec.policy == proof.policy,
+                && launch.start.task_spec.policy == proof.policy,
             "prepared Ready take requires unchanged producer cursor and policy"
         );
         if proof.policy == TaskPolicy::JoinSameKey {
@@ -2818,7 +2720,7 @@ impl NeedProducerRegistry {
             .iter()
             .find(|(_, launch)| &launch.correlation == correlation)
             .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
-        if launch.task_spec.policy != TaskPolicy::AlwaysStart
+        if launch.start.task_spec.policy != TaskPolicy::AlwaysStart
             || !matches!(launch.state, RuntimeNeedProducerState::ReadyTransferred)
             || !launch.task_terminal
         {
@@ -2855,7 +2757,7 @@ impl NeedProducerRegistry {
     /// corresponding Product step output.
     pub fn pending_reensure(&self) -> impl Iterator<Item = &RuntimeNeedProducerLaunch> {
         self.launches.values().filter(|launch| {
-            launch.restart == HostRestartPolicy::Restartable
+            launch.start.restart == HostRestartPolicy::Restartable
                 && !launch.task_terminal
                 && !launch.state.is_terminal()
                 && !launch.task_submitted
@@ -2890,7 +2792,7 @@ impl NeedProducerRegistry {
                 submission: None,
             });
         }
-        if launch.restart != HostRestartPolicy::Restartable {
+        if launch.start.restart != HostRestartPolicy::Restartable {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
         Ok(NeedProducerTaskEnsuredProof {
@@ -2932,14 +2834,10 @@ impl NeedProducerRegistry {
         // first owner moves into this candidate.
         let checked = validate_restore_launch(&restore)
             .expect("borrowed Need registry preflight established this launch");
-        let generation = restore.invocation.generation;
         let mut launch = RuntimeNeedProducerLaunch {
             correlation: restore.correlation,
             invocation: restore.invocation,
-            plan: restore.plan,
-            producer: checked.producer,
-            arguments: restore.arguments,
-            task_spec: restore.task_spec,
+            start: restore.start,
             state: restore.state,
             publication: restore.publication,
             task_submitted: restore.task_submitted,
@@ -2948,7 +2846,7 @@ impl NeedProducerRegistry {
         let key = checked.key;
         assert!(!self.launches.contains_key(&key));
         assert!(!self.invocation_launches.contains_key(&launch.invocation));
-        if launch.task_spec.policy == TaskPolicy::JoinSameKey
+        if launch.start.task_spec.policy == TaskPolicy::JoinSameKey
             && self
                 .joined
                 .insert((launch.correlation.generation, checked.instance_key), key)
@@ -2957,13 +2855,14 @@ impl NeedProducerRegistry {
             unreachable!("borrowed Need registry preflight checked joined uniqueness");
         }
         let correlation = launch
+            .start
             .task_spec
             .correlation(launch.correlation.launch_ordinal)
             .expect("borrowed restore preflight authenticated correlation");
         assert!(
             self.task_journal
                 .accepted_spec(TaskHandle { correlation })
-                .is_some_and(|spec| spec.same_join_contract(&launch.task_spec)),
+                .is_some_and(|spec| spec.same_join_contract(&launch.start.task_spec)),
             "borrowed restore preflight authenticated complete journal membership"
         );
         let entry = self
@@ -2972,7 +2871,7 @@ impl NeedProducerRegistry {
             .or_insert(0);
         *entry = (*entry).max(checked.invocation_next);
         if policy == NeedProducerRestorePolicy::Resume
-            && launch.restart == HostRestartPolicy::Restartable
+            && launch.start.restart == HostRestartPolicy::Restartable
             && !launch.task_terminal
         {
             launch.task_submitted = false;
@@ -2997,8 +2896,8 @@ impl NeedProducerRegistry {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         };
         if invocation.generation != launch.correlation.generation
-            || invocation.producer_site != launch.producer.producer_site()
-            || launch.task_spec.policy != TaskPolicy::JoinSameKey
+            || invocation.producer_site != launch.start.producer.producer_site()
+            || launch.start.task_spec.policy != TaskPolicy::JoinSameKey
             || self.invocation_launches.contains_key(&invocation)
         {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
@@ -3087,13 +2986,13 @@ fn launch_matches_start(
         return false;
     };
     launch.correlation.generation == generation
-        && launch.restart == restart
-        && launch.producer.same_instance_contract(producer)
-        && launch.arguments == arguments
+        && launch.start.restart == restart
+        && launch.start.producer.same_instance_contract(producer)
+        && launch.start.arguments == arguments
         && launch.correlation.producer == instance_key
         && launch.correlation.need == correlation.need
         && launch.correlation.task_id == correlation.task_id
-        && &launch.task_spec == task_spec
+        && &launch.start.task_spec == task_spec
 }
 
 pub use crate::plan::{
@@ -3238,9 +3137,9 @@ mod identity_tests {
         NeedProducerLaunchRestore {
             invocation: launch.invocation(),
             plan: launch.plan().clone(),
-            arguments: launch.arguments().to_vec(),
+            arguments: launch.start.arguments().to_vec(),
             correlation: launch.correlation(),
-            task_spec: launch.task_spec().clone(),
+            task_spec: launch.start.task_spec().clone(),
             state: RuntimeNeedProducerState::NotStarted,
             publication: launch.publication(),
             task_submitted: launch.task_submitted(),

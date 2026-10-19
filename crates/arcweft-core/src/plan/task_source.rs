@@ -19,7 +19,7 @@ mod host_tests;
 mod producer_tests;
 #[cfg(test)]
 mod template_tests;
-pub use owned::RuntimeTaskSource;
+pub use owned::{RuntimeTaskSource, RuntimeTaskSourceAssertion};
 
 use super::body_semantic::function::OriginalRequestEndpoint;
 use super::body_semantic::{RuntimeBodySemanticContext, RuntimeBodySemanticError};
@@ -35,6 +35,8 @@ pub(crate) enum RuntimeTaskSourceError {
     ForeignCoordinate,
     #[error("Task source row does not belong to this completed program")]
     ForeignRow,
+    #[error("Task Source execution assertion belongs to another backend")]
+    ForeignExecution,
     #[error("Task source expected key does not resolve in this completed program")]
     MissingExpectedKey,
     #[error("completed Task source has no request endpoint {request:?}")]

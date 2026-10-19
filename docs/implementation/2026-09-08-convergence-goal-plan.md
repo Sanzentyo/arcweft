@@ -20079,3 +20079,75 @@ View, Generic Match, nominal/Sans-I/O, R1507's broader failures, real stop/
 restore and Native/Web capture parity, complete reverse execution and final
 workspace/Tier 2 acceptance remain required. This intermediate commit changes
 the real runtime boundary; it does not narrow or complete the full goal.
+
+### 2026-10-19 — retain selected Source through registry and restore (intermediate)
+
+Inspected main at `d7db2054b09bcd460999fe8d7043f0083723664c` with
+11 owned Rust paths, fourteen held tracked paths and three held untracked paths.
+The Source-backed public switch remains intermediate and the full goal stays
+active. The user's explicit allowance for intermediate commits does not waive
+final validation. No additional clean, artifact movement, branch, checkout,
+worktree, dependency, profile, job-count or OS setting change occurs.
+
+Supersedes the previous note's unretained-binding and ten-library-error state.
+The actual live launch now owns one RuntimeNeedProducerStart, shared generically
+with inert rollback storage. This input keeps the original Source, evaluated
+arguments, derived specification, restart policy and actual invocation effect
+binding together. Only inert storage is Clone; activation moves its owners.
+Restore re-admits the actual Source and all values on the enclosing original
+bank before constructing the admitted live journal. Resource preflight reads
+effect-instantiation rows directly, avoiding Serde's cloning owned conversion.
+Validation checks the actual program's effect solution before retaining it.
+Exact caller/function origin and Ready's invocation-sensitive outcome validation
+remain required; retaining the binding alone does not complete those obligations.
+
+The external AWBC wire now carries an inert Source assertion: completed expected
+key plus exact code-local execution row. Resolution uses the actual original/
+code pair, repeats the full existing row/type/ABI admission, and compares the
+asserted completed key. It rejects a backend mismatch without a fallback. The
+old producer-site scan and metadata-to-Core request-plan reconstruction are
+deleted. Exact argument count is checked before collecting restored arguments.
+No version marker changes. Actual upper View authority still needs propagation
+through this preparation path, whose current ordinary-only authority is None.
+
+Public registry restore/validation now require the caller's retained admission.
+The admitted commit stage performs only journal/receipt validation and moves
+owners. TaskAdmissionJournal's old restore path that opened fresh descriptor
+validation is replaced with restore_admitted_accepted. A temporary index of
+already admitted task receipts replaces each launch's repeated full journal
+scan; it is not another authority. Failure atomicity and cumulative resource
+behavior still need execution evidence.
+
+R1587 Core all-feature locked check fails with three stale field diagnostics;
+those references are repaired. R1588 then passes, actual Cargo exit 0,
+59.18 seconds, with 126 warnings. All 3929 frozen input hashes, fourteen held
+paths, 99 manifest/lock inputs and the 53-package reverse closure match with
+zero drift. No current test execution, doctest, Clippy, downstream/workspace or
+Tier 2 pass is claimed. In particular, the two historical selected-key parity
+failures are not yet proven fixed.
+
+R1590 canonical structural gate passes, actual 0, and whitespace passes.
+Canonical bytes/physical LOC/embedded-test LOC are: registry 140828/3791/789;
+selected input 10149/264/0; AWBC snapshot owner 172321/4068/180; journal
+17902/501/98; Source execution assertion 5775/144/0; retained admission
+19577/525/0. Core workspace fan-in/fan-out is 31/7, development 4/5. The
+registry keeps launch state transitions and journal joins; the new input owns
+one admission stage; the existing snapshot owner keeps its product root and
+wire grammar. No unrelated state, parallel catalog, I/O or unsafe is added.
+These cohesive responsibilities retain the earlier large-owner disposition.
+
+Next migrate stale direct-registry and request-only identity tests to genuine
+completed Source fixtures, then execute the selected parity and restore/resource
+cases. Do not restore removed metadata issuers, raw-key constructors, fake
+Core owners or Source-free selected success paths. The broader final public
+switch, all fourteen Host request kinds, genuine autonomous owners, View,
+Generic Match, nominal/Sans-I/O, old-epoch owners, caller correspondence,
+pre-copy VM admission, real stop/restore and Native/Web parity, broad R1507
+failures and final workspace/Tier 2 acceptance remain open.
+
+R1589 selected Core/RuntimePlan catalogue compilation terminates with nextest
+exit 101 (inner cargo test --no-run 101), 45 Core test compile errors,
+zero tests executed. Diagnostics are obsolete metadata producer/semantic digest
+methods, old launch fields and old start/restore signatures. This is an explicit
+change-caused test migration failure. The only frozen-input drift during this
+command is this noncompiled implementation note; all Rust inputs remain exact.

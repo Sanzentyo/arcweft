@@ -7,33 +7,60 @@ use super::{
 };
 use crate::plan::task_source::{RuntimeTaskSource, RuntimeTaskSourceProgram, RuntimeTaskSourceRef};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
-use crate::value::{RuntimeRetainedValueAdmission, RuntimeValue};
+use crate::value::{
+    AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimePayload,
+    RuntimeRetainedValueAdmission, RuntimeStoredValue, RuntimeValue,
+};
 
-/// Complete admitted selected input. Its private fields bind the exact
-/// arguments, request and completed key to the original immutable program.
-/// No constructor accepts a copied request plan or caller Task digest.
+/// Source-admitted input shared by live execution and inert rollback storage.
+/// Private fields keep its exact arguments, request, key and invocation binding
+/// together. Neither role has a metadata-plan or caller-digest constructor.
 #[derive(Debug)]
-pub struct RuntimeNeedProducerStart {
+pub struct RuntimeNeedProducerStart<V = RuntimeValue, P = RuntimePayload> {
     pub(super) producer: NeedProducerSpec<RuntimeTaskSource>,
-    pub(super) arguments: Vec<NeedProducerRuntimeArgument>,
-    pub(super) task_spec: TaskSpec,
+    pub(super) arguments: Vec<NeedProducerRuntimeArgument<V>>,
+    pub(super) task_spec: TaskSpec<P>,
     pub(super) restart: HostRestartPolicy,
+    pub(super) binding: Option<RuntimeFunctionEffectInstantiation>,
 }
 
-impl RuntimeNeedProducerStart {
-    pub fn task_spec(&self) -> &TaskSpec {
+impl<V: PartialEq, P: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.producer.same_instance_contract(&other.producer)
+            && self.arguments == other.arguments
+            && self.task_spec == other.task_spec
+            && self.restart == other.restart
+            && self.binding == other.binding
+    }
+}
+
+impl<V, P> RuntimeNeedProducerStart<V, P> {
+    pub fn task_spec(&self) -> &TaskSpec<P> {
         &self.task_spec
+    }
+    pub fn producer(&self) -> &NeedProducerSpec<RuntimeTaskSource> {
+        &self.producer
+    }
+    pub fn arguments(&self) -> &[NeedProducerRuntimeArgument<V>] {
+        &self.arguments
+    }
+    pub fn source(&self) -> &RuntimeTaskSource {
+        self.producer.source()
+    }
+    pub fn restart(&self) -> HostRestartPolicy {
+        self.restart
+    }
+    pub(crate) fn binding(&self) -> Option<&RuntimeFunctionEffectInstantiation> {
+        self.binding.as_ref()
     }
 }
 
 impl RuntimeTaskSourceRef<'_> {
-    /// The existing bank admits every input before request projection copies
-    /// a host-safe value. The result retains that same original/code Source.
     pub(crate) fn selected_start(
         &self,
         program: &RuntimeTaskSourceProgram,
         generation: super::GenerationId,
-        arguments: Vec<NeedProducerRuntimeArgument<RuntimeValue>>,
+        arguments: Vec<NeedProducerRuntimeArgument>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<RuntimeNeedProducerStart, RuntimeTaskProducerSourceError> {
@@ -46,9 +73,12 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
     pub(crate) fn start(
         mut self,
         generation: super::GenerationId,
-        arguments: Vec<NeedProducerRuntimeArgument<RuntimeValue>>,
+        arguments: Vec<NeedProducerRuntimeArgument>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
     ) -> Result<RuntimeNeedProducerStart, RuntimeTaskProducerSourceError> {
+        if let Some(binding) = binding {
+            self.admission.validate_function_instantiation(binding)?;
+        }
         let producer = self.producer_spec(&arguments, binding)?;
         let metadata = self.metadata;
         let request = metadata.project_request(&arguments)?;
@@ -68,6 +98,167 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
             arguments,
             task_spec,
             restart: metadata.restart(),
+            binding: binding.cloned(),
+        })
+    }
+
+    pub(crate) fn restore_start<V: RuntimeStoredValue, P: RuntimeStoredValue>(
+        mut self,
+        arguments: Vec<NeedProducerRuntimeArgument<V>>,
+        task_spec: TaskSpec<P>,
+        binding: Option<RuntimeFunctionEffectInstantiation>,
+    ) -> Result<RuntimeNeedProducerStart<V, P>, RuntimeTaskProducerSourceError> {
+        if let Some(binding) = &binding {
+            self.admission.validate_function_instantiation(binding)?;
+        }
+        let producer = self.producer_spec(&arguments, binding.as_ref())?;
+        self.validate_specification(&producer, &arguments, &task_spec)?;
+        Ok(RuntimeNeedProducerStart {
+            producer,
+            arguments,
+            task_spec,
+            restart: self.metadata.restart(),
+            binding,
+        })
+    }
+
+    fn validate_specification<V: RuntimeStoredValue, P: RuntimeStoredValue>(
+        &mut self,
+        producer: &NeedProducerSpec<RuntimeTaskSource>,
+        arguments: &[NeedProducerRuntimeArgument<V>],
+        spec: &TaskSpec<P>,
+    ) -> Result<(), RuntimeTaskProducerSourceError> {
+        spec.admit_retained(self.admission)?;
+        if spec.producer != NeedProducerInstance::try_from(producer)?
+            || spec.class != *self.metadata.class()
+            || spec.priority != self.metadata.priority()
+            || spec.cancel_scope != *self.metadata.cancel_scope()
+            || spec.policy != self.metadata.policy()
+            || spec.outcome != self.metadata.outcome()
+            || spec.debug_label != spec.request.debug_label()
+            || !self.metadata.request_matches(arguments, &spec.request)?
+        {
+            return Err(RuntimeTaskProducerSourceError::Specification);
+        }
+        Ok(())
+    }
+}
+
+impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P> {
+    pub(super) fn admit_retained(
+        &self,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        let result = (|| {
+            let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+            let mut meter = admission.task_source_meter(limits)?;
+            let source = self.source().borrow(limits, &mut meter).map_err(|error| {
+                admission
+                    .status()
+                    .err()
+                    .unwrap_or_else(|| AwbcRuntimeValueSnapshotError::Message {
+                        message: error.to_string(),
+                    })
+            })?;
+            let mut prepared = source
+                .prepare_selected_producer(self.source().program(), admission)
+                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                })?;
+            if let Some(binding) = &self.binding {
+                prepared
+                    .admission
+                    .validate_function_instantiation(binding)?;
+            }
+            let canonical = prepared
+                .producer_spec(&self.arguments, self.binding.as_ref())
+                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                })?;
+            if !canonical.same_instance_contract(&self.producer)
+                || self.restart != prepared.metadata.restart()
+            {
+                return Err(AwbcRuntimeValueSnapshotError::Message {
+                    message: "retained selected input differs from its original Source".into(),
+                });
+            }
+            prepared
+                .validate_specification(&canonical, &self.arguments, &self.task_spec)
+                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
+                    message: error.to_string(),
+                })
+        })();
+        if let Err(error) = &result {
+            admission.retain_failure(error.clone());
+        }
+        result
+    }
+}
+
+type SavedStart = RuntimeNeedProducerStart<AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshot>;
+
+impl Clone for SavedStart {
+    fn clone(&self) -> Self {
+        Self {
+            producer: self.producer.clone(),
+            arguments: self.arguments.clone(),
+            task_spec: self.task_spec.clone(),
+            restart: self.restart,
+            binding: self.binding.clone(),
+        }
+    }
+}
+
+impl RuntimeNeedProducerStart {
+    pub(super) fn snapshot_admitted(
+        &self,
+        owner: &super::RuntimeProgramOwner,
+    ) -> Result<SavedStart, AwbcRuntimeValueSnapshotError> {
+        Ok(SavedStart {
+            producer: self.producer.clone(),
+            arguments: self
+                .arguments
+                .iter()
+                .map(|argument| {
+                    Ok(NeedProducerRuntimeArgument {
+                        name: argument.name.clone(),
+                        value: AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+                            &argument.value,
+                            owner,
+                        )?,
+                    })
+                })
+                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
+            task_spec: TaskSpec::<AwbcRuntimeValueSnapshot>::from_admitted_live(
+                &self.task_spec,
+                owner,
+            )?,
+            restart: self.restart,
+            binding: self.binding.clone(),
+        })
+    }
+}
+
+impl SavedStart {
+    pub(super) fn into_admitted_live(
+        self,
+        owner: &super::RuntimeProgramOwner,
+    ) -> Result<RuntimeNeedProducerStart, AwbcRuntimeValueSnapshotError> {
+        Ok(RuntimeNeedProducerStart {
+            producer: self.producer,
+            arguments: self
+                .arguments
+                .into_iter()
+                .map(|argument| {
+                    Ok(NeedProducerRuntimeArgument {
+                        name: argument.name,
+                        value: argument.value.into_admitted_runtime_value(owner)?,
+                    })
+                })
+                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
+            task_spec: self.task_spec.into_admitted_live(owner)?,
+            restart: self.restart,
+            binding: self.binding,
         })
     }
 }

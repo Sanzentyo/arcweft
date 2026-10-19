@@ -9,7 +9,7 @@ use crate::plan::task_source::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
 use crate::plan::{RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanSealLimits};
 use crate::task::semantic::TaskSemanticMeter;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(in crate::plan::task_source) enum RuntimeTaskExecutionRow {
     HostCall(AwbcHostCallId),
     Selected(AwbcTaskPlanId),
@@ -42,6 +42,53 @@ pub(crate) enum RuntimeTaskSourceBorrowError {
 }
 
 impl RuntimeTaskSourceProgram {
+    pub(crate) fn borrow_assertion(
+        &self,
+        assertion: &crate::plan::RuntimeTaskSourceAssertion,
+        limits: RuntimeTaskPlanSealLimits,
+        meter: &mut TaskSemanticMeter,
+    ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceBorrowError> {
+        use super::super::owned::RuntimeTaskSourceExecutionAssertion;
+        let result = (|| {
+            let source = match (&assertion.execution, self.data.as_ref()) {
+                (
+                    RuntimeTaskSourceExecutionAssertion::Native,
+                    RuntimeTaskSourceProgramData::Native(_),
+                ) => self.original().task_source_by_expected_key(
+                    &assertion.expected,
+                    limits,
+                    meter,
+                )?,
+                (
+                    RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Selected(
+                        row,
+                    )),
+                    RuntimeTaskSourceProgramData::Awbc { .. },
+                ) => self.awbc_selected_source(*row, limits, meter)?,
+                (
+                    RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::HostCall(
+                        row,
+                    )),
+                    RuntimeTaskSourceProgramData::Awbc { .. },
+                ) => self.awbc_host_source(*row, limits, meter)?,
+                (
+                    RuntimeTaskSourceExecutionAssertion::Awbc(RuntimeTaskExecutionRow::Template(
+                        row,
+                    )),
+                    RuntimeTaskSourceProgramData::Awbc { .. },
+                ) => self.awbc_template_source(*row, limits, meter)?,
+                _ => return Err(RuntimeTaskSourceError::ForeignExecution.into()),
+            };
+            if source.task_plan().key().as_bytes() != assertion.expected.bytes() {
+                return Err(RuntimeTaskSourceError::ForeignRow.into());
+            }
+            Ok(source)
+        })();
+        if result.is_err() {
+            meter.reject_owner();
+        }
+        result
+    }
     pub(super) fn bind_source<'program>(
         &'program self,
         mut source: RuntimeTaskSourceRef<'program>,

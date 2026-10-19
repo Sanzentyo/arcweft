@@ -320,13 +320,15 @@ impl TaskAdmissionJournal {
         handle
     }
 
-    pub(super) fn restore_accepted(
+    /// Restores a descriptor already admitted on the enclosing owner's bank.
+    /// This stage checks only the journal and receipt, without reopening value
+    /// admission with a fresh work budget.
+    pub(super) fn restore_admitted_accepted(
         &mut self,
         spec: TaskSpec,
         handle: TaskHandle,
     ) -> Result<(), TaskEnsureError> {
-        let submission = TaskSubmission::try_from_accepted(spec, handle)?;
-        let (spec, handle) = submission.into_parts();
+        spec.validate_handle(handle)?;
         let correlation = handle.correlation;
         if self.accepted.contains_key(&correlation.task_id)
             || (spec.policy == TaskPolicy::JoinSameKey
