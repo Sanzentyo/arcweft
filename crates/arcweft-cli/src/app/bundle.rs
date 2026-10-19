@@ -750,6 +750,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::ExpectedAwfbProduct { .. } => ExitCode::from(2),
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
+        | BundleRunnerError::ProgramAdmission(_)
         | BundleRunnerError::ContainerArtifactIdentity(_)
         | BundleRunnerError::LogicalArtifactIdentity(_)
         | BundleRunnerError::BundleAssetContext(_)

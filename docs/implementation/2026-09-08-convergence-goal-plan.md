@@ -21432,3 +21432,34 @@ commit/push without proving every checkpoint operational. The full Source public
 switch, convergence of all 14 families, complete Presentation lowering, strict lint,
 Tier2 and final Native/Web execution/capture/parity acceptance remain open. The
 full goal stays active, with no genuine external blocker.
+
+### 2026-10-20 — complete the bundle admission error consumer
+
+Published the embedding-owner change at
+`c916f0623d0656cc88391e5666dba42c0f6c3911`, parent
+`0e1fbc6bb8cda25dc01f1b1e34e39288120c741e`, tree
+`9aea59dac27cef3797e3a8777db5b6dec8c3dc99`, raw patch SHA-256
+`eeeba4acfb91d6435de2b5dfc9dbac1663bc3dcfe947f953f32eae1622d0339d`.
+Fresh advertised remote, complete patch, all 14 working/published blobs and 3931
+frozen inputs matched. The baseline returned to owned0/held14 with empty index.
+
+R1693 workspace check completed with actual exit 101: CLI's exhaustive bundle
+error classification lacked the new typed ProgramAdmission variant. It now
+classifies that failure with the existing executable/decode failures (exit 1),
+preserving invalid-option selection errors at exit 2. No catch-all or raw-program
+success path was added. The one-arm classification needs no mirrored unit test;
+exhaustive compilation and the existing execution tests cover this consumer.
+
+R1697 completed the final owned/borrowed canonicalization structural stage with
+exit 0: 3154 files, 3024 Rust files, 1718380 physical Rust lines, 97 packages,
+376 review triggers, zero blocking violations. This precedes the one-line CLI
+classification correction and does not claim a later source count.
+
+R1694 five-owner check and R1696 19-package lib/tests catalogue remain live
+(handles 85030 and 84157). R1698 is the fresh locked all-feature/all-target
+workspace check after the CLI correction (handle 94288). Keep those same
+processes and their actual terminal results; a prior observation timeout is not
+a restart condition. Current-slice runtime, public API and strict lint evidence
+remain pending. Core source is unchanged, so the earlier 1880-case/73-doctest
+proof remains attributed to its actual Core inputs. The full goal and all
+previously listed remaining requirements stay active.
