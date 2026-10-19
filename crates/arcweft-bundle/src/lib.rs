@@ -446,6 +446,8 @@ pub enum BundleCodecError {
     InvalidViewStyleContract(#[from] ViewStyleContractError),
     #[error(transparent)]
     InvalidViewProduct(#[from] ViewProductValidationError),
+    #[error(transparent)]
+    ProgramAdmission(#[from] resource_codec::view::ViewProgramAdmissionError),
     #[error("View handler runtime cross-section is invalid: {message}")]
     InvalidViewHandlerRuntime { message: String },
     #[error(transparent)]
@@ -916,6 +918,15 @@ impl ArcweftBundle {
         self.product_awbc.program()
     }
 
+    /// Admits the exact executable and its original Source against this
+    /// bundle's complete View product. Callers retain the returned authority.
+    pub fn admit_runtime_program(
+        &self,
+    ) -> Result<arcweft_core::awbc::product_step::AwbcProductProgram, BundleCodecError> {
+        let product = self.validate_schema_and_kind()?;
+        Ok(product.admit_awbc_program(self.product_awbc.program_lease())?)
+    }
+
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
         self.validate_schema_and_kind()?;
         if self.character_dialogue_generation.is_some() {
@@ -1245,7 +1256,7 @@ impl ArcweftBundle {
         Ok(Some(file.bytes.as_slice()))
     }
 
-    fn validate_kind(&self) -> Result<(), BundleCodecError> {
+    fn validate_kind(&self) -> Result<ValidatedViewProduct, BundleCodecError> {
         match (self.bundle_kind, self.agent.is_some()) {
             (BundleKind::AgentController, false) => Err(BundleCodecError::MissingAgentManifest),
             (BundleKind::AgentController, true) | (BundleKind::Game, false) => {
@@ -1255,7 +1266,7 @@ impl ArcweftBundle {
         }
     }
 
-    fn validate_unique_items(&self) -> Result<(), BundleCodecError> {
+    fn validate_unique_items(&self) -> Result<ValidatedViewProduct, BundleCodecError> {
         let mut adapter_ids = BTreeSet::new();
         for manifest in &self.adapter_manifests {
             if !adapter_ids.insert(manifest.id.as_str()) {
@@ -1361,24 +1372,25 @@ impl ArcweftBundle {
                 .encode_canonical_section()
                 .map_err(ViewStyleContractError::InvalidResource)?;
         }
-        ValidatedViewProduct::try_new(
-            Some(self.source_map.clone()),
-            self.view_program.clone(),
-            self.view_style.clone(),
+        ValidatedViewProduct::try_from_borrowed(
+            Some(&self.source_map),
+            self.view_program.as_ref(),
+            self.view_style.as_ref(),
             ViewProductValidationLimits::default(),
-        )?;
-        Ok(())
+        )
+        .map_err(Into::into)
     }
 
-    fn validate_schema_and_kind(&self) -> Result<(), BundleCodecError> {
+    fn validate_schema_and_kind(&self) -> Result<ValidatedViewProduct, BundleCodecError> {
         if self.schema_version != ARCWEFT_BUNDLE_SCHEMA_VERSION {
             return Err(BundleCodecError::UnsupportedSchema {
                 actual: self.schema_version,
                 expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             });
         }
-        self.validate_kind()?;
-        self.validate_dialogue_content_contract().map(|_| ())
+        let product = self.validate_kind()?;
+        self.validate_dialogue_content_contract()?;
+        Ok(product)
     }
 
     #[cfg(feature = "format-avro")]
@@ -1990,7 +2002,10 @@ mod tests {
             other => panic!("assertion guard changed constant kind: {other:?}"),
         };
         assert_eq!(decoded_guard, guard);
-        assert_eq!(decoded_program.effect_plans[0].kind(), AwbcEffectKind::Assert);
+        assert_eq!(
+            decoded_program.effect_plans[0].kind(),
+            AwbcEffectKind::Assert
+        );
     }
 
     #[test]

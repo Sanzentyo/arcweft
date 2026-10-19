@@ -555,11 +555,36 @@ pub struct RuntimePureAccelerator {
     math_prepare_cache: RuntimeMathPrepareCache,
 }
 
-/// Derived native state is pinned to the exact admitted immutable plan. A
-/// foreign function capability cannot select a numerically equal cached site.
+/// Derived state retains its actual program. Only a Native plan can authorize
+/// a Native function cache slot; AWBC keeps its admitted executable and Source.
 struct RuntimePureCache {
-    plan: Arc<RuntimePlan>,
+    program: RuntimePureCacheProgram,
     entries: BTreeMap<RuntimePureFunctionId, RuntimePureCacheEntry>,
+}
+
+enum RuntimePureCacheProgram {
+    Native(Arc<RuntimePlan>),
+    Awbc(arcweft_core::awbc::product_step::AwbcProductProgram),
+}
+
+impl RuntimePureCache {
+    fn owns_function(&self, function: RuntimePureFunctionRef<'_>) -> bool {
+        match &self.program {
+            RuntimePureCacheProgram::Native(plan) => Arc::ptr_eq(plan, function.plan()),
+            RuntimePureCacheProgram::Awbc(_) => false,
+        }
+    }
+
+    fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        match &self.program {
+            RuntimePureCacheProgram::Native(plan) => {
+                arcweft_core::task::RuntimeProgramOwner::Plan(Arc::clone(plan))
+            }
+            RuntimePureCacheProgram::Awbc(program) => {
+                arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc())
+            }
+        }
+    }
 }
 
 enum RuntimePureCacheEntry {

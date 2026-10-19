@@ -1,6 +1,6 @@
 //! Complete-product validation before View resources cross a runtime boundary.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use arcweft_source::{ProductSourceId, ProductSourceRef, SourceRevision, SourceSetRevision};
 use arcweft_view::{
@@ -140,56 +140,78 @@ impl ValidatedViewProduct {
                 .map_err(|_| ViewProductValidationError::ArithmeticOverflow)?,
         };
 
+        Self::validate_sources(&source_map, program.as_ref(), style.as_ref())?;
+        Self::from_admitted_sources(source_map, program.map(Cow::Owned), style.map(Cow::Owned))
+    }
+
+    /// Checks the complete borrowed candidate before copying its resources.
+    /// Source-map construction has already bounded its immutable documents.
+    pub fn try_from_borrowed(
+        source_map: Option<&SourceMapSection>,
+        program: Option<&ViewProgramResource>,
+        style: Option<&ViewStyleResource>,
+        limits: ViewProductValidationLimits,
+    ) -> Result<Self, ViewProductValidationError> {
+        validate_product_limits(program, style, limits)?;
+        let empty;
+        let source_map = match source_map {
+            Some(source_map) => source_map,
+            None if program.is_some_and(program_is_source_bearing)
+                || style.is_some_and(style_is_source_bearing) =>
+            {
+                return Err(ViewProductValidationError::MissingSourceMap);
+            }
+            None => {
+                empty = SourceMapSection::try_from_documents(&[])
+                    .map_err(|_| ViewProductValidationError::ArithmeticOverflow)?;
+                &empty
+            }
+        };
+        Self::validate_sources(source_map, program, style)?;
+        Self::from_admitted_sources(
+            source_map.clone(),
+            program.map(Cow::Borrowed),
+            style.map(Cow::Borrowed),
+        )
+    }
+
+    fn validate_sources(
+        source_map: &SourceMapSection,
+        program: Option<&ViewProgramResource>,
+        style: Option<&ViewStyleResource>,
+    ) -> Result<(), ViewProductValidationError> {
         let program_index = program
-            .as_ref()
-            .map(|resource| validate_source_refs(&resource.source_refs, &source_map))
+            .map(|resource| validate_source_refs(&resource.source_refs, source_map))
             .transpose()?;
         let style_index = style
-            .as_ref()
-            .map(|resource| validate_source_refs(&resource.source_refs, &source_map))
+            .map(|resource| validate_source_refs(&resource.source_refs, source_map))
             .transpose()?;
-        if let Some(resource) = style.as_ref() {
+        if let Some(resource) = style {
             resource.validate_source_ids()?;
         }
-        if let (Some(resource), Some(index)) = (program.as_ref(), program_index.as_ref()) {
-            validate_program_ranges(resource, &source_map, index)?;
+        if let (Some(resource), Some(index)) = (program, program_index.as_ref()) {
+            validate_program_ranges(resource, source_map, index)?;
         }
-        if let (Some(resource), Some(index)) = (style.as_ref(), style_index.as_ref()) {
-            validate_style_ranges(resource, &source_map, index)?;
+        if let (Some(resource), Some(index)) = (style, style_index.as_ref()) {
+            validate_style_ranges(resource, source_map, index)?;
         }
-        if let (Some(resource), Some(index)) = (program.as_ref(), program_index.as_ref()) {
-            validate_export_relations(resource, &source_map, index)?;
+        if let (Some(resource), Some(index)) = (program, program_index.as_ref()) {
+            validate_export_relations(resource, source_map, index)?;
         }
-        if let Some(resource) = style.as_ref() {
+        if let Some(resource) = style {
             super::codec::style_environment::validate_structure(resource)?;
         }
+        Ok(())
+    }
 
+    fn from_admitted_sources(
+        source_map: SourceMapSection,
+        program: Option<Cow<'_, ViewProgramResource>>,
+        style: Option<Cow<'_, ViewStyleResource>>,
+    ) -> Result<Self, ViewProductValidationError> {
         let program = program.map(canonical_program).transpose()?;
         let style = style.map(canonical_style).transpose()?;
-
-        let program_index = program
-            .as_ref()
-            .map(|resource| validate_source_refs(&resource.source_refs, &source_map))
-            .transpose()?;
-        let style_index = style
-            .as_ref()
-            .map(|resource| validate_source_refs(&resource.source_refs, &source_map))
-            .transpose()?;
-        if let Some(resource) = style.as_ref() {
-            resource.validate_source_ids()?;
-        }
-        if let (Some(resource), Some(index)) = (program.as_ref(), program_index.as_ref()) {
-            validate_program_ranges(resource, &source_map, index)?;
-        }
-        if let (Some(resource), Some(index)) = (style.as_ref(), style_index.as_ref()) {
-            validate_style_ranges(resource, &source_map, index)?;
-        }
-        if let (Some(resource), Some(index)) = (program.as_ref(), program_index.as_ref()) {
-            validate_export_relations(resource, &source_map, index)?;
-        }
-        if let Some(resource) = style.as_ref() {
-            super::codec::style_environment::validate_structure(resource)?;
-        }
+        Self::validate_sources(&source_map, program.as_ref(), style.as_ref())?;
 
         let source_set_revision = source_map.source_set_revision();
         let program = program
@@ -408,7 +430,7 @@ fn validate_product_limits(
 }
 
 fn canonical_program(
-    candidate: ViewProgramResource,
+    candidate: Cow<'_, ViewProgramResource>,
 ) -> Result<ViewProgramResource, ViewProductValidationError> {
     let encoded = candidate.encode_canonical_section()?;
     drop(candidate);
@@ -416,11 +438,11 @@ fn canonical_program(
 }
 
 fn canonical_style(
-    candidate: ViewStyleResource,
+    candidate: Cow<'_, ViewStyleResource>,
 ) -> Result<ViewStyleResource, ViewProductValidationError> {
     let encoded = candidate.encode_canonical_section()?;
     let canonical = ViewStyleResource::decode_canonical_section(&encoded)?;
-    let is_canonical = candidate == canonical;
+    let is_canonical = candidate.as_ref() == &canonical;
     drop(candidate);
     if is_canonical {
         Ok(canonical)

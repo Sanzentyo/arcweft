@@ -21368,3 +21368,67 @@ at the published descriptor correction; this evidence-only note changes no
 Rust/Cargo/test input. The broader current-source runtime, strict lint, final
 Source/owner/public switch and all previously recorded acceptance remain open.
 The complete goal stays active, with no genuine external blocker.
+
+### 2026-10-20 — retain admitted bundle Source through embedding runners
+
+Inspected main `0e1fbc6bb8cda25dc01f1b1e34e39288120c741e`, with the inherited
+14 tracked paths and three untracked roots held. The preceding goal turn was
+progress: three published commits, 1880 passing Core cases, 73 passing Core
+doctests, and audited default-warning Clippy evidence. Those are attributed to
+their actual inputs; this consumer change does not alter Core source.
+
+Two production bundle paths still extracted the raw AWBC lease after artifact
+checks and reconstructed execution with no accepted View authority. Agent runner
+and native bundle runner now consume `ArcweftBundle::admit_runtime_program`.
+The bundle validation path returns its actual `ValidatedViewProduct` instead of
+discarding it, and the new admission method reuses that product to admit the
+actual code and its complete original Source. Mutable bundle fields are checked
+on each admission; there is no stale admission cache or second View catalog.
+
+`ValidatedViewProduct::try_from_borrowed` shares source/resource validation and
+canonicalization with owned admission. It borrows the original mutable View
+candidate through validation and canonical codec encoding, instead of cloning
+its unadmitted graph. Canonicalization distinguishes owned/borrowed inputs with
+Cow, retaining the owned path's release before canonical program decoding.
+Immutable SourceMap construction already enforces its
+document and total-byte limits. AWFB source projection and bundle validation use
+the borrowed constructor. The accepted resource still has one owned canonical
+graph and the same source/revision/registry laws.
+
+The native bundle runner previously made an empty RuntimePlan solely to create
+a pure accelerator. Its cache now owns a closed Native/AWBC program alternative:
+Native slots retain exact Arc identity checks, while AWBC retains the actual
+admitted executable and Source. Shared accelerator setup preserves its existing
+config, scratch, math and counters. Bundle execution retains the same admitted
+program in the executor and accelerator. Program-admission failure has its own
+typed runner error, before execution or host effects.
+
+Coverage adds borrowed/owned admission equivalence at exact and one-less source
+limits, missing/stale source rejection without candidate mutation, real AWBC
+cache identity with rejection of foreign Native cache selection, and an AWFB
+round trip plus bundle execution in the existing real View Source/PNG fixture.
+Its two Native/AWBC asset runs retain eight steps, 32 operations and exact
+completed/failed assertions; the additional bundle entry returns its original
+value and performs zero asset tasks. No budget, batch, fusion, copy or capture
+condition was weakened, no dependency/feature/layer changed, and all owned
+contract versions remain at 1.
+
+Initial current-slice source/graph preflight completed: 3931 inputs, 12 owned Rust
+paths, held14, all 99 manifest/lock inputs unchanged, outside-owned/held drift
+zero. The resolved union of Bundle, accelerator, host, Agent runner and CLI
+reverse dependencies contains 19 packages. R1692's old 53-package catalogue and R1693
+workspace check were already live when these edits began. R1692 observed missing
+new APIs in dependencies while compiling changed runner code; it completed with
+actual exit 101. Retain this mixed-source failure, not current acceptance.
+Do not restore the raw/fake-owner path to satisfy its older dependency artifacts.
+R1694 is the new five-owner all-feature/all-target locked check, currently queued.
+R1695 structure completed with exit 0: 3154 files, 3024 Rust files, 1718374
+physical Rust lines, 97 packages, 376 review triggers, zero blocking violations.
+The bundle owns complete-product admission and the accelerator owns its actual
+program alternative; no new layer edge or duplicate authority was introduced.
+Current-slice runtime, public API and dependency evidence is pending
+at this intermediate checkpoint; the user explicitly permits intermediate
+commit/push without proving every checkpoint operational. The full Source public
+switch, convergence of all 14 families, complete Presentation lowering, strict lint,
+Tier2 and final Native/Web execution/capture/parity acceptance remain open. The
+full goal stays active, with no genuine external blocker.

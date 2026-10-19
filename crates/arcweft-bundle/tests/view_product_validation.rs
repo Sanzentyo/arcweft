@@ -33,6 +33,61 @@ fn complete_product_accepts_exact_revision_and_exposes_only_validated_views() {
 }
 
 #[test]
+fn borrowed_product_admission_preserves_source_identity_and_exact_limits() {
+    let (exact_map, program) = ranged_program("main.arcw", "hello");
+    let before = serde_json::to_vec(&program).unwrap();
+    let exact = ViewProductValidationLimits {
+        source_refs: 1,
+        source_ranges: 1,
+        validation_work: 2,
+        match_source_bytes: 0,
+    };
+    let borrowed =
+        ValidatedViewProduct::try_from_borrowed(Some(&exact_map), Some(&program), None, exact)
+            .unwrap();
+    let owned = validate_with_limits(exact_map.clone(), program.clone(), exact).unwrap();
+    assert_eq!(borrowed.source_map(), owned.source_map());
+    assert_eq!(
+        borrowed.program().unwrap().accepted_revision(),
+        owned.program().unwrap().accepted_revision()
+    );
+    assert_eq!(
+        borrowed.program().unwrap().resource(),
+        owned.program().unwrap().resource()
+    );
+    for short in [
+        ViewProductValidationLimits {
+            source_refs: 0,
+            ..exact
+        },
+        ViewProductValidationLimits {
+            source_ranges: 0,
+            ..exact
+        },
+        ViewProductValidationLimits {
+            validation_work: 1,
+            ..exact
+        },
+    ] {
+        assert_eq!(
+            ValidatedViewProduct::try_from_borrowed(Some(&exact_map), Some(&program), None, short)
+                .unwrap_err(),
+            validate_with_limits(exact_map.clone(), program.clone(), short).unwrap_err(),
+        );
+    }
+    assert_eq!(
+        ValidatedViewProduct::try_from_borrowed(None, Some(&program), None, exact).unwrap_err(),
+        ViewProductValidationError::MissingSourceMap
+    );
+    let stale = source_map(&[("main.arcw", "changed")]);
+    assert!(matches!(
+        ValidatedViewProduct::try_from_borrowed(Some(&stale), Some(&program), None, exact),
+        Err(ViewProductValidationError::StaleSource { .. })
+    ));
+    assert_eq!(serde_json::to_vec(&program).unwrap(), before);
+}
+
+#[test]
 fn complete_product_rejects_missing_unknown_and_stale_sources() {
     let (exact_map, program) = ranged_program("main.arcw", "hello");
     assert_eq!(

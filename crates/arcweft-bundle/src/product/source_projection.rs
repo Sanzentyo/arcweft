@@ -9,10 +9,10 @@ pub(super) fn validate_view_sources(
     view_style: Option<&ViewStyleResource>,
     source_map: Option<&SourceMapSection>,
 ) -> Result<(), BundleCodecError> {
-    ValidatedViewProduct::try_new(
-        source_map.cloned(),
-        view_program.cloned(),
-        view_style.cloned(),
+    ValidatedViewProduct::try_from_borrowed(
+        source_map,
+        view_program,
+        view_style,
         ViewProductValidationLimits::default(),
     )
     .map_err(|error| BundleCodecError::DecodeAwfb {

@@ -50,7 +50,6 @@ impl RuntimePureAccelerator {
         let helpers = RuntimePureFunctionRef::eager_candidates(plan).collect::<Vec<_>>();
         let helper_summary = helper_summary_from_helpers(&helpers);
         let helper_work_units = helper_work_unit_slots(&helpers);
-        let resolved_workers = resolve_worker_count(config.workers);
         let mut cache = helper_cache_slots(plan);
         for helper in helpers.iter().copied() {
             let work_units = helper_work_units
@@ -66,16 +65,45 @@ impl RuntimePureAccelerator {
             record_aot_object_artifact_bundle(plan, &cache, &mut compile_stats);
         }
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
+        let mut accelerator = Self::uncompiled(config, cache);
+        accelerator.compile_stats = compile_stats;
+        accelerator.helper_summary = helper_summary;
+        accelerator.helper_work_units = helper_work_units;
+        accelerator.auto_scalar_work_units = helpers.iter().map(|helper| (helper.id, 0)).collect();
+        accelerator
+    }
+
+    /// Retains an admitted AWBC program without constructing a Native plan.
+    /// Its pure execution stays under AWBC's existing invocation/frame owner.
+    pub fn with_awbc_program(
+        config: RuntimePureAcceleratorConfig,
+        program: arcweft_core::awbc::product_step::AwbcProductProgram,
+    ) -> Self {
+        Self::uncompiled(
+            config,
+            super::RuntimePureCache {
+                program: super::RuntimePureCacheProgram::Awbc(program),
+                entries: Default::default(),
+            },
+        )
+    }
+
+    /// Exact executable retained by this accelerator's cache owner.
+    pub fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        self.cache.program_owner()
+    }
+
+    fn uncompiled(config: RuntimePureAcceleratorConfig, cache: super::RuntimePureCache) -> Self {
         Self {
             config,
             cache,
             stats: RuntimePureCallStats::default(),
-            compile_stats,
-            helper_summary,
-            helper_work_units,
-            auto_scalar_work_units: helpers.iter().map(|helper| (helper.id, 0)).collect(),
+            compile_stats: RuntimePureCompileStats::default(),
+            helper_summary: Default::default(),
+            helper_work_units: Default::default(),
+            auto_scalar_work_units: Default::default(),
             pool: None,
-            resolved_workers,
+            resolved_workers: resolve_worker_count(config.workers),
             flat_i64_inputs: Vec::new(),
             aot_i64_slots: Vec::new(),
             aot_scalar_slots: Vec::new(),
@@ -273,7 +301,7 @@ impl RuntimePureAccelerator {
         out: &mut [i64],
         budget: arcweft_core::step::RuntimeStepBudget,
     ) -> Result<(), RuntimeEvalError> {
-        if !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
+        if !self.cache.owns_function(helper) {
             return Err(RuntimeEvalError::UnsupportedPure {
                 name: helper.name.to_owned(),
                 reason: "standalone batch belongs to another admitted plan".to_owned(),
@@ -677,7 +705,7 @@ impl RuntimePureAccelerator {
         helper: RuntimePureFunctionRef<'_>,
         rows: usize,
     ) {
-        if !native_jit_enabled() || !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
+        if !native_jit_enabled() || !self.cache.owns_function(helper) {
             return;
         }
         let work_units = rows.saturating_mul(self.helper_work_units(helper));
@@ -698,7 +726,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn promote_auto_jit_for_scalar_call(&mut self, helper: RuntimePureFunctionRef<'_>) {
         if !native_jit_enabled()
-            || !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan())
+            || !self.cache.owns_function(helper)
             || !self.has_promotable_auto_slot(helper.id)
         {
             return;
@@ -734,7 +762,7 @@ impl RuntimePureAccelerator {
         helper: RuntimePureFunctionRef<'_>,
         kind: RuntimePureNativeKind,
     ) {
-        if !std::sync::Arc::ptr_eq(&self.cache.plan, helper.plan()) {
+        if !self.cache.owns_function(helper) {
             return;
         }
         let request = compile_request(helper, || kind.zero_value());

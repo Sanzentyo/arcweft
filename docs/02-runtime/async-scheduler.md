@@ -94,6 +94,14 @@ replacement, continuation rollback and owned restore retain that complete lease.
 The saved Need registry resolves its inert Source assertions through the retained
 admitted program; a raw code/type lease cannot authorize Source reconstruction.
 
+Bundle admission returns that executable authority using the complete View
+product accepted by the same bundle validation. Borrowed View candidates enter
+source and resource validation before canonical codec materialization. Agent
+controllers and native bundle runners retain the returned executable/Source
+lease through activation. The pure accelerator's cache owns either its exact
+Native plan or its admitted AWBC program; Native cache slots require a function
+capability from the matching Native plan.
+
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by

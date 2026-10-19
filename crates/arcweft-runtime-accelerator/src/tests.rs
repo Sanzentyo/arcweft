@@ -548,6 +548,47 @@ fn aot_source_function_cache_refuses_foreign_plan_leases_with_colliding_site_ids
     assert_eq!(accelerator.stats().jit_calls, 0);
 }
 
+#[test]
+fn awbc_accelerator_retains_the_actual_executable_without_native_cache_authority() {
+    use arcweft_core::awbc::product_step::AwbcProductProgram;
+    use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
+    let program = Arc::new(AwbcProgram::default());
+    let admitted = AwbcProductProgram::admit(
+        Arc::clone(&program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+    let mut accelerator = RuntimePureAccelerator::with_awbc_program(
+        RuntimePureAcceleratorConfig {
+            backend: RuntimePureBackendMode::Aot,
+            ..Default::default()
+        },
+        admitted,
+    );
+    let owner = RuntimeProgramOwner::Awbc(program);
+    assert!(accelerator.program_owner().same_program(&owner));
+    let native = admitted_ordinary_add_with_unused_formal(1);
+    assert!(super::compile::cache_entry(&accelerator.cache, native.function_ref()).is_none());
+    assert_eq!(
+        accelerator
+            .call_i64(
+                native.function_ref(),
+                RuntimeI64Args::new([4, 999, 0, 0], 2)
+            )
+            .unwrap(),
+        Some(5)
+    );
+    assert_eq!(accelerator.stats().vm_calls, 1);
+    assert_eq!(accelerator.stats().aot_calls, 0);
+    assert!(accelerator.program_owner().same_program(&owner));
+}
+
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_source_function_promotion_refuses_foreign_leases_and_promotes_the_owner() {

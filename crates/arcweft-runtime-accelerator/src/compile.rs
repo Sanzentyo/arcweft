@@ -789,7 +789,7 @@ pub(super) fn build_thread_pool(worker_count: usize) -> Option<ThreadPool> {
 
 pub(super) fn helper_cache_slots(plan: &std::sync::Arc<super::RuntimePlan>) -> RuntimePureCache {
     RuntimePureCache {
-        plan: std::sync::Arc::clone(plan),
+        program: super::RuntimePureCacheProgram::Native(std::sync::Arc::clone(plan)),
         entries: std::collections::BTreeMap::new(),
     }
 }
@@ -1022,7 +1022,7 @@ pub(super) fn cache_entry<'cache>(
     cache: &'cache RuntimePureCache,
     function: RuntimePureFunctionRef<'_>,
 ) -> Option<&'cache RuntimePureCacheEntry> {
-    if !std::sync::Arc::ptr_eq(&cache.plan, function.plan()) {
+    if !cache.owns_function(function) {
         return None;
     }
     cache.entries.get(&function.id)

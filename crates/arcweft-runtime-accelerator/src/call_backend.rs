@@ -55,9 +55,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
         function: RuntimePureFunctionRef<'_>,
         rows: usize,
     ) -> Option<()> {
-        if !std::sync::Arc::ptr_eq(&self.cache.plan, function.plan())
-            || !function.supports_total_numeric_completion()
-        {
+        if !self.cache.owns_function(function) || !function.supports_total_numeric_completion() {
             return None;
         }
         super::helper_native_kind(function)?;

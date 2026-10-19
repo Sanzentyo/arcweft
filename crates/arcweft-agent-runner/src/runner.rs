@@ -713,9 +713,16 @@ where
             .ok_or(AgentRunError::MissingAgentManifest)?;
         let entry = Self::validate_controller_artifact(bundle, manifest)?;
         self.validate_project_binding(&manifest.project_binding)?;
-        let program = bundle.product_awbc().program_lease();
-        let mut executor = ArcweftRuntimeExecutor::from_awbc_product_arc(program, entry)
-            .map_err(AgentRunError::ProductAwbcExecutor)?;
+        let program = bundle
+            .admit_runtime_program()
+            .map_err(AgentRunError::BundleProductAwbc)?;
+        let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
+            program,
+            entry,
+            arcweft_core::task::GenerationId::new(0),
+            None,
+        )
+        .map_err(AgentRunError::ProductAwbcExecutor)?;
         let authorization = AgentEffectRegistry::canonical()
             .authorization_for_artifact(&manifest.verified_effects.inferred, &self.policy)
             .map_err(AgentRunError::EffectPolicy)?;

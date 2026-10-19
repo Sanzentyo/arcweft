@@ -10,13 +10,13 @@ use arcweft_bundle::{
     BundleImageAsset, BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
 use arcweft_core::awbc::{
-    product_step::AwbcProductStepBuildError,
+    product_step::{AwbcProductProgram, AwbcProductStepBuildError},
     schema::{AwbcEntryId, AwbcProgram},
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{EngineStartError, FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimePlanBuilder};
+use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
 use arcweft_core::step::{
     RuntimeHostCallRequest, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
     RuntimeStepOptions, RuntimeStepResult,
@@ -184,6 +184,8 @@ pub enum BundleRunnerError {
     ExpectedAwfbProduct { path: PathBuf },
     #[error("failed to decode bundle: {0}")]
     DecodeBundle(arcweft_bundle::BundleCodecError),
+    #[error("failed to admit the bundle executable and original Source: {0}")]
+    ProgramAdmission(#[source] arcweft_bundle::BundleCodecError),
     #[error("failed to inspect the AWFB artifact identity: {0}")]
     ContainerArtifactIdentity(#[source] arcweft_bundle::container::ContainerError),
     #[error("failed to compute the logical bundle artifact identity: {0}")]
@@ -418,7 +420,7 @@ fn run_bundle_runner_phase<T>(
 }
 
 struct BundleRunnerRuntimeProgram {
-    program: Arc<AwbcProgram>,
+    program: AwbcProductProgram,
     entry: AwbcEntryId,
 }
 
@@ -426,7 +428,9 @@ fn bundle_runner_runtime_program(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
 ) -> Result<BundleRunnerRuntimeProgram, BundleRunnerError> {
-    let program = bundle.product_awbc().program_lease();
+    let program = bundle
+        .admit_runtime_program()
+        .map_err(BundleRunnerError::ProgramAdmission)?;
     let entry = selected_awbc_entry(&program, bundle, options)?;
     Ok(BundleRunnerRuntimeProgram { program, entry })
 }
@@ -636,19 +640,18 @@ impl RuntimeExecutorInstance {
         program: BundleRunnerRuntimeProgram,
         active_locale: LocaleTag,
     ) -> Result<Self, BundleRunnerError> {
-        let pure_plan = Arc::new(
-            RuntimePlanBuilder::new()
-                .finish()
-                .expect("empty runtime plan is valid"),
+        let mut pure = RuntimePureAccelerator::with_awbc_program(
+            RuntimePureAcceleratorConfig::default(),
+            program.program.clone(),
         );
-        let mut executor =
-            ArcweftRuntimeExecutor::from_awbc_product_arc(program.program, program.entry)?;
+        let mut executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
+            program.program,
+            program.entry,
+            GenerationId::new(0),
+            None,
+        )?;
         let format_context = RuntimeFormatContext::new(active_locale);
         executor.set_format_context(format_context.clone());
-        let mut pure = RuntimePureAccelerator::with_config(
-            RuntimePureAcceleratorConfig::default(),
-            &pure_plan,
-        );
         pure.set_format_context(format_context);
         Ok(Self { executor, pure })
     }

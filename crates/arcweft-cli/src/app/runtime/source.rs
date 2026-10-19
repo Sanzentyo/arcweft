@@ -270,6 +270,37 @@ view SourceProbe(enabled: bool = true) {
             assert_eq!(trace.native_io.completed_tasks, 1);
             assert_eq!(trace.native_io.failed_tasks, 0);
         }
+
+        let encoded = runtime
+            .bundle
+            .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
+            .expect("the same View Source bundle encodes as AWFB");
+        let decoded = arcweft_bundle::ArcweftBundle::from_format_slice(
+            arcweft_bundle::BundleFormat::Awfb,
+            &encoded,
+        )
+        .expect("the original Source and its View assertions decode together");
+        assert!(
+            arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product_arc(
+                decoded.product_awbc().program_lease(),
+                arcweft_core::awbc::schema::AwbcEntryId(0),
+            )
+            .is_err(),
+            "the raw constructor cannot replace the accepted View Source authority"
+        );
+        let report = crate::run_bundle_with_native_adapters(
+            &decoded,
+            &crate::BundleRunnerOptions::default(),
+            &[crate::app::desktop_native_adapter_registrar],
+        )
+        .expect("bundle execution retains the actual accepted Source");
+        assert_eq!(
+            report.final_status,
+            FlowFiberStatus::Done(FlowExit::Return("unused_entry".to_owned()))
+                .status_label(arcweft_core::engine::FlowStatusLabelStyle::Runtime)
+        );
+        assert_eq!(report.native_io.completed_tasks, 0);
+        assert_eq!(report.native_io.failed_tasks, 0);
     }
 
     fn one_pixel_png() -> Vec<u8> {
