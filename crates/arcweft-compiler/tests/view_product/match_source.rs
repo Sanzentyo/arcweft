@@ -352,7 +352,7 @@ fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
     use std::sync::Arc;
 
     let compiled = super::project_view_fixture_with_entry(
-        "entry cli @entry.main { goto @flow.main } flow main() -> String { return \"done\" } view Main(enabled: bool = true) { match enabled { true => Text(\"yes\"), false => Text(\"no\") }; }",
+        "entry cli @entry.main { goto @flow.main }\nflow main() -> String { return \"done\" }\nview Main(enabled: bool = true) { match enabled { true => Text(\"yes\"), false => Text(\"no\") }; }",
         "arcweft-test://view-source-owned-restore",
     ).compile().unwrap();
     let code = arcweft_runtime_plan::awbc_lower::AwbcLowerer::new(
@@ -396,7 +396,14 @@ fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
     executor = executor
         .restore_snapshot_owned(saved)
         .unwrap_or_else(|(_, error)| panic!("{error}"));
-    let output = executor.step(Default::default(), Default::default());
+    let output = executor.step(
+        Default::default(),
+        arcweft_core::step::RuntimeStepOptions {
+            mode: arcweft_core::step::RuntimeStepMode::Drain,
+            budget: arcweft_core::step::RuntimeStepBudget { max_ops: 64 },
+            max_new_task_requests: 0,
+        },
+    );
     assert!(output.output.diagnostics.is_empty(), "{output:?}");
     let saved = executor.snapshot().unwrap();
     executor = executor

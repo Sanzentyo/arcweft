@@ -20880,3 +20880,52 @@ task-view-source-consumers-20261020-validation; this note changes no Rust/Cargo
 input to that catalogue. No required failure is relabeled as a passing check.
 The overall goal, complete reverse/workspace validation and every other open
 implementation/acceptance item above remain active.
+
+### 2026-10-20 — execute the View Source owner slice and repair its restore fixture
+
+The consumer migration is published at
+`03bce69cd8b9776c7e7451114d528b6aa3663b12`, verified against freshly advertised
+main with the exact parent/tree/patch and all eight published blobs. The
+working tree contains only the held inventory before this fixture/evidence cut.
+
+R1652 compiled and catalogued 2597 selected cases in fourteen binaries, with
+zero excluded/ignored cases: Bundle 213, Compiler 240, Core 1879, Driver 130 and
+RuntimePlan 135. These are the five owner libraries plus nine explicitly selected
+integration targets, not the complete 53-package Core reverse closure.
+R1653 ran the exact set and exited 100: 2596 passed, one new fixture failed,
+zero skipped (156.157s). All actual terminal keys and all 3930 frozen inputs
+match, with held drift zero. Every one of the four previously failing real View
+regressions now passes, as do the Source/compact-resource round trip, exact
+admission-limit and forged-assertion cases. The unchanged long budget/restore
+regressions passed at 121.217s and 149.212s; no budget or timeout was relaxed.
+
+The new owned-restore fixture concatenated its Entry/Flow/View declarations
+without the normal separators and failed Entry binding before execution. Its
+declarations now use the established newline-separated fixture form. R1655
+catalogued the exact one-case repair; R1656 then reached restore but failed
+because one default step had not produced a terminal result (exit 100, 0.129s;
+2596 deliberately filtered). The fixture now explicitly drains within its
+existing 64-operation quantum, allows zero new host requests and preserves the
+typed result and exact executable-lease assertions. Production is unchanged.
+R1657 again selects exactly that case; R1658 passes it (exit 0, 0.129s; 2596
+deliberately filtered). Both narrow terminal audits match all 3930 inputs and
+their exact catalogue keys. The successful case checks initial/completed owned
+restore and rejects removal of the linked original Source.
+
+Exact case-key union retains the 2596 unchanged passing cases from R1653 and
+replaces its failed fixture with the one current passing case, covering all
+2597 current selected cases with zero gaps or overlap. The only changed source
+between these executions is that isolated fixture function; production drift
+is zero. Failed run receipts remain failed, rather than being relabeled as an
+all-green whole run. The union is retained in the fixture owner-coverage record.
+
+R1654 structure auditing passed: 3153 files, 3023 Rust files, 1717621 physical
+Rust lines, 97 packages, 376 review triggers and zero blocking violations. That
+measurement precedes only the isolated fixture correction; the production
+ownership/dependency disposition above is unchanged. R1659 is the current
+locked all-feature/all-target Clippy command over these five owners. It is
+still running at this checkpoint and has not established the strict workspace
+-D warnings gate. Current public API/doctest, complete reverse/workspace, Tier2
+and actual Native/Web acceptance remain required, along with the final public
+Source/instance/outcome migration and every other open implementation above.
+The full goal remains active.
