@@ -56,6 +56,26 @@ pub(super) fn nominal_candidate() -> UnsealedRuntimePlanImage {
         .unwrap()
 }
 
+fn assert_body_literal_limit(error: RuntimeTaskSourceCodecError, expected_kind: &'static str) {
+    use crate::plan::construction::source::{expression, function_bodies};
+    let RuntimeTaskSourceCodecError::Program(error) = error else {
+        panic!("expected a program admission failure: {error:?}");
+    };
+    let RuntimeProgramSourceError::Bodies(
+        function_bodies::RuntimeFunctionBodySourceError::Expression(error),
+    ) = *error
+    else {
+        panic!("expected a body admission failure: {error:?}");
+    };
+    assert!(
+        matches!(*error,
+        expression::RuntimeExpressionSourceError::Literal(crate::value::RuntimeLiteralSourceError::Limit {
+            kind, actual, maximum,
+        }) if kind == expected_kind && actual == maximum + 1),
+        "{error:?}"
+    );
+}
+
 #[test]
 fn nominal_declarations_share_the_composed_limits_and_original_executable_seal() {
     let original = nominal_candidate()
@@ -63,22 +83,24 @@ fn nominal_declarations_share_the_composed_limits_and_original_executable_seal()
         .unwrap()
         .into_plan();
     let encoded = bytes(&original);
-    let (types, nominals, locals, controls) = declaration_encoding(&original);
-    assert!(types.elements() > 0 && nominals.elements() > 0 && controls.elements() > 0);
-    let elements = types.elements() + nominals.elements() + controls.elements();
-    let storage = types.storage_bytes()
-        + nominals.storage_bytes()
-        + locals.storage_bytes()
-        + controls.storage_bytes();
+    let program = original
+        .encode_program_source(
+            limits().program,
+            &resources(),
+            &mut TaskSemanticMeter::new(1_000_000, 1_000_000),
+        )
+        .unwrap();
+    let elements = program.elements();
+    let storage = program.storage_bytes();
     let exact = RuntimeTaskSourceCodecLimits {
-        declaration_elements: u32::try_from(elements).unwrap(),
+        program: RuntimeProgramSourceLimits {
+            elements: elements as u32,
+            ..limits().program
+        },
         decoded_bytes: storage,
         ..limits()
     };
-    let fresh = nominal_candidate();
-    let restored = UnsealedRuntimePlanImage::decode_task_sources(
-        fresh.inventory,
-        fresh.coordinate_owner,
+    let restored = decode_image(
         &encoded,
         exact,
         TaskSemanticMeter::new(1_000_000, 1_000_000),
@@ -97,47 +119,47 @@ fn nominal_declarations_share_the_composed_limits_and_original_executable_seal()
         original.executable_semantic_digest()
     );
     assert_eq!(bytes(&restored), encoded);
-    for short in [
-        RuntimeTaskSourceCodecLimits {
-            declaration_elements: exact.declaration_elements - 1,
-            ..exact
-        },
-        RuntimeTaskSourceCodecLimits {
-            decoded_bytes: storage - 1,
-            ..exact
-        },
+    for (short, kind) in [
+        (
+            RuntimeTaskSourceCodecLimits {
+                program: RuntimeProgramSourceLimits {
+                    elements: exact.program.elements - 1,
+                    ..exact.program
+                },
+                ..exact
+            },
+            "source elements",
+        ),
+        (
+            RuntimeTaskSourceCodecLimits {
+                decoded_bytes: storage - 1,
+                ..exact
+            },
+            "decoded bytes",
+        ),
     ] {
-        let fresh = nominal_candidate();
-        assert!(matches!(
-            UnsealedRuntimePlanImage::decode_task_sources(
-                fresh.inventory,
-                fresh.coordinate_owner,
-                &encoded,
-                short,
-                TaskSemanticMeter::new(1_000_000, 1_000_000)
-            )
-            .err()
-            .unwrap(),
-            RuntimeTaskSourceCodecError::Limit { .. }
-        ));
+        let error = decode_image(
+            &encoded,
+            short,
+            TaskSemanticMeter::new(1_000_000, 1_000_000),
+        )
+        .err()
+        .unwrap();
+        assert_body_literal_limit(error, kind);
     }
 }
 
 #[test]
-fn nominal_declaration_frames_cannot_replace_original_policies_or_case_names() {
+fn nominal_source_distinguishes_codec_policy_from_diagnostic_labels_in_original_semantics() {
     let original = nominal_candidate()
         .seal(RuntimeTaskPlanSealLimits::default(), None)
         .unwrap()
         .into_plan();
     let encoded = bytes(&original);
     let [_, nominals, _, _] = declaration_ranges(&encoded);
-    for (old, replacement, table) in [
-        (b"wire0".as_slice(), b"other".as_slice(), "nominal record"),
-        (
-            b"Missing".as_slice(),
-            b"Absent_".as_slice(),
-            "nominal variant",
-        ),
+    for (old, replacement, semantic) in [
+        (b"wire0".as_slice(), b"other".as_slice(), true),
+        (b"Missing".as_slice(), b"Absent_".as_slice(), false),
     ] {
         let offsets = encoded[nominals.clone()]
             .windows(old.len())
@@ -148,12 +170,34 @@ fn nominal_declaration_frames_cannot_replace_original_policies_or_case_names() {
         let start = nominals.start + offsets[0];
         let mut changed = encoded.clone();
         changed[start..start + old.len()].copy_from_slice(replacement);
-        let fresh = nominal_candidate();
+        let restored = decode_image(
+            &changed,
+            limits(),
+            TaskSemanticMeter::new(1_000_000, 1_000_000),
+        )
+        .unwrap()
+        .seal(RuntimeTaskPlanSealLimits::default(), None)
+        .unwrap()
+        .into_plan();
+        // Domain labels are diagnostic; the accepted owner/layout and actual
+        // occurrence codec remain the nominal semantic authority.
+        if semantic {
+            assert_ne!(
+                restored.executable_semantic_digest(),
+                original.executable_semantic_digest()
+            );
+        } else {
+            assert_eq!(
+                restored.executable_semantic_digest(),
+                original.executable_semantic_digest()
+            );
+        }
         assert!(
-            matches!(UnsealedRuntimePlanImage::decode_task_sources(fresh.inventory,fresh.coordinate_owner,
-            &changed,limits(),TaskSemanticMeter::new(1_000_000,1_000_000)).err().unwrap(),
-            RuntimeTaskSourceCodecError::DeclarationMismatch {table:actual} if actual == table)
+            restored.nominal_record_domains() != original.nominal_record_domains()
+                || restored.variant_domains() != original.variant_domains()
         );
+        assert_eq!(bytes(&restored), changed);
+        assert_eq!(bytes(&original), encoded);
     }
 }
 
@@ -276,10 +320,7 @@ fn declaration_frames_rebuild_the_original_executable_local_placement() {
             .into_plan();
         assert_eq!(original.local_declarations().len(), 1);
         let encoded = bytes(&original);
-        let fresh = candidate();
-        let decoded = UnsealedRuntimePlanImage::decode_task_sources(
-            fresh.inventory,
-            fresh.coordinate_owner,
+        let decoded = decode_image(
             &encoded,
             limits(),
             TaskSemanticMeter::new(1_000_000, 1_000_000),
@@ -310,18 +351,22 @@ fn declaration_element_limit_covers_types_and_controls_together() {
         .unwrap()
         .into_plan();
     let encoded = bytes(&original);
-    let (types, _, _, controls) = declaration_encoding(&original);
-    assert!(types.elements() > 0);
-    assert!(controls.elements() > 0);
-    let elements = types.elements() + controls.elements();
+    let program = original
+        .encode_program_source(
+            limits().program,
+            &resources(),
+            &mut TaskSemanticMeter::new(1_000_000, 1_000_000),
+        )
+        .unwrap();
+    let elements = program.elements();
     for (limit_value, accepted) in [(elements, true), (elements - 1, false)] {
-        let fresh = declaration_candidate();
-        let result = UnsealedRuntimePlanImage::decode_task_sources(
-            fresh.inventory,
-            fresh.coordinate_owner,
+        let result = decode_image(
             &encoded,
             RuntimeTaskSourceCodecLimits {
-                declaration_elements: u32::try_from(limit_value).unwrap(),
+                program: RuntimeProgramSourceLimits {
+                    elements: limit_value as u32,
+                    ..limits().program
+                },
                 ..limits()
             },
             TaskSemanticMeter::new(1_000_000, 1_000_000),
@@ -329,24 +374,20 @@ fn declaration_element_limit_covers_types_and_controls_together() {
         if accepted {
             assert!(result.is_ok());
         } else {
-            assert!(
-                matches!(result.err().unwrap(), RuntimeTaskSourceCodecError::Limit {
-                kind: "declaration elements", actual, maximum,
-            } if actual == elements && maximum == elements - 1)
-            );
+            let error = result.err().unwrap();
+            assert_body_literal_limit(error, "source elements");
         }
     }
 }
 
 fn declaration_ranges(encoded: &[u8]) -> [std::ops::Range<usize>; 4] {
-    let fresh = candidate(1);
-    let mut reader = Reader::new(encoded, limits(), References::original(&fresh.inventory), 1);
-    reader.header().unwrap();
+    let mut offset =
+        DOMAIN.len() + 1 + 4 + b"arcweft.runtime.program-source.v1\0".len() + 1 + 15 * 4;
     std::array::from_fn(|_| {
-        let length = reader.u32().unwrap() as usize;
-        let start = reader.offset;
-        reader.slice(length).unwrap();
-        start..reader.offset
+        let length = u32::from_le_bytes(encoded[offset..offset + 4].try_into().unwrap()) as usize;
+        let start = offset + 4;
+        offset = start + length;
+        start..offset
     })
 }
 
@@ -376,10 +417,7 @@ fn declaration_frames_cannot_retype_admitted_original_expressions() {
     let boolean = projection(102);
     assert_ne!(encoded[unit], encoded[boolean]);
     encoded[unit] = encoded[boolean];
-    let fresh = declaration_candidate();
-    let decoded = UnsealedRuntimePlanImage::decode_task_sources(
-        fresh.inventory,
-        fresh.coordinate_owner,
+    let decoded = decode_image(
         &encoded,
         limits(),
         TaskSemanticMeter::new(1_000_000, 1_000_000),
@@ -392,35 +430,35 @@ fn declaration_frames_cannot_retype_admitted_original_expressions() {
     assert!(
         matches!(
             completed.err().unwrap(),
-            RuntimeTaskSourceCodecError::DeclarationMismatch { table: "type" }
+            RuntimeTaskSourceCodecError::Program(error) if matches!(*error, RuntimeProgramSourceError::Bodies(_))
         ),
         "a declaration frame must not make an admitted Unit literal inhabit Bool"
     );
 }
 
 #[test]
-fn declaration_frames_cannot_change_the_original_local_or_control_contract() {
-    for (mutable, mode, table) in [
-        (true, RuntimeTaskControlMode::MustSuspend, "local"),
-        (false, RuntimeTaskControlMode::MaySuspend, "control"),
+fn program_source_owns_local_and_control_definitions_without_an_external_inventory() {
+    for (mutable, mode) in [
+        (true, RuntimeTaskControlMode::MustSuspend),
+        (false, RuntimeTaskControlMode::MaySuspend),
     ] {
         let other = declaration_candidate_with(mutable, mode)
             .seal(RuntimeTaskPlanSealLimits::default(), None)
             .unwrap()
             .into_plan();
         let encoded = bytes(&other);
-        let fresh = declaration_candidate();
-        let result = UnsealedRuntimePlanImage::decode_task_sources(
-            fresh.inventory,
-            fresh.coordinate_owner,
+        let result = decode_image(
             &encoded,
             limits(),
             TaskSemanticMeter::new(1_000_000, 1_000_000),
         );
-        assert!(matches!(
-            result.err().unwrap(),
-            RuntimeTaskSourceCodecError::DeclarationMismatch { table: actual } if actual == table
-        ));
+        let restored = result
+            .unwrap()
+            .seal(RuntimeTaskPlanSealLimits::default(), None)
+            .unwrap()
+            .into_plan();
+        assert_eq!(restored.inventory, other.inventory);
+        assert_eq!(bytes(&restored), encoded);
     }
 }
 
@@ -448,11 +486,11 @@ fn every_frame_preflights_before_type_admission_or_key_publication() {
     );
     assert!(matches!(
         bad_type.err().unwrap(),
-        RuntimeTaskSourceCodecError::Types(
-            crate::plan::type_table::source_codec::RuntimeTypeSourceError::Admission(_)
-        )
+        RuntimeTaskSourceCodecError::Program(error) if matches!(*error,
+            RuntimeProgramSourceError::Declarations(crate::plan::declaration_sources::RuntimePlanDeclarationSourceError::Types(
+                crate::plan::type_table::source_codec::RuntimeTypeSourceError::Admission(_))))
     ));
-    assert!(coordinate.sealed_plan().is_none());
+    assert!(coordinate.is_none());
     encoded[nominals.start] ^= 1;
     let (bad_nominal, coordinate) = decode(
         &encoded,
@@ -462,11 +500,11 @@ fn every_frame_preflights_before_type_admission_or_key_publication() {
     );
     assert!(matches!(
         bad_nominal.err().unwrap(),
-        RuntimeTaskSourceCodecError::Nominals(
-            crate::plan::type_table::source_codec::RuntimeTypeSourceError::Domain
-        )
+        RuntimeTaskSourceCodecError::Program(error) if matches!(*error,
+            RuntimeProgramSourceError::Declarations(crate::plan::declaration_sources::RuntimePlanDeclarationSourceError::Nominals(
+                crate::plan::type_table::source_codec::RuntimeTypeSourceError::Domain)))
     ));
-    assert!(coordinate.sealed_plan().is_none());
+    assert!(coordinate.is_none());
     encoded[nominals.start] ^= 1;
     // The conflicting type is structurally bounded but fails admission. A
     // malformed later control must be found before that admission is attempted.
@@ -479,11 +517,11 @@ fn every_frame_preflights_before_type_admission_or_key_publication() {
     );
     assert!(matches!(
         bad_control.err().unwrap(),
-        RuntimeTaskSourceCodecError::Controls(
-            crate::plan::control_effect::source_codec::RuntimeControlSourceError::Domain
-        )
+        RuntimeTaskSourceCodecError::Program(error) if matches!(*error,
+            RuntimeProgramSourceError::Declarations(crate::plan::declaration_sources::RuntimePlanDeclarationSourceError::Controls(
+                crate::plan::control_effect::source_codec::RuntimeControlSourceError::Domain)))
     ));
-    assert!(coordinate.sealed_plan().is_none());
+    assert!(coordinate.is_none());
 }
 
 pub(super) fn define_declaration_body(

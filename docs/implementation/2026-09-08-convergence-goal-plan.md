@@ -18475,3 +18475,108 @@ internal reader and migrate its tests in the same version-1 contract change.
 The fourteen-family public switch and known R1349 selected-Need failures remain
 open, as do the other full-goal runtime/restore/registry/View/display acceptance
 conditions. The full goal remains active.
+
+### 2026-10-19 — Task Source reconstructs its own complete original program
+
+Inspected existing main and freshly fetched origin/main at
+`97be265547507ba666738f58aa6387bbc4c763f0`, parent
+`dfb408a56afdc500d54ec24ab0e7dbff50ebd7e9`. The preceding five-path admission
+publication has tree `6b8ee54d010eb5e1948dbcdbfb3523edd6b9f361` and verified raw
+patch SHA-256
+`e1267e4753e3ab7774ca803bc5f710d09f6a52b8c135d562654d6e2d1be1e3ff`.
+The index is empty; fourteen held tracked and three held untracked paths remain
+excluded and untouched.
+
+Supersedes the task decoder's external RuntimePlanInventory and coordinate-owner
+inputs. The same private task-sources version-1 domain now contains one complete
+program Source frame followed by original task request rows and expected key
+assertions. The 339-line original-inventory declaration reader, its four-frame
+task replay and obsolete comparison errors are deleted together. General base
+declaration admission remains the program Source's actual construction component.
+Every codec caller and corresponding wire/limit test uses the replacement shape;
+there is no second task reader or compatibility version.
+
+Encoding counts task rows and their mapped-role storage before allocating the
+complete program frame. Decoding validates all task framing, references, binding
+shapes and cumulative row/request storage before program construction. The
+program receives the remaining encoded/storage allowance. Accounting includes
+raw and genuine seed headers, expected assertions and both request role-array
+types; request paths move once. The caller supplies the same value admission
+through every Source section. The original semantic work/transcript bank is
+tightened to common-seal policy at entry. Task count, request roles/path width,
+control count and View count are checked against that policy before Source
+materialization. These are logical candidate bounds, not allocator measurements
+or a claim that every invalid semantic program causes zero earlier allocation.
+
+Reconstruction uses only the program frame's genuine function, Line, control and
+Task reservations. Request type coordinates resolve through the actual Source
+type owner; real RuntimeTaskPlanSeed definitions enter their original reserved
+slots through the owning builder. That same builder produces the actual common-
+seal image. Only then are count-checked expected assertions attached; no expected
+bytes issue a key, producer specification or semantic child. Source exposes typed
+type lookup and first-error-preserving owner rejection without exposing its bank.
+
+The migrated tests preserve actual local placement, scoped generic declarations,
+nominal policies, source order, malformed framing and common-seal failure rules.
+Complete Source owns its definitions. Actual occurrence-codec policy changes
+change E, while diagnostic domain labels preserve the accepted owner/layout/codec
+semantics, as established by the nominal semantic owner. A changed declaration
+cannot make an original Unit literal inhabit Bool. Composed element/storage caps
+reach the nested literal: exact bounds pass and one less is rejected with the
+specific resource kind and an actual/maximum difference of one.
+
+New actual-builder Host coverage exercises sixteen combinations of Immediate/
+Suspend, optional contract, result binding and empty/ordered positional/named/
+spread arguments. Complete decode/common seal preserves the original request
+definition, E, Task key and canonical bytes in its fresh namespace. Actual Native
+launch emits a request carrying that completed key. Nonempty requests also reject
+a common request-role cap of zero. A separate adversarial case proves that zero
+semantic work wins even over malformed input, and zero Task/control/View caps
+reject before reconstruction. This is Native request emission, not an external
+Host response, AWBC execution or all-fourteen-family execution proof.
+
+R1422 Core Clippy fails, actual 101, on three ownership/API errors in the first
+migration patch: private type/bank fields and a nonexistent function-ID index
+method. The fix uses the legitimate Source owner APIs and accepted positive
+ordinal. R1423 Clippy passes, actual 0, 42.19s. R1424/R1425 inspect and run 1785
+Core cases: actual 100, 1783 pass and two fail, zero skipped, 18.878s. Those tests
+initially conflated diagnostic labels with codec policy and expected an outer
+storage error instead of the actual nested literal error. R1426 catalog build
+fails, actual 101, on the new Host test's wrong mode import; it is corrected to
+the owning step module. R1427/R1428 run 1786 cases: actual 100, 1785 pass and one
+fail, zero skipped, 19.619s. R1429/R1430 run 1786: actual 100, 1784 pass and two
+fail, zero skipped, 20.457s. These remaining test failures are corrected to assert
+the exact nested literal resource causes rather than obsolete outer stages;
+rejection, caps, source order and test selection are retained.
+
+R1431 final behavioral-source Core all-target/all-feature locked Clippy passes,
+actual 0, 19.74s. R1432 builds and inspects all 1787 Core library cases, actual 0,
+27.12s, none excluded. R1433 executes exactly that set: actual 0, 1787 pass, zero
+fail/skip, 20.564s. Terminal audits retain every failed attempt and match every
+selected name, all 3906 frozen surviving inputs and the single expected reader
+deletion with zero drift. The resolved reverse closure remains 53 packages with
+99 unchanged manifest/lock inputs. This selection is Core only: the codec and
+Source methods are private to the plan owner and have no cross-crate caller.
+
+The first final rustfmt check catches only the Host launch fixture's signature
+wrapping after its test visibility changes. Rustfmt corrects that
+whitespace; freeze comparison identifies only that fixture path. R1433 runtime
+evidence is reused for the identical behavior after this formatting change.
+R1435 post-format Core Clippy passes, actual 0, 17.48s; R1436 final canonical
+structural gate passes, actual 0. Final exact-file rustfmt/diff checks pass and
+the post-terminal audit verifies all 3906 current inputs and the deletion with
+zero drift. The task codec is 29397 bytes/804 physical lines; its closed frame,
+row grammar and reconstruction sequencing form one serialization context. Tests
+are 22869/643 and declaration-focused tests 23301/604; Source construction is
+7485/190. No new dependency, unsafe, I/O, public runtime API or alternate seal is
+added. Earlier R1413/R1414 workspace gates cover the published Project seed
+migration; they are not relabeled as current whole-workspace validation.
+
+Publish this complete private codec replacement. Continue the atomic fourteen-
+family producer/consumer/public switch, including original program Source in the
+actual artifact path and deriving Native/AWBC producer specifications from the
+completed original Task coordinate. Expected assertions cannot substitute for
+that authority. The two R1349 selected-Need integration failures remain open and
+were not rerun here. Full reverse/default acceptance, registry lifetime, failed-
+atomic restore/replacement, retained View and Native/Web display acceptance also
+remain open. The full goal remains active.

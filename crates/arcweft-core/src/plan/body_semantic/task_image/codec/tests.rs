@@ -21,10 +21,10 @@ fn declaration_encoding(
         .prepare_sources_encoding(
             crate::plan::type_table::source_codec::RuntimeTypeSourceLimits {
                 rows: u32::try_from(plan.type_table().len()).unwrap(),
-                elements: limits.declaration_elements,
+                elements: limits.program.elements,
                 encoded_bytes: limits.encoded_bytes,
                 decoded_bytes: limits.decoded_bytes,
-                policy_depth: limits.type_policy_depth,
+                policy_depth: limits.program.policy_depth,
             },
             &mut meter,
         )
@@ -37,10 +37,10 @@ fn declaration_encoding(
                     plan.nominal_record_domains().len() + plan.variant_domains().len(),
                 )
                 .unwrap(),
-                elements: limits.declaration_elements,
+                elements: limits.program.elements,
                 encoded_bytes: limits.encoded_bytes,
                 decoded_bytes: limits.decoded_bytes,
-                policy_depth: limits.type_policy_depth,
+                policy_depth: limits.program.policy_depth,
             },
             &mut meter,
         )
@@ -62,7 +62,7 @@ fn declaration_encoding(
         .prepare_sources_encoding(
             crate::plan::control_effect::source_codec::RuntimeControlSourceLimits {
                 rows: u32::try_from(plan.control_effect_contracts().len()).unwrap(),
-                elements: limits.declaration_elements as usize,
+                elements: limits.program.elements as usize,
                 encoded_bytes: limits.encoded_bytes,
                 decoded_bytes: limits.decoded_bytes,
                 type_count: plan.type_table().len(),
@@ -87,12 +87,28 @@ fn declaration_frames(plan: &RuntimePlan) -> [Vec<u8>; 4] {
 }
 
 fn task_count_offset(input: &[u8]) -> usize {
-    let image = candidate(1);
-    let mut reader = Reader::new(input, limits(), References::original(&image.inventory), 1);
-    reader.header().unwrap();
-    let _ = crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(&mut reader)
-        .unwrap();
-    reader.offset
+    let length_offset = DOMAIN.len() + 1;
+    let length =
+        u32::from_le_bytes(input[length_offset..length_offset + 4].try_into().unwrap()) as usize;
+    length_offset + 4 + length
+}
+
+fn resources() -> ValueResourceAdmission {
+    ValueResourceAdmission::live(crate::entry::schema::RuntimeSchemaLimits::engine_default())
+}
+
+fn decode_image(
+    input: &[u8],
+    limits: RuntimeTaskSourceCodecLimits,
+    meter: TaskSemanticMeter,
+) -> Result<UnsealedRuntimePlanImage, RuntimeTaskSourceCodecError> {
+    UnsealedRuntimePlanImage::decode_task_sources(
+        input,
+        limits,
+        RuntimeTaskPlanSealLimits::default(),
+        meter,
+        &mut resources(),
+    )
 }
 
 fn limits() -> RuntimeTaskSourceCodecLimits {
@@ -102,8 +118,16 @@ fn limits() -> RuntimeTaskSourceCodecLimits {
         decoded_bytes: 100_000,
         request_roles: 32,
         path_steps: 32,
-        declaration_elements: 100_000,
-        type_policy_depth: 32,
+        program: RuntimeProgramSourceLimits {
+            rows: 100_000,
+            nodes: 100_000,
+            elements: 100_000,
+            depth: 128,
+            policy_depth: 32,
+            encoded_bytes: 100_000,
+            decoded_bytes: 100_000,
+            opaque_producer_bytes: 65_536,
+        },
     }
 }
 
@@ -122,8 +146,12 @@ fn published() -> (RuntimePlan, RuntimeTaskPlanBuildCoordinate) {
 }
 
 fn bytes(plan: &RuntimePlan) -> Vec<u8> {
-    plan.encode_task_sources(limits(), &mut TaskSemanticMeter::new(1_000_000, 1_000_000))
-        .unwrap()
+    plan.encode_task_sources(
+        limits(),
+        &resources(),
+        &mut TaskSemanticMeter::new(1_000_000, 1_000_000),
+    )
+    .unwrap()
 }
 
 fn decode(
@@ -133,17 +161,19 @@ fn decode(
     meter: TaskSemanticMeter,
 ) -> (
     Result<UnsealedRuntimePlanImage, RuntimeTaskSourceCodecError>,
-    RuntimeTaskPlanBuildCoordinate,
+    Option<RuntimeTaskPlanBuildCoordinate>,
 ) {
-    let image = candidate(rows);
-    let coordinate = image.coordinate_owner.resolve(0).unwrap();
     let decoded = UnsealedRuntimePlanImage::decode_task_sources(
-        image.inventory,
-        image.coordinate_owner,
         input,
         limits,
+        RuntimeTaskPlanSealLimits::default(),
         meter,
+        &mut resources(),
     );
+    let coordinate = decoded.as_ref().ok().and_then(|image| {
+        assert_eq!(image.task_plans.len(), rows as usize);
+        image.coordinate_owner.resolve(0)
+    });
     (decoded, coordinate)
 }
 
@@ -158,6 +188,7 @@ fn task_source_codec_recomputes_the_original_key_in_a_fresh_namespace() {
         TaskSemanticMeter::new(1_000_000, 1_000_000),
     );
     let decoded = decoded.unwrap();
+    let coordinate = coordinate.unwrap();
     assert!(coordinate.sealed_plan().is_none());
     let expected = original.task_plan(&original_coordinate).unwrap().key();
     assert_eq!(
@@ -185,10 +216,15 @@ fn task_source_frame_has_one_canonical_version_one_wire_shape() {
     let (original, coordinate) = published();
     let mut expected = b"arcweft.runtime.task-sources.v1\0".to_vec();
     expected.push(1);
-    for frame in declaration_frames(&original) {
-        expected.extend_from_slice(&u32::try_from(frame.len()).unwrap().to_le_bytes());
-        expected.extend(frame);
-    }
+    let program = original
+        .encode_program_source(
+            limits().program,
+            &resources(),
+            &mut TaskSemanticMeter::new(1_000_000, 1_000_000),
+        )
+        .unwrap();
+    expected.extend_from_slice(&u32::try_from(program.bytes().len()).unwrap().to_le_bytes());
+    expected.extend_from_slice(program.bytes());
     expected.extend_from_slice(&[
         1, 0, 0, 0, // source row count
         0, 0, 0, 0, // dense source ordinal
@@ -219,6 +255,7 @@ fn task_source_codec_retains_zero_expected_bytes_without_issuing_a_key() {
         TaskSemanticMeter::new(1_000_000, 1_000_000),
     );
     let decoded = decoded.unwrap();
+    let coordinate = coordinate.unwrap();
     assert_eq!(decoded.expected_key(0).unwrap().bytes(), &[0; 32]);
     assert!(coordinate.sealed_plan().is_none());
     assert!(matches!(
@@ -269,7 +306,7 @@ fn task_source_codec_rejects_noncanonical_frames_before_publication() {
             TaskSemanticMeter::new(1_000_000, 1_000_000),
         );
         assert!(decoded.is_err(), "case {case}");
-        assert!(coordinate.sealed_plan().is_none(), "case {case}");
+        assert!(coordinate.is_none(), "case {case}");
     }
 }
 
@@ -284,12 +321,23 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
     let mut second = encoded[row..].to_vec();
     second[..4].copy_from_slice(&1_u32.to_le_bytes());
     doubled.extend(second);
-    let (types, nominals, locals, controls) = declaration_encoding(&original);
-    let required = types.storage_bytes()
-        + nominals.storage_bytes()
-        + locals.storage_bytes()
-        + controls.storage_bytes()
-        + 2 * (std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<ExpectedTaskPlanKey>());
+    let program_start = DOMAIN.len() + 1 + 4;
+    let task_namespace = program_start + b"arcweft.runtime.program-source.v1\0".len() + 1 + 12 * 4;
+    doubled[task_namespace..task_namespace + 4].copy_from_slice(&2_u32.to_le_bytes());
+    let mut meter = TaskSemanticMeter::new(1_000_000, 1_000_000);
+    let program = PreparedRuntimeProgramSource::preflight(
+        &doubled[program_start..count],
+        limits().program,
+        &resources(),
+        &mut meter,
+    )
+    .unwrap()
+    .materialize(meter, &mut resources())
+    .unwrap();
+    let required = program.footprint.storage
+        + 2 * (size_of::<RuntimeTaskPlan>()
+            + size_of::<RuntimeTaskPlanSeed>()
+            + size_of::<ExpectedTaskPlanKey>());
     let exact = RuntimeTaskSourceCodecLimits {
         decoded_bytes: required,
         ..limits()
@@ -301,7 +349,7 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
         TaskSemanticMeter::new(1_000_000, 1_000_000),
     );
     assert_eq!(decoded.unwrap().task_plans.len(), 2);
-    assert!(coordinate.sealed_plan().is_none());
+    assert!(coordinate.unwrap().sealed_plan().is_none());
     let (short, coordinate) = decode(
         &doubled,
         2,
@@ -311,14 +359,28 @@ fn task_source_codec_checks_aggregate_row_storage_before_materialization() {
         },
         TaskSemanticMeter::new(1_000_000, 1_000_000),
     );
-    assert!(matches!(
-        short.err().unwrap(),
-        RuntimeTaskSourceCodecError::Limit {
-            kind: "decoded bytes",
-            ..
-        }
-    ));
-    assert!(coordinate.sealed_plan().is_none());
+    let error = short.err().unwrap();
+    use crate::plan::construction::source::{expression, flow, function_bodies};
+    let RuntimeTaskSourceCodecError::Program(error) = error else {
+        panic!("expected a program storage limit: {error:?}");
+    };
+    let RuntimeProgramSourceError::Bodies(function_bodies::RuntimeFunctionBodySourceError::Flow(
+        error,
+    )) = *error
+    else {
+        panic!("expected body storage admission: {error:?}");
+    };
+    let flow::RuntimeFlowSourceError::Expression(error) = *error else {
+        panic!("expected expression storage admission: {error:?}");
+    };
+    assert!(
+        matches!(*error,
+        expression::RuntimeExpressionSourceError::Literal(crate::value::RuntimeLiteralSourceError::Limit {
+            kind: "decoded bytes", actual, maximum,
+        }) if actual == maximum + 1),
+        "{error:?}"
+    );
+    assert!(coordinate.is_none());
 }
 
 #[test]
@@ -343,6 +405,7 @@ fn task_source_codec_shares_the_exact_work_bank_with_the_common_seal() {
     meter.charge_work(1).unwrap();
     let (decoded, coordinate) = decode(&encoded, 1, limits(), meter);
     let decoded = decoded.unwrap();
+    let coordinate = coordinate.unwrap();
     assert_eq!(
         decoded.preparation_meter.as_ref().unwrap().totals().0,
         charged + 1
@@ -370,11 +433,11 @@ fn task_source_codec_shares_the_exact_work_bank_with_the_common_seal() {
     let mut short_meter = TaskSemanticMeter::new(charged, 1_000_000);
     short_meter.charge_work(1).unwrap();
     let (short, coordinate) = decode(&encoded, 1, limits(), short_meter);
-    assert_eq!(
+    assert!(matches!(
         short.err().unwrap(),
         RuntimeTaskSourceCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
-    );
-    assert!(coordinate.sealed_plan().is_none());
+    ));
+    assert!(coordinate.is_none());
 }
 
 #[test]
@@ -384,7 +447,7 @@ fn task_source_encoder_has_exact_shared_work_and_reserved_output_bounds() {
     let mut measured = TaskSemanticMeter::new(1_000_000, 1_000_000);
     assert_eq!(
         original
-            .encode_task_sources(limits(), &mut measured)
+            .encode_task_sources(limits(), &resources(), &mut measured)
             .unwrap(),
         encoded
     );
@@ -396,25 +459,30 @@ fn task_source_encoder_has_exact_shared_work_and_reserved_output_bounds() {
     };
     let mut meter = TaskSemanticMeter::new(charged, 1_000_000);
     assert_eq!(
-        original.encode_task_sources(exact, &mut meter).unwrap(),
+        original
+            .encode_task_sources(exact, &resources(), &mut meter)
+            .unwrap(),
         encoded
     );
     assert_eq!(meter.totals().0, charged);
     let mut short = TaskSemanticMeter::new(charged - 1, 1_000_000);
-    assert_eq!(
-        original.encode_task_sources(exact, &mut short).unwrap_err(),
+    assert!(matches!(
+        original
+            .encode_task_sources(exact, &resources(), &mut short)
+            .unwrap_err(),
         RuntimeTaskSourceCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
-    );
+    ));
     assert_eq!(short.status(), Err(TaskSemanticEncodingError::SemanticWork));
-    assert_eq!(
+    assert!(matches!(
         original
             .encode_task_sources(
                 RuntimeTaskSourceCodecLimits { rows: 0, ..exact },
+                &resources(),
                 &mut short
             )
             .unwrap_err(),
         RuntimeTaskSourceCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
-    );
+    ));
 }
 
 #[test]
@@ -427,4 +495,149 @@ fn source_class_tags_are_the_same_closed_owner_grammar() {
     }
     assert!(TaskClass::from_semantic_tag(13).is_none());
     assert!(TaskClass::from_semantic_tag(u8::MAX).is_none());
+}
+
+#[test]
+fn complete_task_source_restores_original_host_request_roles_and_emits_native_completed_keys() {
+    use crate::plan::construction::source::host_calls::tests::{fixture, launch};
+    use crate::step::RuntimeHostCallMode;
+    for mode in [RuntimeHostCallMode::Immediate, RuntimeHostCallMode::Suspend] {
+        for contract in [false, true] {
+            for binding in [false, true] {
+                for empty in [false, true] {
+                    let original = fixture(mode, contract, binding, empty);
+                    let encoded = bytes(&original);
+                    let decoded = decode_image(
+                        &encoded,
+                        limits(),
+                        TaskSemanticMeter::new(1_000_000, 1_000_000),
+                    )
+                    .unwrap();
+                    let coordinate = decoded.coordinate_owner.resolve(0).unwrap();
+                    assert!(coordinate.sealed_plan().is_none());
+                    let expected = original
+                        .task_plans()
+                        .by_index(RuntimeTaskPlanIndex(0))
+                        .unwrap();
+                    let restored = decoded
+                        .seal(RuntimeTaskPlanSealLimits::default(), None)
+                        .unwrap()
+                        .into_plan();
+                    let actual = restored.task_plan(&coordinate).unwrap();
+                    assert_eq!(actual.key(), expected.key());
+                    assert_eq!(
+                        actual.definition().request_template(),
+                        expected.definition().request_template()
+                    );
+                    assert_eq!(
+                        restored.executable_semantic_digest(),
+                        original.executable_semantic_digest()
+                    );
+                    assert_eq!(bytes(&restored), encoded);
+                    if !empty {
+                        let rejected = UnsealedRuntimePlanImage::decode_task_sources(
+                            &encoded,
+                            limits(),
+                            RuntimeTaskPlanSealLimits {
+                                max_request_roles: 0,
+                                ..Default::default()
+                            },
+                            TaskSemanticMeter::new(1_000_000, 1_000_000),
+                            &mut resources(),
+                        );
+                        assert!(
+                            matches!(rejected.err().unwrap(), RuntimeTaskSourceCodecError::Request {
+                            source: RuntimeTaskRequestCodecError::Limit { kind: "roles", actual, maximum: 0 }, ..
+                        } if actual > 0)
+                        );
+                    }
+                    let (_engine, call) = launch(restored);
+                    assert_eq!(call.submission().spec().producer.plan(), expected.key());
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn task_source_applies_common_seal_budget_and_shape_caps_before_reconstruction() {
+    let (original, _) = published();
+    let encoded = bytes(&original);
+    for malformed in [false, true] {
+        let mut input = encoded.clone();
+        if malformed {
+            input[0] ^= 1;
+        }
+        let error = UnsealedRuntimePlanImage::decode_task_sources(
+            &input,
+            limits(),
+            RuntimeTaskPlanSealLimits {
+                max_semantic_work: 0,
+                ..Default::default()
+            },
+            TaskSemanticMeter::new(u64::MAX, u64::MAX),
+            &mut resources(),
+        )
+        .err()
+        .unwrap();
+        assert!(matches!(
+            error,
+            RuntimeTaskSourceCodecError::Resource(TaskSemanticEncodingError::SemanticWork)
+        ));
+    }
+    for (seal, kind) in [
+        (
+            RuntimeTaskPlanSealLimits {
+                max_task_plan_rows: 0,
+                ..Default::default()
+            },
+            "rows",
+        ),
+        (
+            RuntimeTaskPlanSealLimits {
+                max_control_effect_rows: 0,
+                ..Default::default()
+            },
+            "control rows",
+        ),
+    ] {
+        let error = UnsealedRuntimePlanImage::decode_task_sources(
+            &encoded,
+            limits(),
+            seal,
+            TaskSemanticMeter::new(u64::MAX, u64::MAX),
+            &mut resources(),
+        )
+        .err()
+        .unwrap();
+        assert!(
+            matches!(error, RuntimeTaskSourceCodecError::Limit { kind: actual_kind, actual: 1, maximum: 0 }
+            if actual_kind == kind)
+        );
+    }
+    let mut view = encoded.clone();
+    let row = task_count_offset(&view) + 4;
+    let request = u32::from_le_bytes(view[row + 10..row + 14].try_into().unwrap()) as usize;
+    view[row + 8] = NeedProducerFamily::ViewMatchSubscription.semantic_tag();
+    view[row + 14 + request + 4] = 1;
+    let error = UnsealedRuntimePlanImage::decode_task_sources(
+        &view,
+        limits(),
+        RuntimeTaskPlanSealLimits {
+            max_view_bindings: 0,
+            ..Default::default()
+        },
+        TaskSemanticMeter::new(u64::MAX, u64::MAX),
+        &mut resources(),
+    )
+    .err()
+    .unwrap();
+    assert!(matches!(
+        error,
+        RuntimeTaskSourceCodecError::Limit {
+            kind: "View rows",
+            actual: 1,
+            maximum: 0
+        }
+    ));
 }

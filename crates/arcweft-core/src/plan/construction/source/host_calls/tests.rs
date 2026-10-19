@@ -75,7 +75,7 @@ fn body(host: RuntimeFlowOpSeed) -> RuntimeFunctionSiteBodySeed {
         ]),
     })
 }
-pub(in crate::plan::construction::source) fn fixture(
+pub(in crate::plan) fn fixture(
     mode: RuntimeHostCallMode,
     contract: bool,
     binding: bool,
@@ -330,9 +330,7 @@ fn replay_body(plan: &RuntimePlan, host_bytes: Option<&[u8]>) -> RuntimePlan {
         .unwrap()
         .into_plan()
 }
-pub(in crate::plan::construction::source) fn launch(
-    plan: RuntimePlan,
-) -> (Engine, RuntimeHostCallRequest) {
+pub(in crate::plan) fn launch(plan: RuntimePlan) -> (Engine, RuntimeHostCallRequest) {
     let FlowOp::HostCall { target, .. } = operation(&plan) else {
         unreachable!()
     };

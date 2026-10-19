@@ -1,17 +1,19 @@
 //! Strict private version-one task source frame. Expected keys are assertions;
 //! every semantic child and issued key still comes from the common seal.
 
-mod declarations;
-
 use super::{
     ExpectedTaskPlanKey, RuntimeTaskPlan, RuntimeTaskSemanticBinding, UnsealedRuntimePlanImage,
 };
+use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::plan::body_semantic::request::codec::{
     RuntimeTaskRequestCodecError, RuntimeTaskRequestCodecLimits,
 };
+use crate::plan::construction::source::program::{
+    PreparedRuntimeProgramSource, RuntimeProgramSourceError, RuntimeProgramSourceLimits,
+};
 use crate::plan::{
-    RuntimeControlEffectContractId, RuntimePlan, RuntimePlanInventory,
-    RuntimeTaskPlanCoordinateOwner, RuntimeTaskPlanIndex, RuntimeTaskRequestTemplate,
+    RuntimeControlEffectContractId, RuntimePlan, RuntimeTaskPlanIndex, RuntimeTaskPlanSealLimits,
+    RuntimeTaskPlanSeed, RuntimeTaskRequestTemplate,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLineTaskGroupId};
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
@@ -28,11 +30,10 @@ pub(in crate::plan) struct RuntimeTaskSourceCodecLimits {
     pub(in crate::plan) decoded_bytes: usize,
     pub(in crate::plan) request_roles: u32,
     pub(in crate::plan) path_steps: u32,
-    pub(in crate::plan) declaration_elements: u32,
-    pub(in crate::plan) type_policy_depth: u32,
+    pub(in crate::plan) program: RuntimeProgramSourceLimits,
 }
 
-#[derive(Debug, PartialEq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub(in crate::plan) enum RuntimeTaskSourceCodecError {
     #[error("task source resource admission failed: {0:?}")]
     Resource(TaskSemanticEncodingError),
@@ -64,26 +65,8 @@ pub(in crate::plan) enum RuntimeTaskSourceCodecError {
     },
     #[error("task source count {actual} differs from original namespace count {expected}")]
     NamespaceCount { expected: u32, actual: u32 },
-    #[error(
-        "task source {table} declaration count {actual} differs from original count {expected}"
-    )]
-    DeclarationCount {
-        table: &'static str,
-        expected: usize,
-        actual: usize,
-    },
-    #[error("task source {table} declarations differ from the original executable context")]
-    DeclarationMismatch { table: &'static str },
-    #[error("task source type declarations are invalid: {0}")]
-    Types(#[from] crate::plan::type_table::source_codec::RuntimeTypeSourceError),
-    #[error("task source nominal declarations are invalid: {0}")]
-    Nominals(crate::plan::type_table::source_codec::RuntimeTypeSourceError),
-    #[error("task source local declarations are invalid: {0}")]
-    Locals(#[from] crate::plan::local_declarations::source_codec::RuntimeLocalSourceError),
-    #[error("task source control declarations are invalid: {0}")]
-    Controls(#[from] crate::plan::control_effect::source_codec::RuntimeControlSourceError),
-    #[error("task source local placement is invalid: {0}")]
-    LocalPlacement(#[from] crate::plan::RuntimeLocalPlacementError),
+    #[error("task source program is invalid: {0}")]
+    Program(Box<RuntimeProgramSourceError>),
     #[error("task {ordinal} request source is invalid: {source}")]
     Request {
         ordinal: usize,
@@ -92,7 +75,7 @@ pub(in crate::plan) enum RuntimeTaskSourceCodecError {
     #[error("task source family/binding is invalid: {0}")]
     Binding(#[from] crate::plan::RuntimeTaskPlanValidationError),
     #[error("task source image could not be retained: {0}")]
-    Image(#[from] super::RuntimeTaskPlanSealError),
+    Image(super::RuntimeTaskPlanSealError),
 }
 
 impl From<TaskSemanticEncodingError> for RuntimeTaskSourceCodecError {
@@ -101,28 +84,46 @@ impl From<TaskSemanticEncodingError> for RuntimeTaskSourceCodecError {
     }
 }
 
-impl From<crate::plan::declaration_sources::RuntimePlanDeclarationSourceError>
-    for RuntimeTaskSourceCodecError
-{
-    fn from(error: crate::plan::declaration_sources::RuntimePlanDeclarationSourceError) -> Self {
-        use crate::plan::declaration_sources::RuntimePlanDeclarationSourceError as Source;
+impl From<RuntimeProgramSourceError> for RuntimeTaskSourceCodecError {
+    fn from(error: RuntimeProgramSourceError) -> Self {
         match error {
-            Source::Resource(error) => Self::Resource(error),
-            Source::Arithmetic => Self::Arithmetic,
-            Source::Limit {
-                kind,
-                actual,
-                maximum,
-            } => Self::Limit {
-                kind,
-                actual,
-                maximum,
-            },
-            Source::Types(error) => Self::Types(error),
-            Source::Nominals(error) => Self::Nominals(error),
-            Source::Locals(error) => Self::Locals(error),
-            Source::Controls(error) => Self::Controls(error),
+            RuntimeProgramSourceError::Resource(cause) => Self::Resource(cause),
+            other => Self::Program(Box::new(other)),
         }
+    }
+}
+
+impl From<super::RuntimeTaskPlanSealError> for RuntimeTaskSourceCodecError {
+    fn from(error: super::RuntimeTaskPlanSealError) -> Self {
+        match error {
+            super::RuntimeTaskPlanSealError::Encoding(cause)
+            | super::RuntimeTaskPlanSealError::Body(
+                crate::plan::RuntimeBodySemanticError::Encoding(cause),
+            ) => Self::Resource(cause),
+            other => Self::Image(other),
+        }
+    }
+}
+
+impl RuntimeTaskSourceCodecLimits {
+    fn remaining_program(
+        self,
+        wire_overhead: usize,
+        task_storage: usize,
+    ) -> Result<RuntimeProgramSourceLimits, RuntimeTaskSourceCodecError> {
+        limit("encoded bytes", wire_overhead, self.encoded_bytes)?;
+        limit("decoded bytes", task_storage, self.decoded_bytes)?;
+        Ok(RuntimeProgramSourceLimits {
+            encoded_bytes: self
+                .program
+                .encoded_bytes
+                .min(self.encoded_bytes - wire_overhead),
+            decoded_bytes: self
+                .program
+                .decoded_bytes
+                .min(self.decoded_bytes - task_storage),
+            ..self.program
+        })
     }
 }
 
@@ -150,12 +151,12 @@ struct References {
 }
 
 impl References {
-    fn original(inventory: &RuntimePlanInventory) -> Self {
+    fn original(plan: &RuntimePlan) -> Self {
         Self {
-            functions: inventory.function_sites.len(),
-            types: inventory.type_table.len(),
-            controls: inventory.control_effect_contracts.len(),
-            lines: inventory.line_task_groups.len(),
+            functions: plan.function_sites().len(),
+            types: plan.type_table().len(),
+            controls: plan.control_effect_contracts().len(),
+            lines: plan.line_task_groups().len(),
         }
     }
 
@@ -174,45 +175,45 @@ impl RuntimePlan {
     pub(in crate::plan) fn encode_task_sources(
         &self,
         limits: RuntimeTaskSourceCodecLimits,
+        resources: &ValueResourceAdmission,
         meter: &mut TaskSemanticMeter,
     ) -> Result<Vec<u8>, RuntimeTaskSourceCodecError> {
         meter.status()?;
         let result = (|| {
-            let declarations =
-                declarations::PreparedDeclarationEncoding::prepare(&self.inventory, limits, meter)?;
-            let declaration_storage = declarations.storage_bytes();
-            let (length, measured_storage, references) = {
-                let mut count = Writer::new(
-                    None,
-                    Some(&mut *meter),
-                    limits,
-                    References::original(&self.inventory),
-                );
-                count.header()?;
-                declarations.measure(&mut count)?;
-                storage(
-                    &mut count.storage,
-                    declaration_storage,
-                    1,
-                    limits.decoded_bytes,
-                )?;
+            let (row_length, row_storage, references) = {
+                let mut count =
+                    Writer::new(None, Some(&mut *meter), limits, References::original(self));
                 count.task_rows(self)?;
                 (count.length, count.storage, count.references)
             };
+            let overhead = DOMAIN
+                .len()
+                .checked_add(1 + 4)
+                .and_then(|bytes| bytes.checked_add(row_length))
+                .ok_or(RuntimeTaskSourceCodecError::Arithmetic)?;
+            limit("encoded bytes", overhead, limits.encoded_bytes)?;
+            let program_limits = limits.remaining_program(overhead, row_storage)?;
+            let program = self.encode_program_source(program_limits, resources, meter)?;
+            let length = overhead
+                .checked_add(program.bytes().len())
+                .ok_or(RuntimeTaskSourceCodecError::Arithmetic)?;
             charge_passes(meter, length, 2)?;
             let mut bytes = Vec::with_capacity(length);
             let mut writer = Writer::new(Some(&mut bytes), None, limits, references);
             writer.header()?;
-            declarations.append(&mut writer)?;
+            writer.frame(program.bytes().len(), |output| {
+                output.extend_from_slice(program.bytes());
+                Ok(())
+            })?;
             storage(
                 &mut writer.storage,
-                declaration_storage,
                 1,
+                program.storage_bytes(),
                 limits.decoded_bytes,
             )?;
             writer.task_rows(self)?;
             debug_assert_eq!(writer.length, length);
-            debug_assert_eq!(writer.storage, measured_storage);
+            debug_assert_eq!(writer.storage, row_storage + program.storage_bytes());
             Ok(bytes)
         })();
         result.map_err(|error: RuntimeTaskSourceCodecError| error.reject_in_bank(meter))
@@ -220,64 +221,151 @@ impl RuntimePlan {
 }
 
 impl UnsealedRuntimePlanImage {
-    /// The original inventory and namespace enter once. No decoded data is
-    /// published, and no expected bytes can become a key or a semantic child.
+    /// Complete original Source enters once and reserves its own genuine
+    /// namespace. Expected bytes are assertions checked only by the common seal.
     pub(in crate::plan) fn decode_task_sources(
-        mut inventory: RuntimePlanInventory,
-        coordinate_owner: RuntimeTaskPlanCoordinateOwner,
         bytes: &[u8],
         limits: RuntimeTaskSourceCodecLimits,
+        seal_limits: RuntimeTaskPlanSealLimits,
         mut meter: TaskSemanticMeter,
+        resources: &mut ValueResourceAdmission,
     ) -> Result<Self, RuntimeTaskSourceCodecError> {
-        meter.status()?;
-        let decoded = (|| {
-            coordinate_owner.ensure_unsealed()?;
+        meter.constrain(
+            seal_limits.max_semantic_work,
+            seal_limits.max_transcript_bytes,
+        )?;
+        let limits = RuntimeTaskSourceCodecLimits {
+            rows: limits.rows.min(seal_limits.max_task_plan_rows),
+            request_roles: limits.request_roles.min(seal_limits.max_request_roles),
+            path_steps: limits.path_steps.min(seal_limits.max_children_per_row),
+            ..limits
+        };
+        let checked = (|| {
             limit("encoded bytes", bytes.len(), limits.encoded_bytes)?;
             charge_passes(&mut meter, bytes.len(), 3)?;
-            let references = References::original(&inventory);
-            let mut count = Reader::new(bytes, limits, references, coordinate_owner.len());
+            // These zero counts are cursor initialization only. No task row is
+            // read until its assertions come from the complete Source header.
+            let mut count = Reader::new(
+                bytes,
+                limits,
+                References {
+                    functions: 0,
+                    types: 0,
+                    controls: 0,
+                    lines: 0,
+                },
+                0,
+            );
             count.header()?;
-            let declaration_bytes =
-                crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(
-                    &mut count,
-                )?;
+            let length = count.u32()? as usize;
+            let program_bytes = count.slice(length)?;
+            let namespaces =
+                PreparedRuntimeProgramSource::namespaces(program_bytes, limits.program)?;
+            limit("rows", namespaces.tasks, limits.rows as usize)?;
+            limit(
+                "control rows",
+                namespaces.controls,
+                seal_limits.max_control_effect_rows as usize,
+            )?;
+            count.references = References {
+                functions: namespaces.functions,
+                types: namespaces.types,
+                controls: namespaces.controls,
+                lines: namespaces.groups,
+            };
+            count.original_rows = u32::try_from(namespaces.tasks)
+                .map_err(|_| RuntimeTaskSourceCodecError::Arithmetic)?;
+            let row_offset = count.offset;
             count.task_rows(false)?;
-            let declarations =
-                declaration_bytes.preflight_original(&inventory, limits, &mut meter)?;
-            let declaration_storage = declarations.storage_bytes();
-            storage(
-                &mut count.storage,
-                declaration_storage,
-                1,
-                limits.decoded_bytes,
+            limit(
+                "View rows",
+                count.views,
+                seal_limits.max_view_bindings as usize,
             )?;
-            // Every declaration and task row has passed resource/shape preflight
-            // before any source table, local placement or task row is retained.
-            declarations.materialize_original(&mut inventory, &mut meter)?;
-            let mut reader = Reader::new(bytes, limits, references, coordinate_owner.len());
-            reader.header()?;
-            let _ = crate::plan::declaration_sources::RuntimePlanDeclarationSourceBytes::read(
-                &mut reader,
+            let program = PreparedRuntimeProgramSource::preflight(
+                program_bytes,
+                limits.remaining_program(bytes.len() - length, count.storage)?,
+                resources,
+                &mut meter,
             )?;
-            storage(
-                &mut reader.storage,
-                declaration_storage,
-                1,
-                limits.decoded_bytes,
-            )?;
+            Ok((
+                program,
+                count.references,
+                count.original_rows,
+                row_offset,
+                count.storage,
+            ))
+        })();
+        let (program, references, task_count, row_offset, task_storage) = checked
+            .map_err(|error: RuntimeTaskSourceCodecError| error.reject_in_bank(&mut meter))?;
+        let mut original = program.materialize(meter, resources)?;
+        let retained = (|| {
+            let mut reader = Reader::new(bytes, limits, references, task_count);
+            reader.offset = row_offset;
             let rows = reader
                 .task_rows(true)?
                 .expect("materializing a checked task frame retains its rows");
-            debug_assert_eq!(reader.storage, count.storage);
-            Ok::<_, RuntimeTaskSourceCodecError>(rows)
-        })();
-        let (rows, expected) = match decoded {
-            Ok(rows) => rows,
-            Err(error) => {
-                return Err(error.reject_in_bank(&mut meter));
+            debug_assert_eq!(reader.storage, task_storage);
+            for (ordinal, row) in rows.0.into_vec().into_iter().enumerate() {
+                let request = row.request_template.try_map_types(|ty| {
+                    original.source.type_identity(ty).ok_or(
+                        RuntimeTaskSourceCodecError::Reference {
+                            kind: "type",
+                            actual: ty.get().get(),
+                            maximum: references.types,
+                        },
+                    )
+                })?;
+                let binding = row.binding.try_complete_line(|group| {
+                    original.groups.get(group.index()).cloned().ok_or(
+                        RuntimeTaskSourceCodecError::Reference {
+                            kind: "line",
+                            actual: group.get().get(),
+                            maximum: references.lines,
+                        },
+                    )
+                })?;
+                let function = original
+                    .functions
+                    .get(row.producer_function.get().get() as usize - 1)
+                    .cloned()
+                    .ok_or(RuntimeTaskSourceCodecError::Reference {
+                        kind: "function",
+                        actual: row.producer_function.get().get(),
+                        maximum: references.functions,
+                    })?;
+                let control = original.source.control(row.control_effect).cloned().ok_or(
+                    RuntimeTaskSourceCodecError::Reference {
+                        kind: "control",
+                        actual: row.control_effect.index() as u32 + 1,
+                        maximum: references.controls,
+                    },
+                )?;
+                original.source.builder.define_task_plan(
+                    &original.tasks[ordinal],
+                    RuntimeTaskPlanSeed::new(
+                        function, row.family, row.class, request, control, binding,
+                    ),
+                )?;
             }
-        };
-        Self::new(inventory, coordinate_owner, rows, Some(expected), meter).map_err(Into::into)
+            Ok(rows.1)
+        })();
+        let expected = retained.map_err(|error: RuntimeTaskSourceCodecError| {
+            match original.source.reject_owner() {
+                TaskSemanticEncodingError::OwnerRejected => error,
+                cause => RuntimeTaskSourceCodecError::Resource(cause),
+            }
+        })?;
+        let mut image = original.source.prepare_image(seal_limits)?;
+        if expected.len() != image.task_plans.len() {
+            return Err(super::RuntimeTaskPlanSealError::ExpectedKeyCount {
+                rows: image.task_plans.len(),
+                keys: expected.len(),
+            }
+            .into());
+        }
+        image.expected_task_plan_keys = Some(expected);
+        Ok(image)
     }
 }
 
@@ -333,7 +421,7 @@ fn row_storage(
     storage(
         total,
         count,
-        std::mem::size_of::<RuntimeTaskPlan>(),
+        std::mem::size_of::<RuntimeTaskPlan>() + std::mem::size_of::<RuntimeTaskPlanSeed>(),
         maximum,
     )?;
     storage(
@@ -462,7 +550,9 @@ impl<'a> Writer<'a> {
         storage(
             &mut self.storage,
             1,
-            prepared.storage_bytes(),
+            prepared
+                .mapped_type_storage_bytes::<crate::pattern::RuntimeSemanticTypeId>()
+                .map_err(|source| request_error(ordinal, source))?,
             self.limits.decoded_bytes,
         )?;
         let length = prepared.encoded_bytes();
@@ -535,6 +625,7 @@ struct Reader<'a> {
     limits: RuntimeTaskSourceCodecLimits,
     references: References,
     original_rows: u32,
+    views: usize,
 }
 
 impl<'a> Reader<'a> {
@@ -551,6 +642,7 @@ impl<'a> Reader<'a> {
             limits,
             references,
             original_rows,
+            views: 0,
         }
     }
 
@@ -619,12 +711,20 @@ impl<'a> Reader<'a> {
             storage(
                 &mut self.storage,
                 1,
-                request.storage_bytes(),
+                request
+                    .mapped_type_storage_bytes::<crate::pattern::RuntimeSemanticTypeId>()
+                    .map_err(|source| request_error(ordinal as usize, source))?,
                 self.limits.decoded_bytes,
             )?;
             let control = reference("control", self.u32()?, self.references.controls)?;
             let binding = self.binding()?;
             family.validate_runtime_task_binding(&binding)?;
+            if matches!(binding, RuntimeTaskSemanticBinding::View) {
+                self.views = self
+                    .views
+                    .checked_add(1)
+                    .ok_or(RuntimeTaskSourceCodecError::Arithmetic)?;
+            }
             let expected = ExpectedTaskPlanKey::new(self.take()?);
             if let (Some(rows), Some(keys)) = (&mut rows, &mut keys) {
                 rows.push(RuntimeTaskPlan {

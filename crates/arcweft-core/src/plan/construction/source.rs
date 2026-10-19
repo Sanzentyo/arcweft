@@ -41,6 +41,30 @@ pub(in crate::plan) struct RuntimePlanSourceConstruction {
 }
 
 impl RuntimePlanSourceConstruction {
+    pub(in crate::plan) fn type_identity(
+        &self,
+        id: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Option<crate::pattern::RuntimeSemanticTypeId> {
+        self.builder
+            .types
+            .get(id)
+            .map(|declaration| declaration.semantic_identity())
+    }
+
+    /// Rejects this construction while retaining its original first resource
+    /// failure. Consumers cannot replace or reset the underlying work bank.
+    pub(in crate::plan) fn reject_owner(
+        &mut self,
+    ) -> crate::task::semantic::TaskSemanticEncodingError {
+        let cause = self
+            .meter
+            .status()
+            .err()
+            .unwrap_or(crate::task::semantic::TaskSemanticEncodingError::OwnerRejected);
+        self.meter.reject_owner();
+        cause
+    }
+
     /// Extra logical storage while the admitted tables enter construction.
     /// Shared Arc payloads include their two reference-count slots once.
     pub(in crate::plan) fn storage_bytes(
