@@ -44,11 +44,17 @@ impl CharacterId {
     /// Validates and constructs a public character identifier.
     pub fn try_new(value: impl Into<String>) -> Result<Self, CharacterIdError> {
         let value = value.into();
-        PublicId::try_new(value.clone())?;
+        Self::validate_source(&value)?;
+        Ok(Self(value))
+    }
+
+    /// Checks the complete authored identity before a codec allocates it.
+    pub fn validate_source(value: &str) -> Result<(), CharacterIdError> {
+        PublicId::validate_text(value)?;
         let Some(local) = value.strip_prefix("character.") else {
             return Err(CharacterIdError::MissingCharacterPrefix);
         };
-        validate_local_id("character", local.to_owned())?;
+        validate_local_text("character", local)?;
         for (component_index, component) in local.split('.').enumerate() {
             if component.is_empty()
                 || !component
@@ -57,11 +63,11 @@ impl CharacterId {
             {
                 let component_index = u32::try_from(component_index).map_err(|_| {
                     CharacterIdError::OwnerComponentIndexOverflow {
-                        value: value.clone(),
+                        value: value.to_owned(),
                     }
                 })?;
                 return Err(CharacterIdError::InvalidOwnerComponent {
-                    value,
+                    value: value.to_owned(),
                     component_index,
                 });
             }
@@ -69,9 +75,12 @@ impl CharacterId {
         let root = local.split('.').next().unwrap_or(local);
         if matches!(root, "crate" | "self" | "super" | "parent" | "character") {
             let root = root.to_owned();
-            return Err(CharacterIdError::ReservedCompactRoot { value, root });
+            return Err(CharacterIdError::ReservedCompactRoot {
+                value: value.to_owned(),
+                root,
+            });
         }
-        Ok(Self(value))
+        Ok(())
     }
 
     /// Source-visible identifier without an `@` reference marker.
@@ -140,15 +149,23 @@ impl CharacterLookId {
 }
 
 fn validate_local_id(kind: &'static str, value: String) -> Result<String, CharacterIdError> {
+    validate_local_text(kind, &value)?;
+    Ok(value)
+}
+
+fn validate_local_text(kind: &'static str, value: &str) -> Result<(), CharacterIdError> {
     let mut chars = value.chars();
     let first_valid = chars
         .next()
         .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_');
     let rest_valid = chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'));
     if first_valid && rest_valid {
-        Ok(value)
+        Ok(())
     } else {
-        Err(CharacterIdError::InvalidLocal { kind, value })
+        Err(CharacterIdError::InvalidLocal {
+            kind,
+            value: value.to_owned(),
+        })
     }
 }
 

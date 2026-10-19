@@ -4,7 +4,7 @@
 mod encoding;
 mod reading;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::RuntimePlanSourceConstruction;
 use super::expression::{
@@ -196,6 +196,7 @@ pub(in crate::plan) struct PreparedRuntimeHostCallSource<'a> {
     bytes: &'a [u8],
     limits: RuntimeHostCallSourceLimits,
     footprint: Footprint,
+    task_ordinal: u32,
 }
 impl<'a> PreparedRuntimeHostCallSource<'a> {
     pub(in crate::plan) fn preflight(
@@ -237,6 +238,7 @@ impl<'a> PreparedRuntimeHostCallSource<'a> {
                 bytes,
                 limits,
                 footprint: counts.footprint,
+                task_ordinal: row.task,
             })
         })();
         result.map_err(|error: Error| error.reject(meter))
@@ -249,6 +251,9 @@ impl<'a> PreparedRuntimeHostCallSource<'a> {
     }
     pub(in crate::plan) const fn node_count(&self) -> usize {
         self.footprint.nodes
+    }
+    pub(in crate::plan::construction::source) const fn task_ordinal(&self) -> u32 {
+        self.task_ordinal
     }
 
     pub(in crate::plan) fn materialize(

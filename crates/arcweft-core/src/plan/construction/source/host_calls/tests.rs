@@ -75,7 +75,12 @@ fn body(host: RuntimeFlowOpSeed) -> RuntimeFunctionSiteBodySeed {
         ]),
     })
 }
-fn fixture(mode: RuntimeHostCallMode, contract: bool, binding: bool, empty: bool) -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture(
+    mode: RuntimeHostCallMode,
+    contract: bool,
+    binding: bool,
+    empty: bool,
+) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     let admitted = builder
         .admit_type_batch(
@@ -224,20 +229,64 @@ fn source(
     (source, functions, coordinates)
 }
 fn replay(plan: &RuntimePlan, bytes: &[u8]) -> RuntimePlan {
+    replay_body(plan, Some(bytes))
+}
+pub(in crate::plan::construction::source) fn replay_flow(plan: &RuntimePlan) -> RuntimePlan {
+    replay_body(plan, None)
+}
+fn replay_body(plan: &RuntimePlan, host_bytes: Option<&[u8]>) -> RuntimePlan {
     let (mut source, functions, coordinates) = source(plan, 1);
-    let prepared = PreparedRuntimeHostCallSource::preflight(
-        bytes,
-        limits(plan),
-        &resources(),
-        &mut source.meter,
-    )
-    .unwrap();
-    let host = prepared
-        .materialize(&mut source, &coordinates[0], &handles(), &mut resources())
+    let body = if let Some(bytes) = host_bytes {
+        let prepared = PreparedRuntimeHostCallSource::preflight(
+            bytes,
+            limits(plan),
+            &resources(),
+            &mut source.meter,
+        )
         .unwrap();
+        body(
+            prepared
+                .materialize(&mut source, &coordinates[0], &handles(), &mut resources())
+                .unwrap(),
+        )
+    } else {
+        let bounds = super::super::flow::tests::limits(plan);
+        let original = plan
+            .function_sites()
+            .iter()
+            .next()
+            .unwrap()
+            .body()
+            .executable()
+            .unwrap();
+        let encoded = plan
+            .encode_flow_source(original.ops(), bounds, &resources(), &mut source.meter)
+            .unwrap();
+        let prepared = super::super::flow::PreparedRuntimeFlowSource::preflight(
+            encoded.bytes(),
+            bounds,
+            &resources(),
+            &mut source.meter,
+        )
+        .unwrap();
+        let expressions = handles();
+        let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
+            expression: &expressions,
+            contents: &[],
+            defers: &[],
+            tasks: &coordinates,
+        };
+        let ops = prepared
+            .materialize(&mut source, &flow_handles, &mut resources())
+            .unwrap();
+        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+            effects: original.effects().clone(),
+            ops: ops.into_boxed_slice(),
+        })
+    };
     source
         .builder
-        .define_function_site_seed(&functions[0], body(host))
+        .define_function_site_seed(&functions[0], body)
         .unwrap();
     source
         .builder
@@ -281,7 +330,9 @@ fn replay(plan: &RuntimePlan, bytes: &[u8]) -> RuntimePlan {
         .unwrap()
         .into_plan()
 }
-fn launch(plan: RuntimePlan) -> (Engine, RuntimeHostCallRequest) {
+pub(in crate::plan::construction::source) fn launch(
+    plan: RuntimePlan,
+) -> (Engine, RuntimeHostCallRequest) {
     let FlowOp::HostCall { target, .. } = operation(&plan) else {
         unreachable!()
     };

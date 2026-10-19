@@ -201,6 +201,7 @@ pub(in crate::plan) struct PreparedRuntimeSelectedProducerSource<'a> {
     bytes: &'a [u8],
     limits: RuntimeSelectedProducerSourceLimits,
     footprint: Footprint,
+    task_ordinal: u32,
 }
 impl<'a> PreparedRuntimeSelectedProducerSource<'a> {
     pub(in crate::plan) fn preflight(
@@ -246,6 +247,7 @@ impl<'a> PreparedRuntimeSelectedProducerSource<'a> {
                 bytes,
                 limits,
                 footprint: counts.footprint,
+                task_ordinal: row.task,
             })
         })();
         result.map_err(|error: Error| error.reject(meter))
@@ -258,6 +260,9 @@ impl<'a> PreparedRuntimeSelectedProducerSource<'a> {
     }
     pub(in crate::plan) const fn node_count(&self) -> usize {
         self.footprint.nodes
+    }
+    pub(in crate::plan::construction::source) const fn task_ordinal(&self) -> u32 {
+        self.task_ordinal
     }
 
     /// The caller supplies a real reservation from this original builder.

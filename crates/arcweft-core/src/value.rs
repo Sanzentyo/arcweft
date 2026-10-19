@@ -4259,6 +4259,18 @@ impl RuntimeCallArgumentMode {
 }
 
 impl RuntimeStandardMapFamily {
+    pub(crate) const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Vec),
+            1 => Some(Self::Seq),
+            2 => Some(Self::Array),
+            3 => Some(Self::Slice),
+            4 => Some(Self::Option),
+            5 => Some(Self::Result),
+            _ => None,
+        }
+    }
+
     pub(crate) const fn semantic_tag(self) -> u8 {
         match self {
             Self::Vec => 0,

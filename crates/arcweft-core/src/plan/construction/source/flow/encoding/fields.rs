@@ -1,4 +1,4 @@
-//! Borrowed operation metadata. Expressions/patterns come from FlowOp's
+//! Borrowed operation metadata. Expressions/patterns come from `FlowOp`'s
 //! ordered value-root projection; referenced definitions remain real edges.
 
 use super::super::{Counts, Error, limit};
@@ -301,12 +301,12 @@ impl Writer {
                 match evidence.executable {
                     RuntimeIteratorWitnessExecutable::TraitCalls { into_iter, next } => {
                         self.byte(0)?;
-                        self.u32(into_iter.get().get())?;
-                        self.u32(next.get().get())?;
+                        self.count(into_iter.0.checked_add(1).ok_or(Error::Arithmetic)?)?;
+                        self.count(next.0.checked_add(1).ok_or(Error::Arithmetic)?)?;
                     }
                     RuntimeIteratorWitnessExecutable::IdentityIntoIterator { next } => {
                         self.byte(1)?;
-                        self.u32(next.get().get())?;
+                        self.count(next.0.checked_add(1).ok_or(Error::Arithmetic)?)?;
                     }
                 }
             }
@@ -480,7 +480,7 @@ impl Writer {
                 }
             }
             FlowOp::IfLet { guard, .. } | FlowOp::WhileLet { guard, .. } => {
-                self.flag(guard.is_some())?
+                self.flag(guard.is_some())?;
             }
             FlowOp::Match { arms, .. } => {
                 self.count(arms.len())?;
@@ -507,7 +507,7 @@ impl Writer {
                 self.locals(captures)?;
             }
             FlowOp::Scope { identity, .. } | FlowOp::EnterScope { identity } => {
-                self.scope(identity)?
+                self.scope(identity)?;
             }
             FlowOp::Break(value) => self.flag(value.is_some())?,
             FlowOp::Goto(flow) => self.path(flow)?,

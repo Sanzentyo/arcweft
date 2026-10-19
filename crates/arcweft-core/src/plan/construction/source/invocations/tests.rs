@@ -306,32 +306,27 @@ pub(in crate::plan::construction::source) fn define_bodies(
                 RuntimeFunctionSiteBodySeed::Expression(decode(expr, plan, source, &handles))
             }
             RuntimeFunctionSiteBody::Executable(body) => {
-                // Operation source transport remains separate work. These
-                // actual typed operations exercise the restored declarations.
-                let ops = body
-                    .ops()
-                    .iter()
-                    .map(|op| match op {
-                        FlowOp::ReturnExpr(expr) => {
-                            RuntimeFlowOpSeed::ReturnExpr(decode(expr, plan, source, &handles))
-                        }
-                        FlowOp::RegisterDefer {
-                            site,
-                            outcome,
-                            captures,
-                            owner,
-                        } => RuntimeFlowOpSeed::RegisterDefer {
-                            site: defers[site.index()],
-                            outcome: *outcome,
-                            captures: captures
-                                .iter()
-                                .map(|expr| decode(expr, plan, source, &handles))
-                                .collect(),
-                            owner: *owner,
-                        },
-                        _ => unreachable!("fixture owns returns and one real defer registration"),
-                    })
-                    .collect();
+                let limits = super::super::flow::tests::limits(plan);
+                let encoded = plan
+                    .encode_flow_source(body.ops(), limits, &resources(), &mut source.meter)
+                    .unwrap();
+                let prepared = super::super::flow::PreparedRuntimeFlowSource::preflight(
+                    encoded.bytes(),
+                    limits,
+                    &resources(),
+                    &mut source.meter,
+                )
+                .unwrap();
+                let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
+                    expression: &handles,
+                    contents: &[],
+                    defers,
+                    tasks: &[],
+                };
+                let ops = prepared
+                    .materialize(source, &flow_handles, &mut resources())
+                    .unwrap()
+                    .into_boxed_slice();
                 RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                     effects: body.effects().clone(),
                     ops,

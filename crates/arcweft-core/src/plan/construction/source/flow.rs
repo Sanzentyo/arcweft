@@ -8,7 +8,7 @@ mod decoding;
 mod encoding;
 mod metadata;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::RuntimePlanSourceConstruction;
 use super::audio_commands::{RuntimeAudioCommandSourceError, RuntimeAudioCommandSourceLimits};
@@ -125,6 +125,8 @@ pub(in crate::plan) enum RuntimeFlowSourceError {
     Character(#[from] arcweft_character::id::CharacterIdError),
     #[error("Flow Source construction failed: {0}")]
     Construction(Box<RuntimePlanBuildError>),
+    #[error("Flow Source dialogue result is invalid: {0}")]
+    DialogueResult(#[from] crate::plan::RuntimeDialogueResultTargetSeedError),
     #[error("Flow Source needs {required} output bytes, only {remaining} are reserved")]
     OutputCapacity { required: usize, remaining: usize },
 }
@@ -210,13 +212,14 @@ impl Counts {
         };
         limit("operation nodes", operations, limits.nodes as usize)?;
         counts.footprint.nodes = operations;
-        // All rows, seed-stack slots, final operation slots and bounded prefix
-        // counters are admitted before the first traversal allocation/value.
+        // All rows, seed-stack slots, owned bodies, the Map split/merge scratch,
+        // final operation slots and bounded prefix counters are admitted before
+        // the first traversal allocation/value.
         counts.storage(
             operations
                 .checked_mul(
                     size_of::<metadata::Row<'_>>()
-                        + 2 * size_of::<RuntimeFlowOpSeed>()
+                        + 3 * size_of::<RuntimeFlowOpSeed>()
                         + size_of::<FlowOp>()
                         + 2 * size_of::<usize>(),
                 )
@@ -427,7 +430,7 @@ impl<'a> PreparedRuntimeFlowSource<'a> {
                     limits: self.limits,
                     seeds: &mut seeds,
                 }
-                .operation(row)?;
+                .operation(&row)?;
                 seeds.push(op);
             }
             let roots = (0..self.roots)

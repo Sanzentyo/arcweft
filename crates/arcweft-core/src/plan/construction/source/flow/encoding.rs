@@ -199,10 +199,6 @@ impl Sink<'_> {
                 .to_le_bytes(),
         )
     }
-    fn frame(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        self.count(bytes.len())?;
-        self.raw(bytes)
-    }
 }
 fn emit(
     plan: &RuntimePlan,

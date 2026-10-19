@@ -17900,3 +17900,77 @@ preserve one semantic/value-resource bank, and derive captures through the real
 factory. No function or mark namespace is invented for operations that do not
 reference those owners. Continue the remaining joint program, Line, registry,
 retained View, key, restore and final acceptance work. The full goal stays active.
+
+## 2026-10-19 — Canonical Flow Source reconstruction and actual execution
+
+Inspected main d024fe561b7e10c6dc31992b4b7763d8a556a617. Fourteen owned Rust
+paths (including two new files) and the retained fourteen tracked/three untracked
+held changes are observed. Supersedes the preceding incomplete Flow checkpoint:
+Flow Source is now registered and reconstructs the forty canonical seed variants.
+It refuses ten runtime-only Bind/continuation tags, retains original ordered
+value roots and owned bodies, and uses existing Host/selected/project/effect
+Source owners. Await observer transactions recurse through the same Flow
+forest. This is a private Source implementation, not the joint public switch.
+
+Complete borrowed inspection precedes seed/value reconstruction. Cumulative
+node, operation-depth, element, encoded and decoded quotas cover every nested
+leaf and body. Reverse reconstruction replays each row's admitted resource
+prefix under the same semantic and value banks. Fixed storage includes the
+seed stack, owned bodies, Map split/merge scratch and final operations. Template
+captures are derived by the actual factory, not stored as another authority.
+All expression/content/defer/task namespaces are checked before reconstruction;
+genuine issuer membership and source ordinal order reject foreign handles.
+Host/selected prepared packets expose their already preflighted task ordinal;
+the caller still supplies an actual reservation from the original builder.
+
+CharacterId now owns one borrowed validator shared with its ordinary constructor
+and the Flow reader; valid identities need no temporary PublicId/local String.
+Existing error kinds and grammar remain. StandardMapFamily owns its semantic-tag
+inverse. Original Line sites retain zero-based coordinates, and iterator method
+coordinates use their actual positive Source representation. No synthetic scope,
+program, completed task key, executable proof or backend-forcing effect is made.
+
+R1350 first Clippy fails, actual 101: four wrong assumptions about content-ID and
+trait-method-ID projections. After using their actual owner representations,
+R1351 Core/Character all-target/all-feature locked Clippy passes, actual 0,
+47.37s. R1352 catalogs 2321 cases in six owning/consumer libraries with all
+features and rdeps(=arcweft-character); R1353 executes all 2321, actual 0,
+26.901s, zero skips. After accounting for Map scratch and adding whole-body
+Host coverage, R1354 fresh Clippy passes, actual 0, 21.78s. R1355 catalogs the
+final exact 2322-case selection, zero excluded; R1356 executes it, actual 0:
+2322 pass, zero fail/skip, 26.851s. Its terminal audit verifies all names and all
+3890 frozen inputs unchanged. R1357 canonical structure gate passes, actual 0.
+
+Six new Flow cases cover nested Scope/If/Match bodies, Bool/Never guard results
+and real Native results 7/42/100 with common-seal/digest parity; inclusive and
+one-over cumulative quotas with sticky bank failure; all packet truncations,
+bad framing/prefix/tags/trailing data and unchanged insufficient-capacity output;
+foreign genuine task handles; iterative 4097-level inspection and zero-based
+Line site data; and all sixteen Host mode/contract/binding/argument combinations.
+The Host case restores whole executable bodies, seals genuine new task
+reservations, refuses using an original foreign reservation, reproduces the
+same Source bytes and emits actual Native requests with matching completed
+program keys. Existing invocation reconstruction now consumes general Flow
+Source instead of its return/defer-only handwritten path. The selected-Need
+integration-key failures in R1349 are distinct and remain open.
+
+Ownership review: Flow coordinator 18649 bytes/506 physical lines, borrowed
+framer 4863/155, field grammar 20281/618, writer 7625/229, writer fields 21658/557,
+seed reconstruction 40281/1021 and focused tests 20263/564. The growth owns one
+complete forty-variant codec and actual builder consequences; the long closed
+field matches retain their cohesive grammar. No unrelated owner, new dependency,
+I/O, unsafe or alternate seal is introduced. Character identity remains 8354/242.
+Core normal fan-in/out stays 31/7 and development 4/5; Character stays 18/2 and
+development 4/0. All 99 manifest/lock inputs are unchanged. Character's actual
+resolved reverse closure has 59 workspace packages; the six-library run does
+not stand in for all 59, workspace gates, integration/API or display acceptance.
+
+Next run current workspace/reverse checks and implement complete Line Source.
+The actual Line factory allocates nodes in preorder, derives captures and
+activation exports, and checks scheduled packets/handle sites. Its complete
+original metadata and Flow bodies must re-enter that owner. Existing content
+Source already retains group links and binds genuine group handles; retain that
+single attachment owner. Finish Line and whole-program Source, all fourteen
+families and the joint public switch, registry execution, retained View, key,
+restore and remaining acceptance without interpreting this cut as completion.
+The full goal remains active.

@@ -11,11 +11,10 @@ pub(super) struct Row<'a> {
     pub tag: u8,
     pub metadata: &'a [u8],
     pub values: &'a [u8],
-    pub value_count: usize,
     pub bodies: &'a [u8],
-    pub body_count: usize,
     pub children: usize,
     pub prefix: super::Footprint,
+    pub end: super::Footprint,
 }
 
 pub(super) struct Cursor<'a> {
@@ -62,13 +61,6 @@ impl<'a> Cursor<'a> {
             0 => Ok(false),
             1 => Ok(true),
             tag => Err(Error::Tag { kind, tag }),
-        }
-    }
-    pub fn optional_text(&mut self) -> Result<Option<&'a str>, Error> {
-        if self.flag("optional text")? {
-            self.text().map(Some)
-        } else {
-            Ok(None)
         }
     }
     pub fn positive(&mut self, kind: &'static str, maximum: usize) -> Result<u32, Error> {
@@ -137,17 +129,17 @@ impl<'a> Cursor<'a> {
             counts.body(count)?;
             children = children.checked_add(count).ok_or(Error::Arithmetic)?;
         }
-        let row = Row {
+        let mut row = Row {
             tag,
             metadata,
             values,
-            value_count,
             bodies,
-            body_count,
             children,
             prefix: counts.footprint,
+            end: counts.footprint,
         };
         fields::preflight(&row, counts, resources, meter)?;
+        row.end = counts.footprint;
         Ok(row)
     }
     pub fn value(&mut self) -> Result<(u8, &'a [u8]), Error> {

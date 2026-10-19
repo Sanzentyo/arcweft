@@ -43,7 +43,14 @@ pub(super) fn preflight(
                 "format attempt",
                 reader.counts.limits.expression.attempt_count,
             )?;
-            reader.metadata.u32()?;
+            let parameter = reader.metadata.u32()?;
+            if crate::value::RuntimeFmtParameterId::from_index(parameter as usize).is_none() {
+                return Err(Error::Reference {
+                    kind: "format parameter",
+                    actual: parameter,
+                    maximum: 9,
+                });
+            }
             reader.expression()?;
             reader.body()?;
         }
@@ -207,7 +214,7 @@ pub(super) fn preflight(
             reader.tag("defer outcome", 4)?;
             reader.tag("defer owner", 2)?;
             let count = reader.metadata.u32()? as usize;
-            reader.counts.elements(count)?;
+            reader.counts.array::<crate::plan::RuntimeExprSeed>(count)?;
             for _ in 0..count {
                 reader.expression()?;
             }
