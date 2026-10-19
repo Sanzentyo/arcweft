@@ -308,3 +308,91 @@ fn request_encoding_count_uses_the_original_sticky_parent_work_bank() {
     );
     assert_eq!(short.status(), Err(TaskSemanticEncodingError::SemanticWork));
 }
+
+#[test]
+fn request_type_mapping_is_admitted_at_exact_peak_storage_and_moves_original_paths() {
+    use crate::pattern::RuntimeSemanticTypeId;
+    for source in [
+        fixture_template(),
+        RuntimeTaskRequestTemplate::new(
+            RuntimeTaskRequestSource::FunctionRoot,
+            Box::new([]),
+            Box::new([]),
+        ),
+    ] {
+        let bytes = source.encode(limits()).unwrap();
+        let original = source.prepare_encoding(limits()).unwrap().storage_bytes();
+        let expected = original
+            + source.arguments.len() * size_of::<RuntimeRequestArgument<RuntimeSemanticTypeId>>()
+            + source.fields.len() * size_of::<RuntimeRequestField<RuntimeSemanticTypeId>>();
+        let exact = RuntimeTaskRequestCodecLimits {
+            decoded_bytes: expected,
+            ..limits()
+        };
+        let prepared = source.prepare_encoding(exact).unwrap();
+        let checked = RuntimeTaskRequestTemplate::preflight_source(&bytes, exact).unwrap();
+        assert_eq!(
+            prepared
+                .mapped_type_storage_bytes::<RuntimeSemanticTypeId>()
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            checked
+                .mapped_type_storage_bytes::<RuntimeSemanticTypeId>()
+                .unwrap(),
+            expected
+        );
+        let decoded = checked.materialize().unwrap();
+        let paths = decoded
+            .arguments
+            .iter()
+            .map(|argument| argument.path.as_ptr())
+            .chain(decoded.fields.iter().map(|field| field.path.as_ptr()))
+            .collect::<Vec<_>>();
+        let semantic = RuntimeSemanticTypeId::from_bytes([17; 32]);
+        let mapped = decoded.try_map_types(|_| Ok::<_, ()>(semantic)).unwrap();
+        assert_eq!(
+            paths,
+            mapped
+                .arguments
+                .iter()
+                .map(|argument| argument.path.as_ptr())
+                .chain(mapped.fields.iter().map(|field| field.path.as_ptr()))
+                .collect::<Vec<_>>()
+        );
+        let restored = mapped
+            .try_map_types(|actual| {
+                assert_eq!(actual, semantic);
+                Ok::<_, ()>(RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN))
+            })
+            .unwrap();
+        assert_eq!(restored, source);
+        if expected > 0 {
+            let short = RuntimeTaskRequestCodecLimits {
+                decoded_bytes: expected - 1,
+                ..exact
+            };
+            for error in [
+                source
+                    .prepare_encoding(short)
+                    .unwrap()
+                    .mapped_type_storage_bytes::<RuntimeSemanticTypeId>()
+                    .unwrap_err(),
+                RuntimeTaskRequestTemplate::preflight_source(&bytes, short)
+                    .unwrap()
+                    .mapped_type_storage_bytes::<RuntimeSemanticTypeId>()
+                    .unwrap_err(),
+            ] {
+                assert_eq!(
+                    error,
+                    RuntimeTaskRequestCodecError::Limit {
+                        kind: "decoded bytes",
+                        actual: expected,
+                        maximum: expected - 1,
+                    }
+                );
+            }
+        }
+    }
+}

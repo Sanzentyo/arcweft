@@ -18398,3 +18398,80 @@ keys must remain assertions against the common seal. The known R1349 selected-
 Need integration failures, full fourteen-family switch, registry lifetime,
 restore, retained View and Native/Web display acceptance remain open. The full
 goal remains active.
+
+### 2026-10-19 — Admit Task request mapping storage and reservation work
+
+Inspected existing main and freshly fetched origin/main at
+`dfb408a56afdc500d54ec24ab0e7dbff50ebd7e9`, parent
+`71e48a3f0771e209414352f72fa3e81551cff061`. The preceding thirty-path program
+Source publication has tree `845ffc59636707e9931f2c3a2a9937b951ffd82e` and verified
+raw patch SHA-256
+`e0ec0c2c580348b2803c8de9f646f58cabb1121d06df65b76739e1ac21a8d836`.
+All published/working blobs, advertised remote head and frozen inputs match;
+the index is empty. Fourteen held tracked and three held untracked paths remain
+excluded and untouched.
+
+R1413 `cargo check --workspace --all-targets --all-features --locked` passes,
+actual 0, Cargo reports 1m45s. R1414 matching workspace Clippy passes, actual 0,
+Cargo reports 2m01s. The post-terminal audit verifies all 3907 inputs with zero
+drift. These gates cover the published whole-program Source and public Project
+reservation seed migration. They retain the established warning-level policy;
+they do not claim that all workspace warnings disappeared.
+
+The request codec's actual borrowed/prepared owners now admit peak type-mapping
+storage for a requested target role type. They count both original and target
+argument/field arrays with checked arithmetic and the same decoded-byte limit.
+Paths move once through try_map_types and are counted once. Borrowed preflight
+retains only the already validated argument/field counts needed for this query;
+it does not build another request definition. This is the actual request codec's
+resource calculation, not a multiplier guessed by the aggregate decoder. The
+method is ready for the complete task decoder; that old decoder is not yet
+connected and its original-inventory path remains pending replacement.
+
+Whole-program materialization also charges the original semantic work bank for
+the requested Task count before allocating/reserving its real coordinate slots.
+The negative Source case requests seventeen slots without definitions: all
+coordinates have the genuine candidate and dense original ordinal, common
+preparation rejects the missing first definition, and none obtains a sealed key.
+Reservation plus the existing body and Line namespace authentications account
+for exactly three visits per slot. Exact total work succeeds; one less fails
+with the original SemanticWork cause. No substitute program, key or proof is
+constructed for this test.
+
+New request coverage uses every existing argument/field/path form and an empty
+request. Both encoding count and borrowed preflight admit the exact peak limit
+and reject one byte less. Actual type mapping preserves each original path
+allocation and round-trips the complete request definition and source order.
+These are logical storage bounds and move semantics, not an allocator benchmark.
+
+R1415 Core all-target/all-feature locked Clippy passes, actual 0, 45.65s.
+R1416/R1417 inspect and execute 1785 Core library cases: actual 100, 1784 pass,
+one fail, zero skipped, 15.759s. The new work test initially expected only the
+reservation visit and omitted the two existing namespace authentications. Its
+exact expected total is corrected to include all three, without changing the
+implementation, rejection requirements, work limit or test selection.
+R1418 inspects the same 1785 cases, actual 0, 20.66s, none excluded. R1419
+executes exactly that set: actual 0, 1785 pass, zero fail/skip, 15.676s. Terminal
+audits retain the failed attempt and match every name and all 3907 frozen inputs
+with zero drift. R1420 final Core Clippy passes, actual 0, 17.46s; R1421
+canonical structural gate passes, actual 0. Exact changed-file rustfmt and diff
+checks pass. The resolved reverse closure remains 53 packages with 99 unchanged
+manifest/lock inputs. Current tests select Core only: the new request query has
+no cross-crate consumer, and the Task reservation boundary is private Source.
+This is not a new complete reverse/default or workspace acceptance run.
+
+Request codec is 22598 bytes/657 physical lines and its tests 14018/398; program
+reader is 12408/300 and program tests 281 physical lines. The request wire owner
+owns its generic array admission and existing field grammar; the program reader
+owns reservation sequencing under its original bank. No dependency, public API,
+unsafe, I/O, compatibility reader or alternative seal is added.
+
+Next replace task Source's original RuntimePlanInventory input and four-frame
+declaration replay with the complete program Source plus original request rows.
+Admit task rows, expected assertions and mapped request roles before program
+construction, define the real reserved tasks through their owning builder, then
+attach expected assertions to the actual common-seal image. Delete the replaced
+internal reader and migrate its tests in the same version-1 contract change.
+The fourteen-family public switch and known R1349 selected-Need failures remain
+open, as do the other full-goal runtime/restore/registry/View/display acceptance
+conditions. The full goal remains active.

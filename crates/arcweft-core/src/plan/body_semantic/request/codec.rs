@@ -25,6 +25,8 @@ pub(crate) struct ValidatedRuntimeTaskRequestSource<'a> {
     bytes: &'a [u8],
     limits: RuntimeTaskRequestCodecLimits,
     storage_bytes: usize,
+    arguments: usize,
+    fields: usize,
 }
 
 /// Borrows the exact original definition after its complete encoding count.
@@ -43,6 +45,18 @@ impl PreparedRuntimeTaskRequestEncoding<'_> {
 
     pub(crate) const fn storage_bytes(&self) -> usize {
         self.storage_bytes
+    }
+
+    /// Includes the old and mapped role arrays; their paths move only once.
+    pub(crate) fn mapped_type_storage_bytes<Next>(
+        &self,
+    ) -> Result<usize, RuntimeTaskRequestCodecError> {
+        mapping_storage_bytes::<Next>(
+            self.storage_bytes,
+            self.definition.arguments.len(),
+            self.definition.fields.len(),
+            self.limits,
+        )
     }
 
     pub(crate) fn append_to(
@@ -75,6 +89,13 @@ impl ValidatedRuntimeTaskRequestSource<'_> {
         self.storage_bytes
     }
 
+    /// Admits type mapping before the borrowed roles or their paths are copied.
+    pub(crate) fn mapped_type_storage_bytes<Next>(
+        &self,
+    ) -> Result<usize, RuntimeTaskRequestCodecError> {
+        mapping_storage_bytes::<Next>(self.storage_bytes, self.arguments, self.fields, self.limits)
+    }
+
     pub(crate) fn materialize(
         self,
     ) -> Result<RuntimeTaskRequestTemplate, RuntimeTaskRequestCodecError> {
@@ -83,6 +104,8 @@ impl ValidatedRuntimeTaskRequestSource<'_> {
             offset: 0,
             limits: self.limits,
             storage_bytes: 0,
+            arguments: 0,
+            fields: 0,
         };
         let template = reader
             .request(true)?
@@ -235,12 +258,16 @@ impl RuntimeTaskRequestTemplate {
             offset: 0,
             limits,
             storage_bytes: 0,
+            arguments: 0,
+            fields: 0,
         };
         reader.request(false)?;
         Ok(ValidatedRuntimeTaskRequestSource {
             bytes,
             limits,
             storage_bytes: reader.storage_bytes,
+            arguments: reader.arguments,
+            fields: reader.fields,
         })
     }
 }
@@ -267,6 +294,7 @@ impl Reader<'_> {
         };
         let count = self.count("roles", limits.roles as usize, 15)?;
         charge_storage::<RuntimeRequestArgument>(&mut self.storage_bytes, count, limits)?;
+        self.arguments = count;
         let mut arguments = materialize.then(|| Vec::with_capacity(count));
         for ordinal in 0..count {
             self.ordinal(ordinal)?;
@@ -293,6 +321,7 @@ impl Reader<'_> {
         check_roles(count, fields_count, limits)?;
         self.minimum_bytes(fields_count, 45)?;
         charge_storage::<RuntimeRequestField>(&mut self.storage_bytes, fields_count, limits)?;
+        self.fields = fields_count;
         let mut fields = materialize.then(|| Vec::with_capacity(fields_count));
         for ordinal in 0..fields_count {
             self.ordinal(ordinal)?;
@@ -367,6 +396,17 @@ fn charge_storage<T>(
     Ok(())
 }
 
+fn mapping_storage_bytes<Next>(
+    mut storage_bytes: usize,
+    arguments: usize,
+    fields: usize,
+    limits: RuntimeTaskRequestCodecLimits,
+) -> Result<usize, RuntimeTaskRequestCodecError> {
+    charge_storage::<RuntimeRequestArgument<Next>>(&mut storage_bytes, arguments, limits)?;
+    charge_storage::<RuntimeRequestField<Next>>(&mut storage_bytes, fields, limits)?;
+    Ok(storage_bytes)
+}
+
 struct Writer<'a> {
     bytes: Option<&'a mut Vec<u8>>,
     meter: Option<&'a mut TaskSemanticMeter>,
@@ -429,6 +469,8 @@ struct Reader<'a> {
     offset: usize,
     limits: RuntimeTaskRequestCodecLimits,
     storage_bytes: usize,
+    arguments: usize,
+    fields: usize,
 }
 impl Reader<'_> {
     fn take<const N: usize>(&mut self) -> Result<[u8; N], RuntimeTaskRequestCodecError> {

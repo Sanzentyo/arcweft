@@ -231,3 +231,51 @@ fn program_source_preserves_project_site_ids_when_bodies_were_defined_in_another
         encoded.bytes()
     );
 }
+
+#[test]
+fn program_source_counts_task_reservations_in_original_work_bank_and_keeps_them_unsealed() {
+    let plan = RuntimePlanBuilder::new().finish().unwrap();
+    let mut bytes = plan
+        .encode_program_source(limits(), &resources(), &mut meter())
+        .unwrap()
+        .bytes()
+        .to_vec();
+    let restore = |bytes: &[u8], work| {
+        let mut bank = TaskSemanticMeter::new(work, u64::MAX);
+        let mut values = resources();
+        PreparedRuntimeProgramSource::preflight(bytes, limits(), &values, &mut bank)?
+            .materialize(bank, &mut values)
+    };
+    let baseline = restore(&bytes, u64::MAX).unwrap().source.meter.totals().0;
+    // An untrusted namespace can request slots without supplying definitions.
+    let offset = DOMAIN.len() + 1 + 12 * 4;
+    bytes[offset..offset + 4].copy_from_slice(&17_u32.to_le_bytes());
+    let original = restore(&bytes, u64::MAX).unwrap();
+    assert_eq!(original.tasks.len(), 17);
+    for (ordinal, task) in original.tasks.iter().enumerate() {
+        assert_eq!(task.ordinal() as usize, ordinal);
+        assert!(task.same_candidate(&original.tasks[0]));
+        assert!(task.sealed_plan().is_none());
+    }
+    let work = original.source.meter.totals().0;
+    // Reservation and the body/Line namespace authentications each visit the
+    // genuine slots under this same bank, even when all body tables are empty.
+    assert_eq!(work, baseline + 3 * 17);
+    assert!(matches!(
+        original
+            .source
+            .prepare_image(RuntimeTaskPlanSealLimits::default()),
+        Err(RuntimeTaskPlanSealError::IncompleteDefinition { ordinal: 0 })
+    ));
+    assert!(
+        original
+            .tasks
+            .iter()
+            .all(|task| task.sealed_plan().is_none())
+    );
+    restore(&bytes, work).unwrap();
+    assert!(matches!(
+        restore(&bytes, work - 1),
+        Err(Error::Resource(TaskSemanticEncodingError::SemanticWork))
+    ));
+}

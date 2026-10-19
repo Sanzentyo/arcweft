@@ -251,6 +251,9 @@ impl<'a> PreparedRuntimeProgramSource<'a> {
             namespace("attempts", attempts.len(), frames.namespace.attempts)?;
             let defers = invocations.materialize(&mut source, &functions)?;
             namespace("defers", defers.len(), frames.namespace.defers)?;
+            source.meter.charge_work(
+                u64::try_from(frames.namespace.tasks).map_err(|_| Error::Arithmetic)?,
+            )?;
             let mut tasks = Vec::with_capacity(frames.namespace.tasks);
             for _ in 0..frames.namespace.tasks {
                 tasks.push(source.builder.reserve_task_plan()?);
