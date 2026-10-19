@@ -21105,3 +21105,47 @@ and fresh current-source catalogue/run/Clippy before accepting this slice.
 The fourteen held paths and three unrelated untracked items are preserved. No
 additional clean, branch, worktree, artifact move, feature/profile/jobs or budget
 change was made. The full convergence goal and broader acceptance remain open.
+
+### 2026-10-20 — validate admitted activation, replacement and CLI execution
+
+The constructor-consumer repair is published and freshly verified at
+`af749d5cc85d9334a89cdfc04f6acf30dc76864d`, parent
+`0afb54bc168fd88e7cda78a702677db557efde18`, tree
+`e3c8eabc14657a110f1537a543a3cc93d1eeea1c`, complete patch SHA-256
+`cd8a536c06f531b813b9f5684b7c23cccbad4680347da05778568ee99992fb0b`.
+Its four blobs, freshly advertised main, 3931 inputs, held inventory and empty
+index were verified before advancing the baseline. R1667 actually ended with
+Cargo 101 after its remaining compiler jobs finished; its two diagnostics above
+are repaired, not relabeled as a passing catalogue.
+
+R1669 then compiled the current six-owner/twelve-nonempty-binary selection and
+catalogued all 2812 cases, with zero excluded or ignored. R1670 passed all 2812,
+zero failed/skipped (162.400s, two slow, exit 0). The catalogue and exact terminal
+case sets match, as do all 3931 frozen inputs and the fourteen held paths. The
+required View entry/Flow/replacement/inert-restore case and prior owned-restore
+case passed. The actual CLI PNG asset task with a retained View Match completed
+under both Native and AWBC at the original eight steps/32 operations, with one
+completed task and no failed tasks. CLI selected-entry, explicit-Flow and repeated
+bench cases preserve their real tier, actual code identity and inputs.
+
+R1671 all-target/all-feature locked Clippy over the same six owners exited 0
+(2m53s). Its independent source audit matches all 3931 inputs. Warnings remain;
+this is not the final strict workspace -D warnings gate. This command overlapped
+the test command; Cargo serialized its compilation with the test build. No jobs,
+profiles, budgets, timeout, capture/copy, batch or fusion setting changed, and no
+performance comparison is claimed. R1668's structural result and ownership
+dispositions remain valid for these same ownership/dependency boundaries.
+
+This establishes the current activation/session/CLI slice, not the full goal or
+the complete Core reverse closure of 53 packages. Continue the remaining genuine
+Source owners and atomic public Source/spec/instance/outcome migration. Actual
+raw production activation remains in Agent runner and host bundle runner; the
+external-data evaluator also receives a type-only AWBC owner. Carry the admitted
+executable through those value/callback/runner boundaries rather than fabricating
+Native Source or recovering it from requests. Original caller/body relations,
+invocation-bound Ready/outcomes, autonomous/standalone Source and all fourteen
+request kinds, retained View operations/slots/captures, Presentation and the other
+recorded semantic/persistence requirements remain open. Complete reverse/workspace,
+public API/doctest, Tier2 and Native/Web capture/image evidence are still required.
+The full goal stays active. This following cut changes only this evidence note;
+the executed production/test inputs remain the published bytes identified above.
