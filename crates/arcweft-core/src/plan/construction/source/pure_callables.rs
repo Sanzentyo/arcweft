@@ -4,7 +4,7 @@
 mod cursor;
 mod encoding;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::RuntimePlanSourceConstruction;
 use crate::plan::{

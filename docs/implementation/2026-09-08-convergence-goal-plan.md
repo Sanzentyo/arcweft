@@ -18251,3 +18251,68 @@ then remove the replaced internal reader. Expected keys remain assertions. No
 pure-body aggregate, original-inventory removal, public atomic switch, current
 full reverse/default acceptance, registry lifetime execution, restore or display
 completion is claimed by this evidence-only update. The goal remains active.
+
+### 2026-10-19 — One original body frame includes helpers and trait methods
+
+Inspected existing main and origin/main at
+`d325ddaca449c27c51ecf8160d11ca38bdb5fee0`, with empty index and the same fourteen
+held tracked plus three held untracked paths. That evidence publication has
+parent `e0a1b0f7dc1ed85908185570d7bda8a0f8620fa7`, tree
+`00d7d841e236b2e0b632e685c0904bd0f780a426`, and verified raw patch SHA-256
+`4c5dc229cdc519045268448429119869e634f15d9ff9347a205cb1c81a3dfc38`.
+
+Supersedes the preceding function-only body-frame scope. The same private
+version-1 frame now contains three checked namespace counts followed by dense
+function, pure-helper and trait-method body rows. A closed BodyOwner selects the
+actual owning table and factory; every row retains its original definition
+identity. Helper/method counts come from the existing expression namespace
+contract. The row cap covers the sum of all three tables, with one cumulative
+node/element/storage allowance and each child's original admitted prefix. No
+function-only reader, compatibility version, copied body catalog or substitute
+declaration authority remains. Encoding borrows each actual owning body.
+
+All real function/helper/method handles, definition identities, prior-definition
+state and function effect permissions are checked before body materialization.
+Helper/method rows require Expression bodies. The actual helper/method factories
+continue to own ABI, receiver, result and local checks. Existing Invocation and
+pure-callable replay no longer defines those bodies individually before replay;
+the complete frame now supplies them. Effect-label storage is also admitted
+before identity validation can retain an invalid label in its error. The bounds
+are logical Source storage/work, not physical allocator measurements.
+
+R1391 Core all-target/all-feature locked Clippy passes, actual 0, 43.55s. R1392
+builds and inspects 2291 library cases, actual 0, 2m11s, zero excluded; all three
+new cases and the affected original Invocation/pure-callable cases are present.
+R1393 executes exactly that set: actual 0, 2291 pass, zero fail/skip, 25.836s.
+The terminal audit matches every selected name and all 3902 frozen inputs,
+including fourteen held files, with zero drift. The actual five test packages
+remain Core, RuntimePlan, Bundle, ProjectLoader and RuntimeDriver. The resolved
+Core reverse closure remains 53 packages with 99 unchanged manifest/lock inputs;
+this is not a complete reverse/default integration or workspace acceptance run.
+
+New evidence restores a function calling an owned trait receiver, which calls a
+forward pure helper and then another helper. The original signatures, helper
+origins, ABI, tables, executable digest and reencoded bytes agree at exact
+aggregate caps. Actual Native invocations on original and restored plans return
+both false and true as supplied. Every one-less outer resource cap, every frame
+truncation, changed late helper/method definition, executable pure-body tag,
+foreign/reordered genuine handles and preexisting helper/method body is rejected.
+All-header failures leave earlier function/helper/method bodies unpublished.
+No AWBC execution or retained scope lifetime success is inferred from this case.
+
+R1394 canonical structural gate passes, actual 0. The existing cohesive body
+coordinator is 11685 bytes/343 physical lines, reader 5527/162, reconstruction
+8718/188 and writer 8516/248. Existing body tests are 19000/589; the related pure
+call/receiver fixtures are 10278/324. The closed owner and namespace projections
+belong to this serialization context; the actual construction tables remain the
+sole semantic authority. No public runtime API, dependency, unsafe, I/O, alternate
+seal or completed-key issuer is added. No new workspace run is claimed here;
+the preceding R1389/R1390 evidence belongs to the published function-only state.
+
+Publish this complete body-frame extension, then connect the whole original
+program Source, genuine task reservations and original request definitions to
+the common seal. Remove the original-inventory decoder with its replacement,
+retain expected keys as assertions, and finish the atomic public switch and
+remaining full-goal execution/restore/retained View/display acceptance. R1349's
+two known selected-Need key integration failures remain prior unresolved evidence
+and were not rerun by this selection. The full goal remains active.

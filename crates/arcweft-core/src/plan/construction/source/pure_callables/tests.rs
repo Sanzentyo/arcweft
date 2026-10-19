@@ -4,10 +4,7 @@ use super::*;
 
 #[test]
 fn original_expression_sources_replay_helper_method_and_function_bodies_with_original_signatures() {
-    use super::super::expression::{
-        RuntimeExpressionSourceHandles,
-        tests::{decode, replay_functions},
-    };
+    use super::super::expression::{RuntimeExpressionSourceHandles, tests::replay_functions};
     let plan = fixture();
     let bytes = encode(&plan);
     let (mut source, functions) = source(&plan);
@@ -23,20 +20,6 @@ fn original_expression_sources_replay_helper_method_and_function_bodies_with_ori
         methods: &callables.methods,
         attempts: &[],
     };
-    for (helper, handle) in plan.pure_helpers().iter().zip(&callables.helpers) {
-        let body = decode(&helper.expr, &plan, &mut source, &handles);
-        source
-            .builder
-            .define_pure_helper_seed(handle, body)
-            .unwrap();
-    }
-    for (method, handle) in plan.trait_methods().iter().zip(&callables.methods) {
-        let body = decode(&method.body, &plan, &mut source, &handles);
-        source
-            .builder
-            .define_trait_method_seed(handle, body)
-            .unwrap();
-    }
     replay_functions(&plan, &mut source, &functions, &handles);
     let seal = RuntimeTaskPlanSealLimits::default();
     let restored = source
@@ -58,7 +41,9 @@ use crate::plan::*;
 use crate::value::{RuntimeCallArgumentMode, RuntimeLocalReadMode};
 
 const BOOL: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([201; 32]);
-fn limits(plan: &RuntimePlan) -> RuntimePureCallableSourceLimits {
+pub(in crate::plan::construction::source) fn limits(
+    plan: &RuntimePlan,
+) -> RuntimePureCallableSourceLimits {
     RuntimePureCallableSourceLimits {
         helpers: 100,
         methods: 100,
@@ -134,7 +119,7 @@ fn define(
         )
         .unwrap();
 }
-fn fixture() -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     let parameters = (0..4)
         .map(|i| RuntimeFunctionParameterIdentity::from_accepted_identity([202 + i; 32]))
@@ -240,7 +225,7 @@ fn fixture() -> RuntimePlan {
     define(&mut builder, &helpers, &method, &function, &locals);
     builder.finish().unwrap()
 }
-fn encode(plan: &RuntimePlan) -> Vec<u8> {
+pub(in crate::plan::construction::source) fn encode(plan: &RuntimePlan) -> Vec<u8> {
     let prepared = plan
         .prepare_pure_callable_declaration_sources_encoding(limits(plan), &mut meter())
         .unwrap();
@@ -248,7 +233,7 @@ fn encode(plan: &RuntimePlan) -> Vec<u8> {
     prepared.append_to(&mut bytes).unwrap();
     bytes
 }
-fn source(
+pub(in crate::plan::construction::source) fn source(
     plan: &RuntimePlan,
 ) -> (
     RuntimePlanSourceConstruction,

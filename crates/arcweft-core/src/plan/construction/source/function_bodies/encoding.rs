@@ -1,10 +1,57 @@
 use super::{
-    Counts, DOMAIN, Error, Footprint, RuntimeFunctionBodySourceLimits, charge, limit, namespace,
-    reading,
+    BodyOwner, Counts, DOMAIN, Error, Footprint, Namespaces, RuntimeFunctionBodySourceLimits,
+    charge, limit, reading,
 };
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
-use crate::plan::{RuntimeFunctionSiteBody, RuntimePlan};
+use crate::plan::{
+    RuntimeExecutableBody, RuntimeFunctionDefinitionIdentity, RuntimeFunctionSiteBody, RuntimePlan,
+};
 use crate::task::semantic::TaskSemanticMeter;
+use crate::value::RuntimeExpr;
+
+// Borrowed projections of the actual owning tables; no copied body catalog.
+enum Body<'a> {
+    Expression(&'a RuntimeExpr),
+    Executable(&'a RuntimeExecutableBody),
+}
+fn bodies(
+    plan: &RuntimePlan,
+) -> impl Iterator<Item = (BodyOwner, RuntimeFunctionDefinitionIdentity, Body<'_>)> {
+    plan.function_sites()
+        .iter()
+        .enumerate()
+        .map(|(index, function)| {
+            let body = match function.body() {
+                RuntimeFunctionSiteBody::Expression(expr) => Body::Expression(expr),
+                RuntimeFunctionSiteBody::Executable(body) => Body::Executable(body),
+            };
+            (BodyOwner::Function(index), function.definition(), body)
+        })
+        .chain(
+            plan.pure_helpers()
+                .iter()
+                .enumerate()
+                .map(|(index, helper)| {
+                    (
+                        BodyOwner::Helper(index),
+                        helper.definition,
+                        Body::Expression(&helper.expr),
+                    )
+                }),
+        )
+        .chain(
+            plan.trait_methods()
+                .iter()
+                .enumerate()
+                .map(|(index, method)| {
+                    (
+                        BodyOwner::Method(index),
+                        method.definition,
+                        Body::Expression(&method.body),
+                    )
+                }),
+        )
+}
 
 pub(in crate::plan) struct EncodedRuntimeFunctionBodySources {
     bytes: Vec<u8>,
@@ -44,23 +91,27 @@ impl RuntimePlan {
     ) -> Result<EncodedRuntimeFunctionBodySources, Error> {
         meter.status()?;
         let result = (|| {
-            let rows = self.function_sites().len();
-            namespace("function declarations", limits.functions, rows)?;
-            let mut counts = Counts::new(limits, rows)?;
-            let mut length = DOMAIN.len().checked_add(5).ok_or(Error::Arithmetic)?;
+            let namespaces = Namespaces {
+                functions: self.function_sites().len(),
+                helpers: self.pure_helpers().len(),
+                methods: self.trait_methods().len(),
+            };
+            let mut counts = Counts::new(limits, namespaces)?;
+            let mut length = DOMAIN.len().checked_add(13).ok_or(Error::Arithmetic)?;
             limit("encoded bytes", length, limits.encoded_bytes)?;
-            for (index, function) in self.function_sites().iter().enumerate() {
+            for (owner, definition, body) in bodies(self) {
                 let packet = encode_row(
                     self,
-                    index,
-                    function,
+                    owner,
+                    definition,
+                    body,
                     &counts,
                     limits.encoded_bytes - length,
                     resources,
                     meter,
                 )?;
                 let mut cursor = reading::Cursor::new(&packet);
-                cursor.row(index, &mut counts, resources, meter)?;
+                cursor.row(owner, &mut counts, resources, meter)?;
                 cursor.finish()?;
                 length = length.checked_add(packet.len()).ok_or(Error::Arithmetic)?;
                 limit("encoded bytes", length, limits.encoded_bytes)?;
@@ -72,20 +123,23 @@ impl RuntimePlan {
             };
             output.raw(DOMAIN)?;
             output.byte(1)?;
-            output.count(rows)?;
-            let mut emitted = Counts::new(limits, rows)?;
-            for (index, function) in self.function_sites().iter().enumerate() {
+            output.count(namespaces.functions)?;
+            output.count(namespaces.helpers)?;
+            output.count(namespaces.methods)?;
+            let mut emitted = Counts::new(limits, namespaces)?;
+            for (owner, definition, body) in bodies(self) {
                 let packet = encode_row(
                     self,
-                    index,
-                    function,
+                    owner,
+                    definition,
+                    body,
                     &emitted,
                     limits.encoded_bytes - output.bytes.len(),
                     resources,
                     meter,
                 )?;
                 let mut cursor = reading::Cursor::new(&packet);
-                cursor.row(index, &mut emitted, resources, meter)?;
+                cursor.row(owner, &mut emitted, resources, meter)?;
                 cursor.finish()?;
                 output.raw(&packet)?;
             }
@@ -101,15 +155,16 @@ impl RuntimePlan {
 }
 fn encode_row(
     plan: &RuntimePlan,
-    index: usize,
-    function: &crate::plan::RuntimeFunctionSite,
+    owner: BodyOwner,
+    definition: RuntimeFunctionDefinitionIdentity,
+    body: Body<'_>,
     counts: &Counts,
     maximum: usize,
     resources: &ValueResourceAdmission,
     meter: &mut TaskSemanticMeter,
 ) -> Result<Vec<u8>, Error> {
     let mut counts = *counts;
-    if let RuntimeFunctionSiteBody::Executable(body) = function.body() {
+    if let Body::Executable(body) = &body {
         let bytes = body.effects().iter().try_fold(0_usize, |total, effect| {
             total
                 .checked_add(effect.as_str().len())
@@ -121,10 +176,10 @@ fn encode_row(
         bytes: Vec::new(),
         maximum,
     };
-    output.count(index.checked_add(1).ok_or(Error::Arithmetic)?)?;
-    output.raw(function.definition().as_bytes())?;
-    match function.body() {
-        RuntimeFunctionSiteBody::Expression(expr) => {
+    output.count(owner.index().checked_add(1).ok_or(Error::Arithmetic)?)?;
+    output.raw(definition.as_bytes())?;
+    match body {
+        Body::Expression(expr) => {
             output.byte(0)?;
             output.count(0)?;
             let child = expr.encode_sources(
@@ -134,7 +189,7 @@ fn encode_row(
             )?;
             output.frame(child.bytes())?;
         }
-        RuntimeFunctionSiteBody::Executable(body) => {
+        Body::Executable(body) => {
             output.byte(1)?;
             output.count(body.effects().len())?;
             for effect in body.effects().iter() {

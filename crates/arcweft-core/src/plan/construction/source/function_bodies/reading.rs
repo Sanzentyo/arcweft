@@ -1,11 +1,14 @@
 use super::super::flow::PreparedRuntimeFlowSource;
-use super::{Counts, DOMAIN, Error, Footprint, RuntimeFunctionBodySourceLimits};
+use super::{
+    BodyOwner, Counts, DOMAIN, Error, Footprint, Namespaces, RuntimeFunctionBodySourceLimits,
+};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::plan::RuntimeFunctionSiteBodyKind;
 use crate::task::semantic::TaskSemanticMeter;
 use crate::value::RuntimeExpr;
 
 pub(super) struct Row<'a> {
+    pub owner: BodyOwner,
     pub definition: [u8; 32],
     pub kind: RuntimeFunctionSiteBodyKind,
     pub effects: &'a [u8],
@@ -52,7 +55,7 @@ impl<'a> Cursor<'a> {
             })
         }
     }
-    pub fn header(&mut self) -> Result<usize, Error> {
+    pub fn header(&mut self) -> Result<Namespaces, Error> {
         if self.raw(DOMAIN.len())? != DOMAIN {
             return Err(Error::Domain);
         }
@@ -60,17 +63,21 @@ impl<'a> Cursor<'a> {
         if actual != 1 {
             return Err(Error::Version { actual });
         }
-        Ok(self.u32()? as usize)
+        Ok(Namespaces {
+            functions: self.u32()? as usize,
+            helpers: self.u32()? as usize,
+            methods: self.u32()? as usize,
+        })
     }
     pub fn row(
         &mut self,
-        index: usize,
+        owner: BodyOwner,
         counts: &mut Counts,
         resources: &ValueResourceAdmission,
         meter: &mut TaskSemanticMeter,
     ) -> Result<Row<'a>, Error> {
         let actual = self.u32()?;
-        let expected = u32::try_from(index.checked_add(1).ok_or(Error::Arithmetic)?)
+        let expected = u32::try_from(owner.index().checked_add(1).ok_or(Error::Arithmetic)?)
             .map_err(|_| Error::Arithmetic)?;
         if actual != expected {
             return Err(Error::Ordinal { actual, expected });
@@ -81,6 +88,13 @@ impl<'a> Cursor<'a> {
             1 => RuntimeFunctionSiteBodyKind::Executable,
             tag => return Err(Error::Tag { kind: "body", tag }),
         };
+        if !matches!(owner, BodyOwner::Function(_))
+            && kind != RuntimeFunctionSiteBodyKind::Expression
+        {
+            return Err(Error::PureBodyKind {
+                owner: owner.label(),
+            });
+        }
         let start = self.offset;
         let count = self.u32()? as usize;
         counts.effects(count, 0)?;
@@ -90,11 +104,11 @@ impl<'a> Cursor<'a> {
         let mut previous = None;
         for _ in 0..count {
             let effect = self.text()?;
+            counts.effects(0, effect.len())?;
             arcweft_id::EffectId::validate_source(effect)?;
             if previous.is_some_and(|previous| previous >= effect) {
                 return Err(Error::EffectOrder);
             }
-            counts.effects(0, effect.len())?;
             previous = Some(effect);
         }
         let effects = &self.bytes[start..self.offset];
@@ -121,6 +135,7 @@ impl<'a> Cursor<'a> {
             }
         }
         Ok(Row {
+            owner,
             definition,
             kind,
             effects,
@@ -137,11 +152,11 @@ pub(super) fn inspect<'a>(
     mut visit: impl FnMut(Row<'a>),
 ) -> Result<(usize, Footprint), Error> {
     let mut cursor = Cursor::new(bytes);
-    let rows = cursor.header()?;
-    let mut counts = Counts::new(limits, rows)?;
-    for index in 0..rows {
-        visit(cursor.row(index, &mut counts, resources, meter)?);
+    let namespaces = cursor.header()?;
+    let mut counts = Counts::new(limits, namespaces)?;
+    for owner in namespaces.owners() {
+        visit(cursor.row(owner, &mut counts, resources, meter)?);
     }
     cursor.finish()?;
-    Ok((rows, counts.footprint))
+    Ok((namespaces.total()?, counts.footprint))
 }

@@ -1,4 +1,5 @@
-//! Complete original function definitions. Declaration permissions and actual
+//! Complete original function, pure-helper and trait-method definitions.
+//! Declaration permissions and actual
 //! executable-body effects remain separate roles. Every row header is checked
 //! against genuine reserved declarations before any body value is retained.
 
@@ -62,6 +63,8 @@ pub(in crate::plan) enum RuntimeFunctionBodySourceError {
     },
     #[error("function body Source contains a foreign or reordered function handle")]
     Handle,
+    #[error("{owner} Source requires an expression body")]
+    PureBodyKind { owner: &'static str },
     #[error("function body Source declaration identity differs at row {row}")]
     Definition { row: usize },
     #[error("function body Source effect labels are not strictly ordered")]
@@ -128,10 +131,62 @@ struct Counts {
     limits: RuntimeFunctionBodySourceLimits,
     footprint: Footprint,
 }
+
+#[derive(Clone, Copy)]
+struct Namespaces {
+    functions: usize,
+    helpers: usize,
+    methods: usize,
+}
+impl Namespaces {
+    fn total(self) -> Result<usize, Error> {
+        self.functions
+            .checked_add(self.helpers)
+            .and_then(|rows| rows.checked_add(self.methods))
+            .ok_or(Error::Arithmetic)
+    }
+    fn owners(self) -> impl Iterator<Item = BodyOwner> {
+        (0..self.functions)
+            .map(BodyOwner::Function)
+            .chain((0..self.helpers).map(BodyOwner::Helper))
+            .chain((0..self.methods).map(BodyOwner::Method))
+    }
+}
+#[derive(Clone, Copy)]
+enum BodyOwner {
+    Function(usize),
+    Helper(usize),
+    Method(usize),
+}
+impl BodyOwner {
+    fn index(self) -> usize {
+        match self {
+            Self::Function(index) | Self::Helper(index) | Self::Method(index) => index,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Function(_) => "function",
+            Self::Helper(_) => "pure helper",
+            Self::Method(_) => "trait method",
+        }
+    }
+}
 impl Counts {
-    fn new(limits: RuntimeFunctionBodySourceLimits, rows: usize) -> Result<Self, Error> {
+    fn new(limits: RuntimeFunctionBodySourceLimits, namespaces: Namespaces) -> Result<Self, Error> {
+        namespace("function rows", limits.functions, namespaces.functions)?;
+        namespace(
+            "helper rows",
+            limits.flow.expression.helper_count,
+            namespaces.helpers,
+        )?;
+        namespace(
+            "method rows",
+            limits.flow.expression.method_count,
+            namespaces.methods,
+        )?;
+        let rows = namespaces.total()?;
         limit("rows", rows, limits.rows as usize)?;
-        namespace("function rows", limits.functions, rows)?;
         let mut counts = Self {
             limits,
             footprint: Footprint::default(),

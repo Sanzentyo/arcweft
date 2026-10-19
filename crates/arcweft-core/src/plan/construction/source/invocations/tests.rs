@@ -1,4 +1,4 @@
-use super::super::expression::{RuntimeExpressionSourceHandles, tests::decode};
+use super::super::expression::RuntimeExpressionSourceHandles;
 use super::super::functions::RuntimeFunctionSourceLimits;
 use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::super::pure_callables::{
@@ -293,13 +293,6 @@ pub(in crate::plan::construction::source) fn define_bodies(
         methods: &[],
         attempts: &[],
     };
-    for (helper, handle) in plan.pure_helpers().iter().zip(helpers) {
-        let body = decode(&helper.expr, plan, source, &handles);
-        source
-            .builder
-            .define_pure_helper_seed(handle, body)
-            .unwrap();
-    }
     let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
         expression: &handles,
         contents: &[],

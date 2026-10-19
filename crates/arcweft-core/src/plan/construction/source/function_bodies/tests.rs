@@ -11,6 +11,8 @@ use crate::value::{RuntimeSignedIntWidth, RuntimeValue};
 use arcweft_id::{EffectId, runtime_program::RuntimePureProgramId};
 use std::sync::Arc;
 
+mod pure_callables;
+
 fn integer() -> RuntimeSemanticTypeId {
     RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest()
 }
@@ -325,7 +327,7 @@ fn function_body_sources_reject_truncations_ordinals_flags_effects_and_unreserve
             "accepted prefix {end}"
         );
     }
-    let row = DOMAIN.len() + 5;
+    let row = DOMAIN.len() + 13;
     for (offset, tag) in [
         (0, 0xff),
         (DOMAIN.len(), 2),
