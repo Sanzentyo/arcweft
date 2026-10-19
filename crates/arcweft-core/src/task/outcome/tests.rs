@@ -24,6 +24,120 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
 }
 
 #[test]
+fn scoped_result_outcomes_keep_the_original_invocation_for_both_cases() {
+    use crate::effect_row::{EffectFormula, EffectPredicate, EffectSet};
+    use crate::plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope};
+    use crate::program_types::RuntimeFunctionEffectInstantiation;
+
+    let binder = RuntimeTypeBinder::new(0, 0, 1);
+    let scope = RuntimeTypeScope::root().enter(binder).unwrap();
+    let mut program = AwbcProgram::default();
+    program.strings = vec!["Ok".into(), "Err".into()];
+    program.runtime_types = vec![
+        AwbcRuntimeType::unit(),
+        AwbcRuntimeType::new(semantic(41), AwbcRuntimeTypeShape::Bool).with_scope(scope.clone()),
+        AwbcRuntimeType::new(
+            semantic(42),
+            AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1)]),
+        )
+        .with_scope(scope.clone()),
+        AwbcRuntimeType::new(
+            semantic(43),
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
+                arguments: vec![],
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(0),
+                        payload: Some(AwbcTypeId(2)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(1),
+                        payload: Some(AwbcTypeId(2)),
+                    },
+                ],
+            },
+        )
+        .with_scope(scope),
+        AwbcRuntimeType::new(
+            semantic(44),
+            AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::new(
+                    binder,
+                    EffectPredicate::unconstrained(),
+                    EffectFormula::empty(),
+                ),
+                parameters: vec![],
+                result: AwbcTypeId(3),
+            },
+        ),
+    ];
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(program));
+    let contract = TaskOutcomeContract::program(semantic(43));
+    let limits = RuntimeSchemaLimits::engine_default();
+    assert!(
+        contract.bind_program(owner.clone(), limits).is_err(),
+        "a scoped row requires its invocation even before a value arrives"
+    );
+    let binding = |effects| {
+        RuntimeFunctionEffectInstantiation::from_source_rows(semantic(44), Box::new([effects]))
+    };
+    let empty = binding(EffectSet::new());
+    let io = binding(EffectSet::from_labels(["io.read"]).unwrap());
+    let bound = contract
+        .bind_program_in_invocation(owner.clone(), Some(&empty), limits)
+        .unwrap();
+    let other = contract
+        .bind_program_in_invocation(owner.clone(), Some(&io), limits)
+        .unwrap();
+    assert!(!bound.same_contract(&other));
+    for outcome in [&bound, &other] {
+        assert!(outcome.try_result_ok(RuntimeValue::Bool(true)).is_ok());
+        assert!(outcome.try_result_err(RuntimeValue::Bool(false)).is_ok());
+        assert!(
+            outcome
+                .try_result_ok(RuntimeValue::String("wrong".into()))
+                .is_err()
+        );
+        assert!(
+            outcome
+                .try_result_err(RuntimeValue::String("wrong".into()))
+                .is_err()
+        );
+    }
+    let invalid = RuntimeFunctionEffectInstantiation::from_source_rows(
+        semantic(99),
+        Box::new([EffectSet::new()]),
+    );
+    assert!(
+        contract
+            .bind_program_in_invocation(owner.clone(), Some(&invalid), limits)
+            .is_err()
+    );
+    for short in [
+        RuntimeSchemaLimits {
+            max_sequence_items: 0,
+            ..limits
+        },
+        RuntimeSchemaLimits {
+            max_string_bytes: 6,
+            ..limits
+        },
+        RuntimeSchemaLimits {
+            max_validation_work: 0,
+            ..limits
+        },
+    ] {
+        assert!(matches!(
+            contract.bind_program_in_invocation(owner.clone(), Some(&io), short),
+            Err(TaskOutcomeBindingError::ProgramType(
+                crate::program_types::RuntimeProgramTypeError::Resource(_)
+            ))
+        ));
+    }
+}
+
+#[test]
 fn borrowed_standalone_choice_retains_work_failure_before_a_later_match() {
     use crate::entry::RuntimeSchemaError;
     use crate::entry::schema::value_budget::ValidationWork;
@@ -93,8 +207,15 @@ fn queued_inert_outcomes_share_nodes_and_keep_the_first_error() {
     use crate::value::{
         AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission,
     };
-    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::String);
-    let correlation = crate::tests::reusable_need("queued outcomes").correlation();
+    let spec = crate::tests::task_spec(
+        TaskOutcomeContract::new(RuntimeCheckedType::String),
+        HostTaskRequest::FileReadText(FileReadTextRequest {
+            path: "queued outcomes".into(),
+        }),
+    );
+    let correlation = spec
+        .correlation(crate::task::TaskLaunchOrdinal::JOIN)
+        .unwrap();
     let events: Vec<TaskEvent<AwbcRuntimeValueSnapshot>> = ["first", "second"]
         .into_iter()
         .map(|value| TaskEvent {
@@ -111,11 +232,9 @@ fn queued_inert_outcomes_share_nodes_and_keep_the_first_error() {
         max_nodes: 3,
         ..RuntimeSchemaLimits::engine_default()
     });
-    events[0]
-        .admit_retained(Some(&outcome), &mut limited)
-        .unwrap();
+    events[0].admit_retained(Some(&spec), &mut limited).unwrap();
     let first = events[1]
-        .admit_retained(Some(&outcome), &mut limited)
+        .admit_retained(Some(&spec), &mut limited)
         .unwrap_err();
     assert!(matches!(
         first,
@@ -125,7 +244,7 @@ fn queued_inert_outcomes_share_nodes_and_keep_the_first_error() {
     ));
     assert_eq!(
         events[0]
-            .admit_retained(Some(&outcome), &mut limited)
+            .admit_retained(Some(&spec), &mut limited)
             .unwrap_err(),
         first
     );
@@ -135,7 +254,7 @@ fn queued_inert_outcomes_share_nodes_and_keep_the_first_error() {
         ..RuntimeSchemaLimits::engine_default()
     });
     for event in &events {
-        event.admit_retained(Some(&outcome), &mut exact).unwrap();
+        event.admit_retained(Some(&spec), &mut exact).unwrap();
     }
 }
 
@@ -146,7 +265,12 @@ fn retained_need_ready_states_share_one_sticky_outcome_allowance() {
     use crate::value::{
         AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission,
     };
-    let outcome = TaskOutcomeContract::new(RuntimeCheckedType::Bool);
+    let mut spec = crate::tests::task_spec(
+        TaskOutcomeContract::new(RuntimeCheckedType::Bool),
+        HostTaskRequest::FileReadText(FileReadTextRequest {
+            path: "ready states".into(),
+        }),
+    );
     let states = [
         RuntimeNeedProducerState::Ready(AwbcRuntimeValueSnapshot::Bool(true)),
         RuntimeNeedProducerState::Ready(AwbcRuntimeValueSnapshot::Bool(false)),
@@ -156,22 +280,18 @@ fn retained_need_ready_states_share_one_sticky_outcome_allowance() {
         max_nodes: 3,
         ..RuntimeSchemaLimits::engine_default()
     });
-    states[0]
-        .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut limited)
-        .unwrap();
-    let error = states[1]
-        .admit_retained(&outcome, TaskPolicy::AlwaysStart, &mut limited)
-        .unwrap_err();
+    states[0].admit_retained(&spec, &mut limited).unwrap();
+    spec.policy = TaskPolicy::AlwaysStart;
+    let error = states[1].admit_retained(&spec, &mut limited).unwrap_err();
     assert!(matches!(
         error,
         AwbcRuntimeValueSnapshotError::Resource(RuntimeSchemaError::BudgetExceeded {
             budget: "nodes"
         })
     ));
+    spec.policy = TaskPolicy::JoinSameKey;
     assert_eq!(
-        states[0]
-            .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut limited)
-            .unwrap_err(),
+        states[0].admit_retained(&spec, &mut limited).unwrap_err(),
         error
     );
     assert_eq!(serde_json::to_vec(&states).unwrap(), before);
@@ -180,9 +300,7 @@ fn retained_need_ready_states_share_one_sticky_outcome_allowance() {
         ..RuntimeSchemaLimits::engine_default()
     });
     for state in &states {
-        state
-            .admit_retained(&outcome, TaskPolicy::JoinSameKey, &mut exact)
-            .unwrap();
+        state.admit_retained(&spec, &mut exact).unwrap();
     }
 }
 

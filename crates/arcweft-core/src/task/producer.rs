@@ -1117,10 +1117,9 @@ pub enum RuntimeNeedProducerState<P = RuntimePayload> {
 }
 
 impl<P> RuntimeNeedProducerState<P> {
-    pub(crate) fn admit_retained(
+    pub(crate) fn admit_retained<Q>(
         &self,
-        outcome: &super::TaskOutcomeContract,
-        policy: TaskPolicy,
+        spec: &TaskSpec<Q>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
@@ -1130,7 +1129,7 @@ impl<P> RuntimeNeedProducerState<P> {
             Self::Ready(value) => {
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
                     let view = value.borrowed_view();
-                    if policy == TaskPolicy::JoinSameKey {
+                    if spec.policy == TaskPolicy::JoinSameKey {
                         view.admit_ownership(
                             crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
                             resources,
@@ -1142,7 +1141,7 @@ impl<P> RuntimeNeedProducerState<P> {
                     crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                         view, owner, resources,
                     )?;
-                    outcome.validate_admitted_value_view(view, owner, resources)?;
+                    spec.validate_admitted_value_view(view, owner, resources)?;
                     Ok(())
                 })
             }
@@ -1597,17 +1596,13 @@ impl<V, P> NeedProducerRegistryRestore<V, P> {
         Ok(())
     }
 
-    pub(crate) fn task_outcome(
-        &self,
-        correlation: TaskCorrelation,
-    ) -> Option<&super::TaskOutcomeContract> {
+    pub(crate) fn task_spec(&self, correlation: TaskCorrelation) -> Option<&TaskSpec<P>> {
         let mut matches = self
             .task_admissions
             .iter()
             .filter(|row| row.task_id() == correlation.task_id);
         let row = matches.next()?;
-        (row.handle().correlation == correlation && matches.next().is_none())
-            .then_some(&row.spec().outcome)
+        (row.handle().correlation == correlation && matches.next().is_none()).then_some(row.spec())
     }
 }
 
@@ -1629,11 +1624,7 @@ impl<V, P> NeedProducerLaunchRestore<V, P> {
         ))?;
         self.start.admit_retained(admission)?;
         admission.with_program_owner(self.start.source().program_owner(), |admission| {
-            self.state.admit_retained(
-                &self.start.task_spec.outcome,
-                self.start.task_spec.policy,
-                admission,
-            )
+            self.state.admit_retained(&self.start.task_spec, admission)
         })
     }
 }
@@ -1816,11 +1807,9 @@ impl NeedProducerRegistry {
             ))?;
             launch.start.admit_retained(admission)?;
             admission.with_program_owner(launch.source().program_owner(), |admission| {
-                launch.state.admit_retained(
-                    &launch.start.task_spec.outcome,
-                    launch.start.task_spec.policy,
-                    admission,
-                )
+                launch
+                    .state
+                    .admit_retained(&launch.start.task_spec, admission)
             })?;
         }
         admission.validate_metadata_collection(self.invocation_launches.len())?;
@@ -2242,13 +2231,9 @@ impl NeedProducerRegistry {
         self.task_journal.submissions()
     }
 
-    pub(crate) fn task_outcome(
-        &self,
-        correlation: TaskCorrelation,
-    ) -> Option<&super::TaskOutcomeContract> {
+    pub(crate) fn task_spec(&self, correlation: TaskCorrelation) -> Option<&TaskSpec> {
         self.task_journal
             .accepted_spec(super::TaskHandle { correlation })
-            .map(|spec| &spec.outcome)
     }
 
     pub(crate) fn ensure_task_with_publication(

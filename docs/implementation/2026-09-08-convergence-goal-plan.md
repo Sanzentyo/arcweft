@@ -21231,3 +21231,67 @@ handover adjustment began, so retain its terminal result without claiming curren
 source equivalence. No profile/jobs/budget/timeout/copy/capture/batch/fusion condition
 changed. The full Source/owner/public-switch and remaining recorded acceptance
 goal stays active; no broader completion claim follows from these passing checks.
+
+### 2026-10-20 — retain producer invocation through outcome admission
+
+Inspected main `7f140ebae1ee7d03163d029da52c3a8a9debe175`. The inherited
+14 tracked changes and three untracked roots remain held. The previous goal
+turn made implementation/publication progress; the intervening user-requested
+workspace clean also completed an authoritative filesystem action. Neither is
+a no-progress turn or an external blocker.
+
+The explicit clean request stopped this chat's four verified validation process
+trees. R1679/R1680/R1681/R1682 were interrupted, not passing or unavailable
+checks; their shell handles are terminal with exit 1. The previously completed
+R1676 2812-case evidence remains attributed to its actual older inputs. The
+clean then exited 0 in 184.182 seconds, removing 265286 files / 323.8 GiB.
+All 8340 tracked/untracked source hashes, source inventory and Git state matched
+before/after. Receipt:
+`C:/Users/sanze/AppData/Local/Temp/arcweft-workspace-clean-20261019T203608Z.json`.
+No build artifacts were moved, copied or archived, and no build profile/jobs
+setting was changed. The next validation is an intentional rebuild after this
+explicit clean and implementation change, not a restart after an observation
+timeout.
+
+The admitted Source producer specification already retained its validated
+function effect solution and committed it into instance identity. Conversion
+to `NeedProducerInstance` dropped that solution, however, and outcome admission
+used an unbound program row. The instance now retains the same immutable rows.
+The complete `TaskSpec` owns invocation selection for Ready states and queued
+events; `BoundTaskSpec` derives its bound outcome from that same instance.
+Program value-type admission checks the original destination scope and binding
+under the enclosing resource allowance. Scoped missing/invalid bindings reject
+before the bound outcome copies the binding lease. Both Result constructors
+validate through this bound outcome instead of using an unbound live-value path.
+
+The descriptor grammar counts the instance's binding context, collections and
+labels. The v1 save shape retains binding in the instance and deletes the
+independent launch binding field. Restore re-admits the decoded binding through
+the actual original Source, validates the complete registry, then checks queued
+Ready values using its exact task specifications. There is no legacy launch
+reader, replacement Source, added budget, or fallback binding.
+
+Initial source/graph preflight for this slice: 3931 frozen inputs, ten owned Rust
+paths, held14, all 99 manifest/lock inputs unchanged, outside-owned and held drift
+zero. The unchanged resolved Cargo graph selects 53 transitive workspace reverse
+dependents of Core. R1683's all-feature locked Core-lib catalogue failed to build
+(actual exit 101) at two old contract-only calls in Await/AwaitMany. They now
+use the retained Need specification or the already admitted suspended activation
+binding, respectively. R1685 is the revised Core catalogue; its terminal result
+and runtime evidence are pending at this intermediate publication. The user's
+explicit checkpoint instruction permits intermediate commits without proving
+every commit operational. No failed check is represented as passing. R1684
+structure exited 0: 3154 files, 3024 Rust files, 1718115 physical Rust lines,
+97 packages, 376 review triggers, zero blocking violations. The new binding
+relation belongs to the existing program value-type owner; task/event/retained
+storage selects that relation from its admitted specification or activation.
+The final Await consumer glue still needs the subsequent structural run.
+Coverage adds
+scoped Result cases, wrong/missing binding and resource rejection, and real
+Source instance/binding serialization, re-admission and bound-outcome identity.
+
+The complete public Source/spec/instance switch, genuine standalone Host and
+AWBC Source, remaining execution/value owners, complete retained Presentation
+lowering, broader reverse-dependency runtime coverage, strict Clippy and final
+Native/Web capture/parity acceptance remain required. This slice does not claim
+that any of those requirements is complete. The full goal remains active.

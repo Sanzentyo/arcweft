@@ -59,7 +59,7 @@ impl<P> TaskSpec<P> {
                 message: error.to_string(),
             }
         })?;
-        self.outcome.validate_storage_owner(owner)?;
+        self.validate_outcome_storage_owner(owner, resources)?;
         for payload in self.request.payloads() {
             let view = payload.borrowed_view();
             crate::entry::schema::value_encoding::visit_admitted_storage(
@@ -132,6 +132,17 @@ impl<P> TaskSpec<P> {
             self.producer.arguments().as_bytes(),
         ] {
             visitor.fixed(digest, next)?;
+        }
+        visitor.fixed(&[u8::from(self.producer.binding().is_some())], next)?;
+        if let Some(binding) = self.producer.binding() {
+            visitor.fixed(binding.context().as_bytes(), next)?;
+            visitor.collection(binding.source_rows().len(), next)?;
+            for row in binding.source_rows() {
+                visitor.collection(row.len(), next + 1)?;
+                for effect in row {
+                    visitor.string(effect.as_str(), next + 2)?;
+                }
+            }
         }
         visitor.fixed(&[self.class.semantic_tag()], next)?;
         visitor.fixed(&self.priority.0.to_le_bytes(), next)?;

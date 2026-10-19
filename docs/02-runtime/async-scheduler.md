@@ -48,15 +48,25 @@ Core program's executable seal and its common function/request/control
 semantics. Arguments remain part of producer-instance identity, and changed
 executable expressions remain part of the completed plan's identity.
 
-The producer specification owns its original declaration effect instantiation.
+Source admission checks the producer's original declaration effect instantiation.
 Instance identity includes an explicit absent/present tag, the function's
 semantic type context, and its ordered effect-binding rows with canonical
 effect labels. Equal Source and argument values with different admitted
 instantiations must produce distinct instances. Repeating the same complete
-binding is deterministic. Retained starts and rollback storage read that same
-specification rather than retaining an independent binding. Immutable binding
-rows may share storage; resource admission still checks every row before a
-producer or retained field copies its lease.
+binding is deterministic. The issued instance retains this immutable binding;
+its task specification and bound outcome use that same declaration solution.
+Ready states and queued events are validated against the complete accepted task
+specification, including its invocation, rather than a result type in isolation.
+Result construction uses this binding for both cases. A scoped outcome without
+its original binding is rejected before accepting an outcome authority.
+
+Retained descriptors count the invocation's context, rows and labels in the
+enclosing resource allowance. Immutable rows may share storage; resource
+admission still checks every row before a producer or retained field copies its
+lease. Version-one saves retain the binding in the producer instance rather than
+an independent launch column. Restore checks the saved instance against the
+original Source and the complete launch journal before admitting queued Ready
+payloads; decoded binding metadata does not itself grant Source authority.
 
 View task construction binds the exact original Core coordinates to the accepted
 View program, source site and complete Match admission transcript. After every

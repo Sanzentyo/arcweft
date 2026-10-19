@@ -19,6 +19,59 @@ pub(crate) use authority::RuntimeValueTypeContext;
 pub use parameter_values::RuntimeParameterValueAdmissionError;
 
 impl super::RuntimeProgramValueType<'_> {
+    /// Checks the destination's declaration scope before retaining a binding.
+    /// The caller has already bounded its borrowed metadata in this allowance.
+    pub(crate) fn validate_invocation_binding(
+        self,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        match self {
+            Self::Plan { program, ty } => {
+                Self::validate_authority_binding(program, ty, binding, resources)
+            }
+            Self::Awbc { program, ty } => {
+                Self::validate_authority_binding(program, ty, binding, resources)
+            }
+        }
+    }
+
+    fn validate_authority_binding<A: FunctionTypeAuthority>(
+        program: &A,
+        expected: A::Type,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), super::RuntimeProgramTypeError> {
+        let invalid = || {
+            A::value_error(
+                expected,
+                crate::entry::RuntimeSchemaError::Type {
+                    path: "$".to_owned(),
+                    expected: "original outcome declaration binding",
+                    actual: "invalid binding",
+                },
+            )
+        };
+        RuntimeFunctionEffectInstantiation::with_value_relation(
+            program,
+            resources.origin(),
+            binding,
+            &resources.work(),
+            |context| {
+                resources.work().charge(0)?;
+                if program
+                    .scope(expected)
+                    .is_some_and(|scope| context.permits_scope(scope))
+                {
+                    Ok(())
+                } else {
+                    Err(invalid())
+                }
+            },
+        )?
+        .ok_or_else(invalid)
+    }
+
     /// Admits a stored value under its original row and retained construction
     /// binding, sharing the enclosing resource traversal's remaining work.
     pub(crate) fn validate_snapshot_storage(

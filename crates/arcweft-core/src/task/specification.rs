@@ -17,6 +17,7 @@ pub(crate) enum NeedProducerAssertionField {
     Contract,
     PayloadType,
     Arguments,
+    Invocation,
     Key,
 }
 
@@ -47,6 +48,7 @@ pub struct NeedProducerInstance<Plan = TaskPlanSemanticDigest> {
     plan: Plan,
     payload_type: RuntimeTypeSemanticDigest,
     arguments: RuntimeValueDigest,
+    binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
 }
 
 impl TryFrom<&NeedProducerSpec> for NeedProducerInstance {
@@ -59,6 +61,7 @@ impl TryFrom<&NeedProducerSpec> for NeedProducerInstance {
             plan: input.plan(),
             payload_type: input.payload_type(),
             arguments: input.arguments(),
+            binding: input.binding().cloned(),
         })
     }
 }
@@ -75,13 +78,14 @@ impl TryFrom<&NeedProducerSpec<crate::plan::RuntimeTaskSource>> for NeedProducer
             plan: input.source().task_plan().key(),
             payload_type: input.payload_type(),
             arguments: input.arguments(),
+            binding: input.binding().cloned(),
         })
     }
 }
 
 impl NeedProducerInstance {
-    /// Called after the enclosing source/value batch is admitted. Only scalar
-    /// derivation metadata is copied; the issued key becomes an assertion.
+    /// Called after the enclosing source/value batch is admitted. The issued
+    /// key and immutable invocation metadata become original-source assertions.
     pub(crate) fn plan_assertion(&self) -> NeedProducerInstance<super::ExpectedTaskPlanKey> {
         NeedProducerInstance {
             key: self.key,
@@ -89,6 +93,7 @@ impl NeedProducerInstance {
             plan: super::ExpectedTaskPlanKey::new(*self.plan.as_bytes()),
             payload_type: self.payload_type,
             arguments: self.arguments,
+            binding: self.binding.clone(),
         }
     }
     pub const fn key(&self) -> NeedProducerInstanceKey {
@@ -105,6 +110,11 @@ impl NeedProducerInstance {
     }
     pub const fn arguments(&self) -> RuntimeValueDigest {
         self.arguments
+    }
+    pub(crate) fn binding(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.binding.as_ref()
     }
 }
 
@@ -123,6 +133,8 @@ impl NeedProducerInstance<super::ExpectedTaskPlanKey> {
             Some(NeedProducerAssertionField::PayloadType)
         } else if self.arguments != original.arguments() {
             Some(NeedProducerAssertionField::Arguments)
+        } else if self.binding.as_ref() != original.binding() {
+            Some(NeedProducerAssertionField::Invocation)
         } else {
             None
         };

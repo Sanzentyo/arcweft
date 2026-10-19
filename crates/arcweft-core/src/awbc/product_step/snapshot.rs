@@ -462,27 +462,11 @@ pub struct AwbcNeedProducerRegistrySaveSnapshot {
     pub launch_frontiers: Vec<AwbcNeedProducerLaunchFrontierSaveSnapshot>,
 }
 
-impl AwbcNeedProducerRegistrySaveSnapshot {
-    fn task_outcome(
-        &self,
-        correlation: crate::task::TaskCorrelation,
-    ) -> Option<&crate::task::TaskOutcomeContract> {
-        let mut rows = self
-            .task_admissions
-            .iter()
-            .filter(|row| row.handle().correlation.task_id == correlation.task_id);
-        let row = rows.next()?;
-        (row.handle().correlation == correlation && rows.next().is_none())
-            .then_some(&row.spec().outcome)
-    }
-}
-
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcNeedProducerLaunchSaveSnapshot {
     pub invocation: NeedProducerInvocationToken,
     pub source: crate::plan::RuntimeTaskSourceAssertion,
-    pub binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     pub arguments: Vec<AwbcNeedProducerArgumentSaveSnapshot>,
     pub correlation: crate::task::TaskCorrelation,
     pub task_spec: crate::task::TaskSpec<crate::value::AwbcRuntimeValueSnapshot>,
@@ -596,7 +580,6 @@ fn save_need_producer_registry(
                 Ok(AwbcNeedProducerLaunchSaveSnapshot {
                     invocation: launch.invocation,
                     source: launch.start.source().assertion(),
-                    binding: launch.start.binding().cloned(),
                     arguments: launch
                         .start
                         .arguments()
@@ -696,7 +679,7 @@ fn restore_need_producer_registry(
             })
             .collect();
         let start = prepared
-            .restore_start(arguments, launch.task_spec, launch.binding)
+            .restore_start(arguments, launch.task_spec)
             .map_err(|error| error.to_string())?;
         launches.push(NeedProducerLaunchRestore {
             invocation: launch.invocation,
@@ -2867,12 +2850,6 @@ impl AwbcProductExecutorSaveSnapshot {
         admission
             .validate_metadata_collection(self.queued_task_events.len())
             .map_err(|error| error.to_string())?;
-        for event in &self.queued_task_events {
-            let outcome = self.need_producers.task_outcome(event.correlation);
-            event
-                .admit_retained(outcome, &mut admission)
-                .map_err(|error| error.to_string())?;
-        }
         let need_publication_count = self.need_publications.len();
         let need_publications = self
             .need_publications
@@ -2887,6 +2864,14 @@ impl AwbcProductExecutorSaveSnapshot {
             program.task_source.as_ref(),
             &mut admission,
         )?;
+        need_producers
+            .admit_retained(&mut admission)
+            .map_err(|error| error.to_string())?;
+        for event in &self.queued_task_events {
+            event
+                .admit_retained(need_producers.task_spec(event.correlation), &mut admission)
+                .map_err(|error| error.to_string())?;
+        }
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
             runtime_generation: self.runtime_generation,
@@ -3063,7 +3048,7 @@ fn validate_task_publications(
     for event in &snapshot.queued_task_events {
         event
             .admit_retained(
-                snapshot.need_producers.task_outcome(event.correlation),
+                snapshot.need_producers.task_spec(event.correlation),
                 admission,
             )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
@@ -3358,10 +3343,7 @@ impl AwbcProductStepExecutor {
             .map_err(invalid)?;
         for event in &self.queued_task_events {
             event
-                .admit_retained(
-                    self.need_producers.task_outcome(event.correlation),
-                    admission,
-                )
+                .admit_retained(self.need_producers.task_spec(event.correlation), admission)
                 .map_err(invalid)?;
         }
         self.need_producers

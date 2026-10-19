@@ -549,11 +549,7 @@ impl<P> RuntimeNeedPublication<P> {
                 ..
             } = self
             {
-                handle.outcome().validate_admitted_value_view(
-                    value.borrowed_view(),
-                    owner,
-                    resources,
-                )?;
+                handle.validate_admitted_outcome(value.borrowed_view(), owner, resources)?;
             }
             Ok(())
         })
@@ -1592,9 +1588,9 @@ impl Clone for TaskEvent<crate::value::AwbcRuntimeValueSnapshot> {
 impl<P> TaskEvent<P> {
     /// Preflights retained metadata and the exact outcome while the payload
     /// still belongs to its original live or inert owner.
-    pub(crate) fn admit_retained(
+    pub(crate) fn admit_retained<Q>(
         &self,
-        outcome: Option<&TaskOutcomeContract>,
+        spec: Option<&TaskSpec<Q>>,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
     ) -> Result<(), crate::value::AwbcRuntimeValueSnapshotError>
     where
@@ -1603,19 +1599,18 @@ impl<P> TaskEvent<P> {
         admission.validate_metadata(&(self.correlation, self.cursor))?;
         match &self.kind {
             TaskEventKind::Ready(value) => {
-                let outcome = outcome.ok_or_else(|| {
-                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                let spec =
+                    spec.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
                         message: "queued Ready has no exact admitted task correlation".into(),
-                    }
-                })?;
-                admission.validate_metadata(outcome)?;
+                    })?;
+                admission.validate_metadata(&spec.outcome)?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
                     let view = value.borrowed_view();
                     resources.validate_view(view, 0, None)?;
                     crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
                         view, owner, resources,
                     )?;
-                    outcome.validate_admitted_value_view(view, owner, resources)?;
+                    spec.validate_admitted_value_view(view, owner, resources)?;
                     Ok(())
                 })
             }

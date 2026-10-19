@@ -205,11 +205,15 @@ where
             if let Some(value) = result {
                 admission.validate_owned_borrowed(value.borrowed_value())?;
                 admission.admit_composite(P::admission_origin(), |owner, resources| {
-                    self.target.child.outcome().validate_admitted_value_view(
-                        value.borrowed_view(),
-                        owner,
-                        resources,
-                    )?;
+                    self.target
+                        .child
+                        .outcome()
+                        .validate_admitted_in_invocation(
+                            value.borrowed_view(),
+                            owner,
+                            binding,
+                            resources,
+                        )?;
                     Ok(())
                 })?;
             }

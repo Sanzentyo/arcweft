@@ -520,6 +520,43 @@ fn source_bound_zero_argument_invocations_keep_distinct_effect_instance_keys() {
     assert_eq!(first.task_spec().request, second.task_spec().request);
     assert_eq!(first.binding(), Some(&first_binding));
     assert_eq!(second.binding(), Some(&second_binding));
+    assert_eq!(first.task_spec().producer.binding(), Some(&first_binding));
+    assert_eq!(second.task_spec().producer.binding(), Some(&second_binding));
+    let decoded: crate::task::TaskSpec =
+        serde_json::from_slice(&serde_json::to_vec(first.task_spec()).unwrap()).unwrap();
+    assert_eq!(decoded.producer, first.task_spec().producer);
+    let restored = source
+        .prepare_selected_producer(
+            &source_program(&plan),
+            &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
+        )
+        .unwrap()
+        .restore_start(Vec::new(), decoded)
+        .unwrap();
+    assert_eq!(restored, first);
+    let bound = |start: &crate::task::RuntimeNeedProducerStart| {
+        crate::task::BoundTaskSpec::bind(
+            crate::tests::task_submission(start.task_spec().clone()),
+            Some(crate::task::RuntimeProgramOwner::Plan(plan.clone())),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap()
+    };
+    let first_outcome = bound(&first);
+    assert!(
+        first_outcome
+            .outcome()
+            .same_contract(bound(&repeated).outcome())
+    );
+    assert!(
+        !first_outcome
+            .outcome()
+            .same_contract(bound(&second).outcome())
+    );
+    first_outcome
+        .outcome()
+        .validate_value(&RuntimeValue::Unit)
+        .unwrap();
     assert_eq!(
         first.task_spec().producer.key(),
         repeated.task_spec().producer.key()

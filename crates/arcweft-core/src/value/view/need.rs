@@ -22,6 +22,22 @@ impl<'a> From<&'a RuntimeNeedHandleSaveSnapshot> for RuntimeNeedView<'a> {
 }
 
 impl<'a> RuntimeNeedView<'a> {
+    pub(crate) fn validate_admitted_outcome(
+        self,
+        value: RuntimeValueView<'_>,
+        owner: Option<&crate::task::RuntimeProgramOwner>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), crate::task::TaskOutcomeValueError> {
+        match self {
+            Self::Live(handle) => handle
+                .spec()
+                .validate_admitted_value_view(value, owner, resources),
+            Self::Snapshot(handle) => handle
+                .spec()
+                .validate_admitted_value_view(value, owner, resources),
+        }
+    }
+
     pub(crate) fn admit_retained(
         self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,

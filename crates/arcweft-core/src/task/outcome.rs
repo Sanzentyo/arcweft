@@ -48,6 +48,8 @@ pub enum TaskOutcomeBindingError {
     StandaloneRequiresStandaloneBinding,
     #[error("a program task outcome contract requires a selected executable")]
     ProgramRequiresExecutable,
+    #[error("a standalone task outcome cannot carry a program invocation binding")]
+    StandaloneInvocationBinding,
     #[error(transparent)]
     ProgramType(#[from] RuntimeProgramTypeError),
 }
@@ -86,6 +88,7 @@ enum BoundTaskOutcomeType {
         payload: RuntimeSemanticTypeId,
         owner: RuntimeProgramOwner,
         limits: RuntimeSchemaLimits,
+        binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     },
 }
 
@@ -96,6 +99,7 @@ enum TaskOutcomeTypeView<'a> {
     Program {
         payload: RuntimeSemanticTypeId,
         owner: &'a RuntimeProgramOwner,
+        binding: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
     },
 }
 
@@ -116,11 +120,15 @@ impl TaskOutcomeTypeView<'_> {
                     ))
                 }
             }
-            Self::Program { payload, owner } => {
+            Self::Program {
+                payload,
+                owner,
+                binding,
+            } => {
                 owner
                     .types()
                     .value_type(payload)?
-                    .validate_snapshot_storage(value, &resources.work(), resources.origin())?;
+                    .validate_admitted_view(value, binding, resources)?;
                 Ok(())
             }
         }
@@ -156,8 +164,12 @@ impl BoundTaskSpec {
     ) -> Result<Self, TaskOutcomeBindingError> {
         let spec = submission.spec();
         let outcome = match owner {
-            Some(owner) => spec.outcome.bind_program(owner, limits)?,
-            None => spec.outcome.bind_standalone()?,
+            Some(owner) => {
+                spec.outcome
+                    .bind_program_in_invocation(owner, spec.producer.binding(), limits)?
+            }
+            None if spec.producer.binding().is_none() => spec.outcome.bind_standalone()?,
+            None => return Err(TaskOutcomeBindingError::StandaloneInvocationBinding),
         };
         Ok(Self {
             submission,
@@ -208,11 +220,50 @@ impl PartialEq for BoundTaskSpec {
     }
 }
 
-impl TaskOutcomeContract {
+impl<P> TaskSpec<P> {
     pub(crate) fn validate_admitted_value_view(
         &self,
         value: crate::value::RuntimeValueView<'_>,
         owner: Option<&RuntimeProgramOwner>,
+        resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), TaskOutcomeValueError> {
+        self.outcome.validate_admitted_in_invocation(
+            value,
+            owner,
+            self.producer.binding(),
+            resources,
+        )
+    }
+
+    pub(crate) fn validate_outcome_storage_owner(
+        &self,
+        owner: Option<&RuntimeProgramOwner>,
+        resources: &crate::entry::schema::value_encoding::ValueResourceAdmission,
+    ) -> Result<(), TaskOutcomeBindingError> {
+        self.outcome.validate_storage_owner(owner)?;
+        match &self.outcome {
+            TaskOutcomeContract::Program { payload } => owner
+                .ok_or(TaskOutcomeBindingError::ProgramRequiresExecutable)?
+                .types()
+                .value_type(*payload)?
+                .validate_invocation_binding(self.producer.binding(), resources)?,
+            TaskOutcomeContract::Standalone { .. } if self.producer.binding().is_some() => {
+                return Err(TaskOutcomeBindingError::StandaloneInvocationBinding);
+            }
+            TaskOutcomeContract::Standalone { .. } => (),
+        }
+        Ok(())
+    }
+}
+
+impl TaskOutcomeContract {
+    /// The enclosing admitted task or suspended activation supplies the
+    /// original declaration solution; the candidate value cannot select it.
+    pub(crate) fn validate_admitted_in_invocation(
+        &self,
+        value: crate::value::RuntimeValueView<'_>,
+        owner: Option<&RuntimeProgramOwner>,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
         resources: &mut crate::entry::schema::value_encoding::ValueResourceAdmission,
     ) -> Result<(), TaskOutcomeValueError> {
         let expected = match self {
@@ -222,6 +273,7 @@ impl TaskOutcomeContract {
                 owner: owner.ok_or(TaskOutcomeValueError::WrongProgramOwner {
                     semantic_type: *payload,
                 })?,
+                binding,
             },
         };
         expected.validate_admitted(value, resources)
@@ -271,15 +323,36 @@ impl TaskOutcomeContract {
         owner: RuntimeProgramOwner,
         limits: RuntimeSchemaLimits,
     ) -> Result<BoundTaskOutcome, TaskOutcomeBindingError> {
+        self.bind_program_in_invocation(owner, None, limits)
+    }
+
+    fn bind_program_in_invocation(
+        &self,
+        owner: RuntimeProgramOwner,
+        binding: Option<&crate::program_types::RuntimeFunctionEffectInstantiation>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<BoundTaskOutcome, TaskOutcomeBindingError> {
         let Self::Program { payload } = self else {
             return Err(TaskOutcomeBindingError::StandaloneRequiresStandaloneBinding);
         };
         self.validate_storage_owner(Some(&owner))?;
+        let mut resources =
+            crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits);
+        if let Some(binding) = binding {
+            resources
+                .function_instantiation(binding)
+                .map_err(RuntimeProgramTypeError::from)?;
+        }
+        owner
+            .types()
+            .value_type(*payload)?
+            .validate_invocation_binding(binding, &resources)?;
         Ok(BoundTaskOutcome {
             ty: BoundTaskOutcomeType::Program {
                 payload: *payload,
                 owner,
                 limits,
+                binding: binding.cloned(),
             },
         })
     }
@@ -296,7 +369,12 @@ impl BoundTaskOutcome {
     ) -> Result<(), TaskOutcomeValueError> {
         let expected = match &self.ty {
             BoundTaskOutcomeType::Standalone(payload) => TaskOutcomeTypeView::Standalone(payload),
-            BoundTaskOutcomeType::Program { payload, owner, .. } => {
+            BoundTaskOutcomeType::Program {
+                payload,
+                owner,
+                binding,
+                ..
+            } => {
                 if original_owner.is_none_or(|original| !owner.same_program(original)) {
                     return Err(TaskOutcomeValueError::WrongProgramOwner {
                         semantic_type: *payload,
@@ -305,6 +383,7 @@ impl BoundTaskOutcome {
                 TaskOutcomeTypeView::Program {
                     payload: *payload,
                     owner,
+                    binding: binding.as_ref(),
                 }
             }
         };
@@ -324,14 +403,17 @@ impl BoundTaskOutcome {
                     payload: left_payload,
                     owner: left_owner,
                     limits: left_limits,
+                    binding: left_binding,
                 },
                 BoundTaskOutcomeType::Program {
                     payload: right_payload,
                     owner: right_owner,
                     limits: right_limits,
+                    binding: right_binding,
                 },
             ) => {
                 left_payload == right_payload
+                    && left_binding == right_binding
                     && left_limits == right_limits
                     && left_owner.same_program(right_owner)
             }
@@ -381,11 +463,7 @@ impl BoundTaskOutcome {
             BoundTaskOutcomeType::Standalone(payload) => payload
                 .try_result_payload(Ok(value))
                 .map_err(TaskOutcomeValueError::Standalone),
-            BoundTaskOutcomeType::Program {
-                payload,
-                owner,
-                limits,
-            } => {
+            BoundTaskOutcomeType::Program { payload, owner, .. } => {
                 let types = owner.types();
                 if !types.is_result_type(*payload)? {
                     return Err(TaskOutcomeValueError::NotResult {
@@ -393,7 +471,7 @@ impl BoundTaskOutcome {
                     });
                 }
                 let result = RuntimeValue::result_ok(value);
-                types.validate_live_value(*payload, &result, *limits)?;
+                self.validate_value(&result)?;
                 Ok(result.into())
             }
         }
@@ -408,11 +486,7 @@ impl BoundTaskOutcome {
             BoundTaskOutcomeType::Standalone(payload) => payload
                 .try_result_payload(Err(value))
                 .map_err(TaskOutcomeValueError::Standalone),
-            BoundTaskOutcomeType::Program {
-                payload,
-                owner,
-                limits,
-            } => {
+            BoundTaskOutcomeType::Program { payload, owner, .. } => {
                 let types = owner.types();
                 if !types.is_result_type(*payload)? {
                     return Err(TaskOutcomeValueError::NotResult {
@@ -420,7 +494,7 @@ impl BoundTaskOutcome {
                     });
                 }
                 let result = RuntimeValue::result_err(value);
-                types.validate_live_value(*payload, &result, *limits)?;
+                self.validate_value(&result)?;
                 Ok(result.into())
             }
         }

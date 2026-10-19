@@ -100,9 +100,8 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         mut self,
         arguments: Vec<NeedProducerRuntimeArgument<V>>,
         task_spec: TaskSpec<P>,
-        binding: Option<RuntimeFunctionEffectInstantiation>,
     ) -> Result<RuntimeNeedProducerStart<V, P>, RuntimeTaskProducerSourceError> {
-        let producer = self.producer_spec(&arguments, binding.as_ref())?;
+        let producer = self.producer_spec(&arguments, task_spec.producer.binding())?;
         self.validate_specification(&producer, &arguments, &task_spec)?;
         Ok(RuntimeNeedProducerStart {
             producer,
