@@ -629,4 +629,4 @@ fn charge_source(
 }
 
 #[cfg(test)]
-mod tests;
+pub(in crate::plan) mod tests;

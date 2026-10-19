@@ -8,7 +8,10 @@ mod program;
 pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };
-pub(crate) use program::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError};
+pub(crate) use program::{
+    RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeTaskSourceProgram,
+    RuntimeTaskSourceProgramError,
+};
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]

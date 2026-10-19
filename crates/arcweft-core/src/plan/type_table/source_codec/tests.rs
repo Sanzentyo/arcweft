@@ -60,7 +60,7 @@ impl DecisionControl for Algebra {
     }
 }
 
-fn full_table() -> RuntimePlanTypeTable {
+pub(in crate::plan) fn full_table() -> RuntimePlanTypeTable {
     let mut seeds = Vec::new();
     let unit = add(&mut seeds, P::Unit);
     let payload = add(&mut seeds, P::Tuple(vec![unit].into_boxed_slice()));

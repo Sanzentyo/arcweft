@@ -58,6 +58,12 @@ Source cannot substitute for it. Verifying code and admitting its carried Source
 prepares this immutable pair. Each executed task row still needs its original-row
 assertion checked before producer publication or restore.
 
+An asserted type identity also requires correspondence with the original
+executable shape, lexical scope, declaration/layout and field/case bindings,
+function contract, and occurrence codec policy. Matching semantic type IDs alone
+does not admit a different backend shape. Correlation reads the two owning typed
+graphs under the original allowance before retaining a producer or its values.
+
 AWBC executable identity includes the original E assertion, which must pass that
 admission, rather than raw Source wire spelling. Source bytes preserve diagnostic
 labels in addition to semantic declarations. An identity over assertion data is

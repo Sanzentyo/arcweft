@@ -19449,3 +19449,111 @@ fourteen-request construction/codec/runtime/restore public switch, real View
 authority, obsolete issuer/reader deletion, 58 broad R1507 failures and remaining
 Native/AWBC/Native-Web/workspace/Tier 2 acceptance remain open. Keep the original
 full goal active.
+
+### 2026-10-19 — bind AWBC HostCall assertions and executable type graphs to Source
+
+This cut starts on main at `616a3e23682b3706a7bbfcb5acf58decbf139807`.
+Its five published blobs, raw patch, parent/tree, fresh advertised origin and
+3917 source inputs were verified before advancing the baseline. Patch SHA-256
+is `b656ceaa304af855fbbfa9a541f617e34ba15cccfdc512ddd71a699c22483f0f`.
+The same fourteen tracked and three untracked held paths remain outside this
+cut. No branch/worktree/checkout, further clean, artifact move/copy, profile or
+job-count change is made.
+
+The private original-program context now admits an actual AWBC HostCall row by
+its typed code-local ID. The row's existing plan digest becomes only private
+ExpectedTaskPlanKey assertion bytes. The exact original sealed table resolves
+the completed row and endpoint; missing keys cannot fall back to site, equal
+metadata or another program. A real selected-producer endpoint cannot serve as
+a HostCall. Checks cover producer contract/site, public identity, capability,
+manifest contract, result type, mode, determinism, operand count, optional names,
+spread and source-order argument identities. Both code and original role counts
+obey the supplied request-role bound before matching or projecting operands.
+The code count guard precedes claimed-key lookup.
+
+Identity equality was not sufficient: a verified code graph could keep the
+original Bool identity while replacing its executable shape with String.
+R1537 reproduces that missing rejection: actual nextest 100, zero pass/one fail,
+1837 explicitly filtered cases. Neither independent code verification nor
+admitting its carried genuine Source rejected that divergence. The correction
+is a general relation over both existing typed graphs, not a scalar exception.
+
+The relation checks complete reachable executable projections, incoming scopes,
+nominal declaration/layout, field/case order and payloads, function/effect
+contracts, and source-proved occurrence codec policies/arguments. Native and
+backend local indices may differ. Its one pair memo belongs to the immutable
+program pair, spans result and argument roots, and prevents repeated shared
+subgraphs from hiding a different tail. Children run in source order. A failed
+relation poisons the original meter before any tentative ancestor memo can be
+reused. No projected Source, parallel type catalog, copied original definition,
+Native surrogate value owner, new Task key or successful fallback is created.
+Codec comparison uses its existing purpose-built typed encoder on the same
+meter with a private version-one comparison domain; it never uses Serde as a
+semantic transcript. String work is charged before content comparisons, child
+widths before pending work, and policies before completing a borrowed Source.
+
+Nine HostCall tests cover canonical immediate/suspend and empty/nonempty rows;
+zero/foreign keys despite matching metadata; a genuine wrong source endpoint;
+thirteen separately verified field/ABI mutations; exact/prior/short/tightened
+work; wrong backend/missing row; role limits before a forged key; producing a
+Source-bound spec with final code-lease release; and the reproduced same-ID,
+different-shape case, now rejected before producer construction.
+
+Six type-relation tests exercise all 37 original type-algebra kinds against
+verified reverse-order backend rows; wrong shapes for every original type;
+shared prefixes with different tails and failed-memo reuse; exact and one-short
+work; genuine differing byte codec policies and an exact/one-short transcript
+allowance; and zero-child leaf acceptance with bounded real children. The
+complete existing type codec fixture is reused with test-only plan visibility.
+The genuine plan builder requires the actual nominal schema proof, computed
+layout, declaration, field domain and occurrence policies, which the fixture
+now supplies. Its code table explicitly starts empty before reversing Source
+rows, instead of accidentally including AWBC's two default rows. No builder or
+verifier condition is weakened to admit a fixture.
+
+R1539 initially finds two test-fixture compile errors: an opaque iterator did
+not promise DoubleEndedIterator. The fixture now reverses collected borrowed
+rows without widening that production API. R1541/R1542 each run all 1973 cases:
+1967 pass, four new fixture failures and the same two selected-key failures.
+The four fixture failures expose missing nominal proof, then the misplaced
+default code rows; neither is hidden or presented as a production pass.
+
+R1543 catalogs all 1975 all-feature Core/RuntimePlan library and
+awbc_product_parity cases, zero exclusions. R1544 runs the final frozen Rust:
+actual nextest 100, 1973 pass, two fail, zero skip, 20.771s. All fifteen added
+cases in this cut pass. Terminal names and all 3921 source hashes/held inputs
+match. The exact failure set still equals R1528:
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`.
+R1545 matching all-target/all-feature locked Core Clippy passes, actual 0,
+20.21s, with warnings; no -D warnings pass is claimed. R1546 canonical structural
+gate passes, actual 0. Changed-file rustfmt and diff checks pass. This rewritten
+unpublished task record and maintained type-correspondence prose follow terminal
+source auditing; tested Rust remains unchanged. No fresh workspace-wide,
+complete reverse execution, doctest or Tier 2 pass is claimed.
+
+Canonical bytes/physical LOC are Source facade 5275/142, program owner 4826/138,
+HostCall join 10444/287, join tests 17688/499, type relation 25202/689, relation
+tests 19543/546 and existing HostCall tests 18973/579. Existing type codec and
+its tests are 22783/632 and 28684/818; only their test fixture visibility changes.
+New >300-line owners remain cohesive: one ordered code/Source binding, and one
+borrowed type-graph relation with its own assertions, policy comparison, memo
+and resource failure state. The memo is temporary algorithm state, not another
+type authority. Their child tests follow those exact boundaries. The join's
+explicit cohesive-function expectation preserves key/field error precedence.
+No I/O, unsafe, dependency, new public wire field or provisional public task row
+is added. All 99 manifest/lock inputs and the retained 53-package reverse closure
+are unchanged. Private owner tests and their existing Core/RuntimePlan consumers
+are selected here; final public-switch acceptance remains broader.
+
+The fixture is a verified AWBC library with genuine original Source and actual
+HostCall/type rows. It does not claim HostCall instruction execution, live
+capture values, stop/restore or final public consumer migration. The final
+cutover must make the checked Source/execution-row/type binding mandatory;
+private unbound Source preparation alone remains insufficient publication
+evidence. Continue with AwaitMany/Template asserted keys and original capture/
+operand ABI, then the missing selected-row assertion and full public switch.
+The two selected-key failures, R1507's 58 broader failures, real View authority,
+all fourteen request kinds, old issuer/reader deletion, Native/AWBC stop/restore,
+Native/Web capture parity and final workspace/Tier 2 acceptance remain open.
+Keep the original full goal active; there is no external blocker.

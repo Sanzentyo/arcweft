@@ -1,5 +1,5 @@
 //! Original Task Source and the exact executable used for value admission.
-//! This private preparation does not certify AWBC task-row/source assertions.
+//! Pair construction alone does not certify AWBC row/source assertions.
 
 use super::{
     RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits, RuntimeTaskSourceRef,
@@ -9,6 +9,10 @@ use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::plan::{RuntimePlan, ViewTaskPlanAuthority};
 use crate::task::RuntimeProgramOwner;
 use std::sync::Arc;
+
+mod host;
+pub(crate) use host::{RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField};
+mod types;
 
 #[cfg(test)]
 mod tests;

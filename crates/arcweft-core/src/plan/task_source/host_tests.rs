@@ -51,7 +51,7 @@ fn code(program: &RuntimeTaskSourceProgram, include_pair: bool) -> Arc<AwbcProgr
         original_source: Some(
             program
                 .original()
-                .task_source_artifact(Default::default())
+                .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
                 .unwrap(),
         ),
         runtime_types,
@@ -213,7 +213,10 @@ fn host_source_survives_canonical_awbc_source_admission_with_its_real_execution_
     let native = native(false);
     let code = code(&native, true);
     let encoded = code.encode_canonical().unwrap();
-    let decoded = Arc::new(AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap());
+    let decoded = Arc::new(
+        AwbcProgram::decode_canonical(&encoded, crate::awbc::codec::AwbcDecodeBudget::default())
+            .unwrap(),
+    );
     let compiled = awbc(Arc::clone(&decoded));
     let produce = |program: &RuntimeTaskSourceProgram| {
         source(program)
@@ -355,9 +358,8 @@ fn host_source_rejects_foreign_programs_before_operand_views() {
             value,
         }),
     );
-    let actual_code = match compiled.program_owner() {
-        RuntimeProgramOwner::Awbc(code) => code,
-        _ => unreachable!(),
+    let RuntimeProgramOwner::Awbc(actual_code) = compiled.program_owner() else {
+        unreachable!()
     };
     for owner in [
         program.program_owner(),
