@@ -207,9 +207,10 @@ impl BundleSession {
                 tier: self.executor.tier().as_str().to_owned(),
             }
         })?;
+        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(state) = self.executor.snapshot()?;
         let executor = BundleSessionExecutorSnapshot {
             generation: active.id,
-            state: self.executor.product_inert_rollback_image()?.product,
+            state,
         };
         let active_entry = self
             .executor

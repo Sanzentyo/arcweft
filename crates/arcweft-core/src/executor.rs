@@ -272,7 +272,8 @@ impl AwbcProductExecutor {
         if !needs.is_empty() {
             return Err(AwbcProductSaveError::NeedsQuiescence { needs });
         }
-        self.vm.inert_rollback_image().map(|image| image.product)
+        let snapshot = self.vm.snapshot_for_save()?;
+        AwbcProductExecutorSaveSnapshot::from_admitted(&snapshot)
     }
 }
 

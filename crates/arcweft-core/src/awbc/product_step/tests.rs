@@ -266,7 +266,7 @@ fn program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frame
     let invocation_frontiers = executor.need_producers.invocation_frontiers();
     let launch_frontiers = executor.need_producers.launch_frontiers();
     let image = executor.inert_rollback_image().unwrap().product;
-    let executor = executor.restore_inert_snapshot_owned(image).unwrap();
+    let executor = executor.restore_snapshot_owned(image).unwrap();
     let restored = executor
         .need_producers
         .restartable_dispatches()
@@ -410,9 +410,7 @@ fn detached_program_result_rejection_retains_awbc_value_and_saved_owner() {
     assert!(executor.take_program_result().is_err());
     assert!(executor.take_program_result().is_err());
     let saved = executor.inert_rollback_image().unwrap().product;
-    let executor = executor
-        .restore_inert_snapshot_owned(saved.clone())
-        .unwrap();
+    let executor = executor.restore_snapshot_owned(saved.clone()).unwrap();
     let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
         panic!("rejected export must keep its live result")
     };
@@ -438,9 +436,7 @@ fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
         .validate_for_program(&executor.program)
         .unwrap();
     let saved = executor.inert_rollback_image().unwrap().product;
-    let executor = executor
-        .restore_inert_snapshot_owned(saved.clone())
-        .unwrap();
+    let executor = executor.restore_snapshot_owned(saved.clone()).unwrap();
     executor
         .fiber
         .validate_for_program(&executor.program)
@@ -451,7 +447,7 @@ fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
     forged.fiber.terminal = Some(crate::awbc::fiber::FiberTerminalValue::Returned(Some(
         crate::value::AwbcRuntimeValueSnapshot::Bool(true),
     )));
-    let (executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    let (executor, _) = executor.restore_snapshot_owned(forged).unwrap_err();
     assert_eq!(
         executor.fiber.root,
         crate::awbc::fiber::AwbcFiberRoot::Empty
@@ -6058,6 +6054,100 @@ fn typed_direct_need_program() -> AwbcProgram {
     program
 }
 
+fn need_producer_original(
+    metadata: crate::task::NeedProducerTaskPlan,
+    definition: crate::plan::RuntimeFunctionDefinitionIdentity,
+) -> (crate::plan::RuntimePlan, crate::task::ExpectedTaskPlanKey) {
+    use crate::plan::*;
+    let item = metadata.payload_type();
+    let need = RuntimeSemanticTypeId::from_bytes([0x90; 32]);
+    let local_source = |marker| RuntimeLocalDeclarationSource::Binding {
+        identity: [marker; 32],
+        declaration: RuntimeLocalBindingDeclaration::new(
+            RuntimeLocalBindingKind::PatternBinding,
+            false,
+            RuntimeLocalBindingStorage::Derived,
+        ),
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    let admitted = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(item, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(need, RuntimePlanTypeProjection::Need(item)),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(local_source(0x92), need),
+                RuntimeLocalDeclarationSeed::new(local_source(0x93), item),
+            ],
+        )
+        .unwrap();
+    let handle = admitted.local_ids()[0].clone();
+    let result = admitted.local_ids()[1].clone();
+    let function = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition,
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([]),
+            result: item,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    let coordinate = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    let binding = |ty, local| {
+        RuntimePatternSeed::new(
+            ty,
+            RuntimePatternSeedKind::Bind {
+                mutable: false,
+                local,
+            },
+        )
+    };
+    let read = |ty, local| {
+        RuntimeExprSeed::new(
+            ty,
+            RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                local,
+                crate::value::RuntimeLocalReadMode::Move,
+            )),
+        )
+    };
+    builder
+        .define_function_site_seed(
+            &function,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: binding(need, handle.clone()),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: metadata,
+                            task_plan: coordinate.clone(),
+                            arguments: Vec::new(),
+                        },
+                    },
+                    RuntimeFlowOpSeed::Await {
+                        binding: Some(binding(item, result.clone())),
+                        target: RuntimeAwaitTargetSeed {
+                            source: read(need, handle),
+                        },
+                        observers: Vec::new(),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(read(item, result)),
+                ]),
+            }),
+        )
+        .unwrap();
+    let original = builder.finish().unwrap();
+    let expected = original.task_plan(&coordinate).unwrap().key().into();
+    (original, expected)
+}
+
 fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
     let item_ty = AwbcTypeId(1);
     let need_ty = AwbcTypeId(0);
@@ -6089,7 +6179,10 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
         crate::task::CancelScopeId("flow".to_owned()),
     )
     .expect("test producer plan is internally consistent");
+    let definition = crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.need_producer_program.definition.0.v1\0").as_bytes());
+    let (original, expected) = need_producer_original(producer_plan, definition);
     let mut program = AwbcProgram {
+        original_source: Some(original.task_source_artifact(Default::default()).unwrap()),
         strings: vec![
             "entry.main".to_owned(),
             "probe".to_owned(),
@@ -6173,7 +6266,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             },
         ],
         functions: vec![AwbcFunction {
-            definition: crate::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(*blake3::hash(b"crates.arcweft-core.src.awbc.product_step.tests.need_producer_program.definition.0.v1\0").as_bytes()),
+            definition,
             semantic_role: crate::plan::RuntimeFunctionSemanticRole::Ordinary,
             public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
@@ -6201,7 +6294,7 @@ fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
             payload_type: item_ty,
             arguments: Vec::<AwbcHostArgument>::new(),
             kind: AwbcTaskPlanKind::NeedProducer {
-                plan: crate::task::ExpectedTaskPlanKey::new([0; 32]),
+                plan: expected,
                 contract,
                 site,
                 restart,
@@ -6726,7 +6819,12 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
     let image = executor
         .inert_rollback_image()
         .expect("complete inert Product image");
-    let bytes = serde_json::to_vec(&image.product).expect("observation save is inert JSON");
+    let wire = AwbcProductExecutorSaveSnapshot::from_live(
+        &image.product,
+        &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&wire).expect("observation save is inert JSON");
     let saved: AwbcProductExecutorSaveSnapshot =
         serde_json::from_slice(&bytes).expect("typed Product save decodes without live values");
     let executor = executor

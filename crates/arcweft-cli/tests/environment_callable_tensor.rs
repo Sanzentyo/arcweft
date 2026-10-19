@@ -95,9 +95,15 @@ fn environment_tensor_value_preserves_elements_and_one_op_restoration() {
                 &mut awbc_backend,
             );
             let snapshot = executor.inert_rollback_image().unwrap().product;
-            let bytes = serde_json::to_vec(&snapshot).unwrap();
+            let wire =
+                arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
+                    &snapshot,
+                    &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+                )
+                .unwrap();
+            let bytes = serde_json::to_vec(&wire).unwrap();
             let decoded = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(snapshot, decoded);
+            assert_eq!(wire, decoded);
             let restored = executor
                 .restore_inert_snapshot_owned(decoded)
                 .unwrap_or_else(|(_, error)| {

@@ -1573,6 +1573,29 @@ impl<V, P> NeedProducerLaunchRestore<V, P> {
     }
 }
 impl NeedProducerRegistrySaveSnapshot {
+    pub(crate) fn visit_saved_value_roots<E>(
+        &self,
+        visit: &mut impl FnMut(&crate::value::AwbcRuntimeValueSnapshot) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for row in &self.task_admissions {
+            for value in row.spec().request.payloads() {
+                visit(value)?;
+            }
+        }
+        for launch in &self.launches {
+            for argument in launch.start.arguments() {
+                visit(&argument.value)?;
+            }
+            for value in launch.start.task_spec().request.payloads() {
+                visit(value)?;
+            }
+            if let RuntimeNeedProducerState::Ready(value) = &launch.state {
+                visit(value)?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn into_admitted_live(
         self,
         owner: &RuntimeProgramOwner,

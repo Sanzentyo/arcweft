@@ -384,7 +384,12 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     .unwrap();
     assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
     let saved = executor.inert_rollback_image().unwrap().product;
-    let bytes = serde_json::to_vec(&saved).unwrap();
+    let wire = AwbcProductExecutorSaveSnapshot::from_live(
+        &saved,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&wire).unwrap();
     let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut forged = saved.clone();
     forged.fiber.root = AwbcFiberRoot::Entry(AwbcEntryId(0));
@@ -407,13 +412,18 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
         Some(arcweft_core::value::AwbcRuntimeValueSnapshot::Bool(true)),
     ));
     forged.fiber.return_summary = Some("true".to_owned());
-    let (mut executor, _) = executor.restore_inert_snapshot_owned(forged).unwrap_err();
+    let (mut executor, _) = executor.restore_snapshot_owned(forged).unwrap_err();
     assert_eq!(
         executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::NeedHandle(retained.clone())))
     );
     assert_eq!(executor.take_program_result().unwrap(), None);
-    let bytes = serde_json::to_vec(&saved).unwrap();
+    let wire = AwbcProductExecutorSaveSnapshot::from_live(
+        &saved,
+        &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
+    )
+    .unwrap();
+    let bytes = serde_json::to_vec(&wire).unwrap();
     let saved: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
     let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
     assert_eq!(
@@ -467,13 +477,13 @@ fn owned_unit_program_retains_its_typed_result_across_save_restore() {
             .is_empty()
     );
     let saved = executor.inert_rollback_image().unwrap().product;
-    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    let mut executor = executor.restore_snapshot_owned(saved).unwrap();
     assert_eq!(
         executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::Unit))
     );
     let saved = executor.inert_rollback_image().unwrap().product;
-    let mut executor = executor.restore_inert_snapshot_owned(saved).unwrap();
+    let mut executor = executor.restore_snapshot_owned(saved).unwrap();
     assert_eq!(executor.take_program_result().unwrap(), None);
 }
 

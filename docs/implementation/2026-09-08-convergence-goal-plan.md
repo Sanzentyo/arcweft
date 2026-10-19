@@ -20245,3 +20245,95 @@ AWBC/host owners, exact caller/instruction and invocation-binding origin,
 Ready's invocation-sensitive obligation, View, Generic Match, nominal/Sans-I/O,
 pre-copy VM admission, external multi-owner persistence, broader R1507 failures,
 real stop/restore and Native/Web parity and final acceptance remain open.
+
+### 2026-10-19 — preserve Source in the actual AWBC rollback transaction
+
+Inspected main at `96755da6ac2a0e11f18e01657da89cb453efe30a`, with seven owned
+Rust paths and the same fourteen held tracked and three held untracked paths.
+This is a coherent intermediate publication; the full goal remains active.
+The user authorizes intermediate commits without requiring every intermediate
+state to work. No clean, artifact movement, branch, checkout, worktree,
+dependency, feature, profile, jobs or OS setting change occurs.
+
+Supersedes the preceding five-failure state. AwbcProductExecutorSnapshot already
+contains inert value storage throughout its fibers, dialogues, producer state,
+events and observations. Its opaque Source handles retain immutable original
+program leases. It is now Clone in that inert role and is the Product portion
+of the internal rollback image. Rollback directly restores that canonical image;
+it no longer projects through external wire data and loses the original Source.
+The duplicate inert_product_snapshot implementation and its stale live-copy
+comment are deleted. Source-backed rollback and the existing snapshot use one
+owning state grammar.
+
+restore_snapshot_owned owns the sole executor replacement transaction and
+rebuilds the original on failure. The external restore_inert_snapshot_owned
+resolves its single wire format to the inert image before delegating; this
+creates no second runnable affine owner. Serialization remains an explicit
+SaveSnapshot projection, not serialization of retained Source authority.
+The runtime facade uses the admitted projection after its normal snapshot/save
+admission instead of opening a fresh value allowance. The canonical snapshot
+also visits inert roots directly, preserving provenance without cloning them
+into wire data. Its producer-root traversal belongs to the registry owner.
+
+The selected AWBC fixture now first declares the actual original function and
+Start/Await/Return body, including its real local/type graph and matching function
+identity. Its code row asserts the key of that completed original coordinate;
+zero expected keys and Source-free selected success are removed from this
+fixture. This is an original declaration for a compiled fixture, not a runtime
+metadata-to-Core adapter or a claim of genuine autonomous AWBC support.
+
+R1598 Core test check fails on the private TaskPlanIndex import; the fixture
+instead retains its actual original coordinate and derives its expected key
+there. R1599 exposes seven remaining old wire/internal consumer references.
+R1600 Core/RuntimePlan all-test check reaches two incorrect parity-test callees;
+both are repaired with explicit inert-versus-wire roles. These are resolved,
+change-caused intermediate compilation failures, not unavailable checks.
+
+R1601 catalogue build passes with exactly 2009 matched tests, zero excluded.
+R1602 executes every case: 2009 pass, zero fail, zero skip, 32.507 seconds,
+actual exit 0. Catalogue identities, all 3929 frozen inputs and fourteen held
+paths match with zero drift at execution completion. The previous five AWBC
+save/defer/Ready/continuation/rollback failures all pass, together with Native
+and decoded AWBC completed-key parity and the original-owner/resource tests.
+R1604 canonical structural gate passes, actual 0; whitespace passes.
+
+The changed CLI environment tensor test and RuntimePlan parity tests explicitly
+project wire data before their JSON round trips, while internal restore tests
+use the opaque inert image. CLI tensor catalogue R1603 reaches a real downstream compilation failure:
+runtime-driver session persistence still expects wire data from the internal
+rollback image. That consumer now obtains the explicit AwbcProduct save variant
+from the executor's owning save API, preserving the existing typed error mapping.
+The command is still finishing its other first-build dependencies at this
+publication; its retry and the one-test execution are not yet passed. Clean
+removed prior output, so this first CLI build rebuilds graphics, text, JIT and
+other dependencies. No CLI execution/check, current Clippy/doctest, complete
+reverse/workspace or Tier 2 pass is claimed. Finish that command and retry the
+same target, then run its case and applicable lint; do not restart the clean or
+repeat the already passing 2009 cases without a relevant source change. The
+subsequent driver consumer repair is outside the Core/RuntimePlan suite's inputs.
+
+Canonical bytes/physical LOC/embedded-test LOC from R1604: AWBC snapshot owner
+169061/4004/180; its test owner 275974/7014/0; runtime facade 38914/994/0;
+registry 151327/4042/987; CLI tensor test 10750/308/0. The snapshot owner retains
+one product state and ownership transaction, the registry owns its value roots,
+and test changes cover the same wire/owner boundary. The large-owner cohesion
+disposition remains applicable. No extra catalog, I/O, unsafe or public split
+facade is introduced. The changed Core/RuntimePlan/CLI/runtime-driver roots resolve to the same
+53-package reverse closure with all 99 manifest/lock inputs unchanged.
+
+While the CLI build runs, investigation confirms another real Source mismatch:
+semantic_facts accepts an AssetLoad positional operand, and AWBC lowering emits
+its canonical metadata argument name. Source preparation and selected static ABI
+currently require the original operand spelling to equal that canonical name;
+Native evaluation also copies the original spelling. Next express the source
+binding rule once on its owning request schema and migrate sema/Source/Native/
+AWBC consumers, preserving source order, complete original keys, no-spread,
+pre-copy resource checks and canonical transport names. Do not add a spelling
+exception at a consumer or reconstruct a Source from metadata.
+
+The final public switch and raw/default digest/API cleanup, all fourteen Host
+request kinds, autonomous and standalone owners, exact caller/instruction and
+invocation-binding origin, invocation-sensitive Ready, actual View, Generic
+Match, nominal/Sans-I/O, VM pre-copy admission, external multi-owner persistence,
+broader R1507 failures, real Native/Web parity and final workspace/Tier 2
+acceptance remain open. This passing slice does not complete the full goal.
