@@ -20151,3 +20151,97 @@ zero tests executed. Diagnostics are obsolete metadata producer/semantic digest
 methods, old launch fields and old start/restore signatures. This is an explicit
 change-caused test migration failure. The only frozen-input drift during this
 command is this noncompiled implementation note; all Rust inputs remain exact.
+
+### 2026-10-19 — execute Source registry migration and retain original owners
+
+Inspected main at `adf3cd3d8af56e748210984ad0caeb4c47e12a6b`, with twelve
+owned Rust paths and the same fourteen held tracked and three held untracked
+paths. The full convergence goal remains active. This is an intermediate cut
+with five actual required test failures, explicitly permitted by the user's
+checkpoint instruction. No additional clean, artifact movement, branch,
+worktree, checkout, dependency, profile, jobs or OS change occurs.
+
+Supersedes the preceding uncompiled-test and unproven-selected-parity state.
+Direct registry fixtures now declare and seal actual original functions and
+Task slots, using the supplied real payload graph. They obtain starts through
+the Source factory. String-only pending fixtures state that contract explicitly;
+program-custody fixtures declare their actual Bool outcome. Live starts are not
+made Clone. Restore fixtures use the admitted inert storage role. Request-schema
+byte grammar tests now hash that nested schema fragment as a raw test transcript,
+not as a live plan-key issuer. The old test claiming completed keys exclude
+source-control fields is replaced with actual Source/instance mutation coverage.
+Exact malformed-frontier errors and atomic-empty-registry assertions remain.
+
+R1591 Core all-feature locked test check reduces the forty-five migration errors
+to one stale inspect_start_visit call; that call is repaired. R1592 catalogue
+build then passes with exactly 2007 matched tests, zero excluded, and all required
+new and selected-key cases present. R1593 runs every case: 1989 pass, eighteen
+fail, zero skip, 30.823 seconds, actual nextest exit 100. All 3929 source hashes,
+case identities and fourteen held paths match. Both Native and decoded AWBC
+completed-key parity tests now pass in actual execution. Both new inert Source
+assertion tests pass, including missing/zero expected keys, wrong backend,
+invalid code-local row, no extra live lease on rejection, and poisoned retry.
+The new cumulative retained-start test exposes a real first-error inconsistency.
+
+Retained admission now temporarily selects the genuine program lease carried
+by an already owning Source. This is not a candidate-derived owner or a new
+allowance: one bank keeps all counters, limits, storage provenance and first
+failure. A private Drop guard restores the outer owner on success, rejection
+and unwind. Source arguments, selected task receipts, Ready state, snapshot
+conversion and activation select that retained original lease, including after
+replacement. Temporary borrowed receipt/Source indexes are bounded joins over
+the admitted group, not another persisted catalog or authority.
+
+The first returned typed error is now retained intact, including its program/type
+context; it no longer changes to a differently wrapped resource error on retry.
+Both composite and ordinary admission first consult shared bank status, and
+both retain hard resource failures. Selected Source error conversion preserves
+its existing typed admission error instead of stringifying it. No resource
+condition or assertion is weakened.
+
+R1594 Core all-feature locked test check passes, actual 0, 1m22s. R1595 catalogue
+passes with exactly 2009 cases and zero excluded. R1596 executes every case:
+2004 pass, five fail, zero skip, 30.866 seconds, actual nextest exit 100. The
+catalogue set, all 3929 frozen inputs and held paths match with zero drift.
+All added tests pass: exact/short/prefixed original work and sticky failure;
+original Bool Ready retained against a replacement declaring the same type ID
+as String, including rejecting a replacement-only String payload; and all
+Native/AWBC owner-scope pairs preserving the outer lease and consumed budget
+through unwind and exclusive bank transfer. Native continuation, field access,
+Await/capture, environment and fiber resource cases that failed in R1593 now
+pass. Both completed-key parity tests continue to pass.
+
+The exact remaining R1596 failures are AWBC product tests:
+- must_be_quiescent_need_save_returns_typed_defer;
+- ready_need_producer_payload_is_checked_before_publication_and_on_restore;
+- restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revision;
+- program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frames;
+- program_continuation_rolls_back_awbc_context_and_inputs_after_custody_revision_failure.
+
+The first three use need_producer_program, whose explicit producer declaration
+is currently unused while its AWBC row still asserts zero and has no original
+Source. Migrate this fixture to a truthful original Start/Await/Return body and
+its actual completed key. The other two expose a real internal rollback bug:
+AwbcProductExecutorRollbackImage.product uses external SaveSnapshot wire data,
+so into_live_for_program discards the retained Source namespace/lease and tries
+to resolve it against the current AWBC program with no original Source. Preserve
+opaque original Source in the internal inert rollback role, sharing the actual
+product grammar with wire data where appropriate; do not add metadata fallback,
+site scans, fake Core owners or a second external reader.
+
+R1597 canonical structural gate passes, actual 0; whitespace passes. Canonical
+bytes/physical LOC/embedded-test LOC: registry 150578/4019/987 (base 3791 LOC,
+growth 228); selected input 9981/256/0; retained bank 20524/553/0; common test
+fixtures 10898/284/0. Core dependency fan-in/fan-out remains 31/7, development
+4/5; all 99 manifest/lock inputs and the 53-package reverse closure are unchanged.
+The registry remains the launch/state/journal owner, the bank owns scoped
+admission and error continuity, and Source owns its immutable original program.
+The larger registry test block exercises that same boundary; no public API is
+widened to split files. No I/O, unsafe or parallel authority is introduced.
+
+No current Clippy, doctest, complete reverse/workspace or Tier 2 pass is claimed.
+The final public switch, all fourteen Host request kinds, genuine autonomous
+AWBC/host owners, exact caller/instruction and invocation-binding origin,
+Ready's invocation-sensitive obligation, View, Generic Match, nominal/Sans-I/O,
+pre-copy VM admission, external multi-owner persistence, broader R1507 failures,
+real stop/restore and Native/Web parity and final acceptance remain open.

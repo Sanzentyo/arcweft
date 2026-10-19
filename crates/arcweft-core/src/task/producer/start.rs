@@ -149,7 +149,7 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
         &self,
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        let result = (|| {
+        let result = admission.with_program_owner(self.source().program_owner(), |admission| {
             let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
             let mut meter = admission.task_source_meter(limits)?;
             let source = self.source().borrow(limits, &mut meter).map_err(|error| {
@@ -162,9 +162,7 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
             })?;
             let mut prepared = source
                 .prepare_selected_producer(self.source().program(), admission)
-                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                })?;
+                .map_err(AwbcRuntimeValueSnapshotError::from)?;
             if let Some(binding) = &self.binding {
                 prepared
                     .admission
@@ -172,9 +170,7 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
             }
             let canonical = prepared
                 .producer_spec(&self.arguments, self.binding.as_ref())
-                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                })?;
+                .map_err(AwbcRuntimeValueSnapshotError::from)?;
             if !canonical.same_instance_contract(&self.producer)
                 || self.restart != prepared.metadata.restart()
             {
@@ -184,10 +180,8 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
             }
             prepared
                 .validate_specification(&canonical, &self.arguments, &self.task_spec)
-                .map_err(|error| AwbcRuntimeValueSnapshotError::Message {
-                    message: error.to_string(),
-                })
-        })();
+                .map_err(AwbcRuntimeValueSnapshotError::from)
+        });
         if let Err(error) = &result {
             admission.retain_failure(error.clone());
         }
@@ -210,10 +204,8 @@ impl Clone for SavedStart {
 }
 
 impl RuntimeNeedProducerStart {
-    pub(super) fn snapshot_admitted(
-        &self,
-        owner: &super::RuntimeProgramOwner,
-    ) -> Result<SavedStart, AwbcRuntimeValueSnapshotError> {
+    pub(super) fn snapshot_admitted(&self) -> Result<SavedStart, AwbcRuntimeValueSnapshotError> {
+        let owner = self.source().program_owner();
         Ok(SavedStart {
             producer: self.producer.clone(),
             arguments: self
@@ -224,14 +216,14 @@ impl RuntimeNeedProducerStart {
                         name: argument.name.clone(),
                         value: AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
                             &argument.value,
-                            owner,
+                            &owner,
                         )?,
                     })
                 })
                 .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
             task_spec: TaskSpec::<AwbcRuntimeValueSnapshot>::from_admitted_live(
                 &self.task_spec,
-                owner,
+                &owner,
             )?,
             restart: self.restart,
             binding: self.binding.clone(),
@@ -242,8 +234,8 @@ impl RuntimeNeedProducerStart {
 impl SavedStart {
     pub(super) fn into_admitted_live(
         self,
-        owner: &super::RuntimeProgramOwner,
     ) -> Result<RuntimeNeedProducerStart, AwbcRuntimeValueSnapshotError> {
+        let owner = self.source().program_owner();
         Ok(RuntimeNeedProducerStart {
             producer: self.producer,
             arguments: self
@@ -252,11 +244,11 @@ impl SavedStart {
                 .map(|argument| {
                     Ok(NeedProducerRuntimeArgument {
                         name: argument.name,
-                        value: argument.value.into_admitted_runtime_value(owner)?,
+                        value: argument.value.into_admitted_runtime_value(&owner)?,
                     })
                 })
                 .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-            task_spec: self.task_spec.into_admitted_live(owner)?,
+            task_spec: self.task_spec.into_admitted_live(&owner)?,
             restart: self.restart,
             binding: self.binding,
         })

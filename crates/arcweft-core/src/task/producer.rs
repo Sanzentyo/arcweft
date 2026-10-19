@@ -741,9 +741,6 @@ pub enum NeedProducerRequestError {
 }
 
 impl NeedProducerTaskPlan {
-    /// Recomputes the selected producer plan transcript from its owning fields.
-    /// This does not accept or read a stored self-digest. Count conversion remains
-    /// checked at the encoder boundary even for constructor-validated plans.
     /// Inert endpoint metadata for the original source's control contract.
     /// This excludes task keys and issues no completed semantic proof.
     pub(crate) fn encode_control_metadata(
@@ -1490,8 +1487,19 @@ impl<V, P> NeedProducerRegistryRestore<V, P> {
     {
         admission.validate_metadata_collection(self.task_admissions.len())?;
         admission.validate_metadata_collection(self.launches.len())?;
+        let sources = self
+            .launches
+            .iter()
+            .map(|launch| (launch.correlation.task_id, launch.start.source()))
+            .collect::<BTreeMap<_, _>>();
         for row in &self.task_admissions {
-            row.admit_retained(admission)?;
+            if let Some(source) = sources.get(&row.task_id()) {
+                admission.with_program_owner(source.program_owner(), |admission| {
+                    row.admit_retained(admission)
+                })?;
+            } else {
+                row.admit_retained(admission)?;
+            }
         }
         for launch in &self.launches {
             launch.admit_retained(admission)?;
@@ -1555,11 +1563,13 @@ impl<V, P> NeedProducerLaunchRestore<V, P> {
             self.task_terminal,
         ))?;
         self.start.admit_retained(admission)?;
-        self.state.admit_retained(
-            &self.start.task_spec.outcome,
-            self.start.task_spec.policy,
-            admission,
-        )
+        admission.with_program_owner(self.start.source().program_owner(), |admission| {
+            self.state.admit_retained(
+                &self.start.task_spec.outcome,
+                self.start.task_spec.policy,
+                admission,
+            )
+        })
     }
 }
 impl NeedProducerRegistrySaveSnapshot {
@@ -1567,27 +1577,37 @@ impl NeedProducerRegistrySaveSnapshot {
         self,
         owner: &RuntimeProgramOwner,
     ) -> Result<NeedProducerRegistryRestore, crate::value::AwbcRuntimeValueSnapshotError> {
-        Ok(NeedProducerRegistryRestore {
-            task_admissions: self
-                .task_admissions
-                .into_iter()
-                .map(|row| {
-                    let (spec, handle) = row.into_parts();
-                    Ok(TaskSubmission {
-                        spec: spec.into_admitted_live(owner)?,
-                        handle,
-                    })
+        let sources = self
+            .launches
+            .iter()
+            .map(|launch| (launch.correlation.task_id, launch.start.source()))
+            .collect::<BTreeMap<_, _>>();
+        let task_admissions = self
+            .task_admissions
+            .into_iter()
+            .map(|row| {
+                let (spec, handle) = row.into_parts();
+                let original = sources
+                    .get(&handle.correlation.task_id)
+                    .map(|source| source.program_owner());
+                Ok(TaskSubmission {
+                    spec: spec.into_admitted_live(original.as_ref().unwrap_or(owner))?,
+                    handle,
                 })
-                .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+            })
+            .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?;
+        Ok(NeedProducerRegistryRestore {
+            task_admissions,
             launches: self
                 .launches
                 .into_iter()
                 .map(|launch| {
+                    let original = launch.start.source().program_owner();
                     Ok(NeedProducerLaunchRestore {
                         invocation: launch.invocation,
-                        start: launch.start.into_admitted_live(owner)?,
+                        start: launch.start.into_admitted_live()?,
                         correlation: launch.correlation,
-                        state: launch.state.into_admitted_live(owner)?,
+                        state: launch.state.into_admitted_live(&original)?,
                         publication: launch.publication,
                         task_submitted: launch.task_submitted,
                         task_terminal: launch.task_terminal,
@@ -1689,7 +1709,13 @@ impl NeedProducerRegistry {
         admission.validate_metadata_collection(self.task_journal.accepted_len())?;
         admission.validate_metadata_collection(self.launches.len())?;
         for (spec, handle) in self.task_journal.borrowed_submissions() {
-            spec.admit_retained(admission)?;
+            if let Some(launch) = self.launch_for_correlation(&handle.correlation) {
+                admission.with_program_owner(launch.source().program_owner(), |admission| {
+                    spec.admit_retained(admission)
+                })?;
+            } else {
+                spec.admit_retained(admission)?;
+            }
             admission.validate_metadata(&handle)?;
         }
         for launch in self.launches.values() {
@@ -1701,11 +1727,13 @@ impl NeedProducerRegistry {
                 launch.task_terminal,
             ))?;
             launch.start.admit_retained(admission)?;
-            launch.state.admit_retained(
-                &launch.start.task_spec.outcome,
-                launch.start.task_spec.policy,
-                admission,
-            )?;
+            admission.with_program_owner(launch.source().program_owner(), |admission| {
+                launch.state.admit_retained(
+                    &launch.start.task_spec.outcome,
+                    launch.start.task_spec.policy,
+                    admission,
+                )
+            })?;
         }
         admission.validate_metadata_collection(self.invocation_launches.len())?;
         for (invocation, launch) in self.invocations() {
@@ -1731,13 +1759,15 @@ impl NeedProducerRegistry {
     ) -> Result<NeedProducerRegistrySaveSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(NeedProducerRegistrySaveSnapshot {
             task_admissions: self.task_journal.borrowed_submissions().map(|(spec, handle)| {
-                Ok(TaskSubmission { spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(spec, owner)?, handle })
+                let original = self.launch_for_correlation(&handle.correlation).map(|launch| launch.source().program_owner());
+                Ok(TaskSubmission { spec: super::TaskSpec::<crate::value::AwbcRuntimeValueSnapshot>::from_admitted_live(spec, original.as_ref().unwrap_or(owner))?, handle })
             }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
             launches: self.launches.values().map(|launch| {
+                let original = launch.source().program_owner();
                 Ok(NeedProducerLaunchSaveSnapshot {
-                    invocation: launch.invocation, start: launch.start.snapshot_admitted(owner)?,
+                    invocation: launch.invocation, start: launch.start.snapshot_admitted()?,
                     correlation: launch.correlation,
-                    state: RuntimeNeedProducerState::from_admitted_live(&launch.state, owner)?, publication: launch.publication,
+                    state: RuntimeNeedProducerState::from_admitted_live(&launch.state, &original)?, publication: launch.publication,
                     task_submitted: launch.task_submitted, task_terminal: launch.task_terminal,
                 })
             }).collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
@@ -3123,6 +3153,76 @@ mod identity_tests {
         .expect("typed producer plan")
     }
 
+    fn registry_plan(
+        site: u8,
+        contract: u8,
+        policy: TaskPolicy,
+        restart: HostRestartPolicy,
+        class: TaskClass,
+    ) -> Arc<crate::plan::RuntimePlan> {
+        source_fixture(producer_plan(site, contract, policy, restart, class))
+    }
+
+    fn source_fixture(metadata: NeedProducerTaskPlan) -> Arc<crate::plan::RuntimePlan> {
+        let mut builder = crate::plan::RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [crate::plan::RuntimePlanTypeSeed::new(
+                    metadata.payload_type(),
+                    crate::plan::RuntimePlanTypeProjection::Bool,
+                )],
+                [],
+            )
+            .unwrap();
+        crate::tests::selected_producer_plan(builder, metadata, Vec::new())
+    }
+
+    fn registry_site(plan: &crate::plan::RuntimePlan) -> NeedProducerSiteDigest {
+        let crate::plan::FlowOp::StartNeedProducer { target, .. } = &plan
+            .function_sites()
+            .iter()
+            .next()
+            .unwrap()
+            .body()
+            .executable()
+            .unwrap()
+            .ops()[0]
+        else {
+            unreachable!()
+        };
+        target.plan().site()
+    }
+
+    fn start(
+        plan: &Arc<crate::plan::RuntimePlan>,
+        generation: GenerationId,
+    ) -> RuntimeNeedProducerStart {
+        crate::tests::selected_producer_start(plan, generation, Vec::new())
+    }
+
+    fn restore_admission(
+        plan: &Arc<crate::plan::RuntimePlan>,
+    ) -> crate::value::RuntimeRetainedValueAdmission {
+        crate::value::RuntimeRetainedValueAdmission::for_program(
+            RuntimeProgramOwner::Plan(Arc::clone(plan)),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Tests the schema fragment nested in original control metadata. This is
+    /// deliberately a raw test transcript hash, never a live Task plan key.
+    fn request_schema_hash(
+        plan: &NeedProducerTaskPlan,
+    ) -> Result<blake3::Hash, super::super::semantic::TaskSemanticEncodingError> {
+        let mut meter = super::super::semantic::TaskSemanticMeter::new(100_000, 1_000_000);
+        let mut encoder = super::super::semantic::TaskSemanticEncoder::new(
+            b"arcweft.task.request-schema.v1\0",
+            &mut meter,
+        );
+        plan.encode_request_schema(&mut encoder);
+        encoder.finish()
+    }
+
     #[test]
     fn generation_zero_and_join_ordinal_are_valid_values() {
         assert_eq!(GenerationId::new(0).get(), 0);
@@ -3134,12 +3234,22 @@ mod identity_tests {
             launch.state(),
             RuntimeNeedProducerState::NotStarted
         ));
+        let owner = launch.source().program_owner();
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        launch.start.admit_retained(&mut admission).unwrap();
+        let start = launch
+            .start
+            .snapshot_admitted()
+            .unwrap()
+            .into_admitted_live()
+            .unwrap();
         NeedProducerLaunchRestore {
             invocation: launch.invocation(),
-            plan: launch.plan().clone(),
-            arguments: launch.start.arguments().to_vec(),
+            start,
             correlation: launch.correlation(),
-            task_spec: launch.start.task_spec().clone(),
             state: RuntimeNeedProducerState::NotStarted,
             publication: launch.publication(),
             task_submitted: launch.task_submitted(),
@@ -3180,7 +3290,7 @@ mod identity_tests {
             HostRestartPolicy::Restartable,
             TaskClass::AssetDecode,
         );
-        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        let mut transcript = b"arcweft.task.request-schema.v1\0".to_vec();
         transcript.push(1);
         transcript.extend_from_slice(&5_u32.to_le_bytes());
         transcript.extend_from_slice(b"asset");
@@ -3190,7 +3300,7 @@ mod identity_tests {
         transcript.extend_from_slice(&0_u32.to_le_bytes());
         transcript.push(1);
         assert_eq!(
-            plan.semantic_digest().unwrap().as_bytes(),
+            request_schema_hash(&plan).unwrap().as_bytes(),
             blake3::hash(&transcript).as_bytes()
         );
     }
@@ -3216,7 +3326,7 @@ mod identity_tests {
             RuntimeSemanticTypeId::from_bytes([8; 32]),
         ]
         .into_boxed_slice();
-        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        let mut transcript = b"arcweft.task.request-schema.v1\0".to_vec();
         transcript.push(1);
         transcript.extend_from_slice(&5_u32.to_le_bytes());
         transcript.extend_from_slice(b"asset");
@@ -3232,19 +3342,19 @@ mod identity_tests {
         transcript.extend_from_slice(&[8; 32]);
         transcript.push(1);
         assert_eq!(
-            plan.semantic_digest().unwrap().as_bytes(),
+            request_schema_hash(&plan).unwrap().as_bytes(),
             blake3::hash(&transcript).as_bytes()
         );
-        let before = plan.semantic_digest().unwrap();
+        let before = request_schema_hash(&plan).unwrap();
         plan.argument_types.reverse();
-        assert_ne!(before, plan.semantic_digest().unwrap());
+        assert_ne!(before, request_schema_hash(&plan).unwrap());
         plan.argument_types.reverse();
         if let NeedProducerRequestProjection::ExternCapability { argument_names, .. } =
             &mut plan.request
         {
             argument_names.reverse();
         }
-        assert_ne!(before, plan.semantic_digest().unwrap());
+        assert_ne!(before, request_schema_hash(&plan).unwrap());
     }
 
     #[test]
@@ -3261,7 +3371,7 @@ mod identity_tests {
             argument_name: "clip".to_owned(),
         };
         plan.argument_types = vec![RuntimeSemanticTypeId::from_bytes([7; 32])].into_boxed_slice();
-        let mut transcript = b"arcweft.need.producer-task-plan.v1\0".to_vec();
+        let mut transcript = b"arcweft.task.request-schema.v1\0".to_vec();
         transcript.extend_from_slice(&[0, 1]);
         transcript.extend_from_slice(&4_u32.to_le_bytes());
         transcript.extend_from_slice(b"clip");
@@ -3269,7 +3379,7 @@ mod identity_tests {
         transcript.extend_from_slice(&[7; 32]);
         transcript.push(0);
         assert_eq!(
-            plan.semantic_digest().unwrap().as_bytes(),
+            request_schema_hash(&plan).unwrap().as_bytes(),
             blake3::hash(&transcript).as_bytes()
         );
         plan.request = NeedProducerRequestProjection::AssetLoad {
@@ -3277,78 +3387,178 @@ mod identity_tests {
             argument_name: "clip".to_owned(),
         };
         assert_ne!(
-            plan.semantic_digest().unwrap().as_bytes(),
+            request_schema_hash(&plan).unwrap().as_bytes(),
             blake3::hash(&transcript).as_bytes()
         );
     }
 
     #[test]
-    fn producer_task_plan_excludes_instance_coordinates_and_scheduling_metadata() {
+    fn selected_instance_and_plan_commit_original_control_metadata() {
         let base = producer_plan(
             1,
             2,
             TaskPolicy::JoinSameKey,
             HostRestartPolicy::Restartable,
-            TaskClass::AssetDecode,
+            TaskClass::Io,
         );
-        let another_site = producer_plan(
-            3,
+        let original = source_fixture(base.clone());
+        let expected = start(&original, GenerationId::new(0));
+        let changes: [fn(&mut NeedProducerTaskPlan); 7] = [
+            |plan| plan.site = NeedProducerSiteDigest::from_bytes([3; 32]),
+            |plan| plan.policy = TaskPolicy::AlwaysStart,
+            |plan| plan.restart = HostRestartPolicy::MustBeQuiescent,
+            |plan| plan.priority = TaskPriority(12),
+            |plan| plan.cancel_scope = CancelScopeId("another scope".into()),
+            |plan| plan.class = TaskClass::Cpu,
+            |plan| plan.payload_type = RuntimeSemanticTypeId::from_bytes([10; 32]),
+        ];
+        for (index, change) in changes.into_iter().enumerate() {
+            let mut metadata = base.clone();
+            change(&mut metadata);
+            let program = source_fixture(metadata);
+            let changed = start(&program, GenerationId::new(0));
+            assert_ne!(
+                expected.source().task_plan().key(),
+                changed.source().task_plan().key(),
+                "control field {index}"
+            );
+            assert_ne!(
+                expected.producer().instance_key().unwrap(),
+                changed.producer().instance_key().unwrap(),
+                "instance field {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn selected_retained_start_uses_the_original_bank_and_keeps_its_first_failure() {
+        let plan = registry_plan(
+            1,
             2,
             TaskPolicy::JoinSameKey,
             HostRestartPolicy::Restartable,
-            TaskClass::AssetDecode,
+            TaskClass::Io,
         );
-        assert_eq!(
-            base.semantic_digest().expect("valid base plan"),
-            another_site
-                .semantic_digest()
-                .expect("valid alternate site plan")
+        let input = start(&plan, GenerationId::new(7));
+        let mut measured = restore_admission(&plan);
+        input.admit_retained(&mut measured).unwrap();
+        let work = measured.work().consumed();
+        assert!(work > 1);
+        let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+        let bank = |maximum| {
+            crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits {
+                    max_validation_work: maximum,
+                    ..crate::entry::RuntimeSchemaLimits::engine_default()
+                },
+            )
+        };
+        let mut exact = bank(work);
+        input.admit_retained(&mut exact).unwrap();
+        assert_eq!(exact.work().consumed(), work);
+        assert!(
+            exact.try_into_state().is_ok(),
+            "Source must release its temporary work alias"
         );
-        assert_ne!(
-            base.producer_spec(&[])
-                .expect("producer spec")
-                .instance_key()
-                .expect("site-specific key"),
-            another_site
-                .producer_spec(&[])
-                .expect("producer spec")
-                .instance_key()
-                .expect("site-specific key")
-        );
-        let changed_policy = producer_plan(
+        for prefix in [false, true] {
+            let mut short = bank(if prefix { work } else { work - 1 });
+            if prefix {
+                short.validate_metadata(&17_u64).unwrap();
+            }
+            let leases = Arc::strong_count(&plan);
+            let error = input.admit_retained(&mut short).unwrap_err();
+            let consumed = short.work().consumed();
+            assert_eq!(consumed, if prefix { work + 1 } else { work });
+            assert_eq!(short.status(), Err(error.clone()));
+            assert_eq!(input.admit_retained(&mut short), Err(error));
+            assert_eq!(short.work().consumed(), consumed);
+            assert_eq!(Arc::strong_count(&plan), leases);
+        }
+    }
+
+    #[test]
+    fn selected_ready_retains_its_original_type_graph_across_program_replacement() {
+        let original = registry_plan(
             1,
             2,
-            TaskPolicy::AlwaysStart,
+            TaskPolicy::JoinSameKey,
             HostRestartPolicy::Restartable,
-            TaskClass::AssetDecode,
+            TaskClass::Io,
         );
-        assert_eq!(
-            base.semantic_digest().expect("valid base plan"),
-            changed_policy
-                .semantic_digest()
-                .expect("valid alternate policy plan")
+        let metadata = producer_plan(
+            1,
+            2,
+            TaskPolicy::JoinSameKey,
+            HostRestartPolicy::Restartable,
+            TaskClass::Io,
         );
-        let mut metadata = base.clone();
-        metadata.priority = TaskPriority(12);
-        metadata.cancel_scope = CancelScopeId("another scope".into());
-        metadata.class = TaskClass::Cpu;
-        assert_eq!(
-            base.semantic_digest().unwrap(),
-            metadata.semantic_digest().unwrap()
+        let mut builder = crate::plan::RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [crate::plan::RuntimePlanTypeSeed::new(
+                    metadata.payload_type(),
+                    crate::plan::RuntimePlanTypeProjection::String,
+                )],
+                [],
+            )
+            .unwrap();
+        let replacement = crate::tests::selected_producer_plan(builder, metadata, Vec::new());
+        let current = RuntimeProgramOwner::Plan(replacement);
+        let mut registry = NeedProducerRegistry::default();
+        let proof = registry
+            .inspect_start_visit(
+                RuntimePersistentFiberId::from_allocated(3),
+                start(&original, GenerationId::new(7)),
+            )
+            .unwrap();
+        let admitted = registry.commit_start_visit(proof);
+        let event = TaskEvent {
+            correlation: admitted.correlation(),
+            cursor: TaskPublicationCursor {
+                logical_epoch: LogicalEpoch(1),
+                sequence: TaskSequence(1),
+            },
+            kind: TaskEventKind::Ready(RuntimePayload(RuntimeValue::Bool(true))),
+        };
+        assert!(matches!(
+            registry.publish_task_event_owned(event),
+            Ok(NeedProducerOwnedTaskEventDisposition::Published)
+        ));
+        let mut bank = crate::value::RuntimeRetainedValueAdmission::for_program(
+            current.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        assert_eq!(
-            base.producer_spec(&[]).unwrap().instance_key().unwrap(),
-            metadata.producer_spec(&[]).unwrap().instance_key().unwrap()
+        let image = registry.snapshot_retained(&current, &mut bank).unwrap();
+        assert!(bank.program_owner().unwrap().same_program(&current));
+        let work = bank.work().consumed();
+        image.admit_retained(&mut bank).unwrap();
+        assert!(bank.work().consumed() > work);
+        assert!(bank.program_owner().unwrap().same_program(&current));
+        let mut forged = image.clone();
+        forged.launches[0].state = RuntimeNeedProducerState::Ready(
+            crate::value::AwbcRuntimeValueSnapshot::String("replacement-only payload".into()),
         );
-        let mut payload = base.clone();
-        payload.payload_type = RuntimeSemanticTypeId::from_bytes([10; 32]);
-        assert_eq!(
-            base.semantic_digest().unwrap(),
-            payload.semantic_digest().unwrap()
+        let mut failed = crate::value::RuntimeRetainedValueAdmission::for_program(
+            current.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        assert_ne!(
-            base.producer_spec(&[]).unwrap().instance_key().unwrap(),
-            payload.producer_spec(&[]).unwrap().instance_key().unwrap()
+        let error = forged.admit_retained(&mut failed).unwrap_err();
+        assert_eq!(failed.status(), Err(error));
+        assert!(failed.program_owner().unwrap().same_program(&current));
+        let mut restored = NeedProducerRegistry::default();
+        restored
+            .restore_admitted_registry_with_policy(
+                image.into_admitted_live(&current).unwrap(),
+                NeedProducerRestorePolicy::Rollback,
+            )
+            .unwrap();
+        let launch = restored
+            .launch_for_correlation(&admitted.correlation())
+            .unwrap();
+        assert!(launch.source().belongs_to(&original));
+        assert!(
+            matches!(launch.state(), RuntimeNeedProducerState::Ready(value) if value.value() == &RuntimeValue::Bool(true))
         );
     }
 
@@ -3460,24 +3670,23 @@ mod identity_tests {
                 .expect("empty nominal authority"),
             )
             .expect("original Need<Bool> outcome rows");
-        let owner =
-            RuntimeProgramOwner::Plan(Arc::new(builder.finish().expect("outcome owner plan")));
+        let plan = crate::tests::selected_producer_plan(
+            builder,
+            producer_plan(
+                2,
+                3,
+                TaskPolicy::AlwaysStart,
+                HostRestartPolicy::Restartable,
+                TaskClass::Io,
+            ),
+            Vec::new(),
+        );
+        let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
         let generation = GenerationId::new(3);
         let fiber = RuntimePersistentFiberId::from_allocated(7);
         let mut registry = NeedProducerRegistry::default();
         let proof = registry
-            .inspect_start_visit(
-                generation,
-                fiber,
-                producer_plan(
-                    2,
-                    3,
-                    TaskPolicy::AlwaysStart,
-                    HostRestartPolicy::Restartable,
-                    TaskClass::Io,
-                ),
-                Vec::new(),
-            )
+            .inspect_start_visit(fiber, start(&plan, generation))
             .expect("producer start preflight");
         let admission = registry.commit_start_visit(proof);
         let need = admission.need().clone();
@@ -3530,7 +3739,7 @@ mod identity_tests {
     fn need_producer_registry_replays_join_and_advances_always_start_per_instance() {
         let generation = GenerationId::new(8);
         let fiber = RuntimePersistentFiberId::from_allocated(17);
-        let join_plan = producer_plan(
+        let join_plan = registry_plan(
             1,
             2,
             TaskPolicy::JoinSameKey,
@@ -3539,10 +3748,10 @@ mod identity_tests {
         );
         let mut registry = NeedProducerRegistry::default();
         let first_token = registry
-            .begin_invocation(generation, fiber, join_plan.site())
+            .begin_invocation(generation, fiber, registry_site(&join_plan))
             .expect("first token");
         let first = registry
-            .admit_start(first_token, join_plan.clone(), Vec::new())
+            .admit_start(first_token, start(&join_plan, first_token.generation))
             .expect("first join producer");
         assert_eq!(first.disposition(), NeedProducerTaskDisposition::Ensure);
         assert_eq!(
@@ -3551,23 +3760,23 @@ mod identity_tests {
         );
 
         let replay = registry
-            .admit_start(first_token, join_plan.clone(), Vec::new())
+            .admit_start(first_token, start(&join_plan, first_token.generation))
             .expect("same accepted invocation replays");
         assert_eq!(replay.disposition(), NeedProducerTaskDisposition::Reuse);
         assert_eq!(replay.need(), first.need());
         assert_eq!(replay.correlation().task_id, first.correlation().task_id);
 
         let joined_token = registry
-            .begin_invocation(generation, fiber, join_plan.site())
+            .begin_invocation(generation, fiber, registry_site(&join_plan))
             .expect("next checked invocation");
         let joined = registry
-            .admit_start(joined_token, join_plan.clone(), Vec::new())
+            .admit_start(joined_token, start(&join_plan, joined_token.generation))
             .expect("join existing producer");
         assert_eq!(joined.disposition(), NeedProducerTaskDisposition::Reuse);
         assert_eq!(joined.need(), first.need());
         assert_eq!(registry.invocations().count(), 2);
 
-        let changed_plan = producer_plan(
+        let changed_plan = registry_plan(
             1,
             4,
             TaskPolicy::JoinSameKey,
@@ -3575,11 +3784,11 @@ mod identity_tests {
             TaskClass::Io,
         );
         assert_eq!(
-            registry.admit_start(first_token, changed_plan, Vec::new()),
+            registry.admit_start(first_token, start(&changed_plan, first_token.generation)),
             Err(NeedProducerAdmissionError::InvocationSpecificationConflict)
         );
 
-        let always_plan = producer_plan(
+        let always_plan = registry_plan(
             2,
             3,
             TaskPolicy::AlwaysStart,
@@ -3587,16 +3796,22 @@ mod identity_tests {
             TaskClass::Io,
         );
         let always_first_token = registry
-            .begin_invocation(generation, fiber, always_plan.site())
+            .begin_invocation(generation, fiber, registry_site(&always_plan))
             .expect("AlwaysStart token 1");
         let always_first = registry
-            .admit_start(always_first_token, always_plan.clone(), Vec::new())
+            .admit_start(
+                always_first_token,
+                start(&always_plan, always_first_token.generation),
+            )
             .expect("AlwaysStart launch 1");
         let always_second_token = registry
-            .begin_invocation(generation, fiber, always_plan.site())
+            .begin_invocation(generation, fiber, registry_site(&always_plan))
             .expect("AlwaysStart token 2");
         let always_second = registry
-            .admit_start(always_second_token, always_plan, Vec::new())
+            .admit_start(
+                always_second_token,
+                start(&always_plan, always_second_token.generation),
+            )
             .expect("AlwaysStart launch 2");
         assert_eq!(
             registry
@@ -3625,16 +3840,21 @@ mod identity_tests {
         );
 
         let next_generation = GenerationId::new(9);
-        let always_plan = registry
-            .launch_for_need(always_second.need())
-            .unwrap()
-            .plan()
-            .clone();
+        assert!(
+            registry
+                .launch_for_need(always_second.need())
+                .unwrap()
+                .source()
+                .belongs_to(&always_plan)
+        );
         let next_generation_token = registry
-            .begin_invocation(next_generation, fiber, always_plan.site())
+            .begin_invocation(next_generation, fiber, registry_site(&always_plan))
             .expect("new generation token");
         let next_generation_launch = registry
-            .admit_start(next_generation_token, always_plan, Vec::new())
+            .admit_start(
+                next_generation_token,
+                start(&always_plan, next_generation_token.generation),
+            )
             .expect("new generation launch");
         assert_ne!(next_generation_launch.need(), always_second.need());
         assert_ne!(
@@ -3647,7 +3867,7 @@ mod identity_tests {
     fn need_producer_restore_preserves_aliases_and_reensures_once() {
         let generation = GenerationId::new(11);
         let fiber = RuntimePersistentFiberId::from_allocated(23);
-        let plan = producer_plan(
+        let plan = registry_plan(
             5,
             6,
             TaskPolicy::JoinSameKey,
@@ -3656,16 +3876,16 @@ mod identity_tests {
         );
         let mut registry = NeedProducerRegistry::default();
         let first = registry
-            .begin_invocation(generation, fiber, plan.site())
+            .begin_invocation(generation, fiber, registry_site(&plan))
             .expect("first invocation");
         let first_launch = registry
-            .admit_start(first, plan.clone(), Vec::new())
+            .admit_start(first, start(&plan, first.generation))
             .expect("first launch");
         let second = registry
-            .begin_invocation(generation, fiber, plan.site())
+            .begin_invocation(generation, fiber, registry_site(&plan))
             .expect("join invocation");
         registry
-            .admit_start(second, plan, Vec::new())
+            .admit_start(second, start(&plan, second.generation))
             .expect("join launch");
 
         let snapshot = NeedProducerRegistryRestore {
@@ -3680,7 +3900,7 @@ mod identity_tests {
         };
         let mut restored = NeedProducerRegistry::default();
         restored
-            .restore_registry(snapshot)
+            .restore_registry(snapshot, &mut restore_admission(&plan))
             .expect("restore full producer journal");
         assert_eq!(restored.invocations().count(), 2);
         assert_eq!(
@@ -3715,13 +3935,13 @@ mod identity_tests {
         ] {
             let generation = GenerationId::new(12);
             let fiber = RuntimePersistentFiberId::from_allocated(24);
-            let plan = producer_plan(7, 8, policy, HostRestartPolicy::Restartable, TaskClass::Io);
+            let plan = registry_plan(7, 8, policy, HostRestartPolicy::Restartable, TaskClass::Io);
             let mut registry = NeedProducerRegistry::default();
             let invocation = registry
-                .begin_invocation(generation, fiber, plan.site())
+                .begin_invocation(generation, fiber, registry_site(&plan))
                 .expect("producer invocation");
             registry
-                .admit_start(invocation, plan, Vec::new())
+                .admit_start(invocation, start(&plan, invocation.generation))
                 .expect("producer launch");
             let mut snapshot = NeedProducerRegistryRestore {
                 task_admissions: registry.task_admissions().collect(),
@@ -3741,8 +3961,12 @@ mod identity_tests {
 
             let mut restored = NeedProducerRegistry::default();
             assert_eq!(
-                restored.restore_registry(snapshot),
-                Err(NeedProducerAdmissionError::InvalidRestoredLaunch)
+                restored.restore_registry(snapshot, &mut restore_admission(&plan)),
+                Err(NeedProducerAdmissionError::Admission(
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: NeedProducerAdmissionError::InvalidRestoredLaunch.to_string(),
+                    },
+                )),
             );
             assert_eq!(restored.launches().count(), 0);
         }
@@ -3756,13 +3980,13 @@ mod identity_tests {
         ] {
             let generation = GenerationId::new(13);
             let fiber = RuntimePersistentFiberId::from_allocated(25);
-            let plan = producer_plan(9, 10, policy, HostRestartPolicy::Restartable, TaskClass::Io);
+            let plan = registry_plan(9, 10, policy, HostRestartPolicy::Restartable, TaskClass::Io);
             let mut registry = NeedProducerRegistry::default();
             let invocation = registry
-                .begin_invocation(generation, fiber, plan.site())
+                .begin_invocation(generation, fiber, registry_site(&plan))
                 .expect("producer invocation");
             registry
-                .admit_start(invocation, plan, Vec::new())
+                .admit_start(invocation, start(&plan, invocation.generation))
                 .expect("producer launch");
             let mut snapshot = NeedProducerRegistryRestore {
                 task_admissions: registry.task_admissions().collect(),
@@ -3782,8 +4006,12 @@ mod identity_tests {
 
             let mut restored = NeedProducerRegistry::default();
             assert_eq!(
-                restored.restore_registry(snapshot),
-                Err(NeedProducerAdmissionError::InvalidRestoredLaunch)
+                restored.restore_registry(snapshot, &mut restore_admission(&plan)),
+                Err(NeedProducerAdmissionError::Admission(
+                    crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: NeedProducerAdmissionError::InvalidRestoredLaunch.to_string(),
+                    },
+                )),
             );
             assert_eq!(restored.launches().count(), 0);
         }

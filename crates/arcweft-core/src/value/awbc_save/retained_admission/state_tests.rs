@@ -62,3 +62,47 @@ fn retained_bank_transfer_keeps_the_exact_original_program() {
         assert!(admission.program_owner().unwrap().same_program(&owner));
     }
 }
+
+#[test]
+fn retained_program_scopes_preserve_outer_owner_and_consumed_budget_after_unwind() {
+    let owners = crate::value::awbc_save::tests::owners();
+    for outer in &owners {
+        for retained in &owners {
+            let mut admission = RuntimeRetainedValueAdmission::for_program(
+                outer.clone(),
+                RuntimeSchemaLimits {
+                    max_nodes: 1,
+                    ..RuntimeSchemaLimits::engine_default()
+                },
+            );
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                admission.with_program_owner::<()>(retained.clone(), |admission| {
+                    assert!(admission.program_owner().unwrap().same_program(retained));
+                    admission.validate(&RuntimeValue::Bool(true)).unwrap();
+                    panic!("interrupt retained-field admission");
+                })
+            }));
+            assert!(result.is_err());
+            assert!(admission.program_owner().unwrap().same_program(outer));
+            let consumed = admission.work().consumed();
+            assert!(consumed > 0);
+            let error = admission
+                .with_program_owner(retained.clone(), |admission| {
+                    admission.validate(&RuntimeValue::Bool(false))
+                })
+                .unwrap_err();
+            assert_eq!(
+                error,
+                AwbcRuntimeValueSnapshotError::Resource(
+                    crate::entry::RuntimeSchemaError::BudgetExceeded { budget: "nodes" }
+                )
+            );
+            assert!(admission.program_owner().unwrap().same_program(outer));
+            assert_eq!(admission.status(), Err(error.clone()));
+            let mut resumed = transfer(admission).resume();
+            assert!(resumed.program_owner().unwrap().same_program(outer));
+            assert_eq!(resumed.validate(&RuntimeValue::Unit), Err(error));
+            assert_eq!(resumed.work().consumed(), consumed);
+        }
+    }
+}

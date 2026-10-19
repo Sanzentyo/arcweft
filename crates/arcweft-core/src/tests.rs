@@ -111,7 +111,108 @@ pub(crate) fn task_submission(spec: crate::task::TaskSpec) -> crate::task::TaskS
         .expect("fixture retains its accepted receipt")
 }
 
-pub(crate) fn pending_need(
+/// Builds a real original selected declaration, including its complete Task
+/// slot, using the caller's actual payload/type graph.
+pub(crate) fn selected_producer_plan(
+    mut builder: crate::plan::RuntimePlanBuilder,
+    metadata: crate::task::NeedProducerTaskPlan,
+    arguments: Vec<crate::task::RuntimeHostArgumentTemplate<crate::plan::RuntimeExprSeed>>,
+) -> std::sync::Arc<crate::plan::RuntimePlan> {
+    use crate::plan::*;
+    let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let need = crate::pattern::RuntimeSemanticTypeId::from_bytes([0xf6; 32]);
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    need,
+                    RuntimePlanTypeProjection::Need(metadata.payload_type()),
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    let function = builder
+        .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xf7; 32]),
+            role: RuntimeFunctionSemanticRole::Ordinary,
+            function_type: None,
+            inputs: Box::new([]),
+            result: unit,
+            body_kind: RuntimeFunctionSiteBodyKind::Executable,
+            effects: RuntimeEffectSet::empty(),
+        })
+        .unwrap();
+    let task_plan = builder
+        .task_plan_construction()
+        .reserve_original_source()
+        .unwrap();
+    builder
+        .define_function_site_seed(
+            &function,
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
+                ops: Box::new([
+                    RuntimeFlowOpSeed::StartNeedProducer {
+                        binding: RuntimePatternSeed::new(need, RuntimePatternSeedKind::Discard),
+                        target: RuntimeNeedProducerStartTargetSeed {
+                            plan: metadata,
+                            task_plan,
+                            arguments,
+                        },
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Unit),
+                    )),
+                ]),
+            }),
+        )
+        .unwrap();
+    std::sync::Arc::new(builder.finish().unwrap())
+}
+
+pub(crate) fn selected_producer_start(
+    plan: &std::sync::Arc<crate::plan::RuntimePlan>,
+    generation: crate::task::GenerationId,
+    arguments: Vec<crate::task::NeedProducerRuntimeArgument>,
+) -> crate::task::RuntimeNeedProducerStart {
+    let crate::plan::FlowOp::StartNeedProducer { target, .. } = &plan
+        .function_sites()
+        .iter()
+        .next()
+        .unwrap()
+        .body()
+        .executable()
+        .unwrap()
+        .ops()[0]
+    else {
+        panic!("fixture must retain its actual selected declaration")
+    };
+    let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+        crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(plan)),
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+    );
+    let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+    let mut meter = admission.task_source_meter(limits).unwrap();
+    let source = plan
+        .task_source(target.task_plan(), limits, &mut meter)
+        .unwrap();
+    source
+        .selected_start(
+            &crate::plan::task_source::RuntimeTaskSourceProgram::native(std::sync::Arc::clone(
+                plan,
+            )),
+            generation,
+            arguments,
+            None,
+            &mut admission,
+        )
+        .unwrap()
+}
+
+pub(crate) fn pending_string_need(
     payload: crate::pattern::RuntimeSemanticTypeId,
 ) -> (
     crate::task::NeedProducerRegistry,
@@ -136,15 +237,27 @@ pub(crate) fn pending_need(
         CancelScopeId("fixture".to_owned()),
     )
     .expect("fixture selected producer admits");
+    let mut builder = crate::plan::RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [crate::plan::RuntimePlanTypeSeed::new(
+                payload,
+                crate::plan::RuntimePlanTypeProjection::String,
+            )],
+            [],
+        )
+        .unwrap();
+    let source = selected_producer_plan(builder, plan, Vec::new());
+    let start = selected_producer_start(&source, GenerationId::new(0), Vec::new());
     let mut registry = NeedProducerRegistry::default();
     let invocation = registry
         .begin_invocation(
             GenerationId::new(0),
             crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
-            plan.site(),
+            start.producer().producer_site(),
         )
         .unwrap();
-    let admission = registry.admit_start(invocation, plan, Vec::new()).unwrap();
+    let admission = registry.admit_start(invocation, start).unwrap();
     let handle =
         crate::task::RuntimeNeedHandle::try_from(registry.submission_for_admission(&admission))
             .unwrap();

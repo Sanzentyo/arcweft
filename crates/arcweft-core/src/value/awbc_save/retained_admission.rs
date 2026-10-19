@@ -39,6 +39,17 @@ pub struct RuntimeRetainedValueAdmission {
     failure: Option<AwbcRuntimeValueSnapshotError>,
 }
 
+struct RetainedProgramOwnerScope<'a> {
+    admission: &'a mut RuntimeRetainedValueAdmission,
+    previous: Option<RuntimeProgramOwner>,
+}
+
+impl Drop for RetainedProgramOwnerScope<'_> {
+    fn drop(&mut self) {
+        self.admission.owner = self.previous.take();
+    }
+}
+
 /// Exclusive transport of the original bank between incremental publications.
 /// It has no Clone or decoder and cannot issue a second allowance.
 pub(crate) struct RuntimeRetainedValueAdmissionState {
@@ -58,6 +69,27 @@ impl RuntimeRetainedValueAdmissionState {
 }
 
 impl RuntimeRetainedValueAdmission {
+    /// A retained Source supplies its genuine original lease, including across
+    /// program replacement. Only the type authority changes for this field;
+    /// counters, limits, storage provenance and the first failure stay shared.
+    pub(crate) fn with_program_owner<T>(
+        &mut self,
+        owner: RuntimeProgramOwner,
+        admit: impl FnOnce(&mut Self) -> Result<T, AwbcRuntimeValueSnapshotError>,
+    ) -> Result<T, AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        let previous = self.owner.replace(owner);
+        let scope = RetainedProgramOwnerScope {
+            admission: self,
+            previous,
+        };
+        let result = admit(&mut *scope.admission);
+        if let Err(error) = &result {
+            scope.admission.retain_failure(error.clone());
+        }
+        result
+    }
+
     /// Reads the actual declaration solution before copying its rows. Serde's
     /// owned conversion is deliberately not used for this resource preflight.
     pub(crate) fn validate_function_instantiation(
@@ -404,7 +436,8 @@ impl RuntimeRetainedValueAdmission {
     }
 
     /// Returns the immutable original executable lease for domain-owned
-    /// generation/role checks. The context cannot be rebound to another owner.
+    /// generation/role checks. Retained Source fields temporarily select their
+    /// own original lease while preserving this context's allowance.
     #[must_use]
     pub fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
         self.owner.as_ref()
@@ -414,8 +447,7 @@ impl RuntimeRetainedValueAdmission {
         if let AwbcRuntimeValueSnapshotError::Resource(resource) = &error {
             self.resources.work().retain_failure(resource.clone());
         }
-        let first = self.resources.work().failure().map_or(error, Into::into);
-        self.failure.get_or_insert(first);
+        self.failure.get_or_insert(error);
     }
 
     /// An owning composite authenticates its custody and original metadata
@@ -429,9 +461,7 @@ impl RuntimeRetainedValueAdmission {
             &mut ValueResourceAdmission,
         ) -> Result<(), AwbcRuntimeValueSnapshotError>,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        if let Some(failure) = &self.failure {
-            return Err(failure.clone());
-        }
+        self.status()?;
         self.resources.set_origin(origin);
         let result = admit(self.owner.as_ref(), &mut self.resources);
         if let Err(failure) = &result {
@@ -461,12 +491,10 @@ impl RuntimeRetainedValueAdmission {
         expected: Option<RetainedTypeObligation<'_>>,
         requirement: RuntimeValueOwnershipRequirement,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        if let Some(failure) = &self.failure {
-            return Err(failure.clone());
-        }
+        self.status()?;
         let result = self.admit(value, origin, expected, requirement);
         if let Err(failure) = &result {
-            self.failure = Some(failure.clone());
+            self.retain_failure(failure.clone());
         }
         result
     }

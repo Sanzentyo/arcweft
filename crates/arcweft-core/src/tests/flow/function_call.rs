@@ -203,7 +203,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         ))
         .expect("caller application admits");
     let plan = builder.finish().expect("callback plan seals");
-    let (registry, need) = crate::tests::pending_need(string);
+    let (registry, need) = crate::tests::pending_string_need(string);
     let invocation = plan
         .seal_flow_invocation(
             entry,

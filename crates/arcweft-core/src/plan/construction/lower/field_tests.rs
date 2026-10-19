@@ -169,7 +169,7 @@ fn field_inspection_admits_copy_result_from_an_affine_record() {
         target: RuntimeFieldTarget::Inspect { place: RuntimeMutablePlace::Local(local), ty },
         field: RuntimeFieldProjection::Nominal(field),
     } if *local == owner && *ty == owner_ty && field.zero_based() == 0));
-    let (_registry, need) = crate::tests::pending_need(identity(1));
+    let (_registry, need) = crate::tests::pending_string_need(identity(1));
     let value = record_value(&builder, need);
     assert!(
         !value.ownership().permits_copy(),
@@ -381,7 +381,7 @@ fn field_inspection_native_and_pure_execution_preserve_an_affine_receiver_until_
             },
         ))
         .unwrap();
-    let (registry, need) = crate::tests::pending_need(identity(1));
+    let (registry, need) = crate::tests::pending_string_need(identity(1));
     let value = record_value(&builder, need);
     let plan = builder.finish().unwrap();
     let pure_plan = Arc::new(plan.clone());
@@ -578,7 +578,7 @@ fn partial_move_inspection_fixture() -> PartialMoveInspectionFixture {
         locals[1].resolve(&builder.issuer).unwrap().0,
         locals[2].resolve(&builder.issuer).unwrap().0,
     ];
-    let (registry, need) = crate::tests::pending_need(identity(1));
+    let (registry, need) = crate::tests::pending_string_need(identity(1));
     let value = record_value(&builder, need.clone());
     PartialMoveInspectionFixture {
         plan: Arc::new(builder.finish().unwrap()),
@@ -746,7 +746,7 @@ fn nominal_field_inspection_pure_rejects_moved_selected_children_and_whole_parti
         let expected = crate::value::RuntimeEvalError::UninitializedLocal(
             local.resolve(&builder.issuer).unwrap().0,
         );
-        let (_registry, need) = crate::tests::pending_need(identity(1));
+        let (_registry, need) = crate::tests::pending_string_need(identity(1));
         let value = record_value(&builder, need);
         let plan = Arc::new(builder.finish().unwrap());
         assert_eq!(

@@ -39,6 +39,17 @@ pub(crate) enum RuntimeTaskProducerSourceError {
     Specification,
 }
 
+impl From<RuntimeTaskProducerSourceError> for AwbcRuntimeValueSnapshotError {
+    fn from(error: RuntimeTaskProducerSourceError) -> Self {
+        match error {
+            RuntimeTaskProducerSourceError::Admission(error) => error,
+            error => Self::Message {
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
 pub(crate) struct PreparedRuntimeSelectedProducer<'source, 'bank> {
     pub(super) source: &'source RuntimeTaskSourceRef<'source>,
     pub(super) program: &'source RuntimeTaskSourceProgram,

@@ -42,12 +42,24 @@ pub(crate) fn pending_program_need(
     crate::task::RuntimeNeedHandle,
 ) {
     use crate::task::*;
-    let plan = program_need_plan();
+    let payload = RuntimeSemanticTypeId::from_bytes([0x51; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                payload,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+        )
+        .unwrap();
+    let plan = crate::tests::selected_producer_plan(builder, program_need_plan(), Vec::new());
+    let start = crate::tests::selected_producer_start(&plan, generation, Vec::new());
     let mut registry = NeedProducerRegistry::default();
     let invocation = registry
-        .begin_invocation(generation, fiber, plan.site())
+        .begin_invocation(generation, fiber, start.producer().producer_site())
         .unwrap();
-    let admission = registry.admit_start(invocation, plan, Vec::new()).unwrap();
+    let admission = registry.admit_start(invocation, start).unwrap();
     let need =
         crate::task::RuntimeNeedHandle::try_from(registry.submission_for_admission(&admission))
             .unwrap();

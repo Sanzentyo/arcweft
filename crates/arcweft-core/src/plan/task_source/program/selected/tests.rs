@@ -470,3 +470,55 @@ fn awbc_selected_factory_requires_a_checked_code_binding_before_value_views_or_l
     assert!(reads.get() > 0);
     assert_eq!(spec.source().task_plan().key(), bound.task_plan().key());
 }
+
+#[test]
+fn saved_awbc_source_assertions_keep_the_exact_row_and_reject_forged_locators() {
+    let bytes = executable(2).encode_canonical().unwrap();
+    let code = Arc::new(AwbcProgram::decode_canonical(&bytes, Default::default()).unwrap());
+    let program = admit(Arc::clone(&code));
+    let limits = RuntimeTaskPlanSealLimits::default();
+    let source = program
+        .awbc_selected_source(AwbcTaskPlanId(0), limits, &mut meter())
+        .unwrap();
+    let retained =
+        RuntimeTaskSource::from_borrowed(&source, &program, &program.program_owner()).unwrap();
+    let leases = Arc::strong_count(&code);
+    let encoded = serde_json::to_vec(&retained.assertion()).unwrap();
+    let assertion: crate::plan::RuntimeTaskSourceAssertion =
+        serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(Arc::strong_count(&code), leases);
+    let restored = program
+        .borrow_assertion(&assertion, limits, &mut meter())
+        .unwrap();
+    assert_eq!(restored.task_plan().key(), source.task_plan().key());
+    assert!(program.owns_source_for(&restored, &program.program_owner()));
+    let mut missing = assertion.clone();
+    missing.expected = ExpectedTaskPlanKey::new([0; 32]);
+    let mut row = assertion.clone();
+    row.execution = crate::plan::task_source::owned::RuntimeTaskSourceExecutionAssertion::Awbc(
+        crate::plan::task_source::program::RuntimeTaskExecutionRow::Selected(AwbcTaskPlanId(
+            u32::MAX,
+        )),
+    );
+    let mut backend = assertion.clone();
+    backend.execution =
+        crate::plan::task_source::owned::RuntimeTaskSourceExecutionAssertion::Native;
+    for forged in [missing, row, backend] {
+        let mut bank = meter();
+        assert!(
+            program
+                .borrow_assertion(&forged, limits, &mut bank)
+                .is_err()
+        );
+        assert_eq!(
+            bank.status(),
+            Err(crate::task::semantic::TaskSemanticEncodingError::OwnerRejected)
+        );
+        assert!(
+            program
+                .borrow_assertion(&assertion, limits, &mut bank)
+                .is_err()
+        );
+        assert_eq!(Arc::strong_count(&code), leases);
+    }
+}

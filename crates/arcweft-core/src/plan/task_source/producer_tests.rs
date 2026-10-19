@@ -152,11 +152,14 @@ fn source_bound_selected_specs_use_the_completed_key_and_canonical_request() {
         );
         assert_eq!(
             spec.arguments(),
-            metadata.producer_spec(&values).unwrap().arguments()
-        );
-        assert_ne!(
-            spec.source().task_plan().key(),
-            metadata.producer_spec(&values).unwrap().plan()
+            crate::entry::schema::canonical_runtime_tuple_digest(
+                &values
+                    .iter()
+                    .map(|argument| &argument.value)
+                    .collect::<Vec<_>>(),
+                RuntimeSchemaLimits::engine_default().platform_encoded_bytes(),
+            )
+            .unwrap()
         );
     }
 }
@@ -512,4 +515,55 @@ fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure(
         .selected_producer_spec(&source_program(&plan), &values, None, &mut prefixed)
         .unwrap();
     assert_eq!(prefixed.work().consumed(), work + 1);
+}
+
+#[test]
+fn native_source_assertions_are_inert_and_resolve_only_completed_original_slots() {
+    let plan = fixture(2);
+    let program = source_program(&plan);
+    let source = borrow_source(&plan);
+    let spec = source
+        .selected_producer_spec(
+            &program,
+            &arguments(2),
+            None,
+            &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
+        )
+        .unwrap();
+    let leases = Arc::strong_count(&plan);
+    let encoded = serde_json::to_vec(&spec.source().assertion()).unwrap();
+    let assertion: RuntimeTaskSourceAssertion = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(Arc::strong_count(&plan), leases);
+    let limits = RuntimeTaskPlanSealLimits::default();
+    assert_eq!(
+        program
+            .borrow_assertion(
+                &assertion,
+                limits,
+                &mut TaskSemanticMeter::new(1_000_000, 1_000_000)
+            )
+            .unwrap()
+            .task_plan()
+            .key(),
+        source.task_plan().key(),
+    );
+    let mut missing = assertion.clone();
+    missing.expected = crate::task::ExpectedTaskPlanKey::new([0; 32]);
+    let mut backend = assertion;
+    backend.execution = owned::RuntimeTaskSourceExecutionAssertion::Awbc(
+        program::RuntimeTaskExecutionRow::Selected(crate::awbc::schema::AwbcTaskPlanId(0)),
+    );
+    for assertion in [missing, backend] {
+        let mut meter = TaskSemanticMeter::new(1_000_000, 1_000_000);
+        assert!(
+            program
+                .borrow_assertion(&assertion, limits, &mut meter)
+                .is_err()
+        );
+        assert_eq!(
+            meter.status(),
+            Err(crate::task::semantic::TaskSemanticEncodingError::OwnerRejected)
+        );
+        assert_eq!(Arc::strong_count(&plan), leases);
+    }
 }

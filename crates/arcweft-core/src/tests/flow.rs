@@ -2140,7 +2140,7 @@ fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
 fn await_progress_runs_only_the_first_matching_observer() {
     let progress_type = RuntimeSemanticTypeId::from_bytes([3; 32]);
     let need_string_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
-    let (registry, need_id) = crate::tests::pending_need(string_type());
+    let (registry, need_id) = crate::tests::pending_string_need(string_type());
     let entry = flow_id("flow.await_observer");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
