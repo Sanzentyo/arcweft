@@ -20675,3 +20675,45 @@ request families, complete retained View operation/slot/capture authority,
 compiler Presentation ABI and all previously recorded final acceptance remain
 required. No additional clean, artifact move/copy, branch/worktree/checkout,
 Cargo edge, jobs/profile/OS setting, ignore or assertion weakening is introduced.
+
+### 2026-10-20 — recover current invocation-binding validation
+
+Inspected main at `0c7c1d02960c744afb9f8bdd41a3298d558ecff4`, identical to a
+freshly fetched origin/main. Only the fourteen tracked and three untracked held
+paths were dirty before this evidence update; the index was empty. The producer
+binding checkpoint is published. No production, test or Cargo input changes in
+this evidence cut.
+
+R1642 compiled and catalogued the current complete Core/RuntimePlan owner set:
+2083 cases, all selected, zero excluded. Its exact case-key delta is the one new
+Source invocation-binding identity regression. R1644 then passed all 2083 cases
+(316.939s, exit 0; two slow, zero skipped). The terminal audit joins every actual
+case to that catalogue and verifies all 3929 frozen source inputs without drift,
+including the fourteen held paths. This is current whole-owner evidence after
+the Arc effect-row and Serde-role refinements, superseding the earlier pending
+status without changing the historical failed-build records.
+
+R1643 structure auditing completed with exit 0: 3152 files, 3022 Rust files,
+1716808 Rust physical lines, 97 packages, 376 review triggers and zero blocking
+violations. Relevant metrics (bytes / physical lines / embedded-test lines) are
+producer.rs 154407/4117/987, function_contract.rs 50882/1388/0, identity.rs
+5892/182/0 and producer/start.rs 9254/238/0. The original declaration binding
+belongs to the producer specification; Start delegates to it and no longer owns
+a duplicate field. Immutable effect rows belong to the function-instantiation
+type, while the instance transcript stays with its sole identity issuer. This
+ownership disposition does not claim that file size itself establishes behavior.
+
+R1645 locked all-feature/all-target Core/RuntimePlan Clippy completed with exit 0
+(61.116s). All 3929 inputs still match the execution freeze. Warnings remain;
+this command did not use -D warnings and is not the final strict workspace gate.
+The current 53-package Core reverse closure and final workspace, doctest, Tier2
+and actual Native/Web acceptance are still outstanding. The Source lease/public
+instance switch, invocation-sensitive host/Ready/restore outcomes, genuine
+standalone/backend owners, all fourteen request kinds, retained View and
+Presentation work remain as recorded above. The overall goal remains active.
+
+The requested workspace clean was already completed once: cargo clean exited 0
+on 2026-10-19 at 06:32:01 UTC, removing 303332 files and 371.1 GiB. Its recorded
+8321 source hashes, path inventory, Git HEAD and status were unchanged. This
+continuation verified that receipt and did not run another clean or move/copy
+build artifacts.
