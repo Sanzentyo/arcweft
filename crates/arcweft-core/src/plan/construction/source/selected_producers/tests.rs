@@ -149,6 +149,16 @@ pub(in crate::plan) fn fixture(
                 ),
             ],
         ),
+        3 => (
+            NeedProducerRequestProjection::ExternCapability {
+                capability: HostCapabilityId("source".into()),
+                operation: "読む".into(),
+                contract: crate::step::HostCallContractDigest::from_bytes([0x61; 32]),
+                argument_names: Box::new([]),
+            },
+            Box::new([]) as Box<[_]>,
+            Vec::new(),
+        ),
         _ => unreachable!(),
     };
     let plan = NeedProducerTaskPlan::try_new(

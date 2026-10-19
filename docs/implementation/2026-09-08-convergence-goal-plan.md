@@ -20434,3 +20434,47 @@ invocation-binding origin, invocation-sensitive Ready, actual View, Generic
 Match, nominal/Sans-I/O, VM pre-copy checks, external multi-owner persistence
 and the final acceptance work recorded above remain required. Continue from
 the current typed owners rather than adding another metadata authority.
+
+### 2026-10-20 — checkpoint exact Source invocation admission
+
+Inspected main at `59b927a5f4c7841e3cc7f242d1bea4cf8ba2014a`. Its nine
+published paths, tree and complete patch were verified against advertised
+origin/main and all 3929 inputs; the baseline advanced with zero drift. This
+next cut owns six Core Rust paths and this note, preserving fourteen held
+tracked paths and three held untracked paths. Per the user's explicit direction,
+this is an intermediate implementation checkpoint; current compilation and
+execution are pending, not claimed successful.
+
+Source argument admission previously relied on per-value relations to detect an
+invalid invocation binding, which left empty argument tuples unchecked. Generic
+binding validation on Start only checked membership somewhere in the program.
+Source now invokes the existing RuntimePlan FunctionSite binding law with its
+actual original endpoint's function ID, and checks the actual AWBC authority
+when applicable. Selected, host and template factories share this boundary;
+Start construction, retained validation and restore use that same factory
+rather than a second generic-only binding check. The existing retained bank
+preflights binding metadata before values/captures and keeps its original work,
+limits, provenance and first failure. FunctionInstantiation preserves the typed
+RuntimeFunctionApplyError instead of flattening its declaration/site cause.
+Selected arguments now finish all names before any value is projected.
+
+One genuine original-Source fixture adds a zero-argument external request. A
+new case requires the exact original-function rejection and the same retained
+bank failure; the existing unresolved-binding case now also requires zero value
+projections. These cases have not yet executed. This does not establish exact
+runtime caller/instruction equivalence, invocation-sensitive Ready or the full
+public Source/instance switch; those and the preceding full acceptance remain
+required. No additional quota, reconstructed owner, fallback, dependency,
+unsafe, contract version, branch, worktree or build-artifact move is added.
+
+R1617 is still running the workspace all-feature locked nextest catalogue with
+`rdeps(=arcweft-core)`, the actual 53-package reverse closure. It began at the
+published base before this cut and continued while these sources changed. Its
+eventual command result is investigation/build evidence only; refresh catalogue
+and frozen inputs for the final current sources before using it for execution
+acceptance. No R1617 pass is claimed here. The temporary red source freeze was
+prepared, but no red test run was dispatched. Changed Rust formatting and
+whitespace pass; current check, nextest, Clippy and applicable downstream
+evidence remain pending. Continue those checks and repair their actual failures
+after the running command ends; do not repeat clean or infer a stopped process
+from a quiet log or an observation timeout.

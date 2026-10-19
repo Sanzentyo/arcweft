@@ -49,6 +49,8 @@ pub enum AwbcRuntimeValueSnapshotError {
     ProgramType(Box<crate::program_types::RuntimeProgramTypeError>),
     #[error(transparent)]
     TaskOutcome(#[from] crate::task::TaskOutcomeBindingError),
+    #[error(transparent)]
+    FunctionInstantiation(#[from] super::RuntimeFunctionApplyError),
 }
 
 impl From<super::ownership::RuntimeValueOwnershipAdmissionError> for AwbcRuntimeValueSnapshotError {

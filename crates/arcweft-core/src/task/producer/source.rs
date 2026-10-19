@@ -87,15 +87,15 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
                 expected: self.metadata.argument_types().len(),
             });
         }
-        for (index, (argument, expected)) in arguments
-            .iter()
-            .zip(self.metadata.argument_types())
-            .enumerate()
-        {
+        for (index, argument) in arguments.iter().enumerate() {
             admission.validate_metadata(&argument.name)?;
             if self.metadata.argument_name(index) != Some(argument.name.as_deref()) {
                 return Err(RuntimeTaskProducerSourceError::ArgumentName { index });
             }
+        }
+        self.source
+            .admit_invocation_binding(self.program, binding, admission)?;
+        for (argument, expected) in arguments.iter().zip(self.metadata.argument_types()) {
             admission.validate_typed_borrowed_in_invocation(
                 argument.value.borrowed_value(),
                 *expected,
@@ -133,6 +133,56 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
 }
 
 impl RuntimeTaskSourceRef<'_> {
+    /// The declaration, the actual backend and every operand share one bank.
+    /// In particular, an empty argument tuple is not evidence for a binding.
+    fn admit_invocation_binding(
+        &self,
+        program: &RuntimeTaskSourceProgram,
+        binding: Option<&RuntimeFunctionEffectInstantiation>,
+        admission: &mut RuntimeRetainedValueAdmission,
+    ) -> Result<(), RuntimeTaskProducerSourceError> {
+        if !admission
+            .program_owner()
+            .is_some_and(|owner| program.owns_source_for(self, owner))
+        {
+            return Err(RuntimeTaskProducerSourceError::OriginalProgram);
+        }
+        admission.admit_composite(
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
+            |owner, resources| {
+                if let Some(binding) = binding {
+                    resources.function_instantiation(binding)?;
+                }
+                let site = self.request_endpoint().function_id();
+                program
+                    .original()
+                    .validate_function_instantiation(site, binding, &resources.work())
+                    .map_err(|error| {
+                        resources.work().failure().map_or_else(
+                            || AwbcRuntimeValueSnapshotError::from(error),
+                            AwbcRuntimeValueSnapshotError::from,
+                        )
+                    })?;
+                if let (Some(crate::task::RuntimeProgramOwner::Awbc(executable)), Some(binding)) =
+                    (owner, binding)
+                    && !binding.is_valid_with_work(executable.as_ref(), &resources.work())
+                {
+                    return Err(resources.work().failure().map_or_else(
+                        || {
+                            crate::value::RuntimeFunctionApplyError::InvalidEffectInstantiation {
+                                site,
+                            }
+                            .into()
+                        },
+                        Into::into,
+                    ));
+                }
+                Ok(())
+            },
+        )?;
+        Ok(())
+    }
+
     /// Bounds the original operand grammar before evaluation allocates argument
     /// storage or copies a binding name. This token borrows the same value bank.
     pub(crate) fn prepare_selected_producer<'source, 'bank>(
@@ -243,6 +293,7 @@ impl RuntimeTaskSourceRef<'_> {
                 return Err(RuntimeTaskProducerSourceError::ArgumentRole { index });
             }
         }
+        self.admit_invocation_binding(program, binding, admission)?;
         for (argument, expected) in arguments.iter().zip(&target.args) {
             let ty = program
                 .original()

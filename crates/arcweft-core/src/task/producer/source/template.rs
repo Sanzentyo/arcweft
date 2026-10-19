@@ -101,6 +101,7 @@ impl RuntimeTaskSourceRef<'_> {
         {
             return Err(RuntimeTaskProducerSourceError::OriginalProgram);
         }
+        self.admit_invocation_binding(program, binding, admission)?;
         let mut locals = Vec::new();
         match (self.request_endpoint().operation(), &arguments) {
             (

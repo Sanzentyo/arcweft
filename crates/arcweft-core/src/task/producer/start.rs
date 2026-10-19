@@ -76,9 +76,6 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         arguments: Vec<NeedProducerRuntimeArgument>,
         binding: Option<&RuntimeFunctionEffectInstantiation>,
     ) -> Result<RuntimeNeedProducerStart, RuntimeTaskProducerSourceError> {
-        if let Some(binding) = binding {
-            self.admission.validate_function_instantiation(binding)?;
-        }
         let producer = self.producer_spec(&arguments, binding)?;
         let metadata = self.metadata;
         let request = metadata.project_request(&arguments)?;
@@ -108,9 +105,6 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
         task_spec: TaskSpec<P>,
         binding: Option<RuntimeFunctionEffectInstantiation>,
     ) -> Result<RuntimeNeedProducerStart<V, P>, RuntimeTaskProducerSourceError> {
-        if let Some(binding) = &binding {
-            self.admission.validate_function_instantiation(binding)?;
-        }
         let producer = self.producer_spec(&arguments, binding.as_ref())?;
         self.validate_specification(&producer, &arguments, &task_spec)?;
         Ok(RuntimeNeedProducerStart {
@@ -163,11 +157,6 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
             let mut prepared = source
                 .prepare_selected_producer(self.source().program(), admission)
                 .map_err(AwbcRuntimeValueSnapshotError::from)?;
-            if let Some(binding) = &self.binding {
-                prepared
-                    .admission
-                    .validate_function_instantiation(binding)?;
-            }
             let canonical = prepared
                 .producer_spec(&self.arguments, self.binding.as_ref())
                 .map_err(AwbcRuntimeValueSnapshotError::from)?;

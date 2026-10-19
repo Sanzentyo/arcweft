@@ -412,6 +412,7 @@ fn source_bound_selected_specs_reject_a_different_original_request_kind() {
 fn source_bound_selected_specs_reject_unresolved_invocation_effect_bindings() {
     let plan = fixture(2);
     let source = borrow_source(&plan);
+    let reads = Cell::new(0);
     let binding = crate::program_types::RuntimeFunctionEffectInstantiation::from_source_rows(
         crate::pattern::RuntimeSemanticTypeId::from_bytes([0xfe; 32]),
         Box::new([]),
@@ -419,14 +420,49 @@ fn source_bound_selected_specs_reject_unresolved_invocation_effect_bindings() {
     assert!(matches!(
         source.selected_producer_spec(
             &source_program(&plan),
-            &arguments(2),
+            &observed_arguments(&reads),
             Some(&binding),
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
         ),
         Err(RuntimeTaskProducerSourceError::Admission(
-            AwbcRuntimeValueSnapshotError::ProgramType(_)
+            AwbcRuntimeValueSnapshotError::FunctionInstantiation(
+                crate::value::RuntimeFunctionApplyError::InvalidEffectInstantiation { .. }
+            )
         ))
     ));
+    assert_eq!(
+        reads.get(),
+        0,
+        "invocation admission precedes value projection"
+    );
+}
+
+#[test]
+fn source_bound_zero_argument_specs_require_original_invocation_binding() {
+    let plan = fixture(3);
+    let source = borrow_source(&plan);
+    let binding = crate::program_types::RuntimeFunctionEffectInstantiation::from_source_rows(
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([0xfe; 32]),
+        Box::new([]),
+    );
+    let mut bank = admission(&plan, RuntimeSchemaLimits::engine_default());
+    let error = source
+        .selected_producer_spec::<RuntimeValue>(
+            &source_program(&plan),
+            &[],
+            Some(&binding),
+            &mut bank,
+        )
+        .expect_err("an empty tuple cannot bypass the original function binding");
+    let expected = AwbcRuntimeValueSnapshotError::FunctionInstantiation(
+        crate::value::RuntimeFunctionApplyError::InvalidEffectInstantiation {
+            site: source.request_endpoint().function_id(),
+        },
+    );
+    assert!(
+        matches!(error, RuntimeTaskProducerSourceError::Admission(ref cause) if cause == &expected)
+    );
+    assert_eq!(bank.status().unwrap_err(), expected);
 }
 
 #[test]
