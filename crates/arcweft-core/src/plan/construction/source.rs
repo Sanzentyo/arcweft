@@ -22,6 +22,7 @@ pub(in crate::plan) mod flow;
 pub(in crate::plan) mod functions;
 pub(in crate::plan) mod host_calls;
 pub(in crate::plan) mod invocations;
+pub(in crate::plan) mod line_groups;
 pub(in crate::plan) mod pattern;
 pub(in crate::plan) mod project_calls;
 pub(in crate::plan) mod pure_callables;

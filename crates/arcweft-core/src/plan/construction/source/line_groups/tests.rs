@@ -8,6 +8,8 @@ use crate::line_task::{
 };
 use crate::plan::*;
 
+mod handles;
+
 fn limits(plan: &RuntimePlan) -> RuntimeLineGroupSourceLimits {
     RuntimeLineGroupSourceLimits {
         groups: 100,
@@ -16,13 +18,94 @@ fn limits(plan: &RuntimePlan) -> RuntimeLineGroupSourceLimits {
         elements: 1_000_000,
         encoded_bytes: 1 << 24,
         decoded_bytes: 1 << 28,
+        opaque_producer_bytes: plan
+            .type_table()
+            .declarations_with_ids()
+            .filter_map(|(_, declaration)| match declaration.projection() {
+                RuntimePlanTypeProjection::Opaque { producer, .. } => Some(producer.as_str().len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0),
         flow: super::super::flow::tests::limits(plan),
     }
 }
 fn fixture(policy: LineCleanupPolicy, cancel: ChildCancelPolicy) -> RuntimePlan {
+    scoped_fixture(policy, cancel, 0)
+}
+fn scoped_fixture(
+    policy: LineCleanupPolicy,
+    cancel: ChildCancelPolicy,
+    depth: usize,
+) -> RuntimePlan {
     let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+    let mut activation_ops = vec![RuntimeFlowOpSeed::Noop];
+    let mut action = vec![RuntimeFlowOpSeed::Noop];
+    if depth != 0 {
+        let boolean = crate::pattern::RuntimeSemanticTypeId::from_bytes([2; 32]);
+        let admitted = builder
+            .admit_type_batch(
+                [],
+                [RuntimeLocalDeclarationSeed::new(
+                    RuntimeLocalDeclarationSource::Binding {
+                        identity: [0xf2; 32],
+                        declaration: RuntimeLocalBindingDeclaration::new(
+                            RuntimeLocalBindingKind::PatternBinding,
+                            false,
+                            RuntimeLocalBindingStorage::Derived,
+                        ),
+                    },
+                    boolean,
+                )],
+            )
+            .unwrap();
+        let local = admitted.local_ids()[0].clone();
+        let read = || RuntimeFlowOpSeed::Let {
+            pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+            expr: RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Local(RuntimeLocalReadSeed::new(
+                    local.clone(),
+                    crate::value::RuntimeLocalReadMode::Copy,
+                )),
+            ),
+        };
+        activation_ops = vec![RuntimeFlowOpSeed::Let {
+            pattern: RuntimePatternSeed::new(
+                boolean,
+                RuntimePatternSeedKind::Bind {
+                    local: local.clone(),
+                    mutable: false,
+                },
+            ),
+            expr: RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+            ),
+        }];
+        activation_ops.extend((0..depth).map(|_| RuntimeFlowOpSeed::EnterScope {
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        }));
+        let mut nested = vec![read()];
+        for _ in 0..depth {
+            nested = vec![RuntimeFlowOpSeed::Match {
+                scrutinee: RuntimeExprSeed::new(
+                    boolean,
+                    RuntimeExprSeedKind::Value(crate::value::RuntimeValue::Bool(true)),
+                ),
+                arms: vec![RuntimeFlowMatchArmSeed {
+                    pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+                    guard: None,
+                    ops: nested,
+                }],
+            }];
+        }
+        activation_ops.extend(nested);
+        activation_ops.extend((0..depth).map(|_| RuntimeFlowOpSeed::ExitScope));
+        action.push(read());
+    }
     let root = RuntimeLineTaskNodeSeed::Sequence(vec![RuntimeLineTaskNodeSeed::Start(vec![
-        RuntimeLineTaskNodeSeed::Action(vec![RuntimeFlowOpSeed::Noop]),
+        RuntimeLineTaskNodeSeed::Action(action),
         RuntimeLineTaskNodeSeed::Parallel {
             policy: ParallelPolicy::JoinAll,
             children: vec![
@@ -42,7 +125,7 @@ fn fixture(policy: LineCleanupPolicy, cancel: ChildCancelPolicy) -> RuntimePlan 
     let group = builder
         .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
             definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xf1; 32]),
-            activation_ops: vec![RuntimeFlowOpSeed::Noop],
+            activation_ops,
             result_type: crate::pattern::RuntimeSemanticTypeId::from_bytes([1; 32]),
             handle_sites: Box::new([]),
             root,
@@ -91,7 +174,7 @@ fn source(
     let contents = prepared
         .materialize(&mut source, &functions, &handles(&states), &mut resources())
         .unwrap();
-    content::bodies(plan, &mut source, &functions, &states);
+    content::bodies(plan, &mut source, &functions, &states, &contents);
     (source, functions, states, contents)
 }
 fn restore(plan: &RuntimePlan, bytes: &[u8], bounds: RuntimeLineGroupSourceLimits) -> RuntimePlan {
@@ -348,4 +431,71 @@ fn line_sources_authenticate_original_content_and_actual_mark_extent_before_valu
     ));
     assert!(source.builder.line_task_groups.is_empty());
     assert!(source.meter.status().is_err());
+}
+
+#[test]
+fn line_sources_cover_scope_snapshot_storage_and_derive_actual_activation_exports() {
+    let plan = scoped_fixture(
+        LineCleanupPolicy::default(),
+        ChildCancelPolicy::CancelAndJoin,
+        32,
+    );
+    assert_eq!(plan.line_task_groups()[0].activation_exports().len(), 1);
+    let bounds = limits(&plan);
+    let encoded = plan
+        .encode_line_group_sources(bounds, &resources(), &mut meter())
+        .unwrap();
+    let exact = RuntimeLineGroupSourceLimits {
+        decoded_bytes: encoded.storage_bytes(),
+        ..bounds
+    };
+    let restored = restore(&plan, encoded.bytes(), exact);
+    assert_eq!(restored.line_task_groups(), plan.line_task_groups());
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        plan.executable_semantic_digest()
+    );
+    assert!(matches!(
+        PreparedRuntimeLineGroupSources::preflight(
+            encoded.bytes(),
+            RuntimeLineGroupSourceLimits {
+                decoded_bytes: exact.decoded_bytes - 1,
+                ..exact
+            },
+            &resources(),
+            &mut meter()
+        ),
+        Err(Error::Limit {
+            kind: "decoded bytes",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn line_sources_share_actual_detach_policy_rejection_before_flow_values() {
+    let plan = fixture(
+        LineCleanupPolicy::default(),
+        ChildCancelPolicy::CancelAndJoin,
+    );
+    let bounds = limits(&plan);
+    let encoded = plan
+        .encode_line_group_sources(bounds, &resources(), &mut meter())
+        .unwrap();
+    let policy = DOMAIN.len() + 5 + 32 + 4;
+    let pattern = [3, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0];
+    let offset = encoded
+        .bytes()
+        .windows(pattern.len())
+        .position(|bytes| bytes == pattern)
+        .unwrap();
+    for (offset, tag) in [(policy, 1), (offset + 11, 2)] {
+        let mut bytes = encoded.bytes().to_vec();
+        bytes[offset] = tag;
+        let mut bank = meter();
+        assert!(
+            matches!(PreparedRuntimeLineGroupSources::preflight(&bytes,bounds,&resources(),&mut bank),Err(Error::Construction(error)) if matches!(*error,RuntimePlanBuildError::UnsupportedLineTaskDetach))
+        );
+        assert!(bank.status().is_err());
+    }
 }

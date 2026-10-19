@@ -5,9 +5,6 @@
 //! branches and the three outcome cleanup bodies. Captures and activation
 //! exports are derived by the actual Line factory. Content Source remains the
 //! sole owner of attachments; a Mark carries its genuine content/local identity.
-//!
-//! This module is not registered until its reader, writer, reconstruction and
-//! actual-group tests are complete.
 
 mod decoding;
 mod encoding;
@@ -33,6 +30,8 @@ pub(in crate::plan) struct RuntimeLineGroupSourceLimits {
     pub elements: u32,
     pub encoded_bytes: usize,
     pub decoded_bytes: usize,
+    /// Maximum producer-identity text per derived opaque handle-site owner.
+    pub opaque_producer_bytes: usize,
     pub flow: RuntimeFlowSourceLimits,
 }
 
@@ -117,6 +116,9 @@ struct Footprint {
     nodes: usize,
     elements: usize,
     storage: usize,
+    value_nodes: usize,
+    owned_bodies: usize,
+    lexical_scopes: usize,
 }
 struct Counts {
     limits: RuntimeLineGroupSourceLimits,

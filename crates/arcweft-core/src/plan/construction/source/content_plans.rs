@@ -5,7 +5,7 @@ mod cursor;
 mod decoding;
 mod encoding;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::expression::{RuntimeExpressionSourceError, RuntimeExpressionSourceLimits};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;

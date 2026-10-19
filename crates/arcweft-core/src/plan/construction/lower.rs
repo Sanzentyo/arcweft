@@ -4856,6 +4856,57 @@ impl RuntimePlanBodyConstruction<'_> {
         Ok(used)
     }
 
+    /// Conservative logical storage/work for the Line factory's source capture
+    /// derivation and the actual lexical validator. Admission precedes values.
+    /// The scalar summaries come from the complete borrowed operation grammar.
+    pub(in crate::plan) fn line_group_source_scope_storage(
+        atoms: usize,
+        value_nodes: usize,
+        owned_bodies: usize,
+        lexical_scopes: usize,
+        local_namespace: usize,
+    ) -> Option<(usize, usize)> {
+        // Source free-local collection retains a bound vector at each body,
+        // expression scope and explicit scope frame. Invalid duplicate bindings
+        // can grow those vectors: do not assume namespace-sized seed vectors.
+        let seed_frames = owned_bodies
+            .checked_add(value_nodes)?
+            .checked_mul(2)?
+            .checked_add(lexical_scopes)?
+            .checked_add(3)?;
+        let seed_bound = if local_namespace == 0 { 0 } else { atoms };
+        let seed_slots = seed_frames.checked_mul(seed_bound)?;
+        let seed_bytes = seed_slots
+            .checked_mul(size_of::<super::RuntimeLocalSeedId>())?
+            .checked_add(seed_frames.checked_mul(size_of::<Vec<super::RuntimeLocalSeedId>>())?)?;
+        // The work frontier retains independent scope-frame snapshots. Count
+        // both dimensions; nested Match within entered scopes is not linear in
+        // the number of operations. Actual BTree scopes contain unique IDs.
+        let frontier = owned_bodies
+            .checked_add(value_nodes)?
+            .checked_add(1)?
+            .checked_mul(3)?;
+        let runtime_sets = frontier
+            .checked_mul(lexical_scopes.checked_add(1)?)?
+            .checked_add(8)?;
+        let unique = atoms.min(local_namespace);
+        let runtime_slots = runtime_sets.checked_mul(unique)?;
+        let runtime_bytes = runtime_slots
+            .checked_mul(size_of::<RuntimeLocalDeclarationId>())?
+            .checked_add(
+                runtime_sets.checked_mul(size_of::<BTreeSet<RuntimeLocalDeclarationId>>())?,
+            )?
+            .checked_add(frontier.checked_mul(size_of::<FlowLocalValidationWork<'_>>())?)?;
+        // Vec growth and simultaneous conversion scratch remain bounded even
+        // before the ordinary duplicate/scope rejection reaches its final error.
+        let storage = seed_bytes.checked_add(runtime_bytes)?.checked_mul(2)?;
+        let work = seed_slots
+            .checked_add(runtime_slots)?
+            .checked_mul(2)?
+            .checked_add(atoms.checked_mul(unique.checked_add(1)?)?)?;
+        Some((storage, work))
+    }
+
     fn validate_flow_match_arms_iterative(
         &self,
         arms: &[RuntimeMatchArm],

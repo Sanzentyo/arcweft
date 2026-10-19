@@ -199,6 +199,8 @@ struct Footprint {
     nodes: usize,
     elements: usize,
     storage: usize,
+    owned_bodies: usize,
+    lexical_scopes: usize,
 }
 struct Counts {
     limits: RuntimeFlowSourceLimits,
@@ -401,6 +403,15 @@ impl<'a> PreparedRuntimeFlowSource<'a> {
     }
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.footprint.storage
+    }
+    pub(in crate::plan::construction::source) const fn operation_count(&self) -> usize {
+        self.operations
+    }
+    pub(in crate::plan::construction::source) const fn owned_body_count(&self) -> usize {
+        self.footprint.owned_bodies
+    }
+    pub(in crate::plan::construction::source) const fn lexical_scope_count(&self) -> usize {
+        self.footprint.lexical_scopes
     }
     pub(in crate::plan) fn materialize(
         self,

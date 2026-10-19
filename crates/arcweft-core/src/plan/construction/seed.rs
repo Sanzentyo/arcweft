@@ -703,6 +703,33 @@ pub struct RuntimeScheduledCaptureSeed {
 }
 
 impl RuntimeLineTaskGroupSeed {
+    pub(in crate::plan) fn validate_handle_site_count(
+        count: usize,
+    ) -> Result<(), super::RuntimePlanBuildError> {
+        let limit = crate::line_task::MAX_LINE_HANDLE_SITES;
+        if count > limit {
+            return Err(super::RuntimePlanBuildError::LineHandleSiteLimit {
+                actual: count,
+                limit,
+            });
+        }
+        Ok(())
+    }
+    pub(in crate::plan) fn validate_cleanup_policy(
+        policy: &crate::line_task::LineCleanupPolicy,
+    ) -> Result<(), super::RuntimePlanBuildError> {
+        if policy.child_tasks == crate::line_task::ChildTaskCleanup::Detach {
+            return Err(super::RuntimePlanBuildError::UnsupportedLineTaskDetach);
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate_policies(&self) -> Result<(), super::RuntimePlanBuildError> {
+        Self::validate_cleanup_policy(&self.cleanup_policy)?;
+        self.root.validate_policies()?;
+        Self::validate_handle_site_count(self.handle_sites.len())
+    }
+
     /// Derives external inputs in deterministic first-use order. Scheduled
     /// children own separate capture packets and do not capture group inputs.
     pub(super) fn free_locals(&self) -> Box<[RuntimeLocalSeedId]> {
@@ -735,6 +762,32 @@ impl RuntimeLineTaskGroupSeed {
 }
 
 impl RuntimeLineTaskNodeSeed {
+    pub(in crate::plan) fn validate_cancel_policy(
+        policy: crate::line_task::ChildCancelPolicy,
+    ) -> Result<(), super::RuntimePlanBuildError> {
+        if policy == crate::line_task::ChildCancelPolicy::Detach {
+            return Err(super::RuntimePlanBuildError::UnsupportedLineTaskDetach);
+        }
+        Ok(())
+    }
+
+    fn validate_policies(&self) -> Result<(), super::RuntimePlanBuildError> {
+        match self {
+            Self::Sequence(children) | Self::Start(children) | Self::Parallel { children, .. } => {
+                children.iter().try_for_each(Self::validate_policies)
+            }
+            Self::Child {
+                cancel_policy,
+                scope,
+                ..
+            } => {
+                Self::validate_cancel_policy(*cancel_policy)?;
+                scope.validate_policies()
+            }
+            Self::Action(_) => Ok(()),
+        }
+    }
+
     fn collect_free_locals(
         &self,
         bound: &[RuntimeLocalSeedId],

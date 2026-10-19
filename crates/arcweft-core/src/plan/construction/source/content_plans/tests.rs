@@ -10,7 +10,9 @@ use super::super::pattern::tests::{meter, resources};
 use super::*;
 use crate::plan::*;
 
-fn limits(plan: &RuntimePlan) -> RuntimeContentPlanSourceLimits {
+pub(in crate::plan::construction::source) fn limits(
+    plan: &RuntimePlan,
+) -> RuntimeContentPlanSourceLimits {
     RuntimeContentPlanSourceLimits {
         rows: 100,
         nodes: 100_000,
@@ -52,12 +54,12 @@ fn grouped_fixture() -> RuntimePlan {
         .unwrap();
     builder.finish().unwrap()
 }
-fn encode(plan: &RuntimePlan) -> Vec<u8> {
+pub(in crate::plan::construction::source) fn encode(plan: &RuntimePlan) -> Vec<u8> {
     plan.encode_content_plan_sources(limits(plan), &resources(), &mut meter())
         .unwrap()
         .into_bytes()
 }
-fn source(
+pub(in crate::plan::construction::source) fn source(
     plan: &RuntimePlan,
     bank: TaskSemanticMeter,
 ) -> (
@@ -97,11 +99,12 @@ fn handles(states: &[RuntimeCallableStateSeedId]) -> RuntimeExpressionSourceHand
         attempts: &[],
     }
 }
-fn bodies(
+pub(in crate::plan::construction::source) fn bodies(
     plan: &RuntimePlan,
     source: &mut super::super::RuntimePlanSourceConstruction,
     functions: &[RuntimeFunctionSiteSeedId],
     states: &[RuntimeCallableStateSeedId],
+    contents: &[RuntimeDialogueContentPlanSeedId],
 ) {
     for (function, handle) in plan.function_sites().iter().zip(functions) {
         let body = match function.body() {
@@ -109,12 +112,30 @@ fn bodies(
                 decode(expr, plan, source, &handles(states)),
             ),
             RuntimeFunctionSiteBody::Executable(body) => {
-                assert!(body.ops().is_empty());
-                // Flow-operation source transport is separate. These are the
-                // actual empty callback bodies, passed through their real owner.
+                let limits = super::super::flow::tests::limits(plan);
+                let encoded = plan
+                    .encode_flow_source(body.ops(), limits, &resources(), &mut source.meter)
+                    .unwrap();
+                let prepared = super::super::flow::PreparedRuntimeFlowSource::preflight(
+                    encoded.bytes(),
+                    limits,
+                    &resources(),
+                    &mut source.meter,
+                )
+                .unwrap();
+                let expressions = handles(states);
+                let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
+                    expression: &expressions,
+                    contents,
+                    defers: &[],
+                    tasks: &[],
+                };
+                let ops = prepared
+                    .materialize(source, &flow_handles, &mut resources())
+                    .unwrap();
                 RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                     effects: body.effects().clone(),
-                    ops: Box::new([]),
+                    ops: ops.into_boxed_slice(),
                 })
             }
         };
@@ -124,7 +145,9 @@ fn bodies(
             .unwrap();
     }
 }
-fn finish(source: super::super::RuntimePlanSourceConstruction) -> RuntimePlan {
+pub(in crate::plan::construction::source) fn finish(
+    source: super::super::RuntimePlanSourceConstruction,
+) -> RuntimePlan {
     let seal = RuntimeTaskPlanSealLimits::default();
     source
         .prepare_image(seal)
@@ -154,7 +177,7 @@ fn content_plan_sources_restore_original_values_effect_states_captures_marks_and
     let content = prepared
         .materialize(&mut source, &functions, &handles(&states), &mut resources())
         .unwrap();
-    bodies(&plan, &mut source, &functions, &states);
+    bodies(&plan, &mut source, &functions, &states, &content);
     prepared
         .bind_line_groups(&mut source, &content, &[])
         .unwrap();
@@ -212,7 +235,7 @@ fn content_plan_sources_bind_original_line_group_links_only_through_actual_group
     let content = prepared
         .materialize(&mut source, &functions, &handles(&states), &mut resources())
         .unwrap();
-    bodies(&plan, &mut source, &functions, &states);
+    bodies(&plan, &mut source, &functions, &states, &content);
     // Line graph/operation transport is separate; supply the exact genuine
     // typed group seed and let its existing owner build the original graph.
     let group = source

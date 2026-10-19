@@ -1817,9 +1817,7 @@ impl RuntimePlanBuilder {
         &mut self,
         seed: RuntimeLineTaskGroupSeed,
     ) -> Result<RuntimeLineTaskGroupSeedId, RuntimePlanBuildError> {
-        if line_task_seed_requests_detach(&seed) {
-            return Err(RuntimePlanBuildError::UnsupportedLineTaskDetach);
-        }
+        seed.validate_policies()?;
         let event_owners = self.line_task_event_owners(&seed)?;
         let captures = seed
             .free_locals()
@@ -2057,12 +2055,7 @@ impl RuntimePlanBuilder {
         seeds: Box<[RuntimeLineHandleSiteSeed]>,
         nodes: &[LineTaskNode],
     ) -> Result<Box<[RuntimeLineHandleSite]>, RuntimePlanBuildError> {
-        if seeds.len() > MAX_LINE_HANDLE_SITES {
-            return Err(RuntimePlanBuildError::LineHandleSiteLimit {
-                actual: seeds.len(),
-                limit: MAX_LINE_HANDLE_SITES,
-            });
-        }
+        RuntimeLineTaskGroupSeed::validate_handle_site_count(seeds.len())?;
         let mut previous_source = None;
         let mut sites = Vec::with_capacity(seeds.len());
         for (expected, seed) in seeds.into_vec().into_iter().enumerate() {
@@ -3121,32 +3114,6 @@ impl RuntimePlanBuilder {
         } else {
             Ok(())
         }
-    }
-}
-
-fn line_task_seed_requests_detach(seed: &RuntimeLineTaskGroupSeed) -> bool {
-    matches!(
-        seed.cleanup_policy.child_tasks,
-        crate::line_task::ChildTaskCleanup::Detach
-    ) || line_task_node_requests_detach(&seed.root)
-}
-
-fn line_task_node_requests_detach(node: &RuntimeLineTaskNodeSeed) -> bool {
-    match node {
-        RuntimeLineTaskNodeSeed::Sequence(children)
-        | RuntimeLineTaskNodeSeed::Start(children)
-        | RuntimeLineTaskNodeSeed::Parallel { children, .. } => {
-            children.iter().any(line_task_node_requests_detach)
-        }
-        RuntimeLineTaskNodeSeed::Child {
-            cancel_policy,
-            scope,
-            ..
-        } => {
-            *cancel_policy == crate::line_task::ChildCancelPolicy::Detach
-                || line_task_node_requests_detach(scope)
-        }
-        RuntimeLineTaskNodeSeed::Action(_) => false,
     }
 }
 

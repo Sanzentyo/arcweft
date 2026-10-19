@@ -162,6 +162,29 @@ impl RuntimeLineHandleSite {
         scheduled_child: Option<RuntimeLineTaskNodeId>,
         opaque_owner: RuntimeOpaqueTypeOwner,
     ) -> Result<Self, LineRuntimeError> {
+        Self::validate_metadata(
+            kind,
+            character.is_some(),
+            scheduled_child.is_some(),
+            &opaque_owner,
+        )?;
+        Ok(Self {
+            id,
+            source_ordinal,
+            kind,
+            result_type,
+            character,
+            scheduled_child,
+            opaque_owner,
+        })
+    }
+
+    pub(crate) fn validate_metadata(
+        kind: RuntimeLineHandleSiteKind,
+        has_character: bool,
+        has_scheduled_child: bool,
+        opaque_owner: &RuntimeOpaqueTypeOwner,
+    ) -> Result<(), LineRuntimeError> {
         let handle_kind = kind.handle_kind();
         if opaque_owner.value_class() != RuntimeOpaqueValueClass::AffineHandle(handle_kind)
             || opaque_owner.persistence() != RuntimeOpaquePersistence::SnapshotOnly
@@ -174,25 +197,15 @@ impl RuntimeLineHandleSite {
         }
         let valid_shape = match kind {
             RuntimeLineHandleSiteKind::StageActor | RuntimeLineHandleSiteKind::StageLookCue => {
-                character.is_some() && scheduled_child.is_none()
+                has_character && !has_scheduled_child
             }
-            RuntimeLineHandleSiteKind::ScheduledCue => {
-                character.is_none() && scheduled_child.is_some()
-            }
-            RuntimeLineHandleSiteKind::Voice => character.is_none() && scheduled_child.is_none(),
+            RuntimeLineHandleSiteKind::ScheduledCue => !has_character && has_scheduled_child,
+            RuntimeLineHandleSiteKind::Voice => !has_character && !has_scheduled_child,
         };
         if !valid_shape {
             return Err(LineRuntimeError::InvalidHandleSite);
         }
-        Ok(Self {
-            id,
-            source_ordinal,
-            kind,
-            result_type,
-            character,
-            scheduled_child,
-            opaque_owner,
-        })
+        Ok(())
     }
 
     #[must_use]

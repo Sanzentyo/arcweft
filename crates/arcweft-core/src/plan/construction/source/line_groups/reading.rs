@@ -201,6 +201,26 @@ impl<'a> Cursor<'a> {
             meter,
         )?;
         counts.child(child.node_count(), child.elements(), child.storage_bytes())?;
+        counts.footprint.value_nodes = counts
+            .footprint
+            .value_nodes
+            .checked_add(
+                child
+                    .node_count()
+                    .checked_sub(child.operation_count())
+                    .ok_or(Error::Arithmetic)?,
+            )
+            .ok_or(Error::Arithmetic)?;
+        counts.footprint.owned_bodies = counts
+            .footprint
+            .owned_bodies
+            .checked_add(child.owned_body_count())
+            .ok_or(Error::Arithmetic)?;
+        counts.footprint.lexical_scopes = counts
+            .footprint
+            .lexical_scopes
+            .checked_add(child.lexical_scope_count())
+            .ok_or(Error::Arithmetic)?;
         Ok(child)
     }
     pub fn group(
@@ -210,6 +230,7 @@ impl<'a> Cursor<'a> {
         meter: &mut TaskSemanticMeter,
         retain: bool,
     ) -> Result<Group<'a>, Error> {
+        let before = counts.footprint;
         let definition = self.raw(32)?.try_into().expect("Source definition width");
         let result = self.positive("result type", counts.limits.flow.expression.type_count)?;
         let child_tasks = match self.tag("child cleanup", 3)? {
@@ -234,6 +255,7 @@ impl<'a> Cursor<'a> {
             presentation,
             audio,
         };
+        crate::plan::RuntimeLineTaskGroupSeed::validate_cleanup_policy(&policy)?;
         let nodes = self.u32()? as usize;
         if nodes == 0 {
             return Err(Error::Prefix);
@@ -250,7 +272,14 @@ impl<'a> Cursor<'a> {
                 .ok_or(Error::Arithmetic)?,
         )?;
         let site_count = self.u32()? as usize;
+        crate::plan::RuntimeLineTaskGroupSeed::validate_handle_site_count(site_count)?;
         counts.array::<Site<'_>>(site_count)?;
+        counts.storage(
+            site_count
+                .checked_mul(counts.limits.opaque_producer_bytes)
+                .and_then(|bytes| bytes.checked_mul(2))
+                .ok_or(Error::Arithmetic)?,
+        )?;
         counts.storage(
             site_count
                 .checked_mul(
@@ -367,6 +396,20 @@ impl<'a> Cursor<'a> {
             self.flow(counts, resources, meter)?,
             self.flow(counts, resources, meter)?,
         ];
+        let after = counts.footprint;
+        let atoms = (after.nodes - before.nodes)
+            .checked_add(after.elements - before.elements)
+            .ok_or(Error::Arithmetic)?;
+        let (storage, work) = crate::plan::construction::lower::RuntimePlanBodyConstruction::line_group_source_scope_storage(
+            atoms,
+            after.value_nodes - before.value_nodes,
+            after.owned_bodies - before.owned_bodies,
+            after.lexical_scopes - before.lexical_scopes,
+            counts.limits.flow.expression.local_count,
+        )
+        .ok_or(Error::Arithmetic)?;
+        counts.storage(storage)?;
+        super::charge(meter, work)?;
         Ok(Group {
             definition,
             result,
@@ -413,6 +456,7 @@ impl<'a> Cursor<'a> {
                     2 => ChildCancelPolicy::Detach,
                     _ => unreachable!(),
                 };
+                RuntimeLineTaskNodeSeed::validate_cancel_policy(cancel)?;
                 Node::Child {
                     trigger,
                     join,

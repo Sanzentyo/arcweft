@@ -121,6 +121,18 @@ impl<'a> Cursor<'a> {
         let values = &self.bytes[start..self.offset];
         let body_count = self.u32()? as usize;
         counts.elements(body_count)?;
+        counts.footprint.owned_bodies = counts
+            .footprint
+            .owned_bodies
+            .checked_add(body_count)
+            .ok_or(Error::Arithmetic)?;
+        if matches!(tag, 29 | 42) {
+            counts.footprint.lexical_scopes = counts
+                .footprint
+                .lexical_scopes
+                .checked_add(1)
+                .ok_or(Error::Arithmetic)?;
+        }
         let bodies = self.raw(body_count.checked_mul(4).ok_or(Error::Arithmetic)?)?;
         let mut body_reader = Self::new(bodies);
         let mut children = 0usize;

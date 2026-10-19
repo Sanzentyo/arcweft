@@ -4,7 +4,7 @@
 use super::super::RuntimePlanSourceConstruction;
 use super::super::flow::RuntimeFlowSourceHandles;
 use super::reading::{self, Group, Node, Trigger};
-use super::{Error, PreparedRuntimeLineGroupSources};
+use super::{Error, PreparedRuntimeLineGroupSources, limit};
 use crate::entry::schema::value_encoding::ValueResourceAdmission;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
@@ -20,8 +20,7 @@ pub(super) fn authenticate<'a>(
     handles: &RuntimeFlowSourceHandles<'_>,
     resources: &ValueResourceAdmission,
 ) -> Result<Vec<Group<'a>>, Error> {
-    // This validation belongs to the Flow handle owner and will be shared with
-    // this sibling Source reader when the complete Line module is registered.
+    // The same original Flow handle owner authenticates the entire namespace.
     handles.validate(source, prepared.limits.flow)?;
     let actual = source.builder.line_task_groups.len();
     if actual != 0 {
@@ -34,6 +33,55 @@ pub(super) fn authenticate<'a>(
         &mut source.meter,
     )?;
     for group in &groups {
+        for (index, site) in group.sites.iter().enumerate() {
+            let invalid = || crate::plan::RuntimePlanBuildError::InvalidLineHandleType {
+                site: RuntimeLineHandleSiteId::from_zero_based(
+                    u32::try_from(index).expect("admitted dense site"),
+                ),
+            };
+            let id = RuntimePlanTypeId::from_accepted_ordinal(
+                std::num::NonZeroU32::new(site.result).expect("preflighted positive site type"),
+            );
+            let declaration = source.builder.types.get(id).ok_or_else(invalid)?;
+            let crate::plan::RuntimePlanTypeProjection::Opaque {
+                producer,
+                admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class,
+                persistence,
+                ..
+            } = declaration.projection()
+            else {
+                return Err(invalid().into());
+            };
+            limit(
+                "opaque producer bytes",
+                producer.as_str().len(),
+                prepared.limits.opaque_producer_bytes,
+            )?;
+            let expected = site
+                .kind
+                .handle_kind()
+                .try_producer()
+                .map_err(|_| invalid())?;
+            limit(
+                "opaque producer bytes",
+                expected.as_str().len(),
+                prepared.limits.opaque_producer_bytes,
+            )?;
+            let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                producer.clone(),
+                declaration.semantic_identity(),
+                *value_class,
+                *persistence,
+            );
+            crate::line_task::RuntimeLineHandleSite::validate_metadata(
+                site.kind,
+                site.character.is_some(),
+                site.scheduled_child.is_some(),
+                &owner,
+            )
+            .map_err(crate::plan::RuntimePlanBuildError::from)?;
+        }
         for node in &group.nodes {
             if let Node::Child {
                 trigger: Trigger::Mark { content, mark },

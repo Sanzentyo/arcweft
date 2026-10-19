@@ -18049,3 +18049,88 @@ derivation storage/work admission, unsupported-detach owner review and complete
 scheduled/actor/look/voice coverage still need implementation before registering
 and checking the finished Line codec. Continue the joint Source/consumer switch
 and remaining actual execution/restore/display acceptance. The goal stays active.
+
+## 2026-10-19 — Original Line Source admission and complete group round trips
+
+Inspected main bb0d69ff28d6779f5dbabc6518821e5d299c4555 with fifteen owned Rust
+paths, including one new handle fixture, and fourteen held tracked/three held
+untracked changes. Supersedes the preceding unregistered Line checkpoint: the
+reader/writer/seed reconstruction is registered. Original definition/result,
+preorder topology, four handle-site kinds, activation/actions/cancellation,
+three cleanup outcomes/policies, Mark content ownership and scheduled packets
+enter the actual Line factory. Captures and activation exports are derived
+there; content Source remains the only attachment owner. No liveness, program,
+completed key, native fallback or execution proof is fabricated by Source.
+
+Borrowed framing admits complete cumulative node/depth/element/encoded/decoded
+quotas before reconstruction. Flow now reports its actual operation/body/scope
+counts. RuntimePlanBodyConstruction, which owns lexical validation, uses those
+summaries to bound capture derivation and scope-frame snapshots, including the
+body-frontier by explicit-scope dimension, and charges the same live work bank.
+Invalid duplicate bindings do not get a false namespace-sized seed-vector bound.
+These are conservative logical storage/work bounds, not physical allocator or
+performance measurements. All original Flow/content/mark namespaces authenticate
+before values. Site metadata also checks its actual opaque type/class/producer,
+persistence and shape before Flow values. A per-owner producer-text byte cap
+reserves derived identity copies; insufficient caps refuse before reconstruction.
+
+Site-count admission, cleanup-detach and child-cancel-detach rules now live on
+their seed owner and are shared by the builder and borrowed reader. They reject
+before capture derivation/copies. The old detached-scan free functions are removed.
+The existing rules do not reject ChildJoinPolicy::Detached; no new rejection of
+that enum is invented. RuntimeLineHandleSite's constructor and borrowed-context
+admission share its same type/shape validator. Existing valid semantics and
+structured errors remain. Content callback reconstruction also consumes general
+Flow Source instead of its handwritten empty-executable path.
+
+R1363 first Clippy fails, actual 101: the scope storage helper was called on
+RuntimePlanBuilder instead of its actual RuntimePlanBodyConstruction owner.
+R1364 after that correction passes, actual 0, 43.79s. R1365 catalogs all 2293
+owner/consumer cases; R1366 executes that exact set, actual 0, 2293 pass, zero
+skip, 24.269s. R1367 added handle-fixture Clippy fails, actual 101, on two private
+pattern imports; the actual public value-owner reexports replace them. R1370
+Clippy then passes, actual 0, 18.41s. R1371/R1372 catalog/execute all 2294 cases,
+actual 0, 24.604s, zero skip. Planned R1368/R1369 did not run after R1367 failed.
+
+Derived opaque producer-name storage and pre-value site checks were then added.
+R1373 final Core/interaction-model all-target/all-feature locked Clippy passes,
+actual 0, 21.27s. R1374 catalogs the final 2295-case selection, zero excluded;
+R1375 executes all 2295, actual 0, zero fail/skip, 20.669s. Terminal audit verifies
+all names and all 3896 frozen inputs unchanged, including the fourteen held files.
+As before, seven -p libraries are selected but six contribute cases under the
+interaction-model reverse filter; unchanged Character is outside that root.
+These runs are not all 53 Core reverse packages or a workspace integration pass.
+R1376 canonical structural gate passes, actual 0.
+
+Seven new Line cases cover 24 supported cleanup/cancel combinations, genuine
+marked content and nested Start/Parallel/Child topology, exact/one-over cumulative
+quotas and every truncation, bad tags/trailing bytes/output capacity, foreign
+content and invalid mark extent before values, and original detach errors. A
+32-scope/32-Match fixture derives the real activation export and preserves its
+common-seal/digest result at the exact storage cap. A genuine typed factory
+fixture covers all four site kinds, distinct scheduled/look Cue metadata, an
+explicit scheduled capture packet, borrowed actor receiver, CharacterLook,
+Duration, Voice and immediate/scheduled children, then reencodes identically.
+Another case rejects 129 sites against the actual 128 limit, a non-opaque site
+type and insufficient producer-text allowance before any group publication.
+These are Source/common-seal tests, not real Native/AWBC actor or audio execution.
+Current Flow guard/Host Native execution regressions also pass in the full set.
+
+Ownership review: Line coordinator 10196 bytes/283 physical lines, borrowed reader
+16477/470, writer 12284/334, reconstruction 9644/241, tests 17817/501 and handle
+fixtures 11418/304 retain the complete group codec and actual consequences.
+RuntimePlanBodyConstruction's original lower.rs owner is 253914/5962, seed.rs
+99775/3041, and existing handle.rs 237579/6149. Their narrow changes own actual
+scope accounting or shared metadata/policy laws; no facade or public splitting
+API is introduced for size. No dependency, I/O, unsafe, alternate seal or shadow
+attachment catalog is added. Manifest/lock inputs stay at 99 unchanged; Core
+normal fan-in/out 31/7 and development 4/5 remain. Size triggers require this
+ownership disposition, not arbitrary algorithm splitting.
+
+Publish the coherent Line implementation, then run current workspace gates.
+Next connect the complete original program Source and task source definitions
+through genuine reservations and the common seal, retaining expected keys only
+as assertions. Finish the atomic public consumer switch, actual Native/AWBC
+selected-Need key failures, registry/lifetime execution, retained View, restore
+and display acceptance. R1349's two selected-Need key failures remain open; the
+new library pass does not execute them. The full goal remains active.
