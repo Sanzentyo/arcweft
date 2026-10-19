@@ -21186,3 +21186,48 @@ intermediate checkpoint; complete operability at each intermediate commit is not
 claimed. The entire convergence goal remains active, including actual admitted
 owners in Agent/host/value/callback paths and the final public Source/spec/instance/
 outcome, autonomous/standalone, all-family and wider acceptance requirements.
+
+### 2026-10-20 — validate Core-owned View prefix and tighten its handover
+
+The prefix/meter change is published and freshly verified at
+`04cd78d0ad81027be5996a439e30ec12297e6c99`, parent
+`30505a85ec2a691d294ea1df60612d5c43cd0bb1`, tree
+`97f7c71eed41425048221cff37b9f420e6203fb3`, complete patch SHA-256
+`7b11f385e92c13b78eddeee44694f3a2b7838c299c2caaf6aa16accd7efd22c0`.
+All eight blobs, 3931 frozen inputs, held inventory and empty index matched.
+
+R1672 completed its older full-Core catalogue: 7119 cases, 7080 selected and 39
+ignored/default-excluded, across 210 nonempty binaries and 50 packages with named
+host tests from the 53-package selection. It compiled while this next change was
+in progress and is not current-prefix runtime acceptance. Its terminal Cargo exit
+was 0, not a stalled or missing process. R1673 then compiled the current six-owner
+selection and catalogued all 2812 cases with no exclusions/ignored. R1676 passed
+all 2812, zero failed/skipped (238.884s, two slow, exit 0). Case keys and all 3931
+frozen inputs match, including held drift zero. This includes exact/one-less
+original work/bytes with no escaped key, independently encoded unchanged transcript
+keys, unfinished/substituted-key rejection and real linked View Source activation,
+replacement, restore and Native/AWBC asset execution.
+
+R1674's three capability compile-fail doctests passed (70 unrelated doctests
+intentionally filtered). R1675 six-owner all-target/all-feature Clippy exited 0
+with existing warnings; R1677 locked workspace all-target/all-feature check exited
+0. Both audits match the same 3931 inputs. R1678 structure passed: 3154 files,
+3024 Rust files, 1717855 physical Rust lines, 97 packages, 376 review triggers and
+zero blocking violations. The request now owns the same Core prefix and original
+meter, Bundle only validates and supplies its View binding, and staged common
+completion retains expected/duplicate/atomic-publication ownership. These changes
+remove duplicate prefix authority without changing layer direction or version.
+
+Clippy also identified a new nine-argument private request constructor. Its
+handover now follows the existing owners: the invocation issues its read-only
+base and that base consumes the actual prefix/meter into the one-use request.
+No new wrapper or lint suppression is introduced, and the fields/grammar/budget
+semantics are unchanged. The negative doctest now attempts to pass a hasher to
+the actual new binding API, rather than testing only the removed method name.
+These final private-factory/doctest adjustments still need current focused and
+Clippy evidence; the full 2812-case proof above remains attributed to its actual
+published inputs. R1679's broader current catalogue was active when the final
+handover adjustment began, so retain its terminal result without claiming current
+source equivalence. No profile/jobs/budget/timeout/copy/capture/batch/fusion condition
+changed. The full Source/owner/public-switch and remaining recorded acceptance
+goal stays active; no broader completion claim follows from these passing checks.

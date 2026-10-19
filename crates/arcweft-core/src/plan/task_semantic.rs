@@ -414,7 +414,20 @@ pub struct RuntimeTaskPlanDigestBase<'a> {
     control_effect: ControlEffectContractDigest,
 }
 
-impl RuntimeTaskPlanDigestBase<'_> {
+impl<'a> RuntimeTaskPlanDigestBase<'a> {
+    /// Attaches the checked transcript and its meter only inside the Core seal.
+    pub(crate) fn into_request(
+        self,
+        transcript: blake3::Hasher,
+        meter: &'a mut crate::task::semantic::TaskSemanticMeter,
+    ) -> ViewTaskPlanDigestRequest<'a> {
+        ViewTaskPlanDigestRequest {
+            base: self,
+            transcript,
+            meter,
+        }
+    }
+
     /// Inert locator from the complete original Source codec. Construction
     /// requests have no assertion; the common seal still recomputes and checks
     /// the completed key after the upper owner consumes its capability.
@@ -483,7 +496,7 @@ impl RuntimeTaskPlanDigestBase<'_> {
 /// fn replace_prefix(request: ViewTaskPlanDigestRequest<'_>) {
 ///     let mut forged = blake3::Hasher::new();
 ///     forged.update(&[0; 512]);
-///     request.finish_authority_transcript(forged);
+///     request.complete_view_binding(forged, &[23; 32], &[47; 32]);
 /// }
 /// ```
 pub struct ViewTaskPlanDigestRequest<'a> {
@@ -595,7 +608,7 @@ impl ViewTaskPlanSealInvocation {
         }
     }
 
-    pub(crate) fn request<'a>(
+    pub(crate) fn base<'a>(
         &'a self,
         plan: &'a SourceRuntimeTaskPlan,
         expected: Option<&'a crate::task::ExpectedTaskPlanKey>,
@@ -603,21 +616,15 @@ impl ViewTaskPlanSealInvocation {
         producer_function: ProducerFunctionSemanticDigest,
         request_template: TaskRequestTemplateDigest,
         control_effect: ControlEffectContractDigest,
-        transcript: blake3::Hasher,
-        meter: &'a mut crate::task::semantic::TaskSemanticMeter,
-    ) -> ViewTaskPlanDigestRequest<'a> {
-        ViewTaskPlanDigestRequest {
-            base: RuntimeTaskPlanDigestBase {
-                issuer: self,
-                expected,
-                plan,
-                executable,
-                producer_function,
-                request_template,
-                control_effect,
-            },
-            transcript,
-            meter,
+    ) -> RuntimeTaskPlanDigestBase<'a> {
+        RuntimeTaskPlanDigestBase {
+            issuer: self,
+            expected,
+            plan,
+            executable,
+            producer_function,
+            request_template,
+            control_effect,
         }
     }
 

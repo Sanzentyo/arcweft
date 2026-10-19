@@ -191,16 +191,16 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
                 let invocation =
                     crate::plan::task_semantic::ViewTaskPlanSealInvocation::new(coordinate);
                 let children = &self.rows.tasks[ordinal];
-                let request = invocation.request(
-                    children.row,
-                    self.image.expected_key(ordinal),
-                    self.rows.executable,
-                    children.function,
-                    children.request,
-                    children.control,
-                    core_prefix,
-                    self.meter,
-                );
+                let request = invocation
+                    .base(
+                        children.row,
+                        self.image.expected_key(ordinal),
+                        self.rows.executable,
+                        children.function,
+                        children.request,
+                        children.control,
+                    )
+                    .into_request(core_prefix, self.meter);
                 let completed = authority.task_plan_semantic_digest(request);
                 // A budget rejection by completion is the original sticky
                 // encoding failure, even if the upper owner maps its error.
