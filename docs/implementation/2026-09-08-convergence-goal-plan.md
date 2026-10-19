@@ -19050,3 +19050,48 @@ Remove the request-only issuer and old readers in the single complete consumer
 migration. R1497's two failures, full View capability/retained View, failed-atomic
 restore/replacement, Native/Web/CLI and all remaining acceptance stay open.
 The full goal remains active.
+
+### 2026-10-19 — CLI Source failure consumer and current workspace gates
+
+The preceding Source artifact cut is published as
+`c44048254a415f34d442a7c73cdeec7d2ad59afe`, parent
+`3035f166a6fc0b9c0360dd025598fe6c78c599bd`, tree
+`f6396c6500205e73c78e5d0c2da62434ff119d4c`. Fresh origin/main and advertised head,
+all 27 published/working blobs and raw binary/full-index patch match; patch
+SHA-256 is
+`e5a18e4dc284c89ae3af1a71dbc23ec4c37366e23d67b4bdf6dcc1a3a18b0ea7`.
+The advanced baseline has 3914 inputs and zero owned changes. Fourteen tracked
+and three untracked held paths remain excluded and untouched.
+
+R1500 workspace all-target/all-feature locked check fails, actual 101. The CLI
+profile product lowerer exhaustively matches AwbcLowerError but omits the new
+OriginalSource variant. This is a change-caused consumer error, not an unrelated
+failure. Its queued Clippy/catalog commands do not run after that failure.
+profile_lower_product_awbc now explicitly reports the retained Source encoding
+error in the existing product phase and returns the existing failure ExitCode.
+No wildcard, fallback, success path or diagnostic suppression is added. The
+three-line CLI consumer repair needs compile evidence, not a spelling-only test.
+
+R1504 repeated workspace all-target/all-feature locked check passes, actual 0,
+Cargo 13.37s. R1505 matching workspace Clippy passes, actual 0, 2m29s. Warnings
+remain; neither result claims -D warnings. Rust inputs match the R1504 frozen
+source; this task-note addition follows those completed executions. Changed-file
+rustfmt and diff checks pass. No Core/RuntimePlan source or acceptance assertion
+changes after R1497, so its 1939 pass/two named completed-key failures and R1498's
+69 doctests remain their actual recorded evidence.
+
+R1506 is currently building the default-feature complete workspace library/test
+catalog with rdeps(=arcweft-core), including CLI. Its cargo nextest list and Cargo
+test --no-run processes were observed live; unified exec session 35759 owns the
+current queue. Receipts/logs use task-final-r1506-awbc-original-source-reverse-
+catalog under the existing session Temp evidence directory. No catalog count,
+test execution or reverse-dependency pass is claimed yet. Inspect that exact
+handle/catalog, verify all required names and package coverage against the
+resolved 53-package closure, then run and terminal-audit the complete selection.
+
+Publish this consumer repair at the requested intermediate boundary while the
+catalog continues; the Rust bytes are unchanged by publication/task-note prose.
+Complete reverse/default and milestone acceptance, the fourteen-family registry/
+public switch, both completed-key failures, retained View, original program
+leases, failure-atomic restore/replacement and actual Native/Web/CLI capture/
+display acceptance remain open. The full goal remains active.

@@ -102,6 +102,9 @@ fn profile_lower_product_awbc(
                             );
                         }
                     }
+                    AwbcLowerError::OriginalSource(error) => {
+                        eprintln!("error: product AWBC source encoding failed: {error}");
+                    }
                     AwbcLowerError::Verify(error) => {
                         eprintln!("error: product AWBC verification failed: {error}");
                     }
