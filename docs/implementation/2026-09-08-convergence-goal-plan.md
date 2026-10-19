@@ -21579,3 +21579,62 @@ explicit permission to publish intermediate commits without proving each one
 operational; repair validation is pending, not reported as successful. The full
 convergence goal, Source public switch/all14 families, Presentation lowering,
 strict lint, Tier2, Native/Web execution and capture/parity acceptance remain open.
+
+### 2026-10-20 — borrowed invocation admission before argument copies
+
+The authored entry repair is published and blob-verified at
+`41ee27b36655a3240b1e1f353eb012a1a6aa5a4f`, parent
+`3b0c44932dbf827c495d0055ded12032dc7595aa`, tree
+`89884127b78a53758e6e384e0fe27c5baf330ace`, patch SHA-256
+`8cff72552bc997ba6ce11d51ff7df860fd7a813e85b57a47128020c948be6261`.
+R1706 then passed all 191 CLI library cases in 10.384s, zero skipped. The actual
+Source/PNG/context case passed with its original execution limits. Its terminal
+case set and all 3931 frozen inputs matched, with held14 unchanged.
+
+R1701 completed with actual exit100: 2728 executed, 2670 passed (69 slow), 58
+failed and 23 skipped in 2015.172s. Its exact terminal inventory matched the
+19-package catalogue. Both new View admission and actual AWBC cache ownership
+cases passed. The failure inventory has one now-repaired entry selection case,
+nine explicit pending Presentation ABI rejections, one IME generator E0063 for
+missing ViewProgramResource.task_plan_bindings, and 47 cases requiring their
+actual contract diagnosis. At the failure-only audit nine current paths differed
+from its original freeze, including the earlier fixture/note and subsequent
+Core/documentation work. This is failed-run evidence, not final immutable-source
+acceptance. Full diagnostics and the exact 58-case set are retained in R1701's
+failure-diagnostics and terminal-audit evidence.
+
+The two pure-program helpers previously copied borrowed arguments before entering
+the complete owning invocation constructor. AWBC also recorded the call before
+that constructor could reject it. Each owning executor now admits an owned or
+borrowed Cow packet through the same existing custody, ABI, pattern and frame
+preparation. Only the admitted borrowed packet becomes owned. Owned rejection
+returns its original Vec; borrowed rejection releases its original borrow and
+cannot clone an affine value while constructing an error. The shared private
+rejection packet keeps its structured cause boxed, avoiding a large internal
+error return. The retained Native plan and admitted AWBC executable/Source remain
+the actual execution owners; no fresh preflight bank or resolver was added.
+AWBC accounting now follows successful activation. Operation budgets, quantum,
+batches, copies per accepted input, capture and execution workload remain intact.
+The existing two issued-handle custody tests now exercise borrowed rejection
+before owned rejection and retain the same original handle and active ledger.
+
+R1708 initial complete Core run passed 1933 cases. Clippy then identified five new
+warnings; they were repaired without lint suppression. The final R1712 inventory
+has 1933 selected cases: 1880 library cases and 53 integration/public-API cases,
+zero excluded. R1713 passed all 1933 in 129.364s, zero skipped; exact cases and all
+3931 inputs matched. R1714 ordinary all-target/all-feature locked Core Clippy
+passed, with its prior warning counts restored (2917 library-test warnings,
+2391 duplicates); strict -D warnings remains unmet. R1715 passed all 73 doctests,
+zero failed/ignored/filtered. R1716 structural gate passed: 3154 files, 3024 Rust
+files, 1718585 physical Rust lines, 97 packages, 376 review triggers, zero blocking
+violations. The existing invocation owners retain the complete packet and decide
+when it may move/copy; this introduces no layer edge, I/O, unsafe or version marker.
+
+The unchanged 99 manifest/lock inputs retain the actual Core reverse closure of
+53 packages. Run that full consumer catalogue and current workspace check after
+publication. The separate IME generator still needs its typed View binding field;
+its inspected authored View has only element/semantic instructions and no value
+program/input task sites. Finish that migration and its deterministic AWFB test.
+Aggregate original-allowance admission, complete Source public switching/all14
+families, Presentation, remaining semantic/execution failures, strict lint, Tier2
+and Native/Web capture/parity are still required. This does not complete the goal.

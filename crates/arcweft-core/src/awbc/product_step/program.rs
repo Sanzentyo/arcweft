@@ -1,6 +1,6 @@
 //! Owned admitted-program activation and single-owner result transfer.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
@@ -228,6 +228,46 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProgramInvocationError> {
+        Self::for_admitted_program_inputs(
+            admitted,
+            id,
+            Cow::Owned(inputs),
+            generation,
+            budget_quantum,
+        )
+        .map_err(|rejected| AwbcProgramInvocationError {
+            reason: *rejected.reason,
+            inputs: rejected.inputs.into_owned(),
+        })
+    }
+
+    /// The complete executable/Source and frame are admitted before borrowed
+    /// inputs can be copied into the selected invocation.
+    pub(crate) fn for_borrowed_program_invocation(
+        admitted: AwbcProductProgram,
+        id: RuntimePureProgramId,
+        inputs: &[RuntimeValue],
+        generation: GenerationId,
+        budget_quantum: u64,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_admitted_program_inputs(
+            admitted,
+            id,
+            Cow::Borrowed(inputs),
+            generation,
+            budget_quantum,
+        )
+        .map_err(|rejected| *rejected.reason)
+    }
+
+    fn for_admitted_program_inputs(
+        admitted: AwbcProductProgram,
+        id: RuntimePureProgramId,
+        inputs: Cow<'_, [RuntimeValue]>,
+        generation: GenerationId,
+        budget_quantum: u64,
+    ) -> Result<Self, crate::program_invocation::RejectedProgramInputs<'_, AwbcProductStepBuildError>>
+    {
         let program = admitted.program_arc();
         let prepared = (|| {
             for (position, value) in inputs.iter().enumerate() {
@@ -238,6 +278,13 @@ impl AwbcProductStepExecutor {
                         source: Box::new(source),
                     }
                 })?;
+            }
+            if matches!(&inputs, Cow::Borrowed(_))
+                && inputs.iter().any(|value| !value.ownership().permits_copy())
+            {
+                return Err(AwbcProductStepBuildError::FiberState {
+                    message: format!("pure program {id} input contains an affine value"),
+                });
             }
             let binding = program.pure_program_binding(id).ok_or_else(|| {
                 AwbcProductStepBuildError::FiberState {
@@ -259,12 +306,17 @@ impl AwbcProductStepExecutor {
         })();
         let (mut executor, prepared) = match prepared {
             Ok(prepared) => prepared,
-            Err(reason) => return Err(AwbcProgramInvocationError { reason, inputs }),
+            Err(reason) => {
+                return Err(crate::program_invocation::RejectedProgramInputs {
+                    reason: Box::new(reason),
+                    inputs,
+                });
+            }
         };
         executor.fiber = FiberState::for_function_with_arguments_prepared(
             &program,
             AwbcFiberRoot::Program(id),
-            inputs,
+            inputs.into_owned(),
             prepared,
             executor.fiber.instance,
             generation.get(),

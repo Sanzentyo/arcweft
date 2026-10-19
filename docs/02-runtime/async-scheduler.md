@@ -105,6 +105,14 @@ lease through activation. The pure accelerator's cache owns either its exact
 Native plan or its admitted AWBC program; Native cache slots require a function
 capability from the matching Native plan.
 
+Borrowed pure-program inputs use the same activation admission as owned inputs.
+Custody, the complete positional ABI, binding patterns and the selected frame
+must be prepared before copying a borrowed packet. Copy permission is checked
+for every transitive input graph. Rejection preserves owned inputs or releases
+the original borrow; constructing an error must not copy an unadmitted value.
+AWBC pure-call statistics advance only after activation is accepted. This
+boundary does not grant a fresh argument, frame or execution-budget allowance.
+
 The current Rust implementation keeps the deterministic scheduling layer in
 `arcweft-runtime-scheduler`. It depends only on `arcweft-core`, accepts
 `TaskSpec` values, joins in-flight `JoinSameKey` tasks, sorts dispatch by

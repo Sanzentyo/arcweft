@@ -4,6 +4,13 @@ use crate::task::RuntimeProgramOwner;
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimeValue};
 use thiserror::Error;
 
+/// Rejected input packets preserve their original ownership form. In particular,
+/// a borrowed rejection must never clone an unadmitted affine value to report it.
+pub(crate) struct RejectedProgramInputs<'a, E> {
+    pub(crate) reason: Box<E>,
+    pub(crate) inputs: std::borrow::Cow<'a, [RuntimeValue]>,
+}
+
 /// Positional input to another program on the same retained executor.
 /// The previous result is consumed once together with its existing context.
 #[derive(Debug, PartialEq)]

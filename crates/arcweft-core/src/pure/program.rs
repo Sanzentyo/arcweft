@@ -77,14 +77,9 @@ pub fn evaluate_pure_program_with_backend(
             return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
         }
     }
-    for (input, value) in site.inputs().iter().zip(args) {
-        if !value.ownership().permits_copy() {
-            return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
-        }
-    }
     let mut engine =
-        crate::engine::Engine::for_program_invocation(Arc::clone(plan), program, args.to_vec())
-            .map_err(|failure| failure.into_parts().0)?;
+        crate::engine::Engine::for_borrowed_program_invocation(Arc::clone(plan), program, args)
+            .map_err(|reason| *reason)?;
     let output = engine.step_with_pure_backend(
         crate::step::RuntimeStepInput::default(),
         crate::step::RuntimeStepOptions {

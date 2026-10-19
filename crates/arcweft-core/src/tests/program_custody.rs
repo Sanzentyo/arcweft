@@ -541,6 +541,38 @@ fn detached_input_rejects_issued_handle_before_consuming_awbc_owner() {
     )
     .unwrap();
     let before = fixture.ledger.clone();
+    let admitted = crate::awbc::product_step::AwbcProductProgram::admit(
+        Arc::clone(&program),
+        crate::awbc::verify::AwbcVerifyBudget::default(),
+        crate::awbc::verify::AwbcVerifyContext {
+            require_entrypoint: false,
+            ..Default::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+    let borrowed_error =
+        crate::awbc::product_step::AwbcProductStepExecutor::for_borrowed_program_invocation(
+            admitted,
+            fixture.program,
+            std::slice::from_ref(&fixture.value),
+            crate::task::GenerationId::new(0),
+            64,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        borrowed_error,
+        crate::awbc::product_step::AwbcProductStepBuildError::ProgramInputCustody {
+            position: 0,
+            ..
+        }
+    ));
+    assert_eq!(fixture.ledger, before);
+    assert_eq!(
+        fixture.value.affine_line_handles().unwrap()[0].token(),
+        &fixture.token
+    );
     let error = crate::awbc::product_step::AwbcProductStepExecutor::for_program_invocation(
         program,
         fixture.program,
@@ -573,6 +605,21 @@ fn detached_input_rejects_issued_handle_before_consuming_native_owner() {
         .validate_function_site_input_refs(site, &[], &[&fixture.value])
         .unwrap();
     let before = fixture.ledger.clone();
+    let borrowed_error = crate::engine::Engine::for_borrowed_program_invocation(
+        Arc::clone(&fixture.plan),
+        fixture.program,
+        std::slice::from_ref(&fixture.value),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        *borrowed_error,
+        crate::value::RuntimeEvalError::ProgramInputCustody { position: 0, .. }
+    ));
+    assert_eq!(fixture.ledger, before);
+    assert_eq!(
+        fixture.value.affine_line_handles().unwrap()[0].token(),
+        &fixture.token
+    );
     let error = crate::engine::Engine::for_program_invocation(
         fixture.plan,
         fixture.program,

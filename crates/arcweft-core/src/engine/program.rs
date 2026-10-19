@@ -1,6 +1,6 @@
 //! Owned program activation through the selected plan's FunctionSite ABI.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
@@ -194,6 +194,30 @@ impl Engine {
         program: RuntimePureProgramId,
         inputs: Vec<RuntimeValue>,
     ) -> Result<Self, RuntimeProgramInvocationError> {
+        Self::for_program_inputs(plan, program, Cow::Owned(inputs)).map_err(|rejected| {
+            RuntimeProgramInvocationError {
+                reason: *rejected.reason,
+                inputs: rejected.inputs.into_owned(),
+            }
+        })
+    }
+
+    /// Copies a borrowed packet only after the complete owned activation
+    /// boundary has admitted custody, formals, patterns and the frame's inputs.
+    pub(crate) fn for_borrowed_program_invocation(
+        plan: Arc<RuntimePlan>,
+        program: RuntimePureProgramId,
+        inputs: &[RuntimeValue],
+    ) -> Result<Self, Box<RuntimeEvalError>> {
+        Self::for_program_inputs(plan, program, Cow::Borrowed(inputs))
+            .map_err(|rejected| rejected.reason)
+    }
+
+    fn for_program_inputs(
+        plan: Arc<RuntimePlan>,
+        program: RuntimePureProgramId,
+        inputs: Cow<'_, [RuntimeValue]>,
+    ) -> Result<Self, crate::program_invocation::RejectedProgramInputs<'_, RuntimeEvalError>> {
         let prepared = (|| {
             for (position, value) in inputs.iter().enumerate() {
                 value.validate_detached_custody().map_err(|source| {
@@ -204,14 +228,34 @@ impl Engine {
                     }
                 })?;
             }
-            prepare_program_inputs(&plan, program, &inputs.iter().collect::<Vec<_>>())
+            let site = prepare_program_inputs(&plan, program, &inputs.iter().collect::<Vec<_>>())?;
+            if matches!(&inputs, Cow::Borrowed(_)) {
+                for (input, value) in plan
+                    .function_sites()
+                    .get(site)
+                    .expect("the complete input preflight retained its selected function site")
+                    .inputs()
+                    .iter()
+                    .zip(inputs.iter())
+                {
+                    if !value.ownership().permits_copy() {
+                        return Err(RuntimeEvalError::AffineLocalCopy(input.input_local()));
+                    }
+                }
+            }
+            Ok(site)
         })();
         let site = match prepared {
             Ok(site) => site,
-            Err(reason) => return Err(RuntimeProgramInvocationError { reason, inputs }),
+            Err(reason) => {
+                return Err(crate::program_invocation::RejectedProgramInputs {
+                    reason: Box::new(reason),
+                    inputs,
+                });
+            }
         };
         let mut engine = Self::new_with_shared_plan(plan, crate::task::GenerationId::new(0));
-        engine.activate_program_prepared(program, site, inputs);
+        engine.activate_program_prepared(program, site, inputs.into_owned());
         Ok(engine)
     }
 

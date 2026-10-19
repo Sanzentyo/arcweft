@@ -142,13 +142,6 @@ pub fn evaluate_admitted_pure_program_with_backend(
             actual: args.len(),
         });
     }
-    for value in args {
-        if !value.ownership().permits_copy() {
-            return Err(crate::awbc::vm::VmError::Runtime(format!(
-                "pure program {pure_program} input contains an affine value"
-            )));
-        }
-    }
     for (position, (value, expected)) in args.iter().zip(&binding.input_types).enumerate() {
         let ty = program
             .runtime_types
@@ -167,15 +160,15 @@ pub fn evaluate_admitted_pure_program_with_backend(
             )));
         }
     }
-    backend.record_awbc_pure_program_call();
-    let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
+    let mut executor = AwbcProductStepExecutor::for_borrowed_program_invocation(
         admitted.clone(),
         pure_program,
-        args.to_vec(),
+        args,
         GenerationId::new(0),
         1_000_000,
     )
-    .map_err(|error| crate::awbc::vm::VmError::Runtime(error.into_parts().0.to_string()))?;
+    .map_err(|error| crate::awbc::vm::VmError::Runtime(error.to_string()))?;
+    backend.record_awbc_pure_program_call();
     let output = executor.step_with_pure_backend(
         RuntimeStepInput::default(),
         RuntimeStepOptions {
