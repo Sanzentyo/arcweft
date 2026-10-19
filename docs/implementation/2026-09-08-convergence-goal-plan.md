@@ -17974,3 +17974,40 @@ single attachment owner. Finish Line and whole-program Source, all fourteen
 families and the joint public switch, registry execution, retained View, key,
 restore and remaining acceptance without interpreting this cut as completion.
 The full goal remains active.
+
+## 2026-10-19 — Current workspace gates and original Line reader checkpoint
+
+Inspected published main 16e181fa6fef9b0753590191f419a596896550c9. Supersedes
+the preceding pending workspace check/Clippy: R1358 workspace all-target/all-
+feature locked check passes, actual 0, 2m01s; R1359 matching workspace Clippy
+passes, actual 0, 2m08s. Both run against unchanged production Rust and all 3890
+frozen inputs verify unchanged, including fourteen held tracked files. The
+three new Line files are unregistered and outside that freeze. The six-library
+2322-case pass, canonical structure result and failure scopes above remain.
+
+Checkpoint the unregistered Line coordinator, borrowed reader and seed decoder
+under the user's instruction permitting incomplete intermediate commits. They
+are not compiled or tested. Encoding and tests are still absent; do not register
+this module until the complete implementation is ready. Draft framing retains
+original definition/result/cleanup metadata, ordered handle sites, one preorder
+node prefix, activation/action/cancel bodies and all three cleanup outcomes as
+Flow Source. Nested Flow tokens retain their cumulative remaining allowance.
+Mark triggers retain original content/local coordinates, and the decoder checks
+the genuine content table before materializing Flow values or Line seeds. The
+original factory will derive captures/activation exports and issue group handles;
+content Source retains sole attachment ownership.
+
+Next finish the counted writer and complete actual-group fixtures, including
+marks, scheduled capture packets, actor/look/voice sites, cancellation and all
+cleanup policies. The drafts need the real Flow handle validator visible to its
+sibling Source reader and a borrowed Identifier validation/normalization API on
+the interaction identity owner; that API does not yet exist. Identifier::new
+currently trims and rejects empty text, so share that law without copying it into
+the codec. Preserve original normalized identity data and count constructor
+scratch. Before registration, finish conservative capture/activation derivation
+storage admission for the actual Line factory, review unsupported detach policy
+at its real owner, authenticate all Mark pairs before any owned Flow values,
+and verify prefix/source-order and resource bounds. These remaining details are
+implementation work, not external blockers or completed acceptance. Retain the
+two real selected-Need key failures and continue the joint complete-program
+Source/public switch and all other goal conditions. The full goal remains active.
