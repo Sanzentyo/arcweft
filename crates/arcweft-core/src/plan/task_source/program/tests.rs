@@ -1,5 +1,4 @@
 use super::*;
-use crate::awbc::schema::{AwbcRuntimeType, AwbcRuntimeTypeShape};
 use crate::entry::RuntimeSchemaLimits;
 use crate::pattern::RuntimeCheckedType;
 use crate::plan::construction::source::selected_producers;
@@ -24,18 +23,7 @@ fn original() -> RuntimePlan {
 }
 
 fn executable() -> AwbcProgram {
-    AwbcProgram {
-        original_source: Some(
-            original()
-                .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
-                .unwrap(),
-        ),
-        runtime_types: vec![AwbcRuntimeType::new(
-            RuntimeCheckedType::Bool.semantic_identity_digest(),
-            AwbcRuntimeTypeShape::Bool,
-        )],
-        ..AwbcProgram::default()
-    }
+    super::selected::tests::executable(2)
 }
 
 fn context() -> AwbcVerifyContext<'static> {
@@ -67,14 +55,25 @@ fn source(program: &RuntimeTaskSourceProgram) -> RuntimeTaskSourceRef<'_> {
             .key()
             .as_bytes(),
     );
-    program
+    let source = program
         .original()
         .task_source_by_expected_key(
             &expected,
             RuntimeTaskPlanSealLimits::default(),
             &mut TaskSemanticMeter::new(1_000_000, 0),
         )
-        .unwrap()
+        .unwrap();
+    match program.data.as_ref() {
+        RuntimeTaskSourceProgramData::Native(_) => source,
+        RuntimeTaskSourceProgramData::Awbc { .. } => program
+            .awbc_selected_source(
+                crate::awbc::schema::AwbcTaskPlanId(0),
+                source,
+                RuntimeTaskPlanSealLimits::default(),
+                &mut TaskSemanticMeter::new(1_000_000, 0),
+            )
+            .unwrap(),
+    }
 }
 
 fn arguments() -> [NeedProducerRuntimeArgument; 2] {
@@ -181,22 +180,20 @@ fn awbc_source_program_rejects_native_surrogates_foreign_code_and_source_before_
 fn awbc_source_program_uses_awbc_type_rows_instead_of_its_original_native_types() {
     let mut executable = executable();
     executable.runtime_types.clear();
-    let program = admit(Arc::new(executable)).unwrap();
     assert!(
-        program
-            .original()
+        original()
             .type_table()
             .id_for_semantic(RuntimeCheckedType::Bool.semantic_identity_digest())
             .is_some()
     );
-    let mut bank = RuntimeRetainedValueAdmission::for_program(
-        program.program_owner(),
-        RuntimeSchemaLimits::engine_default(),
-    );
     assert!(matches!(
-        source(&program).selected_producer_spec(&program, &arguments(), None, &mut bank),
-        Err(RuntimeTaskProducerSourceError::Admission(
-            AwbcRuntimeValueSnapshotError::ProgramType(_)
+        admit(Arc::new(executable)),
+        Err(RuntimeTaskSourceProgramError::Awbc(
+            AwbcVerifyError::IndexOutOfBounds {
+                table: "runtime_types",
+                index: 0,
+                ..
+            }
         ))
     ));
 }

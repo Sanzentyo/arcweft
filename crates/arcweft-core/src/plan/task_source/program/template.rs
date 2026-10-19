@@ -113,7 +113,9 @@ impl RuntimeTaskSourceProgram {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeAwbcTemplateSourceError> {
-        let result = self.admit_awbc_template_source(task, limits, meter);
+        let result = self
+            .admit_awbc_template_source(task, limits, meter)
+            .map(|source| self.bind_source(source, super::RuntimeTaskExecutionRow::Template(task)));
         if result.is_err() {
             meter.reject_owner();
         }

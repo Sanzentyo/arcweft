@@ -19654,3 +19654,115 @@ all fourteen request kinds, old issuer/reader deletion, the two selected-key
 failures, R1507's 58 broader failures, Native/AWBC stop/restore, Native/Web capture
 parity and final workspace/Tier 2 acceptance remain open. Keep the original full
 goal active; this coherent publication is private preparation, not completion.
+
+### 2026-10-19 — require checked code-row bindings before retaining Task Source
+
+The previous turn made concrete implementation, validation and publication
+progress. This cut starts on main at
+`2fe17b65d3f2b209b3dac143861021bff46a6318`. Its seven published blobs, complete
+raw patch, parent/tree, fresh advertised origin and all 3923 frozen inputs were
+verified before the baseline advanced. Parent is
+`45afa5d517b5ec3d0e63a0258433360afea96854`, tree is
+`c460af99d1b6deaef416b6840eca057e363e68dd`, and patch SHA-256 is
+`f5853f9f9bc562264bec3d9caf5a46921dd722389701de69c9d7ad77051c4e48`.
+The same fourteen tracked and three untracked held paths remain outside this
+cut. No further clean, artifact move/copy, branch/worktree/checkout, job-count or
+profile change is made. The original unlimited full convergence goal stays active.
+
+Private producer factories previously admitted any genuine original Source
+paired with the same code owner, even if no actual AWBC row had been joined.
+That Source-only success route is now closed at the shared owning boundary.
+The borrowed Source can carry a field-private execution capability tied to the
+exact immutable original/code context and closed HostCall/Selected/Template row
+role. Only completed row admissions install it. A raw original lookup carries
+none. AWBC factories and lease construction require that capability as well as
+the existing exact code Arc and original endpoint/row ownership. Native uses its
+actual immutable plan and rejects a foreign execution capability. Neither raw
+row IDs nor equal metadata can construct a capability outside its owner.
+
+The owning Source retains that admitted code-local row beside its actual
+original coordinate. Equality preserves both kinds of provenance; producer
+semantic identity still uses the genuine completed row key and never a backend
+index or pointer. Reborrowing HostCall/Template reruns their actual row join;
+Selected resolves the retained original coordinate and reruns its construction
+join. All cases check the retained original slot. The caller's same meter and
+new limits flow through complete metadata/type admission; no internal meter,
+fresh quota, request copy, reconstructed Source or unchecked reborrow fallback
+is introduced. Typed borrow errors preserve original, HostCall, Selected and
+Template causes, and the first resource failure remains sticky.
+
+Selected construction now accepts an actual original Source capability and an
+actual verified code-row ID, rather than deriving Source from request metadata.
+It checks original ownership/endpoint/family, code kind, contract/site, all
+three selected projections (image, voice and extern), request identity, actual
+sealed-row class, priority/scope/policy/restart, ordered argument roles and the
+complete original/executable payload/argument type graphs and occurrence codec
+policies. Code and original role bounds precede argument projection. Text work
+is charged before comparison. No request-only key is issued or old producer
+plan reconstruction called by this join. Decoded selected rows still lack their
+explicit expected-key assertion; this private construction capability does not
+invent that field, resolve Source by metadata, or discharge the final codec and
+public consumer switch.
+
+Existing AWBC factory tests now use real HostCall/NeedProducer rows, signatures,
+requests, verified types and genuine original Source. Their success paths obtain
+the checked binding instead of relying on a Source-only library with no code
+row. Missing backend types reject earlier: the selected test now specifically
+requires runtime_types index zero to be out of bounds during code verification;
+the HostCall test requires original argument type mismatch at index two during
+row admission. Native wrong-value rejection and all live/inert, owner, exact-work,
+sticky failure, same-key parity and final lease-release assertions remain.
+Only test fixture visibility is widened to reuse the real existing HostCall
+fixture; no production API or verifier condition is weakened.
+
+Nine new tests cover canonical selected image/voice/extern joins; real foreign
+Source, Native and absent rows; ten independently verified metadata mutations;
+same asserted identity with another executable shape; exact/short/sticky work
+through construction and reborrow; both selected/HostCall factories rejecting
+unbound Source before the first observed value view or lease retention; HostCall
+reborrow's exact work and tighter role bound; and retained parent/child Template
+bindings rejecting the new caller's tighter allowance. Successful factories and
+all existing real-owner/lease tests still pass. These are private static row/ABI
+and ownership tests, not live instruction execution, caller/register correlation,
+request-body equivalence or stop/restore evidence.
+
+R1557 initially finds one fixture compile error: AWBC spells its entity shape
+EntityRef. R1558 catalogs all 1994 Core/RuntimePlan library and awbc_product_parity
+cases, zero exclusions. R1559 runs 1992 pass/two fail, zero skip, 20.765s with
+matching terminal names and all 3926 frozen inputs. R1560 Core all-target/
+all-feature locked Clippy passes, actual 0, 43.96s, with warnings; R1561 structural
+gate passes. The final existing missing-type assertion is then strengthened to
+the exact typed backend failure above, rather than accepting any AWBC error.
+
+R1562 recatalogs the unchanged complete 1994-case set. R1563 runs the final Rust:
+actual nextest 100, 1992 pass/two fail, zero skip, 21.594s. All nine added tests
+and migrated existing tests pass. Terminal names and all 3926 input hashes match,
+with zero held drift. Its exact failure set equals R1554:
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`.
+R1564 matching Core Clippy passes, actual 0, 20.04s, with warnings; no -D warnings
+pass is claimed. R1565 canonical structural gate passes, actual 0. Changed-file
+rustfmt and whitespace checks pass. This record and maintained binding prose
+follow terminal Rust auditing; tested Rust remains unchanged. No fresh full
+workspace, complete reverse execution, doctest or Tier 2 pass is claimed.
+
+Canonical bytes/physical LOC are execution capability/reborrow 3773/98, selected
+join 12496/346 and its child tests 15084/440, owning Source 2709/81, facade
+5507/145 and program context 5307/148. Existing HostCall join/tests are
+10590/289 and 22570/641; Template join/tests 20225/563 and 33377/917; outer
+HostCall/program tests 18715/574 and 13073/388. New >300-line owners remain
+cohesive: one borrowed selected request/type admission and its real code/Source
+fixture plus assertions. The execution proof is legitimate provenance on the
+existing Source owner, not another row catalog or semantic-key authority. All
+99 manifest/lock inputs and the retained 53-package reverse closure are unchanged.
+No I/O, unsafe, dependency, new public wire row, reader or compatibility path is
+added. Private Core owners and their existing Core/RuntimePlan consumers remain
+the validation scope for this cut.
+
+Continue with Source-bound template/capture construction and the complete
+public switch: selected decoded assertions, actual caller/instruction Source
+correspondence, all fourteen request kinds and genuine autonomous AWBC/host
+owners, actual View authority, old issuer/reader deletion, the two selected-key
+failures and R1507's 58 broader failures, Native/AWBC stop/restore, Native/Web
+capture parity and final workspace/Tier 2 acceptance. This checked private
+boundary is concrete progress; none of that remaining acceptance is complete.

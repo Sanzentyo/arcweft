@@ -58,6 +58,11 @@ Source cannot substitute for it. Verifying code and admitting its carried Source
 prepares this immutable pair. Each executed task row still needs its original-row
 assertion checked before producer publication or restore.
 
+A Source lookup alone grants no executable-row correspondence. Retaining a
+producer requires a checked binding to the exact immutable original/code pair
+and code-local row. An owning Source preserves that binding and revalidates the
+same row under the caller's allowance when borrowed again.
+
 An asserted type identity also requires correspondence with the original
 executable shape, lexical scope, declaration/layout and field/case bindings,
 function contract, and occurrence codec policy. Matching semantic type IDs alone

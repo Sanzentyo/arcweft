@@ -432,6 +432,44 @@ fn awbc_templates_resolve_both_original_rows_and_capture_abis_after_decode() {
 }
 
 #[test]
+fn awbc_template_owning_source_preserves_checked_rows_and_rechecks_the_new_allowance() {
+    let program = admit(executable());
+    for task in [AwbcTaskPlanId(0), AwbcTaskPlanId(1)] {
+        let bound = program
+            .awbc_template_source(task, RuntimeTaskPlanSealLimits::default(), &mut meter())
+            .unwrap();
+        let owned = crate::plan::task_source::RuntimeTaskSource::from_borrowed(
+            &bound,
+            &program,
+            &program.program_owner(),
+        )
+        .unwrap();
+        let borrowed = owned
+            .borrow(RuntimeTaskPlanSealLimits::default(), &mut meter())
+            .unwrap();
+        assert!(program.owns_source_for(&borrowed, &program.program_owner()));
+        assert_eq!(borrowed.task_plan().key(), bound.task_plan().key());
+        assert!(matches!(
+            owned.borrow(
+                RuntimeTaskPlanSealLimits {
+                    max_request_roles: 1,
+                    ..RuntimeTaskPlanSealLimits::default()
+                },
+                &mut meter()
+            ),
+            Err(super::super::RuntimeTaskSourceBorrowError::Template(
+                RuntimeAwbcTemplateSourceError::Roles {
+                    field: RuntimeAwbcTemplateSourceField::ArgumentCount,
+                    actual: 2,
+                    maximum: 1,
+                    ..
+                }
+            ))
+        ));
+    }
+}
+
+#[test]
 fn awbc_templates_reject_foreign_keys_without_metadata_fallback() {
     for task in [AwbcTaskPlanId(0), AwbcTaskPlanId(1)] {
         let mut code = executable();

@@ -10,9 +10,17 @@ use crate::plan::{RuntimePlan, ViewTaskPlanAuthority};
 use crate::task::RuntimeProgramOwner;
 use std::sync::Arc;
 
+mod execution;
+pub(super) use execution::{
+    RuntimeTaskExecutionRef, RuntimeTaskExecutionRow, RuntimeTaskSourceBorrowError,
+};
 mod host;
+#[cfg(test)]
+pub(super) use host::tests::executable as host_executable_fixture;
 pub(crate) use host::{RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField};
+mod selected;
 mod template;
+pub(crate) use selected::{RuntimeAwbcSelectedSourceError, RuntimeAwbcSelectedSourceField};
 mod types;
 pub(crate) use template::{RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField};
 
@@ -102,12 +110,12 @@ impl RuntimeTaskSourceProgram {
     ) -> bool {
         let same_executable = match (self.data.as_ref(), owner) {
             (RuntimeTaskSourceProgramData::Native(program), RuntimeProgramOwner::Plan(owner)) => {
-                Arc::ptr_eq(program, owner)
+                Arc::ptr_eq(program, owner) && source.execution.is_none()
             }
             (
                 RuntimeTaskSourceProgramData::Awbc { executable, .. },
                 RuntimeProgramOwner::Awbc(owner),
-            ) => Arc::ptr_eq(executable, owner),
+            ) => Arc::ptr_eq(executable, owner) && self.owns_execution(source),
             _ => false,
         };
         same_executable

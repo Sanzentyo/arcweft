@@ -1,7 +1,7 @@
 //! Original host operands, actual backend types and shared retained allowance.
 
 use super::*;
-use crate::awbc::schema::{AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId};
+use crate::awbc::schema::AwbcProgram;
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::entry::RuntimeSchemaLimits;
 use crate::plan::RuntimeTaskPlanIndex;
@@ -29,34 +29,17 @@ fn native(empty: bool) -> RuntimeTaskSourceProgram {
 }
 
 fn code(program: &RuntimeTaskSourceProgram, include_pair: bool) -> Arc<AwbcProgram> {
-    let source = source(program);
-    let Some(RuntimeBodyTaskSource::Host(host)) = source.request_endpoint().task_source() else {
-        unreachable!()
-    };
-    let types = program.original().type_table();
-    let mut runtime_types = vec![AwbcRuntimeType::new(
-        types.get(host.result).unwrap().semantic_identity(),
-        AwbcRuntimeTypeShape::Bool,
-    )];
-    if include_pair {
-        runtime_types.push(AwbcRuntimeType::new(
-            types
-                .get(host.args[2].value().ty())
-                .unwrap()
-                .semantic_identity(),
-            AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0), AwbcTypeId(0)]),
-        ));
+    let mut code = super::program::host_executable_fixture(RuntimeHostCallMode::Suspend, false);
+    code.original_source = Some(
+        program
+            .original()
+            .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
+            .unwrap(),
+    );
+    if !include_pair {
+        code.runtime_types.remove(1);
     }
-    Arc::new(AwbcProgram {
-        original_source: Some(
-            program
-                .original()
-                .task_source_artifact(RuntimeTaskSourceArtifactLimits::default())
-                .unwrap(),
-        ),
-        runtime_types,
-        ..AwbcProgram::default()
-    })
+    Arc::new(code)
 }
 
 fn awbc(code: Arc<AwbcProgram>) -> RuntimeTaskSourceProgram {
@@ -74,6 +57,15 @@ fn awbc(code: Arc<AwbcProgram>) -> RuntimeTaskSourceProgram {
 }
 
 fn source(program: &RuntimeTaskSourceProgram) -> RuntimeTaskSourceRef<'_> {
+    if matches!(program.program_owner(), RuntimeProgramOwner::Awbc(_)) {
+        return program
+            .awbc_host_source(
+                crate::awbc::schema::AwbcHostCallId(0),
+                RuntimeTaskPlanSealLimits::default(),
+                &mut TaskSemanticMeter::new(1_000_000, 0),
+            )
+            .unwrap();
+    }
     let key = program
         .original()
         .task_plans()
@@ -400,17 +392,20 @@ fn host_source_rejects_foreign_programs_before_operand_views() {
 fn host_source_checks_original_types_against_the_actual_backend_not_a_native_surrogate() {
     let native = native(false);
     let compiled = awbc(code(&native, false));
-    let error = source(&compiled)
-        .host_producer_spec(
-            &compiled,
-            &arguments(&compiled, values()),
-            None,
-            &mut bank(&compiled, RuntimeSchemaLimits::engine_default()),
+    let error = compiled
+        .awbc_host_source(
+            crate::awbc::schema::AwbcHostCallId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut TaskSemanticMeter::new(1_000_000, 0),
         )
-        .unwrap_err();
+        .err()
+        .unwrap();
     assert!(matches!(
         error,
-        RuntimeTaskProducerSourceError::Admission(AwbcRuntimeValueSnapshotError::ProgramType(_))
+        RuntimeAwbcHostSourceError::Mismatch {
+            field: RuntimeAwbcHostSourceField::ArgumentType { index: 2 },
+            ..
+        }
     ));
     let wrong = arguments(
         &native,

@@ -11,7 +11,7 @@ use crate::task::ExpectedTaskPlanKey;
 use crate::task::semantic::{TaskSemanticEncodingError, TaskSemanticMeter};
 
 #[cfg(test)]
-mod tests;
+pub(in crate::plan::task_source) mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RuntimeAwbcHostSourceField {
@@ -100,7 +100,9 @@ impl RuntimeTaskSourceProgram {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeAwbcHostSourceError> {
-        let result = self.admit_awbc_host_source(call, limits, meter);
+        let result = self
+            .admit_awbc_host_source(call, limits, meter)
+            .map(|source| self.bind_source(source, super::RuntimeTaskExecutionRow::HostCall(call)));
         if result.is_err() {
             meter.reject_owner();
         }

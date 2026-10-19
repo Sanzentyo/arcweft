@@ -9,8 +9,9 @@ pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };
 pub(crate) use program::{
-    RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcTemplateSourceError,
-    RuntimeAwbcTemplateSourceField, RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
+    RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField, RuntimeAwbcSelectedSourceError,
+    RuntimeAwbcSelectedSourceField, RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField,
+    RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError,
 };
 #[cfg(test)]
 mod host_tests;
@@ -48,6 +49,7 @@ pub(crate) struct RuntimeTaskSourceRef<'program> {
     task: RuntimeTaskPlanRef<'program>,
     request: OriginalRequestEndpoint<'program>,
     owner: &'program RuntimeTaskPlanCoordinateOwner,
+    execution: Option<program::RuntimeTaskExecutionRef<'program>>,
 }
 
 impl RuntimePlan {
@@ -113,6 +115,7 @@ impl RuntimePlan {
                 task,
                 request,
                 owner,
+                execution: None,
             })
         })();
         result.map_err(|error| {

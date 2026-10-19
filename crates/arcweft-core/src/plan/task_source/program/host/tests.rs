@@ -26,7 +26,10 @@ fn key(plan: &RuntimePlan) -> TaskPlanSemanticDigest {
         .key()
 }
 
-fn executable(mode: RuntimeHostCallMode, empty: bool) -> AwbcProgram {
+pub(in crate::plan::task_source) fn executable(
+    mode: RuntimeHostCallMode,
+    empty: bool,
+) -> AwbcProgram {
     let plan = original(mode, empty);
     let FlowOp::HostCall { target, .. } = &plan
         .function_sites()
@@ -496,4 +499,143 @@ fn awbc_host_assertions_feed_the_source_bound_producer_without_copying_definitio
     assert!(weak.upgrade().is_some());
     drop(spec);
     assert!(weak.upgrade().is_none());
+}
+
+struct Observed<'a> {
+    reads: &'a std::cell::Cell<usize>,
+    value: &'a RuntimeValue,
+}
+
+impl crate::value::RuntimeStoredValue for Observed<'_> {
+    fn borrowed_view(&self) -> crate::value::RuntimeValueView<'_> {
+        self.reads.set(self.reads.get() + 1);
+        self.value.view()
+    }
+    fn admission_origin() -> crate::entry::schema::value_encoding::ValueAdmissionOrigin {
+        crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live
+    }
+}
+
+#[test]
+fn awbc_host_factory_rejects_unbound_source_before_value_views_or_lease_retention() {
+    let code = Arc::new(executable(RuntimeHostCallMode::Suspend, false));
+    let program = admit(Arc::clone(&code));
+    let original = program.original();
+    let raw = original
+        .task_source_by_expected_key(
+            &ExpectedTaskPlanKey::new(*key(original).as_bytes()),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter(),
+        )
+        .unwrap();
+    let Some(RuntimeBodyTaskSource::Host(host)) = raw.request_endpoint().task_source() else {
+        unreachable!()
+    };
+    let reads = std::cell::Cell::new(0);
+    let values = [
+        RuntimeValue::Bool(true),
+        RuntimeValue::Bool(false),
+        RuntimeValue::Tuple(vec![RuntimeValue::Bool(false), RuntimeValue::Bool(true)]),
+    ];
+    let arguments: Vec<_> = host
+        .args
+        .iter()
+        .zip(&values)
+        .map(|(argument, value)| {
+            let value = Observed {
+                reads: &reads,
+                value,
+            };
+            match argument {
+                RuntimeHostArgumentTemplate::Positional(role, _) => {
+                    RuntimeHostArgumentTemplate::positional(*role, value)
+                }
+                RuntimeHostArgumentTemplate::Named(role, named) => {
+                    RuntimeHostArgumentTemplate::named(*role, &named.name, value)
+                }
+                RuntimeHostArgumentTemplate::Spread(role, _) => {
+                    RuntimeHostArgumentTemplate::spread(*role, value)
+                }
+            }
+        })
+        .collect();
+    let mut bank = RuntimeRetainedValueAdmission::for_program(
+        program.program_owner(),
+        RuntimeSchemaLimits::engine_default(),
+    );
+    let leases = Arc::strong_count(&code);
+    assert!(matches!(
+        raw.host_producer_spec(&program, &arguments, None, &mut bank),
+        Err(crate::task::RuntimeTaskProducerSourceError::OriginalProgram)
+    ));
+    assert!(
+        crate::plan::task_source::RuntimeTaskSource::from_borrowed(
+            &raw,
+            &program,
+            bank.program_owner().unwrap()
+        )
+        .is_none()
+    );
+    assert_eq!(reads.get(), 0);
+    assert_eq!(Arc::strong_count(&code), leases);
+    let bound = program
+        .awbc_host_source(
+            AwbcHostCallId(0),
+            RuntimeTaskPlanSealLimits::default(),
+            &mut meter(),
+        )
+        .unwrap();
+    let spec = bound
+        .host_producer_spec(&program, &arguments, None, &mut bank)
+        .unwrap();
+    assert!(reads.get() > 0);
+    let borrowed = spec
+        .source()
+        .borrow(RuntimeTaskPlanSealLimits::default(), &mut meter())
+        .unwrap();
+    assert!(program.owns_source_for(&borrowed, bank.program_owner().unwrap()));
+    assert_eq!(borrowed.task_plan().key(), bound.task_plan().key());
+}
+
+#[test]
+fn awbc_host_owning_source_rechecks_row_limits_and_exact_work_on_reborrow() {
+    let program = admit(Arc::new(executable(RuntimeHostCallMode::Suspend, false)));
+    let limits = RuntimeTaskPlanSealLimits::default();
+    let bound = program
+        .awbc_host_source(AwbcHostCallId(0), limits, &mut meter())
+        .unwrap();
+    let owned = crate::plan::task_source::RuntimeTaskSource::from_borrowed(
+        &bound,
+        &program,
+        &program.program_owner(),
+    )
+    .unwrap();
+    let mut measured = meter();
+    owned.borrow(limits, &mut measured).unwrap();
+    let work = measured.totals().0;
+    let mut exact = TaskSemanticMeter::new(work, 0);
+    let borrowed = owned.borrow(limits, &mut exact).unwrap();
+    assert!(program.owns_source_for(&borrowed, &program.program_owner()));
+    assert_eq!(exact.totals(), (work, 0));
+    let mut short = TaskSemanticMeter::new(work - 1, 0);
+    for _ in 0..2 {
+        assert!(owned.borrow(limits, &mut short).is_err());
+        assert_eq!(short.status(), Err(TaskSemanticEncodingError::SemanticWork));
+    }
+    assert!(matches!(
+        owned.borrow(
+            RuntimeTaskPlanSealLimits {
+                max_request_roles: 2,
+                ..limits
+            },
+            &mut meter()
+        ),
+        Err(super::super::RuntimeTaskSourceBorrowError::Host(
+            RuntimeAwbcHostSourceError::ArgumentRoles {
+                actual: 3,
+                maximum: 2,
+                ..
+            }
+        ))
+    ));
 }

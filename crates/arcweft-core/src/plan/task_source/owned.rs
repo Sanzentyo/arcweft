@@ -1,6 +1,7 @@
 //! An owning lease for an original program's actual completed Task slot.
 
-use super::{RuntimeTaskSourceError, RuntimeTaskSourceProgram, RuntimeTaskSourceRef};
+use super::program::{RuntimeTaskExecutionRow, RuntimeTaskSourceBorrowError};
+use super::{RuntimeTaskSourceProgram, RuntimeTaskSourceRef};
 use crate::plan::{
     RuntimePlan, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanRef, RuntimeTaskPlanSealLimits,
 };
@@ -13,6 +14,7 @@ use crate::task::semantic::TaskSemanticMeter;
 pub(crate) struct RuntimeTaskSource {
     program: RuntimeTaskSourceProgram,
     coordinate: RuntimeTaskPlanBuildCoordinate,
+    execution: Option<RuntimeTaskExecutionRow>,
 }
 
 impl RuntimeTaskSource {
@@ -28,6 +30,10 @@ impl RuntimeTaskSource {
         Some(Self {
             program: program.clone(),
             coordinate,
+            execution: source
+                .execution
+                .as_ref()
+                .map(super::program::RuntimeTaskExecutionRef::row),
         })
     }
 
@@ -42,10 +48,9 @@ impl RuntimeTaskSource {
         &self,
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
-    ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceError> {
+    ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceBorrowError> {
         self.program
-            .original()
-            .task_source(&self.coordinate, limits, meter)
+            .reborrow_source(&self.coordinate, self.execution, limits, meter)
     }
 
     pub(crate) fn belongs_to(&self, program: &RuntimePlan) -> bool {
@@ -59,7 +64,9 @@ impl RuntimeTaskSource {
 
 impl PartialEq for RuntimeTaskSource {
     fn eq(&self, other: &Self) -> bool {
-        self.program == other.program && self.coordinate == other.coordinate
+        self.program == other.program
+            && self.coordinate == other.coordinate
+            && self.execution == other.execution
     }
 }
 impl Eq for RuntimeTaskSource {}
