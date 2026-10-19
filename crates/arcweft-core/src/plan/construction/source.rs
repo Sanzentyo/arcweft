@@ -25,6 +25,7 @@ pub(in crate::plan) mod host_calls;
 pub(in crate::plan) mod invocations;
 pub(in crate::plan) mod line_groups;
 pub(in crate::plan) mod pattern;
+pub(in crate::plan) mod program;
 pub(in crate::plan) mod project_calls;
 pub(in crate::plan) mod pure_callables;
 pub(in crate::plan) mod selected_producers;
@@ -35,6 +36,7 @@ pub(in crate::plan) struct RuntimePlanSourceConstruction {
     pub(in crate::plan) builder: RuntimePlanBuilder,
     locals: Box<[RuntimeLocalSeedId]>,
     controls: Box<[RuntimeControlEffectContractSeedId]>,
+    projects: Box<[super::RuntimeProjectCallSiteSeedId]>,
     meter: TaskSemanticMeter,
 }
 
@@ -107,6 +109,7 @@ impl RuntimePlanSourceConstruction {
             builder,
             locals,
             controls,
+            projects: Box::new([]),
             meter,
         }
     }
@@ -117,6 +120,33 @@ impl RuntimePlanSourceConstruction {
     ) -> Result<UnsealedRuntimePlanImage, RuntimeTaskPlanSealError> {
         self.builder
             .prepare_task_image_with_meter(limits, self.meter)
+    }
+
+    pub(in crate::plan) fn reserve_project_sites(
+        &mut self,
+        count: usize,
+    ) -> Result<(), super::RuntimePlanBuildError> {
+        if !self.projects.is_empty() || !self.builder.project_call_sites.borrow().rows.is_empty() {
+            return Err(crate::plan::RuntimeProjectCallSiteTableError::ExistingNamespace.into());
+        }
+        self.meter
+            .charge_work(
+                u64::try_from(count).map_err(|_| {
+                    crate::plan::RuntimeProjectCallSiteTableError::IdentityExhausted
+                })?,
+            )
+            .map_err(|error| super::RuntimePlanBuildError::TaskPlanSeal(Box::new(error.into())))?;
+        let mut projects = Vec::with_capacity(count);
+        for _ in 0..count {
+            projects.push(self.builder.reserve_project_call_site()?);
+        }
+        self.projects = projects.into_boxed_slice();
+        Ok(())
+    }
+
+    fn project(&self, ordinal: u32) -> Option<&super::RuntimeProjectCallSiteSeedId> {
+        self.projects
+            .get(usize::try_from(ordinal.checked_sub(1)?).ok()?)
     }
 
     pub(in crate::plan) fn local(

@@ -33,7 +33,7 @@ fn duration(nanos: u64) -> RuntimeExprSeed {
         )),
     )
 }
-fn fixture() -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
     let admitted = builder
         .admit_type_batch(

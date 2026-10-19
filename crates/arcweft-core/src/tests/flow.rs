@@ -557,6 +557,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
                 ops: (vec![
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
+                            placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                             callee: RuntimeExprSeed::new(
                                 outer,
                                 RuntimeExprSeedKind::MakeCallable {
@@ -745,6 +746,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                 ops: (vec![
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
+                            placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                             callee,
                             state,
                             completed_group: 0,
@@ -898,6 +900,8 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                     ops: (vec![
                         RuntimeFlowOpSeed::ProjectCall {
                             plan: RuntimeProjectCallPlanSeed {
+                                placement:
+                                    crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                                 callee,
                                 state: callable_state,
                                 completed_group: 0,
@@ -1162,6 +1166,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                     },
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
+                            placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                             callee,
                             state: callable_state,
                             completed_group: 0,
@@ -1282,6 +1287,7 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
                 ops: (vec![
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
+                            placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                             callee,
                             state,
                             completed_group: 0,
@@ -1387,6 +1393,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
                 effects: crate::plan::RuntimeEffectSet::empty(),
                 ops: (vec![RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
+                        placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                         callee,
                         state,
                         completed_group: 0,
@@ -1519,6 +1526,7 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
                 effects: crate::plan::RuntimeEffectSet::empty(),
                 ops: (vec![RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
+                        placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                         callee,
                         state,
                         completed_group: 0,

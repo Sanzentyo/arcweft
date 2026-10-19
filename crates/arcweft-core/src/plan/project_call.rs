@@ -297,12 +297,21 @@ pub struct RuntimeProjectCallPlan {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallPlanSeed {
+    pub placement: RuntimeProjectCallSitePlacementSeed,
     pub callee: super::RuntimeExprSeed,
     pub state: RuntimeCallableStateSeedId,
     pub completed_group: u32,
     pub operands: Box<[RuntimeProjectCallOperandSeed]>,
     pub ordinary: Box<[RuntimeProjectCallOrdinaryMaterializationSeed]>,
     pub attached: Option<RuntimeProjectCallAttachedMaterializationSeed>,
+}
+
+/// A fresh body can allocate a site, while original Source can define a slot
+/// already issued by its real builder. Both transitions use the same table.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeProjectCallSitePlacementSeed {
+    Allocate,
+    Reserved(super::RuntimeProjectCallSiteSeedId),
 }
 
 impl RuntimeProjectCallPlanSeed {
@@ -515,4 +524,16 @@ impl RuntimeProjectCallSite {
 pub enum RuntimeProjectCallSiteTableError {
     #[error("project-call site identity space is exhausted")]
     IdentityExhausted,
+    #[error("project-call site reservation belongs to another builder")]
+    ForeignReservation,
+    #[error("project-call site {site:?} is already defined")]
+    DuplicateDefinition {
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+    },
+    #[error("project-call site {site:?} has no definition")]
+    IncompleteDefinition {
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+    },
+    #[error("project-call Source needs an empty reservation namespace")]
+    ExistingNamespace,
 }

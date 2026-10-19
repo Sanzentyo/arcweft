@@ -50,6 +50,7 @@ fn call(
 ) -> RuntimeFlowOpSeed {
     RuntimeFlowOpSeed::ProjectCall {
         plan: RuntimeProjectCallPlanSeed {
+            placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee: RuntimeExprSeed::new(
                 ty(function_type),
                 RuntimeExprSeedKind::MakeCallable {
@@ -153,6 +154,105 @@ fn fixture() -> RuntimePlan {
         )
         .unwrap();
     builder.finish().unwrap()
+}
+
+pub(in crate::plan::construction::source) fn differently_defined_body_fixture() -> RuntimePlan {
+    let (mut builder, functions, states) = graph::fixture_builder();
+    graph::define_bodies(&mut builder, &functions, &states);
+    let first = graph::reserve_executable_function(&mut builder, 231, &[], 0, ty(121));
+    let second = graph::reserve_executable_function(&mut builder, 232, &[], 0, ty(121));
+    for (function, input) in [(second, false), (first, true)] {
+        let op = call(
+            &states[0],
+            123,
+            &[],
+            0,
+            vec![
+                operand(boolean(input), Mode::Value),
+                operand(boolean(!input), Mode::Value),
+            ],
+            vec![fixed(0, 0), fixed(1, 1)],
+            None,
+        );
+        builder
+            .define_function_site_seed(
+                &function,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: vec![op, RuntimeFlowOpSeed::ReturnExpr(boolean(input))].into_boxed_slice(),
+                }),
+            )
+            .unwrap();
+    }
+    builder.finish().unwrap()
+}
+
+#[test]
+fn project_site_reservations_reject_foreign_and_duplicate_definitions_without_publishing_a_plan() {
+    for foreign in [true, false] {
+        let (mut builder, functions, states) = graph::fixture_builder();
+        graph::define_bodies(&mut builder, &functions, &states);
+        let root = graph::reserve_executable_function(&mut builder, 233, &[], 0, ty(121));
+        let mut other = RuntimePlanBuilder::new();
+        let reservation = if foreign {
+            other.reserve_project_call_site().unwrap()
+        } else {
+            builder.reserve_project_call_site().unwrap()
+        };
+        let mut operation = call(
+            &states[0],
+            123,
+            &[],
+            0,
+            vec![
+                operand(boolean(true), Mode::Value),
+                operand(boolean(false), Mode::Value),
+            ],
+            vec![fixed(0, 0), fixed(1, 1)],
+            None,
+        );
+        let RuntimeFlowOpSeed::ProjectCall { plan, .. } = &mut operation else {
+            unreachable!()
+        };
+        plan.placement = RuntimeProjectCallSitePlacementSeed::Reserved(reservation.clone());
+        let ops = if foreign {
+            vec![operation]
+        } else {
+            vec![operation.clone(), operation]
+        };
+        let error = builder
+            .define_function_site_seed(
+                &root,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: ops.into_boxed_slice(),
+                }),
+            )
+            .unwrap_err();
+        if foreign {
+            assert!(matches!(
+                error,
+                RuntimePlanBuildError::ProjectCallSites(
+                    RuntimeProjectCallSiteTableError::ForeignReservation
+                )
+            ));
+        } else {
+            assert!(
+                matches!(error,RuntimePlanBuildError::ProjectCallSites(RuntimeProjectCallSiteTableError::DuplicateDefinition { site }) if site == reservation.id())
+            );
+        }
+        assert_eq!(builder.finish(), Err(RuntimePlanBuildError::Poisoned));
+    }
+}
+
+#[test]
+fn project_site_reservations_must_be_defined_before_the_common_plan_can_be_published() {
+    let (mut builder, functions, states) = graph::fixture_builder();
+    graph::define_bodies(&mut builder, &functions, &states);
+    let site = builder.reserve_project_call_site().unwrap();
+    assert!(
+        matches!(builder.finish(),Err(RuntimePlanBuildError::ProjectCallSites(RuntimeProjectCallSiteTableError::IncompleteDefinition { site:actual })) if actual == site.id())
+    );
 }
 fn limits(plan: &RuntimePlan) -> RuntimeProjectCallSourceLimits {
     RuntimeProjectCallSourceLimits {
@@ -501,7 +601,12 @@ fn project_call_sources_late_actual_abi_failure_cannot_publish_the_prior_retaine
     let plan = fixture();
     let (mut source, functions, states) = source(&plan, meter());
     assert!(replay(&plan, &mut source, &functions, &states, true).is_err());
-    assert_eq!(source.builder.project_call_sites.borrow().rows.len(), 1);
+    {
+        let sites = source.builder.project_call_sites.borrow();
+        assert_eq!(sites.rows.len(), 2);
+        assert!(sites.rows[0].is_some());
+        assert!(sites.rows[1].is_none());
+    }
     assert!(finish(source).is_err());
 }
 #[test]

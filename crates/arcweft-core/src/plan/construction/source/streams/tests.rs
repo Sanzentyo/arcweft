@@ -47,7 +47,7 @@ fn upstream() -> RuntimeExprSeed {
         },
     )
 }
-fn fixture() -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     use RuntimeStreamOpSeed as Op;
     let mut builder = RuntimePlanBuilder::new();
     let admitted = builder

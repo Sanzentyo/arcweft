@@ -71,6 +71,16 @@ impl RuntimeFlowSourceHandles<'_> {
             ("defer handles", limits.defer_count, self.defers.len()),
             ("task", limits.task_count, tasks),
             ("task handles", limits.task_count, self.tasks.len()),
+            (
+                "project",
+                limits.project_count,
+                source.builder.project_call_sites.borrow().rows.len(),
+            ),
+            (
+                "project handles",
+                limits.project_count,
+                source.projects.len(),
+            ),
         ] {
             if expected != actual {
                 return Err(Error::Namespace {
@@ -85,8 +95,17 @@ impl RuntimeFlowSourceHandles<'_> {
             .len()
             .checked_add(self.defers.len())
             .and_then(|n| n.checked_add(self.tasks.len()))
+            .and_then(|n| n.checked_add(source.projects.len()))
             .ok_or(Error::Arithmetic)?;
         charge(&mut source.meter, handles)?;
+        for (index, project) in source.projects.iter().enumerate() {
+            if project
+                .resolve(&source.builder.issuer)
+                .is_none_or(|id| id.index() != index)
+            {
+                return Err(Error::Handle { kind: "project" });
+            }
+        }
         for (index, handle) in self.contents.iter().enumerate() {
             if handle
                 .resolve(&source.builder.issuer)
@@ -815,6 +834,22 @@ impl Reader<'_, '_, '_> {
                 )?
             }
             15 => {
+                let ordinal = self.metadata.u32()?;
+                let site = self
+                    .source
+                    .project(ordinal)
+                    .ok_or(Error::Reference {
+                        kind: "project",
+                        actual: ordinal,
+                        maximum: self.counts.limits.project_count,
+                    })?
+                    .clone();
+                self.source
+                    .builder
+                    .project_call_sites
+                    .borrow()
+                    .vacant(&self.source.builder.issuer, &site)
+                    .map_err(RuntimePlanBuildError::from)?;
                 let bytes = self.metadata.frame()?;
                 let child = PreparedRuntimeProjectCallSource::preflight(
                     bytes,
@@ -824,7 +859,13 @@ impl Reader<'_, '_, '_> {
                 )?;
                 self.counts
                     .child(child.node_count(), child.elements(), child.storage_bytes())?;
-                child.materialize(self.source, self.handles.expression, self.resources)?
+                let mut operation =
+                    child.materialize(self.source, self.handles.expression, self.resources)?;
+                let RuntimeFlowOpSeed::ProjectCall { plan, .. } = &mut operation else {
+                    unreachable!("project Source owns its operation")
+                };
+                plan.placement = crate::plan::RuntimeProjectCallSitePlacementSeed::Reserved(site);
+                operation
             }
             16 => {
                 let callee = self.expression()?;

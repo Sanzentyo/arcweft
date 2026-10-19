@@ -3706,7 +3706,22 @@ impl RuntimePlanBodyConstruction<'_> {
                     result,
                 }
             }
-            RuntimeFlowOpSeed::ProjectCall { plan, result } => {
+            RuntimeFlowOpSeed::ProjectCall { mut plan, result } => {
+                let placement = std::mem::replace(
+                    &mut plan.placement,
+                    super::super::RuntimeProjectCallSitePlacementSeed::Allocate,
+                );
+                let site = match placement {
+                    super::super::RuntimeProjectCallSitePlacementSeed::Allocate => {
+                        self.project_call_sites.borrow_mut().reserve(&self.issuer)?
+                    }
+                    super::super::RuntimeProjectCallSitePlacementSeed::Reserved(site) => {
+                        self.project_call_sites
+                            .borrow()
+                            .vacant(&self.issuer, &site)?;
+                        site
+                    }
+                };
                 let plan = self.lower_project_call_plan(plan)?;
                 let result = self.lower_pattern_seed(result)?;
                 let expected = self.callable_states.borrow().states[plan.state().index()]
@@ -3716,7 +3731,9 @@ impl RuntimePlanBodyConstruction<'_> {
                     })?
                     .result;
                 require_same("project-call result pattern", expected, result.ty())?;
-                let site = self.project_call_sites.borrow_mut().push(
+                let site = self.project_call_sites.borrow_mut().define(
+                    &self.issuer,
+                    &site,
                     super::super::RuntimeProjectCallSite::from_admitted_parts(plan, result),
                 )?;
                 FlowOp::ProjectCall { site }

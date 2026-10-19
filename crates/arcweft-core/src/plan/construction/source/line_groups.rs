@@ -10,7 +10,7 @@ mod decoding;
 mod encoding;
 mod reading;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::RuntimePlanSourceConstruction;
 use super::flow::{RuntimeFlowSourceError, RuntimeFlowSourceHandles, RuntimeFlowSourceLimits};

@@ -59,6 +59,7 @@ pub use callable_states::{
     RuntimeCallableStateDefinition, RuntimeCallableStateError, RuntimeCallableStateTable,
     RuntimeCallableTransition,
 };
+pub use construction::RuntimeProjectCallSiteSeedId;
 pub use construction::{
     RuntimeAgentExprSeed, RuntimeAssignmentSeed, RuntimeAudioCommandSeed,
     RuntimeAwaitManyTargetSeed, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
@@ -149,7 +150,8 @@ pub use project_call::{
     RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOrdinaryMaterializationSeed,
     RuntimeProjectCallPlan, RuntimeProjectCallPlanError, RuntimeProjectCallPlanSeed,
     RuntimeProjectCallRestMaterialization, RuntimeProjectCallRestMaterializationSeed,
-    RuntimeProjectCallSite, RuntimeProjectCallSiteTable, RuntimeProjectCallSiteTableError,
+    RuntimeProjectCallSite, RuntimeProjectCallSitePlacementSeed, RuntimeProjectCallSiteTable,
+    RuntimeProjectCallSiteTableError,
 };
 pub use task_semantic::{
     RuntimeExecutableSemanticDigest, RuntimeLineTaskPlanBinding, RuntimeTaskPlan,

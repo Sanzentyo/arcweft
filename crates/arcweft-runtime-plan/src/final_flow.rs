@@ -5492,6 +5492,7 @@ fn lower_controller_callable(
     );
     let project_call = RuntimeFlowOpSeed::ProjectCall {
         plan: RuntimeProjectCallPlanSeed {
+            placement: arcweft_core::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee: RuntimeExprSeed::new(
                 instance.callable_type().identity(),
                 arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
@@ -8071,6 +8072,7 @@ impl<'a> FinalFlowLowerer<'a> {
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
             .into_boxed_slice();
         Ok(RuntimeProjectCallPlanSeed {
+            placement: arcweft_core::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
             callee,
             state,
             completed_group: u32::try_from(call.completed_group().get()).map_err(|_| {

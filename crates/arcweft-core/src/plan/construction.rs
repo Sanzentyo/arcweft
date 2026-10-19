@@ -713,15 +713,48 @@ struct ReservedTraitMethod {
 /// injected by a caller or by another builder.
 #[derive(Debug, Default)]
 struct RuntimeProjectCallSiteTableBuilder {
-    rows: Vec<super::RuntimeProjectCallSite>,
+    rows: Vec<Option<super::RuntimeProjectCallSite>>,
 }
 
+/// A project-call slot issued by its sole aggregate construction owner.
+/// Copies name the same slot; they cannot define it a second time.
+#[derive(Clone)]
+pub struct RuntimeProjectCallSiteSeedId {
+    issuer: Arc<RuntimePlanConstructionIssuer>,
+    site: crate::runtime_id::RuntimeProjectCallSiteId,
+}
+impl RuntimeProjectCallSiteSeedId {
+    #[must_use]
+    pub const fn id(&self) -> crate::runtime_id::RuntimeProjectCallSiteId {
+        self.site
+    }
+    fn resolve(
+        &self,
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+    ) -> Option<crate::runtime_id::RuntimeProjectCallSiteId> {
+        Arc::ptr_eq(&self.issuer, issuer).then_some(self.site)
+    }
+}
+impl std::fmt::Debug for RuntimeProjectCallSiteSeedId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("RuntimeProjectCallSiteSeedId")
+            .field(&self.site)
+            .finish()
+    }
+}
+impl PartialEq for RuntimeProjectCallSiteSeedId {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.issuer, &other.issuer) && self.site == other.site
+    }
+}
+impl Eq for RuntimeProjectCallSiteSeedId {}
+
 impl RuntimeProjectCallSiteTableBuilder {
-    fn push(
+    fn reserve(
         &mut self,
-        row: super::RuntimeProjectCallSite,
-    ) -> Result<crate::runtime_id::RuntimeProjectCallSiteId, super::RuntimeProjectCallSiteTableError>
-    {
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+    ) -> Result<RuntimeProjectCallSiteSeedId, super::RuntimeProjectCallSiteTableError> {
         let ordinal = self
             .rows
             .len()
@@ -731,19 +764,90 @@ impl RuntimeProjectCallSiteTableBuilder {
             .and_then(NonZeroU32::new)
             .ok_or(super::RuntimeProjectCallSiteTableError::IdentityExhausted)?;
         let site = crate::runtime_id::RuntimeProjectCallSiteId::from_accepted_ordinal(ordinal);
-        self.rows.push(row);
-        Ok(site)
+        self.rows.push(None);
+        Ok(RuntimeProjectCallSiteSeedId {
+            issuer: Arc::clone(issuer),
+            site,
+        })
+    }
+
+    fn vacant(
+        &self,
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+        site: &RuntimeProjectCallSiteSeedId,
+    ) -> Result<crate::runtime_id::RuntimeProjectCallSiteId, super::RuntimeProjectCallSiteTableError>
+    {
+        let id = site
+            .resolve(issuer)
+            .ok_or(super::RuntimeProjectCallSiteTableError::ForeignReservation)?;
+        match self.rows.get(id.index()) {
+            Some(None) => Ok(id),
+            Some(Some(_)) => {
+                Err(super::RuntimeProjectCallSiteTableError::DuplicateDefinition { site: id })
+            }
+            None => Err(super::RuntimeProjectCallSiteTableError::ForeignReservation),
+        }
+    }
+
+    fn define(
+        &mut self,
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+        site: &RuntimeProjectCallSiteSeedId,
+        row: super::RuntimeProjectCallSite,
+    ) -> Result<crate::runtime_id::RuntimeProjectCallSiteId, super::RuntimeProjectCallSiteTableError>
+    {
+        let id = self.vacant(issuer, site)?;
+        self.rows[id.index()] = Some(row);
+        Ok(id)
     }
 
     fn get(
         &self,
         site: crate::runtime_id::RuntimeProjectCallSiteId,
     ) -> Option<&super::RuntimeProjectCallSite> {
-        self.rows.get(site.index())
+        self.rows.get(site.index()).and_then(Option::as_ref)
     }
 
-    fn finish(self) -> super::RuntimeProjectCallSiteTable {
-        super::RuntimeProjectCallSiteTable::from_admitted_rows(self.rows.into_boxed_slice())
+    fn finish(
+        self,
+    ) -> Result<super::RuntimeProjectCallSiteTable, super::RuntimeProjectCallSiteTableError> {
+        let rows = self
+            .rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| {
+                row.ok_or_else(
+                    || super::RuntimeProjectCallSiteTableError::IncompleteDefinition {
+                        site: crate::runtime_id::RuntimeProjectCallSiteId::from_accepted_ordinal(
+                            NonZeroU32::new(
+                                u32::try_from(index + 1).expect("reserved project ordinal"),
+                            )
+                            .expect("positive project ordinal"),
+                        ),
+                    },
+                )
+            })
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(super::RuntimeProjectCallSiteTable::from_admitted_rows(rows))
+    }
+}
+
+impl RuntimePlanBuilder {
+    /// Reserves one project-call coordinate before its owning body is defined.
+    /// Only this builder can later define the returned slot.
+    pub fn reserve_project_call_site(
+        &mut self,
+    ) -> Result<RuntimeProjectCallSiteSeedId, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = self
+            .project_call_sites
+            .borrow_mut()
+            .reserve(&self.issuer)
+            .map_err(RuntimePlanBuildError::from);
+        if result.is_err() {
+            self.poisoned.store(true, Ordering::Release);
+        }
+        result
     }
 }
 
@@ -2833,7 +2937,7 @@ impl RuntimePlanBuilder {
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         );
-        let project_call_sites = self.project_call_sites.into_inner().finish();
+        let project_call_sites = self.project_call_sites.into_inner().finish()?;
         let local_declarations = {
             let mut locals = self
                 .locals

@@ -105,6 +105,7 @@ impl PreparedRuntimeProjectCallSource<'_> {
             debug_assert_eq!(counts.footprint, self.footprint);
             Ok(RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
+                    placement: crate::plan::RuntimeProjectCallSitePlacementSeed::Allocate,
                     callee,
                     state: handles.states[row.state as usize - 1].clone(),
                     completed_group: row.group,

@@ -88,7 +88,7 @@ fn define_specialized_body(
         )
         .unwrap();
 }
-fn fixture() -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
     let (mut builder, functions, mut states) = graph::fixture_builder();
     let source_binder = RuntimeTypeBinder::new(1, 1, 1);
     let target_binder = RuntimeTypeBinder::new(1, 0, 1);

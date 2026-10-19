@@ -129,6 +129,14 @@ pub(super) fn preflight(
                 .child(child.node_count(), child.elements(), child.storage_bytes())?;
         }
         15 => {
+            let ordinal = reader.metadata.u32()?;
+            if ordinal == 0 || ordinal as usize > reader.counts.limits.project_count {
+                return Err(Error::Reference {
+                    kind: "project",
+                    actual: ordinal,
+                    maximum: reader.counts.limits.project_count,
+                });
+            }
             let bytes = reader.metadata.frame()?;
             let child = PreparedRuntimeProjectCallSource::preflight(
                 bytes,

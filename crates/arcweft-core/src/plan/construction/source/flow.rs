@@ -47,6 +47,7 @@ pub(in crate::plan) struct RuntimeFlowSourceLimits {
     pub task_count: usize,
     pub content_count: usize,
     pub defer_count: usize,
+    pub project_count: usize,
     pub expression: RuntimeExpressionSourceLimits,
 }
 

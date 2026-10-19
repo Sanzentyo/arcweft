@@ -223,6 +223,9 @@ impl<'a> PreparedRuntimeEntrySources<'a> {
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.footprint.storage
     }
+    pub(in crate::plan) const fn node_count(&self) -> usize {
+        self.footprint.schemas
+    }
     pub(in crate::plan) fn materialize(
         self,
         source: &mut RuntimePlanSourceConstruction,

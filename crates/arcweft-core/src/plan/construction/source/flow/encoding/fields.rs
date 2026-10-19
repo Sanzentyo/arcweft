@@ -463,6 +463,14 @@ impl Writer {
                 self.frame(child.bytes())?;
             }
             FlowOp::ProjectCall { site } => {
+                if site.get().get() as usize > counts.limits.project_count {
+                    return Err(Error::Reference {
+                        kind: "project",
+                        actual: site.get().get(),
+                        maximum: counts.limits.project_count,
+                    });
+                }
+                self.u32(site.get().get())?;
                 let site = plan.project_call_sites().get(*site).ok_or(Error::Handle {
                     kind: "project call",
                 })?;

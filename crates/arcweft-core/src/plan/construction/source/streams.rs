@@ -5,7 +5,7 @@ mod decoding;
 mod encoding;
 mod reading;
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 use super::expression::{RuntimeExpressionSourceError, RuntimeExpressionSourceLimits};
 use super::pattern::{RuntimePatternSourceError, RuntimePatternSourceLimits};

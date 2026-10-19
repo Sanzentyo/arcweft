@@ -8,7 +8,7 @@ use crate::line_task::{
 };
 use crate::plan::*;
 
-mod handles;
+pub(in crate::plan::construction::source) mod handles;
 
 fn limits(plan: &RuntimePlan) -> RuntimeLineGroupSourceLimits {
     RuntimeLineGroupSourceLimits {
@@ -30,7 +30,10 @@ fn limits(plan: &RuntimePlan) -> RuntimeLineGroupSourceLimits {
         flow: super::super::flow::tests::limits(plan),
     }
 }
-fn fixture(policy: LineCleanupPolicy, cancel: ChildCancelPolicy) -> RuntimePlan {
+pub(in crate::plan::construction::source) fn fixture(
+    policy: LineCleanupPolicy,
+    cancel: ChildCancelPolicy,
+) -> RuntimePlan {
     scoped_fixture(policy, cancel, 0)
 }
 fn scoped_fixture(

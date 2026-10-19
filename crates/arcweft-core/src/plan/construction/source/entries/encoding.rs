@@ -31,6 +31,9 @@ impl PreparedRuntimeEntrySourceEncoding<'_> {
     pub(in crate::plan) const fn storage_bytes(&self) -> usize {
         self.footprint.storage
     }
+    pub(in crate::plan) const fn node_count(&self) -> usize {
+        self.footprint.schemas
+    }
     pub(in crate::plan) fn append_to(self, output: &mut Vec<u8>) -> Result<(), Error> {
         let remaining = output.capacity() - output.len();
         if remaining < self.bytes {

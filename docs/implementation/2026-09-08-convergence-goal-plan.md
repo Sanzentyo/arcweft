@@ -18316,3 +18316,85 @@ retain expected keys as assertions, and finish the atomic public switch and
 remaining full-goal execution/restore/retained View/display acceptance. R1349's
 two known selected-Need key integration failures remain prior unresolved evidence
 and were not rerun by this selection. The full goal remains active.
+
+### 2026-10-19 — Whole original program Source preserves issued Project sites
+
+Inspected existing main and freshly fetched origin/main at
+`71e48a3f0771e209414352f72fa3e81551cff061`, parent
+`d325ddaca449c27c51ecf8160d11ca38bdb5fee0`, with an empty index and the same
+fourteen held tracked plus three held untracked paths. The preceding publication
+has tree `4c3c694b7c949f81fa14abc807d0516dfd2b71eb` and verified raw patch SHA-256
+`7001e7b9822d4ccb2e5ca6d4f7875675f0ea352b87825f7b2669736adfc3b641`.
+
+The new private version-1 program Source contains fifteen checked reference
+namespace counts and fifteen length-framed sections. It borrows every actual
+owning declaration/body table and restores genuine construction handles for
+functions, callable states/specializations, helpers/methods, content, defers,
+tasks, Line groups and Project sites. Entries and Stream definitions are included.
+One cumulative allowance covers namespace/child elements, expression/pattern/
+schema nodes, logical construction storage and encoded bytes. Child admission
+receives the remaining allowance. Context-free sections are preflighted together;
+specialization admission subsequently uses the genuine reserved type/state
+context and the remaining allowance before its materialization. The original
+semantic meter and value admission continue through reconstruction. These are
+logical bounds, not a physical allocator or performance measurement.
+
+R1403 deliberately exercised functions defined in a different order from their
+reserved ordinals: actual 100, four pass and one fail. This exposed Project site
+IDs changing when original bodies were restored in function order. Supersedes
+implicit Project allocation during complete-body replay. The actual Project site
+owner now has one reserve/define/finish lifecycle with genuine issuer-bound
+handles. Fresh producers use Allocate; original Flow Source carries its positive
+original site ordinal and uses a Reserved handle from that same owner. Foreign,
+duplicate and missing definitions fail closed. The Source lookup is a projection
+of real handles, not another semantic table. Core and RuntimePlan seed producers
+are migrated together; all touched wire contracts remain version 1.
+
+R1405/R1406 inspect and execute seven focused program/reservation cases: all pass,
+actual 0, 0.103s. R1407 Core and RuntimePlan all-target/all-feature locked Clippy
+passes, actual 0, 28.76s. R1408/R1409 then inspect and execute all 2298 selected
+library cases: actual 100, 2297 pass and one fail, zero skipped, 26.201s. The
+failure was the old late-ABI rejection test counting all reservation slots as
+defined rows. Its final assertion now checks both actual states: the first slot
+is defined, the second slot is vacant, and final plan publication still fails.
+No failure assertion, test selection or resource condition was removed.
+
+R1410 builds and inspects the same 2298 library cases, actual 0, 28.16s, none
+excluded. R1411 executes exactly that set: actual 0, 2298 pass, zero fail/skip,
+25.834s. Terminal audits retain the earlier failures and match all selected names
+and all 3907 frozen inputs, including fourteen held files, with zero drift.
+The actual five packages are Core, RuntimePlan, Bundle, ProjectLoader and
+RuntimeDriver. The resolved Core/RuntimePlan reverse union remains 53 packages;
+99 manifest/lock inputs are unchanged. This is not a complete reverse/default
+integration acceptance run. The final post-Clippy edit changes only the test's
+assertion of the new owner state and is covered by R1410/R1411.
+
+The new cases compare complete inventory, executable digest, footprint and
+reencoded bytes after the common seal for seven real zero-Task fixtures: empty,
+forward helpers/owned trait receiver, Invocation, generic specialization, plain
+Content/Line, typed Actor/Cue/Voice/capture Line and Stream. Native execution of
+the restored helper/trait graph returns both supplied booleans. Other cases
+reject every truncated prefix, bad child/header/namespace/trailing data, every
+one-less aggregate bound and original finite-work exhaustion. The adverse Project
+ordering case retains its original Project/function/local tables, digest and
+bytes; actual reservation tests reject foreign, duplicate and undefined sites.
+The Line fixture is Source/common-seal evidence, not Native/AWBC actor execution.
+
+R1412 canonical structural gate passes, actual 0. Program coordinator is 9449
+bytes/297 physical lines, reader 12267/297, writer 14523/367, bounds 10169/263 and
+tests 8210/233. The closed section grammar and remaining-limit projections belong
+to this serialization context; actual construction owners retain all semantic
+authority. Existing construction/lowering and Flow owners are touched for that
+same reservation boundary, with no new dependency, unsafe, I/O or alternative
+seal. RuntimePlan final_flow changes only the two actual seed producer fields.
+
+Publish this coherent foundation and verify the public seed migration with
+workspace check/Clippy. Task coordinates are reserved but definitions are
+intentionally still vacant at the program Source boundary; this shape issues no
+Task key. The old task decoder still requires RuntimePlanInventory. Replace it
+with this complete Source plus original request rows and real definitions, then
+delete its replaced original-inventory reader in the same migration. Expected
+keys must remain assertions against the common seal. The known R1349 selected-
+Need integration failures, full fourteen-family switch, registry lifetime,
+restore, retained View and Native/Web display acceptance remain open. The full
+goal remains active.

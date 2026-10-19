@@ -54,6 +54,7 @@ pub(in crate::plan::construction::source) fn limits(plan: &RuntimePlan) -> Runti
         task_count: plan.task_plans().len(),
         content_count: plan.dialogue_content().rows().len(),
         defer_count: plan.defer_sites().len(),
+        project_count: plan.project_call_sites().len(),
         expression: expression_limits(plan),
     }
 }
