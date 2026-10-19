@@ -565,8 +565,9 @@ impl NeedProducerTaskPlan {
         &self,
         arguments: &[NeedProducerRuntimeArgument<V>],
     ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
-        let digest = need_producer_arguments_digest(arguments)
-            .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
+        let digest =
+            need_producer_arguments_digest(arguments.iter().map(|argument| &argument.value))
+                .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
         Ok(NeedProducerSpec::new(
             NeedProducerFamily::SelectedCallable,
             self.contract,
@@ -910,14 +911,11 @@ impl TaskClass {
     }
 }
 
-fn need_producer_arguments_digest<V: crate::value::RuntimeStoredValue>(
-    arguments: &[NeedProducerRuntimeArgument<V>],
+fn need_producer_arguments_digest<'value, V: crate::value::RuntimeStoredValue + 'value>(
+    arguments: impl Iterator<Item = &'value V>,
 ) -> Result<RuntimeValueDigest, crate::entry::RuntimeSchemaError> {
     const MAX_ARGUMENT_BYTES: usize = 16 * 1024 * 1024;
-    let values: Vec<_> = arguments
-        .iter()
-        .map(|argument| argument.value.borrowed_view())
-        .collect();
+    let values: Vec<_> = arguments.map(V::borrowed_view).collect();
     crate::entry::schema::canonical_runtime_value_view_digest(
         crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Views(&values)),
         MAX_ARGUMENT_BYTES,
@@ -3518,8 +3516,13 @@ mod identity_tests {
             .cloned()
             .map(|value| NeedProducerRuntimeArgument { name: None, value })
             .collect();
-        let digest = need_producer_arguments_digest(&named).unwrap();
-        assert_eq!(digest, need_producer_arguments_digest(&positional).unwrap());
+        let digest =
+            need_producer_arguments_digest(named.iter().map(|argument| &argument.value)).unwrap();
+        assert_eq!(
+            digest,
+            need_producer_arguments_digest(positional.iter().map(|argument| &argument.value))
+                .unwrap()
+        );
         assert_eq!(
             digest,
             RuntimeValue::Tuple(values.to_vec())
@@ -3527,13 +3530,17 @@ mod identity_tests {
                 .unwrap()
         );
         let reversed: Vec<_> = positional.into_iter().rev().collect();
-        assert_ne!(digest, need_producer_arguments_digest(&reversed).unwrap());
+        assert_ne!(
+            digest,
+            need_producer_arguments_digest(reversed.iter().map(|argument| &argument.value))
+                .unwrap()
+        );
         assert_eq!(
-            need_producer_arguments_digest::<RuntimeValue>(&[]).unwrap(),
+            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>()).unwrap(),
             RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap()
         );
         assert_ne!(
-            need_producer_arguments_digest::<RuntimeValue>(&[])
+            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>())
                 .unwrap()
                 .as_bytes(),
             &[0; 32]

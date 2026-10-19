@@ -10,6 +10,8 @@ pub use artifact::{
 };
 pub(crate) use program::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError};
 #[cfg(test)]
+mod host_tests;
+#[cfg(test)]
 mod producer_tests;
 pub(crate) use owned::RuntimeTaskSource;
 

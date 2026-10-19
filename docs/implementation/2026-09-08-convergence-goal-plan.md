@@ -19369,3 +19369,83 @@ issuers/readers are still open. The two completed-key failures are not repaired 
 claiming this preparation is live. R1507's 58 broad failures, real View capability,
 failure-atomic replacement/restore, Native/Web/CLI capture/display parity and all
 remaining milestone/workspace/Tier2 acceptance stay open. Keep the full goal active.
+
+### 2026-10-19 — admit original HostCall operands before producer identity
+
+This continuation starts on main at
+`99250b22aea950681ac604bdeb833bc1bc03a542`, whose nine published blobs,
+3916 source inputs, tree, parent, raw patch and advertised origin head were
+verified before advancing the retained baseline. The preceding turn therefore
+made publication-verification progress. The same fourteen tracked and three
+untracked held paths remain outside this cut. No branch/worktree/checkout,
+further clean, artifact move/copy, profile or job-count change is made.
+
+The private Source-bound producer boundary now also accepts an original
+HostCall. It selects only the actual admitted Source endpoint and completed row,
+proves the exact original-program/execution-owner pair against the caller's
+existing retained-value bank, and checks the complete operand count, names,
+accepted roles and positional/named/spread variants before the first value
+projection. Types come from each original operand and are admitted through the
+actual backend and invocation binding. The result payload comes from the
+original HostCall result declaration. No caller key, result type, family,
+contract, site or copied AWBC request can substitute for that original endpoint.
+
+All source-order operands, including values destined for spread expansion, enter
+the existing canonical tuple visitor before request projection. The existing
+arguments-digest helper now accepts a borrowed value iterator; every prior
+production and test consumer moves directly, preserving its exact transcript,
+16 MiB bound and assertions. It does not issue a Task key. The completed row
+supplies the key; the producer spec retains the existing Source/executable lease
+only after complete admission. No runtime carrier or original definition is
+cloned to obtain the proof, and no fresh retained allowance is introduced.
+
+Seven new tests cover the complete Native Source key/contract/site/payload and
+operand identity, including empty arguments; canonical AWBC Source round trip,
+equal Native/AWBC instance keys and final code-lease release; late wrong names,
+roles and spread variants before any observed value; exact/equal-content foreign
+execution owners, missing owners and foreign Source; actual backend type-table
+rejection when the original Native Source still contains the missing tuple;
+live/inert equality in one bank, exact work, one-short terminal failure and
+previously consumed work; and collection/zero-work/request-kind failures before
+value views. The AWBC fixture is an admitted library carrying genuine original
+Source, with actual Bool/tuple backend rows. It does not claim execution of an
+AWBC HostCall instruction or the still pending code-row/Source join.
+
+R1526 first reports five compile errors from the old digest helper's unit-test
+call sites. All five are migrated without weakening their assertions. R1527
+then catalogs exactly 1960 all-feature Core/RuntimePlan library and
+awbc_product_parity cases, no exclusions. R1528 runs all 1960: actual nextest
+exit 100, 1958 pass, two fail, zero skip, 25.330s. All seven added tests pass.
+Terminal names, 3917 source hashes and held inputs match the frozen catalog.
+The two failures remain
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`; this
+private HostCall preparation does not repair the live selected-producer path.
+
+R1529 `cargo clippy -p arcweft-core --all-targets --all-features --locked`
+passes, actual 0, Cargo 26.51s, with warnings; this is not a -D warnings pass.
+R1530 canonical structural gate passes, actual 0. Changed-file rustfmt and diff
+checks pass. The task record is appended after terminal source auditing; tested
+Rust remains unchanged. No current-cut workspace check/Clippy, complete reverse
+execution, doctest or Tier 2 pass is claimed. These remain explicit final-switch
+acceptance; earlier broader receipts retain only their actual scope/failures.
+
+Current canonical bytes/physical LOC are Source facade 5208/139, Source producer
+factory 8443/190, new HostCall tests 18921/577 and existing producer owner
+147206/3923 (777 embedded test lines). The >300-line test growth is reviewed as
+one cohesive original-operand/backend-type/resource/lease admission owner, in
+the Source test child. The existing producer owner changes only its same
+canonical arguments visitor and corresponding callers/assertions; its selected
+plan/registry ownership disposition is unchanged. No I/O, unsafe, dependency,
+new public schema or second key issuer is added. The retained resolved Cargo
+graph still has 53 Core reverse packages and 99 unchanged manifest/lock inputs;
+the new private factory has no external consumers, and its existing helper's
+complete Core/RuntimePlan consumer selection is exercised above.
+
+Next, join the existing AWBC HostCall row assertions to this actual original
+Source before producer construction; do not infer Source from site or request
+metadata. AWBC selected rows still lack their original-row assertion. The full
+fourteen-request construction/codec/runtime/restore public switch, real View
+authority, obsolete issuer/reader deletion, 58 broad R1507 failures and remaining
+Native/AWBC/Native-Web/workspace/Tier 2 acceptance remain open. Keep the original
+full goal active.
