@@ -61,7 +61,9 @@ Result construction uses this binding for both cases. A scoped outcome without
 its original binding is rejected before accepting an outcome authority.
 
 Retained descriptors count the invocation's context, rows and labels in the
-enclosing resource allowance. Immutable rows may share storage; resource
+enclosing resource allowance. Absent invocation metadata adds no logical node or
+encoded bytes; the issued instance key already commits its absence or presence.
+Immutable rows may share storage; resource
 admission still checks every row before a producer or retained field copies its
 lease. Version-one saves retain the binding in the producer instance rather than
 an independent launch column. Restore checks the saved instance against the

@@ -555,8 +555,14 @@ fn source_bound_zero_argument_invocations_keep_distinct_effect_instance_keys() {
     );
     first_outcome
         .outcome()
-        .validate_value(&RuntimeValue::Unit)
+        .validate_value(&RuntimeValue::Bool(true))
         .unwrap();
+    assert!(
+        first_outcome
+            .outcome()
+            .validate_value(&RuntimeValue::Unit)
+            .is_err()
+    );
     assert_eq!(
         first.task_spec().producer.key(),
         repeated.task_spec().producer.key()

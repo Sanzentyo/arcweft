@@ -21295,3 +21295,42 @@ AWBC Source, remaining execution/value owners, complete retained Presentation
 lowering, broader reverse-dependency runtime coverage, strict Clippy and final
 Native/Web capture/parity acceptance remain required. This slice does not claim
 that any of those requirements is complete. The full goal remains active.
+
+### 2026-10-20 — preserve exact monomorphic budgets and verify Core outcomes
+
+The intermediate invocation/outcome change is published and freshly verified at
+`75089ee0751e644c239f87b4ffe1128e1b544900`, parent
+`7f140ebae1ee7d03163d029da52c3a8a9debe175`, tree
+`a8714451942237dfef342bf05ded011c7595a0a7`, raw patch SHA-256
+`7fe51b0b532622e3d49be898aa9b431081189e0b37fe6a2140bfbe6203765475`.
+All 14 published/index/working blobs and 3931 frozen inputs matched; the held
+inventory stayed14 and the index was empty after publication.
+
+R1685 compiled/catalogued all 1880 Core lib tests with no exclusions or ignored
+cases. R1686 ran all 1880 and exited100: 1876 passed, four failed, zero skipped
+(27.308s). Its failure/source receipt matches all 3931 published inputs. Three
+exact-limit tests exposed a phantom node/byte added for an absent invocation.
+The issued instance key already commits the absent/present role. The descriptor
+now visits only actual present invocation context/rows/labels, so monomorphic
+values retain their existing logical descriptor cost. No numeric node/byte,
+sequence, work, capture, copy, batch or execution allowance changed. The fourth
+failure was the new assertion passing Unit to an original Bool fixture; it now
+accepts Bool and explicitly rejects Unit.
+
+R1687 recompiled/catalogued the same complete 1880-case selection. R1688 then
+passed all 1880, zero failed/skipped (28.483s, actual exit0). The terminal audit
+matches every selected case key and all 3931 frozen inputs, with source and held
+drift zero. This includes both scoped Result cases and wrong/missing binding,
+resource rejection, actual Source binding serialization/re-admission and
+outcome identity, exact shared Native/AWBC Need limits, Await/AwaitMany retained
+node limits, and the Core-owned View prefix budget/issuance tests. Coverage and
+all existing exact/one-less assertions remain intact.
+
+R1691 structure exited0: 3154 files, 3024 Rust files, 1718155 physical Rust lines,
+97 packages, 376 review triggers, zero blocking violations. The added admitted
+Need view method belongs to that borrowed handle owner; AwaitMany selects its
+existing suspended Source context. R1689 full Core doctests and R1690 Core
+all-target/all-feature Clippy are still live at this record. Their eventual
+terminal results, the 53-package reverse closure, strict workspace checks and
+the previously listed full-goal requirements remain to be established. No
+completion or validation-unavailability claim follows from this Core pass.

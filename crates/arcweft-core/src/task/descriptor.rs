@@ -133,7 +133,8 @@ impl<P> TaskSpec<P> {
         ] {
             visitor.fixed(digest, next)?;
         }
-        visitor.fixed(&[u8::from(self.producer.binding().is_some())], next)?;
+        // The issued key already commits the invocation's presence. Absent
+        // metadata has no rows, nodes or bytes in this logical descriptor.
         if let Some(binding) = self.producer.binding() {
             visitor.fixed(binding.context().as_bytes(), next)?;
             visitor.collection(binding.source_rows().len(), next)?;
