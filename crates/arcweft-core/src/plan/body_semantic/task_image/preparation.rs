@@ -170,13 +170,12 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
                     self.meter.reject_owner();
                     return Err(RuntimeTaskPlanSealError::MissingViewAuthority { ordinal });
                 };
-                // Charge and validate the original core prefix before issuing
-                // the capability; the upper owner writes these exact fields.
-                let core_prefix_bytes = {
+                // Transfer the checked Core prefix and its original meter to
+                // the one-use request; the upper owner only supplies binding.
+                let (core_prefix, core_prefix_bytes) = {
                     let prefix = self.task_prefix(ordinal)?;
                     let bytes = prefix.encoded_bytes();
-                    prefix.finish()?;
-                    bytes
+                    (prefix.finish_hasher()?, bytes)
                 };
                 let coordinate = self
                     .image
@@ -199,18 +198,22 @@ impl PreparedRuntimePlanSemantic<'_, '_> {
                     children.function,
                     children.request,
                     children.control,
+                    core_prefix,
+                    self.meter,
                 );
-                let (key, extension_bytes) = authority
-                    .task_plan_semantic_digest(request)
+                let completed = authority.task_plan_semantic_digest(request);
+                // A budget rejection by completion is the original sticky
+                // encoding failure, even if the upper owner maps its error.
+                self.meter.status()?;
+                let key = completed
                     .and_then(|key| {
-                        let bytes = invocation.verify(key, core_prefix_bytes)?;
-                        Ok((key, bytes))
+                        invocation.verify(key, core_prefix_bytes)?;
+                        Ok(key)
                     })
                     .map_err(|source| {
                         self.meter.reject_owner();
                         RuntimeTaskPlanSealError::ViewAuthority { ordinal, source }
                     })?;
-                self.meter.charge_authority_extension(extension_bytes)?;
                 key
             } else {
                 let mut transcript = self.task_prefix(ordinal)?;

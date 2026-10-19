@@ -105,18 +105,8 @@ impl TaskPlanSemanticDigest {
     /// The version-one domain shared by Core and its upper View authority.
     pub const DOMAIN: &'static [u8] = b"arcweft.task.plan-semantic.v1\0";
 
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "The capability finalizer consumes the completed hash state as part of its one-use contract"
-    )]
-    pub(crate) fn from_view_authority_transcript(
-        request: ViewTaskPlanDigestRequest<'_>,
-        hasher: blake3::Hasher,
-    ) -> Self {
-        let bytes = hasher.count();
-        let key = Self(*hasher.finalize().as_bytes());
-        request.record_completion(key, bytes);
-        key
+    pub(crate) fn from_view_authority_transcript(request: ViewTaskPlanDigestRequest<'_>) -> Self {
+        request.complete_transcript(|hasher| Self(*hasher.finalize().as_bytes()))
     }
     /// Only the semantic owner turns a completed, checked transcript into a key.
     pub(crate) fn from_semantic_transcript(

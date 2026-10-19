@@ -474,25 +474,11 @@ impl ValidatedViewProgramResource {
         if base.family() != NeedProducerFamily::ViewMatchSubscription {
             return Err(Error::ExpectedViewFamily);
         }
-        let mut hash = blake3::Hasher::new();
-        hash.update(TaskPlanSemanticDigest::DOMAIN);
-        hash.update(&[base.plan_owner_tag()]);
-        hash.update(base.executable_semantic_digest().as_bytes());
-        hash.update(base.producer_function_semantic_digest().as_bytes());
-        hash.update(&[
-            base.family().semantic_tag(),
-            base.task_class().semantic_tag(),
-        ]);
-        hash.update(base.request_template_digest().as_bytes());
-        hash.update(base.control_effect_contract_digest().as_bytes());
-        hash.update(&[1]);
-        let program = self.program_id().as_str().as_bytes();
-        let length = u32::try_from(program.len()).map_err(|_| Error::ArithmeticOverflow)?;
-        hash.update(&length.to_le_bytes());
-        hash.update(program);
-        hash.update(site.as_bytes());
-        hash.update(admission.as_bytes());
-        Ok(request.finish_authority_transcript(hash))
+        request.complete_view_binding(
+            self.program_id().as_str(),
+            site.as_bytes(),
+            admission.as_bytes(),
+        )
     }
 }
 

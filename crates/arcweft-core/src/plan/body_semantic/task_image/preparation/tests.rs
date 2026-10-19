@@ -696,7 +696,10 @@ impl ViewTaskPlanAuthority for CompletingViewAuthority {
         hasher.update(b"view");
         hasher.update(&[23; 32]);
         hasher.update(&[47; 32]);
-        Ok(request.finish_authority_transcript(hasher))
+        let expected = hasher.finalize();
+        let key = request.complete_view_binding("view", &[23; 32], &[47; 32])?;
+        assert_eq!(key.as_bytes(), expected.as_bytes());
+        Ok(key)
     }
 }
 
@@ -1089,56 +1092,70 @@ fn consuming_seal_completes_an_original_function_root_request_without_a_host_pro
 
 #[test]
 fn view_hash_extension_uses_the_same_exact_work_and_byte_limits() {
-    struct Tracking(std::cell::Cell<u32>);
+    struct Tracking {
+        calls: std::cell::Cell<u32>,
+        issued: std::cell::Cell<Option<crate::task::TaskPlanSemanticDigest>>,
+    }
     impl ViewTaskPlanAuthority for Tracking {
         fn task_plan_semantic_digest(
             &self,
             request: crate::task::ViewTaskPlanDigestRequest<'_>,
         ) -> Result<crate::task::TaskPlanSemanticDigest, crate::task::ViewTaskPlanValidationError>
         {
-            self.0.set(self.0.get() + 1);
-            CompletingViewAuthority.task_plan_semantic_digest(request)
+            self.calls.set(self.calls.get() + 1);
+            let key = CompletingViewAuthority.task_plan_semantic_digest(request)?;
+            self.issued.set(Some(key));
+            Ok(key)
         }
     }
     let mut candidate = image(None);
     candidate.task_plans[0].family = NeedProducerFamily::ViewMatchSubscription;
     candidate.task_plans[0].binding = RuntimeTaskSemanticBinding::View;
-    let authority = Tracking(std::cell::Cell::new(0));
+    let authority = Tracking {
+        calls: std::cell::Cell::new(0),
+        issued: std::cell::Cell::new(None),
+    };
     let mut measured = TaskSemanticMeter::new(100_000, 1_000_000);
     complete_with_authority(&candidate, &mut measured, Some(&authority)).unwrap();
+    assert!(authority.issued.take().is_some());
     let (work, bytes) = measured.totals();
     let mut exact = TaskSemanticMeter::new(work, bytes);
     complete_with_authority(&candidate, &mut exact, Some(&authority)).unwrap();
+    assert!(authority.issued.take().is_some());
     assert_eq!(exact.totals(), (work, bytes));
     for (max_work, max_bytes, expected) in [
         (work - 1, bytes, TaskSemanticEncodingError::SemanticWork),
         (work, bytes - 1, TaskSemanticEncodingError::TranscriptBytes),
     ] {
-        let before = authority.0.get();
+        let before = authority.calls.get();
         let mut limited = TaskSemanticMeter::new(max_work, max_bytes);
         assert!(
             matches!(complete_with_authority(&candidate, &mut limited, Some(&authority)),
             Err(RuntimeTaskPlanSealError::Encoding(error)) if error == expected)
         );
         assert_eq!(
-            authority.0.get(),
+            authority.calls.get(),
             before + 1,
             "the upper extension exhausted the original meter"
         );
         assert_eq!(limited.status(), Err(expected));
+        assert!(
+            authority.issued.get().is_none(),
+            "no key may escape the failed original budget"
+        );
     }
 }
 
 #[test]
-fn view_completion_rejects_short_transcripts_and_substituted_issued_keys() {
-    struct Short;
-    impl ViewTaskPlanAuthority for Short {
+fn view_completion_rejects_unfinished_requests_and_substituted_issued_keys() {
+    struct Unfinished(crate::task::TaskPlanSemanticDigest);
+    impl ViewTaskPlanAuthority for Unfinished {
         fn task_plan_semantic_digest(
             &self,
-            request: crate::task::ViewTaskPlanDigestRequest<'_>,
+            _request: crate::task::ViewTaskPlanDigestRequest<'_>,
         ) -> Result<crate::task::TaskPlanSemanticDigest, crate::task::ViewTaskPlanValidationError>
         {
-            Ok(request.finish_authority_transcript(blake3::Hasher::new()))
+            Ok(self.0)
         }
     }
     struct Substitute(crate::task::TaskPlanSemanticDigest);
@@ -1163,7 +1180,10 @@ fn view_completion_rejects_short_transcripts_and_substituted_issued_keys() {
     let mut candidate = image(None);
     candidate.task_plans[0].family = NeedProducerFamily::ViewMatchSubscription;
     candidate.task_plans[0].binding = RuntimeTaskSemanticBinding::View;
-    for authority in [&Short as &dyn ViewTaskPlanAuthority, &Substitute(previous)] {
+    for authority in [
+        &Unfinished(previous) as &dyn ViewTaskPlanAuthority,
+        &Substitute(previous),
+    ] {
         let mut meter = TaskSemanticMeter::new(100_000, 1_000_000);
         assert!(matches!(
             complete_with_authority(&candidate, &mut meter, Some(authority)),

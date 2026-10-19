@@ -72,7 +72,11 @@ link assertions, then uses an expected key only to select an accepted binding.
 The common seal recomputes the actual E/F/Q/C and upper View transcript, consumes
 the one-use completion capability and compares the final expected key. A decoded
 assertion cannot issue a task key or rebind the construction authority to a
-foreign candidate. AWBC execution retains the admitted executable and original
+foreign candidate. Core retains the actual checked prefix and its original sticky
+meter inside that capability. The upper owner supplies the accepted program,
+site and admission binding; it cannot replace the prefix or provide a hash state.
+Core admits the complete binding's work and bytes before hashing or issuing a key.
+AWBC execution retains the admitted executable and original
 Source together. Entry and Flow activation, View invocation, compatible code
 replacement, continuation rollback and owned restore retain that complete lease.
 The saved Need registry resolves its inert Source assertions through the retained

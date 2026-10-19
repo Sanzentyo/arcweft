@@ -21149,3 +21149,40 @@ recorded semantic/persistence requirements remain open. Complete reverse/workspa
 public API/doctest, Tier2 and Native/Web capture/image evidence are still required.
 The full goal stays active. This following cut changes only this evidence note;
 the executed production/test inputs remain the published bytes identified above.
+
+### 2026-10-20 — keep the common seal prefix and budget inside Core
+
+Inspected existing main `30505a85ec2a691d294ea1df60612d5c43cd0bb1`, parent
+`af749d5cc85d9334a89cdfc04f6acf30dc76864d`. The previous goal turn was progress:
+four published/verified commits and the 2812-case current-source runtime proof,
+not just a wait or restatement. The held fourteen tracked paths and three
+unrelated untracked items remain unchanged.
+
+While inspecting remaining Source owners, the actual View completion API exposed
+a more fundamental common-seal gap: an upper authority supplied an entire hasher,
+while Core checked only capability consumption, returned-key equality and byte
+count. Thus byte count did not prove the Core prefix. The common prepared prefix
+is now moved into the private request together with its original sticky meter.
+The consuming public completion accepts only program/site/admission binding data;
+Core writes the exact existing version-one binding grammar and preflights its
+complete work/bytes before hashing or issuing a key. The complete prefix remains
+the one emitted by the shared original task-prefix encoder. Bundle no longer
+reconstructs E/F/Q/C or supplies any hasher. The replaced public hasher finalizer
+and its internal arbitrary-hasher constructor are removed.
+
+The reference authority independently encodes the complete old transcript and
+asserts that every completed key still matches those bytes. Exact/one-less
+original meter cases now also assert that no key escapes a failed binding
+preflight. Missing completion and substituted issued-key rejection remain, with
+no weakened assertions. Public compile-fail examples cover non-clonability,
+double completion and attempted arbitrary-prefix substitution.
+
+R1672's 53-package catalogue was still compiling when this next production change
+began. Preserve its actual terminal result, but do not treat a catalogue spanning
+these changed inputs as current acceptance. New catalogue/runtime/Clippy and the
+capability doctests are pending. No feature/profile/jobs, budgets, timeout,
+capture/copy, batch or fusion condition changes. This is a user-authorized
+intermediate checkpoint; complete operability at each intermediate commit is not
+claimed. The entire convergence goal remains active, including actual admitted
+owners in Agent/host/value/callback paths and the final public Source/spec/instance/
+outcome, autonomous/standalone, all-family and wider acceptance requirements.

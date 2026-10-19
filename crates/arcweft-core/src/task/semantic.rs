@@ -305,9 +305,14 @@ impl<'a> TaskSemanticEncoder<'a> {
     }
 
     pub(crate) fn finish(self) -> Result<blake3::Hash, TaskSemanticEncodingError> {
+        self.finish_hasher().map(|hasher| hasher.finalize())
+    }
+
+    /// Transfers the actual checked prefix without exposing a new budget.
+    pub(crate) fn finish_hasher(self) -> Result<blake3::Hasher, TaskSemanticEncodingError> {
         match self.meter.error {
             Some(error) => Err(error),
-            None => Ok(self.hasher.finalize()),
+            None => Ok(self.hasher),
         }
     }
 }

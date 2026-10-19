@@ -472,12 +472,24 @@ impl RuntimeTaskPlanDigestBase<'_> {
 /// ```compile_fail
 /// use arcweft_core::task::ViewTaskPlanDigestRequest;
 /// fn finalize_twice(request: ViewTaskPlanDigestRequest<'_>) {
-///     let _ = request.finish_authority_transcript(blake3::Hasher::new());
-///     let _ = request.finish_authority_transcript(blake3::Hasher::new());
+///     let _ = request.complete_view_binding("view", &[23; 32], &[47; 32]);
+///     let _ = request.complete_view_binding("view", &[23; 32], &[47; 32]);
+/// }
+/// ```
+///
+/// An upper owner cannot supply or replace the Core prefix:
+/// ```compile_fail
+/// use arcweft_core::task::ViewTaskPlanDigestRequest;
+/// fn replace_prefix(request: ViewTaskPlanDigestRequest<'_>) {
+///     let mut forged = blake3::Hasher::new();
+///     forged.update(&[0; 512]);
+///     request.finish_authority_transcript(forged);
 /// }
 /// ```
 pub struct ViewTaskPlanDigestRequest<'a> {
     base: RuntimeTaskPlanDigestBase<'a>,
+    transcript: blake3::Hasher,
+    meter: &'a mut crate::task::semantic::TaskSemanticMeter,
 }
 
 impl ViewTaskPlanDigestRequest<'_> {
@@ -486,15 +498,38 @@ impl ViewTaskPlanDigestRequest<'_> {
         &self.base
     }
 
-    /// Consumes the capability after the accepted View owner writes the exact
-    /// version-one transcript. Core verifies this invocation's issuance record.
-    #[must_use]
-    pub fn finish_authority_transcript(self, hasher: blake3::Hasher) -> TaskPlanSemanticDigest {
-        TaskPlanSemanticDigest::from_view_authority_transcript(self, hasher)
+    /// Completes the version-one View binding on the actual Core prefix. The
+    /// same sticky meter admits the complete extension before any hashing;
+    /// the caller cannot replace, omit or rehash any Core field.
+    pub fn complete_view_binding(
+        mut self,
+        program: &str,
+        site: &[u8; 32],
+        admission: &[u8; 32],
+    ) -> Result<TaskPlanSemanticDigest, ViewTaskPlanValidationError> {
+        let length = u32::try_from(program.len())
+            .map_err(|_| ViewTaskPlanValidationError::ArithmeticOverflow)?;
+        let bytes = u64::from(length) + 1 + 4 + 32 + 32;
+        self.meter
+            .charge_authority_extension(bytes)
+            .map_err(|_| ViewTaskPlanValidationError::WorkLimitExceeded)?;
+        self.transcript
+            .update(&[RuntimeTaskSemanticBindingKind::View.semantic_tag()]);
+        self.transcript.update(&length.to_le_bytes());
+        self.transcript.update(program.as_bytes());
+        self.transcript.update(site);
+        self.transcript.update(admission);
+        Ok(TaskPlanSemanticDigest::from_view_authority_transcript(self))
     }
 
-    pub(crate) fn record_completion(self, key: TaskPlanSemanticDigest, bytes: u64) {
+    pub(crate) fn complete_transcript(
+        self,
+        finish: impl FnOnce(blake3::Hasher) -> TaskPlanSemanticDigest,
+    ) -> TaskPlanSemanticDigest {
+        let bytes = self.transcript.count();
+        let key = finish(self.transcript);
         self.base.issuer.completed.set(Some((key, bytes)));
+        key
     }
 }
 
@@ -568,6 +603,8 @@ impl ViewTaskPlanSealInvocation {
         producer_function: ProducerFunctionSemanticDigest,
         request_template: TaskRequestTemplateDigest,
         control_effect: ControlEffectContractDigest,
+        transcript: blake3::Hasher,
+        meter: &'a mut crate::task::semantic::TaskSemanticMeter,
     ) -> ViewTaskPlanDigestRequest<'a> {
         ViewTaskPlanDigestRequest {
             base: RuntimeTaskPlanDigestBase {
@@ -579,6 +616,8 @@ impl ViewTaskPlanSealInvocation {
                 request_template,
                 control_effect,
             },
+            transcript,
+            meter,
         }
     }
 
