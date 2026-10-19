@@ -15,11 +15,22 @@ impl Identifier {
     /// Returns [`IdentifierError`] when the trimmed value is empty.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentifierError> {
         let value = value.into();
+        Ok(Self(Self::validate_source(&value)?.to_owned()))
+    }
+
+    /// Validates borrowed source and returns its normalized identity slice.
+    ///
+    /// This shares [`Self::new`]'s trimming rule without allocating an identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdentifierError`] when the trimmed value is empty.
+    pub fn validate_source(value: &str) -> Result<&str, IdentifierError> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
             return Err(IdentifierError);
         }
-        Ok(Self(trimmed.to_owned()))
+        Ok(trimmed)
     }
 
     #[must_use]
@@ -78,5 +89,18 @@ mod tests {
     #[test]
     fn identifier_rejects_empty_values() {
         assert_eq!(Identifier::new(" \t\n"), Err(IdentifierError));
+    }
+
+    #[test]
+    fn borrowed_identifier_admission_retains_the_original_normalized_slice() {
+        let source = "\u{3000}action.advance\t";
+        let admitted = Identifier::validate_source(source).unwrap();
+        assert_eq!(admitted, "action.advance");
+        assert_eq!(admitted.as_ptr(), source[3..].as_ptr());
+        assert_eq!(Identifier::new(source).unwrap().as_str(), admitted);
+        assert_eq!(
+            Identifier::validate_source("\u{3000}\r\n"),
+            Err(IdentifierError)
+        );
     }
 }

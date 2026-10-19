@@ -43,7 +43,7 @@ use crate::value::{
 };
 
 impl RuntimeFlowSourceHandles<'_> {
-    pub(super) fn validate(
+    pub(in crate::plan::construction::source) fn validate(
         &self,
         source: &mut RuntimePlanSourceConstruction,
         limits: RuntimeFlowSourceLimits,

@@ -18011,3 +18011,41 @@ and verify prefix/source-order and resource bounds. These remaining details are
 implementation work, not external blockers or completed acceptance. Retain the
 two real selected-Need key failures and continue the joint complete-program
 Source/public switch and all other goal conditions. The full goal remains active.
+
+## 2026-10-19 — Borrowed interaction identity admission and Line writer checkpoint
+
+Inspected main 713393787500caaef8264b99f754f5400be495a1, fourteen held tracked
+paths and three held untracked items. Identifier now owns borrowed validation
+returning its original normalized slice; its constructor shares the exact same
+trim/empty law. A focused test verifies Unicode whitespace normalization,
+original-slice pointer identity, constructor parity and empty rejection. Flow's
+actual handle validator is visible to its sibling Source reader. No dependency,
+contract marker, existing identity rule or executable authority changes.
+
+R1360 current Core/interaction-model all-target/all-feature locked Clippy passes,
+actual 0, 19.72s. R1361 catalogs 2288 matched cases, zero excluded, in the
+seven-package all-feature library selection filtered by actual interaction-model
+reverse dependencies. R1362 executes that exact set: actual 0, 2288 pass, zero
+fail/skip, 21.613s; all names and 3894 frozen inputs verify unchanged. The filter
+selects six packages with cases. Character is outside this changed root's
+reverse closure and contributes no named cases in this selection; its unchanged
+owner tests passed in R1356. Do not interpret the seven selected -p arguments as
+seven executed packages or as all 62 resolved workspace reverse packages. The
+earlier workspace results predate these two narrow owner edits. The unregistered
+Line writer was frozen but not compiled; the new Line tests are outside that
+freeze and likewise have no execution evidence.
+
+Checkpoint the counted Line writer and three drafted group tests. The writer
+checks actual dense preorder coordinates, retains original handle-site kind
+instead of its coarser runtime handle kind, finds a Mark's actual content owner,
+uses the original Flow Source for all bodies and checks the complete borrowed
+grammar before final output allocation. Draft tests cover a genuine marked
+content/group factory, nested Start/Parallel/Child topology, cancellation and
+supported cleanup combinations, common-seal/digest/byte parity, cumulative
+resource edges, all truncations, output capacity, foreign content handles and
+invalid original mark extent. They are not yet compiled or validated. The Line
+module remains unregistered. Test-fixture visibility, capture/activation
+derivation storage/work admission, unsupported-detach owner review and complete
+scheduled/actor/look/voice coverage still need implementation before registering
+and checking the finished Line codec. Continue the joint Source/consumer switch
+and remaining actual execution/restore/display acceptance. The goal stays active.
