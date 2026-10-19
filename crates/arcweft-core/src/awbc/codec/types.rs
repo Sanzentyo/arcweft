@@ -1465,7 +1465,7 @@ mod opaque_wire_tests {
         bytes.extend([23, 0]);
         bytes.push(2);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             AwbcRuntimeType::read_wire(&mut reader)
                 .expect_err("unknown opaque admission must reject"),
             AwbcCodecError::UnknownTag {
@@ -1473,7 +1473,7 @@ mod opaque_wire_tests {
                 tag: 2,
                 offset: 36,
             }
-        );
+        ));
     }
 
     #[test]
@@ -1511,11 +1511,11 @@ mod opaque_wire_tests {
         let bytes = [15, 1, 0, 2, 0x81, 0x00, 0x80, 0x01, 0];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
 
-        assert_eq!(
+        assert!(matches!(
             AwbcConstant::read_wire(&mut reader)
                 .expect_err("overlong tensor dimension must reject"),
             AwbcCodecError::NonCanonicalVarint { offset: 4 }
-        );
+        ));
     }
 
     #[test]
@@ -1612,14 +1612,14 @@ mod map_kind_wire_tests {
         bytes.extend([32, 3, 0, 1]);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
 
-        assert_eq!(
+        assert!(matches!(
             AwbcRuntimeType::read_wire(&mut reader).expect_err("unknown map kind must reject"),
             AwbcCodecError::UnknownTag {
                 kind: "runtime map kind",
                 tag: 3,
                 offset: 35,
             }
-        );
+        ));
     }
 
     #[test]

@@ -218,6 +218,9 @@ pub struct AwbcDigest(pub [u8; 32]);
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcProgram {
     pub header: AwbcHeader,
+    /// Inert complete original Source. Executable admission must resolve its
+    /// assertions through the common seal before using any original Task key.
+    pub original_source: Option<crate::plan::RuntimeTaskSourceArtifact>,
     pub strings: Vec<String>,
     pub runtime_types: Vec<AwbcRuntimeType>,
     pub constants: Vec<AwbcConstant>,
@@ -267,6 +270,7 @@ impl Default for AwbcProgram {
     fn default() -> Self {
         Self {
             header: AwbcHeader::default(),
+            original_source: None,
             strings: Vec::new(),
             runtime_types: vec![AwbcRuntimeType::unit(), AwbcRuntimeType::dynamic()],
             constants: Vec::new(),

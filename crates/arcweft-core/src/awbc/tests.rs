@@ -6301,14 +6301,14 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
     assert_eq!(AWBC_CODEC_VERSION, 1);
     let mut unsupported_version = encoded.clone();
     unsupported_version[8..10].copy_from_slice(&2_u16.to_le_bytes());
-    assert_eq!(
+    assert!(matches!(
         AwbcProgram::decode_canonical(&unsupported_version, AwbcDecodeBudget::default())
             .expect_err("codec rejects an unsupported version"),
         AwbcCodecError::UnsupportedCodecVersion {
             actual: 2,
             expected: AWBC_CODEC_VERSION,
         }
-    );
+    ));
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
         .expect("decode typed runtime type table");
     decoded

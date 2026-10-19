@@ -49,6 +49,7 @@ pub struct AwbcLowerer<'a> {
 )]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AwbcLowerOptions {
+    pub original_source_limits: arcweft_core::plan::RuntimeTaskSourceArtifactLimits,
     pub verify: bool,
     pub include_structured_debug_names: bool,
     pub emit_display_map: bool,
@@ -58,6 +59,7 @@ pub struct AwbcLowerOptions {
 impl Default for AwbcLowerOptions {
     fn default() -> Self {
         Self {
+            original_source_limits: arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
             verify: true,
             include_structured_debug_names: true,
             emit_display_map: true,
@@ -77,6 +79,8 @@ pub struct AwbcLowerReport {
 /// Top-level failure. Diagnostics remain structured and reusable by CLI/LSP.
 #[derive(Clone, Debug, Error)]
 pub enum AwbcLowerError {
+    #[error(transparent)]
+    OriginalSource(arcweft_core::plan::RuntimeTaskSourceArtifactError),
     #[error("Product AWBC lowering reported structured diagnostics: {0:?}")]
     Lowering(Vec<AwbcLowerDiagnostic>),
     #[error(transparent)]
@@ -136,6 +140,9 @@ impl<'a> AwbcLowerer<'a> {
             entry,
             options,
         } = self;
+        let original_source = plan
+            .task_source_artifact(options.original_source_limits)
+            .map_err(AwbcLowerError::OriginalSource)?;
         let mut inventory = AwbcInventory::new(options);
         inventory.intern_runtime_primitives();
         pattern::preflight_plan_types(&mut inventory, plan).map_err(AwbcLowerError::Lowering)?;
@@ -180,6 +187,7 @@ impl<'a> AwbcLowerer<'a> {
             });
         }
         let mut program = inventory.finish();
+        program.original_source = Some(original_source);
         program.plain_text_context_template = plan.dialogue_content().plain_text_context_template();
         program.canonicalize_string_table();
 

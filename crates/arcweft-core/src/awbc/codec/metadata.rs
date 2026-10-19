@@ -36,6 +36,7 @@ mod schema_tests;
 impl Wire for AwbcProgram {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.header.write_wire(writer)?;
+        self.original_source.write_wire(writer)?;
         writer.write_table(&self.strings)?;
         writer.write_table(&self.runtime_types)?;
         writer.write_table(&self.constants)?;
@@ -81,6 +82,7 @@ impl Wire for AwbcProgram {
         let budget = reader.budget();
         Ok(Self {
             header: AwbcHeader::read_wire(reader)?,
+            original_source: Option::<crate::plan::RuntimeTaskSourceArtifact>::read_wire(reader)?,
             strings: reader.read_string_table(budget.strings)?,
             runtime_types: reader.read_table("runtime_types", budget.runtime_types)?,
             constants: reader.read_table("constants", budget.constants)?,
@@ -125,6 +127,30 @@ impl Wire for AwbcProgram {
             flow_executables: reader.read_table("flow_executables", budget.flow_executables)?,
             entries: reader.read_table("entries", budget.entries)?,
         })
+    }
+}
+
+impl Wire for crate::plan::RuntimeTaskSourceArtifact {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.expected_executable().write_wire(writer)?;
+        writer.write_len(self.bytes().len())?;
+        writer.write_bytes(self.bytes());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let expected_executable = <[u8; 32]>::read_wire(reader)?;
+        let length = reader.read_len()?;
+        let limits = reader.budget().original_source;
+        Reader::check_limit("original_source_bytes", length, limits.codec.encoded_bytes)?;
+        let bytes = reader.read_exact(length)?;
+        Self::preflight_encoded(bytes, limits)
+            .map_err(|source| AwbcCodecError::OriginalSource { offset, source })?;
+        Ok(Self::from_encoded_source(
+            expected_executable,
+            bytes.to_vec(),
+        ))
     }
 }
 
@@ -1560,11 +1586,11 @@ mod limit_wire_tests {
     fn root_limits_reject_a_count_outside_the_canonical_u32_domain() {
         let bytes = [0xff, 0xff, 0xff, 0xff, 0x10];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             RootExecutionLimits::read_wire(&mut reader)
                 .expect_err("out-of-domain max depth must reject"),
             AwbcCodecError::NonCanonicalVarint { offset: 0 }
-        );
+        ));
     }
 
     #[test]

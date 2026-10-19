@@ -15,6 +15,13 @@ impl AwbcProgram {
     /// of their dense string-table positions.
     pub fn executable_identity(&self) -> Result<AwbcDigest, AwbcCodecError> {
         let mut executable = self.clone();
+        // Source wire preserves diagnostics as well as semantic declarations.
+        // Its E claim is identity data; source admission must recompute it
+        // before execution. Hashing it never issues an original Task key.
+        let original_executable = executable
+            .original_source
+            .take()
+            .map(|source| *source.expected_executable());
         executable.canonicalize_string_table();
         for block in &mut executable.blocks {
             block.source_map = None;
@@ -26,9 +33,14 @@ impl AwbcProgram {
         executable.display_map.clear();
         executable.source_map.clear();
         executable.retain_referenced_strings();
-        executable
-            .encode_canonical()
-            .map(|bytes| AwbcDigest(*blake3::hash(&bytes).as_bytes()))
+        let bytes = executable.encode_canonical()?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&bytes);
+        if let Some(original) = original_executable {
+            hasher.update(b"arcweft.awbc.original-program.v1\0");
+            hasher.update(&original);
+        }
+        Ok(AwbcDigest(*hasher.finalize().as_bytes()))
     }
 }
 

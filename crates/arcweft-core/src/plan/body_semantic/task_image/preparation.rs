@@ -407,6 +407,12 @@ impl UnsealedRuntimePlanImage {
             children.binding.write(&mut encoder);
         }
         let executable = RuntimeExecutableSemanticDigest::from_semantic_transcript(encoder)?;
+        if self
+            .expected_executable_key
+            .is_some_and(|expected| executable.as_bytes() != &expected)
+        {
+            return Err(RuntimeTaskPlanSealError::ExpectedExecutableKeyMismatch);
+        }
         Ok(PreparedRuntimePlanRows {
             executable,
             tasks: tasks.into_boxed_slice(),

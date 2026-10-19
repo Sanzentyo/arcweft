@@ -705,13 +705,13 @@ mod callable_default_wire_tests {
     #[test]
     fn callable_default_decoder_rejects_unknown_tags() {
         let mut reader = Reader::new(&[2], &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             RuntimeCallableDefault::<AwbcFunctionId>::read_wire(&mut reader).unwrap_err(),
             AwbcCodecError::UnknownTag {
                 kind: "callable default",
                 tag: 2,
                 offset: 0,
             }
-        );
+        ));
     }
 }

@@ -21,6 +21,7 @@ const ENVELOPE_BYTES: usize = 20;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AwbcDecodeBudget {
     pub encoded_bytes: usize,
+    pub original_source: crate::plan::RuntimeTaskSourceArtifactLimits,
     pub strings: usize,
     pub string_bytes: usize,
     pub runtime_types: usize,
@@ -69,6 +70,7 @@ impl Default for AwbcDecodeBudget {
     fn default() -> Self {
         Self {
             encoded_bytes: 256 * 1024 * 1024,
+            original_source: crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             strings: 1_000_000,
             string_bytes: 64 * 1024 * 1024,
             runtime_types: 262_144,
@@ -116,8 +118,13 @@ impl Default for AwbcDecodeBudget {
 }
 
 /// Canonical codec failure with a stable byte offset when applicable.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error)]
 pub enum AwbcCodecError {
+    #[error("AWBC original Source is invalid at byte offset {offset}: {source}")]
+    OriginalSource {
+        offset: usize,
+        source: crate::plan::RuntimeTaskSourceArtifactError,
+    },
     #[error("AWBC payload exceeds `{budget}` budget: {actual} > {limit}")]
     BudgetExceeded {
         budget: &'static str,

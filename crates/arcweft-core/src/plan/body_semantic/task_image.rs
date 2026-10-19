@@ -1,7 +1,7 @@
 //! Private task candidate ownership shared by construction and strict decode.
 //! There is one executable inventory; expected keys remain untrusted assertions.
 
-mod codec;
+pub(in crate::plan) mod codec;
 mod preflight;
 #[allow(
     dead_code,
@@ -24,6 +24,7 @@ pub(in crate::plan) struct UnsealedRuntimePlanImage {
     pub(super) coordinate_owner: RuntimeTaskPlanCoordinateOwner,
     pub(super) task_plans: Box<[RuntimeTaskPlan]>,
     expected_task_plan_keys: Option<Box<[ExpectedTaskPlanKey]>>,
+    expected_executable_key: Option<[u8; 32]>,
     preparation_meter: Option<crate::task::semantic::TaskSemanticMeter>,
 }
 
@@ -57,6 +58,8 @@ pub enum RuntimeTaskPlanSealError {
     },
     #[error("task row {ordinal} differs from its expected decoded key")]
     ExpectedKeyMismatch { ordinal: usize },
+    #[error("the executable differs from its expected decoded key")]
+    ExpectedExecutableKeyMismatch,
     #[error("task row {ordinal} duplicates completed task key from row {first}")]
     DuplicateKey { first: usize, ordinal: usize },
     #[error("executable table {table} row {ordinal} has {actual} children; maximum {maximum}")]
@@ -106,6 +109,13 @@ impl From<crate::plan::entry_inventory::RuntimePlanError> for RuntimeTaskPlanSea
 }
 
 impl UnsealedRuntimePlanImage {
+    /// Stores only assertion data. The actual semantic encoder compares it
+    /// before any task completion or coordinate publication.
+    pub(in crate::plan) fn with_expected_executable_key(mut self, expected: [u8; 32]) -> Self {
+        self.expected_executable_key = Some(expected);
+        self
+    }
+
     pub(in crate::plan) fn new(
         inventory: RuntimePlanInventory,
         coordinate_owner: RuntimeTaskPlanCoordinateOwner,
@@ -131,6 +141,7 @@ impl UnsealedRuntimePlanImage {
             coordinate_owner,
             task_plans,
             expected_task_plan_keys,
+            expected_executable_key: None,
             preparation_meter: Some(preparation_meter),
         })
     }

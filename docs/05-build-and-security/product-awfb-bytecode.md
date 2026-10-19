@@ -17,6 +17,37 @@ bundles, not the normal producer error path. Source/dev execution may continue
 to use structured bytecode, but an `.awfb` Game product has no structured
 executable fallback.
 
+## Original program Source
+
+Compiler-side AWBC lowering retains the complete original RuntimePlan Source,
+including all executable inventories and original Task definitions, even for an
+entry-selected artifact. It never reconstructs that Source from emitted bytecode.
+`RuntimeTaskSourceArtifact` owns immutable shared bytes and an untrusted original
+executable E assertion. Cloning retains the same packet without copying its bytes.
+
+Canonical AWBC v1 writes the Source option immediately after its fixed header.
+A present Source writes the 32 E assertion bytes followed by a canonical length
+and the strict version-one complete Task Source frame. The binary reader checks
+the declared byte bound and preflights the borrowed complete Source grammar and
+construction footprint before retaining its bytes or reading later AWBC tables.
+Line handle producer storage is bounded by the owning encoded handle domain's
+actual producer labels; the general string limit does not multiply that footprint.
+The unadmitted schema represents absent Source explicitly; absence grants no
+original-program or Task authority. Ordinary compiler lowering attaches Source.
+
+Source transport and wire preflight do not issue a key. Original Source admission
+uses one constrained semantic meter and one retained-value allowance across
+preflight, genuine namespace construction and the common seal. That seal compares
+the recomputed E before completing or publishing Task rows, compares each Task
+assertion, and requires the actual upper View authority for View-bound rows.
+Execution and restore must bind their original Task rows and exact program lease
+through this admitted Source; copying an asserted digest is not admission.
+
+AWBC executable identity includes the original E assertion, which must pass that
+admission, rather than raw Source wire spelling. Source bytes preserve diagnostic
+labels in addition to semantic declarations. An identity over assertion data is
+not validation evidence for malformed Source or a forged E assertion.
+
 ## Function input semantic origins
 
 Each positional AWBC function input retains a mandatory `RuntimeLocalOrigin`

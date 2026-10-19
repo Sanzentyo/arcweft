@@ -38,6 +38,11 @@ pub(crate) mod sequence_sum;
 pub use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
 pub(crate) mod task_source;
+pub use body_semantic::task_image::codec::RuntimeTaskSourceCodecLimits;
+pub use construction::source::program::RuntimeProgramSourceLimits;
+pub use task_source::{
+    RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
+};
 mod type_kind;
 pub(crate) use type_kind::RuntimeSequenceMutation;
 mod type_scope;

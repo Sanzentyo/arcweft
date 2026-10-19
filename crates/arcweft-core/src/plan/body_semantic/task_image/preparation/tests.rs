@@ -8,6 +8,18 @@ fn image(expected: Option<[u8; 32]>) -> UnsealedRuntimePlanImage {
 }
 
 #[test]
+fn expected_executable_mismatch_keeps_the_original_coordinate_unpublished() {
+    let candidate = image(None).with_expected_executable_key([0; 32]);
+    let coordinate = candidate.coordinate_owner.resolve(0).unwrap();
+    let result = candidate.seal(RuntimeTaskPlanSealLimits::default(), None);
+    assert!(matches!(
+        result,
+        Err(RuntimeTaskPlanSealError::ExpectedExecutableKeyMismatch)
+    ));
+    assert!(coordinate.sealed_plan().is_none());
+}
+
+#[test]
 fn consuming_seal_keeps_the_original_preparation_meter() {
     let mut image = image(None);
     let coordinate = image.coordinate_owner.resolve(0).unwrap();

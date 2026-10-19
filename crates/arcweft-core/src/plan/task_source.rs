@@ -1,7 +1,11 @@
 //! A completed Task and its actual original function/request source.
 //! This boundary borrows the immutable program and never accepts a key assertion.
 
+mod artifact;
 mod owned;
+pub use artifact::{
+    RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
+};
 #[cfg(test)]
 mod producer_tests;
 pub(crate) use owned::RuntimeTaskSource;

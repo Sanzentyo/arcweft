@@ -2809,6 +2809,26 @@ pub enum RuntimeHandleKind {
 }
 
 impl RuntimeHandleKind {
+    /// Largest producer identity in this closed encoded handle domain. Source
+    /// storage admission uses actual valid identities, not a general string cap.
+    pub(crate) const MAX_PRODUCER_BYTES: usize = {
+        let mut maximum = 0;
+        let mut tag = 0;
+        loop {
+            if let Some(kind) = Self::from_encoded(tag) {
+                let bytes = kind.producer_label().len();
+                if bytes > maximum {
+                    maximum = bytes;
+                }
+            }
+            if tag == u8::MAX {
+                break;
+            }
+            tag += 1;
+        }
+        maximum
+    };
+
     #[must_use]
     pub const fn encoded(self) -> u8 {
         self as u8
@@ -2844,11 +2864,15 @@ impl RuntimeHandleKind {
     pub fn try_producer(
         self,
     ) -> Result<RuntimeOpaqueTypeProducerId, crate::entry::RuntimeIdentityError> {
-        RuntimeOpaqueTypeProducerId::try_new(match self {
+        RuntimeOpaqueTypeProducerId::try_new(self.producer_label())
+    }
+
+    const fn producer_label(self) -> &'static str {
+        match self {
             Self::StageActor => "std.line.stage_actor_handle",
             Self::Cue => "std.line.cue_handle",
             Self::Voice => "std.line.voice_handle",
-        })
+        }
     }
 }
 

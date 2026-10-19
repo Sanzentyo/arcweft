@@ -18935,3 +18935,118 @@ private specification is not yet the live registry/public switch. R1438's two
 Native/decoded-AWBC completed-key failures, all fourteen-family public migration
 and old issuer deletion, restore/replacement, retained View and complete Native/
 Web/CLI/Tier 2/workspace acceptance remain open. The full goal remains active.
+
+### 2026-10-19 — Carry complete original Source in actual AWBC artifacts
+
+Previous goal turn is progress: the Source-owning specification and borrowed
+admission/construction boundaries were published. Existing main and freshly
+fetched origin/main are `3035f166a6fc0b9c0360dd025598fe6c78c599bd`, parent
+`27d07f422f992346c3683d71556c93a2c4ef5636`, tree
+`2757835236e855a4141b4eb298fc3dab2121fb34`. Previous publication's binary/full-
+index patch SHA-256 is
+`e73d6fd878abb7184cfb6b85243b791b639d97c823a0d3259f53bde98efb94c2`.
+The baseline has 3911 inputs, with fourteen tracked and three untracked held
+paths separate from this work. No manifest, lock, branch or checkout changes.
+
+RuntimeTaskSourceArtifact now transports the actual complete original program
+Source and an inert original executable E assertion. Its shared immutable packet
+retains bytes across clone; Debug reports length rather than dumping Source.
+The existing Task/program Source bounds are exposed as data, with an aggregate
+policy selecting codec, common-seal and retained-value allowances. Raw schema
+deserialization creates assertion data, never a live digest or program lease.
+The public admission operation uses the existing borrowed preparation, genuine
+namespace construction and common seal with their original constrained meter
+and value bank. View rows still require the actual supplied upper authority.
+
+UnsealedRuntimePlanImage owns the optional E assertion. Its existing semantic
+encoder compares the computed E before Task completion, View callbacks, table
+publication or coordinate publication. Mismatch returns the structured common-
+seal ExpectedExecutableKeyMismatch; the regression proves the original coordinate
+remains unpublished. Expected Task assertions continue through the same seal.
+
+Actual compiler-side AwbcLowerer captures Source from the complete input plan,
+including entry-selected lowering, before allocating AWBC tables. AwbcProgram's
+inert schema carries that packet. Canonical v1 writes the required option after
+the fixed header, then the present E assertion, canonical length and original
+strict v1 frame. The reader admits the borrowed Source shape/footprint before
+copying its bytes or reading later AWBC tables. No old wire reader or bytecode-
+to-Native-Source reconstruction is added. Absent Source in an unadmitted candidate
+grants no original Task authority. Ordinary compiler lowering always attaches it.
+
+The AWBC identity owner includes the original E assertion under a version-one
+domain, not Source wire spelling: Source also preserves diagnostic labels. Its
+claim must be recomputed before executable use; an identity over data does not
+validate malformed Source. Tests distinguish those roles. Artifact Source errors
+retain the complete typed private child rather than a formatted string. Therefore
+AwbcCodecError no longer promises Eq/PartialEq over those opaque failures. All
+26 affected existing test comparisons preserve their exact variants, tags,
+offsets, bounds and success values using typed matching; none is ignored or relaxed.
+
+R1488 Core all-target/all-feature locked Clippy fails, actual 101, on those 26
+test-only Eq uses. After migration, R1489 matching Core Clippy passes, actual 0,
+47.83s; R1490 RuntimePlan matching Clippy passes, actual 0, 1m24s. R1491 inspects
+1940 all-feature cases: Core 1809, RuntimePlan 120, awbc_product_parity 11, no
+exclusions. R1492 executes all: actual 100, 1938 pass, two fail, zero skip,
+21.231s. The two failures are precisely the existing Native/decoded-AWBC selected
+Need completed-key assertions. Both still emit the same request-only digest
+instead of the original completed F/Q/C digest. All new Source tests pass,
+including actual lowering/canonical decoding/resealing of the original program.
+
+A new full-128-Line-handle-site regression exposes a real default footprint
+defect. R1493/R1494 select and execute exactly that case: actual 100, one fail,
+1809 excluded, 0.038s. A genuine sealed program is rejected during Source admission
+with Program/Lines decoded storage 268442424 > 268409018. The default had used
+the general 1-MiB string ceiling for each opaque producer identity. The existing
+RuntimeHandleKind owner now derives MAX_PRODUCER_BYTES from its complete encoded
+domain and sole producer-label grammar. Source defaults use that actual bound;
+no parallel label inventory is introduced. MAX_LINE_HANDLE_SITES (128), live
+handle counts, decoded bytes, semantic work and value limits are unchanged.
+
+R1495 final Core matching Clippy passes, actual 0, Cargo 19.13s. R1496 final
+catalog selects exactly 1941 cases: Core 1810, RuntimePlan 120 and the same eleven
+integration cases, zero exclusions. R1497 runs every case without fail-fast:
+actual 100, 1939 pass, the same two completed-key failures, zero skip, 22.034s.
+The 128-site admission/round-trip, Source byte sharing, complete original E and
+Task recomputation, forged E/Task assertions, storage/work rejection and original
+namespace isolation all pass. Terminal audits match every selected name and
+all 3914 input hashes with zero drift; held inputs remain unchanged. R1498 Core
+all-feature locked doctests pass, actual 0, 69 passed/zero failed or ignored,
+2.10s. R1499 canonical structural gate passes, actual 0. Exact changed-file
+rustfmt and diff checks pass. Existing warnings remain; no -D warnings claim.
+
+Structural review uses the actual Core/RuntimePlan Cargo graph: Core workspace
+fan-in/out 31/7 (development 4/5), RuntimePlan 5/10 (development 5/0), transitive
+Core closure 53; all 99 manifest/lock inputs match. New Source artifact ownership
+is 6624 bytes/187 physical LOC, tests 6675/171, in Core. One immutable packet and
+its Source admission/error/allowance boundary are cohesive, with genuine fixture
+tests following that boundary. No dependency, unsafe or I/O is added.
+
+Touched large Core owners retain their existing responsibilities: AWBC schema
+125306/3861 bytes/physical LOC (no embedded tests), instruction wire 110130/2932
+(668 embedded test lines), metadata wire 61282/1648 (101), type wire 66501/1809
+(419), opaque values 160941/4069 (1062), and plan facade 55052/1599 (zero). The
+schema adds one inert field; Source behavior remains on its real plan owner.
+The wire/type modules and 322546/8827 AWBC test owner change only the equivalent
+error assertions outside the metadata Source frame join. Opaque changes are
+confined to the existing handle producer registry, without adding unrelated
+state. Reuse the existing cohesive-owner dispositions for unchanged state and
+dependencies. Task Source codec is 31266/867, common image 7017/177, preparation
+17519/447 and its tests 55548/1421. Source program bounds are 9525/298, handle
+tests 13589/353, RuntimePlan lowerer 14728/380 and parity tests 39772/1046.
+
+Following the user's explicit intermediate-commit preference, publish this
+reviewable Source transport/admission result with the actual evidence above.
+Current workspace check/Clippy and complete reverse-dependency execution are
+not run yet for this cut; continue them after publication, without claiming
+whole-workspace acceptance. They remain required, along with the final milestone
+matrix, Tier 2 and real display/capture acceptance.
+
+The actual registry/public fourteen-family switch is still open. AWBC selected
+rows must carry original row assertions and join the actual admitted Source;
+Native/AWBC launch/restore must retain the correct program lease, argument bank,
+row class and expected-key checks before copies. Do not fabricate a Native owner
+for AWBC values or resolve a row from canonical metadata's launch coordinate.
+Remove the request-only issuer and old readers in the single complete consumer
+migration. R1497's two failures, full View capability/retained View, failed-atomic
+restore/replacement, Native/Web/CLI and all remaining acceptance stay open.
+The full goal remains active.

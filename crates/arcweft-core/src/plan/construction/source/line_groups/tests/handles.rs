@@ -201,6 +201,55 @@ pub(in crate::plan::construction::source) fn fixture() -> RuntimePlan {
 }
 
 #[test]
+fn default_source_artifact_accepts_the_full_line_handle_site_limit() {
+    let (mut builder, content) = crate::plan::body_semantic::content_root_builder_fixture();
+    let voice = ty(0xee);
+    builder
+        .admit_type_batch([opaque(RuntimeHandleKind::Voice, voice)], [])
+        .unwrap();
+    let count = u32::try_from(crate::line_task::MAX_LINE_HANDLE_SITES).unwrap();
+    let group = builder
+        .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0xed; 32]),
+            activation_ops: vec![RuntimeFlowOpSeed::Noop],
+            result_type: ty(1),
+            handle_sites: (0..count)
+                .map(|index| RuntimeLineHandleSiteSeed {
+                    id: site(index),
+                    source_ordinal: index + 1,
+                    kind: RuntimeLineHandleSiteKind::Voice,
+                    result_type: voice,
+                    character: None,
+                    scheduled_child: None,
+                })
+                .collect(),
+            root: RuntimeLineTaskNodeSeed::Action(
+                (0..count)
+                    .map(|index| RuntimeFlowOpSeed::LineOperation {
+                        binding: None,
+                        operation: RuntimeLineOperationSeed::VoiceHandle { site: site(index) },
+                    })
+                    .collect(),
+            ),
+            cancel_rules: Box::new([]),
+            cleanup_completed: vec![],
+            cleanup_cancelled: vec![],
+            cleanup_failed: vec![],
+            cleanup_policy: LineCleanupPolicy::default(),
+        })
+        .unwrap();
+    builder
+        .attach_line_task_group_seed(&content, &group)
+        .unwrap();
+    let original = builder.finish().unwrap();
+    let limits = crate::plan::RuntimeTaskSourceArtifactLimits::default();
+    let source = original.task_source_artifact(limits).unwrap();
+    let restored = source.admit(limits, None).unwrap();
+    assert_eq!(restored.line_task_groups(), original.line_task_groups());
+    assert_eq!(restored.task_source_artifact(limits).unwrap(), source);
+}
+
+#[test]
 fn line_sources_restore_all_handle_site_kinds_scheduled_packets_and_borrowed_actor_operations() {
     let plan = fixture();
     let bounds = limits(&plan);

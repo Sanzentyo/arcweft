@@ -23,14 +23,15 @@ use std::num::NonZeroU32;
 const DOMAIN: &[u8] = b"arcweft.runtime.task-sources.v1\0";
 const ROW_FIXED_BYTES: usize = 4 + 4 + 1 + 1 + 4 + 4 + 1 + 32;
 
-#[derive(Clone, Copy)]
-pub(in crate::plan) struct RuntimeTaskSourceCodecLimits {
-    pub(in crate::plan) rows: u32,
-    pub(in crate::plan) encoded_bytes: usize,
-    pub(in crate::plan) decoded_bytes: usize,
-    pub(in crate::plan) request_roles: u32,
-    pub(in crate::plan) path_steps: u32,
-    pub(in crate::plan) program: RuntimeProgramSourceLimits,
+/// Bounds for the one version-one complete Task Source frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeTaskSourceCodecLimits {
+    pub rows: u32,
+    pub encoded_bytes: usize,
+    pub decoded_bytes: usize,
+    pub request_roles: u32,
+    pub path_steps: u32,
+    pub program: RuntimeProgramSourceLimits,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -589,6 +589,52 @@ fn canonical_awbc_rejects_tampered_payload() {
 }
 
 #[test]
+fn decoded_awbc_carries_the_complete_original_program_source() {
+    let original = plan_with_await_observer();
+    let expected = selected_producer_key(&original);
+    let program = lower(&original);
+    let source = program
+        .original_source
+        .as_ref()
+        .expect("lowering retains Source");
+    assert_eq!(
+        source.expected_executable(),
+        original.executable_semantic_digest().as_bytes()
+    );
+    let bytes = program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    let source = decoded
+        .original_source
+        .expect("canonical bytes retain Source");
+    let restored = source
+        .admit(
+            arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        restored.executable_semantic_digest(),
+        original.executable_semantic_digest()
+    );
+    assert_eq!(restored.task_plans().len(), original.task_plans().len());
+    assert!(restored.task_plans().by_digest(expected).is_some());
+    assert_eq!(
+        restored.task_source_artifact(Default::default()).unwrap(),
+        source
+    );
+    let arcweft_core::plan::FlowOp::StartNeedProducer { target, .. } =
+        &original.flows()[0].body().ops()[0]
+    else {
+        unreachable!()
+    };
+    assert!(restored.task_plan(target.task_plan()).is_none());
+}
+
+#[test]
 fn native_selected_need_uses_the_completed_program_task_plan_key() {
     let plan = plan_with_await_observer();
     let expected = selected_producer_key(&plan);

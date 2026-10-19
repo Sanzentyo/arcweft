@@ -155,10 +155,10 @@ fn awbc_identity_wire_has_exact_golden_and_cumulative_original_budgets() {
             ..exact
         },
     );
-    assert_eq!(
+    assert!(matches!(
         RuntimeEntityReference::read_wire(&mut reader),
         Err(AwbcCodecError::NestingDepthExceeded { limit: 0 })
-    );
+    ));
     let mut two = encoded.clone();
     two.extend_from_slice(&encoded);
     for (budget, expected) in [

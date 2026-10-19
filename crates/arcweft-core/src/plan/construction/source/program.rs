@@ -25,8 +25,9 @@ pub(in crate::plan) use decoding::PreparedRuntimeProgramSource;
 const DOMAIN: &[u8] = b"arcweft.runtime.program-source.v1\0";
 const SECTION_COUNT: usize = 15;
 
-#[derive(Clone, Copy)]
-pub(in crate::plan) struct RuntimeProgramSourceLimits {
+/// Resource bounds for the complete original program Source grammar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeProgramSourceLimits {
     pub rows: u32,
     pub nodes: u32,
     pub elements: u32,

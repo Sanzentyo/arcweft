@@ -731,7 +731,7 @@ mod tests {
             Err(AwbcCodecError::LengthOverflow)
         });
 
-        assert_eq!(result, Err(AwbcCodecError::LengthOverflow));
+        assert!(matches!(result, Err(AwbcCodecError::LengthOverflow)));
         assert_eq!(writer.into_bytes(), b"prefix");
     }
 
@@ -765,7 +765,7 @@ mod tests {
             ..AwbcDecodeBudget::default()
         };
         let mut over_budget = Reader::new(&[3, b'a', b'w', b'b'], &budget);
-        assert_eq!(
+        assert!(matches!(
             over_budget
                 .read_str()
                 .expect_err("borrowed path still enforces byte budget"),
@@ -774,27 +774,27 @@ mod tests {
                 actual: 3,
                 limit: 2,
             }
-        );
+        ));
 
         let mut invalid_utf8 = Reader::new(&[1, 0xff], &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             invalid_utf8
                 .read_str()
                 .expect_err("borrowed path still validates UTF-8"),
             AwbcCodecError::InvalidUtf8 { offset: 1 }
-        );
+        ));
     }
 
     #[test]
     fn reader_maps_truncation_to_the_consumed_byte_offset() {
         let mut reader = Reader::new(&[0xaa, 0x80], &AwbcDecodeBudget::default());
 
-        assert_eq!(reader.read_u8(), Ok(0xaa));
+        assert_eq!(reader.read_u8().unwrap(), 0xaa);
 
-        assert_eq!(
+        assert!(matches!(
             reader.read_u32_var(),
             Err(AwbcCodecError::Truncated { offset: 2 })
-        );
+        ));
     }
 
     #[test]
@@ -804,10 +804,10 @@ mod tests {
             [0x80, 0x80, 0x80, 0x80, 0x80, 0],
         ] {
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-            assert_eq!(
+            assert!(matches!(
                 reader.read_u32_var(),
                 Err(AwbcCodecError::NonCanonicalVarint { offset: 0 })
-            );
+            ));
         }
     }
 
@@ -815,9 +815,9 @@ mod tests {
     fn reader_consumes_only_the_canonical_prefix_before_trailing_bytes() {
         let mut reader = Reader::new(&[0x80, 0x01, 0xaa], &AwbcDecodeBudget::default());
 
-        assert_eq!(reader.read_u32_var(), Ok(128));
+        assert_eq!(reader.read_u32_var().unwrap(), 128);
         assert_eq!(reader.offset(), 2);
-        assert_eq!(reader.read_u8(), Ok(0xaa));
+        assert_eq!(reader.read_u8().unwrap(), 0xaa);
         assert_eq!(reader.offset(), 3);
     }
 }

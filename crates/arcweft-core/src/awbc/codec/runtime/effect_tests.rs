@@ -69,14 +69,14 @@ fn registry_effect_decoder_shares_key_string_and_collection_budgets() {
     ] {
         let mut reader = Reader::new(&bytes, &budget);
         assert_eq!(AwbcEffectPlan::read_wire(&mut reader).unwrap(), plan);
-        assert_eq!(
+        assert!(matches!(
             AwbcEffectPlan::read_wire(&mut reader),
             Err(AwbcCodecError::BudgetExceeded {
-                budget: name,
-                actual,
-                limit
-            })
-        );
+                budget: actual_name,
+                actual: actual_count,
+                limit: actual_limit
+            }) if actual_name == name && actual_count == actual && actual_limit == limit
+        ));
     }
 }
 
@@ -93,14 +93,14 @@ fn registry_key_bounds_precede_name_materialization_and_grammar_diagnostics() {
         ..AwbcDecodeBudget::default()
     };
     let mut reader = Reader::new(&bytes, &budget);
-    assert_eq!(
+    assert!(matches!(
         reader.read_registry_key(),
         Err(AwbcCodecError::BudgetExceeded {
             budget: "string_bytes",
             actual: 17,
             limit: 12
         })
-    );
+    ));
     let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
     assert!(matches!(
         reader.read_registry_key(),

@@ -2266,30 +2266,30 @@ mod opcode_class_tests {
     fn instruction_decoder_rejects_a_known_terminator_opcode() {
         let bytes = [AwbcOpcode::Jump.encoded()];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             AwbcInstruction::read_wire(&mut reader)
                 .expect_err("terminator cannot enter instruction table"),
             AwbcCodecError::UnknownTag {
                 kind: "instruction opcode",
-                tag: AwbcOpcode::Jump.encoded(),
+                tag,
                 offset: 0,
-            }
-        );
+            } if tag == AwbcOpcode::Jump.encoded()
+        ));
     }
 
     #[test]
     fn terminator_decoder_rejects_a_known_instruction_opcode() {
         let bytes = [AwbcOpcode::Nop.encoded()];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             AwbcTerminator::read_wire(&mut reader)
                 .expect_err("instruction cannot enter terminator table"),
             AwbcCodecError::UnknownTag {
                 kind: "terminator opcode",
-                tag: AwbcOpcode::Nop.encoded(),
+                tag,
                 offset: 0,
-            }
-        );
+            } if tag == AwbcOpcode::Nop.encoded()
+        ));
     }
 
     #[test]
@@ -2515,14 +2515,14 @@ mod format_content_wire_tests {
             0xff, // unknown parameter
         ];
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             AwbcInstruction::read_wire(&mut reader).expect_err("reject forged parameter tag"),
             AwbcCodecError::UnknownTag {
                 kind: "fmt parameter",
                 tag: 0xff,
                 offset: 9,
             }
-        );
+        ));
     }
 
     #[test]
@@ -2675,14 +2675,14 @@ mod function_semantic_role_wire_tests {
         for tag in 7..=u8::MAX {
             let bytes = [tag];
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-            assert_eq!(
+            assert!(matches!(
                 AwbcFunction::read_wire(&mut reader).unwrap_err(),
                 AwbcCodecError::UnknownTag {
                     kind: "function semantic role",
-                    tag,
+                    tag: actual_tag,
                     offset: 0
-                }
-            );
+                } if actual_tag == tag
+            ));
         }
     }
 }
@@ -2754,14 +2754,14 @@ mod function_input_source_wire_tests {
         for tag in 4..=u8::MAX {
             let bytes = [tag];
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-            assert_eq!(
+            assert!(matches!(
                 RuntimeLocalOrigin::read_wire(&mut reader).unwrap_err(),
                 AwbcCodecError::UnknownTag {
                     kind: "function input origin",
-                    tag,
+                    tag: actual_tag,
                     offset: 0
-                }
-            );
+                } if actual_tag == tag
+            ));
         }
     }
 
@@ -2902,14 +2902,14 @@ mod function_input_source_wire_tests {
         for tag in 3..=u8::MAX {
             let bytes = [tag];
             let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-            assert_eq!(
+            assert!(matches!(
                 RuntimeFunctionInputSource::read_wire(&mut reader).unwrap_err(),
                 AwbcCodecError::UnknownTag {
                     kind: "function input source",
-                    tag,
+                    tag: actual_tag,
                     offset: 0
-                }
-            );
+                } if actual_tag == tag
+            ));
             for source_tag in [1, 2] {
                 let mut writer = Writer::with_capacity(8);
                 writer.write_u8(source_tag);
@@ -2918,14 +2918,14 @@ mod function_input_source_wire_tests {
                 let offset = bytes.len();
                 bytes.push(tag);
                 let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
-                assert_eq!(
+                assert!(matches!(
                     RuntimeFunctionInputSource::read_wire(&mut reader).unwrap_err(),
                     AwbcCodecError::UnknownTag {
                         kind: "function parameter passing",
-                        tag,
-                        offset
-                    }
-                );
+                        tag: actual_tag,
+                        offset: actual_offset
+                    } if actual_tag == tag && actual_offset == offset
+                ));
             }
         }
     }

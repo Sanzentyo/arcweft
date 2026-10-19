@@ -281,14 +281,14 @@ mod tests {
     #[test]
     fn runtime_codec_use_wire_rejects_unknown_tags_and_excessive_nesting() {
         let mut reader = Reader::new(&[13], &AwbcDecodeBudget::default());
-        assert_eq!(
+        assert!(matches!(
             RuntimeCodecUse::read_wire(&mut reader).expect_err("unknown codec-use tag must reject"),
             AwbcCodecError::UnknownTag {
                 kind: "runtime codec use",
                 tag: 13,
                 offset: 0,
             }
-        );
+        ));
 
         let mut writer = Writer::default();
         let mut deeply_nested = RuntimeCodecUse::Plain;
@@ -305,10 +305,10 @@ mod tests {
             nesting_depth: 8,
             ..AwbcDecodeBudget::default()
         };
-        assert_eq!(
+        assert!(matches!(
             RuntimeCodecUse::read_wire(&mut Reader::new(&bytes, &budget))
                 .expect_err("nesting budget protects recursive policy decode"),
             AwbcCodecError::NestingDepthExceeded { limit: 8 }
-        );
+        ));
     }
 }
