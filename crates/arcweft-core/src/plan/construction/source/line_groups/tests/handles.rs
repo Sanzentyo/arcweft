@@ -243,10 +243,55 @@ fn default_source_artifact_accepts_the_full_line_handle_site_limit() {
         .unwrap();
     let original = builder.finish().unwrap();
     let limits = crate::plan::RuntimeTaskSourceArtifactLimits::default();
-    let source = original.task_source_artifact(limits).unwrap();
-    let restored = source.admit(limits, None).unwrap();
-    assert_eq!(restored.line_task_groups(), original.line_task_groups());
-    assert_eq!(restored.task_source_artifact(limits).unwrap(), source);
+    for producer_limit in [
+        limits.codec.program.opaque_producer_bytes,
+        1 << 20,
+        usize::MAX,
+    ] {
+        let mut limits = limits;
+        limits.codec.program.opaque_producer_bytes = producer_limit;
+        let source = original.task_source_artifact(limits).unwrap();
+        let restored = source.admit(limits, None).unwrap();
+        assert_eq!(restored.line_task_groups(), original.line_task_groups());
+        assert_eq!(restored.task_source_artifact(limits).unwrap(), source);
+    }
+}
+
+#[test]
+fn line_source_storage_counts_actual_producers_independently_of_allowance() {
+    let plan = fixture();
+    let bounds = limits(&plan);
+    let encoded = plan
+        .encode_line_group_sources(bounds, &resources(), &mut meter())
+        .unwrap();
+    for producer_limit in [bounds.opaque_producer_bytes, 1 << 20, usize::MAX] {
+        let bounds = RuntimeLineGroupSourceLimits {
+            opaque_producer_bytes: producer_limit,
+            decoded_bytes: encoded.storage_bytes(),
+            ..bounds
+        };
+        let prepared = PreparedRuntimeLineGroupSources::preflight(
+            encoded.bytes(),
+            bounds,
+            &resources(),
+            &mut meter(),
+        )
+        .unwrap();
+        assert_eq!(prepared.storage_bytes(), encoded.storage_bytes());
+        let restored = restore(&plan, encoded.bytes(), bounds);
+        assert_eq!(restored.line_task_groups(), plan.line_task_groups());
+        assert_eq!(
+            restored.executable_semantic_digest(),
+            plan.executable_semantic_digest()
+        );
+        assert_eq!(
+            restored
+                .encode_line_group_sources(bounds, &resources(), &mut meter())
+                .unwrap()
+                .bytes(),
+            encoded.bytes()
+        );
+    }
 }
 
 #[test]
@@ -328,19 +373,27 @@ fn line_sources_admit_derived_producer_storage_and_reject_site_metadata_before_v
             bounds,
             &resources(),
             &mut source.meter,
-        )
-        .unwrap();
-        let error = prepared
-            .materialize(&mut source, &handles, &mut resources())
-            .err()
-            .unwrap();
+        );
+        let error = if producer_limit {
+            prepared
+                .err()
+                .expect("the derived producer bound is checked in preflight")
+        } else {
+            prepared
+                .unwrap()
+                .materialize(&mut source, &handles, &mut resources())
+                .err()
+                .unwrap()
+        };
         if producer_limit {
             assert!(matches!(
                 error,
                 Error::Limit {
                     kind: "opaque producer bytes",
-                    ..
-                }
+                    actual,
+                    maximum,
+                } if actual == RuntimeHandleKind::StageActor.try_producer().unwrap().as_str().len()
+                    && maximum == bounds.opaque_producer_bytes
             ));
         } else {
             assert!(

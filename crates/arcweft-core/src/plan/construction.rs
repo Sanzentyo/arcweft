@@ -2206,6 +2206,14 @@ impl RuntimePlanBuilder {
             else {
                 return Err(RuntimePlanBuildError::InvalidLineHandleType { site: seed.id });
             };
+            RuntimeLineHandleSite::validate_metadata(
+                seed.kind,
+                seed.character.is_some(),
+                seed.scheduled_child.is_some(),
+                producer,
+                *value_class,
+                *persistence,
+            )?;
             let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
                 producer.clone(),
                 declaration.semantic_identity(),

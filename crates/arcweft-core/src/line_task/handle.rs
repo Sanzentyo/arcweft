@@ -8,7 +8,7 @@ use super::{
     RuntimeDialogueContentEventKind, ScopeExit,
 };
 use crate::effect::RuntimeDropPolicy;
-use crate::pattern::RuntimeOpaqueTypeOwner;
+use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId};
 use crate::presentation::{RuntimeCommandQueue, RuntimeStageRejectCode, RuntimeVoiceSessionId};
 use crate::runtime_id::{
     DialogueActivationId, RuntimeDeferRegistrationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId,
@@ -166,7 +166,9 @@ impl RuntimeLineHandleSite {
             kind,
             character.is_some(),
             scheduled_child.is_some(),
-            &opaque_owner,
+            opaque_owner.producer(),
+            opaque_owner.value_class(),
+            opaque_owner.persistence(),
         )?;
         Ok(Self {
             id,
@@ -179,19 +181,19 @@ impl RuntimeLineHandleSite {
         })
     }
 
+    /// Checks the borrowed declaration before copying an opaque site owner.
     pub(crate) fn validate_metadata(
         kind: RuntimeLineHandleSiteKind,
         has_character: bool,
         has_scheduled_child: bool,
-        opaque_owner: &RuntimeOpaqueTypeOwner,
+        producer: &RuntimeOpaqueTypeProducerId,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
     ) -> Result<(), LineRuntimeError> {
         let handle_kind = kind.handle_kind();
-        if opaque_owner.value_class() != RuntimeOpaqueValueClass::AffineHandle(handle_kind)
-            || opaque_owner.persistence() != RuntimeOpaquePersistence::SnapshotOnly
-            || opaque_owner.producer()
-                != &handle_kind
-                    .try_producer()
-                    .map_err(|_| LineRuntimeError::WrongOpaqueProducer)?
+        if value_class != RuntimeOpaqueValueClass::AffineHandle(handle_kind)
+            || persistence != RuntimeOpaquePersistence::SnapshotOnly
+            || producer.as_str() != handle_kind.producer_label()
         {
             return Err(LineRuntimeError::WrongOpaqueProducer);
         }

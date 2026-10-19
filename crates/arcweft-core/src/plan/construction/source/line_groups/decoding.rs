@@ -58,27 +58,13 @@ pub(super) fn authenticate<'a>(
                 producer.as_str().len(),
                 prepared.limits.opaque_producer_bytes,
             )?;
-            let expected = site
-                .kind
-                .handle_kind()
-                .try_producer()
-                .map_err(|_| invalid())?;
-            limit(
-                "opaque producer bytes",
-                expected.as_str().len(),
-                prepared.limits.opaque_producer_bytes,
-            )?;
-            let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
-                producer.clone(),
-                declaration.semantic_identity(),
-                *value_class,
-                *persistence,
-            );
             crate::line_task::RuntimeLineHandleSite::validate_metadata(
                 site.kind,
                 site.character.is_some(),
                 site.scheduled_child.is_some(),
-                &owner,
+                producer,
+                *value_class,
+                *persistence,
             )
             .map_err(crate::plan::RuntimePlanBuildError::from)?;
         }

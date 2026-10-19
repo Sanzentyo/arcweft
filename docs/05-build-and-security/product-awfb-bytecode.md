@@ -32,6 +32,10 @@ the declared byte bound and preflights the borrowed complete Source grammar and
 construction footprint before retaining its bytes or reading later AWBC tables.
 Line handle producer storage is bounded by the owning encoded handle domain's
 actual producer labels; the general string limit does not multiply that footprint.
+The borrowed site kind determines that storage count and checks the producer
+limit during preflight. A more permissive limit does not increase the count.
+Original type, producer, value class, persistence and site shape are checked
+before copying a derived opaque site owner.
 The unadmitted schema represents absent Source explicitly; absence grants no
 original-program or Task authority. Ordinary compiler lowering attaches Source.
 

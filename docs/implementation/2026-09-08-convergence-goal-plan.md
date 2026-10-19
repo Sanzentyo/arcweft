@@ -19095,3 +19095,98 @@ Complete reverse/default and milestone acceptance, the fourteen-family registry/
 public switch, both completed-key failures, retained View, original program
 leases, failure-atomic restore/replacement and actual Native/Web/CLI capture/
 display acceptance remain open. The full goal remains active.
+
+### 2026-10-19 — Complete reverse execution and borrowed Line producer admission
+
+Inspected main and origin/main are both
+`5dfb912a9c196a006318c6fb862ec5b16c52b7a0`. That published CLI consumer repair
+is the preceding goal turn's concrete progress. Resume observes its unchanged
+fourteen held tracked paths, three held untracked paths, and empty index; the
+pending R1506 handle completes normally and is not restarted. The user's whole
+workspace clean is already complete; no additional clean or build-artifact move,
+copy, profile, job-count or environment tuning is performed.
+
+Fresh locked/offline default-feature Cargo metadata has 97 workspace members.
+The reverse closure of Core alone equals the union for Core, RuntimePlan and
+CLI: 53 packages. R1506's complete workspace library/test catalog selects 6967
+cases in 50 packages; arcweft, bundle-assets and render-web each have a host
+suite with no named cases. The other 39 catalog cases are ignored, with no
+default-filter override. All 1941 previous owner cases are present, including
+both known completed-key failures and the actual complete-Source AWBC regression.
+The package-coverage proof complements the terminal auditor, whose explicit
+`-p` counter is zero for this workspace selection; it does not mean zero selected
+packages. Resolved metadata SHA-256 is
+`e7e6c2e266c8923582ac2bd45f8a0db666bee6337aee70e2be0bac42b7683f84`.
+
+R1507 executes that exact selection with no fail-fast, actual 100: 6967 run,
+6909 passed (47 slow), 58 failed, 39 skipped, 1221.899s. Terminal names match
+the catalog and all 3914 frozen inputs match, including held inputs. The failure
+set is one CLI stdio timeout/tail assertion, 55 CLI integration cases and the
+same two RuntimePlan completed-key assertions. CLI failures include the pending
+typed Presentation command ABI, JLREQ geometry assertions, and command/benchmark/
+proof acceptance. Their full names and output are retained in the receipt/log;
+their causality is not all established and they are not dismissed as unrelated.
+IME deterministic generation, low/one-operation Native/AWBC map parity and all
+selected public-API compile-fail cases pass. This is failed broad acceptance,
+not a workspace pass. Receipts, package/owner coverage and terminal audits use
+task-final-r1506/r1507 in the existing convergence session Temp evidence root.
+
+Original Line Source still multiplied the producer-text allowance by the number
+of sites. R1508/R1509 add, select and execute exactly one regression with actual
+storage held fixed while only that allowance grows: actual 100, zero pass/one
+fail, 1810 excluded, 0.038s. A valid four-kind Source requiring 61338 bytes is
+rejected as 8392416 bytes. This is an observed count defect, independent of the
+default cap repair in the preceding Source artifact cut.
+
+The borrowed site kind now obtains producer length from RuntimeHandleKind's
+existing sole producer-label grammar and checks the cap during preflight. The
+existing two-copy storage factor remains; a policy ceiling is not allocated
+storage and no longer multiplies the count or causes usize overflow. Count,
+work, value, site and live-handle limits are unchanged. RuntimeLineHandleSite's
+existing metadata rule accepts borrowed producer/class/persistence fields and
+compares the existing label without allocating an expected producer. Both the
+builder and Source authentication call that rule before copying an opaque site
+owner; Source authentication no longer constructs a temporary owning projection.
+There is no second rule, producer inventory, owner or codec reader.
+
+The regression proves exact storage, complete reconstruction, equal E and
+canonical re-encoding under ordinary, 1-MiB and usize::MAX producer allowances.
+The existing genuine 128-site complete Source regression exercises those same
+three allowances. The narrow-cap assertion now requires rejection in preflight,
+checks exact actual/maximum fields and still proves no group publication and a
+poisoned original meter. Invalid original types retain their materialization
+rejection; no assertion, budget, execution or copy condition is relaxed.
+
+R1510 Core all-target/all-feature locked Clippy passes, actual 0, 23.11s, with
+warnings and no -D warnings claim. R1511 selects exactly 1942 all-feature Core/
+RuntimePlan library and awbc_product_parity cases, no exclusions. R1512 executes
+all: actual 100, 1940 pass, precisely the same two completed-key failures, zero
+skip, 21.975s. Every new/expanded Source assertion passes. The terminal set and
+3914 input hashes match with zero drift. Changed-file rustfmt and diff checks
+pass. This note follows terminal auditing; tested Rust bytes are unchanged.
+
+The resolved 53-package graph and all 99 manifest/lock inputs remain unchanged.
+The post-repair run targets Core and the actual Source-producing/consuming
+RuntimePlan lowerer. No public type/wire shape, feature or dependency changes;
+the private metadata rule has no external callers. R1507 remains evidence for
+its pre-repair bytes and is not relabeled a fresh broad run after this repair.
+R1504/R1505's earlier workspace check/Clippy and R1498's 69 doctests retain their
+recorded scope; full milestone acceptance remains required.
+
+Owner review measures bytes/physical LOC: Line handle 237726/6151 (835 lines from
+its embedded test module), construction 178292/4372 (853), opaque values
+160952/4069 (1061), Line reader 16575/471, decoder 9141/227 and handle tests
+15496/406. Growth is 2, 8, 0, 1, -14 and 53 LOC respectively. Existing large
+owners keep their responsibilities and state: Line owns the handle law, opaque
+values own the closed producer identities, and original construction owns type
+resolution. Private field borrowing avoids a temporary owner; it adds no public
+API, cross-layer projection, unsafe, I/O or dependency. Tests follow the existing
+Line Source boundary. R1499's dependency gate is reusable for the unchanged
+edges, not a claimed scanner execution on new bytes.
+
+Publish this coherent repair at the requested commit/push boundary. The actual
+original Source/AWBC lease join, explicit issued-row assertions, registry and
+all fourteen request-family public migration, deletion of the request-only
+issuer/old readers, retained View, failure-atomic restore/replacement, all 58
+broad failures and the remaining Native/Web/CLI and milestone acceptance stay
+open. Continue the full goal without redefining completion around this cut.

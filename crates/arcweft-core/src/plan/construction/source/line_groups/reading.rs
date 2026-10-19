@@ -276,12 +276,6 @@ impl<'a> Cursor<'a> {
         counts.array::<Site<'_>>(site_count)?;
         counts.storage(
             site_count
-                .checked_mul(counts.limits.opaque_producer_bytes)
-                .and_then(|bytes| bytes.checked_mul(2))
-                .ok_or(Error::Arithmetic)?,
-        )?;
-        counts.storage(
-            site_count
                 .checked_mul(
                     size_of::<RuntimeLineHandleSiteSeed>()
                         + size_of::<crate::line_task::RuntimeLineHandleSite>(),
@@ -309,6 +303,13 @@ impl<'a> Cursor<'a> {
                 3 => RuntimeLineHandleSiteKind::Voice,
                 _ => unreachable!(),
             };
+            let producer_bytes = kind.handle_kind().producer_label().len();
+            limit(
+                "opaque producer bytes",
+                producer_bytes,
+                counts.limits.opaque_producer_bytes,
+            )?;
+            counts.storage(producer_bytes.checked_mul(2).ok_or(Error::Arithmetic)?)?;
             let result = self.positive("handle type", counts.limits.flow.expression.type_count)?;
             let character = if self.flag()? {
                 let character = self.text(counts)?;

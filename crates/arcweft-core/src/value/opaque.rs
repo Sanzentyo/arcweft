@@ -2867,7 +2867,7 @@ impl RuntimeHandleKind {
         RuntimeOpaqueTypeProducerId::try_new(self.producer_label())
     }
 
-    const fn producer_label(self) -> &'static str {
+    pub(crate) const fn producer_label(self) -> &'static str {
         match self {
             Self::StageActor => "std.line.stage_actor_handle",
             Self::Cue => "std.line.cue_handle",
