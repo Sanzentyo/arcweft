@@ -20544,3 +20544,69 @@ still required and is not discharged by this Flow cut. All previously recorded
 public Source/instance, autonomous owners, Ready, actual View, Generic Match,
 nominal/Sans-I/O, persistence, VM pre-copy, all fourteen request families and
 final workspace/Tier2/Native-Web acceptance remain open.
+R1629 compiled the new Core library and Core test binary, but owner catalogue
+construction failed before any test execution: the parity fixture used
+EffectSet::empty at two sites while the effect-row owner exposes EffectSet::new.
+Both fixture constructors are corrected; this is a change-caused failure, not
+a passing test run. R1630 structural audit on the published Flow checkpoint
+completed with actual exit 0: 3152 files, 3022 Rust files, 97 packages, 376 review
+triggers and zero blocking findings. The changed production owners remain Core
+activation, its FunctionSite input admission and its environment; no dependency
+or layer expands. Existing large engine/value/environment/entry inventories
+retain their responsibilities, with binding policy removed from Engine and
+shared through the existing FunctionSite admission owner. The fixture correction
+only changes two constructor calls and does not alter that ownership review.
+R1631 rebuilt the corrected owner catalogue successfully: exactly 2082 selected
+cases, zero exclusions, and only the one new goto case added to the prior Core /
+RuntimePlan inventory. R1632 executed that exact set: 2081 passed, one failed,
+zero skipped, 716.159s, actual nextest exit 100. All 3929 source inputs and the
+terminal case keys match, with held drift zero. Core library/integration and the
+other RuntimePlan cases pass, including typed Image/Voice original-key parity
+and both strict original invocation rejection cases. The sole failure occurs
+before runtime: the new internal goto target was incorrectly given an
+entry-only RuntimeFlowExecutable and was rejected as UnreachableFlowExecutable.
+The fixture now registers only its real Flow schema/FunctionSite for that
+internal target; the launcher retains the actual entry executable contract.
+There is no extra Entry, replacement Source, or relaxed production validation.
+
+R1633 compiled the affected CLI/Compiler lib and native-host integration targets
+successfully, then selected exactly three regressions from 371 discovered
+cases (368 explicitly filtered): the bundled-PNG named Flow, virtual native/AWBC
+file paths, and compact/expression Need spread order/resume. These execution
+checks and the corrected fifteen-case AWBC parity binary are the next checks;
+the 53-package final reverse/workspace acceptance remains outstanding.
+R1634 rebuilt the corrected parity binary and selected its complete fifteen
+cases with zero exclusions. R1635 passed all fifteen (0.158s, exit 0), including
+the different-signature goto through Native and canonical encoded/decoded AWBC,
+Image/Voice canonical arguments, actual original keys, progress publications,
+affine program ownership and save/restore cases. R1636 passed all three selected
+actual CLI/Compiler regressions (2.568s, exit 0; 368 deliberately filtered).
+Both terminal case sets and all 3929 frozen source inputs match exactly, with
+held drift zero. This resolves the observed missing Flow invocation-context
+failures on these real consumers; it is not a claim that all 69 prior failures
+are repaired.
+
+Only the parity fixture and this note changed between R1632 and the corrected
+run: production input drift is zero. Exact case-key union retains the 2067
+passing non-parity owner cases from R1632 and replaces the old parity partition
+with the fifteen current passing cases, covering all 2082 selected Core /
+RuntimePlan cases with zero missing/duplicate keys. The earlier failed run stays
+recorded as failed. No repeated full owner execution was necessary for these
+fixture-only changes. R1637 all-target/all-feature locked Core/RuntimePlan
+Clippy completed with exit 0 (1m52s), and its 3929 inputs match the execution
+freeze. Warnings remain; this did not use -D warnings and does not establish the
+final strict workspace gate. The large existing RuntimeEvalError is also used
+by the shared staging result; no lint suppression or broad error-wrapper layer
+was added.
+
+The Root/FunctionSite code at published
+`76307b866753e98ccefda4bb62e462b228682657` is unchanged by this fixture correction.
+Its source-ownership review is recorded above; the corrected fixture only
+repairs EffectSet construction and the actual entry-versus-internal Flow
+inventory. The four previously observed View failures explicitly report
+MissingViewAuthority during original task Source admission, independently of
+Flow argument binding. Continue the final task/View typed authority and public
+Source switch, genuine backend/standalone owners and their complete consumers,
+then the remaining Presentation ABI and the other recorded full acceptance.
+The active overall goal remains incomplete; final reverse/workspace, strict
+warnings, Tier2 and actual Native/Web acceptance are still required.

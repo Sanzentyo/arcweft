@@ -220,7 +220,7 @@ fn plan_with_observed_producer_entry(
                     function_type,
                     RuntimePlanTypeProjection::Function {
                         contract: RuntimeFunctionTypeContract::monomorphic(
-                            arcweft_core::effect_row::EffectSet::empty(),
+                            arcweft_core::effect_row::EffectSet::new(),
                         ),
                         parameters: Box::new([]),
                         result: STRING_TYPE,
@@ -231,7 +231,7 @@ fn plan_with_observed_producer_entry(
                     launch_type,
                     RuntimePlanTypeProjection::Function {
                         contract: RuntimeFunctionTypeContract::monomorphic(
-                            arcweft_core::effect_row::EffectSet::empty(),
+                            arcweft_core::effect_row::EffectSet::new(),
                         ),
                         parameters: Box::new([]),
                         result: unit_type,
@@ -247,7 +247,16 @@ fn plan_with_observed_producer_entry(
         )
         .expect("Await observer facts admit");
     let need_local = admitted.local_ids()[0].clone();
-    admit_flow_authority(&mut builder, &flow);
+    if start_with_goto {
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("internal Flow schema admits without an entry-only executable contract");
+    } else {
+        admit_flow_authority(&mut builder, &flow);
+    }
     let coordinate = builder
         .task_plan_construction()
         .reserve_original_source()
