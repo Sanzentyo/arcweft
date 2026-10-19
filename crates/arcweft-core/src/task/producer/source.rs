@@ -1,9 +1,9 @@
 //! Source-bound selected producer specifications, before registry publication.
 
 use crate::plan::body_semantic::flow::RuntimeBodyTaskSource;
-use crate::plan::task_source::{RuntimeTaskSource, RuntimeTaskSourceRef};
+use crate::plan::task_source::{RuntimeTaskSource, RuntimeTaskSourceProgram, RuntimeTaskSourceRef};
 use crate::program_types::RuntimeFunctionEffectInstantiation;
-use crate::task::{NeedProducerRuntimeArgument, NeedProducerSpec, RuntimeProgramOwner};
+use crate::task::{NeedProducerRuntimeArgument, NeedProducerSpec};
 use crate::value::{
     AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission, RuntimeStoredValue,
 };
@@ -27,6 +27,7 @@ impl RuntimeTaskSourceRef<'_> {
     /// No caller plan digest, copied request definition or fresh bank is accepted.
     pub(crate) fn selected_producer_spec<V: RuntimeStoredValue>(
         &self,
+        program: &RuntimeTaskSourceProgram,
         arguments: &[NeedProducerRuntimeArgument<V>],
         binding: Option<&RuntimeFunctionEffectInstantiation>,
         admission: &mut RuntimeRetainedValueAdmission,
@@ -37,12 +38,10 @@ impl RuntimeTaskSourceRef<'_> {
         else {
             return Err(RuntimeTaskProducerSourceError::RequestKind);
         };
-        // Raw AWBC currently carries no original Source. Its actual Source
-        // attachment must be established before it can use this boundary.
-        let Some(RuntimeProgramOwner::Plan(program)) = admission.program_owner() else {
+        let Some(owner) = admission.program_owner() else {
             return Err(RuntimeTaskProducerSourceError::OriginalProgram);
         };
-        if !self.task_plan().belongs_to(program) || !self.request_endpoint().belongs_to(program) {
+        if !program.owns_source_for(self, owner) {
             return Err(RuntimeTaskProducerSourceError::OriginalProgram);
         }
         let metadata = target.plan();
@@ -73,6 +72,7 @@ impl RuntimeTaskSourceRef<'_> {
         })?;
         let source = RuntimeTaskSource::from_borrowed(
             self,
+            program,
             admission
                 .program_owner()
                 .ok_or(RuntimeTaskProducerSourceError::OriginalProgram)?,

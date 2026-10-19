@@ -918,8 +918,14 @@ fn completed_task_source_borrows_canonical_metadata_shared_by_distinct_rows() {
     };
     assert!(std::ptr::eq(resolved_target, first_target));
     let owner = crate::task::RuntimeProgramOwner::Plan(std::sync::Arc::clone(&plan));
-    let owned =
-        crate::plan::task_source::RuntimeTaskSource::from_borrowed(&resolved, &owner).unwrap();
+    let source_program =
+        crate::plan::task_source::RuntimeTaskSourceProgram::native(std::sync::Arc::clone(&plan));
+    let owned = crate::plan::task_source::RuntimeTaskSource::from_borrowed(
+        &resolved,
+        &source_program,
+        &owner,
+    )
+    .unwrap();
     assert_eq!(owned.task_plan(), plan.task_plan(&last).unwrap());
     let borrowed = owned
         .borrow(RuntimeTaskPlanSealLimits::default(), &mut bank)

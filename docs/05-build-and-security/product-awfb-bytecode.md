@@ -50,6 +50,13 @@ it does not recover a namespace from request metadata. Executable data equality
 does not transfer a program's Source authority.
 Execution and restore must bind their original Task rows and exact program lease
 through this admitted Source; copying an asserted digest is not admission.
+Original Task Source and execution value authority are distinct roles. Source
+preparation retains the exact Native or AWBC executable lease alongside the
+admitted original program. AWBC arguments, function/capture coordinates and
+retained values use the actual AWBC type graph; a Native owner reconstructed from
+Source cannot substitute for it. Verifying code and admitting its carried Source
+prepares this immutable pair. Each executed task row still needs its original-row
+assertion checked before producer publication or restore.
 
 AWBC executable identity includes the original E assertion, which must pass that
 admission, rather than raw Source wire spelling. Source bytes preserve diagnostic

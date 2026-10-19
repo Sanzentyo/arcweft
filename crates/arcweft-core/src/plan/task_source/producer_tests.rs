@@ -79,6 +79,10 @@ fn admission(
     RuntimeRetainedValueAdmission::for_program(RuntimeProgramOwner::Plan(Arc::clone(plan)), limits)
 }
 
+fn source_program(plan: &Arc<RuntimePlan>) -> RuntimeTaskSourceProgram {
+    RuntimeTaskSourceProgram::native(Arc::clone(plan))
+}
+
 struct ObservedValue<'a>(&'a Cell<usize>);
 
 impl RuntimeStoredValue for ObservedValue<'_> {
@@ -115,6 +119,7 @@ fn source_bound_selected_specs_use_the_completed_key_and_canonical_request() {
         let values = arguments(request);
         let spec = source
             .selected_producer_spec(
+                &source_program(&plan),
                 &values,
                 None,
                 &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
@@ -165,6 +170,7 @@ fn source_bound_selected_specs_retain_the_original_program_after_the_caller_drop
         let weak = Arc::downgrade(&plan);
         let spec = source
             .selected_producer_spec(
+                &source_program(&plan),
                 &arguments(2),
                 None,
                 &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
@@ -197,6 +203,7 @@ fn source_bound_selected_specs_keep_program_identity_outside_the_semantic_transc
     let other = fixture(2);
     let first = borrow_source(&plan)
         .selected_producer_spec(
+            &source_program(&plan),
             &arguments(2),
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
@@ -204,6 +211,7 @@ fn source_bound_selected_specs_keep_program_identity_outside_the_semantic_transc
         .unwrap();
     let last = borrow_source(&other)
         .selected_producer_spec(
+            &source_program(&other),
             &arguments(2),
             None,
             &mut admission(&other, RuntimeSchemaLimits::engine_default()),
@@ -224,6 +232,7 @@ fn source_bound_selected_specs_keep_runtime_arguments_in_instance_identity() {
     changed[0].value = RuntimeValue::Bool(false);
     let first = source
         .selected_producer_spec(
+            &source_program(&plan),
             &values,
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
@@ -231,6 +240,7 @@ fn source_bound_selected_specs_keep_runtime_arguments_in_instance_identity() {
         .unwrap();
     let last = source
         .selected_producer_spec(
+            &source_program(&plan),
             &changed,
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
@@ -268,12 +278,13 @@ fn source_bound_selected_specs_require_the_actual_program_before_value_inspectio
             RuntimeSchemaLimits::engine_default(),
         );
         assert!(matches!(
-            source.selected_producer_spec(&arguments, None, &mut bank),
+            source.selected_producer_spec(&source_program(&plan), &arguments, None, &mut bank),
             Err(RuntimeTaskProducerSourceError::OriginalProgram)
         ));
     }
     assert!(matches!(
         source.selected_producer_spec(
+            &source_program(&plan),
             &arguments,
             None,
             &mut RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits::engine_default())
@@ -289,6 +300,7 @@ fn source_bound_selected_specs_reject_argument_shape_and_type_changes() {
     let source = borrow_source(&plan);
     assert!(matches!(
         source.selected_producer_spec::<RuntimeValue>(
+            &source_program(&plan),
             &[],
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
@@ -302,6 +314,7 @@ fn source_bound_selected_specs_reject_argument_shape_and_type_changes() {
     named[0].name = Some("別名".into());
     assert!(matches!(
         source.selected_producer_spec(
+            &source_program(&plan),
             &named,
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
@@ -312,6 +325,7 @@ fn source_bound_selected_specs_reject_argument_shape_and_type_changes() {
     wrong_type[0].value = RuntimeValue::String("wrong".into());
     assert!(matches!(
         source.selected_producer_spec(
+            &source_program(&plan),
             &wrong_type,
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
@@ -341,7 +355,7 @@ fn source_bound_selected_specs_bound_the_complete_argument_list_before_value_vie
         let mut bank = admission(&plan, limits);
         for _ in 0..2 {
             assert!(matches!(
-                source.selected_producer_spec(&arguments, None, &mut bank),
+                source.selected_producer_spec(&source_program(&plan), &arguments, None, &mut bank),
                 Err(RuntimeTaskProducerSourceError::Admission(
                     AwbcRuntimeValueSnapshotError::Resource(_)
                 ))
@@ -382,6 +396,7 @@ fn source_bound_selected_specs_reject_a_different_original_request_kind() {
         .unwrap();
     assert!(matches!(
         source.selected_producer_spec::<RuntimeValue>(
+            &source_program(&plan),
             &[],
             None,
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
@@ -400,6 +415,7 @@ fn source_bound_selected_specs_reject_unresolved_invocation_effect_bindings() {
     );
     assert!(matches!(
         source.selected_producer_spec(
+            &source_program(&plan),
             &arguments(2),
             Some(&binding),
             &mut admission(&plan, RuntimeSchemaLimits::engine_default())
@@ -418,7 +434,7 @@ fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure(
     let limits = RuntimeSchemaLimits::engine_default();
     let mut measured = admission(&plan, limits);
     let expected = source
-        .selected_producer_spec(&values, None, &mut measured)
+        .selected_producer_spec(&source_program(&plan), &values, None, &mut measured)
         .unwrap();
     let work = measured.work().consumed();
     assert!(work > 0);
@@ -431,7 +447,7 @@ fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure(
     );
     assert_eq!(
         source
-            .selected_producer_spec(&values, None, &mut exact)
+            .selected_producer_spec(&source_program(&plan), &values, None, &mut exact)
             .unwrap(),
         expected
     );
@@ -453,7 +469,7 @@ fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure(
     let mut previous = None;
     for _ in 0..2 {
         let error = source
-            .selected_producer_spec(&values, None, &mut short)
+            .selected_producer_spec(&source_program(&plan), &values, None, &mut short)
             .unwrap_err();
         let RuntimeTaskProducerSourceError::Admission(error) = error else {
             panic!("{error:?}")
@@ -493,7 +509,7 @@ fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure(
     );
     prefixed.validate_metadata(&17_u64).unwrap();
     source
-        .selected_producer_spec(&values, None, &mut prefixed)
+        .selected_producer_spec(&source_program(&plan), &values, None, &mut prefixed)
         .unwrap();
     assert_eq!(prefixed.work().consumed(), work + 1);
 }

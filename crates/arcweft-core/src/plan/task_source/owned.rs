@@ -1,41 +1,39 @@
 //! An owning lease for an original program's actual completed Task slot.
 
-use super::{RuntimeTaskSourceError, RuntimeTaskSourceRef};
+use super::{RuntimeTaskSourceError, RuntimeTaskSourceProgram, RuntimeTaskSourceRef};
 use crate::plan::{
     RuntimePlan, RuntimeTaskPlanBuildCoordinate, RuntimeTaskPlanRef, RuntimeTaskPlanSealLimits,
 };
 use crate::task::RuntimeProgramOwner;
 use crate::task::semantic::TaskSemanticMeter;
-use std::sync::Arc;
 
 /// Retains the genuine source namespace. Neither key assertions nor a metadata
 /// launch coordinate can construct this handle. Cloning retains the same Arc.
 #[derive(Clone)]
 pub(crate) struct RuntimeTaskSource {
-    program: Arc<RuntimePlan>,
+    program: RuntimeTaskSourceProgram,
     coordinate: RuntimeTaskPlanBuildCoordinate,
 }
 
 impl RuntimeTaskSource {
     pub(crate) fn from_borrowed(
         source: &RuntimeTaskSourceRef<'_>,
+        program: &RuntimeTaskSourceProgram,
         owner: &RuntimeProgramOwner,
     ) -> Option<Self> {
-        let RuntimeProgramOwner::Plan(program) = owner else {
-            return None;
-        };
-        if !source.task.belongs_to(program) || !source.request.belongs_to(program) {
+        if !program.owns_source_for(source, owner) {
             return None;
         }
         let coordinate = source.owner.resolve(source.task.index().0)?;
         Some(Self {
-            program: Arc::clone(program),
+            program: program.clone(),
             coordinate,
         })
     }
 
     pub(crate) fn task_plan(&self) -> RuntimeTaskPlanRef<'_> {
         self.program
+            .original()
             .task_plan(&self.coordinate)
             .expect("the original immutable program retains its issued slot")
     }
@@ -45,17 +43,23 @@ impl RuntimeTaskSource {
         limits: RuntimeTaskPlanSealLimits,
         meter: &mut TaskSemanticMeter,
     ) -> Result<RuntimeTaskSourceRef<'_>, RuntimeTaskSourceError> {
-        self.program.task_source(&self.coordinate, limits, meter)
+        self.program
+            .original()
+            .task_source(&self.coordinate, limits, meter)
     }
 
     pub(crate) fn belongs_to(&self, program: &RuntimePlan) -> bool {
-        std::ptr::eq(self.program.as_ref(), program)
+        std::ptr::eq(self.program.original(), program)
+    }
+
+    pub(crate) fn program_owner(&self) -> RuntimeProgramOwner {
+        self.program.program_owner()
     }
 }
 
 impl PartialEq for RuntimeTaskSource {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.program, &other.program) && self.coordinate == other.coordinate
+        self.program == other.program && self.coordinate == other.coordinate
     }
 }
 impl Eq for RuntimeTaskSource {}

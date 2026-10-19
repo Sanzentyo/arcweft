@@ -4,9 +4,11 @@
 
 mod artifact;
 mod owned;
+mod program;
 pub use artifact::{
     RuntimeTaskSourceArtifact, RuntimeTaskSourceArtifactError, RuntimeTaskSourceArtifactLimits,
 };
+pub(crate) use program::{RuntimeTaskSourceProgram, RuntimeTaskSourceProgramError};
 #[cfg(test)]
 mod producer_tests;
 pub(crate) use owned::RuntimeTaskSource;

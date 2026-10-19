@@ -19278,3 +19278,94 @@ registry, template, launch, snapshot and restore consumers still require the
 complete fourteen-request-family migration and deletion of their old raw/request-
 only success routes. R1507's 58 broad failures, View/restore/replacement/display
 and the full final acceptance remain open. The full goal remains active.
+
+### 2026-10-19 — Pair admitted original Source with its actual execution lease
+
+Resume classifies the preceding goal turn as progress: namespace retention is
+published and verified at `04103c841d5aa8a92df2fd1d1ee445bd35764791`, parent
+`cdcacf7be98840c232926fd4ee704146ab455d93`, tree
+`56bb4a438464a4bddda3242902583607f570dc00`. The eight blobs, 3914 source hashes,
+fresh origin/advertised head, raw patch and empty index were verified; patch
+SHA-256 is `ba57beff8902ab08e44adec174b6cb07c77eccbdf77ae6f8b3f04884675ddb99`.
+Live main/origin/main match that commit at this cut's start, with only the same
+fourteen tracked and three untracked held paths. No branch, checkout, worktree,
+further clean, artifact move/copy, profile or job-count changes are made.
+
+RuntimeTaskSource previously retained only Arc<RuntimePlan>, and its private
+selected-spec factory categorically rejected an AWBC value bank. Replacing that
+guard with a reconstructed Native owner would validate values against the wrong
+backend and would not retain the actual code lease. The genuine Source and the
+execution value authority are separate required roles.
+
+The private RuntimeTaskSourceProgram now owns this complete preparation context.
+Native retains its existing original Plan. AWBC first verifies the exact supplied
+code Arc under the supplied verification budget/policy, then admits only the
+complete original Source carried by that same code through the existing common
+seal and supplied Source limits/View authority. Missing Source, code rejection
+and original Source failures remain distinct structured causes. Neither an
+external original plan, raw expected key nor request metadata constructs a pair.
+It retains the actual code and admitted Source Arcs; Clone retains the same
+context without copying bytes, types, definitions or values.
+
+This context does not yet certify AWBC task-row/source assertions. Its constructor
+checks code and carried Source, not the still missing instruction/task-row joins.
+Those assertions, all builders/readers and the live public migration remain
+required. No new public task row, wire field, success fallback or competing task
+key issuer is introduced by this private preparation.
+
+Owning Source now retains this program context and its actual original coordinate.
+Its constructor and the existing selected-spec factory require both the original
+row/endpoint namespace and the exact execution owner in the caller's retained-value
+bank before projecting values or retaining the context. AWBC values therefore use
+RuntimeProgramOwner::Awbc(actual_code), including its own type rows, without a
+Native surrogate. Native identity behavior is preserved. The entire private
+factory/owning-Source consumer set and its existing tests move to this contract;
+there is no old signature overload or Native-only fallback.
+
+Eight new tests cover Native/AWBC equality of completed keys and instance identity
+while preserving distinct scope; exact code/Source rejection before observed value
+views; an AWBC table missing Bool despite Bool existing in original Source;
+retention/release of both leases through final Source clones; missing Source,
+invalid code and forged original E; caller code policy and zero original storage/
+work limits; inert arguments through the unchanged original value bank; and exact
+AWBC validation work plus the first short-budget failure without a reset. The
+missing-Bool case specifically prevents passing by validating through Native
+Source types. Source clone/reborrow keeps the actual original row. All prior
+foreign/equal-key/cloned-program and shared-metadata row/class assertions remain.
+
+R1518 Core all-target/all-feature locked Clippy passes, actual 0, 50.64s. R1519
+catalogs exactly 1950 all-feature Core/RuntimePlan library and awbc_product_parity
+cases, no exclusions. R1520 runs all: actual 100, 1948 pass, the same two completed-
+key failures, zero skip, 25.053s. Exact terminal names and 3916 frozen source hashes
+match, including the two new Rust files and unchanged held inputs.
+
+Only three resource/inert tests are then appended. R1522 selects precisely those
+three from 1822 Core cases. R1523 runs them: actual 0, three pass, 1819 excluded by
+the explicit filter, 0.067s, exact terminal/source audit. The initial test-file
+prefix hash and the other 3915 inputs match R1520 exactly, so its 1950 cases are
+reused for unchanged bodies. Across these two executions evidence is 1951 passes
+and two known failures over 1953 distinct cases; it is not a single 1953-case run.
+Final R1524 matching Clippy passes, actual 0, Cargo 22.60s, with warnings and no
+-D warnings claim. R1525 canonical structural gate passes, actual 0, 5.36s.
+Changed-file rustfmt and diff checks pass. This note and stable prose follow
+terminal auditing; tested Rust is unchanged.
+
+The canonical structural report measures bytes/physical LOC: new Source program
+4731/134, its eight-test owner 13253/391, owning Source 2394/74, Source facade
+5179/137, selected factory 4134/92, existing producer tests 16648/515 and common
+preparation tests 57078/1459. New-test growth above 300 LOC is reviewed as one
+cohesive program admission/lease/resource boundary, with tests in its child owner.
+The context owns only original Source and execution leases; the original task
+table and actual backend type graph remain their sole authorities. No unrelated
+state cluster, unsafe, I/O, dependency or broad API is added. Core fan-in/out is
+31/7 (development 4/5); the 99 manifest/lock inputs and 53-package reverse closure
+are unchanged. Reports/receipts/reuse proof use task-final-r1518 through r1525 in
+the existing convergence Temp evidence root.
+
+Publish this private owner result at the requested coherent boundary. The actual
+AWBC original-row assertions, full native/AWBC registry/template/launch/save/restore
+consumer switch for fourteen request families, and deletion of raw/request-only
+issuers/readers are still open. The two completed-key failures are not repaired by
+claiming this preparation is live. R1507's 58 broad failures, real View capability,
+failure-atomic replacement/restore, Native/Web/CLI capture/display parity and all
+remaining milestone/workspace/Tier2 acceptance stay open. Keep the full goal active.
