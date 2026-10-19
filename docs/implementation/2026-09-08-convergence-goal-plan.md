@@ -20929,3 +20929,32 @@ still running at this checkpoint and has not established the strict workspace
 and actual Native/Web acceptance remain required, along with the final public
 Source/instance/outcome migration and every other open implementation above.
 The full goal remains active.
+
+### 2026-10-20 — close new construction-error lint findings at their owner
+
+The restore fixture and its exact coverage evidence are published at
+`d7a8962730079b11c236971e2443b240899fdb49`; the fresh advertised ref,
+parent/tree/patch and both blobs match, with 3930 inputs and held drift zero.
+R1659 completed the five-owner locked all-feature/all-target Clippy command
+with exit 0 (176.282s wall time). Warnings remain, so this is not the final
+strict workspace -D warnings gate.
+
+The changed-path lint review identifies six new implicit defaults for the inert
+View assertion slot and one implicit RuntimeStepInput default in the restore
+fixture; these now name the same owning default types explicitly. It also
+identifies the new admitted-program constructor's result_large_err warning:
+the existing ProgramInputCustody variant makes the shared build error at least
+240 bytes. Its owning variant now boxes only that cold detached-custody cause,
+and the sole constructor is migrated. Program identity, input position, typed
+source and retained-input behavior are unchanged by design; no blanket Result
+wrapper, diagnostic erasure, unsafe code or lint suppression is added. This is
+an error-storage change, not a measured runtime-latency claim.
+
+R1660 is the fresh complete catalogue for the same 2597-case owner slice after
+that production representation change. Its actual catalogue result, existing
+custody rejection/retention regressions, current runtime execution and current
+Clippy must still be collected. The prior passing coverage remains evidence for
+the previously published source, not an automatic pass for the new error
+representation. The complete reverse/workspace, public API/doctest, Tier2,
+Native/Web and all remaining implementation requirements remain open under the
+same active goal.

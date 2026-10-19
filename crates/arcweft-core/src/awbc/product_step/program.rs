@@ -238,7 +238,7 @@ impl AwbcProductStepExecutor {
                     AwbcProductStepBuildError::ProgramInputCustody {
                         program: id,
                         position,
-                        source,
+                        source: Box::new(source),
                     }
                 })?;
             }

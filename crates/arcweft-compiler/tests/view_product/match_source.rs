@@ -397,7 +397,7 @@ fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
         .restore_snapshot_owned(saved)
         .unwrap_or_else(|(_, error)| panic!("{error}"));
     let output = executor.step(
-        Default::default(),
+        arcweft_core::step::RuntimeStepInput::default(),
         arcweft_core::step::RuntimeStepOptions {
             mode: arcweft_core::step::RuntimeStepMode::Drain,
             budget: arcweft_core::step::RuntimeStepBudget { max_ops: 64 },

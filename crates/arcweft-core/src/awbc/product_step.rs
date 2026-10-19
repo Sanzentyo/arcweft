@@ -222,7 +222,7 @@ pub enum AwbcProductStepBuildError {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
         position: usize,
         #[source]
-        source: crate::value::ownership::RuntimeDetachedValueError,
+        source: Box<crate::value::ownership::RuntimeDetachedValueError>,
     },
     #[error("product AWBC program failed verification: {message}")]
     InvalidProgram { message: String },
