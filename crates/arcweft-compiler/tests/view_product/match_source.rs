@@ -216,21 +216,11 @@ fn decoded_view_source_reseals_exact_original_bindings_in_a_fresh_namespace() {
         plan.executable_semantic_digest(),
         decoded.executable_semantic_digest()
     );
-    let keys = |plan: &arcweft_core::plan::RuntimePlan| {
-        (0..plan.task_plans().len())
-            .map(|index| {
-                plan.task_plans()
-                    .by_index(arcweft_core::plan::RuntimeTaskPlanIndex(
-                        u32::try_from(index).unwrap(),
-                    ))
-                    .unwrap()
-                    .key()
-            })
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(keys(plan), keys(&decoded));
+    assert_eq!(plan.task_plans().len(), decoded.task_plans().len());
+    assert_eq!(view.task_plan_bindings().count(), plan.task_plans().len());
     for binding in view.task_plan_bindings() {
-        assert!(plan.task_plan(binding.coordinate()).is_some());
+        let original = plan.task_plan(binding.coordinate()).unwrap();
+        assert!(decoded.task_plans().by_digest(original.key()).is_some());
         assert!(decoded.task_plan(binding.coordinate()).is_none());
     }
     // The same accepted original bindings can check another complete decode;
@@ -381,6 +371,18 @@ fn admitted_view_awbc_keeps_original_source_through_owned_restore() {
         .unwrap(),
     );
     let admitted = super::admit_view_awbc(&compiled, Arc::clone(&code));
+    let mut erased_source = code.as_ref().clone();
+    erased_source.original_source = None;
+    assert!(matches!(
+        arcweft_runtime_driver::view_runtime::BundleViewRuntime::try_new_with_awbc(
+            compiled.view_product().product().as_ref().clone(),
+            compiled.view_product().text().cloned(),
+            Arc::new(erased_source),
+        ),
+        Err(arcweft_runtime_driver::view_runtime::BundleViewRuntimeError::Admission(
+            arcweft_runtime_driver::view_runtime::ViewProgramAdmissionError::MissingOriginalSource,
+        ))
+    ));
     let program = matches(&compiled)[0].execution.program;
     let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
         admitted,

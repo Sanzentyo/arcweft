@@ -1558,6 +1558,7 @@ fn sourced_program(view_id: &str) -> ViewProgramResource {
 
 fn fixture_program() -> ViewProgramResource {
     ViewProgramResource {
+        task_plan_bindings: Default::default(),
         program_id: arcweft_view::ViewProgramId::try_new("view.program.dialogue").unwrap(),
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {

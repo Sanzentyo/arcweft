@@ -867,6 +867,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                     .semantic_type_id(contract)
                     .ok_or_else(|| failure("missing View input contract".to_owned()))?;
                 program
+                    .program_arc()
                     .validate_parameter_contract_values(
                         contract,
                         supplied.map(|(parameter, value)| (usize::from(parameter.ordinal), value)),
@@ -1030,6 +1031,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         .map(|(ordinal, value)| (*ordinal, value)),
                 );
             if program
+                .program_arc()
                 .validate_parameter_contract_values(
                     contract,
                     values,
@@ -1318,6 +1320,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let compatible = match definition.parameter_contract {
             Some(contract) => program.semantic_type_id(contract).is_some_and(|contract| {
                 program
+                    .program_arc()
                     .validate_parameter_contract_values(
                         contract,
                         definition.parameters.iter().filter_map(|source| {

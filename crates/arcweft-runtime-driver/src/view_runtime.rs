@@ -585,6 +585,8 @@ pub struct BundleViewStateFieldSnapshot {
 /// Fatal construction or snapshot restoration failure.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ViewProgramAdmissionError {
+    #[error("linked View task assertions require their original executable Source")]
+    MissingOriginalSource,
     #[error(transparent)]
     TaskBinding(#[from] arcweft_core::task::ViewTaskPlanValidationError),
     #[error(transparent)]
@@ -991,10 +993,24 @@ impl BundleViewRuntime {
         product: &ValidatedViewProduct,
         awbc: Arc<AwbcProgram>,
     ) -> Result<AwbcProductProgram, ViewProgramAdmissionError> {
-        let authority = product
-            .program()
-            .map(|program| program.task_source_authority(ViewProductValidationLimits::default()))
-            .transpose()?;
+        let authority = if awbc.original_source.is_some() {
+            product
+                .program()
+                .map(|program| {
+                    program.task_source_authority(ViewProductValidationLimits::default())
+                })
+                .transpose()?
+        } else {
+            if product
+                .program()
+                .is_some_and(|program| !program.resource().task_plan_bindings.is_empty())
+            {
+                return Err(ViewProgramAdmissionError::MissingOriginalSource);
+            }
+            // A genuinely Source-free executable grants no original Task
+            // authority. Its actual code and View program ABI are still checked.
+            None
+        };
         let admitted = AwbcProductProgram::admit(
             awbc,
             arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
@@ -1679,6 +1695,7 @@ impl BundleViewRuntime {
                                     .iter()
                                     .any(|parameter| parameter.name == input.name)
                             }) && program
+                                .program_arc()
                                 .validate_parameter_contract_values(
                                     contract,
                                     definition.parameters.iter().filter_map(|parameter| {

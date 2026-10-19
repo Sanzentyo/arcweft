@@ -6,6 +6,7 @@ use arcweft_bundle::resource_codec::{
 
 fn program() -> ViewProgramResource {
     ViewProgramResource {
+        task_plan_bindings: Default::default(),
         program_id: arcweft_view::ViewProgramId::try_new("view.program.focus").unwrap(),
         source_refs: Vec::new(),
         definitions: Vec::new(),

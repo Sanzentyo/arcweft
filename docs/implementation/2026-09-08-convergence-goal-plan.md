@@ -20840,3 +20840,43 @@ R1649 is the fresh catalogue build after that correction, with the same five
 owner packages, relevant library/integration targets and explicit case filter
 as R1647. It is currently compiling; actual execution and current Clippy remain
 pending. The full goal and all remaining acceptance recorded above remain open.
+
+### 2026-10-20 — migrate the remaining View admission consumers
+
+The inert-assertion correction is published at
+`2064ad9e361bb69bf23ed694ec8f4e084a90e8fb`; fresh advertised main, its full
+parent/tree/patch and both published blobs match. Baseline advancement verifies
+3930 inputs, zero drift, empty index and the same held inventory.
+
+R1649 actually failed with Cargo exit 101 at four Driver parameter-contract
+calls. That existing law has an Arc receiver; the admitted wrapper deliberately
+borrows the read-only program rather than exposing an Arc through Deref. The
+four consumers now pass the actual retained executable Arc to that same law.
+No weaker parameter matcher or copied declaration model is introduced.
+
+Runtime admission also distinguishes a genuinely Source-free executable from
+an erased linked Source. Source-free pure AWBC retains its existing actual-code
+and View ABI checks and gains no original Task authority. A View resource with
+published original task assertions requires that original Source; deleting it
+is a typed MissingOriginalSource failure. A present malformed Source is still
+rejected, with no absence fallback. The real owned-restore regression now also
+checks this erasure rejection. Six complete ViewProgramResource literals in
+four Bundle test owners explicitly initialize the new inert assertion slot.
+
+R1650 was a command-construction error: extra --test arguments preceded the
+nextest list subcommand. It exited 2 before compilation or execution. R1651 used
+the corrected target placement, then exited 101 because the new external test
+attempted to construct the private RuntimeTaskPlanIndex. The test now compares
+the complete issued key sets through original bindings, table lengths and the
+public by_digest reader, while requiring that the original coordinates remain
+foreign to the decoded table. The raw index constructor stays private.
+
+R1652 is the fresh catalogue after these consumer/test fixes. It selects all
+five owner libraries and the actual View/parity, Bundle codec/product/dialogue
+and affected text-control/focus/action integration targets, with no additional
+test-name filter. Its actual case set, runtime execution and current Clippy are
+still pending at this intermediate publication. The code is frozen under
+task-view-source-consumers-20261020-validation; this note changes no Rust/Cargo
+input to that catalogue. No required failure is relabeled as a passing check.
+The overall goal, complete reverse/workspace validation and every other open
+implementation/acceptance item above remain active.
