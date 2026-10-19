@@ -20958,3 +20958,41 @@ the previously published source, not an automatic pass for the new error
 representation. The complete reverse/workspace, public API/doctest, Tier2,
 Native/Web and all remaining implementation requirements remain open under the
 same active goal.
+
+### 2026-10-20 — validate current View Source and custody representation
+
+The construction-error correction is published at
+`2946a8cf4c4bcc895d8d62d91c48d7b8889cc89d`, matching freshly advertised main,
+its complete parent/tree/patch and all eight published blobs. The advanced
+baseline contains 3930 inputs, no owned drift and the same held inventory.
+
+R1660 compiled and catalogued all 2597 selected cases with zero exclusions,
+including all five existing custody rejection/retention cases. R1661 then
+passed all 2597 in one current-source execution (182.806s, exit 0; two slow,
+zero skipped). The exact terminal case set and all 3930 frozen source inputs
+match, with held drift zero. This includes the four repaired real View
+regressions, full Source/resource round trips, expected-key and forged-binding
+rejection, bounded source admission, linked-Source erasure rejection and initial/
+completed owned restore. This current pass supersedes the earlier pending
+status and coverage union; their actual failures remain recorded historically.
+
+R1662 locked all-feature/all-target Clippy over the same five owners completed
+with exit 0 (69.193s). Its source audit matches the same 3930 inputs. The specific
+new constructor result_large_err and seven implicit-default findings are no
+longer reported; remaining warnings do not establish the final strict workspace
+-D warnings gate. This independent Clippy command overlapped the runtime slice;
+no Cargo jobs, profiles, test budgets, timeout, copy/capture, batch or fusion
+condition changed, and the timings are not a performance comparison.
+R1663 structure auditing passed: 3153 files, 3023 Rust files, 1717628 Rust physical
+lines, 97 packages, 376 review triggers and zero blocking violations. The owning
+program/Source lease, View capability and transaction-boundary dispositions
+above remain unchanged; the custody cause stays on its existing error owner.
+
+This completes current validation of this five-owner/fourteen-binary slice,
+not the full convergence goal. Continue the complete public Source/instance
+switch and invocation-bound outcome consumers, with genuine standalone host and
+autonomous AWBC sources, all fourteen request kinds and remaining retained View
+operation/slot/capture integration. Raw entry/Flow/host consumers must reuse the
+actual admitted owner. Presentation, remaining semantic/nominal/persistence work,
+the complete Core reverse closure/workspace, public API/doctest, Tier2 and actual
+Native/Web acceptance remain required. The full goal stays active.
