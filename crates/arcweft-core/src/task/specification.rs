@@ -63,6 +63,22 @@ impl TryFrom<&NeedProducerSpec> for NeedProducerInstance {
     }
 }
 
+impl TryFrom<&NeedProducerSpec<crate::plan::RuntimeTaskSource>> for NeedProducerInstance {
+    type Error = TaskIdentityError;
+
+    fn try_from(
+        input: &NeedProducerSpec<crate::plan::RuntimeTaskSource>,
+    ) -> Result<Self, Self::Error> {
+        Ok(Self {
+            key: input.instance_key()?,
+            contract: input.contract(),
+            plan: input.source().task_plan().key(),
+            payload_type: input.payload_type(),
+            arguments: input.arguments(),
+        })
+    }
+}
+
 impl NeedProducerInstance {
     /// Called after the enclosing source/value batch is admitted. Only scalar
     /// derivation metadata is copied; the issued key becomes an assertion.

@@ -1477,6 +1477,7 @@ enum AwbcProductExecutorStatus {
 #[derive(Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
     pub(super) program: Arc<AwbcProgram>,
+    task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     format_context: crate::value::RuntimeFormatContext,
     plain_text_context_template_proof:
@@ -1684,11 +1685,16 @@ impl AwbcProductStepExecutor {
         program: Arc<AwbcProgram>,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<(), AwbcProductStepBuildError> {
-        program
-            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-                message: error.to_string(),
-            })?;
+        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
+            Arc::clone(&program),
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext::default(),
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+            message: error.to_string(),
+        })?;
         let template = program
             .validated_plain_text_context_template()
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -1708,11 +1714,13 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
         let previous_program = std::mem::replace(&mut self.program, program);
+        let previous_source = std::mem::replace(&mut self.task_source, task_source);
         let previous_proof = std::mem::replace(&mut self.plain_text_context_template_proof, proof);
         let observations = match self.validate_snapshot(&snapshot) {
             Ok(observations) => observations,
             Err(error) => {
                 self.program = previous_program;
+                self.task_source = previous_source;
                 self.plain_text_context_template_proof = previous_proof;
                 return Err(error);
             }
@@ -1808,17 +1816,19 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        program
-            .verify(
-                AwbcVerifyBudget::default(),
-                AwbcVerifyContext {
-                    require_entrypoint: origin.entry().is_some(),
-                    ..AwbcVerifyContext::default()
-                },
-            )
-            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-                message: error.to_string(),
-            })?;
+        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
+            Arc::clone(&program),
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: origin.entry().is_some(),
+                ..AwbcVerifyContext::default()
+            },
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+            message: error.to_string(),
+        })?;
         let template = program
             .validated_plain_text_context_template()
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -1906,7 +1916,13 @@ impl AwbcProductStepExecutor {
                 })?;
         }
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
+        let mut executor = Self::for_fiber(
+            program,
+            task_source,
+            fiber,
+            artifact_fingerprint,
+            generation,
+        );
         executor.plain_text_context_template_proof = proof;
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
@@ -1983,12 +1999,17 @@ impl AwbcProductStepExecutor {
         budget_quantum: u64,
         generation: GenerationId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        program
-            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-                message: error.to_string(),
-            })?;
         let program = Arc::new(program);
+        let task_source = crate::plan::task_source::RuntimeTaskSourceProgram::prepare_awbc(
+            Arc::clone(&program),
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext::default(),
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+            message: error.to_string(),
+        })?;
         let mut fiber = FiberState::for_entry_target_function(
             &program,
             entry,
@@ -2006,13 +2027,20 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
+        let mut executor = Self::for_fiber(
+            program,
+            task_source,
+            fiber,
+            artifact_fingerprint,
+            generation,
+        );
         executor.entry_bound = true;
         Ok(executor)
     }
 
     fn for_fiber(
         program: Arc<AwbcProgram>,
+        task_source: Option<crate::plan::task_source::RuntimeTaskSourceProgram>,
         fiber: FiberState,
         artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
         runtime_generation: GenerationId,
@@ -2059,6 +2087,7 @@ impl AwbcProductStepExecutor {
         }
         Self {
             program,
+            task_source,
             artifact_fingerprint,
             format_context: crate::value::RuntimeFormatContext::default(),
             plain_text_context_template_proof: None,

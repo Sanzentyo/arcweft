@@ -379,6 +379,10 @@ pub enum RuntimeSchemaError {
     BudgetExceeded { budget: &'static str },
     #[error("runtime value canonical encoding failed: {message}")]
     Encoding { message: String },
+    #[error("original Task Source admission failed: {cause:?}")]
+    TaskSemantic {
+        cause: crate::task::TaskSemanticEncodingError,
+    },
     #[error("runtime nominal value at `{path}` has identity `{actual}`, expected `{expected}`")]
     NominalIdentity {
         path: String,

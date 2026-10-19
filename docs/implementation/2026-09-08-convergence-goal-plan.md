@@ -19972,3 +19972,110 @@ Generic Match, nominal/Sans-I/O, broader R1507 failures, generated artifacts,
 Native/AWBC stop/restore, Native/Web capture parity and final workspace/Tier 2
 acceptance remain open. The selected wire/assertion boundary is concrete
 progress, not completion of those runtime or full-goal requirements.
+
+### 2026-10-19 — begin the Source-backed selected registry public switch (intermediate)
+
+The previous goal turn made implementation/validation/publication progress at
+`298339e0c51698e1c4ff9847b2ba457f3d489b86`. Its fifteen published blobs,
+parent/tree, raw patch, fresh advertised origin and all 3928 frozen inputs were
+verified before advancing the baseline. Parent is
+`e58fed789977965d00994404bd65d1ba215ca7b9`, tree is
+`598e388b3320409a16bc517660bd20bf9b628aba`, and patch SHA-256 is
+`ff71b6d47ec248738d76ed44d6b9f1d2cc23ae6b47571750e3725dff11694e52`.
+This switch starts on that main with empty index and the same fourteen held
+tracked and three held untracked paths. No clean, artifact move/copy, new
+branch/worktree/checkout, job-count or profile change occurs.
+
+This is an explicitly intermediate development checkpoint, not an accepted
+final public cut: the user permits intermediate commits without proving every
+state works. The code currently does not compile. Keep the full goal active
+and finish the protected public switch; do not restore obsolete methods,
+metadata reconstruction, default keys or adapters to silence its diagnostics.
+
+RuntimeNeedProducerStart is now the owning, field-private selected launch
+input. Its constructor admits the original Source and all argument values on
+the caller's existing bank before projecting the host request. The borrowed
+PreparedRuntimeSelectedProducer bounds the actual original argument grammar,
+names and spread roles before evaluation allocates its argument vector or
+copies names. It retains no Source lease until the complete value/hash pass
+succeeds. Native evaluates these original operands rather than an independently
+copied request definition. AWBC retains one admitted original/code pair and
+uses its exact selected row plus the active frame's effect binding.
+
+The registry now accepts this opaque start input, retains its genuine
+NeedProducerSpec<RuntimeTaskSource>, and derives the completed-key instance
+projection directly from that admitted Source. A copied NeedProducerTaskPlan
+can no longer issue a producer: producer_spec, borrowed_producer_spec,
+task_spec and the request-only semantic_digest issuer are deleted. The launch
+no longer owns that copied plan; restart is legitimate instance scheduling
+metadata, and Ready payload identity comes from its actual outcome contract.
+Replay/Join compares the completed semantic instance fields, not retained lease
+pointers. An accepted launch keeps its original lease.
+
+AWBC's metadata-to-Core need_producer_plan reconstruction is also deleted.
+Its existing structural verifier checks the selected asset/manifest grammar
+directly against the actual code row and already checked references. This
+preserves the old nonempty identity, manifest-contract, count and no-spread
+rules without constructing a surrogate Core declaration. Selected execution
+requires admitted Original Source; Source-free autonomous code gets no
+selected authority or metadata fallback. Preparing/replacing an executor now
+prepares its Source pair before fiber values and rolls the pair back with the
+program/proof if replacement validation rejects it. Actual upper View
+authority must still be threaded through this construction path.
+
+TaskSemanticMeter can borrow the original retained group's ValidationWork
+handle. Source work accumulates on that same counter; local Source limits only
+tighten it. Batched atom charging rejects without an attacker-sized loop.
+Shared failures retain a typed RuntimeSchemaError::TaskSemantic cause, and
+retained-bank status/state transfer observes the original shared first failure.
+The meter's temporary handle must drop before exclusive state transfer. Source
+argument hashing also takes the original bank's encoded-byte bound; the old
+fixed 16 MiB allowance is removed for both selected and Host Source factories.
+These implementation changes have not yet passed runtime/resource tests.
+
+R1580 Core all-feature locked check fails with thirteen migration diagnostics.
+R1581 fails with twelve after the const-status repair. R1583 reports thirteen,
+including the newly required schema-error visitor arm; that arm and the stale
+live payload/site getters are repaired. R1584 and final R1585 each fail with
+ten. R1585 actual Cargo exit is 101, and its exact 3929 frozen input hashes and
+fourteen held paths match with zero drift. All ten remaining diagnostics are
+old registry/cache/restore references in task/producer.rs and AWBC
+product_step/snapshot.rs: deleted metadata issuers/reconstruction, removed live
+launch.plan fields, and a digest-only restored producer where Source is now
+required. These are change-caused, resolvable migration work, not an external
+blocker or a passing check. Previous R1577 execution and R1579 doctests are
+historical evidence, not validation of this switch. No current nextest,
+doctest, Clippy, downstream, workspace or Tier 2 pass is claimed.
+
+R1586 canonical structural gate passes, actual 0; changed-file rustfmt and
+whitespace pass. Canonical bytes/physical LOC include start input 2898/73,
+borrowed Source preparation 11662/268, registry/producer owner 145839/3892,
+semantic meter 22271/640, shared work owner 11915/316 and retained admission
+18404/499. The new owner expresses the actual launch stage; existing large
+schema, verifier and execution owners retain their responsibilities. No
+parallel catalog, unsafe, I/O or dependency is introduced. All 99 manifest/lock
+inputs and the resolved 53-package reverse closure are unchanged.
+
+Next, replace the ten restore/cache references with genuine Source and owning
+prepared restore state. Internal rollback may retain its already admitted
+immutable program lease; external wire data must keep inert expected Source
+assertions and resolve them against the actual original/code owner. Admit the
+complete root group before value activation/publication, preserve the original
+bank, and never scan sites or rebuild Core plans from AWBC metadata. Preserve
+actual invocation effect bindings through retained launch/Ready and restore
+obligations rather than substituting None or deriving them from a candidate.
+The current start passes its frame binding to argument admission but does not
+yet retain that binding. Move AWBC register-observation count/source/layout
+admission before its value copies as part of the actual consumer migration.
+Migrate stale direct-registry tests to real Source fixtures; Source-free
+selected fixtures need actual original declarations or the genuine autonomous
+AWBC owner, not a fake Core Source. Then resume compile-driven downstream/API,
+codec/schema/generated and test migration without restoring the removed APIs.
+
+The old selected parity failures are not proven fixed by this wiring. All
+fourteen Host request kinds, other producer/template/assertion/raw-key routes,
+genuine autonomous AWBC/host owners, caller/instruction correspondence, actual
+View, Generic Match, nominal/Sans-I/O, R1507's broader failures, real stop/
+restore and Native/Web capture parity, complete reverse execution and final
+workspace/Tier 2 acceptance remain required. This intermediate commit changes
+the real runtime boundary; it does not narrow or complete the full goal.

@@ -949,17 +949,41 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let plan = target.plan();
-        if self.plan.task_plan(target.task_plan()).is_none() {
-            self.fail_eval(
-                "Need producer start has no task plan in the current source namespace",
-                output,
-            );
-            return;
-        }
-        for (index, argument) in target.arguments().iter().enumerate() {
+        let source_program =
+            crate::plan::task_source::RuntimeTaskSourceProgram::native(Arc::clone(&self.plan));
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            source_program.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = match admission.task_source_meter(limits) {
+            Ok(meter) => meter,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let source =
+            match source_program
+                .original()
+                .task_source(target.task_plan(), limits, &mut meter)
+            {
+                Ok(source) => source,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+        let prepared = match source.prepare_selected_producer(&source_program, &mut admission) {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        for (index, argument) in prepared.arguments().iter().enumerate() {
             let expression = argument.value();
-            let Some(expected) = plan.argument_types().get(index).copied() else {
+            let Some(expected) = prepared.argument_types().get(index).copied() else {
                 self.fail_eval("Need producer argument type row is incomplete", output);
                 return;
             };
@@ -976,8 +1000,8 @@ impl Engine {
                 return;
             }
         }
-        let mut arguments = Vec::with_capacity(target.arguments().len());
-        for (index, argument) in target.arguments().iter().enumerate() {
+        let mut arguments = Vec::with_capacity(prepared.arguments().len());
+        for argument in prepared.arguments() {
             let expression = argument.value();
             let value = match self.evaluate_expr_with_backend(expression, pure_backend) {
                 Ok(value) => value,
@@ -986,21 +1010,26 @@ impl Engine {
                     return;
                 }
             };
-            let Some(name) = plan.argument_name(index) else {
-                self.fail_eval("Need producer argument name row is incomplete", output);
-                return;
-            };
             arguments.push(NeedProducerRuntimeArgument {
-                name: name.map(str::to_owned),
+                name: argument.name().map(str::to_owned),
                 value,
             });
         }
-        let proof = match self.need_producers.inspect_start_visit(
+        let start = match prepared.start(
             self.generation,
-            self.fiber.persistent_id,
-            plan.clone(),
             arguments,
+            self.fiber.frame.env.function_instantiation(),
         ) {
+            Ok(start) => start,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let proof = match self
+            .need_producers
+            .inspect_start_visit(self.fiber.persistent_id, start)
+        {
             Ok(proof) => proof,
             Err(error) => {
                 self.fail_eval(error, output);

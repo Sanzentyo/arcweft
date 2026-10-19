@@ -14,6 +14,7 @@ pub enum TaskSemanticEncodingError {
 }
 
 pub(crate) struct TaskSemanticMeter {
+    shared_work: Option<crate::entry::schema::value_budget::ValidationWork>,
     max_work: u64,
     max_bytes: u64,
     work: u64,
@@ -24,6 +25,7 @@ pub(crate) struct TaskSemanticMeter {
 impl TaskSemanticMeter {
     pub(crate) const fn new(max_work: u64, max_bytes: u64) -> Self {
         Self {
+            shared_work: None,
             max_work,
             max_bytes,
             work: 0,
@@ -32,18 +34,47 @@ impl TaskSemanticMeter {
         }
     }
 
+    /// Reuses the original retained group's work counter. Local Source limits
+    /// can tighten that allowance but cannot refresh its consumed work.
+    pub(crate) fn for_retained(
+        work: crate::entry::schema::value_budget::ValidationWork,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Self {
+        let mut meter = Self::new(
+            limits
+                .max_semantic_work
+                .min(work.limits().max_validation_work),
+            limits
+                .max_transcript_bytes
+                .min(work.limits().max_encoded_bytes),
+        );
+        meter.shared_work = Some(work);
+        meter
+    }
+
     fn reject(&mut self, error: TaskSemanticEncodingError) -> TaskSemanticEncodingError {
-        *self.error.get_or_insert(error)
+        let first = *self.error.get_or_insert(error);
+        if let Some(work) = &self.shared_work {
+            work.retain_failure(crate::entry::RuntimeSchemaError::TaskSemantic { cause: first });
+        }
+        first
     }
 
     pub(crate) fn reject_owner(&mut self) {
         self.reject(TaskSemanticEncodingError::OwnerRejected);
     }
 
-    pub(crate) const fn status(&self) -> Result<(), TaskSemanticEncodingError> {
+    pub(crate) fn status(&self) -> Result<(), TaskSemanticEncodingError> {
         match self.error {
             Some(error) => Err(error),
-            None => Ok(()),
+            None => match self.shared_work.as_ref().and_then(|work| work.failure()) {
+                Some(crate::entry::RuntimeSchemaError::TaskSemantic { cause }) => Err(cause),
+                Some(crate::entry::RuntimeSchemaError::ValidationWork { .. }) => {
+                    Err(TaskSemanticEncodingError::SemanticWork)
+                }
+                Some(_) => Err(TaskSemanticEncodingError::OwnerRejected),
+                None => Ok(()),
+            },
         }
     }
 
@@ -86,13 +117,18 @@ impl TaskSemanticMeter {
     }
 
     pub(crate) fn charge_work(&mut self, units: u64) -> Result<(), TaskSemanticEncodingError> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
+        self.status()?;
         let Some(next) = self.work.checked_add(units) else {
             return Err(self.reject(TaskSemanticEncodingError::ArithmeticOverflow));
         };
         if next > self.max_work {
+            return Err(self.reject(TaskSemanticEncodingError::SemanticWork));
+        }
+        if self
+            .shared_work
+            .as_mut()
+            .is_some_and(|work| work.charge_atoms(units, 0).is_err())
+        {
             return Err(self.reject(TaskSemanticEncodingError::SemanticWork));
         }
         self.work = next;
@@ -104,9 +140,7 @@ impl TaskSemanticMeter {
     }
 
     fn checked_byte_total(&mut self, bytes: u64) -> Result<u64, TaskSemanticEncodingError> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
+        self.status()?;
         let Some(next) = self.bytes.checked_add(bytes) else {
             return Err(self.reject(TaskSemanticEncodingError::ArithmeticOverflow));
         };
@@ -169,7 +203,7 @@ impl<'a> TaskSemanticEncoder<'a> {
         let _ = self.meter.charge_work(1);
     }
 
-    pub(crate) const fn status(&self) -> Result<(), TaskSemanticEncodingError> {
+    pub(crate) fn status(&self) -> Result<(), TaskSemanticEncodingError> {
         self.meter.status()
     }
 

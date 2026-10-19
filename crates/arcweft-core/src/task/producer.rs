@@ -6,8 +6,10 @@ use crate::entry::RuntimeValueDigest;
 use std::collections::BTreeSet;
 
 mod source;
+mod start;
 pub(crate) use source::RuntimeTaskProducerSourceError;
 pub(crate) use source::RuntimeTaskTemplateArguments;
+pub use start::RuntimeNeedProducerStart;
 
 /// Source-independent ordinal assigned to one launch of a producer instance.
 /// Join uses the zero ordinal; positive `AlwaysStart` candidates remain journal
@@ -289,12 +291,23 @@ impl<Plan> NeedProducerSpec<Plan> {
 }
 
 impl NeedProducerSpec<crate::plan::task_source::RuntimeTaskSource> {
-    pub(crate) const fn source(&self) -> &crate::plan::task_source::RuntimeTaskSource {
+    pub const fn source(&self) -> &crate::plan::task_source::RuntimeTaskSource {
         &self.plan
     }
 
-    pub(crate) fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
+    pub fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
         self.instance_key_with_plan(self.plan.task_plan().key())
+    }
+
+    /// The retained lease proves admission; its pointer is not an instance
+    /// transcript field. A joined launch keeps its already accepted lease.
+    pub(crate) fn same_instance_contract(&self, other: &Self) -> bool {
+        self.family == other.family
+            && self.contract == other.contract
+            && self.plan.task_plan().key() == other.plan.task_plan().key()
+            && self.producer_site == other.producer_site
+            && self.payload_type == other.payload_type
+            && self.arguments == other.arguments
     }
 }
 
@@ -384,9 +397,9 @@ pub enum NeedProducerPlanError {
 }
 
 /// Complete static selected contract for one host-backed Need producer.
-/// Its semantic digest is recomputed from typed fields, so native and
-/// AWBC consumers cannot supply a competing digest or include their local
-/// instruction/plan index in identity.
+/// This is request/control metadata inside the actual original endpoint. It
+/// cannot issue a Task key or live producer; the common seal and Source own
+/// those authorities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NeedProducerTaskPlan {
     contract: NeedProducerContractDigest,
@@ -566,50 +579,6 @@ impl NeedProducerTaskPlan {
                 argument_names.len()
             }
         }
-    }
-
-    #[must_use]
-    pub fn producer_spec(
-        &self,
-        arguments: &[NeedProducerRuntimeArgument],
-    ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
-        self.borrowed_producer_spec(arguments)
-    }
-
-    fn borrowed_producer_spec<V: crate::value::RuntimeStoredValue>(
-        &self,
-        arguments: &[NeedProducerRuntimeArgument<V>],
-    ) -> Result<NeedProducerSpec, NeedProducerAdmissionError> {
-        let digest =
-            need_producer_arguments_digest(arguments.iter().map(|argument| &argument.value))
-                .map_err(|_| NeedProducerAdmissionError::InvalidProducerArguments)?;
-        Ok(NeedProducerSpec::new(
-            NeedProducerFamily::SelectedCallable,
-            self.contract,
-            self.semantic_digest()?,
-            self.site,
-            RuntimeTypeSemanticDigest::from_bytes(*self.payload_type.as_bytes()),
-            digest,
-        ))
-    }
-
-    fn task_spec(
-        &self,
-        generation: GenerationId,
-        producer: &NeedProducerSpec,
-        request: HostTaskRequest,
-    ) -> Result<TaskSpec, NeedProducerAdmissionError> {
-        Ok(TaskSpec {
-            generation,
-            producer: super::NeedProducerInstance::try_from(producer)?,
-            class: self.class.clone(),
-            priority: self.priority,
-            cancel_scope: self.cancel_scope.clone(),
-            policy: self.policy,
-            outcome: self.outcome(),
-            debug_label: request.debug_label(),
-            request,
-        })
     }
 
     pub fn project_request(
@@ -849,40 +818,6 @@ impl NeedProducerTaskPlan {
             HostRestartPolicy::Restartable => 1,
         });
     }
-
-    pub fn semantic_digest(&self) -> Result<TaskPlanSemanticDigest, NeedProducerPlanError> {
-        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
-        let mut meter = super::semantic::TaskSemanticMeter::new(
-            limits.max_semantic_work,
-            limits.max_transcript_bytes,
-        );
-        let mut encoder = super::semantic::TaskSemanticEncoder::new(
-            b"arcweft.need.producer-task-plan.v1\0",
-            &mut meter,
-        );
-        self.encode_request_schema(&mut encoder);
-        let digest = encoder.finish().map_err(|error| match error {
-            super::semantic::TaskSemanticEncodingError::OwnerRejected => {
-                NeedProducerPlanError::OwnerRejected
-            }
-            super::semantic::TaskSemanticEncodingError::CountOverflow => {
-                NeedProducerPlanError::ArgumentBindingCountOverflow
-            }
-            super::semantic::TaskSemanticEncodingError::StringLengthOverflow => {
-                NeedProducerPlanError::RequestStringLengthOverflow
-            }
-            super::semantic::TaskSemanticEncodingError::ArithmeticOverflow => {
-                NeedProducerPlanError::TranscriptArithmeticOverflow
-            }
-            super::semantic::TaskSemanticEncodingError::SemanticWork => {
-                NeedProducerPlanError::SemanticWorkLimit
-            }
-            super::semantic::TaskSemanticEncodingError::TranscriptBytes => {
-                NeedProducerPlanError::TranscriptByteLimit
-            }
-        })?;
-        Ok(TaskPlanSemanticDigest::from_bytes(*digest.as_bytes()))
-    }
 }
 
 impl TaskClass {
@@ -928,12 +863,12 @@ impl TaskClass {
 
 fn need_producer_arguments_digest<'value, V: crate::value::RuntimeStoredValue + 'value>(
     arguments: impl Iterator<Item = &'value V>,
+    max_encoded_bytes: usize,
 ) -> Result<RuntimeValueDigest, crate::entry::RuntimeSchemaError> {
-    const MAX_ARGUMENT_BYTES: usize = 16 * 1024 * 1024;
     let values: Vec<_> = arguments.map(V::borrowed_view).collect();
     crate::entry::schema::canonical_runtime_value_view_digest(
         crate::value::RuntimeValueView::Tuple(crate::value::RuntimeTupleView::Views(&values)),
-        MAX_ARGUMENT_BYTES,
+        max_encoded_bytes,
     )
 }
 
@@ -979,8 +914,8 @@ impl NeedProducerInvocationToken {
 pub struct RuntimeNeedProducerLaunch {
     correlation: TaskCorrelation,
     invocation: NeedProducerInvocationToken,
-    plan: NeedProducerTaskPlan,
-    producer: NeedProducerSpec,
+    restart: HostRestartPolicy,
+    producer: NeedProducerSpec<crate::plan::RuntimeTaskSource>,
     arguments: Vec<NeedProducerRuntimeArgument>,
     task_spec: TaskSpec,
     state: RuntimeNeedProducerState,
@@ -1004,13 +939,22 @@ impl RuntimeNeedProducerLaunch {
     }
 
     #[must_use]
-    pub const fn producer(&self) -> &NeedProducerSpec {
+    pub const fn producer(&self) -> &NeedProducerSpec<crate::plan::RuntimeTaskSource> {
         &self.producer
     }
 
     #[must_use]
-    pub const fn plan(&self) -> &NeedProducerTaskPlan {
-        &self.plan
+    pub const fn source(&self) -> &crate::plan::RuntimeTaskSource {
+        self.producer.source()
+    }
+
+    pub fn payload_type(&self) -> RuntimeSemanticTypeId {
+        match self.task_spec.outcome {
+            TaskOutcomeContract::Program { payload } => payload,
+            TaskOutcomeContract::Standalone { .. } => {
+                unreachable!("a selected original Source has a program-owned Ready contract")
+            }
+        }
     }
 
     #[must_use]
@@ -1045,7 +989,7 @@ impl RuntimeNeedProducerLaunch {
 
     #[must_use]
     pub const fn restart(&self) -> HostRestartPolicy {
-        self.plan.restart
+        self.restart
     }
 
     #[must_use]
@@ -1353,6 +1297,8 @@ pub enum NeedProducerAdmissionError {
     LaunchOrdinalExhausted,
     #[error("producer invocation token does not match the selected producer site")]
     InvocationSiteMismatch,
+    #[error("producer invocation token does not match the selected generation")]
+    InvocationGenerationMismatch,
     #[error("producer invocation token was reused with a different complete launch contract")]
     InvocationSpecificationConflict,
     #[error("joined producer identity was reused with a different complete launch contract")]
@@ -1947,10 +1893,9 @@ impl NeedProducerRegistry {
     pub fn admit_start(
         &mut self,
         invocation: NeedProducerInvocationToken,
-        plan: NeedProducerTaskPlan,
-        arguments: Vec<NeedProducerRuntimeArgument>,
+        start: RuntimeNeedProducerStart,
     ) -> Result<NeedProducerAdmission, NeedProducerAdmissionError> {
-        let (admission, decision) = self.prepare_start_decision(invocation, plan, arguments)?;
+        let (admission, decision) = self.prepare_start_decision(invocation, start)?;
         if matches!(&decision, NeedProducerStartDecision::New { .. }) {
             let handle = self.task_journal.ensure_task(admission.task_spec.clone())?;
             assert_eq!(
@@ -1967,12 +1912,12 @@ impl NeedProducerRegistry {
     /// arguments; binding/quota checks can run before `commit_start_visit`.
     pub fn inspect_start_visit(
         &self,
-        generation: GenerationId,
         fiber: RuntimePersistentFiberId,
-        plan: NeedProducerTaskPlan,
-        arguments: Vec<NeedProducerRuntimeArgument>,
+        start: RuntimeNeedProducerStart,
     ) -> Result<NeedProducerStartProof, NeedProducerAdmissionError> {
-        let frontier = (generation, fiber, plan.site);
+        let generation = start.task_spec.generation;
+        let site = start.producer.producer_site();
+        let frontier = (generation, fiber, site);
         let observed_sequence = self
             .next_invocation_sequence
             .get(&frontier)
@@ -1984,10 +1929,10 @@ impl NeedProducerRegistry {
         let invocation = NeedProducerInvocationToken {
             generation,
             fiber,
-            producer_site: plan.site,
+            producer_site: site,
             sequence: observed_sequence,
         };
-        let (admission, decision) = self.prepare_start_decision(invocation, plan, arguments)?;
+        let (admission, decision) = self.prepare_start_decision(invocation, start)?;
         Ok(NeedProducerStartProof {
             frontier,
             observed_sequence,
@@ -2057,23 +2002,23 @@ impl NeedProducerRegistry {
     fn prepare_start_decision(
         &self,
         invocation: NeedProducerInvocationToken,
-        plan: NeedProducerTaskPlan,
-        arguments: Vec<NeedProducerRuntimeArgument>,
+        start: RuntimeNeedProducerStart,
     ) -> Result<(NeedProducerAdmission, NeedProducerStartDecision), NeedProducerAdmissionError>
     {
-        if arguments
-            .iter()
-            .any(|argument| !argument.value.ownership().permits_copy())
-        {
-            return Err(NeedProducerAdmissionError::AffineHostProducerArgument);
-        }
-        if invocation.producer_site != plan.site {
+        let RuntimeNeedProducerStart {
+            producer,
+            arguments,
+            task_spec,
+            restart,
+        } = start;
+        if invocation.producer_site != producer.producer_site() {
             return Err(NeedProducerAdmissionError::InvocationSiteMismatch);
         }
         let generation = invocation.generation;
-        let producer = plan.producer_spec(&arguments)?;
-        let request = plan.project_request(&arguments)?;
-        let policy = plan.policy;
+        if generation != task_spec.generation {
+            return Err(NeedProducerAdmissionError::InvocationGenerationMismatch);
+        }
+        let policy = task_spec.policy;
         let instance_key = producer.instance_key()?;
 
         if let Some(key) = self.invocation_launches.get(&invocation).copied() {
@@ -2081,14 +2026,14 @@ impl NeedProducerRegistry {
                 .launches
                 .get(&key)
                 .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)?;
-            if !launch_matches_plan(
+            if !launch_matches_start(
                 existing,
                 generation,
-                &plan,
+                &task_spec,
                 &producer,
                 instance_key,
                 &arguments,
-                &request,
+                restart,
             ) {
                 return Err(NeedProducerAdmissionError::InvocationSpecificationConflict);
             }
@@ -2113,14 +2058,14 @@ impl NeedProducerRegistry {
                     .launches
                     .get(&key)
                     .ok_or(NeedProducerAdmissionError::InvalidRestoredLaunch)?;
-                if !launch_matches_plan(
+                if !launch_matches_start(
                     existing,
                     generation,
-                    &plan,
+                    &task_spec,
                     &producer,
                     instance_key,
                     &arguments,
-                    &request,
+                    restart,
                 ) {
                     return Err(NeedProducerAdmissionError::JoinSpecificationConflict);
                 }
@@ -2141,7 +2086,6 @@ impl NeedProducerRegistry {
             }
         }
 
-        let task_spec = plan.task_spec(generation, &producer, request)?;
         let task_admission = self.task_journal.inspect_task(task_spec.clone())?;
         let correlation = task_admission.correlation();
         let ordinal = correlation.launch_ordinal;
@@ -2153,7 +2097,7 @@ impl NeedProducerRegistry {
         let launch = RuntimeNeedProducerLaunch {
             correlation,
             invocation,
-            plan,
+            restart,
             producer,
             arguments,
             task_spec,
@@ -2215,7 +2159,7 @@ impl NeedProducerRegistry {
                 launch,
                 invocation,
             } => {
-                if launch.plan.policy == TaskPolicy::JoinSameKey {
+                if launch.task_spec.policy == TaskPolicy::JoinSameKey {
                     self.joined.insert((key.generation, key.instance_key), key);
                 }
                 self.launches.insert(key, launch);
@@ -2284,7 +2228,7 @@ impl NeedProducerRegistry {
         self.launches
             .values()
             .filter(|launch| {
-                launch.plan.restart == HostRestartPolicy::Restartable
+                launch.restart == HostRestartPolicy::Restartable
                     && !launch.task_terminal
                     && !launch.state.is_terminal()
             })
@@ -2295,7 +2239,7 @@ impl NeedProducerRegistry {
                         correlation: launch.correlation,
                     })
                     .expect("active launch retains its accepted journal receipt"),
-                restart: launch.plan.restart,
+                restart: launch.restart,
                 publication: launch.publication,
                 needs_reensure: !launch.task_submitted,
             })
@@ -2531,7 +2475,7 @@ impl NeedProducerRegistry {
                         _ => NeedProducerAdmissionError::InvalidProducerArguments,
                     })?;
             }
-            if launch.plan.policy == TaskPolicy::JoinSameKey
+            if launch.task_spec.policy == TaskPolicy::JoinSameKey
                 && let RuntimeNeedProducerState::Ready(value) = &launch.state
             {
                 value
@@ -2570,7 +2514,7 @@ impl NeedProducerRegistry {
             }
             if launches.insert(checked.key, launch).is_some()
                 || invocations.insert(launch.invocation, checked.key).is_some()
-                || (launch.plan.policy == TaskPolicy::JoinSameKey
+                || (launch.task_spec.policy == TaskPolicy::JoinSameKey
                     && !joined.insert((launch.invocation.generation, checked.instance_key)))
             {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
@@ -2602,7 +2546,7 @@ impl NeedProducerRegistry {
             };
             if invocation.generation != launch.invocation.generation
                 || invocation.producer_site != launch.plan.site
-                || launch.plan.policy != TaskPolicy::JoinSameKey
+                || launch.task_spec.policy != TaskPolicy::JoinSameKey
             {
                 return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
             }
@@ -2727,7 +2671,7 @@ impl NeedProducerRegistry {
             ));
         }
         if let TaskEventKind::Ready(value) = &event.kind
-            && launch.plan.policy == TaskPolicy::JoinSameKey
+            && launch.task_spec.policy == TaskPolicy::JoinSameKey
             && !value.value().ownership().permits_copy()
         {
             return Err(reject(
@@ -2804,7 +2748,7 @@ impl NeedProducerRegistry {
         let RuntimeNeedProducerState::Ready(value) = &launch.state else {
             return Err(NeedProducerAdmissionError::ReadyUnavailable);
         };
-        if launch.plan.policy == TaskPolicy::JoinSameKey
+        if launch.task_spec.policy == TaskPolicy::JoinSameKey
             && !value.value().ownership().permits_copy()
         {
             return Err(NeedProducerAdmissionError::AffineJoinedReadyPublication);
@@ -2815,7 +2759,7 @@ impl NeedProducerRegistry {
         Ok(NeedProducerReadyTakeProof {
             key: *key,
             publication,
-            policy: launch.plan.policy,
+            policy: launch.task_spec.policy,
         })
     }
 
@@ -2828,7 +2772,8 @@ impl NeedProducerRegistry {
             .get_mut(&proof.key)
             .expect("prepared Ready take launch exists");
         assert!(
-            launch.publication == Some(proof.publication) && launch.plan.policy == proof.policy,
+            launch.publication == Some(proof.publication)
+                && launch.task_spec.policy == proof.policy,
             "prepared Ready take requires unchanged producer cursor and policy"
         );
         if proof.policy == TaskPolicy::JoinSameKey {
@@ -2873,7 +2818,7 @@ impl NeedProducerRegistry {
             .iter()
             .find(|(_, launch)| &launch.correlation == correlation)
             .ok_or(NeedProducerAdmissionError::ReadyUnavailable)?;
-        if launch.plan.policy != TaskPolicy::AlwaysStart
+        if launch.task_spec.policy != TaskPolicy::AlwaysStart
             || !matches!(launch.state, RuntimeNeedProducerState::ReadyTransferred)
             || !launch.task_terminal
         {
@@ -2910,7 +2855,7 @@ impl NeedProducerRegistry {
     /// corresponding Product step output.
     pub fn pending_reensure(&self) -> impl Iterator<Item = &RuntimeNeedProducerLaunch> {
         self.launches.values().filter(|launch| {
-            launch.plan.restart == HostRestartPolicy::Restartable
+            launch.restart == HostRestartPolicy::Restartable
                 && !launch.task_terminal
                 && !launch.state.is_terminal()
                 && !launch.task_submitted
@@ -2945,7 +2890,7 @@ impl NeedProducerRegistry {
                 submission: None,
             });
         }
-        if launch.plan.restart != HostRestartPolicy::Restartable {
+        if launch.restart != HostRestartPolicy::Restartable {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         }
         Ok(NeedProducerTaskEnsuredProof {
@@ -3003,7 +2948,7 @@ impl NeedProducerRegistry {
         let key = checked.key;
         assert!(!self.launches.contains_key(&key));
         assert!(!self.invocation_launches.contains_key(&launch.invocation));
-        if launch.plan.policy == TaskPolicy::JoinSameKey
+        if launch.task_spec.policy == TaskPolicy::JoinSameKey
             && self
                 .joined
                 .insert((launch.correlation.generation, checked.instance_key), key)
@@ -3027,7 +2972,7 @@ impl NeedProducerRegistry {
             .or_insert(0);
         *entry = (*entry).max(checked.invocation_next);
         if policy == NeedProducerRestorePolicy::Resume
-            && launch.plan.restart == HostRestartPolicy::Restartable
+            && launch.restart == HostRestartPolicy::Restartable
             && !launch.task_terminal
         {
             launch.task_submitted = false;
@@ -3052,8 +2997,8 @@ impl NeedProducerRegistry {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
         };
         if invocation.generation != launch.correlation.generation
-            || invocation.producer_site != launch.plan.site
-            || launch.plan.policy != TaskPolicy::JoinSameKey
+            || invocation.producer_site != launch.producer.producer_site()
+            || launch.task_spec.policy != TaskPolicy::JoinSameKey
             || self.invocation_launches.contains_key(&invocation)
         {
             return Err(NeedProducerAdmissionError::InvalidRestoredLaunch);
@@ -3129,29 +3074,26 @@ fn restored_need_state_is_valid<P: crate::value::RuntimeStoredValue>(
         && (restart != HostRestartPolicy::MustBeQuiescent || task_terminal)
 }
 #[allow(clippy::too_many_arguments)]
-fn launch_matches_plan(
+fn launch_matches_start(
     launch: &RuntimeNeedProducerLaunch,
     generation: GenerationId,
-    plan: &NeedProducerTaskPlan,
-    producer: &NeedProducerSpec,
+    task_spec: &TaskSpec,
+    producer: &NeedProducerSpec<crate::plan::RuntimeTaskSource>,
     instance_key: NeedProducerInstanceKey,
     arguments: &[NeedProducerRuntimeArgument],
-    request: &HostTaskRequest,
+    restart: HostRestartPolicy,
 ) -> bool {
-    let Ok(expected_task_spec) = plan.task_spec(generation, producer, request.clone()) else {
-        return false;
-    };
-    let Ok(correlation) = expected_task_spec.correlation(launch.correlation.launch_ordinal) else {
+    let Ok(correlation) = task_spec.correlation(launch.correlation.launch_ordinal) else {
         return false;
     };
     launch.correlation.generation == generation
-        && launch.plan == *plan
-        && &launch.producer == producer
+        && launch.restart == restart
+        && launch.producer.same_instance_contract(producer)
         && launch.arguments == arguments
         && launch.correlation.producer == instance_key
         && launch.correlation.need == correlation.need
         && launch.correlation.task_id == correlation.task_id
-        && launch.task_spec == expected_task_spec
+        && &launch.task_spec == task_spec
 }
 
 pub use crate::plan::{
@@ -3513,6 +3455,8 @@ mod identity_tests {
 
     #[test]
     fn producer_arguments_use_ordered_tuple_identity_without_binding_names() {
+        let max_argument_bytes =
+            crate::entry::RuntimeSchemaLimits::engine_default().platform_encoded_bytes();
         let values = [
             RuntimeValue::Bool(true),
             RuntimeValue::String("value".into()),
@@ -3531,12 +3475,18 @@ mod identity_tests {
             .cloned()
             .map(|value| NeedProducerRuntimeArgument { name: None, value })
             .collect();
-        let digest =
-            need_producer_arguments_digest(named.iter().map(|argument| &argument.value)).unwrap();
+        let digest = need_producer_arguments_digest(
+            named.iter().map(|argument| &argument.value),
+            max_argument_bytes,
+        )
+        .unwrap();
         assert_eq!(
             digest,
-            need_producer_arguments_digest(positional.iter().map(|argument| &argument.value))
-                .unwrap()
+            need_producer_arguments_digest(
+                positional.iter().map(|argument| &argument.value),
+                max_argument_bytes
+            )
+            .unwrap()
         );
         assert_eq!(
             digest,
@@ -3547,15 +3497,19 @@ mod identity_tests {
         let reversed: Vec<_> = positional.into_iter().rev().collect();
         assert_ne!(
             digest,
-            need_producer_arguments_digest(reversed.iter().map(|argument| &argument.value))
-                .unwrap()
+            need_producer_arguments_digest(
+                reversed.iter().map(|argument| &argument.value),
+                max_argument_bytes
+            )
+            .unwrap()
         );
         assert_eq!(
-            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>()).unwrap(),
+            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>(), max_argument_bytes)
+                .unwrap(),
             RuntimeValue::Tuple(Vec::new()).try_digest(1024).unwrap()
         );
         assert_ne!(
-            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>())
+            need_producer_arguments_digest(std::iter::empty::<&RuntimeValue>(), max_argument_bytes)
                 .unwrap()
                 .as_bytes(),
             &[0; 32]

@@ -833,6 +833,7 @@ impl RuntimeSchemaError {
             Self::ValueNesting(_)
             | Self::BudgetExceeded { .. }
             | Self::Encoding { .. }
+            | Self::TaskSemantic { .. }
             | Self::SchemaEncodingOverflow
             | Self::NominalGraph { .. }
             | Self::NominalGraphRequired { .. }

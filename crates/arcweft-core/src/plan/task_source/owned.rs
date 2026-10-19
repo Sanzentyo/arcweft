@@ -11,7 +11,7 @@ use crate::task::semantic::TaskSemanticMeter;
 /// Retains the genuine source namespace. Neither key assertions nor a metadata
 /// launch coordinate can construct this handle. Cloning retains the same Arc.
 #[derive(Clone)]
-pub(crate) struct RuntimeTaskSource {
+pub struct RuntimeTaskSource {
     program: RuntimeTaskSourceProgram,
     coordinate: RuntimeTaskPlanBuildCoordinate,
     execution: Option<RuntimeTaskExecutionRow>,
@@ -37,7 +37,7 @@ impl RuntimeTaskSource {
         })
     }
 
-    pub(crate) fn task_plan(&self) -> RuntimeTaskPlanRef<'_> {
+    pub fn task_plan(&self) -> RuntimeTaskPlanRef<'_> {
         self.program
             .original()
             .task_plan(&self.coordinate)

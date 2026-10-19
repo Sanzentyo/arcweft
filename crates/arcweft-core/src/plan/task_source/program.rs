@@ -73,18 +73,30 @@ impl RuntimeTaskSourceProgram {
         source: RuntimeTaskSourceArtifactLimits,
         authority: Option<&dyn ViewTaskPlanAuthority>,
     ) -> Result<Self, RuntimeTaskSourceProgramError> {
+        Self::prepare_awbc(executable, verify, context, source, authority)?
+            .ok_or(RuntimeTaskSourceProgramError::MissingOriginalSource)
+    }
+
+    /// The unadmitted code schema permits Source-free autonomous executables.
+    /// Absence grants no selected/original authority and has no fallback reader.
+    pub(crate) fn prepare_awbc(
+        executable: Arc<AwbcProgram>,
+        verify: AwbcVerifyBudget,
+        context: AwbcVerifyContext<'_>,
+        source: RuntimeTaskSourceArtifactLimits,
+        authority: Option<&dyn ViewTaskPlanAuthority>,
+    ) -> Result<Option<Self>, RuntimeTaskSourceProgramError> {
         executable.verify(verify, context)?;
-        let original = executable
-            .original_source
-            .as_ref()
-            .ok_or(RuntimeTaskSourceProgramError::MissingOriginalSource)?
-            .admit(source, authority)?;
-        Ok(Self {
+        let Some(original) = executable.original_source.as_ref() else {
+            return Ok(None);
+        };
+        let original = original.admit(source, authority)?;
+        Ok(Some(Self {
             data: Arc::new(RuntimeTaskSourceProgramData::Awbc {
                 executable,
                 original: Arc::new(original),
             }),
-        })
+        }))
     }
 
     pub(crate) fn original(&self) -> &RuntimePlan {

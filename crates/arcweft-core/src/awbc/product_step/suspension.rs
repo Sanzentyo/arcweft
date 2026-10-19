@@ -151,8 +151,7 @@ impl AwbcProductStepExecutor {
                     continue;
                 }
                 if let TaskEventKind::Ready(value) = &event.kind {
-                    let item_type =
-                        self.awbc_type_id_for_semantic_identity(launch.plan().payload_type());
+                    let item_type = self.awbc_type_id_for_semantic_identity(launch.payload_type());
                     if item_type.is_none_or(|item_type| {
                         !crate::awbc::fiber::runtime_value_matches_type(
                             &self.program,
@@ -2720,6 +2719,25 @@ impl AwbcProductStepExecutor {
                     .to_owned(),
             ));
         }
+        let source_program = self.task_source.as_ref().ok_or_else(|| {
+            ProductStepError::Host(
+                "selected Need producer has no admitted original Task Source".to_owned(),
+            )
+        })?;
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            source_program.program_owner(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        let limits = crate::plan::RuntimeTaskPlanSealLimits::default();
+        let mut meter = admission
+            .task_source_meter(limits)
+            .map_err(|error| ProductStepError::Host(error.to_string()))?;
+        let source = source_program
+            .awbc_selected_source(plan_id, limits, &mut meter)
+            .map_err(|error| ProductStepError::Host(error.to_string()))?;
+        let prepared = source
+            .prepare_selected_producer(source_program, &mut admission)
+            .map_err(|error| ProductStepError::Host(error.to_string()))?;
         let row = self
             .program
             .task_plans
@@ -2730,9 +2748,6 @@ impl AwbcProductStepExecutor {
                     plan_id.0
                 ))
             })?;
-        let plan = row
-            .need_producer_plan(&self.program)
-            .map_err(ProductStepError::Internal)?;
         let signature = self
             .program
             .signatures
@@ -2746,24 +2761,7 @@ impl AwbcProductStepExecutor {
             ));
         }
         let mut arguments = Vec::with_capacity(values.len());
-        for ((descriptor, value), expected) in row
-            .arguments
-            .iter()
-            .zip(values)
-            .zip(signature.params.iter().copied())
-        {
-            if descriptor.spread
-                || !crate::awbc::fiber::runtime_value_matches_type(
-                    &self.program,
-                    &value,
-                    expected,
-                    0,
-                )
-            {
-                return Err(ProductStepError::Type(
-                    "Need producer argument violates its checked source type".to_owned(),
-                ));
-            }
+        for (descriptor, value) in row.arguments.iter().zip(values) {
             let name = descriptor
                 .name
                 .map(|name| {
@@ -2780,8 +2778,14 @@ impl AwbcProductStepExecutor {
                 .transpose()?;
             arguments.push(NeedProducerRuntimeArgument { name, value });
         }
+        let frame = fiber
+            .active_frame()
+            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+        let start = prepared
+            .start(generation, arguments, frame.type_instantiation.as_deref())
+            .map_err(|error| ProductStepError::Host(error.to_string()))?;
         registry
-            .inspect_start_visit(generation, persistent_fiber, plan, arguments)
+            .inspect_start_visit(persistent_fiber, start)
             .map_err(|error| ProductStepError::Host(error.to_string()))
     }
 }

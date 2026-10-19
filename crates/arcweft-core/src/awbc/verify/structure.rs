@@ -1168,12 +1168,32 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                         message: "Need producer argument rows cannot contain spreads".to_owned(),
                     });
                 }
-                task.need_producer_plan(program).map_err(|message| {
-                    AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message,
+                let AwbcTaskPlanKind::NeedProducer { contract, .. } = &task.kind else {
+                    unreachable!("the selected kind was matched")
+                };
+                let valid = match &task.request {
+                    AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
+                        !program.strings[argument_name.index()].is_empty()
+                            && task.arguments.len() == 1
                     }
-                })?;
+                    AwbcTaskRequestProjection::ExternCapability {
+                        capability,
+                        operation,
+                        contract: request_contract,
+                    } => {
+                        !program.strings[capability.index()].is_empty()
+                            && !program.strings[operation.index()].is_empty()
+                            && request_contract.as_bytes() == contract.as_bytes()
+                            && u32::try_from(task.arguments.len()).is_ok()
+                    }
+                    AwbcTaskRequestProjection::CustomCapability { .. } => false,
+                };
+                if !valid {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "selected Need request requires its exact nonempty asset or manifest contract and argument count".to_owned(),
+                    });
+                }
             }
             AwbcTaskPlanKind::AwaitMany {
                 child,

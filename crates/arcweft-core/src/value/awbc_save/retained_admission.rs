@@ -58,6 +58,18 @@ impl RuntimeRetainedValueAdmissionState {
 }
 
 impl RuntimeRetainedValueAdmission {
+    /// Source lookup shares this group's consumed work and first hard failure.
+    /// Dropping the temporary meter releases its alias; no quota is issued.
+    pub(crate) fn task_source_meter(
+        &self,
+        limits: crate::plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<crate::task::semantic::TaskSemanticMeter, AwbcRuntimeValueSnapshotError> {
+        self.status()?;
+        Ok(crate::task::semantic::TaskSemanticMeter::for_retained(
+            self.work(),
+            limits,
+        ))
+    }
     /// Moves every counter, the original executable and the first failure.
     /// A temporary validator retaining the work handle prevents this transfer.
     pub(crate) fn try_into_state(self) -> Result<RuntimeRetainedValueAdmissionState, Self> {
@@ -343,9 +355,13 @@ impl RuntimeRetainedValueAdmission {
     }
 
     pub(crate) fn status(&self) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        self.failure
-            .as_ref()
-            .map_or(Ok(()), |failure| Err(failure.clone()))
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        self.resources
+            .work()
+            .failure()
+            .map_or(Ok(()), |failure| Err(failure.into()))
     }
 
     pub(crate) fn admit_partial_record_header(
@@ -372,7 +388,8 @@ impl RuntimeRetainedValueAdmission {
         if let AwbcRuntimeValueSnapshotError::Resource(resource) = &error {
             self.resources.work().retain_failure(resource.clone());
         }
-        self.failure.get_or_insert(error);
+        let first = self.resources.work().failure().map_or(error, Into::into);
+        self.failure.get_or_insert(first);
     }
 
     /// An owning composite authenticates its custody and original metadata

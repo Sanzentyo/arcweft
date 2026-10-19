@@ -66,6 +66,16 @@ impl ValidationWork {
     }
 
     pub(crate) fn charge(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {
+        self.charge_atoms(1, depth)
+    }
+
+    /// A bounded semantic atom may account for several units without opening
+    /// another counter or walking an attacker-controlled count to reject it.
+    pub(crate) fn charge_atoms(
+        &mut self,
+        count: u64,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
         let mut state = self.0.borrow_mut();
         if let Some(error) = &state.failure {
             return Err(error.clone());
@@ -75,7 +85,7 @@ impl ValidationWork {
                 path: "$".to_owned(),
                 limit: state.limits.max_depth,
             })
-        } else if let Some(consumed) = state.consumed.checked_add(1) {
+        } else if let Some(consumed) = state.consumed.checked_add(count) {
             state.consumed = consumed;
             if consumed > state.limits.max_validation_work {
                 Err(RuntimeSchemaError::ValidationWork {
