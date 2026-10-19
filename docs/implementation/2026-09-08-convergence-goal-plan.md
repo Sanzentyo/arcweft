@@ -18217,3 +18217,37 @@ and real Native/AWBC/Web/display acceptance remain unfinished. The two integrati
 failures are retained prior evidence, not executed by this library selection.
 The full goal remains active; the user-held fourteen tracked and three untracked
 paths are preserved and excluded from this publication.
+
+### 2026-10-19 — Function-body publication and current workspace gates
+
+The function-body implementation is published on existing main as
+`e0a1b0f7dc1ed85908185570d7bda8a0f8620fa7`, parent
+`ee148d4a4cbe30fd8fefe1f875f058a43435221b`, tree
+`a0d159c62437dfe89175aafcaa84405038dab3b1`. A fresh fetch and advertised remote
+head match that full commit. All twelve published path blobs, working blobs and
+the raw binary/full-index patch match the prepared review; patch SHA-256 is
+`ef73fd3196de39fed080bcc01e3831a0e8647432fc019d8ee1511adc45a69233`.
+The index is empty, all 3901 baseline inputs are preserved, and fourteen held
+tracked plus three held untracked paths remain excluded and untouched.
+
+R1389 current `cargo check --workspace --all-targets --all-features --locked`
+passes, actual 0, Cargo reports 1m43s. R1390 matching workspace Clippy passes,
+actual 0, Cargo reports 1m55s. This is the established warning-level workspace
+policy, not a claim that all warnings disappeared; R1379's extra -D warnings
+failure remains recorded. The post-terminal gate receipt verifies all 3901
+inputs, including the fourteen held files, with zero drift. These runs complete
+the workspace gates pending in the preceding function-body note. The current
+seven new cases and the whole selected 2288-case library pass remain R1386/R1387
+evidence; the two known selected-Need integration failures were not rerun here.
+
+Inventory inspection confirms that remaining pure-helper and trait-method
+bodies are original RuntimeExpr graphs whose real reserved signatures already
+retain RuntimeFunctionDefinitionIdentity. Join those bodies through genuine
+helper/method handles and cumulative body admission with the existing Expression
+Source; the current fixture still restores them individually. The current task
+decoder continues to take an original RuntimePlanInventory. Replace that path
+with the complete original program Source, actual reservations and common seal,
+then remove the replaced internal reader. Expected keys remain assertions. No
+pure-body aggregate, original-inventory removal, public atomic switch, current
+full reverse/default acceptance, registry lifetime execution, restore or display
+completion is claimed by this evidence-only update. The goal remains active.
