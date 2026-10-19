@@ -75,18 +75,15 @@ pub(in crate::plan::construction::source) fn replay_functions(
     functions: &[RuntimeFunctionSiteSeedId],
     handles: &RuntimeExpressionSourceHandles<'_>,
 ) {
-    for (function, handle) in plan.function_sites().iter().zip(functions) {
-        let RuntimeFunctionSiteBody::Expression(expr) = function.body() else {
-            panic!("fixture owns expression bodies");
-        };
-        let body = decode(expr, plan, source, handles);
-        source
-            .builder
-            .define_function_site_seed(handle, body)
-            .unwrap();
-    }
+    let handles = super::super::flow::RuntimeFlowSourceHandles {
+        expression: handles,
+        contents: &[],
+        defers: &[],
+        tasks: &[],
+    };
+    super::super::function_bodies::tests::restore(plan, source, functions, &handles);
 }
-fn source(
+pub(in crate::plan::construction::source) fn source(
     plan: &RuntimePlan,
 ) -> (
     RuntimePlanSourceConstruction,

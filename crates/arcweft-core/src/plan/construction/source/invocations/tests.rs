@@ -300,44 +300,13 @@ pub(in crate::plan::construction::source) fn define_bodies(
             .define_pure_helper_seed(handle, body)
             .unwrap();
     }
-    for (function, handle) in plan.function_sites().iter().zip(functions) {
-        let body = match function.body() {
-            RuntimeFunctionSiteBody::Expression(expr) => {
-                RuntimeFunctionSiteBodySeed::Expression(decode(expr, plan, source, &handles))
-            }
-            RuntimeFunctionSiteBody::Executable(body) => {
-                let limits = super::super::flow::tests::limits(plan);
-                let encoded = plan
-                    .encode_flow_source(body.ops(), limits, &resources(), &mut source.meter)
-                    .unwrap();
-                let prepared = super::super::flow::PreparedRuntimeFlowSource::preflight(
-                    encoded.bytes(),
-                    limits,
-                    &resources(),
-                    &mut source.meter,
-                )
-                .unwrap();
-                let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
-                    expression: &handles,
-                    contents: &[],
-                    defers,
-                    tasks: &[],
-                };
-                let ops = prepared
-                    .materialize(source, &flow_handles, &mut resources())
-                    .unwrap()
-                    .into_boxed_slice();
-                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                    effects: body.effects().clone(),
-                    ops,
-                })
-            }
-        };
-        source
-            .builder
-            .define_function_site_seed(handle, body)
-            .unwrap();
-    }
+    let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
+        expression: &handles,
+        contents: &[],
+        defers,
+        tasks: &[],
+    };
+    super::super::function_bodies::tests::restore(plan, source, functions, &flow_handles);
 }
 pub(in crate::plan::construction::source) fn finish(
     source: RuntimePlanSourceConstruction,

@@ -1947,6 +1947,17 @@ pub enum RuntimeFunctionSiteBodySeed {
     Executable(RuntimeExecutableBodySeed),
 }
 
+impl RuntimeFunctionSiteBodySeed {
+    /// The body family that must agree with the original reservation.
+    #[must_use]
+    pub const fn kind(&self) -> RuntimeFunctionSiteBodyKind {
+        match self {
+            Self::Expression(_) => RuntimeFunctionSiteBodyKind::Expression,
+            Self::Executable(_) => RuntimeFunctionSiteBodyKind::Executable,
+        }
+    }
+}
+
 /// Construction-only body shared by Flow roots and function sites. The
 /// aggregate builder admits the closed effects and operations together.
 #[derive(Clone, Debug, PartialEq)]

@@ -18134,3 +18134,86 @@ as assertions. Finish the atomic public consumer switch, actual Native/AWBC
 selected-Need key failures, registry/lifetime execution, retained View, restore
 and display acceptance. R1349's two selected-Need key failures remain open; the
 new library pass does not execute them. The full goal remains active.
+
+### 2026-10-19 — Original function bodies and reservation-family admission
+
+Inspected main and origin/main at
+`ee148d4a4cbe30fd8fefe1f875f058a43435221b`. That Line publication has verified
+parent `bb0d69ff28d6779f5dbabc6518821e5d299c4555`, tree
+`4e2c13c89fbeb09da261826030d35de54e595174`, and raw patch SHA-256
+`b34b3c7411cb64206ba8ca476503283ea4645a1000a919eead39347270e57898`.
+Its pending workspace gates are now complete: R1377 all-target/all-feature locked
+workspace check passes, actual 0, 1m43s; R1378 matching Clippy passes, actual 0,
+1m58s. The retained gate receipt verifies all 3896 inputs and fourteen held files
+unchanged. These are evidence for the published Line state, before this change.
+
+The complete version-1 function-body Source table now joins actual reserved
+function declarations to their original Expression or executable Flow bodies.
+Dense ordinals and declaration identities are symbolic links checked against the
+genuine builder issuer and declaration rows, not executable proofs. All original
+headers, existing-definition checks and effect permissions are authenticated
+before the first body value is materialized. Body effects stay distinct from
+invocation permissions: the actual RuntimeEffectSet::covers law admits a scoped
+subset; it is not replaced by label equality or by the declaration's whole set.
+
+Borrowed preflight visits every body with cumulative remaining node, element,
+decoded-storage and encoded-byte allowances, using the same semantic/value banks.
+Every admitted row retains its original aggregate prefix for reconstruction.
+Effect metadata storage and child limits are counted before writer copies; the
+writer counts all rows before final output allocation. These are conservative
+logical storage/work bounds, not physical allocator or performance measurements.
+Insufficient output capacity cannot partially append. Source admission and the
+actual function factory still own lexical, result-type and common-seal checks.
+
+The common factory previously compared the reservation with its issued signature
+but did not compare the supplied body's family. RuntimeFunctionSiteBodySeed now
+owns kind(), and define_function_site_seed rejects either mismatch before
+lowering and poisons the builder. The rule belongs on the general factory;
+the Source decoder additionally checks all row headers before any definition.
+Existing Expression/Callable, Invocation and Content/Line fixture replay now
+uses this complete table instead of reconstructing each function separately.
+
+R1379's extra -D warnings Clippy attempt fails, actual 101, in unchanged upstream
+data/interaction code on workspace warning-level lints. No lint is suppressed or
+upstream code changed for this attempt. The repository's established command
+does not promote every warning to an error: R1380 passes, actual 0, 44.80s.
+R1381 builds/catalogs the first five-crate selection, actual 0, 2m16s; it is not
+execution evidence. R1382 Clippy passes, actual 0, 17.83s. R1383 catalogs 2287;
+R1384 executes exactly 2287, actual 0, all pass, zero skip, 24.532s. The terminal
+audit verifies every selected name and all 3901 inputs with zero drift.
+
+After checked test conversions, explicit Vec clones and separate issuer/order
+coverage, R1385 final Core all-target/all-feature locked Clippy passes, actual 0,
+18.20s. R1386 catalogs all 2288 cases, zero excluded; R1387 executes that exact
+set, actual 0, 2288 pass, zero fail/skip, 25.871s. All 3901 frozen inputs and
+fourteen held files remain unchanged. The five actual test packages are Core,
+RuntimePlan, Bundle, ProjectLoader and RuntimeDriver. The resolved Core reverse
+closure still has 53 packages and 99 unchanged manifest/lock inputs; this library
+selection is not a complete reverse-closure/default integration acceptance run.
+
+Seven new cases cover mixed bodies, scoped permission subsets, actual Native
+program result 42 after common sealing, identical function tables/digests/bytes,
+exact aggregate limits and every one-less resource cap, sticky first resource
+failure, every truncation, bad ordinals/tags/effect labels/order/trailing bytes,
+capacity-before-append, all-header rejection before earlier body publication,
+foreign issuers and reordered genuine handles, empty tables and namespace
+mismatch, and both general-factory family mismatches with terminal poisoning.
+They do not claim actual execution of the unused scoped-effect body or AWBC.
+
+R1388 canonical structural gate passes, actual 0. Ownership review retains one
+function-body table codec: coordinator 10127 bytes/288 physical lines, reader
+5029/147, writer 6794/193, reconstruction 5764/130, and behavioral tests 18978/587.
+The existing construction owner is 174278/4260 and seed owner 100151/3052; the
+narrow additions own the actual reservation law and body-kind projection.
+Core normal fan-in/out stays 31/7, development 4/5. No dependency, I/O, unsafe,
+alternate seal, completed-key issuer, or public file-splitting API is introduced.
+
+Publish this coherent function-body implementation. Next run current workspace
+gates and connect the original program Source and task definitions through
+genuine reservations and the common seal, retaining expected keys as assertions.
+The original-inventory task decoder, atomic public switch, R1349's two known
+selected-Need key failures, lifetime registry execution, retained View, restore,
+and real Native/AWBC/Web/display acceptance remain unfinished. The two integration
+failures are retained prior evidence, not executed by this library selection.
+The full goal remains active; the user-held fourteen tracked and three untracked
+paths are preserved and excluded from this publication.

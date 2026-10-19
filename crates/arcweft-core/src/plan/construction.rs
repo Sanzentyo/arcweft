@@ -1286,6 +1286,13 @@ impl RuntimePlanBuilder {
                 actual: body_kind,
             });
         }
+        if body.kind() != reserved.body_kind {
+            return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
+                site: site_id,
+                expected: reserved.body_kind,
+                actual: body.kind(),
+            });
+        }
         if reserved.effects != *effects {
             return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch { site: site_id });
         }

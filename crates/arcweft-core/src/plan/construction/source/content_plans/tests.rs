@@ -3,8 +3,7 @@ use super::super::content_declarations::{
     PreparedRuntimeContentDeclarationSources, RuntimeContentDeclarationSourceLimits,
 };
 use super::super::expression::{
-    RuntimeExpressionSourceHandles,
-    tests::{decode, limits as expression_limits},
+    RuntimeExpressionSourceHandles, tests::limits as expression_limits,
 };
 use super::super::pattern::tests::{meter, resources};
 use super::*;
@@ -106,44 +105,14 @@ pub(in crate::plan::construction::source) fn bodies(
     states: &[RuntimeCallableStateSeedId],
     contents: &[RuntimeDialogueContentPlanSeedId],
 ) {
-    for (function, handle) in plan.function_sites().iter().zip(functions) {
-        let body = match function.body() {
-            RuntimeFunctionSiteBody::Expression(expr) => RuntimeFunctionSiteBodySeed::Expression(
-                decode(expr, plan, source, &handles(states)),
-            ),
-            RuntimeFunctionSiteBody::Executable(body) => {
-                let limits = super::super::flow::tests::limits(plan);
-                let encoded = plan
-                    .encode_flow_source(body.ops(), limits, &resources(), &mut source.meter)
-                    .unwrap();
-                let prepared = super::super::flow::PreparedRuntimeFlowSource::preflight(
-                    encoded.bytes(),
-                    limits,
-                    &resources(),
-                    &mut source.meter,
-                )
-                .unwrap();
-                let expressions = handles(states);
-                let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
-                    expression: &expressions,
-                    contents,
-                    defers: &[],
-                    tasks: &[],
-                };
-                let ops = prepared
-                    .materialize(source, &flow_handles, &mut resources())
-                    .unwrap();
-                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
-                    effects: body.effects().clone(),
-                    ops: ops.into_boxed_slice(),
-                })
-            }
-        };
-        source
-            .builder
-            .define_function_site_seed(handle, body)
-            .unwrap();
-    }
+    let expressions = handles(states);
+    let flow_handles = super::super::flow::RuntimeFlowSourceHandles {
+        expression: &expressions,
+        contents,
+        defers: &[],
+        tasks: &[],
+    };
+    super::super::function_bodies::tests::restore(plan, source, functions, &flow_handles);
 }
 pub(in crate::plan::construction::source) fn finish(
     source: super::super::RuntimePlanSourceConstruction,

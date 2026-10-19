@@ -19,6 +19,7 @@ pub(in crate::plan) mod entries;
 pub(in crate::plan) mod evaluated_effects;
 pub(in crate::plan) mod expression;
 pub(in crate::plan) mod flow;
+pub(in crate::plan) mod function_bodies;
 pub(in crate::plan) mod functions;
 pub(in crate::plan) mod host_calls;
 pub(in crate::plan) mod invocations;
