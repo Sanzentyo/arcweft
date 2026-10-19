@@ -19557,3 +19557,100 @@ The two selected-key failures, R1507's 58 broader failures, real View authority,
 all fourteen request kinds, old issuer/reader deletion, Native/AWBC stop/restore,
 Native/Web capture parity and final workspace/Tier 2 acceptance remain open.
 Keep the original full goal active; there is no external blocker.
+
+### 2026-10-19 — join AWBC template assertions with original request and capture ABI
+
+This cut starts on main at `45afa5d517b5ec3d0e63a0258433360afea96854`.
+Its eleven published blobs, complete raw patch, parent/tree and freshly
+advertised origin were verified against all 3921 frozen inputs before advancing
+the baseline. Parent is `616a3e23682b3706a7bbfcb5acf58decbf139807`, tree is
+`c91df66b1907655328dd8ecf52c068a64475c74f`, and patch SHA-256 is
+`854ab9f2523323ce0f5859e312413f657f63bf306b67930f6b94f6ef4f3af6bb`.
+The same fourteen tracked and three untracked held paths remain outside this
+cut. No further clean, artifact move/copy, branch/worktree/checkout or job/profile
+change is made. The user's requested whole-workspace clean already completed
+with actual 0 at 06:32:01 UTC, removing 303332 files/371.1 GiB with no source or
+Git-state drift; subsequent validation regenerated build outputs normally.
+
+The private original-program context now resolves existing AwaitMany/Template
+assertions through that exact Source's already completed table. The decoded key
+remains inert ExpectedTaskPlanKey input. A missing/foreign key cannot fall back
+to a producer site, diagnostic name, equal metadata or another namespace. The
+join checks original endpoint kind, family, contract/site, custom request
+projection/capability/operation, actual sealed-row class, priority, scope, policy,
+argument count/name/spread, payload and argument types. Class belongs to the
+resolved completed row, independently of a shared request launch coordinate.
+The existing complete type-graph relation checks all roots and occurrence
+policies with one pair memo spanning parent and child; no key is reissued.
+
+Request kernel definition must be the original producer's generated TaskRequest
+identity. Its ordered input ownership and types correspond to the original
+Thread captures or AwaitMany capture union; the child additionally receives the
+actual item local. Duplicate captures retain first-source order and do not
+consume the merged ABI bound twice. Raw list widths, semantic work and each new
+merged slot are bounded before storage grows. Code argument/kernel role bounds
+precede claimed-key lookup. Strings charge both UTF-8 lengths before comparison.
+All checks use the caller's original meter, and every rejection poisons it while
+retaining the first resource failure. Temporary local-ID/pair work lists borrow
+the existing owners; they contain no copied request, runtime value or lease.
+
+AwaitMany also checks its original limit and exact original child row. A child
+that is independently genuine in the same namespace still cannot replace the
+parent's child. Tests construct two actual original AwaitMany groups, admit the
+replacement child alone, then reject it at the parent ChildKey boundary. The
+existing context-free AWBC-to-TaskClass mapping now uses From and all three old
+callers migrate to that same conversion; its closed mapping and wire shape do
+not change. OriginalRequestEndpoint exposes only a borrowed original operation.
+
+Ten new tests cover canonical decode and both rows; missing keys; thirteen
+independently verified metadata/capture changes; exact/prior/short/tightened and
+sticky failed work; genuine other endpoint kinds, Native and absent rows; role
+preflight before a forged key; shared capture prefixes at the exact ABI bound;
+same asserted type identity with another executable shape; independent argument
+and capture type failures after valid payloads; wrong family/base kind; and the
+genuine different child described above. The fixture has genuine sealed Source,
+verified code, request functions, frame layouts and instructions. It does not
+claim request-body equivalence, caller-register/local correlation, live producer
+execution or stop/restore. The final public switch must enforce those execution
+bindings as well as the private static row/type ABI admission prepared here.
+
+R1547 first finds three test-fixture compile errors: an inferred payload type,
+Let's expr field and the sequence-kind owner. R1548 catalogs 1983 cases. R1549
+runs all of them: 1973 pass, eight new fixture failures and the two retained
+selected-key failures. The fixture's entry blocks incorrectly used Return safe
+points; they now use CallableBoundary. R1550 catalogs 1985 cases; R1551 runs
+1982 pass/three fail, including one new fixture that reused a by-value register.
+That fixture now performs actual CopyValue into a distinct register and retains
+the verifier's unique-operand rule. No production verifier/assertion is weakened.
+
+R1553 catalogs all 1985 Core/RuntimePlan library and awbc_product_parity cases,
+zero exclusions. R1554 executes them all: actual nextest 100, 1983 pass/two fail,
+zero skip, 21.747s. All ten additions pass; terminal names and all 3923 source
+hashes match with zero held drift. Its exact failure set equals R1544:
+`native_selected_need_uses_the_completed_program_task_plan_key` and
+`decoded_awbc_selected_need_uses_the_completed_program_task_plan_key`.
+R1555 all-target/all-feature locked Core Clippy passes, actual 0, 48.27s, with
+warnings including private preparation and cohesive-function/style warnings;
+no -D warnings pass is claimed. R1556 canonical structural gate passes, actual 0.
+Changed-file rustfmt and whitespace checks pass. This task note follows the
+terminal Rust audit; no tested Rust changes follow it. No fresh full workspace,
+complete reverse execution, doctest or Tier 2 pass is claimed.
+
+Canonical bytes/physical LOC are template admission 20112/561 and child tests
+31976/879, Source facade 5339/142, program context 4931/140, original function
+source 36915/937 and existing AWBC schema 125388/3863. The new >300-line owners
+remain cohesive: one ordered original-row/request/capture/type join and its
+real original/code fixture plus boundary assertions. The bounded pending pairs
+and capture union are algorithm state, not another catalog or authority. The
+schema keeps its existing typed grammar; only its owning conversion changes.
+No I/O, unsafe, dependency, public wire field or provisional public task row is
+added. All 99 manifest/lock inputs and the retained 53-package reverse closure
+remain unchanged. Private Core owners and their existing Core/RuntimePlan
+consumers are selected here; final public-switch acceptance remains broader.
+
+Continue with mandatory checked Source/execution binding and the missing
+selected-row assertion in the complete public switch. Real View authority,
+all fourteen request kinds, old issuer/reader deletion, the two selected-key
+failures, R1507's 58 broader failures, Native/AWBC stop/restore, Native/Web capture
+parity and final workspace/Tier 2 acceptance remain open. Keep the original full
+goal active; this coherent publication is private preparation, not completion.

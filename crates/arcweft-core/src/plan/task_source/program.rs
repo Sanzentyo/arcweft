@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 mod host;
 pub(crate) use host::{RuntimeAwbcHostSourceError, RuntimeAwbcHostSourceField};
+mod template;
 mod types;
+pub(crate) use template::{RuntimeAwbcTemplateSourceError, RuntimeAwbcTemplateSourceField};
 
 #[cfg(test)]
 mod tests;

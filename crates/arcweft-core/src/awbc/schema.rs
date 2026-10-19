@@ -2918,7 +2918,7 @@ impl AwbcTaskPlan {
             AwbcTaskPolicy::AlwaysStart => crate::task::TaskPolicy::AlwaysStart,
         };
         if handle.producer() != &expected
-            || handle.class() != &awbc_task_class(self.class)
+            || handle.class() != &crate::task::TaskClass::from(self.class)
             || handle.priority() != crate::task::TaskPriority(self.priority)
             || program
                 .strings
@@ -2954,7 +2954,7 @@ impl AwbcTaskPlan {
         let spec = TaskSpec {
             generation,
             producer: NeedProducerInstance::try_from(&input).map_err(|error| error.to_string())?,
-            class: awbc_task_class(self.class),
+            class: self.class.into(),
             priority: crate::task::TaskPriority(self.priority),
             cancel_scope: crate::task::CancelScopeId(
                 program
@@ -3061,7 +3061,7 @@ impl AwbcTaskPlan {
                 }
                 AwbcTaskRestartPolicy::Restartable => crate::task::HostRestartPolicy::Restartable,
             },
-            awbc_task_class(self.class),
+            self.class.into(),
             crate::task::TaskPriority(self.priority),
             crate::task::CancelScopeId(string(self.cancel_scope)?),
         )
@@ -3070,21 +3070,23 @@ impl AwbcTaskPlan {
     }
 }
 
-const fn awbc_task_class(class: AwbcTaskClass) -> crate::task::TaskClass {
-    match class {
-        AwbcTaskClass::LocalView => crate::task::TaskClass::LocalView,
-        AwbcTaskClass::Io => crate::task::TaskClass::Io,
-        AwbcTaskClass::Cpu => crate::task::TaskClass::Cpu,
-        AwbcTaskClass::GpuPrepare => crate::task::TaskClass::GpuPrepare,
-        AwbcTaskClass::ShaderCompile => crate::task::TaskClass::ShaderCompile,
-        AwbcTaskClass::WasmCall => crate::task::TaskClass::WasmCall,
-        AwbcTaskClass::AssetDecode => crate::task::TaskClass::AssetDecode,
-        AwbcTaskClass::AudioDecode => crate::task::TaskClass::AudioDecode,
-        AwbcTaskClass::AudioRender => crate::task::TaskClass::AudioRender,
-        AwbcTaskClass::TtsSynthesis => crate::task::TaskClass::TtsSynthesis,
-        AwbcTaskClass::BgmPrecompose => crate::task::TaskClass::BgmPrecompose,
-        AwbcTaskClass::Lsp => crate::task::TaskClass::Lsp,
-        AwbcTaskClass::Background => crate::task::TaskClass::Background,
+impl From<AwbcTaskClass> for crate::task::TaskClass {
+    fn from(class: AwbcTaskClass) -> Self {
+        match class {
+            AwbcTaskClass::LocalView => crate::task::TaskClass::LocalView,
+            AwbcTaskClass::Io => crate::task::TaskClass::Io,
+            AwbcTaskClass::Cpu => crate::task::TaskClass::Cpu,
+            AwbcTaskClass::GpuPrepare => crate::task::TaskClass::GpuPrepare,
+            AwbcTaskClass::ShaderCompile => crate::task::TaskClass::ShaderCompile,
+            AwbcTaskClass::WasmCall => crate::task::TaskClass::WasmCall,
+            AwbcTaskClass::AssetDecode => crate::task::TaskClass::AssetDecode,
+            AwbcTaskClass::AudioDecode => crate::task::TaskClass::AudioDecode,
+            AwbcTaskClass::AudioRender => crate::task::TaskClass::AudioRender,
+            AwbcTaskClass::TtsSynthesis => crate::task::TaskClass::TtsSynthesis,
+            AwbcTaskClass::BgmPrecompose => crate::task::TaskClass::BgmPrecompose,
+            AwbcTaskClass::Lsp => crate::task::TaskClass::Lsp,
+            AwbcTaskClass::Background => crate::task::TaskClass::Background,
+        }
     }
 }
 

@@ -247,6 +247,15 @@ impl<'a> OriginalRequestEndpoint<'a> {
         }
     }
 
+    /// Borrows the actual source operation; local/register correspondence must
+    /// never be inferred from a copied request or a diagnostic label.
+    pub(in crate::plan) const fn operation(&self) -> Option<&'a plan::FlowOp> {
+        match self.source {
+            ProducerEndpointSource::Operation(operation) => Some(operation),
+            ProducerEndpointSource::FunctionRoot(_) => None,
+        }
+    }
+
     pub(crate) const fn request_source(&self) -> super::request::RuntimeTaskRequestSource {
         match self.source {
             ProducerEndpointSource::FunctionRoot(_) => {
