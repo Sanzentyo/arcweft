@@ -331,7 +331,7 @@ impl<T> crate::value::RuntimePlaceStorage<T> {
 #[serde(try_from = "EffectInstantiationWire", into = "EffectInstantiationWire")]
 pub struct RuntimeFunctionEffectInstantiation {
     context: RuntimeSemanticTypeId,
-    effects: Box<[crate::effect_row::EffectSet]>,
+    effects: std::sync::Arc<[crate::effect_row::EffectSet]>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -378,7 +378,7 @@ impl TryFrom<EffectInstantiationWire> for RuntimeFunctionEffectInstantiation {
             .collect::<Result<Box<[_]>, _>>()?;
         Ok(Self {
             context: value.context,
-            effects,
+            effects: effects.into(),
         })
     }
 }
@@ -394,7 +394,10 @@ impl RuntimeFunctionEffectInstantiation {
         context: RuntimeSemanticTypeId,
         effects: Box<[crate::effect_row::EffectSet]>,
     ) -> Self {
-        Self { context, effects }
+        Self {
+            context,
+            effects: effects.into(),
+        }
     }
 
     /// Charges the retained declaration solution before matching or copying its
@@ -407,7 +410,7 @@ impl RuntimeFunctionEffectInstantiation {
     ) -> Result<(), crate::entry::RuntimeSchemaError> {
         work.charge(depth)?;
         budget.collection(self.effects.len())?;
-        for row in &self.effects {
+        for row in self.effects.iter() {
             work.charge(depth + 1)?;
             budget.collection(row.len())?;
             for effect in row.iter() {
@@ -839,7 +842,7 @@ impl<A: FunctionTypeAuthority> ParameterMatcher<'_, A> {
             .collect::<Option<Box<[_]>>>()?;
         Some(RuntimeFunctionEffectInstantiation {
             context: program.semantic(context)?,
-            effects,
+            effects: effects.into(),
         })
     }
 }

@@ -21,7 +21,6 @@ pub struct RuntimeNeedProducerStart<V = RuntimeValue, P = RuntimePayload> {
     pub(super) arguments: Vec<NeedProducerRuntimeArgument<V>>,
     pub(super) task_spec: TaskSpec<P>,
     pub(super) restart: HostRestartPolicy,
-    pub(super) binding: Option<RuntimeFunctionEffectInstantiation>,
 }
 
 impl<V: PartialEq, P: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P> {
@@ -30,7 +29,6 @@ impl<V: PartialEq, P: PartialEq> PartialEq for RuntimeNeedProducerStart<V, P> {
             && self.arguments == other.arguments
             && self.task_spec == other.task_spec
             && self.restart == other.restart
-            && self.binding == other.binding
     }
 }
 
@@ -51,7 +49,7 @@ impl<V, P> RuntimeNeedProducerStart<V, P> {
         self.restart
     }
     pub(crate) fn binding(&self) -> Option<&RuntimeFunctionEffectInstantiation> {
-        self.binding.as_ref()
+        self.producer.binding()
     }
 }
 
@@ -95,7 +93,6 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
             arguments,
             task_spec,
             restart: metadata.restart(),
-            binding: binding.cloned(),
         })
     }
 
@@ -112,7 +109,6 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
             arguments,
             task_spec,
             restart: self.metadata.restart(),
-            binding,
         })
     }
 
@@ -158,7 +154,7 @@ impl<V: RuntimeStoredValue, P: RuntimeStoredValue> RuntimeNeedProducerStart<V, P
                 .prepare_selected_producer(self.source().program(), admission)
                 .map_err(AwbcRuntimeValueSnapshotError::from)?;
             let canonical = prepared
-                .producer_spec(&self.arguments, self.binding.as_ref())
+                .producer_spec(&self.arguments, self.binding())
                 .map_err(AwbcRuntimeValueSnapshotError::from)?;
             if !canonical.same_instance_contract(&self.producer)
                 || self.restart != prepared.metadata.restart()
@@ -187,7 +183,6 @@ impl Clone for SavedStart {
             arguments: self.arguments.clone(),
             task_spec: self.task_spec.clone(),
             restart: self.restart,
-            binding: self.binding.clone(),
         }
     }
 }
@@ -215,7 +210,6 @@ impl RuntimeNeedProducerStart {
                 &owner,
             )?,
             restart: self.restart,
-            binding: self.binding.clone(),
         })
     }
 }
@@ -239,7 +233,6 @@ impl SavedStart {
                 .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
             task_spec: self.task_spec.into_admitted_live(&owner)?,
             restart: self.restart,
-            binding: self.binding,
         })
     }
 }

@@ -19,6 +19,8 @@ pub enum TaskIdentityKind {
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum TaskIdentityError {
+    #[error("producer invocation metadata exceeds the version-one identity count domain")]
+    InvocationLengthOverflow,
     #[error("fixed task identity {kind:?} must not be all zero")]
     Zero { kind: TaskIdentityKind },
     #[error("task policy tag {0} is not assigned in version 1")]

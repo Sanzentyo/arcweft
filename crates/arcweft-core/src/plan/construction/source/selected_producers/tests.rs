@@ -101,6 +101,16 @@ pub(in crate::plan) fn fixture(
     restart: HostRestartPolicy,
     class: TaskClass,
 ) -> RuntimePlan {
+    fixture_with_contract(request, policy, restart, class, None)
+}
+
+pub(in crate::plan) fn fixture_with_contract(
+    request: u8,
+    policy: TaskPolicy,
+    restart: HostRestartPolicy,
+    class: TaskClass,
+    function_contract: Option<RuntimeFunctionTypeContract>,
+) -> RuntimePlan {
     let contract = NeedProducerContractDigest::from_bytes([0x61; 32]);
     let role = |tag| RuntimeRequestRoleIdentity::from_accepted_identity([tag; 32]);
     let (projection, types, arguments) = match request {
@@ -186,7 +196,35 @@ pub(in crate::plan) fn fixture(
             [],
         )
         .unwrap();
-    let function = reserve_executable_function(&mut builder, 0x66, &[], 0, unit());
+    let function = if let Some(contract) = function_contract {
+        let context = RuntimeSemanticTypeId::from_bytes([0x69; 32]);
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    context,
+                    RuntimePlanTypeProjection::Function {
+                        contract,
+                        parameters: Box::new([]),
+                        result: unit(),
+                    },
+                )],
+                [],
+            )
+            .unwrap();
+        builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                definition: RuntimeFunctionDefinitionIdentity::from_accepted_identity([0x66; 32]),
+                role: RuntimeFunctionSemanticRole::Ordinary,
+                function_type: Some(context),
+                inputs: Box::new([]),
+                result: unit(),
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .unwrap()
+    } else {
+        reserve_executable_function(&mut builder, 0x66, &[], 0, unit())
+    };
     let coordinate = builder
         .task_plan_construction()
         .reserve_original_source()

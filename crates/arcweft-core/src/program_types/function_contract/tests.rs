@@ -29,7 +29,7 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
     ];
     let binding = RuntimeFunctionEffectInstantiation {
         context: semantic,
-        effects: Box::new([crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()]),
+        effects: vec![crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()].into(),
     };
     let limits = RuntimeSchemaLimits::engine_default();
     assert_eq!(
@@ -234,7 +234,7 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     let io = crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap();
     let binding = |effects| RuntimeFunctionEffectInstantiation {
         context: id(6),
-        effects: Box::new([effects]),
+        effects: vec![effects].into(),
     };
     let destination = binding(empty.clone());
     let source = binding(io);
@@ -360,7 +360,7 @@ fn nominal_origin_is_independent_of_destination_effect_bindings() {
     ));
     let malformed = RuntimeFunctionEffectInstantiation {
         context: id(6),
-        effects: Box::new([]),
+        effects: Vec::new().into(),
     };
     assert!(!matches(Some(&destination), Some(&malformed)));
 
@@ -460,11 +460,11 @@ fn partial_nominal_places_correlate_original_rows_and_independent_effect_origins
     };
     let empty = RuntimeFunctionEffectInstantiation {
         context: id(6),
-        effects: Box::new([crate::effect_row::EffectSet::new()]),
+        effects: vec![crate::effect_row::EffectSet::new()].into(),
     };
     let io = RuntimeFunctionEffectInstantiation {
         context: id(6),
-        effects: Box::new([crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()]),
+        effects: vec![crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()].into(),
     };
     let storage = |semantic, layout, origin: Option<&RuntimeFunctionEffectInstantiation>| {
         serde_json::from_value::<RuntimePlaceStorage<AwbcRuntimeValueSnapshot>>(serde_json::json!({
@@ -716,7 +716,7 @@ fn callback_local_type_and_length_binders_preserve_rigid_identity() {
     ) -> bool {
         let binding = RuntimeFunctionEffectInstantiation {
             context,
-            effects: Box::new([effects]),
+            effects: vec![effects].into(),
         };
         let mut matcher = binding.matcher(program).unwrap();
         let environment = matcher.parameters.clone();
@@ -1134,7 +1134,7 @@ fn shared_effect_bindings_reject_jointly_incompatible_callback_variance() {
 
     let fixed = |effects| RuntimeFunctionEffectInstantiation {
         context: program.runtime_types[6].semantic_identity(),
-        effects: vec![effects].into_boxed_slice(),
+        effects: vec![effects].into(),
     };
     let relates = |binding: &RuntimeFunctionEffectInstantiation, expected, actual| {
         let mut matcher = binding.matcher(&program).unwrap();
@@ -1168,7 +1168,7 @@ fn shared_effect_bindings_reject_jointly_incompatible_callback_variance() {
     assert!(
         !RuntimeFunctionEffectInstantiation {
             context: program.runtime_types[6].semantic_identity(),
-            effects: Box::new([]),
+            effects: Vec::new().into(),
         }
         .is_valid_with_work(
             &program,

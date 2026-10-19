@@ -221,6 +221,10 @@ pub struct NeedProducerSpec<Plan = TaskPlanSemanticDigest> {
     producer_site: NeedProducerSiteDigest,
     payload_type: RuntimeTypeSemanticDigest,
     arguments: RuntimeValueDigest,
+    // Only Source admission supplies this live declaration solution. A
+    // digest-only Serde specification cannot construct an invocation binding.
+    #[serde(skip)]
+    binding: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
 }
 
 impl NeedProducerSpec {
@@ -240,6 +244,7 @@ impl NeedProducerSpec {
             producer_site,
             payload_type,
             arguments,
+            binding: None,
         }
     }
 
@@ -266,7 +271,39 @@ impl<Plan> NeedProducerSpec<Plan> {
         hasher.update(self.producer_site.as_bytes());
         hasher.update(self.payload_type.as_bytes());
         hasher.update(self.arguments.as_bytes());
+        match &self.binding {
+            None => {
+                hasher.update(&[0]);
+            }
+            Some(binding) => {
+                hasher.update(&[1]);
+                hasher.update(b"arcweft.need.producer-invocation.v1\0");
+                hasher.update(binding.context().as_bytes());
+                let rows = binding.source_rows();
+                let count = u64::try_from(rows.len())
+                    .map_err(|_| TaskIdentityError::InvocationLengthOverflow)?;
+                hasher.update(&count.to_le_bytes());
+                for row in rows {
+                    let count = u64::try_from(row.len())
+                        .map_err(|_| TaskIdentityError::InvocationLengthOverflow)?;
+                    hasher.update(&count.to_le_bytes());
+                    for effect in row.iter() {
+                        let bytes = effect.as_str().as_bytes();
+                        let length = u64::try_from(bytes.len())
+                            .map_err(|_| TaskIdentityError::InvocationLengthOverflow)?;
+                        hasher.update(&length.to_le_bytes());
+                        hasher.update(bytes);
+                    }
+                }
+            }
+        }
         NeedProducerInstanceKey::try_from_bytes(*hasher.finalize().as_bytes())
+    }
+
+    pub(crate) fn binding(
+        &self,
+    ) -> Option<&crate::program_types::RuntimeFunctionEffectInstantiation> {
+        self.binding.as_ref()
     }
 
     pub const fn family(&self) -> NeedProducerFamily {
@@ -308,6 +345,7 @@ impl NeedProducerSpec<crate::plan::task_source::RuntimeTaskSource> {
             && self.producer_site == other.producer_site
             && self.payload_type == other.payload_type
             && self.arguments == other.arguments
+            && self.binding == other.binding
     }
 }
 

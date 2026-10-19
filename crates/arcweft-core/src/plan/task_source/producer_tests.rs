@@ -466,6 +466,72 @@ fn source_bound_zero_argument_specs_require_original_invocation_binding() {
 }
 
 #[test]
+fn source_bound_zero_argument_invocations_keep_distinct_effect_instance_keys() {
+    use crate::effect_row::{EffectFormula, EffectPredicate, EffectSet};
+    use crate::plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder};
+    use crate::program_types::RuntimeFunctionEffectInstantiation;
+
+    let plan = Arc::new(selected_producers::tests::fixture_with_contract(
+        3,
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::MustBeQuiescent,
+        TaskClass::Io,
+        Some(RuntimeFunctionTypeContract::new(
+            RuntimeTypeBinder::new(0, 0, 1),
+            EffectPredicate::unconstrained(),
+            EffectFormula::empty(),
+        )),
+    ));
+    let source = borrow_source(&plan);
+    let function = plan
+        .function_sites()
+        .get(source.request_endpoint().function_id())
+        .unwrap();
+    let context = plan
+        .type_table()
+        .get(function.function_type().unwrap())
+        .unwrap()
+        .semantic_identity();
+    let first_binding =
+        RuntimeFunctionEffectInstantiation::from_source_rows(context, Box::new([EffectSet::new()]));
+    let second_binding = RuntimeFunctionEffectInstantiation::from_source_rows(
+        context,
+        Box::new([EffectSet::from_labels(["io.read"]).unwrap()]),
+    );
+    let start = |binding: &RuntimeFunctionEffectInstantiation| {
+        source
+            .selected_start(
+                &source_program(&plan),
+                crate::task::GenerationId::new(7),
+                Vec::new(),
+                Some(binding),
+                &mut admission(&plan, RuntimeSchemaLimits::engine_default()),
+            )
+            .unwrap()
+    };
+    let first = start(&first_binding);
+    let repeated = start(&first_binding);
+    let second = start(&second_binding);
+    assert_eq!(
+        first.source().task_plan().key(),
+        second.source().task_plan().key()
+    );
+    assert_eq!(first.producer().arguments(), second.producer().arguments());
+    assert_eq!(first.task_spec().request, second.task_spec().request);
+    assert_eq!(first.binding(), Some(&first_binding));
+    assert_eq!(second.binding(), Some(&second_binding));
+    assert_eq!(
+        first.task_spec().producer.key(),
+        repeated.task_spec().producer.key()
+    );
+    assert_ne!(
+        first.task_spec().producer.key(),
+        second.task_spec().producer.key()
+    );
+    assert!(!first.producer().same_instance_contract(second.producer()));
+}
+
+#[test]
 fn source_bound_selected_specs_share_exact_original_work_and_keep_first_failure() {
     let plan = fixture(2);
     let source = borrow_source(&plan);

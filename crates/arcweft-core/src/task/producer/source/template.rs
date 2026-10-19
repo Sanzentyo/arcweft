@@ -283,6 +283,7 @@ impl RuntimeTaskSourceRef<'_> {
             producer_site: producer.producer_site,
             payload_type: producer.payload_type,
             arguments: digest,
+            binding: binding.cloned(),
         })
     }
 }

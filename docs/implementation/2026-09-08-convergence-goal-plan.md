@@ -20610,3 +20610,68 @@ Source switch, genuine backend/standalone owners and their complete consumers,
 then the remaining Presentation ABI and the other recorded full acceptance.
 The active overall goal remains incomplete; final reverse/workspace, strict
 warnings, Tier2 and actual Native/Web acceptance are still required.
+### 2026-10-20 — producer owns its invocation effect binding
+
+Inspected main at `fc523a046167b6093f867cae5eb0759eda367909`, matching the
+previously verified advertised origin/main. The Flow and fixture checkpoints
+are published and their baseline has advanced with zero drift. This cut owns
+nine Core Rust paths, the scheduling contract paragraph and this note; fourteen
+tracked and three untracked held paths remain untouched. The prior goal turn
+made progress through those publications and actual validation. The overall
+convergence goal remains active, not complete or blocked.
+
+The current Need Start retained a declaration effect binding independently of
+its producer specification, while the instance-key transcript omitted that
+binding entirely. Producer specifications now own the single binding and Start /
+inert rollback read it through that owner. Selected, host and template Source
+factories copy it only after their existing original-owner, declaration and
+resource admission. The identity transcript remains version 1 and now includes
+an absent/present discriminant plus the original function semantic context and
+canonical ordered effect rows, using fixed little-endian u64 counts. Equality
+for joining includes the same binding. TaskSpec receives the identity derived
+from that complete specification. No fallback Source, fake function body,
+extra quota, compatibility reader or version increment is introduced.
+
+The old digest-spec Serde role cannot supply this live invocation metadata:
+the binding is excluded from that representation. Source-bearing live specs
+still have no Source Serde issuer; their inert rollback retains the admitted
+producer metadata directly. The underlying immutable effect rows now share an
+Arc slice, keeping metadata copies used in canonical retained validation from
+deep-copying effect sets. Its existing inert wire grammar, scope checks and
+resource counts are unchanged. This is ownership evidence, not a runtime
+latency benchmark claim; no value-copy/capture/batch/fusion/budget condition is
+relaxed.
+
+A real Source fixture can declare an actual zero-argument FunctionSite with an
+effect binder and an executable StartNeedProducer body. The new case admits two
+valid binding solutions for the same original Source, same empty arguments and
+same projected request, checks repeatable identity for the same binding, and
+requires different actual TaskSpec producer keys for different bindings. It
+does not substitute a metadata plan or a NoOp for the original source body.
+
+R1638 catalogue construction failed with exit 101 because a fixture argument
+was shadowed by its request contract local; no runtime tests ran. The fixture
+name is corrected. R1639 then compiled/catalogued 1879 Core library cases and
+selected 35 exact Source/producer/identity cases, adding exactly this one case.
+R1640 passed all 35 (0.271s, exit 0; 1844 intentionally filtered). Both original
+binding rejection cases remain selected and pass. Terminal case keys and all
+3929 inputs match that freeze, with held drift zero. Those passes precede the
+Arc-row storage and Serde-role refinements and are not relabeled as current
+whole-owner acceptance. R1641 subsequently failed catalogue construction with
+exit 101: seven test-only Box-array-to-Arc-slice conversions required explicit
+Vec-to-Arc construction. They are corrected. The failed build remained an
+investigation command while those test constructors changed; it is not execution
+acceptance. Current Core/RuntimePlan execution and current Clippy/structure
+checks remain pending for this intermediate checkpoint.
+
+This makes invocation identity complete on the existing Source-admitted path;
+it does not complete invocation-sensitive Ready validation. The current raw
+TaskSpec/NeedProducerInstance defaults still discard the Source lease needed
+by host outcome binding. Continue the final typed Source/instance public switch
+and migrate the owning outcome context and all consumers together; do not add a
+state-only validation helper that leaves host, construction and restore on a
+separate contract. Genuine autonomous AWBC/standalone host owners, all fourteen
+request families, complete retained View operation/slot/capture authority,
+compiler Presentation ABI and all previously recorded final acceptance remain
+required. No additional clean, artifact move/copy, branch/worktree/checkout,
+Cargo edge, jobs/profile/OS setting, ignore or assertion weakening is introduced.

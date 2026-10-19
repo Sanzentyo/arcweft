@@ -128,6 +128,7 @@ impl PreparedRuntimeSelectedProducer<'_, '_> {
                 *self.metadata.payload_type().as_bytes(),
             ),
             arguments,
+            binding: binding.cloned(),
         })
     }
 }
@@ -337,6 +338,7 @@ impl RuntimeTaskSourceRef<'_> {
             producer_site: target.producer.site,
             payload_type: crate::task::RuntimeTypeSemanticDigest::from_bytes(*payload.as_bytes()),
             arguments,
+            binding: binding.cloned(),
         })
     }
 }
