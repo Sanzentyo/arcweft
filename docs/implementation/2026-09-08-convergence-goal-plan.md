@@ -18580,3 +18580,41 @@ that authority. The two R1349 selected-Need integration failures remain open and
 were not rerun here. Full reverse/default acceptance, registry lifetime, failed-
 atomic restore/replacement, retained View and Native/Web display acceptance also
 remain open. The full goal remains active.
+
+### 2026-10-19 — Current selected-Need key failure baseline
+
+Inspected existing main and origin/main at
+`c9d60c8eaddf488bcf968298a322cd6667b2696e`, parent
+`97be265547507ba666738f58aa6387bbc4c763f0`, tree
+`266703ba9bc60c877bb78b391eba1d931d79b711`. Fresh remote/advertised head,
+published and working blobs, and the raw binary/full-index patch match the
+prepared eight-path codec replacement; patch SHA-256 is
+`e890125dbada615df5bd729208857e2ab6adf5dd91b76b93cc6b1bafc1a386ae`.
+The old reader is absent locally and remotely, the index is empty, and the
+baseline now contains 3906 surviving inputs. Fourteen held tracked plus three
+held untracked paths remain excluded and untouched.
+
+R1437 builds the current RuntimePlan awbc_product_parity integration binary,
+actual 0, Cargo reports 2m02s. Its inspected catalog contains ten cases, with
+exactly the two intended completed-key cases selected and eight excluded by
+the explicit filter. R1438 runs precisely those two: actual 100, zero pass,
+two fail, eight skipped, 0.031s. Both
+native_selected_need_uses_the_completed_program_task_plan_key and
+decoded_awbc_selected_need_uses_the_completed_program_task_plan_key still fail
+their original completed F/Q/C key assertions. The terminal audit matches the
+exact failure set and all 3906 frozen inputs with zero drift. This is fresh
+current failure evidence, separate from the passing Core library suite.
+
+The actual Native start path authenticates target.task_plan() against its plan,
+then passes only static request metadata/arguments into inspect_start_visit.
+The registry's prepare_start_decision subsequently calls producer_spec, whose
+borrowed producer construction uses the request-only semantic_digest. AWBC
+rebuilds the same static request metadata from its row and enters that same
+registry path without the complete original task Source. These are the concrete
+remaining producer/consumer joins. Replace that competing issuer with the real
+completed original Task authority and carry the original Source through the
+artifact path, preserving actual program identity during restore. Do not copy
+an expected key into a specification or fabricate an original program/scope.
+Continue the complete fourteen-family public switch and the other retained
+View/registry/restore/display acceptance already recorded. No full reverse,
+AWBC completed-key, or full-goal success is claimed. The goal remains active.
