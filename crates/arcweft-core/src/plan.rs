@@ -37,6 +37,7 @@ mod pure_programs;
 pub(crate) mod sequence_sum;
 pub use pure_programs::RuntimePureProgramLookupError;
 mod task_semantic;
+pub(crate) mod task_source;
 mod type_kind;
 pub(crate) use type_kind::RuntimeSequenceMutation;
 mod type_scope;

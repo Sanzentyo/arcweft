@@ -83,6 +83,22 @@ impl RuntimeTaskPlanBuildCoordinate {
 }
 
 impl RuntimeTaskPlanCoordinateOwner {
+    /// Projects the already completed namespace of this exact original slot.
+    /// Equal key bytes or rows in another program do not transfer ownership.
+    pub(in crate::plan) fn from_completed(
+        coordinate: &RuntimeTaskPlanBuildCoordinate,
+        task: crate::plan::RuntimeTaskPlanRef<'_>,
+    ) -> Option<Self> {
+        let semantics = coordinate.issuer.sealed_tasks.get()?;
+        if coordinate.resolve_in(semantics)? != task {
+            return None;
+        }
+        Some(Self {
+            issuer: Arc::clone(&coordinate.issuer),
+            rows: u32::try_from(semantics.task_plans.len()).ok()?,
+        })
+    }
+
     pub(super) fn new(issuer: Arc<RuntimePlanConstructionIssuer>, rows: u32) -> Self {
         Self { issuer, rows }
     }

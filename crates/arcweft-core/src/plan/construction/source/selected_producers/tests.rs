@@ -95,7 +95,7 @@ fn body(start: RuntimeFlowOpSeed) -> RuntimeFunctionSiteBodySeed {
         ]),
     })
 }
-fn fixture(
+pub(in crate::plan) fn fixture(
     request: u8,
     policy: TaskPolicy,
     restart: HostRestartPolicy,

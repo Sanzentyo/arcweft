@@ -150,6 +150,21 @@ impl<'a> OriginalRequestEndpoint<'a> {
         limits: plan::RuntimeTaskPlanSealLimits,
         visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
     ) -> Result<(), RuntimeBodySemanticError> {
+        Self::visit_endpoints(owner, source, meter, limits, &mut |endpoint, meter| {
+            if endpoint.task_source().is_some() {
+                visitor(endpoint, meter)?;
+            }
+            Ok(())
+        })
+    }
+
+    fn visit_endpoints(
+        owner: OriginalRequestOwner<'a>,
+        source: OriginalFunctionSource<'a>,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+        visitor: &mut impl FnMut(Self, &mut TaskSemanticMeter) -> Result<(), RuntimeBodySemanticError>,
+    ) -> Result<(), RuntimeBodySemanticError> {
         Self::preflight_function_source(&source, meter, limits)?;
         let RuntimeFunctionSiteBody::Executable(body) = source.body else {
             return Ok(());
@@ -167,9 +182,7 @@ impl<'a> OriginalRequestEndpoint<'a> {
                         ordinal,
                         kind: *kind,
                     };
-                    if endpoint.task_source().is_some() {
-                        visitor(endpoint, meter)?;
-                    }
+                    visitor(endpoint, meter)?;
                     ordinal = ordinal
                         .checked_add(1)
                         .ok_or(TaskSemanticEncodingError::ArithmeticOverflow)?;
@@ -553,6 +566,71 @@ impl<'a> OriginalRequestEndpoint<'a> {
 }
 
 impl<'a> RuntimeBodySemanticContext<'a> {
+    /// Borrows the request grammar from its actual immutable function. Sealing
+    /// already proved F; source lookup does not hash or issue that proof again.
+    pub(in crate::plan) fn original_request_endpoint(
+        &self,
+        function: crate::runtime_id::RuntimeFunctionSiteId,
+        request: super::request::RuntimeTaskRequestSource,
+        task_owner: &RuntimeTaskPlanCoordinateOwner,
+        meter: &mut TaskSemanticMeter,
+        limits: plan::RuntimeTaskPlanSealLimits,
+    ) -> Result<Option<OriginalRequestEndpoint<'a>>, RuntimeBodySemanticError> {
+        meter.charge_work(1)?;
+        let result = (|| {
+            let site = self.plan.function_sites().get(function).ok_or(
+                RuntimeBodySemanticError::MissingRow {
+                    table: "function sites",
+                    ordinal: function.get().get() as usize - 1,
+                },
+            )?;
+            let source = OriginalFunctionSource {
+                function,
+                body: site.body(),
+                inputs: site.inputs(),
+            };
+            let owner = OriginalRequestOwner::Inventory(self.plan);
+            match request {
+                super::request::RuntimeTaskRequestSource::FunctionRoot => {
+                    OriginalRequestEndpoint::preflight_function_source(&source, meter, limits)?;
+                    Ok(Some(OriginalRequestEndpoint {
+                        owner,
+                        function_id: function,
+                        source: ProducerEndpointSource::FunctionRoot(source.inputs),
+                        ordinal: 0,
+                        kind: EndpointKind::FunctionRoot,
+                    }))
+                }
+                super::request::RuntimeTaskRequestSource::Operation(ordinal) => {
+                    let mut found = None;
+                    OriginalRequestEndpoint::visit_endpoints(
+                        owner,
+                        source,
+                        meter,
+                        limits,
+                        &mut |endpoint, _| {
+                            if endpoint
+                                .task_source()
+                                .is_some_and(|source| !task_owner.contains(source.coordinate()))
+                            {
+                                return Err(RuntimeBodySemanticError::ForeignTaskCoordinate);
+                            }
+                            if endpoint.ordinal == ordinal {
+                                found = Some(endpoint);
+                            }
+                            Ok(())
+                        },
+                    )?;
+                    Ok(found)
+                }
+            }
+        })();
+        if result.is_err() {
+            meter.reject_owner();
+        }
+        result
+    }
+
     /// Projects metadata from one exact original source reference. This does
     /// not hash a body or issue a completed F/Q digest.
     #[cfg(test)]

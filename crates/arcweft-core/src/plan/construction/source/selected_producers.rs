@@ -4,7 +4,7 @@
 mod encoding;
 mod reading;
 #[cfg(test)]
-mod tests;
+pub(in crate::plan) mod tests;
 
 use super::RuntimePlanSourceConstruction;
 use super::expression::{RuntimeExpressionSourceError, RuntimeExpressionSourceLimits};

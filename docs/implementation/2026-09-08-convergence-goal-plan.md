@@ -18618,3 +18618,53 @@ an expected key into a specification or fabricate an original program/scope.
 Continue the complete fourteen-family public switch and the other retained
 View/registry/restore/display acceptance already recorded. No full reverse,
 AWBC completed-key, or full-goal success is claimed. The goal remains active.
+
+### 2026-10-19 — Borrow completed Tasks through their actual original Source
+
+Inspected existing main and origin/main at
+`2e5ab407428ad69a629988058a40f429b5d4c6f2`. Seven owned Core paths, including
+two new private source modules, remain separate from fourteen held tracked and
+three held untracked paths. No manifest, lockfile, branch or checkout changes.
+
+RuntimeTaskSourceRef borrows the issued Task row and actual request endpoint
+from the same immutable RuntimePlan. The completed coordinate-owner projection
+authenticates pointer identity against the issuing table; equal E/key bytes in
+another program do not transfer ownership. The function owner reuses the bounded
+endpoint traversal and actual metadata without cloning values, issuing another
+Task key or recomputing F. Function-root and operation sources retain their
+distinct grammar. An endpoint naming another Task coordinate is rejected.
+
+Actual Host Immediate/Suspend and three selected-request fixtures prove row and
+metadata pointer identity. Foreign equal-key and unsealed coordinates fail
+without producing a source. Exact work succeeds with zero new transcript bytes;
+one-less work, a tightened original byte bank and zero seal work retain their
+first resource error across retries. A precharged original transcript is
+preserved. Test-only fixture visibility changes remain within the plan owner.
+
+R1439 Core all-target/all-feature locked Clippy passes, actual 0, 35.91s. R1440
+catalog and R1441 execute the earlier function-rehash implementation: 1791 pass,
+zero skipped, actual 0, 20.480s. Those receipts remain historical evidence.
+After replacing rehashing with the completed-row borrow, R1442 matching Core
+Clippy passes, actual 0, Cargo reports 20.02s. R1443 builds and inspects all five
+selected library catalogs: 2306 matches, zero excluded, actual 0. R1444 executes
+exactly that set: 2306 pass, zero fail/skip, actual 0, 25.808s. Terminal audit
+matches every selected name and all 3908 frozen inputs with zero drift.
+
+Resolved Core reverse closure remains 53 packages; all 99 manifest/lock inputs
+are unchanged. The five-library slice covers Core, RuntimePlan, bundle, project
+loader and runtime driver. This private API has no cross-crate caller or wire
+change; the slice is not full reverse-dependency or workspace acceptance.
+Changed-file rustfmt and diff checks pass. R1445 canonical structural gate
+passes, actual 0. The new production source owner is 3553 bytes/90 physical LOC;
+its behavioral tests are 7387/231. The function semantic owner is 36501/928,
+coordinate owner 5248/147, and plan facade 54791/1594. The facade adds only a
+private module declaration; endpoint grammar and validation remain on their
+existing owner. No public export, dependency, unsafe or I/O is added.
+
+This is the private original-source borrowing boundary, not the registry/public
+switch. R1438's two Native/decoded-AWBC selected-Need failures remain unresolved.
+Next verify whether the common seal can publish a Task row whose original
+endpoint belongs to another slot; if demonstrated, repair the common owner
+before relying on source lookup in live consumers. Continue the fourteen-family
+atomic migration, artifact Source attachment, restore/replacement, retained View
+and complete runtime/display acceptance. The full goal remains active.
