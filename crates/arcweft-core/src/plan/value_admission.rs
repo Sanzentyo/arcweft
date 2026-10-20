@@ -57,6 +57,16 @@ impl RuntimePlan {
         self.inventory.validate_live_value(ty, value, limits)
     }
 
+    pub(crate) fn validate_live_value_with_work(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+        work: &ValidationWork,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.inventory
+            .validate_live_value_view_with_work(ty, value.view(), work)
+    }
+
     /// Validates a decoded private snapshot candidate before publication.
     pub fn validate_snapshot_value(
         &self,
@@ -135,6 +145,16 @@ impl super::RuntimePlanInventory {
         value: View<'_>,
         limits: RuntimeSchemaLimits,
     ) -> Result<(), RuntimePlanValueAdmissionError> {
+        self.validate_live_value_view_with_work(ty, value, &ValidationWork::new(limits))
+    }
+
+    pub(crate) fn validate_live_value_view_with_work(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: View<'_>,
+        work: &ValidationWork,
+    ) -> Result<(), RuntimePlanValueAdmissionError> {
+        let limits = work.limits();
         let row = self
             .type_table()
             .get(ty)
@@ -147,7 +167,7 @@ impl super::RuntimePlanInventory {
             self,
             ValueAdmissionOrigin::Live,
             binding,
-            &ValidationWork::new(limits),
+            work,
             |context| {
                 let mut validation = PlanValueValidation {
                     authority: PlanValueAuthority::Inventory(self),

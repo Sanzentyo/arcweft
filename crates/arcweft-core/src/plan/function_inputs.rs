@@ -158,6 +158,34 @@ impl RuntimePlan {
         captures: &[&RuntimeValue],
         arguments: &[&RuntimeValue],
     ) -> Result<RuntimeFunctionInputAdmission<'_>, RuntimeFunctionApplyError> {
+        self.validate_function_site_input_refs_with_work(
+            site,
+            captures,
+            arguments,
+            &crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+    }
+
+    /// Continues an enclosing borrowed admission without resetting its work
+    /// allowance for effect inference or individual input relations.
+    pub(crate) fn validate_function_site_input_refs_with_work(
+        &self,
+        site: RuntimeFunctionSiteId,
+        captures: &[&RuntimeValue],
+        arguments: &[&RuntimeValue],
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<RuntimeFunctionInputAdmission<'_>, RuntimeFunctionApplyError> {
+        let resource_failure = |source| RuntimeFunctionApplyError::InputInstantiation {
+            site,
+            source: crate::program_types::RuntimeFunctionEffectInstantiationError::Resource(
+                Box::new(source),
+            ),
+        };
+        if let Some(source) = work.failure() {
+            return Err(resource_failure(source));
+        }
         let declaration = self
             .function_sites()
             .get(site)
@@ -205,13 +233,7 @@ impl RuntimePlan {
                     .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?
                     .semantic_identity();
                 crate::program_types::RuntimeProgramTypes::Plan(self)
-                    .instantiate_function_effects(
-                        context,
-                        &references,
-                        &crate::entry::schema::value_budget::ValidationWork::new(
-                            crate::entry::RuntimeSchemaLimits::engine_default(),
-                        ),
-                    )
+                    .instantiate_function_effects(context, &references, work)
                     .map(std::sync::Arc::new)
                     .map_err(|source| RuntimeFunctionApplyError::InputInstantiation {
                         site,
@@ -239,9 +261,12 @@ impl RuntimePlan {
                 .get(index)
                 .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?;
             let matches = match &type_instantiation {
-                Some(binding) => binding.value_matches(self, expected, value),
-                None => self.value_matches_type(expected, value)?,
+                Some(binding) => binding.value_matches_with_work(self, expected, value, work),
+                None => self.value_matches_type_with_work(expected, value, work)?,
             };
+            if let Some(source) = work.failure() {
+                return Err(resource_failure(source));
+            }
             if !matches {
                 return Err(match input.source() {
                     RuntimeFunctionInputSource::Capture { .. }

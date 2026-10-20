@@ -2866,16 +2866,25 @@ impl RuntimePlan {
         ty: RuntimePlanTypeId,
         value: &RuntimeValue,
     ) -> Result<bool, RuntimePlanValueTypeError> {
+        self.value_matches_type_with_work(
+            ty,
+            value,
+            &crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+    }
+
+    pub(crate) fn value_matches_type_with_work(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+        work: &crate::entry::schema::value_budget::ValidationWork,
+    ) -> Result<bool, RuntimePlanValueTypeError> {
         if self.type_table().get(ty).is_none() {
             return Err(RuntimePlanValueTypeError::UnknownType { ty });
         }
-        Ok(self
-            .validate_live_value(
-                ty,
-                value,
-                crate::entry::RuntimeSchemaLimits::engine_default(),
-            )
-            .is_ok())
+        Ok(self.validate_live_value_with_work(ty, value, work).is_ok())
     }
 }
 

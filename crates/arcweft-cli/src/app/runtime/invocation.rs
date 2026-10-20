@@ -29,26 +29,15 @@ pub(in crate::app) fn seal_resolved_flow_invocation(
         .flow_schemas()
         .iter()
         .find(|schema| schema.flow == flow)
-        .map(|schema| schema.parameters.clone())
+        .map(|schema| schema.parameters.as_slice())
         .ok_or_else(|| {
             eprintln!("error: selected Flow `{target}` has no executable parameter schema");
             ExitCode::FAILURE
         })?;
-    let mut supplied = BTreeMap::new();
-    for binding in bindings {
-        if supplied
-            .insert(binding.name.clone(), binding.value.clone())
-            .is_some()
-        {
-            eprintln!("error: duplicate --value binding `{}`", binding.name);
-            return Err(ExitCode::from(2));
-        }
-    }
     let mut parameter_names = BTreeMap::new();
-    let mut canonical = Vec::with_capacity(parameters.len());
-    for parameter in parameters {
+    for (index, parameter) in parameters.iter().enumerate() {
         if parameter_names
-            .insert(parameter.name.clone(), parameter.coordinate)
+            .insert(parameter.name.as_str(), index)
             .is_some()
         {
             eprintln!(
@@ -57,7 +46,24 @@ pub(in crate::app) fn seal_resolved_flow_invocation(
             );
             return Err(ExitCode::FAILURE);
         }
-        let Some(value) = supplied.remove(&parameter.name) else {
+    }
+    let mut supplied = vec![None; parameters.len()];
+    for binding in bindings {
+        let Some(&index) = parameter_names.get(binding.name.as_str()) else {
+            eprintln!(
+                "error: selected Flow `{target}` has no parameter named `{}`",
+                binding.name
+            );
+            return Err(ExitCode::from(2));
+        };
+        if supplied[index].replace(&binding.value).is_some() {
+            eprintln!("error: duplicate --value binding `{}`", binding.name);
+            return Err(ExitCode::from(2));
+        }
+    }
+    let mut canonical = Vec::with_capacity(parameters.len());
+    for (parameter, value) in parameters.iter().zip(supplied) {
+        let Some(value) = value else {
             eprintln!(
                 "error: selected Flow `{target}` is missing --value `{}`",
                 parameter.name
@@ -69,11 +75,12 @@ pub(in crate::app) fn seal_resolved_flow_invocation(
             value,
         });
     }
-    if let Some((name, _)) = supplied.first_key_value() {
-        eprintln!("error: selected Flow `{target}` has no parameter named `{name}`");
-        return Err(ExitCode::from(2));
-    }
-    plan.seal_flow_invocation(flow, canonical).map_err(|error| {
+    plan.seal_flow_invocation_copying(
+        flow,
+        canonical,
+        arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+    )
+    .map_err(|error| {
         eprintln!("error: invalid --flow invocation: {error}");
         ExitCode::from(2)
     })

@@ -622,13 +622,36 @@ impl RuntimeFunctionEffectInstantiation {
     ) -> bool {
         self.value_view_matches(program, ty, value.view())
     }
+    pub(crate) fn value_matches_with_work<A: FunctionTypeAuthority>(
+        &self,
+        program: &A,
+        ty: A::Type,
+        value: &RuntimeValue,
+        work: &ValidationWork,
+    ) -> bool {
+        self.value_view_matches_with_work(program, ty, value.view(), work)
+    }
     pub(crate) fn value_view_matches<A: FunctionTypeAuthority>(
         &self,
         program: &A,
         ty: A::Type,
         value: crate::value::RuntimeValueView<'_>,
     ) -> bool {
-        let Some(mut matcher) = self.matcher(program) else {
+        self.value_view_matches_with_work(
+            program,
+            ty,
+            value,
+            &ValidationWork::new(crate::entry::RuntimeSchemaLimits::engine_default()),
+        )
+    }
+    fn value_view_matches_with_work<A: FunctionTypeAuthority>(
+        &self,
+        program: &A,
+        ty: A::Type,
+        value: crate::value::RuntimeValueView<'_>,
+        work: &ValidationWork,
+    ) -> bool {
+        let Some(mut matcher) = self.matcher_with_work(program, work.clone()) else {
             return false;
         };
         let environment = matcher.parameters.clone();

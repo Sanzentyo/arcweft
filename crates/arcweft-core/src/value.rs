@@ -230,9 +230,9 @@ pub struct RuntimeBinding {
 /// diagnostic parameter name is deliberately absent and cannot become a
 /// second execution authority.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeFlowParameterBinding {
+pub struct RuntimeFlowParameterBinding<V = RuntimeValue> {
     pub parameter: FlowParameterCoordinate,
-    pub value: RuntimeValue,
+    pub value: V,
 }
 
 /// One binding in the plan-local structured execution domain.

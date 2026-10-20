@@ -1,6 +1,7 @@
 //! Native-flow behavior exercised through the sole typed runtime-plan builder.
 
 mod function_call;
+mod invocation;
 
 use crate::scope::RuntimeScopeIdentity;
 use crate::{

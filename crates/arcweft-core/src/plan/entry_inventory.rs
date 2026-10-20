@@ -5,6 +5,7 @@
 //! executable metadata, then verifies the complete entry graph before runtime
 //! selection. It performs no source resolution, adapter work, or platform I/O.
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -340,6 +341,8 @@ pub enum RuntimeFlowInvocationError {
     },
     #[error(transparent)]
     FunctionInputs(#[from] crate::value::RuntimeFunctionApplyError),
+    #[error("runtime Flow invocation input admission failed: {0}")]
+    InputAdmission(#[source] Box<crate::value::AwbcRuntimeValueSnapshotError>),
 }
 
 impl RuntimePlan {
@@ -354,7 +357,62 @@ impl RuntimePlan {
         flow: FlowRuntimeId,
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
     ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
+        let collected = self.collect_flow_invocation_bindings(&flow, bindings)?;
+        self.validate_flow_invocation(&flow, &collected)?;
+        Ok(RuntimeFlowInvocation {
+            plan: Arc::new(self),
+            flow,
+            bindings: collected.into_boxed_slice(),
+        })
+    }
+
+    /// Copies a complete borrowed inventory only after its resources, original
+    /// program storage, deep Copy ownership and joint input ABI are admitted.
+    /// All roots and type/effect relations spend the same allowance. The
+    /// returned invocation owns this exact plan and no partial value copy is
+    /// made on rejection.
+    pub fn seal_flow_invocation_copying<'value>(
+        self,
+        flow: FlowRuntimeId,
+        bindings: impl IntoIterator<
+            Item = RuntimeFlowParameterBinding<&'value crate::value::RuntimeValue>,
+        >,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
         let expected = self.flow_invocation_contract(&flow)?.1.parameters.len();
+        let plan = Arc::new(self);
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan)),
+            limits,
+        );
+        let failure = |source| RuntimeFlowInvocationError::InputAdmission(Box::new(source));
+        admission
+            .validate_metadata_collection(expected)
+            .map_err(failure)?;
+        let bindings = plan.collect_flow_invocation_bindings(&flow, bindings)?;
+        for binding in &bindings {
+            admission.validate(binding.value).map_err(failure)?;
+        }
+        plan.validate_flow_invocation_with_work(&flow, &bindings, &admission.work())?;
+        Ok(RuntimeFlowInvocation {
+            plan,
+            flow,
+            bindings: bindings
+                .into_iter()
+                .map(|binding| RuntimeFlowParameterBinding {
+                    parameter: binding.parameter,
+                    value: binding.value.clone(),
+                })
+                .collect(),
+        })
+    }
+
+    fn collect_flow_invocation_bindings<V>(
+        &self,
+        flow: &FlowRuntimeId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding<V>>,
+    ) -> Result<Vec<RuntimeFlowParameterBinding<V>>, RuntimeFlowInvocationError> {
+        let expected = self.flow_invocation_contract(flow)?.1.parameters.len();
         let mut collected = Vec::with_capacity(expected);
         for binding in bindings {
             if collected.len() == expected {
@@ -366,12 +424,7 @@ impl RuntimePlan {
             }
             collected.push(binding);
         }
-        self.validate_flow_invocation(&flow, &collected)?;
-        Ok(RuntimeFlowInvocation {
-            plan: Arc::new(self),
-            flow,
-            bindings: collected.into_boxed_slice(),
-        })
+        Ok(collected)
     }
 
     fn flow_invocation_contract(
@@ -400,6 +453,22 @@ impl RuntimePlan {
         &self,
         flow: &FlowRuntimeId,
         bindings: &[RuntimeFlowParameterBinding],
+    ) -> Result<super::function_inputs::RuntimeFunctionInputAdmission<'_>, RuntimeFlowInvocationError>
+    {
+        self.validate_flow_invocation_with_work(
+            flow,
+            bindings,
+            &crate::entry::schema::value_budget::ValidationWork::new(
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+        )
+    }
+
+    fn validate_flow_invocation_with_work<V: Borrow<crate::value::RuntimeValue>>(
+        &self,
+        flow: &FlowRuntimeId,
+        bindings: &[RuntimeFlowParameterBinding<V>],
+        work: &crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<super::function_inputs::RuntimeFunctionInputAdmission<'_>, RuntimeFlowInvocationError>
     {
         let flow_label = flow.canonical_label();
@@ -437,9 +506,14 @@ impl RuntimePlan {
         }
         let arguments = bindings
             .iter()
-            .map(|binding| &binding.value)
+            .map(|binding| binding.value.borrow())
             .collect::<Vec<_>>();
-        Ok(self.validate_function_site_input_refs(runtime_flow.function_site(), &[], &arguments)?)
+        Ok(self.validate_function_site_input_refs_with_work(
+            runtime_flow.function_site(),
+            &[],
+            &arguments,
+            work,
+        )?)
     }
 }
 
