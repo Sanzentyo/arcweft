@@ -891,30 +891,14 @@ mod tests {
         BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_bundle_assets::BundleAssetValidationError;
-    use arcweft_character::{
-        id::CharacterId,
-        presentation_name::{
-            CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
-            CharacterPresentationSemanticDigest,
-        },
-    };
     use arcweft_core::effect::{
         RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
-    use arcweft_core::entry::{
-        EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
-        RuntimeFlowSchema, RuntimeSchemaLimits,
-    };
+    use arcweft_core::entry::RuntimeSchemaLimits;
     use arcweft_core::pattern::{RuntimeCheckedType, runtime_standard_opaque_type};
-    use arcweft_core::plan::{
-        FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeEntryKind, RuntimeEntrySpec,
-        RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-        RuntimeFlowSeed, RuntimeLineId, RuntimePlanBuilder,
-    };
     use arcweft_core::task::{
         AssetLoadKind, AssetRequest, BoundTaskSpec, CancelScopeId, HostTaskRequest, TaskClass,
-        TaskId, TaskKey, TaskOutcomeContract, TaskPolicy, TaskPriority, TaskPublicationRevision,
-        TaskSpec,
+        TaskOutcomeContract, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSpec,
     };
     use arcweft_core::value::{
         RuntimeAssetContentDigest, RuntimeAssetErrorValue, RuntimeAudioHandleValue,
@@ -922,153 +906,19 @@ mod tests {
         RuntimeBundleAssetResourceId, RuntimeImageHandleValue, RuntimeValue,
         RuntimeVoiceErrorValue,
     };
-    use arcweft_dialogue::{
-        CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
-        CharacterDialogueGenerationDeclaration, CharacterDialoguePresentationContract,
-        CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldCatalog,
-        CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as DialogueRole,
-        CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
-        CharacterDialogueRuntimeRoleTypes, CharacterDialogueType, CharacterDialogueVisualType,
-        DialoguePresentationProfile, DialogueProfileRevision,
-        character_presentation::{
-            CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
-        },
-    };
     use arcweft_host_adapter::{
         HostAdapter, HostTaskCompletion, HostTaskSubmission, HostTaskSubmissionContext,
     };
-    use arcweft_id::TextKey;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_text_model::{
-        DialogueContentCatalog, DialogueContentFragmentTemplate, DialogueContentSpec,
-        RichTextDocument, RichTextNode,
-    };
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId, ViewRegistry};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::DialogueContentCatalog;
 
     fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
         arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
             .expect("fixture runtime artifact fingerprint is non-zero")
-    }
-
-    fn test_character_plan() -> CheckedCharacterPresentationPlan {
-        CheckedCharacterPresentationPlan::try_new(
-            CharacterPresentationTargetEvidence::Exact(
-                CharacterId::try_new("character.fixture").unwrap(),
-            ),
-            CharacterPresentationCatalogGeneration::new(
-                CharacterPresentationCatalogRevision::INITIAL,
-                CharacterPresentationSemanticDigest::from_bytes([1; 32]),
-            ),
-        )
-        .unwrap()
-    }
-
-    fn test_dialogue_profile_revision() -> DialogueProfileRevision {
-        let source = SourceDocument::try_new(
-            SourceDocumentId::try_new("runtime-host-dialogue-profile-fixture").unwrap(),
-            SourceName::Memory,
-            "schema = 1\n",
-        )
-        .unwrap();
-        let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
-        DialogueProfileRevision::from_admitted_parts(
-            source.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.runtime_host_dialogue").unwrap(),
-            AcceptedViewProgramRevision::try_from_bytes([0x44; 32]).unwrap(),
-            ResourceTypeRegistry::empty().digest(),
-        )
-    }
-
-    fn dialogue_runtime_roles() -> CharacterDialogueRuntimeRoleTypes {
-        CharacterDialogueRuntimeRoleTypes::new(
-            DialogueRole::AUTHORED_BASE.map(|role| {
-                let body = if role == DialogueRole::RichText {
-                    CharacterDialogueRuntimeRoleBody::bound(
-                        CharacterDialogueRolePayloadCodec::RichTextProperties
-                            .payload_schema()
-                            .expect("RichText payload schema")
-                            .root(),
-                        CharacterDialogueRolePayloadCodec::RichTextProperties,
-                    )
-                } else {
-                    CharacterDialogueRuntimeRoleBody::Unbound
-                };
-                CharacterDialogueRuntimeRoleType::new(
-                    arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
-                        [20 + role.canonical_tag(); 32],
-                    ),
-                    body,
-                )
-            }),
-            arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([50; 32]),
-        )
-    }
-
-    fn with_dialogue_generation(bundle: ArcweftBundle) -> ArcweftBundle {
-        let character = CharacterId::try_new("character.fixture").expect("fixture character ID");
-        let product = arcweft_bundle::resource_codec::view::ValidatedViewProduct::try_new(
-            Some(bundle.source_map.clone()),
-            bundle.view_program.clone(),
-            bundle.view_style.clone(),
-            arcweft_bundle::resource_codec::view::ViewProductValidationLimits::default(),
-        )
-        .expect("fixture View product validates");
-        let mut views = ViewRegistry::default();
-        product
-            .program()
-            .expect("fixture includes standard dialogue View")
-            .register_runtime_views(&mut views)
-            .expect("fixture View registry accepts standard dialogue View");
-        let view_fingerprint = arcweft_core::entry::RuntimeValueDigest::from_bytes(
-            *views
-                .runtime_digest_v1()
-                .expect("fixture View registry digest")
-                .as_bytes(),
-        );
-        let style_fingerprint = bundle.view_style.as_ref().map(|style| {
-            arcweft_core::entry::RuntimeValueDigest::from_bytes(
-                style
-                    .canonical_digest()
-                    .expect("fixture style digest")
-                    .as_bytes(),
-            )
-        });
-        let profile = DialoguePresentationProfile::engine_default();
-        let roles = dialogue_runtime_roles();
-        let config = CharacterDialogueConfig::try_from_presentation_profile(&profile, &roles)
-            .expect("fixture CharacterDialogue defaults");
-        let exact = CharacterDialogueType::exact(character.clone());
-        let declaration = CharacterDialogueGenerationDeclaration::try_new(
-            [(
-                character.clone(),
-                CharacterDialogueCharacterDeclaration::new(
-                    exact.runtime_semantic_identity(),
-                    CharacterDialogueVisualType::Absent,
-                    CharacterDialogueRuntimeDefault::new(character, config),
-                ),
-            )],
-            CharacterDialogueType::any().runtime_semantic_identity(),
-            arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([56; 32]),
-            roles,
-            CharacterDialogueRuntimeCustomFieldCatalog::try_new([])
-                .expect("empty fixture custom field catalog"),
-            CharacterDialoguePresentationContract::try_new(
-                profile,
-                test_dialogue_profile_revision(),
-                view_fingerprint,
-                style_fingerprint,
-            )
-            .expect("fixture presentation contract"),
-        )
-        .expect("fixture generation declaration");
-        bundle.with_character_dialogue_generation(declaration)
     }
 
     #[test]
@@ -1683,188 +1533,33 @@ mod tests {
     }
 
     fn dialogue_bundle() -> ArcweftBundle {
-        let line = line_id("line.opening");
-        let flow = flow_id("flow.main");
-        let template = DialogueContentFragmentTemplate::try_new_canonical(
-            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
-                .expect("template identity"),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            RichTextDocument::new(vec![RichTextNode::Text {
-                text: "Opening".to_owned(),
-            }]),
+        let compiled = arcweft_compiler::source::compile_source(
+            r#"
+pub character fixture {}
+flow main() -> String {
+    fixture(id=@say.opening)[Opening]
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
         )
-        .expect("dialogue template");
-        let mut builder = RuntimePlanBuilder::new();
-        let unit_result = arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
-            arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
-        );
-        let dialogue_target_type = arcweft_dialogue::CharacterDialogueType::exact(
-            CharacterId::try_new("character.fixture").expect("fixture character ID"),
-        );
-        let dialogue_target_owner = dialogue_target_type.runtime_opaque_owner();
-        let dialogue_target_value = dialogue_target_owner
-            .try_wrap(RuntimeValue::Unit)
-            .expect("fixture CharacterDialogue value wraps");
-        builder
-            .admit_type_batch(
-                [
-                    arcweft_core::plan::RuntimePlanTypeSeed::new(
-                        unit_result.ty(),
-                        arcweft_core::plan::RuntimePlanTypeProjection::Unit,
-                    ),
-                    arcweft_core::plan::RuntimePlanTypeSeed::new(
-                        dialogue_target_type.runtime_semantic_identity(),
-                        arcweft_core::plan::RuntimePlanTypeProjection::Opaque {
-                            producer: dialogue_target_owner.producer().clone(),
-                            admission: dialogue_target_owner.admission(),
-                            value_class: dialogue_target_owner.value_class(),
-                            persistence: dialogue_target_owner.persistence(),
-                            arguments: Box::default(),
-                        },
-                    ),
-                ],
-                [],
-            )
-            .expect("dialogue target and unit result types admit");
-        let content_template_seed =
-            arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
-                id: template.id(),
-                digest: template.digest(),
-                slots: Box::default(),
-                effects: Box::default(),
-            };
-        let registered_content_template =
-            arcweft_core::plan::RuntimeDialogueContentTemplateKey::new(
-                content_template_seed.id,
-                content_template_seed.digest,
-            );
-        builder
-            .register_dialogue_content_template_seed(content_template_seed)
-            .expect("fixture template declaration admits");
-        let content = builder
-            .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
-                line: line.clone(),
-                template: registered_content_template,
-                values: Box::default(),
-                effect_sites: Box::default(),
-                marks: Box::default(),
-                effect_site_count: Default::default(),
-            })
-            .expect("dialogue content admits");
-        let line_task_group = builder
-            .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-                definition:
-                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                        [71; 32],
-                    ),
-                activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
-                    value: RuntimeExprSeed::new(
-                        unit_result.ty(),
-                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-                    ),
-                }],
-                result_type: unit_result.ty(),
-                handle_sites: Box::default(),
-                root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
-                cancel_rules: Box::default(),
-                cleanup_completed: Vec::new(),
-                cleanup_cancelled: Vec::new(),
-                cleanup_failed: Vec::new(),
-                cleanup_policy: Default::default(),
-            })
-            .expect("line-task group admits");
-        builder
-            .attach_line_task_group_seed(&content, &line_task_group)
-            .expect("line-task group attaches to dialogue content");
-        builder
-            .admit_type_batch(
-                [arcweft_core::plan::RuntimePlanTypeSeed::new(
-                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
-                    arcweft_core::plan::RuntimePlanTypeProjection::String,
-                )],
-                [],
-            )
-            .expect("Flow result type admits");
-        builder
-            .push_flow_seed(RuntimeFlowSeed::new(
-                flow.clone(),
-                arcweft_core::plan::RuntimeFunctionSiteDeclarationSeed::flow(
-                    arcweft_core::plan::RuntimeFunctionDefinitionIdentity::from_accepted_identity(
-                        [61; 32],
-                    ),
-                    None,
-                    Box::new([]),
-                    arcweft_core::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
-                    arcweft_core::plan::RuntimeEffectSet::empty(),
-                ),
-                arcweft_core::plan::RuntimeExecutableBodySeed {
-                    effects: arcweft_core::plan::RuntimeEffectSet::empty(),
-                    ops: (vec![
-                        RuntimeFlowOpSeed::Dialogue {
-                            target: RuntimeExprSeed::new(
-                                dialogue_target_type.runtime_semantic_identity(),
-                                RuntimeExprSeedKind::Value(dialogue_target_value),
-                            ),
-                            content,
-                            result: unit_result,
-                        },
-                        RuntimeFlowOpSeed::Return("done".to_owned()),
-                    ])
-                    .into_boxed_slice(),
-                },
-            ))
-            .expect("flow admits");
-        builder
-            .push_flow_schema(RuntimeFlowSchema {
-                flow: flow.clone(),
-                parameters: Vec::new(),
-            })
-            .expect("flow schema admits");
-        builder
-            .push_flow_executable(RuntimeFlowExecutable {
-                flow: flow.clone(),
-                contract: FlowContractHash::from_bytes([0x7b; 32]),
-                controller: None,
-            })
-            .expect("flow executable admits");
-        builder
-            .push_entry(RuntimeEntrySpec {
-                id: EntryRuntimeId::from_source_entity_body("entry.main")
-                    .expect("test entry ID is valid"),
-                kind: RuntimeEntryKind::Cli,
-                binding: EntryBindingIdentity::from_bytes([1; 32]),
-                target: RuntimeEntryTarget::Flow(flow),
-                roles: RuntimeEntryRoles::None,
-            })
-            .expect("entry admits");
-        let plan = builder.finish().expect("runtime plan is valid");
-        let source_map = source_map("dialogue-bundle.arcw", "flow main { dialogue }");
-        let spec = DialogueContentSpec::try_new(
-            line,
-            TextKey::try_new("text.opening").expect("text key"),
-            &template,
-            test_character_plan(),
-            arcweft_text_model::DialoguePresentationSnapshot::new(
-                DialoguePresentationProfile::engine_default(),
-                test_dialogue_profile_revision(),
-            ),
-            Vec::new(),
-            source_map
-                .primary_document()
-                .expect("fixture source map retains its source")
-                .product_source_ref(),
-        )
-        .expect("dialogue spec");
-        let dialogue_content =
-            DialogueContentCatalog::try_from_records_and_templates(vec![spec], vec![template])
-                .expect("final dialogue content catalog");
-        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "dialogue-bundle.arcw")
+        .expect("host fixture compiles through the accepted source pipeline");
+        let documents = compiled
+            .analysis
+            .modules()
+            .iter()
+            .map(|module| module.parsed().document())
+            .collect::<Vec<_>>();
+        let source_map = SourceMapSection::try_from_documents(&documents)
+            .expect("host fixture retains its original source documents");
+        let awbc = AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "src/main.arcw")
             .lower()
-            .expect("product AWBC lowers")
-            .program;
-        let bundle = ArcweftBundle::try_new(
+            .expect("host fixture lowers the complete accepted type inventory");
+        let generation = compiled
+            .character_dialogue_generation
+            .expect("host fixture retains its original dialogue generation");
+        let (style, _, _) = compiled.style.into_parts();
+        ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -1876,18 +1571,20 @@ mod tests {
                 runtime: BundleRuntimeSummary {
                     artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
-                    flows: 1,
-                    bytecode_instructions: 2,
-                    line_task_groups: 1,
-                    stream_plans: 0,
+                    flows: awbc.stats.flow_bindings,
+                    bytecode_instructions: awbc.stats.instructions,
+                    line_task_groups: awbc.stats.line_task_groups,
+                    stream_plans: awbc.stats.stream_plans,
                 },
             },
             source_map,
-            product_awbc,
-            dialogue_content,
+            awbc.program,
+            compiled.dialogue_content,
         )
-        .expect("standard dialogue source joins source map");
-        with_dialogue_generation(bundle)
+        .expect("host fixture installs the standard dialogue resources")
+        .with_view_resources(None, Some(style))
+        .expect("host fixture installs its original compiled Style")
+        .with_character_dialogue_generation(generation.as_ref().clone())
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {
@@ -1898,13 +1595,5 @@ mod tests {
         )
         .expect("source document");
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
-    }
-
-    fn flow_id(value: &str) -> FlowRuntimeId {
-        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
-    }
-
-    fn line_id(value: &str) -> RuntimeLineId {
-        RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
     }
 }

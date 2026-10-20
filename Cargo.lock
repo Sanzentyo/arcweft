@@ -1532,7 +1532,7 @@ dependencies = [
  "arcweft-audio-core",
  "arcweft-bundle",
  "arcweft-bundle-assets",
- "arcweft-character",
+ "arcweft-compiler",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-host-adapter",
