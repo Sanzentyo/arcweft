@@ -21683,3 +21683,82 @@ excluded cases, and run the same full 53-package selection against a fresh sourc
 freeze. Do not use this tool's 17-package bundle-owner graph to narrow that Core
 reverse closure. Strict lint, the remaining implementation/public migrations,
 semantic/execution failures, Tier2 and Native/Web capture/parity remain open.
+
+### 2026-10-20 — Executable owns its admitted plain-text context fact
+
+Inspected main at `f08dafbcede22c1c70009d40917a8e4d926687bd` with 23 in-scope
+changed paths, held14 tracked paths and the same three unrelated untracked
+entries. Published those 23 paths as
+`df15de520c46065b92a8fb45dcb0b68feb0529c9`, parent
+`f08dafbcede22c1c70009d40917a8e4d926687bd`, tree
+`635e5ac07565770d1ff7e7953b9f91be2cb49e79`, raw patch SHA-256
+`d9781e5a76c5ec2621a363c744ce03a72c3647ced66ae3b3a13e72f62f75aa75`.
+Fresh fetch and advertised main, parent/tree/patch, all 23 published blobs and
+all 3931 source hashes matched. The index was empty and held14 unchanged.
+Publication deliberately preceded the full pending checks, following the user's
+instruction to checkpoint accumulated work without requiring every intermediate
+commit to be proved operational. Source and consumer checks and the focused
+regression had already passed; pending evidence is identified below.
+
+AwbcProductProgram now owns its optional catalog-admitted plain-text context
+proof alongside exact immutable code and original Source. Admission verifies
+code/Source before reading the text pointer; attaching a catalog fact checks its
+exact reference. Activation, pure invocation, continuation, rollback and owned
+restore transfer or clone the complete owner. Removed the AdmittedBundleProgram
+wrapper and independent executor, session, CLI-template and rollback proof
+columns, and migrated Bundle, Host, Agent, Driver, Compiler tests and CLI callers.
+CLI Source execution now uses complete bundle admission. Candidate View
+replacement reattaches the existing fact to the same code after candidate
+admission. Driver borrowed View inputs enter admission before cloning. The
+owning Core type is the immutable authority; no new dependency direction,
+I/O, unsafe, schema version or parallel catalog was introduced.
+
+R1725 first exposed a missed CLI verify consumer (removed reader and extra
+argument); that consumer was migrated. R1727 all-feature/all-target locked
+checks for Bundle, CLI, Driver, Host, Agent and Compiler then passed (2m23s).
+The new Core regression executes actual lazy-context callback bytecode from a
+pure-program binding after JSON inert save and owned restore. It checks the
+accepted proof's actual plain-text ArcError and the absent proof's rejection.
+R1726 exposed an invalid new fixture whose original Flow frame was not a pure
+frame; corrected that new fixture's kind, safe point and root metadata. R1728
+passed the exact regression (one passed, 1880 intentionally filtered for this
+diagnostic check); this is not a claim about the full Core suite.
+
+R1730's actual CLI library catalogue contains 191 selected cases, none excluded,
+including Source/PNG/View/context execution in both tiers. R1732 ran all 191:
+exit0, 191 passed, zero skipped, 11.083s. Exact terminal keys and all 3931 pre-run
+hashes matched. R1733 passed all 73 Core doctests in 3.04s, zero failed, ignored
+or filtered. R1734 ordinary all-feature/all-target locked Clippy over the seven
+changed owners passed in 10m46s; existing warnings remain, including Core's 2917
+library-test warnings (2391 duplicates). This is not strict -D warnings evidence.
+Both runs' source audits matched all 3931 hashes. R1735 structural gate passed:
+3154 files, 3024 Rust files, 1718576 physical Rust lines, 97 packages,
+376 review triggers and zero blocking violations.
+
+R1729 catalogued all 1934 selected Core cases across library and integration/API
+binaries. R1731 completed that full selection: exit0, all 1934 passed (two slow),
+zero skipped, 235.277s. Exact terminal keys and all 3930 runtime snapshot hashes
+matched; only this operational note was excluded as described below. The
+unchanged 99 manifest/lock inputs retain Core's actual 53-package reverse closure.
+R1717's complete reverse catalogue has 7122 total cases, 7083 selected and 39
+existing default exclusions. R1723 is still live (handle 98788); its dynamic API
+compile tests overlapped this migration and already show a mixed old-Core/new-
+Bundle E0599 failure. Preserve its actual terminal result when available; it
+cannot certify immutable current inputs or justify restoring the removed API.
+
+The original 3931-path pre-run snapshot remains intact. A derived runtime
+snapshot retains the same 3930 hashes and excludes only this non-executable
+operational ledger, allowing evidence publication during the remaining run.
+This changes no test selection, assertion, budget or execution condition.
+
+The next inspected gap is actual external/default execution: external call
+contexts and Product VM helpers retain raw type-only owners; data.decode field
+default evaluation re-admits raw AWBC with no View authority and loses original
+Source, catalog proof and locale. Native default evaluation also starts with a
+default formatter context. Replace this execution boundary with a complete typed
+program/format context and migrate its producers and consumers; keep raw program
+owners for their legitimate type/value-codec roles. CLI's AWBC accelerator cache
+also still selects the Native plan and must use its actual admitted executable.
+Original shared resource allowance, complete Source/public switching and all14
+families, Presentation, remaining semantic/execution failures, strict lint,
+Tier2 and Native/Web capture/parity remain required. The full goal is open.
