@@ -1067,7 +1067,7 @@ impl RootRuntime {
         Ok(())
     }
 
-    /// Moves the next admitted event into its ordinary executable frame.
+    /// Moves the next admitted event into inputs for its executable frame.
     /// No callable is evaluated and the committed state remains unchanged.
     /// A yielded frame must complete before another invocation can begin.
     pub fn begin_reduction(&mut self) -> Result<Option<RootReducerInvocation>, RootRuntimeError> {
@@ -1077,17 +1077,17 @@ impl RootRuntime {
         if self.active.reducer_active() {
             return Err(RootRuntimeError::ReducerAlreadyActive);
         }
-        let Some(event) = self.active.queued_events.front() else {
-            return Ok(None);
-        };
-        if event.sequence != self.active.next_sequence {
-            return Err(RootRuntimeError::EventSequenceMismatch);
-        }
-        let event = self
+        if self
             .active
             .queued_events
-            .pop_front()
-            .expect("checked front");
+            .front()
+            .is_some_and(|event| event.sequence != self.active.next_sequence)
+        {
+            return Err(RootRuntimeError::EventSequenceMismatch);
+        }
+        let Some(event) = self.active.queued_events.pop_front() else {
+            return Ok(None);
+        };
         self.active.reducer_phase = RootReducerPhase::Evaluating;
         Ok(Some(RootReducerInvocation {
             callable: self.reducer.clone(),

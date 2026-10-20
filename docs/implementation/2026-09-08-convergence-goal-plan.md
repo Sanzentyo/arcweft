@@ -22572,3 +22572,46 @@ Next migrate their actual executable frames, original-entry continuation,
 selected backend/formatter and pending-initializer save/restore together. The
 earlier56 CLI failures and the complete original convergence acceptance remain
 required; this cut does not complete or narrow the active goal.
+
+### 2026-10-20 — reducer boundary publication and terminal evidence
+
+Published b01b9655e5da14b65073413d01bc55dc0854af82, parent
+ac0a74dcda4d4a13bdfe9cef7d8620aaac4ea060, tree
+a1582937ed137b522324e5372140eb00676bbc2a, raw patch SHA256
+e59884f5dc367f1ec39367eca25a0cbd75325d0b42811a131792aa6f749f9e0b.
+Normal push, fresh advertised main, all3 blobs and all3933 publication inputs
+matched; the owned baseline advanced to zero while held14+3 were preserved.
+
+Supersedes the preceding pending R1795/R1798 status: both are terminal exit0.
+R1795 workspace check passed in4m35s including lock wait. R1798 executed the
+exact1943-case Core catalogue:1943 passed, zero skipped,132.432s (one slow
+public-API compile case at103.385s). Each check's3932 executable/source inputs
+matched with zero drift, with this operational record explicitly excluded.
+No execution result was inferred from a catalogue or an unobserved process.
+
+The follow-on guard cleanup removes begin_reduction's unnecessary checked
+expect and accurately documents that it returns frame inputs. The queue is
+inspected for a cursor mismatch before any event moves; empty ingress returns
+None without a panic. No public shape, frame/codec contract, workload or
+assertion changes. R1799 catalogued the unchanged1943 cases with12 Root cases
+selected and1931 filter exclusions; all five required new/affine/save guards
+were present. R1801 passed all12 selected cases in0.103s, with those1931
+intentional filter exclusions. The exact selected case set and all3932 current
+runtime/source hashes matched, held14 unchanged. R1798 remains full-suite
+evidence for b01b9655e5da14b65073413d01bc55dc0854af82; R1801 validates the
+subsequent private queue-guard delta, rather than claiming another full run.
+R1800 ordinary Core all-target/all-feature Clippy passed in49.34s:
+2915 warnings/2391 duplicates; the introduced begin_reduction panic diagnostic
+is gone, without an allow. All3932 current hashes matched. Strict lint remains
+unmet. The unchanged API/dependency boundary reuses R1795 consumer compilation
+and R1797's structural ownership disposition; the private guard cleanup does
+not justify repeating their whole workspace coverage.
+
+Root execution integration remains next: its owning phase must represent an
+initializer with no fabricated state, and then ready/reducing committed state.
+The actual Native/AWBC frame origin must authenticate the selected entry and
+initializer/reducer role, including cold restore, before constructor evaluation
+and the synchronous adapters can be removed. Shared step allowance and the
+selected backend/formatter still require real execution tests. All other
+original acceptance, including the56 CLI failures, remains open. No goal status
+change or scope reduction is made by these intermediate publications.
