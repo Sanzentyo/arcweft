@@ -84,11 +84,11 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
         ),
         (
             RuntimeSchemaLimits {
-                max_encoded_bytes: 41,
+                max_metadata_bytes: 41,
                 ..limits
             },
             RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes",
+                budget: "metadata_bytes",
             },
         ),
         (
@@ -146,7 +146,8 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
     // Context + row count + label count + string length + UTF-8 label.
     let binding_bytes = 32 + 1 + 1 + 1 + 7;
     let limits = RuntimeSchemaLimits {
-        max_encoded_bytes: binding_bytes + 1,
+        max_encoded_bytes: 1,
+        max_metadata_bytes: binding_bytes,
         ..RuntimeSchemaLimits::engine_default()
     };
     let error = RuntimeSchemaError::BudgetExceeded {
@@ -158,7 +159,7 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
             ValueAdmissionOrigin::Live,
             Some(&binding),
             &ValidationWork::new(RuntimeSchemaLimits {
-                max_encoded_bytes: binding_bytes,
+                max_metadata_bytes: binding_bytes,
                 ..limits
             }),
             |_| Ok(()),
@@ -166,7 +167,9 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
         Ok(Some(()))
     );
     let mut admission = ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live);
-    admission.function_instantiation(&binding).unwrap();
+    admission
+        .function_instantiation(&binding, ResourceByteKind::Metadata)
+        .unwrap();
     admission
         .validate_view(crate::value::RuntimeValue::Unit.view(), 0, None)
         .unwrap();
@@ -180,18 +183,28 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
         Err(error.clone())
     );
     assert_eq!(alias.charge(0), Err(error.clone()));
-    assert_eq!(resumed.function_instantiation(&binding), Err(error.clone()));
+    assert_eq!(
+        resumed.function_instantiation(&binding, ResourceByteKind::Metadata),
+        Err(error.clone())
+    );
 
     // A second independently retained binding does not receive another byte bank.
     let mut admission = ValueResourceAdmission::snapshot(
         RuntimeSchemaLimits {
-            max_encoded_bytes: 2 * binding_bytes - 1,
+            max_metadata_bytes: 2 * binding_bytes - 1,
             ..limits
         },
         ValueAdmissionOrigin::InertSnapshot,
     );
-    admission.function_instantiation(&binding).unwrap();
-    assert_eq!(admission.function_instantiation(&binding), Err(error));
+    admission
+        .function_instantiation(&binding, ResourceByteKind::Metadata)
+        .unwrap();
+    assert_eq!(
+        admission.function_instantiation(&binding, ResourceByteKind::Metadata),
+        Err(RuntimeSchemaError::BudgetExceeded {
+            budget: "metadata_bytes"
+        })
+    );
 }
 
 #[test]

@@ -259,7 +259,10 @@ pub struct RuntimeSchemaLimits {
     pub max_nodes: u32,
     pub max_sequence_items: u32,
     pub max_string_bytes: u64,
+    /// Complete-value and actual descriptor encoding; incidental metadata is separate.
     pub max_encoded_bytes: u64,
+    /// Cumulative retained metadata bytes, distinct from complete-value encoding.
+    pub max_metadata_bytes: u64,
     /// Shared expected-type and Choice-candidate work for one value admission.
     pub max_validation_work: u64,
 }
@@ -277,6 +280,7 @@ impl RuntimeSchemaLimits {
             max_sequence_items: 65_536,
             max_string_bytes: 1_048_576,
             max_encoded_bytes: 8_388_608,
+            max_metadata_bytes: 8_388_608,
             max_validation_work: 262_144,
         }
     }
@@ -637,6 +641,9 @@ pub(crate) fn canonical_runtime_value_view_digest(
 trait CanonicalSink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError>;
     fn bytes_written(&self) -> u64;
+    fn byte_budget(&self) -> &'static str {
+        "encoded_bytes"
+    }
 }
 
 impl CanonicalSink for value_budget::ValidationWork {
@@ -774,18 +781,16 @@ struct CanonicalWriter<'a, S: CanonicalSink + ?Sized> {
 
 impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
     fn extend(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
-        let len = u64::try_from(bytes.len()).map_err(|_| RuntimeSchemaError::BudgetExceeded {
-            budget: "encoded_bytes",
-        })?;
-        let next = self.sink.bytes_written().checked_add(len).ok_or(
-            RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes",
-            },
-        )?;
+        let budget = self.sink.byte_budget();
+        let len = u64::try_from(bytes.len())
+            .map_err(|_| RuntimeSchemaError::BudgetExceeded { budget })?;
+        let next = self
+            .sink
+            .bytes_written()
+            .checked_add(len)
+            .ok_or(RuntimeSchemaError::BudgetExceeded { budget })?;
         if next > self.max_encoded_bytes {
-            return Err(RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes",
-            });
+            return Err(RuntimeSchemaError::BudgetExceeded { budget });
         }
         self.sink.write(bytes)
     }

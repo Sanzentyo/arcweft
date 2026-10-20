@@ -1,6 +1,7 @@
 //! Borrowed metadata follows its owning serde grammar under the group's quota.
 
 use super::{AwbcRuntimeValueSnapshotError, RuntimeRetainedValueAdmission};
+use crate::entry::schema::value_budget::ResourceByteKind;
 use serde::{
     Serialize,
     ser::{self, Serializer},
@@ -58,13 +59,13 @@ impl MetadataAdmission<'_> {
     fn fixed(&self, width: usize) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.admission
             .work()
-            .encoded_metadata_fixed(&[0; 16][..width])
+            .encoded_fixed(ResourceByteKind::Metadata, &[0; 16][..width])
             .map_err(Into::into)
     }
     fn finish(self) -> Result<(), AwbcRuntimeValueSnapshotError> {
         self.admission
             .work()
-            .encoded_metadata_count(self.count)
+            .encoded_count(ResourceByteKind::Metadata, self.count)
             .map_err(Into::into)
     }
     fn container(self, length: Option<usize>) -> Result<Self, AwbcRuntimeValueSnapshotError> {
@@ -131,8 +132,8 @@ impl Serializer for MetadataAdmission<'_> {
         self.admission.work().charge(self.depth)?;
         self.admission.validate_metadata_collection(value.len())?;
         let mut work = self.admission.work();
-        work.encoded_metadata_count(value.len())?;
-        work.encoded_metadata_fixed(value)?;
+        work.encoded_count(ResourceByteKind::Metadata, value.len())?;
+        work.encoded_fixed(ResourceByteKind::Metadata, value)?;
         Ok(())
     }
     fn serialize_none(self) -> Result<(), Self::Error> {

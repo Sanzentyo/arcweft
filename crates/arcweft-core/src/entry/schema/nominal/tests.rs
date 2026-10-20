@@ -1103,6 +1103,7 @@ fn scalar_collection_node_depth_and_encoding_limits_are_inclusive() {
         max_nodes: 5,
         max_sequence_items: 2,
         max_string_bytes: 4,
+        max_metadata_bytes: RuntimeSchemaLimits::engine_default().max_metadata_bytes,
         max_encoded_bytes: u64::try_from(length).unwrap(),
     };
     let accepted = RuntimeNominalSchemaGraph::try_new(vec![make()], limits).unwrap();

@@ -170,15 +170,18 @@ field inventory と independent provenance を検証する。destination の型�
 満たすことを要求し、残る子は destination の field 型で検証する。
 部分ヘッダの名前・instantiation・深さ・子数も複製前に制限する。完全値の
 canonical byte 計上は、部分 place や frame wire 全体の byte 計上を代替しない。
-effect instantiation の declaration context、row count、各 row の label count と
-UTF-8 label は、関係式への複製前に同じ累積 byte 枠で検査する。count と文字列長は
-共通 canonical primitive で計上し、value digest や保存 wire を変更しない。
-完全値・descriptor・instantiation の検査で別々の byte 枠を作らず、admission handle
-の複製や一時的な owned state への移行も元の消費量と最初の失敗を保持する。
-frame/session の metadata visitor も同じ枠で固定幅 scalar、長さ付き UTF-8／blob、
-variant tag、実際に走査した collection count を計上する。個別の名前の検査も
-累積 byte 検査を省略しない。これらは複製前の resource transcript であり、外側の
-codec の wire 上限を代替しない。effect instantiation の writer は元の行と label を
+一つの admission owner が完全値・descriptor の `max_encoded_bytes` と、保持する
+metadata の `max_metadata_bytes` をそれぞれ累積する。metadata は logical value では
+なく、空き slot や未到達 formatter の完全値 byte 消費は0のままとする。handle の
+複製や owned state への一時移行は、両方の消費量と共有 work、最初の失敗を保持し、
+どちらの枠も更新しない。実際の descriptor 内の instantiation は descriptor byte に、
+宣言 context や保持値に付随する instantiation は metadata byte に計上する。
+
+effect instantiation の context、row/label count、UTF-8 label と frame/session の
+metadata は、共通 canonical primitive で複製前に検査する。metadata visitor は
+固定幅 scalar、長さ付き文字列／blob、variant tag、実際に走査した collection count
+を計上し、個別の名前の検査も累積上限を省略しない。resource transcript は value
+digest や外側の codec の wire 上限を代替しない。effect writer は元の行と label を
 借用し、検査前に owned wire DTO や文字列のコピーを構築しない。
 継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
 

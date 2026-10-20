@@ -3,7 +3,8 @@ use super::*;
 fn assert_metadata_bytes(value: &(impl serde::Serialize + ?Sized), bytes: u64) {
     let limits = RuntimeSchemaLimits {
         max_nodes: 0,
-        max_encoded_bytes: bytes,
+        max_encoded_bytes: 0,
+        max_metadata_bytes: bytes,
         ..RuntimeSchemaLimits::engine_default()
     };
     RuntimeRetainedValueAdmission::standalone(limits)
@@ -12,13 +13,13 @@ fn assert_metadata_bytes(value: &(impl serde::Serialize + ?Sized), bytes: u64) {
     if let Some(short) = bytes.checked_sub(1) {
         assert_eq!(
             RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
-                max_encoded_bytes: short,
+                max_metadata_bytes: short,
                 ..limits
             })
             .validate_metadata(value),
             Err(AwbcRuntimeValueSnapshotError::Resource(
                 crate::entry::RuntimeSchemaError::BudgetExceeded {
-                    budget: "encoded_bytes"
+                    budget: "metadata_bytes"
                 }
             ))
         );
@@ -88,10 +89,11 @@ fn retained_metadata_scalars_and_variants_use_the_same_byte_bank() {
 }
 
 #[test]
-fn retained_metadata_shares_value_bytes_across_transfer_and_first_failure() {
+fn retained_metadata_and_value_budgets_share_transfer_and_first_failure() {
     let limits = RuntimeSchemaLimits {
         max_nodes: 1,
-        max_encoded_bytes: 23,
+        max_encoded_bytes: 1,
+        max_metadata_bytes: 22,
         ..RuntimeSchemaLimits::engine_default()
     };
     let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
@@ -101,9 +103,10 @@ fn retained_metadata_shares_value_bytes_across_transfer_and_first_failure() {
     let mut resumed = transfer(admission).resume();
     let error =
         AwbcRuntimeValueSnapshotError::Resource(crate::entry::RuntimeSchemaError::BudgetExceeded {
-            budget: "encoded_bytes",
+            budget: "metadata_bytes",
         });
     assert_eq!(resumed.validate_metadata_string(""), Err(error.clone()));
+    assert_eq!(resumed.validate(&RuntimeValue::Unit), Err(error.clone()));
     assert_eq!(resumed.validate_metadata(&()), Err(error.clone()));
     assert_eq!(
         transfer(resumed).resume().validate_metadata_collection(0),
@@ -116,7 +119,8 @@ fn retained_metadata_strings_accumulate_without_consuming_value_nodes() {
     let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
         max_nodes: 0,
         max_string_bytes: 4,
-        max_encoded_bytes: 10,
+        max_encoded_bytes: 0,
+        max_metadata_bytes: 10,
         ..RuntimeSchemaLimits::engine_default()
     });
     admission.validate_metadata_string("name").unwrap();
@@ -125,7 +129,7 @@ fn retained_metadata_strings_accumulate_without_consuming_value_nodes() {
         admission.validate_metadata(&"more"),
         Err(AwbcRuntimeValueSnapshotError::Resource(
             crate::entry::RuntimeSchemaError::BudgetExceeded {
-                budget: "encoded_bytes"
+                budget: "metadata_bytes"
             },
         ))
     );

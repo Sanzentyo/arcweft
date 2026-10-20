@@ -22289,3 +22289,56 @@ state plus the complete command batch atomically after result admission. Retain
 existing normal-save blockers while implementing verified pending-initializer
 restore and ordinary budget-yield continuation. This refines the required Root
 implementation; no Root execution fix is claimed from investigation alone.
+
+### 2026-10-20 — distinct value and retained-metadata byte resources
+
+Inspected main fca23878744cf5e2a55ab94a1c8330119c49b137 with 23 owned
+changed paths, 14 preserved tracked user paths and the three held untracked
+entries. Supersedes the single-byte-bank decision in the preceding metadata
+entries: metadata is not a complete logical value. R1771 finished with actual
+exit100, 1940 executed, 1936 passed and four failed in 594.158s. Its exact
+catalogue and all 3932 fixed inputs matched. The original formatter and cleanup
+tests correctly require zero value bytes for empty slots and exactly seven for
+the retained string. Their limits and assertions are unchanged.
+
+One ValidationWork owner now retains distinct cumulative Value and Metadata
+counters, shared work and the first hard failure across aliases and owned-state
+transfer. RuntimeSchemaLimits explicitly carries max_metadata_bytes (default
+8388608) alongside the unchanged max_encoded_bytes. Actual descriptor headers,
+including registry instantiation, spend Value bytes; incidental declaration
+bindings, partial headers, retained names and serializer metadata spend Metadata
+bytes. The owning instantiation walker handles both roles. AWBC/Source codecs,
+semantic policy digest and public policy literals evolve together at version1;
+wire goldens and truncation checks include the new scalar. No legacy reader or
+new dependency is introduced. This change adds no Root execution fix.
+
+R1769's unchanged 52-consumer selection was deliberately interrupted to repair
+the proven model error; actual exit1, no complete test Summary, no passing-run
+claim. All 3932 source hashes matched before cancellation. Exact nextest root
+44216 and children were targeted; taskkill returned128 during child-exit races,
+but reported root termination and subsequent process inspection confirmed it
+absent. R1770 workspace check and R1767 ordinary Core Clippy passed for the
+earlier bytes; neither proves this corrected model. Strict lint remains open.
+
+R1772 Core catalogue and R1773 workspace check failed compilation at two missed
+instantiation callers in TaskOutcomeContract and RuntimeTaskSourceRef. Both now
+select Metadata explicitly. R1774 then compiled all 1940 Core cases, including
+the original four failures and all seven resource regressions. R1775 executed
+1417 cases: 1415 passed, two failed, 523 unexecuted due to default fail-fast.
+The two failures exposed CanonicalWriter's fixed encoded_bytes error category
+for a Metadata sink. Its preflight now obtains that category from the sink's
+resource role; the byte checks themselves remain intact. The failed receipt
+and pre-repair 3932-input hash audit are retained without promoting the partial
+run to full acceptance.
+
+Corrected runtime inputs are fixed under
+task-resource-byte-kinds-20261020-corrected-runtime (3932 hashes, only this note
+excluded). R1778 runs all Core lib/tests with no-fail-fast and complete terminal
+case reporting; R1777 rebuilds the full consumer catalogue; R1779 runs ordinary
+workspace all-feature/all-target Clippy. R1776 workspace check overlapped the
+error-category repair and therefore needs a fixed-input final replacement.
+These checks are pending at this intermediate publication cut, which follows
+the user's explicit instruction to commit/push accumulated dirty work without
+requiring every intermediate commit to be proven operational. The complete
+reverse closure remains Core plus 52 consumers; no workload is reduced. Root,
+Presentation, remaining Source/public switch and full-goal acceptance remain open.

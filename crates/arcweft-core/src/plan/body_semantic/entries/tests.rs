@@ -534,12 +534,13 @@ fn stateful_entry_commits_actual_command_schema_layout_and_rejects_a_false_leaf(
 fn stateful_entry_runtime_limits_change_the_row() {
     let first = stateful_plan(RuntimeTypeSchema::Bool);
     let expected = digest(&first, 100_000, 1_000_000).0.unwrap();
-    let mutations: [fn(&mut RootExecutionLimits); 10] = [
+    let mutations: [fn(&mut RootExecutionLimits); 11] = [
         |limits| limits.schema.max_depth += 1,
         |limits| limits.schema.max_nodes += 1,
         |limits| limits.schema.max_sequence_items += 1,
         |limits| limits.schema.max_string_bytes += 1,
         |limits| limits.schema.max_encoded_bytes += 1,
+        |limits| limits.schema.max_metadata_bytes += 1,
         |limits| limits.schema.max_validation_work += 1,
         |limits| limits.max_commands_per_transition += 1,
         |limits| limits.max_command_bytes_per_transition += 1,

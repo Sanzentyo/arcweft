@@ -340,7 +340,10 @@ impl TaskOutcomeContract {
             crate::entry::schema::value_encoding::ValueResourceAdmission::live(limits);
         if let Some(binding) = binding {
             resources
-                .function_instantiation(binding)
+                .function_instantiation(
+                    binding,
+                    crate::entry::schema::value_budget::ResourceByteKind::Metadata,
+                )
                 .map_err(RuntimeProgramTypeError::from)?;
         }
         owner

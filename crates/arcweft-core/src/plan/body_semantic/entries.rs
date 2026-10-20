@@ -217,6 +217,7 @@ impl RuntimeSchemaLimits {
         encoder.ordinal(self.max_sequence_items);
         encoder.scalar_u64(self.max_string_bytes);
         encoder.scalar_u64(self.max_encoded_bytes);
+        encoder.scalar_u64(self.max_metadata_bytes);
         encoder.scalar_u64(self.max_validation_work);
     }
 }

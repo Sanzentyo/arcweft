@@ -196,6 +196,7 @@ fn agent_value_descendants_share_nodes_depth_and_scalar_limits() {
         max_depth: 2,
         max_sequence_items: 2,
         max_string_bytes: 1,
+        max_metadata_bytes: RuntimeSchemaLimits::engine_default().max_metadata_bytes,
         max_encoded_bytes: u64::try_from(bytes(&value).len()).unwrap(),
     };
     assert!(Schema::AgentValue.validate_value(&value, limits).is_ok());

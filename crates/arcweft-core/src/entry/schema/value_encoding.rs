@@ -12,7 +12,7 @@ use crate::value::{
 
 use super::{
     CanonicalSink, CanonicalWriter, RuntimeSchemaChoiceMismatch, RuntimeSchemaError,
-    value_budget::{ValidationWork, ValidationWorkState, ValueBudget},
+    value_budget::{ResourceByteKind, ValidationWork, ValidationWorkState, ValueBudget},
 };
 
 struct DescriptorAdmission<'a, 'b, S: CanonicalSink + ?Sized, V: ValueValidation> {
@@ -318,7 +318,12 @@ impl ValueValidation for NoSchemaValidation<'_> {
                 _ => None,
             };
             if let Some(binding) = binding {
-                binding.validate_resource_limits(self.depth + 1, &policy, resources)?;
+                binding.validate_resource_limits(
+                    ResourceByteKind::Metadata,
+                    self.depth + 1,
+                    &policy,
+                    resources,
+                )?;
             }
             if let RuntimeValueView::Sequence(sequence) = value {
                 sequence.validate_storage_metadata(self.depth, &policy, resources)?;
@@ -461,8 +466,8 @@ pub(crate) fn validate_admitted_view<V: ValueValidation>(
 }
 
 /// Resource ownership for an admission containing several complete values and
-/// partial places. Logical nodes, encoded value/descriptor/instantiation bytes
-/// and relation work accumulate across descendants; another value grants no quota.
+/// partial places. One owner accumulates logical nodes, value/descriptor bytes,
+/// retained metadata bytes and relation work without refreshing either byte limit.
 pub(crate) struct ValueResourceAdmission<Work = ValidationWork> {
     budget: ValueBudget,
     work: Work,
@@ -496,8 +501,9 @@ impl ValueResourceAdmission {
     pub(crate) fn function_instantiation(
         &mut self,
         binding: &crate::program_types::RuntimeFunctionEffectInstantiation,
+        kind: ResourceByteKind,
     ) -> Result<(), RuntimeSchemaError> {
-        binding.validate_resource_limits(0, &self.budget, &mut self.work)
+        binding.validate_resource_limits(kind, 0, &self.budget, &mut self.work)
     }
     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
         let Self {
@@ -663,35 +669,43 @@ impl ValueResourceAdmission {
     }
 
     /// Bounds retained metadata before it is cloned. Its length-prefixed UTF-8
-    /// resource bytes share the value/descriptor bank without adding value nodes
+    /// resource bytes use the same owner as values without adding value nodes
     /// or changing the enclosing owner's wire encoding.
     pub(crate) fn metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
+        self.resource_string(ResourceByteKind::Metadata, text)
+    }
+
+    fn resource_string(
+        &mut self,
+        kind: ResourceByteKind,
+        text: &str,
+    ) -> Result<(), RuntimeSchemaError> {
         let result = self
             .work
             .charge(0)
             .and_then(|()| self.budget.string(text))
-            .and_then(|()| self.work.encoded_metadata_string(text));
+            .and_then(|()| self.work.encoded_string(kind, text));
         if let Err(error) = &result {
             self.work.retain_failure(error.clone());
         }
         result
     }
 
-    pub(crate) fn encoded_metadata_count(
-        &mut self,
-        count: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        self.work.collection(count)?;
-        self.work.charge(0)?;
-        self.work.encoded_metadata_count(count)
+    /// An actual descriptor header belongs to the canonical value transcript,
+    /// unlike incidental retained names, scopes and declaration metadata.
+    pub(crate) fn descriptor_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
+        self.resource_string(ResourceByteKind::Value, text)
     }
 
-    pub(crate) fn encoded_metadata_fixed(
-        &mut self,
-        bytes: &[u8],
-    ) -> Result<(), RuntimeSchemaError> {
+    pub(crate) fn descriptor_count(&mut self, count: usize) -> Result<(), RuntimeSchemaError> {
+        self.work.collection(count)?;
         self.work.charge(0)?;
-        self.work.encoded_metadata_fixed(bytes)
+        self.work.encoded_count(ResourceByteKind::Value, count)
+    }
+
+    pub(crate) fn descriptor_fixed(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.work.charge(0)?;
+        self.work.encoded_fixed(ResourceByteKind::Value, bytes)
     }
 
     pub(crate) fn partial_record(
@@ -736,16 +750,23 @@ impl ValueResourceAdmission {
                 ..
             } => {
                 self.budget.string(nominal.as_str())?;
-                self.work.encoded_metadata_string(nominal.as_str())?;
+                self.work
+                    .encoded_string(ResourceByteKind::Metadata, nominal.as_str())?;
                 if let Some(binding) = type_instantiation {
-                    binding.validate_resource_limits(depth + 1, &self.budget, &mut self.work)?;
+                    binding.validate_resource_limits(
+                        ResourceByteKind::Metadata,
+                        depth + 1,
+                        &self.budget,
+                        &mut self.work,
+                    )?;
                 }
             }
             crate::value::RuntimePlaceRecordHeader::Structural { names } => {
-                self.work.encoded_metadata_count(names.len())?;
+                self.work
+                    .encoded_count(ResourceByteKind::Metadata, names.len())?;
                 for name in names {
                     self.budget.string(name)?;
-                    self.work.encoded_metadata_string(name)?;
+                    self.work.encoded_string(ResourceByteKind::Metadata, name)?;
                 }
             }
         }

@@ -604,19 +604,20 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
             .len() as u64;
         // Context, row/label counts and both length-prefixed effect labels.
         let exact_bytes = RuntimeSchemaLimits {
-            max_encoded_bytes: value_bytes + 32 + 1 + 1 + 1 + 9 + 1 + 12,
+            max_encoded_bytes: value_bytes,
+            max_metadata_bytes: 32 + 1 + 1 + 1 + 9 + 1 + 12,
             ..exact
         };
         image.validate_graph_limits(exact_bytes).unwrap();
         let short_bytes = RuntimeSchemaLimits {
-            max_encoded_bytes: exact_bytes.max_encoded_bytes - 1,
+            max_metadata_bytes: exact_bytes.max_metadata_bytes - 1,
             ..exact_bytes
         };
         assert_eq!(
             image.validate_graph_limits(short_bytes),
             Err(AwbcRuntimeValueSnapshotError::Resource(
                 RuntimeSchemaError::BudgetExceeded {
-                    budget: "encoded_bytes"
+                    budget: "metadata_bytes"
                 }
             ))
         );
@@ -650,7 +651,7 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
                     .into_runtime_value_for_program_with_limits(&owner, short_bytes),
                 Err(AwbcRuntimeValueSnapshotError::Resource(
                     RuntimeSchemaError::BudgetExceeded {
-                        budget: "encoded_bytes"
+                        budget: "metadata_bytes"
                     }
                 ))
             );

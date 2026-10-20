@@ -152,7 +152,10 @@ impl RuntimeTaskSourceRef<'_> {
             crate::entry::schema::value_encoding::ValueAdmissionOrigin::Live,
             |owner, resources| {
                 if let Some(binding) = binding {
-                    resources.function_instantiation(binding)?;
+                    resources.function_instantiation(
+                        binding,
+                        crate::entry::schema::value_budget::ResourceByteKind::Metadata,
+                    )?;
                 }
                 let site = self.request_endpoint().function_id();
                 program

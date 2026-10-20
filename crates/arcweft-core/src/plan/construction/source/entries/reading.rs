@@ -495,6 +495,7 @@ impl<'a> Reader<'a> {
                 max_sequence_items: self.u32()?,
                 max_string_bytes: self.u64()?,
                 max_encoded_bytes: self.u64()?,
+                max_metadata_bytes: self.u64()?,
                 max_validation_work: self.u64()?,
             },
             max_commands_per_transition: self.u32()?,

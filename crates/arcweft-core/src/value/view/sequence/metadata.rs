@@ -138,7 +138,10 @@ impl<'a> RuntimeSequenceView<'a> {
                     if let Some((field, values)) = columns.get(index) {
                         if let Some((identity, name)) = field {
                             budget.string(name)?;
-                            work.encoded_metadata_string(name)?;
+                            work.encoded_string(
+                                crate::entry::schema::value_budget::ResourceByteKind::Metadata,
+                                name,
+                            )?;
                             fields
                                 .as_mut()
                                 .expect("record columns retain ordered field admission")

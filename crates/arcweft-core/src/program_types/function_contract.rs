@@ -3,7 +3,7 @@
 use crate::awbc::schema::{AwbcProgram, AwbcRuntimeTypeShape, AwbcTypeId};
 use crate::{
     effect_row::{DecisionControl, DecisionWork, EffectPredicate},
-    entry::schema::value_budget::ValidationWork,
+    entry::schema::value_budget::{ResourceByteKind, ValidationWork},
     plan::{
         RuntimeArrayLength, RuntimeBoundConstReference, RuntimeBoundEffectReference,
         RuntimeBoundTypeReference, RuntimeTypeBinder, RuntimeTypeScope,
@@ -453,22 +453,23 @@ impl RuntimeFunctionEffectInstantiation {
     /// without manufacturing logical payload nodes or changing value digests.
     pub(crate) fn validate_resource_limits(
         &self,
+        kind: ResourceByteKind,
         depth: usize,
         budget: &crate::entry::schema::value_budget::ValueBudget,
         work: &mut crate::entry::schema::value_budget::ValidationWork,
     ) -> Result<(), crate::entry::RuntimeSchemaError> {
         work.charge(depth)?;
         budget.collection(self.effects.len())?;
-        work.encoded_metadata_fixed(self.context.as_bytes())?;
-        work.encoded_metadata_count(self.effects.len())?;
+        work.encoded_fixed(kind, self.context.as_bytes())?;
+        work.encoded_count(kind, self.effects.len())?;
         for row in self.effects.iter() {
             work.charge(depth + 1)?;
             budget.collection(row.len())?;
-            work.encoded_metadata_count(row.len())?;
+            work.encoded_count(kind, row.len())?;
             for effect in row.iter() {
                 work.charge(depth + 2)?;
                 budget.string(effect.as_str())?;
-                work.encoded_metadata_string(effect.as_str())?;
+                work.encoded_string(kind, effect.as_str())?;
             }
         }
         Ok(())
@@ -538,6 +539,7 @@ impl RuntimeFunctionEffectInstantiation {
         // resolving the selected program's declaration scope. Source matchers
         // use the same allowance as their destination, including this pass.
         if let Err(error) = self.validate_resource_limits(
+            ResourceByteKind::Metadata,
             0,
             &crate::entry::schema::value_budget::ValueBudget::new(work.limits()),
             &mut work,

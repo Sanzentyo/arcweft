@@ -21,7 +21,48 @@ pub(crate) struct ValidationWorkState {
     limits: RuntimeSchemaLimits,
     consumed: u64,
     encoded_bytes: u64,
+    metadata_bytes: u64,
     failure: Option<RuntimeSchemaError>,
+}
+
+/// Distinct resource roles in the same enclosing admission bank. Metadata is
+/// not a logical value; descriptor bytes belong to the value encoding instead.
+#[derive(Clone, Copy)]
+pub(crate) enum ResourceByteKind {
+    Value,
+    Metadata,
+}
+
+impl ResourceByteKind {
+    fn budget(self) -> &'static str {
+        match self {
+            Self::Value => "encoded_bytes",
+            Self::Metadata => "metadata_bytes",
+        }
+    }
+}
+
+struct ValidationByteSink<'a> {
+    work: &'a mut ValidationWork,
+    kind: ResourceByteKind,
+}
+
+impl super::CanonicalSink for ValidationByteSink<'_> {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.work.charge_bytes(self.kind, bytes.len())
+    }
+
+    fn bytes_written(&self) -> u64 {
+        let state = self.work.0.borrow();
+        match self.kind {
+            ResourceByteKind::Value => state.encoded_bytes,
+            ResourceByteKind::Metadata => state.metadata_bytes,
+        }
+    }
+
+    fn byte_budget(&self) -> &'static str {
+        self.kind.budget()
+    }
 }
 
 impl ValidationWork {
@@ -42,6 +83,7 @@ impl ValidationWork {
             limits,
             consumed: 0,
             encoded_bytes: 0,
+            metadata_bytes: 0,
             failure: None,
         })))
     }
@@ -71,24 +113,38 @@ impl ValidationWork {
         self.0.borrow().encoded_bytes
     }
 
-    /// Values, descriptors and retained declaration metadata spend the same
-    /// byte allowance. A cloned work handle cannot refresh that allowance.
+    /// Complete values and descriptors spend one encoded-value allowance.
     pub(super) fn charge_encoded_bytes(&mut self, count: usize) -> Result<(), RuntimeSchemaError> {
+        self.charge_bytes(ResourceByteKind::Value, count)
+    }
+
+    fn charge_bytes(
+        &mut self,
+        kind: ResourceByteKind,
+        count: usize,
+    ) -> Result<(), RuntimeSchemaError> {
         let mut state = self.0.borrow_mut();
         if let Some(error) = &state.failure {
             return Err(error.clone());
         }
+        let (consumed, limit) = match kind {
+            ResourceByteKind::Value => (state.encoded_bytes, state.limits.max_encoded_bytes),
+            ResourceByteKind::Metadata => (state.metadata_bytes, state.limits.max_metadata_bytes),
+        };
         let next = u64::try_from(count)
             .ok()
-            .and_then(|count| state.encoded_bytes.checked_add(count));
+            .and_then(|count| consumed.checked_add(count));
         match next {
-            Some(next) if next <= state.limits.max_encoded_bytes => {
-                state.encoded_bytes = next;
+            Some(next) if next <= limit => {
+                match kind {
+                    ResourceByteKind::Value => state.encoded_bytes = next,
+                    ResourceByteKind::Metadata => state.metadata_bytes = next,
+                }
                 Ok(())
             }
             _ => {
                 let error = RuntimeSchemaError::BudgetExceeded {
-                    budget: "encoded_bytes",
+                    budget: kind.budget(),
                 };
                 state.failure = Some(error.clone());
                 Err(error)
@@ -96,32 +152,45 @@ impl ValidationWork {
         }
     }
 
-    pub(crate) fn encoded_metadata_fixed(
+    pub(crate) fn encoded_fixed(
         &mut self,
+        kind: ResourceByteKind,
         bytes: &[u8],
     ) -> Result<(), RuntimeSchemaError> {
-        self.encode_metadata(|writer| writer.extend(bytes))
+        self.encode_bytes(kind, |writer| writer.extend(bytes))
     }
 
-    pub(crate) fn encoded_metadata_count(
+    pub(crate) fn encoded_count(
         &mut self,
+        kind: ResourceByteKind,
         count: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        self.encode_metadata(|writer| writer.len(count))
+        self.encode_bytes(kind, |writer| writer.len(count))
     }
 
-    pub(crate) fn encoded_metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
-        self.encode_metadata(|writer| writer.string(text))
-    }
-
-    fn encode_metadata(
+    pub(crate) fn encoded_string(
         &mut self,
-        encode: impl FnOnce(&mut super::CanonicalWriter<'_, Self>) -> Result<(), RuntimeSchemaError>,
+        kind: ResourceByteKind,
+        text: &str,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.encode_bytes(kind, |writer| writer.string(text))
+    }
+
+    fn encode_bytes(
+        &mut self,
+        kind: ResourceByteKind,
+        encode: impl FnOnce(
+            &mut super::CanonicalWriter<'_, ValidationByteSink<'_>>,
+        ) -> Result<(), RuntimeSchemaError>,
     ) -> Result<(), RuntimeSchemaError> {
         let limits = self.limits();
+        let mut sink = ValidationByteSink { work: self, kind };
         let result = encode(&mut super::CanonicalWriter {
-            sink: self,
-            max_encoded_bytes: limits.max_encoded_bytes,
+            sink: &mut sink,
+            max_encoded_bytes: match kind {
+                ResourceByteKind::Value => limits.max_encoded_bytes,
+                ResourceByteKind::Metadata => limits.max_metadata_bytes,
+            },
             max_string_bytes: Some(limits.max_string_bytes),
         });
         if let Err(error) = &result {

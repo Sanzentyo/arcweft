@@ -811,6 +811,7 @@ impl Wire for RuntimeSchemaLimits {
         self.max_sequence_items.write_wire(writer)?;
         self.max_string_bytes.write_wire(writer)?;
         self.max_encoded_bytes.write_wire(writer)?;
+        self.max_metadata_bytes.write_wire(writer)?;
         self.max_validation_work.write_wire(writer)
     }
 
@@ -821,6 +822,7 @@ impl Wire for RuntimeSchemaLimits {
             max_sequence_items: u32::read_wire(reader)?,
             max_string_bytes: u64::read_wire(reader)?,
             max_encoded_bytes: u64::read_wire(reader)?,
+            max_metadata_bytes: u64::read_wire(reader)?,
             max_validation_work: u64::read_wire(reader)?,
         })
     }
@@ -1555,6 +1557,7 @@ mod limit_wire_tests {
             max_sequence_items: u32::MAX,
             max_string_bytes: 0x0102_0304_0506_0708,
             max_encoded_bytes: u64::MAX,
+            max_metadata_bytes: 0x1112_1314_1516_1718,
             max_validation_work: 7,
         };
         let mut writer = Writer::default();
@@ -1566,7 +1569,8 @@ mod limit_wire_tests {
             bytes,
             vec![
                 0x7f, 0x80, 0x01, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03,
-                0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 7, 0, 0, 0, 0, 0, 0, 0,
+                0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x18, 0x17, 0x16, 0x15,
+                0x14, 0x13, 0x12, 0x11, 7, 0, 0, 0, 0, 0, 0, 0,
             ]
         );
 
@@ -1576,7 +1580,7 @@ mod limit_wire_tests {
             limits
         );
         reader.finish().expect("consume schema limits");
-        for end in bytes.len() - 8..bytes.len() {
+        for end in bytes.len() - 16..bytes.len() {
             let mut reader = Reader::new(&bytes[..end], &AwbcDecodeBudget::default());
             assert!(RuntimeSchemaLimits::read_wire(&mut reader).is_err());
         }
@@ -1602,6 +1606,7 @@ mod limit_wire_tests {
                 max_sequence_items: 1,
                 max_string_bytes: 2,
                 max_encoded_bytes: 3,
+                max_metadata_bytes: 5,
                 max_validation_work: 4,
             },
             max_commands_per_transition: 128,
@@ -1615,9 +1620,9 @@ mod limit_wire_tests {
         assert_eq!(
             bytes,
             vec![
-                1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,
-                0x80, 1, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x7f, 0xff, 0xff, 0xff,
-                0xff, 0x0f,
+                1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 4,
+                0, 0, 0, 0, 0, 0, 0, 0x80, 1, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x7f,
+                0xff, 0xff, 0xff, 0xff, 0x0f,
             ]
         );
 

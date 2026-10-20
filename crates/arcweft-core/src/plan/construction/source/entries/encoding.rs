@@ -309,6 +309,7 @@ impl Writer<'_> {
         self.u32(limits.schema.max_sequence_items)?;
         self.u64(limits.schema.max_string_bytes)?;
         self.u64(limits.schema.max_encoded_bytes)?;
+        self.u64(limits.schema.max_metadata_bytes)?;
         self.u64(limits.schema.max_validation_work)?;
         self.u32(limits.max_commands_per_transition)?;
         self.u64(limits.max_command_bytes_per_transition)?;

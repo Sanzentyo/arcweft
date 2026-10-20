@@ -310,7 +310,8 @@ impl RuntimeRetainedValueAdmission {
     }
 
     /// Bounds an enclosing frame's retained name before cloning it. Metadata
-    /// shares relation work and resource bytes with retained values; the
+    /// shares relation work and the resource owner with retained values; its
+    /// metadata byte limit is distinct from canonical encoded-value bytes. The
     /// enclosing codec still owns its actual wire encoding and wire limit.
     pub fn validate_metadata_string(
         &mut self,

@@ -229,6 +229,7 @@ fn opaque_choice_checks_owner_once_per_candidate_and_accounts_for_payload_once()
         max_sequence_items: 2,
         max_string_bytes: 1,
         max_validation_work: 5,
+        max_metadata_bytes: RuntimeSchemaLimits::engine_default().max_metadata_bytes,
         max_encoded_bytes: u64::try_from(bytes(&value).len()).unwrap(),
     };
     assert_eq!(

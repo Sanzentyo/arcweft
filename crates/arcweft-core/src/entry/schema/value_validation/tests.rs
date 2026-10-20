@@ -45,6 +45,7 @@ fn opaque_payloads_share_the_enclosing_value_and_byte_allowance() {
         max_depth: 3,
         max_sequence_items: 2,
         max_string_bytes: 1,
+        max_metadata_bytes: RuntimeSchemaLimits::engine_default().max_metadata_bytes,
         max_encoded_bytes: u64::try_from(encoded.len()).unwrap(),
     };
     let digest = schema.validate_value(&value, limits).unwrap();
