@@ -550,6 +550,18 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
         max_ops: 1,
         ..BundleSessionOptions::default()
     };
+    let mut unrecorded = BundleSession::new(&bundle, options.clone()).unwrap();
+    let mut early_input = BundleStepInput::default();
+    early_input
+        .root_events
+        .push(RootEventInput::new(event.clone().into()));
+    let early =
+        unrecorded.step_with_clock(RuntimeClockStep::from_millis(1, 1).unwrap(), early_input);
+    assert!(early.diagnostics.is_empty(), "{:?}", early.diagnostics);
+    assert!(matches!(
+        unrecorded.start_root_replay_recording(),
+        Err(RootReplayRecordingError::AlreadyAdvanced)
+    ));
     let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
     let mut recorder = session.start_root_replay_recording().unwrap();
     assert_eq!(

@@ -22831,3 +22831,57 @@ allowance. Their ordinary-frame migration, Native foreign-call cold rollback,
 recorder pre-copy/failure atomicity, full restore failure atomicity, complete
 reverse consumers, earlier56 CLI failures, Presentation ABI, cross-tier/visual
 acceptance and every other original requirement remain open. The goal is active.
+
+### 2026-10-20: initializer execution evidence and recorder generation ownership
+
+Published completion repair `2c753853972f9655a050cc64177d8b73c3e1bafa` was
+verified against fresh origin/main and ls-remote: parent
+`dcfcd32b33f897d21c83d53337cc05e242225dda`, tree
+`0c7673fe9d76b5a1bd3188d192828e01e6b51a3d`, raw patch SHA256
+`33130d58d8a144ee9d1abeee5f8eccb29645f70c59e1a235a150b663fb912954`.
+All10 published blobs and3935 inputs matched; held14 were unchanged and the
+index was empty before the publication baseline advanced.
+
+R1836 selected all2124 Core/driver cases, including the new64-op Native Drain
+case. R1833 executed that exact final case set:2124 passed, zero skipped,
+219.554s, one API-compile case slow at158.490s. Its Cargo command had queued
+before the final edits, but remained blocked at the observed build boundary
+through those edits; the final catalogue, execution case keys and3934 current
+runtime/source/spec hashes match with zero drift. R1837 final workspace check
+all targets/features/locked passed in3m59s; its3934 current input hashes matched.
+These are final-Drain evidence, replacing the earlier development-only results.
+
+R1830 discovered37 integration cases, including AWBC Drain continuation.
+R1834 executed the entire set:36 passed, one failed, zero skipped,1.781s;
+exact case keys and3934 hashes matched. Native selected-locale initialization,
+AWBC actual Rust-call cold rollback with no repeat, and AWBC64-op Drain all
+passed. The real session replay case reached recording but failed because the
+foreground Flow completed and released current_fiber_generation. Its durable
+Root and executable still existed; a foreground pin is not their owner.
+
+The recorder now uses the executor's exact generation and its existing runtime
+image, rejects a changed active generation, and no longer keeps the obsolete
+NoActiveGeneration error path. Starting after unrecorded queued ingress, an
+active reducer or pending commands is rejected before creating a recorder. The
+same integration case includes an unrecorded-ingress rejection assertion.
+
+R1840 executed all37 cases against that correction:36 passed, one failed,
+zero skipped,2.294s; all3935 then-current source/spec/note hashes matched.
+The new ingress rejection passed and recording advanced to a real reducer
+failure: its &GameState argument was checked as a Reference row against the
+materialized State value. R1842 selected exactly driver174 (no Core cases);
+R1843 passed all174, zero skipped. R1841 workspace all-target/all-feature/locked
+check passed and R1844 ordinary Core/driver/compiler Clippy passed. Their input
+hashes matched all3935 then-current files. The actual changed-owner reverse
+closure is10; all99 manifest/lock inputs match the retained resolved graph.
+
+The remaining replay failure is not a fixture reason to remove the reducer,
+change its shared parameter or weaken assertions. Native pattern matching and
+the AWBC Reduction verifier already specify Reference erasure in RuntimeValue;
+both program-backed canonical value validators lack the corresponding Shared/
+Reference head normalization. Repair that general live/inert frame-admission
+boundary under its existing work bank, covering wrong referents and bounded
+cycles, before wiring reducers into ordinary budgeted frames. Do not add a
+Root-only match exception or repair the synchronous evaluator slated for deletion.
+Recorder pre-copy/failure atomicity and all original outstanding requirements
+remain open. The goal stays active.

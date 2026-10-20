@@ -117,15 +117,13 @@ pub enum RootReplayRecordingError {
     InitializationPending,
     #[error("root replay initialization does not match the selected entry")]
     InitializationMismatch,
-    #[error("root replay recording requires a freshly started active generation")]
-    NoActiveGeneration,
     #[error("root replay recording could not inspect the active runtime: {message}")]
     RuntimeInspection { message: String },
     #[error("root replay recording requires a stateful entry")]
     EntryNotStateful,
     #[error("root replay recording requires a durable root")]
     MissingRoot,
-    #[error("root replay recording must begin at transition sequence zero")]
+    #[error("root replay recording must begin before any root ingress or transition")]
     AlreadyAdvanced,
     #[error("root replay recording session identity changed")]
     SessionIdentityChanged,

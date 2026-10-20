@@ -47,9 +47,7 @@ impl BundleSession {
 
 impl RootReplayRecorderV1 {
     fn start(session: &BundleSession) -> Result<Self, RootReplayRecordingError> {
-        let generation = session
-            .current_fiber_generation()
-            .ok_or(RootReplayRecordingError::NoActiveGeneration)?;
+        let generation = session.executor.generation();
         let runtime = session
             .runtime_images
             .get(generation)
@@ -71,7 +69,15 @@ impl RootReplayRecorderV1 {
             .executor
             .product_root_state_snapshot()
             .ok_or(RootReplayRecordingError::MissingRoot)?;
-        if root.next_sequence != TransitionSequence::ZERO {
+        let blockers = session
+            .executor
+            .product_root_save_blockers()
+            .ok_or(RootReplayRecordingError::MissingRoot)?;
+        if root.next_sequence != TransitionSequence::ZERO
+            || blockers.reducer_active
+            || blockers.pending_events > 0
+            || blockers.pending_commands > 0
+        {
             return Err(RootReplayRecordingError::AlreadyAdvanced);
         }
         let initializer_state_digest = root
@@ -96,7 +102,7 @@ impl RootReplayRecorderV1 {
             .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
                 message: "active entry kind is invalid".to_owned(),
             })?;
-        Ok(Self {
+        let recorder = Self {
             identity: RootReplayIdentityV1 {
                 schema_version: ROOT_REPLAY_SCHEMA_VERSION,
                 engine_identity: ROOT_REPLAY_ENGINE_IDENTITY.to_owned(),
@@ -116,7 +122,9 @@ impl RootReplayRecorderV1 {
             external_outcomes: Vec::new(),
             roles: roles.as_ref().clone(),
             pending_events: VecDeque::new(),
-        })
+        };
+        recorder.validate_session_identity(session)?;
+        Ok(recorder)
     }
 
     fn capture_step(
@@ -229,9 +237,7 @@ impl RootReplayRecorderV1 {
                 events: capture.pending_events.len(),
             });
         }
-        let generation = session
-            .current_fiber_generation()
-            .ok_or(RootReplayRecordingError::NoActiveGeneration)?;
+        let generation = session.executor.generation();
         let runtime = session
             .runtime_images
             .get(generation)
@@ -289,7 +295,8 @@ impl RootReplayRecorderV1 {
         &self,
         session: &BundleSession,
     ) -> Result<(), RootReplayRecordingError> {
-        if session.active_generation().artifact_identity != self.identity.artifact
+        if session.executor.generation() != session.active_generation().id
+            || session.active_generation().artifact_identity != self.identity.artifact
             || session.active_locale != self.identity.active_locale
             || session.executor.format_context().data_identity()
                 != self.identity.format_data_identity
