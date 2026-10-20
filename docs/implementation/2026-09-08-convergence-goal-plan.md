@@ -22395,3 +22395,29 @@ across13 binaries. Its same handle88772 remains live; R1779/1780/1782 retain
 handles85743/27106/21700. Source remains at the corrected-runtime freeze, with
 only operational notes changing. Poll these exact handles and terminal receipts;
 full acceptance remains pending, with Root and the complete original goal open.
+
+### 2026-10-20 — corrected resource-kind Core and workspace evidence
+
+At main cf93c2e2ee50f10cac7a4e4f7baf5fcbc0ec087a, the executable change is
+a9a65e462263767c21272471646e8dccac927661; later commits change only this note.
+R1778 completed actual exit0: all1940 Core cases passed, zero skipped, 247.891s
+(one slow API-seal case208.381s). The exact R1774 catalogue case set and all3932
+corrected-runtime input hashes matched, held14 unchanged. This includes the
+original four formatter/cleanup budgets, all seven added resource regressions,
+wire/truncation, executable-policy digest and public API compile checks. R1775's
+partial failed run remains historical evidence and is not relabeled passing.
+
+R1779 ordinary workspace all-feature/all-target locked Clippy passed; R1780's
+fixed-input workspace check passed; R1782 Core all-feature locked doctests passed
+73/73, zero ignored/filtered, 5.10s. Both later checks also matched all3932 frozen
+inputs. Clippy's diagnostic-header/file comparison in changed Rust owners is
+44 before and44 after, zero additions/removals versus R1767. Warnings elsewhere
+and strict lint acceptance remain unresolved. The elapsed19m16s Clippy and
+18m13s check include Cargo lock waits; they are not isolated compilation timings.
+
+R1783's exact52-consumer no-fail-fast run is still live at handle46088, compiling
+the remaining ordinary Cargo outputs after the R1777 allocation failure. Its
+full case-set, Source and execution audit remains required; no consumer pass is
+claimed. Keep the executable inputs fixed while this receipt is outstanding.
+Root initialization/reducers and all other original acceptance remain open;
+these successful checks do not complete or narrow the active goal.
