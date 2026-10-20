@@ -18,6 +18,7 @@ use thiserror::Error;
 
 pub const ROOT_REPLAY_SCHEMA_VERSION: u32 = 1;
 pub const ROOT_REPLAY_ENGINE_IDENTITY: &str = "arcweft.root-replay.v1";
+pub const ROOT_REPLAY_SAVE_SCHEMA_ID: &str = "arcweft.runtime.root-replay";
 
 /// Immutable identity shared by a pending recorder and a completed trace.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -38,6 +39,7 @@ pub struct RootReplayIdentityV1 {
 
 /// A complete transcript always has an observed initializer result.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RootReplayTraceV1 {
     #[serde(flatten)]
     pub identity: RootReplayIdentityV1,
@@ -179,6 +181,8 @@ pub struct RootReplayReportV1 {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayError {
+    #[error("root replay codec rejected the trace: {0}")]
+    Codec(#[source] Box<arcweft_data::DataError>),
     #[error("root replay retained value admission failed: {0}")]
     Snapshot(#[source] Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
     #[error("unsupported root replay schema version {actual}; expected exactly 1")]

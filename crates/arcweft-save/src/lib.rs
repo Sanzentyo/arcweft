@@ -49,12 +49,12 @@ impl SaveSchemaId {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SaveEnvelope {
-    pub schema_id: SaveSchemaId,
+pub struct SaveEnvelope<Schema = SaveSchemaId, Codec = String, Payload = Vec<u8>> {
+    pub schema_id: Schema,
     pub schema_version: u32,
-    pub codec_id: String,
+    pub codec_id: Codec,
     pub payload_checksum: [u8; 32],
-    pub payload: Vec<u8>,
+    pub payload: Payload,
 }
 
 impl SaveEnvelope {
@@ -99,6 +99,21 @@ impl SaveEnvelope {
     }
 
     pub fn decode_bytes(input: &[u8], options: &SaveDecodeOptions) -> Result<Self> {
+        let envelope = SaveEnvelope::decode_borrowed(input, options)?;
+        Ok(Self {
+            schema_id: SaveSchemaId::new(envelope.schema_id),
+            schema_version: envelope.schema_version,
+            codec_id: envelope.codec_id.to_owned(),
+            payload_checksum: envelope.payload_checksum,
+            payload: envelope.payload.to_vec(),
+        })
+    }
+}
+
+impl<'a> SaveEnvelope<&'a str, &'a str, &'a [u8]> {
+    /// One envelope grammar validates the complete borrowed input before any
+    /// owning header/payload projection or typed payload construction.
+    fn decode_borrowed(input: &'a [u8], options: &SaveDecodeOptions) -> Result<Self> {
         if u64::try_from(input.len()).is_ok_and(|len| len > options.max_envelope_bytes) {
             return Err(DataError::limit(format!(
                 "save envelope length {} exceeds {}",
@@ -113,12 +128,12 @@ impl SaveEnvelope {
         let payload_len = cursor.bounded_len("payload", options.max_payload_bytes)?;
         let checksum = cursor.array::<32>()?;
         let schema_version = cursor.u32()?;
-        let schema_id = String::from_utf8(cursor.bytes(schema_len)?.to_vec())
+        let schema_id = std::str::from_utf8(cursor.bytes(schema_len)?)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        let codec_id = String::from_utf8(cursor.bytes(codec_len)?.to_vec())
+        let codec_id = std::str::from_utf8(cursor.bytes(codec_len)?)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        let payload = cursor.bytes(payload_len)?.to_vec();
-        if *blake3::hash(&payload).as_bytes() != checksum {
+        let payload = cursor.bytes(payload_len)?;
+        if *blake3::hash(payload).as_bytes() != checksum {
             return Err(DataError::new(
                 DataErrorKind::InvalidEncoding,
                 "save payload checksum mismatch",
@@ -126,7 +141,7 @@ impl SaveEnvelope {
         }
         cursor.finish(options.allow_trailing_data)?;
         Ok(Self {
-            schema_id: SaveSchemaId::new(schema_id),
+            schema_id,
             schema_version,
             codec_id,
             payload_checksum: checksum,
@@ -415,8 +430,8 @@ where
         current_schema_version,
         &strict_options,
     )?;
-    arcweft_codec_json::JsonCodec::validate_document(&payload, &options.codec.limits)?;
-    let mut deserializer = serde_json::Deserializer::from_slice(&payload);
+    arcweft_codec_json::JsonCodec::validate_document(payload, &options.codec.limits)?;
+    let mut deserializer = serde_json::Deserializer::from_slice(payload);
     let mut ignored = Vec::new();
     let value = serde_ignored::deserialize(&mut deserializer, |path| {
         ignored.push(path.to_string());
@@ -445,19 +460,23 @@ where
     Ok(value)
 }
 
-fn decode_typed_json_payload(
-    input: &[u8],
+fn decode_typed_json_payload<'a>(
+    input: &'a [u8],
     expected_schema_id: &SaveSchemaId,
     current_schema_version: u32,
     options: &SaveDecodeOptions,
-) -> Result<Vec<u8>> {
-    let envelope = SaveEnvelope::decode_bytes(input, options)?;
-    if &envelope.schema_id != expected_schema_id {
+) -> Result<&'a [u8]> {
+    let mut envelope_options = options.clone();
+    envelope_options.max_payload_bytes = envelope_options
+        .max_payload_bytes
+        .min(u64::try_from(options.codec.limits.max_input_len).unwrap_or(u64::MAX));
+    let envelope = SaveEnvelope::decode_borrowed(input, &envelope_options)?;
+    if envelope.schema_id != expected_schema_id.as_str() {
         return Err(DataError::new(
             DataErrorKind::InvalidEncoding,
             format!(
                 "save schema id `{}` does not match expected `{}`",
-                envelope.schema_id.as_str(),
+                envelope.schema_id,
                 expected_schema_id.as_str()
             ),
         ));
@@ -580,6 +599,20 @@ mod typed_json_tests {
 
     fn schema() -> SaveSchemaId {
         SaveSchemaId::new("arcweft.test.typed_json")
+    }
+
+    #[test]
+    fn typed_json_payload_borrows_the_original_envelope_bytes() {
+        let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        let options = SaveDecodeOptions::default();
+        let borrowed = SaveEnvelope::decode_borrowed(&bytes, &options).unwrap();
+        let payload = decode_typed_json_payload(&bytes, &schema(), 1, &options).unwrap();
+        let payload_offset = HEADER_LEN + schema().as_str().len() + TYPED_JSON_CODEC_ID.len();
+        assert_eq!(payload.as_ptr(), bytes[payload_offset..].as_ptr());
+        assert_eq!(borrowed.payload.as_ptr(), payload.as_ptr());
+        let owned = SaveEnvelope::decode_bytes(&bytes, &options).unwrap();
+        assert_eq!(owned.payload, payload);
+        assert_eq!(owned.encode_bytes().unwrap(), bytes);
     }
 
     #[test]

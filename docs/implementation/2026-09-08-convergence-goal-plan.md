@@ -23082,3 +23082,88 @@ Native foreign-call cold rollback, full restore failure atomicity, all14 host
 families, Generic Match/retained View completion, the earlier56 CLI failures,
 Presentation ABI, strict Clippy, full reverse/Tier2/visual acceptance and every
 other original unfinished requirement remain open. The full goal stays active.
+
+### 2026-10-20: bounded replay-byte reader and borrowed save-envelope parsing
+
+The preceding retained-admission cut was published and verified as
+`232684b98889de86f4ffb5dbc4caac634188e7a8`, parent
+`404afe5360578451b934cbe21ba8151c2b4b36eb`, tree
+`87087d9095a493e7f1ec10d819684c361b2e76c2`, raw patch SHA256
+`ea5d5967fff5a9bb4669809cab72f2665217e20297fbf2ddd6dc626427d307e0`.
+Fresh fetch/advertised main, all8 published blobs and3936 frozen inputs matched;
+held14 were unchanged, the index was empty and the baseline advanced. That goal
+turn made implementation, validation and publication progress.
+
+Inspected main remains that full232684 SHA for this cut. Ten source/Cargo/test/
+spec paths (one new private replay codec module) plus this note coexist with the
+unchanged held14 tracked paths and held untracked files. Driver now directly
+depends on arcweft-data to preserve its structured codec error as the public
+error source. Compiler's test dependency on arcweft-save exercises the actual
+envelope producer. Cargo.lock records just these two edges; no package was added.
+Fresh all-feature Cargo metadata was captured after each dependency edit without
+overwriting the earlier evidence. The final R1872 metadata SHA256 is
+`ce471236b6d8f6e08775533e0ad4eed28cb58360adbc6acdd800eaf848a7ef9f`.
+Its97 workspace members and99 manifest/lock inputs are frozen; changed manifest
+inputs versus the prior graph are Cargo.lock and the two edited manifests.
+R1880 cargo tree --invert arcweft-save (normal/build/dev, workspace/all features,
+locked) passed and exactly matches the resolved11-package reverse closure.
+The temporary checkpoint helper now uses this fresh graph/receipt; historical
+R808/R1870 metadata remains intact.
+
+Both logical-bundle and exact-AWFB replay now have byte entry points using one
+private decoder over the existing strict typed JSON save codec. The save schema
+is arcweft.runtime.root-replay at version1, with no raw-JSON fallback or predecessor
+reader. The existing in-memory inert trace API still authenticates the selected
+artifact/program before live construction. Codec DataError kind/path are retained
+in RootReplayError::Codec; decode failure precedes artifact/session construction.
+The flattened current trace wire shape is retained, and its outer DTO rejects
+unknown fields. The shared strict decoder also rejects ignored nested fields.
+
+SaveEnvelope now has storage parameters with the prior owned types as defaults.
+Its sole byte parser borrows schema/codec strings and payload, validates UTF-8,
+lengths, checksum and trailing data, then projects owning buffers only for the
+owned-envelope API. Strict typed JSON reads the original payload slice instead
+of first copying the entire envelope payload. Its JSON input-length limit is
+also applied to the envelope payload header before hashing/reading the payload.
+The existing JSON parser/DecodeBudget still preflights complete structure,
+duplicate keys, trailing JSON, nodes/depth/collections/strings before typed DTO
+deserialization. No second envelope grammar, runtime-value parser, program owner,
+contract version or compatibility path was introduced. The maintained save/replay
+chapter records these boundaries. Bounded output encoding is not claimed here.
+
+A new Save unit case asserts that typed payload decoding aliases the exact input
+slice and that the unchanged owning codec round-trips the same bytes. Existing
+construction-probe tests still require resource failure before typed construction.
+Two new compiler integration cases use a real recorded trace: one covers logical
+replay and caller wire limits, unknown root/nested fields, escaped duplicate keys,
+JSON/envelope trailing data, wrong schema/version/codec and checksum corruption;
+the other records an actual AWFB session and tests byte replay against that same
+artifact plus rejection through the logical-artifact entry. The shared recording
+fixture keeps its original initialization/digest/transition/op-count assertions.
+These behavioral cases are not yet claimed passed at this intermediate checkpoint.
+
+R1871 development Save/driver/compiler all-target/all-feature/locked check passed
+before the final new test bodies. R1877 final workspace all-target/all-feature/
+locked check passed in55.33s. R1878 ordinary workspace Clippy passed in1m54s;
+warnings remain and strict Clippy is not claimed. Both3936-input runtime/source/
+spec audits exclude only this operational note and have zero drift. The full
+freeze has3937 inputs, includes the new codec module, and retains held14 unchanged.
+R1879 structure passed:3158 files,3028 Rust files,1722816 physical Rust LOC,
+97 packages,376 review triggers and zero blocking violations. Save owns envelope
+parsing/projection; the driver owns trace/schema selection and replay context.
+The new dependencies preserve the documented lower-layer direction and Sans-I/O.
+
+R1873/R1874 Save+driver catalogue/execution and R1875/R1876 compiler catalogue/
+execution are running or queued at this checkpoint. The expected compiler set
+is41, but its actual terminal catalogue and cases have not yet been reconciled.
+The observed live Cargo build is compiling Core/dialogue/sema and is not stopped.
+Per the user's explicit instruction, publish this intermediate cut without
+waiting for every middle commit to be proved runnable. Keep the same processes
+and fixed runtime inputs, inspect their real results, and repair any failures.
+
+The complete11-package execution acceptance, bounded output encoding, pre-live
+digest/expected-key admission and Root reducer ordinary frames/shared budget/
+backend remain open, along with Native foreign-call cold rollback, full restore
+failure atomicity, all14 host families, Generic Match/retained View completion,
+earlier56 CLI failures, Presentation ABI, strict Clippy and full Tier2/visual and
+final workspace acceptance. The original full goal remains active.

@@ -61,6 +61,13 @@ durable Root の transition event と成功した external outcome は、Core �
 実行時の入力を同じ executable owner に束縛して構築する。trace の contract version
 は `1` とする。
 
+外部の Root trace bytes は既存の strict typed JSON save codec を使い、schema ID
+`arcweft.runtime.root-replay`、version `1` の envelope として読む。logical bundle と
+AWFB の両入口で caller の `SaveDecodeOptions` を適用し、JSON 全体の resource・
+重複 key・末尾 data の検証後に inert DTO を decode する。未知 field も拒否し、
+`DataError` の kind・path を保持したまま replay の codec error として返す。
+trace の decode が成功するまで artifact/session の構築を開始しない。
+
 recorder は実行前の保持値検証から実行後の結果検証まで同じ資源枠を保持する。
 identity、sequence、digest、external result の metadata と値を別の allowance に
 逃がさず、全 transition の借用結果を検証してから command digest 一覧をコピーする。
@@ -542,6 +549,12 @@ strict typed JSON save は、型付き DTO を構築する前に JSON codec の�
 key だけを保持する。未知 field・重複 key・末尾 data の拒否を維持し、検証後の
 型付き decoder は元の bytes を読む。wide integer と float bit を検証のために
 再エンコードしない。早期拒否の構造化 kind・path は decode context が保持する。
+
+envelope の schema・codec・payload は `SaveEnvelope` の同じ grammar を借用値で
+読み、UTF-8・長さ・checksum・末尾 data を所有値への投影前に検証する。typed JSON
+reader は JSON の input-length 上限も envelope の payload 長に適用し、元の payload
+slice を直接検証・decode する。通常の owned envelope decoder は同じ借用検証の
+成功後にだけ header と payload をコピーする。
 
 ## Agent replay
 

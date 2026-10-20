@@ -111,8 +111,8 @@ pub use self::environment::{
     PresentationEnvironmentUpdate, PresentationEnvironmentUpdateError, SessionEnvironmentState,
 };
 pub use self::replay::{
-    ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
-    RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
+    ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SAVE_SCHEMA_ID, ROOT_REPLAY_SCHEMA_VERSION,
+    RecordedExternalOutcome, RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1, RootReplayError,
     RootReplayRecorderV1, RootReplayRecordingError, RootReplayReportV1, RootReplayStepError,
     RootReplayTraceV1,

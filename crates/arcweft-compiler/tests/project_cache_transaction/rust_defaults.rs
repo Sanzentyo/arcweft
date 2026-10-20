@@ -551,30 +551,15 @@ fn root_replay_fixture(
     (bundle, event, options)
 }
 
-#[test]
-fn root_replay_records_observed_initialization_before_queued_event_transition() {
+fn record_root_replay_session(
+    session: &mut arcweft_runtime_driver::session::BundleSession,
+    event: RuntimeValue,
+) -> arcweft_runtime_driver::session::RootReplayTraceV1 {
     use arcweft_core::root::RootEventInput;
     use arcweft_runtime_driver::{
         clock::RuntimeClockStep,
-        session::{
-            BundleSession, BundleStepInput, RecordedRootOutcomeV1, RootReplayError,
-            RootReplayRecordingError, RootReplayTraceV1,
-        },
+        session::{BundleStepInput, RootReplayRecordingError},
     };
-    let (bundle, event, options) = root_replay_fixture("root-replay-initialization");
-    let mut unrecorded = BundleSession::new(&bundle, options.clone()).unwrap();
-    let mut early_input = BundleStepInput::default();
-    early_input
-        .root_events
-        .push(RootEventInput::new(event.clone().into()));
-    let early =
-        unrecorded.step_with_clock(RuntimeClockStep::from_millis(1, 1).unwrap(), early_input);
-    assert!(early.diagnostics.is_empty(), "{:?}", early.diagnostics);
-    assert!(matches!(
-        unrecorded.start_root_replay_recording(),
-        Err(RootReplayRecordingError::AlreadyAdvanced)
-    ));
-    let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
     let mut recorder = session.start_root_replay_recording().unwrap();
     assert_eq!(
         recorder.clone().finish(),
@@ -609,6 +594,34 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
     let trace = recorder.finish().unwrap();
     assert_eq!(Some(trace.initializer_state_digest), initialized);
     assert_eq!(trace.transitions.len(), 1);
+    trace
+}
+
+#[test]
+fn root_replay_records_observed_initialization_before_queued_event_transition() {
+    use arcweft_core::root::RootEventInput;
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{
+            BundleSession, BundleStepInput, RecordedRootOutcomeV1, RootReplayError,
+            RootReplayRecordingError, RootReplayTraceV1,
+        },
+    };
+    let (bundle, event, options) = root_replay_fixture("root-replay-initialization");
+    let mut unrecorded = BundleSession::new(&bundle, options.clone()).unwrap();
+    let mut early_input = BundleStepInput::default();
+    early_input
+        .root_events
+        .push(RootEventInput::new(event.clone().into()));
+    let early =
+        unrecorded.step_with_clock(RuntimeClockStep::from_millis(1, 1).unwrap(), early_input);
+    assert!(early.diagnostics.is_empty(), "{:?}", early.diagnostics);
+    assert!(matches!(
+        unrecorded.start_root_replay_recording(),
+        Err(RootReplayRecordingError::AlreadyAdvanced)
+    ));
+    let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
+    let trace = record_root_replay_session(&mut session, event);
     let wire = serde_json::to_value(&trace).unwrap();
     assert_eq!(wire["schema_version"], 1);
     assert!(wire.get("identity").is_none());
@@ -690,6 +703,182 @@ fn root_replay_recording_rejection_returns_unexecuted_input_and_clock() {
         session.start_root_replay_recording().unwrap().finish(),
         before
     );
+}
+
+#[test]
+fn root_replay_trace_codec_bounds_wire_and_rejects_unknown_duplicate_and_trailing_data() {
+    use arcweft_data::{DataErrorKind, DecodeLimits};
+    use arcweft_runtime_driver::session::{
+        BundleSession, ROOT_REPLAY_SAVE_SCHEMA_ID, ROOT_REPLAY_SCHEMA_VERSION, RootReplayError,
+    };
+    use arcweft_save::{SaveDecodeOptions, SaveEnvelope, SaveSchemaId, TYPED_JSON_CODEC_ID};
+    let (bundle, event, options) = root_replay_fixture("root-replay-trace-wire");
+    let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
+    let trace = record_root_replay_session(&mut session, event);
+    let envelope = |payload: Vec<u8>| {
+        SaveEnvelope::new(
+            SaveSchemaId::new(ROOT_REPLAY_SAVE_SCHEMA_ID),
+            ROOT_REPLAY_SCHEMA_VERSION,
+            TYPED_JSON_CODEC_ID,
+            payload,
+        )
+        .encode_bytes()
+        .unwrap()
+    };
+    let json = serde_json::to_vec(&trace).unwrap();
+    let bytes = envelope(json.clone());
+    let decode = SaveDecodeOptions::default();
+    let replay =
+        BundleSession::replay_root_trace_from_save_bytes(&bundle, options.clone(), &bytes, &decode)
+            .unwrap();
+    assert_eq!(replay.transitions_verified, 1);
+    let assert_rejected = |packet: &[u8], policy: &SaveDecodeOptions, expected: DataErrorKind| {
+        // A codec failure must precede even inspecting the invalid AWFB input.
+        let failure = BundleSession::replay_root_trace_from_awfb_and_trace_bytes(
+            &[],
+            options.clone(),
+            packet,
+            policy,
+        )
+        .unwrap_err();
+        assert!(std::error::Error::source(&failure).is_some());
+        let RootReplayError::Codec(error) = failure else {
+            panic!("trace decoding must reject first");
+        };
+        assert_eq!(error.kind(), &expected);
+    };
+    for limits in [
+        DecodeLimits {
+            max_input_len: json.len() - 1,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_depth: 0,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_nodes: 0,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_sequence_len: 0,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_map_len: 0,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_collection_items: 0,
+            ..decode.codec.limits
+        },
+        DecodeLimits {
+            max_string_len: 0,
+            ..decode.codec.limits
+        },
+    ] {
+        let mut policy = decode.clone();
+        policy.codec.limits = limits;
+        assert_rejected(&bytes, &policy, DataErrorKind::LimitExceeded);
+    }
+    for policy in [
+        SaveDecodeOptions {
+            max_envelope_bytes: u64::try_from(bytes.len() - 1).unwrap(),
+            ..decode.clone()
+        },
+        SaveDecodeOptions {
+            max_payload_bytes: u64::try_from(json.len() - 1).unwrap(),
+            ..decode.clone()
+        },
+    ] {
+        assert_rejected(&bytes, &policy, DataErrorKind::LimitExceeded);
+    }
+    let mut unknown_root = serde_json::to_value(&trace).unwrap();
+    unknown_root["unrecognized"] = serde_json::json!(true);
+    let mut unknown_transition = serde_json::to_value(&trace).unwrap();
+    unknown_transition["transitions"][0]["unrecognized"] = serde_json::json!(true);
+    for unknown in [unknown_root, unknown_transition] {
+        assert_rejected(
+            &envelope(serde_json::to_vec(&unknown).unwrap()),
+            &decode,
+            DataErrorKind::InvalidEncoding,
+        );
+    }
+    let mut duplicate = json[..json.len() - 1].to_vec();
+    duplicate.extend_from_slice(br#", "schema_\u0076ersion": 1}"#);
+    assert_rejected(&envelope(duplicate), &decode, DataErrorKind::DuplicateField);
+    let mut trailing_json = json.clone();
+    trailing_json.extend_from_slice(b" null");
+    assert_rejected(
+        &envelope(trailing_json),
+        &decode,
+        DataErrorKind::TrailingData,
+    );
+    let mut trailing_envelope = bytes.clone();
+    trailing_envelope.push(0);
+    assert_rejected(
+        &trailing_envelope,
+        &SaveDecodeOptions {
+            allow_trailing_data: true,
+            ..decode.clone()
+        },
+        DataErrorKind::TrailingData,
+    );
+    for version in [0, 2] {
+        let packet = SaveEnvelope::new(
+            SaveSchemaId::new(ROOT_REPLAY_SAVE_SCHEMA_ID),
+            version,
+            TYPED_JSON_CODEC_ID,
+            json.clone(),
+        )
+        .encode_bytes()
+        .unwrap();
+        assert_rejected(&packet, &decode, DataErrorKind::InvalidEncoding);
+    }
+    for (schema, codec) in [
+        ("arcweft.other", TYPED_JSON_CODEC_ID),
+        (ROOT_REPLAY_SAVE_SCHEMA_ID, "other"),
+    ] {
+        let packet = SaveEnvelope::new(SaveSchemaId::new(schema), 1, codec, json.clone())
+            .encode_bytes()
+            .unwrap();
+        assert_rejected(&packet, &decode, DataErrorKind::InvalidEncoding);
+    }
+    let mut corrupt = bytes;
+    *corrupt.last_mut().unwrap() ^= 1;
+    assert_rejected(&corrupt, &decode, DataErrorKind::InvalidEncoding);
+}
+
+#[test]
+fn root_replay_trace_bytes_preserve_the_observed_awfb_artifact_identity() {
+    use arcweft_bundle::BundleFormat;
+    use arcweft_runtime_driver::session::{
+        BundleSession, ROOT_REPLAY_SAVE_SCHEMA_ID, ROOT_REPLAY_SCHEMA_VERSION, RootReplayError,
+    };
+    use arcweft_save::{SaveDecodeOptions, SaveSchemaId, encode_typed_json_save};
+    let (bundle, event, options) = root_replay_fixture("root-replay-awfb-trace-wire");
+    let awfb = bundle.to_format_bytes(BundleFormat::Awfb).unwrap();
+    let mut session = BundleSession::from_awfb_bytes(&awfb, options.clone()).unwrap();
+    let trace = record_root_replay_session(&mut session, event);
+    let bytes = encode_typed_json_save(
+        &trace,
+        SaveSchemaId::new(ROOT_REPLAY_SAVE_SCHEMA_ID),
+        ROOT_REPLAY_SCHEMA_VERSION,
+    )
+    .unwrap();
+    let decode = SaveDecodeOptions::default();
+    let replay = BundleSession::replay_root_trace_from_awfb_and_trace_bytes(
+        &awfb,
+        options.clone(),
+        &bytes,
+        &decode,
+    )
+    .unwrap();
+    assert_eq!(replay.transitions_verified, 1);
+    assert!(matches!(
+        BundleSession::replay_root_trace_from_save_bytes(&bundle, options, &bytes, &decode,),
+        Err(RootReplayError::ArtifactMismatch)
+    ));
 }
 
 #[test]

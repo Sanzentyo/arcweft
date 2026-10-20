@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-bundle = { workspace = true, default-features = false }
 arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
+arcweft-data = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-interaction-model = { workspace = true }
 arcweft-id = { workspace = true }
