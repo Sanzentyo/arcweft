@@ -235,8 +235,7 @@ fn drain(engine: &mut Engine) -> crate::step::RuntimeStepOutput {
     output
 }
 
-#[test]
-fn native_flow_returns_a_typed_scalar_value() {
+fn zero_parameter_flow_invocation_plan() -> (crate::plan::RuntimePlan, crate::plan::FlowRuntimeId) {
     let entry = flow_id("flow.return");
     let plan = finish_plan([RuntimeFlowSeed::new(
         entry.clone(),
@@ -252,6 +251,56 @@ fn native_flow_returns_a_typed_scalar_value() {
             ops: (vec![RuntimeFlowOpSeed::ReturnExpr(string_value("ready"))]).into_boxed_slice(),
         },
     )]);
+    (plan, entry)
+}
+
+#[test]
+fn flow_invocation_rejects_unknown_flow_without_consuming_inputs() {
+    let (plan, _) = zero_parameter_flow_invocation_plan();
+    let bindings = std::iter::from_fn(|| -> Option<crate::value::RuntimeFlowParameterBinding> {
+        panic!("an unknown Flow must be refused before polling its input iterator")
+    });
+
+    assert!(matches!(
+        plan.seal_flow_invocation(flow_id("flow.unknown"), bindings),
+        Err(crate::plan::RuntimeFlowInvocationError::UnknownFlow { .. })
+    ));
+}
+
+#[test]
+fn flow_invocation_refuses_excess_inputs_without_trusting_their_size_hint() {
+    for finite in [false, true] {
+        let (plan, flow) = zero_parameter_flow_invocation_plan();
+        let polled = std::cell::Cell::new(0);
+        let bindings = std::iter::repeat_with(|| {
+            assert_eq!(polled.get(), 0, "no input after the first excess is polled");
+            polled.set(polled.get() + 1);
+            crate::value::RuntimeFlowParameterBinding {
+                parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                value: RuntimeValue::Unit,
+            }
+        });
+        let bindings: Box<dyn Iterator<Item = _> + '_> = if finite {
+            Box::new(bindings.take(usize::MAX))
+        } else {
+            Box::new(bindings)
+        };
+
+        assert!(matches!(
+            plan.seal_flow_invocation(flow, bindings),
+            Err(crate::plan::RuntimeFlowInvocationError::BindingCount {
+                expected: 0,
+                actual: 1,
+                ..
+            })
+        ));
+        assert_eq!(polled.get(), 1, "the first excess binding ends admission");
+    }
+}
+
+#[test]
+fn native_flow_returns_a_typed_scalar_value() {
+    let (plan, entry) = zero_parameter_flow_invocation_plan();
     let mut engine = Engine::for_flow(plan, &entry).expect("entry flow exists");
 
     let output = drain(&mut engine);

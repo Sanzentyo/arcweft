@@ -345,18 +345,53 @@ pub enum RuntimeFlowInvocationError {
 impl RuntimePlan {
     /// Consumes this immutable plan and seals a complete coordinate-addressed
     /// invocation for one exact Flow.
+    ///
+    /// The accepted schema bounds input storage. Collection ignores the
+    /// caller's iterator size hint and stops at the first excess binding,
+    /// without retaining it or consuming the remaining inputs.
     pub fn seal_flow_invocation(
         self,
         flow: FlowRuntimeId,
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
     ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
-        let bindings = bindings.into_iter().collect::<Vec<_>>();
-        self.validate_flow_invocation(&flow, &bindings)?;
+        let expected = self.flow_invocation_contract(&flow)?.1.parameters.len();
+        let mut collected = Vec::with_capacity(expected);
+        for binding in bindings {
+            if collected.len() == expected {
+                return Err(RuntimeFlowInvocationError::BindingCount {
+                    flow: flow.canonical_label(),
+                    expected,
+                    actual: collected.len() + 1,
+                });
+            }
+            collected.push(binding);
+        }
+        self.validate_flow_invocation(&flow, &collected)?;
         Ok(RuntimeFlowInvocation {
             plan: Arc::new(self),
             flow,
-            bindings: bindings.into_boxed_slice(),
+            bindings: collected.into_boxed_slice(),
         })
+    }
+
+    fn flow_invocation_contract(
+        &self,
+        flow: &FlowRuntimeId,
+    ) -> Result<(&super::RuntimeFlow, &crate::entry::RuntimeFlowSchema), RuntimeFlowInvocationError>
+    {
+        let runtime_flow =
+            self.flows
+                .flow(flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
+                    flow: flow.canonical_label(),
+                })?;
+        let schema =
+            self.flows
+                .schema(flow)
+                .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
+                    flow: flow.canonical_label(),
+                })?;
+        Ok((runtime_flow, schema))
     }
 
     /// Coordinate admission and the actual FunctionSite input ABI are one
@@ -368,18 +403,7 @@ impl RuntimePlan {
     ) -> Result<super::function_inputs::RuntimeFunctionInputAdmission<'_>, RuntimeFlowInvocationError>
     {
         let flow_label = flow.canonical_label();
-        let runtime_flow =
-            self.flows
-                .flow(flow)
-                .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
-                    flow: flow_label.clone(),
-                })?;
-        let schema =
-            self.flows
-                .schema(flow)
-                .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
-                    flow: flow_label.clone(),
-                })?;
+        let (runtime_flow, schema) = self.flow_invocation_contract(flow)?;
         if bindings.len() != schema.parameters.len() {
             return Err(RuntimeFlowInvocationError::BindingCount {
                 flow: flow_label,
