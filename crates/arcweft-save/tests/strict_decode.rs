@@ -344,3 +344,6 @@ fn save_migration_chain_rejects_schema_mismatches_and_duplicate_steps() {
     .expect("duplicate from version");
     assert_eq!(error.kind(), &DataErrorKind::DuplicateField);
 }
+
+#[path = "strict_decode/migration_limits.rs"]
+mod migration_limits;

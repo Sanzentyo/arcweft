@@ -317,6 +317,9 @@ pub fn decode_save(
         &EmptyShapeAccess,
         &options.codec,
     )?;
+    // A registered codec may be external; admit its actual result before a
+    // migration or shape conversion can traverse and duplicate that value.
+    options.codec.limits.validate(&value)?;
     let value = match envelope.schema_version.cmp(&current_schema_version) {
         std::cmp::Ordering::Equal => value,
         std::cmp::Ordering::Less => {
@@ -349,7 +352,9 @@ pub fn decode_save(
                     ),
                 ));
             }
-            migration.migrate(envelope.schema_version, value)?
+            let value = migration.migrate(envelope.schema_version, value)?;
+            options.codec.limits.validate(&value)?;
+            value
         }
         std::cmp::Ordering::Greater => unreachable!("future version rejected before decode"),
     };

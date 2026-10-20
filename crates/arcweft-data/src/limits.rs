@@ -33,11 +33,11 @@ impl Default for DecodeLimits {
 
 impl DecodeLimits {
     pub fn validate(&self, value: &Value) -> Result<()> {
-        validate_value(value, self, 0)
+        DecodeBudget::new(0, self)?.validate_value(value)
     }
 }
 
-/// Parse-time budget that codecs consume before allocating decoded values.
+/// One resource bank for parse-time construction or borrowed value admission.
 #[derive(Debug)]
 pub struct DecodeBudget<'a> {
     limits: &'a DecodeLimits,
@@ -154,94 +154,57 @@ impl<'a> DecodeBudget<'a> {
             })?;
         Ok(())
     }
-}
 
-fn validate_value(value: &Value, limits: &DecodeLimits, depth: usize) -> Result<()> {
-    if depth > limits.max_depth {
-        return Err(DataError::limit(format!(
-            "maximum nesting depth {} exceeded",
-            limits.max_depth
-        )));
-    }
-    match value {
-        Value::String(value) if value.len() > limits.max_string_len => {
-            Err(DataError::limit(format!(
-                "string length {} exceeds {}",
-                value.len(),
-                limits.max_string_len
-            )))
-        }
-        Value::Bytes(bytes) if bytes.as_slice().len() > limits.max_bytes_len => {
-            Err(DataError::limit(format!(
-                "bytes length {} exceeds {}",
-                bytes.as_slice().len(),
-                limits.max_bytes_len
-            )))
-        }
-        Value::Seq(values) => {
-            if values.len() > limits.max_sequence_len {
-                return Err(DataError::limit(format!(
-                    "sequence length {} exceeds {}",
-                    values.len(),
-                    limits.max_sequence_len
-                )));
-            }
-            values.iter().enumerate().try_for_each(|(index, value)| {
-                validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
-            })
-        }
-        Value::Tuple(values) => {
-            if values.len() > limits.max_sequence_len {
-                return Err(DataError::limit(format!(
-                    "tuple length {} exceeds {}",
-                    values.len(),
-                    limits.max_sequence_len
-                )));
-            }
-            values.iter().enumerate().try_for_each(|(index, value)| {
-                validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
-            })
-        }
-        Value::Option(value) => value
-            .as_deref()
-            .map_or(Ok(()), |value| validate_value(value, limits, depth + 1)),
-        Value::Map { entries, .. } => {
-            if entries.len() > limits.max_map_len {
-                return Err(DataError::limit(format!(
-                    "map length {} exceeds {}",
-                    entries.len(),
-                    limits.max_map_len
-                )));
-            }
-            entries
-                .iter()
-                .enumerate()
-                .try_for_each(|(index, (key, value))| {
-                    validate_value(key, limits, depth + 1).map_err(|err| err.at_index(index))?;
-                    validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
+    // A logical Value is one node. Record names and enum tags are metadata,
+    // checked as strings without inventing extra Value nodes. Collection items
+    // are sequence/tuple elements and map/record entries across the whole tree.
+    fn validate_value(&mut self, value: &Value) -> Result<()> {
+        self.enter_node()?;
+        match value {
+            Value::Unit | Value::Bool(_) | Value::Number(_) => Ok(()),
+            Value::String(value) => self.string_len(value.len()),
+            Value::Char(value) => self.string_len(value.len_utf8()),
+            Value::Bytes(value) => self.bytes_len(value.as_slice().len()),
+            Value::Seq(values) | Value::Tuple(values) => {
+                self.sequence_len(values.len())?;
+                values.iter().enumerate().try_for_each(|(index, value)| {
+                    self.validate_value(value)
+                        .map_err(|error| error.at_index(index))
                 })
-        }
-        Value::Record(values) => {
-            if values.len() > limits.max_map_len {
-                return Err(DataError::limit(format!(
-                    "record length {} exceeds {}",
-                    values.len(),
-                    limits.max_map_len
-                )));
             }
-            values.iter().try_for_each(|(key, value)| {
-                validate_value(value, limits, depth + 1).map_err(|err| err.at_field(key.clone()))
-            })
-        }
-        Value::Enum { variant, payload } => {
-            if variant.len() > limits.max_string_len {
-                return Err(DataError::limit("enum variant name exceeds string limit"));
+            Value::Option(value) => value
+                .as_deref()
+                .map_or(Ok(()), |value| self.validate_value(value)),
+            Value::Map { entries, .. } => {
+                self.map_len(entries.len())?;
+                entries
+                    .iter()
+                    .enumerate()
+                    .try_for_each(|(index, (key, value))| {
+                        self.validate_value(key)
+                            .map_err(|error| error.at_index(index))?;
+                        self.validate_value(value)
+                            .map_err(|error| error.at_index(index))
+                    })
             }
-            payload.as_deref().map_or(Ok(()), |value| {
-                validate_value(value, limits, depth + 1)
-                    .map_err(|err| err.at_variant(variant.clone()))
-            })
-        }
-        _ => Ok(()),
+            Value::Record(values) => {
+                self.map_len(values.len())?;
+                values.iter().try_for_each(|(key, value)| {
+                    // Refuse an oversized name before cloning it into an error path.
+                    self.string_len(key.len())?;
+                    self.validate_value(value)
+                        .map_err(|error| error.at_field(key.clone()))
+                })
+            }
+            Value::Enum { variant, payload } => {
+                self.string_len(variant.len())?;
+                payload.as_deref().map_or(Ok(()), |value| {
+                    self.validate_value(value)
+                        .map_err(|error| error.at_variant(variant.clone()))
+                })
+            }
+        }?;
+        self.exit_node();
+        Ok(())
     }
 }

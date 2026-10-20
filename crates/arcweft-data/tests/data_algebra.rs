@@ -242,3 +242,6 @@ fn shape_access_rejects_unproductive_reference_cycles() {
         .expect_err("reference-only cycles are invalid");
     assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
 }
+
+#[path = "data_algebra/value_limits.rs"]
+mod value_limits;

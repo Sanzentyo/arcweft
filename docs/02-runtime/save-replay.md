@@ -612,6 +612,14 @@ Serialize 呼び出し前に検証し、payload と全体の byte 上限は esca
 保存データを返さない。payload bytes が既に存在する envelope の出力は、既知の
 全長を出力 buffer の確保前に検証する。
 
+汎用 codec が返した動的 `Value` は、migration や shape 変換より先に借用のまま
+`DecodeLimits` で検証する。migration が返す新しい値も、型変換と公開の前に
+同じ上限で検証する。値全体で node 数と collection item 数を累積し、子や sibling
+ごとに上限を再発行しない。各 `Value` が一つの logical node、sequence／tuple の
+要素と map／record の entry が collection item となる。record 名と enum tag は
+追加の値 node にせず、複製して error path に入れる前に UTF-8 byte 上限を調べる。
+wire の parse-time node と typed value の logical node はそれぞれの grammar で数え、
+型の検証のために synthetic な wire 表現を作らない。
 ## Agent replay
 
 Agent actions are replayed as semantic actions when possible.
