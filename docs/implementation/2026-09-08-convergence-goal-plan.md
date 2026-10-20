@@ -22002,3 +22002,60 @@ Root startup still needs the selected formatter/execution environment before its
 initializer runs. Full Source/all14 switching, Presentation, semantic/persistence
 repairs, strict lint, Tier2 and actual Native/Web capture/parity remain required.
 The full goal is active and unchanged.
+
+### 2026-10-20 — selected formatter execution: accepted slice and full Compiler follow-through
+
+Inspected main 730ccb529ac230a07e8cbb68e08f1f119ad8f03c. The only existing
+tracked worktree changes were the same 14 held paths; three unrelated untracked
+entries remain preserved. No branch, checkout, worktree, artifact relocation or
+additional clean was performed. The requested single workspace clean already
+completed successfully (265286 files, 323.8 GiB); source/Git hashes were unchanged.
+
+The implementation was published as 28c05bb7f5d1236488742646a7529d6c47956e52
+(parent dfa39d791469870c87b0fcc47e10ba29b30fbcb3,
+tree 85c7a3282732cb0ff292d0e0117557bd04a305cc,
+raw patch SHA256 af0ef620f877c5d2879af5168213006cc24b218781c2aa52d9490c99ae43a53a).
+R1754 then failed compilation (exit101): a new Native error assertion moved a
+String out of a match guard. The assertion now borrows the boxed cause and its
+program name; no runtime condition or existing assertion was weakened. That
+repair was published as 730ccb529ac230a07e8cbb68e08f1f119ad8f03c
+(parent 28c05bb7f5d1236488742646a7529d6c47956e52,
+tree 81fc609204094082bd9a7bfb468de2219f39e896,
+raw patch SHA256 b5e47ed56f7ea73138cc58df987982295e673e7277d953bf1fa9ca54df989e6c).
+Fresh fetch, advertised main, parent/tree/patch, published blobs and all 3933
+frozen input hashes matched for both publications.
+
+R1755 completed successfully: all 2286 selected tests passed, two slow, zero
+skipped, 194.185s. The three libraries and view_runtime, view_product and
+project_cache_transaction integration binaries exactly matched R1750's catalogue;
+all 3933 pre-run hashes and held paths matched. This includes Native typed-cause
+and preflight checks, AWBC proof/owned restore, real Rust callable formatting in
+View expressions, locale cache invalidation, handler resealing/stale routes,
+cold restore and the existing shared-budget/failure-atomicity cases. The two slow
+budget tests executed their original work (139.327s and 187.906s). This selected
+six-binary result does not prove the full Compiler or 53-package reverse closure.
+
+R1756 workspace all-feature/all-target locked check passed in 2m29s. R1758 ordinary
+all-feature/all-target locked Clippy for Core/Driver/Compiler passed in 2m30s;
+Core library tests retain 2916 warnings (2391 duplicates), and the new long-test
+warning was removed. These are ordinary successes with warnings, not strict
+Clippy acceptance. On continuation, all 3932 runtime/source inputs were compared
+again with the accepted pre-run freeze and had zero drift; only this operational
+note is excluded from that derived snapshot, while the original 3933-input
+snapshot remains intact.
+
+R1757 fresh full Compiler catalogue passed in 4m35s: all 588 selected, zero
+excluded, including the new formatter and retained-transition failure cases.
+R1759 runs that exact full-package lib/tests selection with all features, locked,
+no filters, no-fail-fast and no-tests=fail; live handle 60887 at this record.
+Executable source stays unchanged until this run's terminal evidence is audited.
+
+Supersedes the prior pending R1754 state, while retaining its failed evidence.
+The next implementation boundary is Root startup: initializer execution must
+receive the actual selected formatter/backend and original shared allowance.
+Constructor-time default evaluation cannot establish that contract. Inspect the
+Root state machine and all constructor/restore consumers before changing it.
+The complete Source/all14-family public switch, all reverse consumers, Generic
+Match/Presentation/persistence acceptance, strict lint, Tier2 and real Native/Web
+capture/parity remain open. The full goal remains active; no broad completion is
+claimed from this accepted formatter slice.
