@@ -24341,3 +24341,84 @@ every old6447 matched key plus exactly the eight added Save cases (expected6455
 matched/16 excluded) before executing its complete set. CLI's lib/bin/six named
 integrations remain separate. Generic codec payload allocation,Presentation11,
 and every other unproven requirement in the full convergence goal remain active.
+
+Bounded-save checkpoint `2c3462c992b04c65999502231fa4698e2244186c` is pushed
+and verified:parent `6ffb650f52588cb96411991c5cea5076456511aa`,tree
+`efd4b2365a5829d8b4cf441d8a416663a4d90b1b`,patch SHA256
+`9161e7e08235063025b0169ea5c3e7f7f07e237a4cf0bde96467dc33e7b41971`.
+All seven blobs/3941 inputs,held14,advertised main and empty index match;
+baseline advanced to owned0. Publication session57433 is closed.
+R1982 completed0 (8m58s build):6471 named cases,6455 matched,16 excluded.
+Its command is identical to R1975;all old case/status/ignored keys remain and
+the only eight additions are the actually passed Save owner cases. All3940
+acceptance inputs match. This remains catalog evidence,not a runtime pass.
+
+CLI coverage reconciliation:Cargo metadata declares check and check_core_cli
+as DIFFERENT targets;the previous56 CLI failures belong to check. CLI also has
+bracket_numeric_batch,environment_callable_tensor and native_host_contracts
+beyond the six canonical targets. R1983 is live session51944:the same command
+extended with -p arcweft-cli selects all53 consumers' lib/test surfaces,including
+CLI's normal unit binary and all TEN integration targets. After inspecting that
+catalog,execute the whole set ONCE in one nextest invocation so the existing
+cross-package test groups retain their shared exclusion. Do not first run a
+duplicate52-member suite or omit check in favor of check_core_cli. Freeze:
+task-root-save-acceptance-20261021-runtime.source-freeze.json,3940 inputs at the
+published checkpoint;only this operational note excluded. The full original
+goal remains active and no whole-closure runtime pass has yet been observed.
+
+Full53 continuation worker is live session37321:task-root-save-acceptance-
+20261021-follow-catalog.ps1 waits on the existing R1983 Cargo PID29628
+(started2026-10-20T17:53:27.7774441Z),then checks all prior Root keys,the exact
+53-package closure,CLI lib/bin and all ten declared integration targets,including
+the matched check suite. It audits all3940 inputs,pins catalog-built test/native
+executables and runtime DLLs by hash,and starts R1984 whole-set nextest with
+--no-tests fail/--no-fail-fast and unchanged groups/default filters/budgets.
+Terminal case/source/artifact audits follow. Do not duplicate the worker or
+start a52-member overlapping runtime run. R1983 session51944 and this worker
+remain the authoritative live handles;receipt/lock files alone are not liveness.
+One orchestration call failed JavaScript parsing before writing/running anything;
+the corrected worker above uses an explicit tab join and valid PowerShell array
+pipeline syntax. It is now waiting,not a runtime pass. CLI support executes the
+catalog-built CARGO_BIN_EXE_arcw directly;its main executable is included in the
+artifact pin. No Rust/spec source has changed since the published checkpoint.
+
+### 2026-10-21 — resume live acceptance and prepare borrowed-value admission repair
+
+Inspected main `2c3462c992b04c65999502231fa4698e2244186c`: the14 held
+tracked changes and three held untracked entries are unchanged;the task-owned
+working change is this note. The previous goal turn only rechecked the existing
+successful clean receipt,so it made no new convergence progress. The current
+turn re-polled authoritative sessions51944 and37321:both are live;Cargo29628
+and its current compiler children were also observed. This is a verified wait
+on the existing R1983/R1984 pipeline,not grounds for restarting or duplicating it.
+The one requested clean is already complete;do not clean the rebuilt artifacts.
+
+A concrete remaining admission defect was found by owner inspection:
+DecodeLimits::validate ignores its max_nodes and max_collection_items fields,
+and checks neither record-name length nor Char UTF-8 length. Its independent
+recursive checker duplicates a subset of DecodeBudget's policy. Also,decode_save
+passes an arbitrary registered codec's result directly into migration and
+passes a migration result into encode_with_shape,which may allocate RawValue
+before its actual resource bounds are checked.
+
+A seven-path candidate is prepared outside the frozen working sources in
+TEMP/task-value-limit-admission-20261021/candidate.json (applied=false):the
+existing DecodeBudget becomes the borrowed Value admission owner as well as
+parse-time budget;no second limit policy is added. Each logical Value consumes
+one node;all sibling sequence/tuple elements and map/record entries share one
+collection bank. Record names and enum tags remain bounded metadata rather
+than synthetic Value nodes. Both immediate codec results and changed migration
+results are admitted before the next owning conversion/publication. New tests
+attach to existing data_algebra and strict_decode binaries,so the retained Cargo
+target inventory remains valid. Seven Value behavior cases plus two save cases
+cover exact/over,aggregate siblings,all empty/scalar forms,key/value accounting,
+UTF-8 metadata and Char,depth,structured paths,codec bypass and migration growth.
+Draft rustfmt succeeded;no execution pass is claimed for these unapplied bytes.
+
+The existing3940-input acceptance freeze remains unchanged. Do not apply the
+candidate while R1984 is using those sources. Reconcile the actual catalog/run
+terminal receipts and source/artifact audits first,then apply all reviewed
+candidate paths together if their input hashes still match. Save generic codec
+payload output is still allocated before envelope admission;this candidate
+repairs borrowed decoded-value admission,not that independent encoding gap.
+Presentation11 and all other unproven original-goal requirements remain active.
