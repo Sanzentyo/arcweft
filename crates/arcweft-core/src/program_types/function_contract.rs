@@ -380,33 +380,28 @@ impl<T> crate::value::RuntimePlaceStorage<T> {
 }
 
 /// One immutable solution of a function frame's declaration effect scope.
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(try_from = "EffectInstantiationWire", into = "EffectInstantiationWire")]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(try_from = "EffectInstantiationWire")]
 pub struct RuntimeFunctionEffectInstantiation {
     context: RuntimeSemanticTypeId,
     effects: std::sync::Arc<[crate::effect_row::EffectSet]>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectInstantiationWire {
     context: RuntimeSemanticTypeId,
     effects: Box<[Box<[String]>]>,
 }
-impl From<RuntimeFunctionEffectInstantiation> for EffectInstantiationWire {
-    fn from(value: RuntimeFunctionEffectInstantiation) -> Self {
-        Self {
-            context: value.context,
-            effects: value
-                .effects
-                .iter()
-                .map(|row| {
-                    row.iter()
-                        .map(|effect| effect.as_str().to_owned())
-                        .collect()
-                })
-                .collect(),
-        }
+impl serde::Serialize for RuntimeFunctionEffectInstantiation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        // Resource admission visits this same borrowed grammar. Converting to
+        // an owned wire DTO here would copy labels before the visitor can reject.
+        let mut wire = serializer.serialize_struct("EffectInstantiationWire", 2)?;
+        wire.serialize_field("context", &self.context)?;
+        wire.serialize_field("effects", self.effects.as_ref())?;
+        wire.end()
     }
 }
 impl TryFrom<EffectInstantiationWire> for RuntimeFunctionEffectInstantiation {

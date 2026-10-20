@@ -175,6 +175,11 @@ UTF-8 label は、関係式への複製前に同じ累積 byte 枠で検査す�
 共通 canonical primitive で計上し、value digest や保存 wire を変更しない。
 完全値・descriptor・instantiation の検査で別々の byte 枠を作らず、admission handle
 の複製や一時的な owned state への移行も元の消費量と最初の失敗を保持する。
+frame/session の metadata visitor も同じ枠で固定幅 scalar、長さ付き UTF-8／blob、
+variant tag、実際に走査した collection count を計上する。個別の名前の検査も
+累積 byte 検査を省略しない。これらは複製前の resource transcript であり、外側の
+codec の wire 上限を代替しない。effect instantiation の writer は元の行と label を
+借用し、検査前に owned wire DTO や文字列のコピーを構築しない。
 継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
 
 Product が保存 Fiber を検証する場合も inert storage を借用し、検証だけを目的とした

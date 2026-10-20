@@ -8,8 +8,9 @@ use serde::{
 
 impl RuntimeRetainedValueAdmission {
     /// Bounds metadata through its existing typed serialization grammar before
-    /// copying any field. Runtime carriers use the value admission methods;
-    /// the enclosing codec remains responsible for its actual wire-byte limit.
+    /// copying any field. Fixed-width scalars, length-prefixed strings/blobs,
+    /// collection counts and variant tags share the retained byte bank.
+    /// Runtime carriers use value admission; the codec owns its actual wire limit.
     pub fn validate_metadata<T: ?Sized + Serialize>(
         &mut self,
         value: &T,
@@ -50,8 +51,21 @@ struct MetadataAdmission<'a> {
 }
 
 impl MetadataAdmission<'_> {
-    fn scalar(self) -> Result<(), AwbcRuntimeValueSnapshotError> {
-        self.admission.work().charge(self.depth).map_err(Into::into)
+    fn scalar(self, width: usize) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admission.work().charge(self.depth)?;
+        self.fixed(width)
+    }
+    fn fixed(&self, width: usize) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admission
+            .work()
+            .encoded_metadata_fixed(&[0; 16][..width])
+            .map_err(Into::into)
+    }
+    fn finish(self) -> Result<(), AwbcRuntimeValueSnapshotError> {
+        self.admission
+            .work()
+            .encoded_metadata_count(self.count)
+            .map_err(Into::into)
     }
     fn container(self, length: Option<usize>) -> Result<Self, AwbcRuntimeValueSnapshotError> {
         self.admission.work().charge(self.depth)?;
@@ -80,7 +94,7 @@ impl MetadataAdmission<'_> {
 }
 
 macro_rules! scalar {
-    ($($name:ident($ty:ty)),* $(,)?) => { $(fn $name(self, _: $ty) -> Result<(), Self::Error> { self.scalar() })* };
+    ($($name:ident($ty:ty)),* $(,)?) => { $(fn $name(self, _: $ty) -> Result<(), Self::Error> { self.scalar(std::mem::size_of::<$ty>()) })* };
 }
 
 impl Serializer for MetadataAdmission<'_> {
@@ -115,20 +129,25 @@ impl Serializer for MetadataAdmission<'_> {
     }
     fn serialize_bytes(self, value: &[u8]) -> Result<(), Self::Error> {
         self.admission.work().charge(self.depth)?;
-        self.admission.validate_metadata_collection(value.len())
+        self.admission.validate_metadata_collection(value.len())?;
+        let mut work = self.admission.work();
+        work.encoded_metadata_count(value.len())?;
+        work.encoded_metadata_fixed(value)?;
+        Ok(())
     }
     fn serialize_none(self) -> Result<(), Self::Error> {
-        self.scalar()
+        self.scalar(1)
     }
     fn serialize_some<T: ?Sized + Serialize>(mut self, value: &T) -> Result<(), Self::Error> {
         self = self.container(Some(1))?;
-        self.member(value)
+        self.member(value)?;
+        self.finish()
     }
     fn serialize_unit(self) -> Result<(), Self::Error> {
-        self.scalar()
+        self.scalar(0)
     }
     fn serialize_unit_struct(self, _: &'static str) -> Result<(), Self::Error> {
-        self.scalar()
+        self.scalar(0)
     }
     fn serialize_unit_variant(
         self,
@@ -136,7 +155,7 @@ impl Serializer for MetadataAdmission<'_> {
         _: u32,
         _: &'static str,
     ) -> Result<(), Self::Error> {
-        self.scalar()
+        self.scalar(4)
     }
     fn serialize_newtype_struct<T: ?Sized + Serialize>(
         mut self,
@@ -144,7 +163,8 @@ impl Serializer for MetadataAdmission<'_> {
         value: &T,
     ) -> Result<(), Self::Error> {
         self = self.container(Some(1))?;
-        self.member(value)
+        self.member(value)?;
+        self.finish()
     }
     fn serialize_newtype_variant<T: ?Sized + Serialize>(
         mut self,
@@ -154,7 +174,9 @@ impl Serializer for MetadataAdmission<'_> {
         value: &T,
     ) -> Result<(), Self::Error> {
         self = self.container(Some(1))?;
-        self.member(value)
+        self.fixed(4)?;
+        self.member(value)?;
+        self.finish()
     }
     fn serialize_seq(self, len: Option<usize>) -> Result<Self, Self::Error> {
         self.container(len)
@@ -172,7 +194,9 @@ impl Serializer for MetadataAdmission<'_> {
         _: &'static str,
         len: usize,
     ) -> Result<Self, Self::Error> {
-        self.container(Some(len))
+        let container = self.container(Some(len))?;
+        container.fixed(4)?;
+        Ok(container)
     }
     fn serialize_map(self, len: Option<usize>) -> Result<Self, Self::Error> {
         self.container(len)
@@ -187,7 +211,9 @@ impl Serializer for MetadataAdmission<'_> {
         _: &'static str,
         len: usize,
     ) -> Result<Self, Self::Error> {
-        self.container(Some(len))
+        let container = self.container(Some(len))?;
+        container.fixed(4)?;
+        Ok(container)
     }
 }
 
@@ -200,7 +226,7 @@ macro_rules! sequence {
                 self.member(value)
             }
             fn end(self) -> Result<(), Self::Error> {
-                Ok(())
+                self.finish()
             }
         }
     };
@@ -223,7 +249,7 @@ impl ser::SerializeMap for MetadataAdmission<'_> {
         })
     }
     fn end(self) -> Result<(), Self::Error> {
-        Ok(())
+        self.finish()
     }
 }
 macro_rules! fields {
@@ -239,7 +265,7 @@ macro_rules! fields {
                 self.member(value)
             }
             fn end(self) -> Result<(), Self::Error> {
-                Ok(())
+                self.finish()
             }
         }
     };

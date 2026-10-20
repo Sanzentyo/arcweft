@@ -662,21 +662,19 @@ impl ValueResourceAdmission {
         self.work.charge(depth)
     }
 
-    /// Bounds retained metadata before it is cloned without inventing a value
-    /// node or value-grammar byte. The enclosing frame codec owns its wire bytes.
+    /// Bounds retained metadata before it is cloned. Its length-prefixed UTF-8
+    /// resource bytes share the value/descriptor bank without adding value nodes
+    /// or changing the enclosing owner's wire encoding.
     pub(crate) fn metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
-        let result = self.work.charge(0).and_then(|()| self.budget.string(text));
+        let result = self
+            .work
+            .charge(0)
+            .and_then(|()| self.budget.string(text))
+            .and_then(|()| self.work.encoded_metadata_string(text));
         if let Err(error) = &result {
             self.work.retain_failure(error.clone());
         }
         result
-    }
-
-    /// Counts an enclosing owner's actual canonical metadata header in the
-    /// same byte bank as its value payloads, without fabricating value nodes.
-    pub(crate) fn encoded_metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
-        self.metadata_string(text)?;
-        self.work.encoded_metadata_string(text)
     }
 
     pub(crate) fn encoded_metadata_count(
@@ -738,13 +736,16 @@ impl ValueResourceAdmission {
                 ..
             } => {
                 self.budget.string(nominal.as_str())?;
+                self.work.encoded_metadata_string(nominal.as_str())?;
                 if let Some(binding) = type_instantiation {
                     binding.validate_resource_limits(depth + 1, &self.budget, &mut self.work)?;
                 }
             }
             crate::value::RuntimePlaceRecordHeader::Structural { names } => {
+                self.work.encoded_metadata_count(names.len())?;
                 for name in names {
                     self.budget.string(name)?;
+                    self.work.encoded_metadata_string(name)?;
                 }
             }
         }

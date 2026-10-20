@@ -22169,3 +22169,56 @@ proves the earlier formatter source only.
 
 The complete goal and the Root startup implementation remain open. No additional
 clean, job/profile/OS tuning, branch/worktree or artifact movement occurred.
+
+### 2026-10-20 — metadata byte admission and borrowed effect serialization
+
+Inspected main fe7e9dd131ae89bb2e1ac85dddae63806250ed0c; owned0/held14 before
+this cut, with the same three unrelated untracked entries. R1761 completed:
+1936/1936 passed (one slow), zero skipped, 424.340s. All R1760 terminal case
+keys and all 3932 frozen runtime/source hashes matched. Its API seal constructor
+rejection case executed for 390.862s. This proves the previous byte-bank source,
+not the metadata extension below.
+
+Shared the relation and inert fixtures to remove the four introduced lint
+patterns without deleting assertions. Added exact-boundary relation admission
+and JSON writer/read roundtrip assertions. Further inspection found that plain
+metadata strings, serialized scalars/containers and column/partial-place names
+still bypassed cumulative bytes. They now spend the existing ValidationWork byte
+bank. Metadata counts fixed-width scalars, UTF-8/blob lengths and contents,
+variant tags and actual visited collection members, including unknown or
+inaccurate length hints. It retains work/depth/collection checks and the first
+failure. New tests cover exact/one-byte-short boundaries, u128/char/options/all
+variant shapes, blobs/UTF-8, collection prefixes, metadata without value nodes,
+combining metadata with values, exclusive-state transfer and sticky failures.
+
+RuntimeFunctionEffectInstantiation's former serde-into writer built an owned
+wire DTO and cloned every effect label before the admission visitor ran. The
+writer now borrows the context and ordered EffectSet rows; EffectSet writes its
+borrowed label strings directly. The obsolete owned writer conversion is
+deleted, with the existing strict inert reader retained for the same wire shape.
+Registry headers delegate instantiation preflight to the owning type instead of
+copying its row grammar. The redundant encoded-metadata-string admission method
+is deleted and its callers use the single bounded metadata-string boundary.
+No contract version, dependency, layer direction, I/O, unsafe, execution amount,
+batch, capture or configured resource limit is changed. Wire limits remain the
+enclosing codec's responsibility; this resource transcript does not replace them.
+
+R1763 consumer catalogue (47308), R1764 workspace check (73382), R1766 three-case
+Core catalogue (86580), R1767 Core Clippy (40241) and R1768 full Core catalogue
+(62424) remain live. The older catalogue commands overlap this migration and
+provide inventory/observed compile evidence only. R1768 is the full Core
+lib/tests selection for the new metadata semantics. Its immutable runtime
+snapshot keeps 3932 inputs, excluding only this note. Recover actual receipts,
+inspect the inventory (including all seven required byte regressions), execute
+the matching full owner/52-consumer selections, and repair any actual failure.
+Publication is an intermediate checkpoint under the user's explicit instruction.
+
+Audit correction: NeedProducerFamily's ten variants describe activation origins;
+HostTaskRequestKind's fourteen variants describe host request algebra. The count
+difference alone is not a missing-family defect. Full fourteen-request Source,
+producer, codec and runtime coverage still requires direct acceptance evidence.
+Nine earlier CLI image failures report Compiler's explicit rejection of typed
+Presentation calls, confirmed at the current lower.rs boundary. They require
+completing the eleven-operation Presentation ABI, not altering samples/assertions
+or emitting string calls. Root initializer/backend/formatter/shared-budget
+activation, the remaining Source/public switch and full goal remain open.

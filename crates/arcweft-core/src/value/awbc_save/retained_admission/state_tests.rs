@@ -1,5 +1,136 @@
 use super::*;
 
+fn assert_metadata_bytes(value: &(impl serde::Serialize + ?Sized), bytes: u64) {
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 0,
+        max_encoded_bytes: bytes,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    RuntimeRetainedValueAdmission::standalone(limits)
+        .validate_metadata(value)
+        .unwrap();
+    if let Some(short) = bytes.checked_sub(1) {
+        assert_eq!(
+            RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+                max_encoded_bytes: short,
+                ..limits
+            })
+            .validate_metadata(value),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                crate::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes"
+                }
+            ))
+        );
+    }
+}
+
+struct SequenceWithLengthHint<'a> {
+    values: &'a [u8],
+    hint: Option<usize>,
+}
+
+impl serde::Serialize for SequenceWithLengthHint<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut sequence = serializer.serialize_seq(self.hint)?;
+        for value in self.values {
+            sequence.serialize_element(value)?;
+        }
+        sequence.end()
+    }
+}
+
+struct MetadataBlob<'a>(&'a [u8]);
+
+impl serde::Serialize for MetadataBlob<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(self.0)
+    }
+}
+
+#[test]
+fn retained_metadata_counts_actual_members_and_length_prefixes() {
+    let values = vec![7_u8; 150];
+    assert_metadata_bytes(&values, 152);
+    for hint in [Some(150), None, Some(0)] {
+        assert_metadata_bytes(
+            &SequenceWithLengthHint {
+                values: &values,
+                hint,
+            },
+            152,
+        );
+    }
+    assert_metadata_bytes(&[(); 32], 1);
+    assert_metadata_bytes(&MetadataBlob(&[1, 2, 3, 4]), 5);
+    assert_metadata_bytes("é", 3);
+}
+
+#[test]
+fn retained_metadata_scalars_and_variants_use_the_same_byte_bank() {
+    #[derive(serde::Serialize)]
+    enum MetadataVariant {
+        Empty,
+        Payload(u64),
+        Pair(u16, u8),
+        Fields { enabled: bool },
+    }
+    assert_metadata_bytes(&(), 0);
+    assert_metadata_bytes(&u128::MAX, 16);
+    assert_metadata_bytes(&'🦀', 4);
+    assert_metadata_bytes(&None::<u128>, 1);
+    assert_metadata_bytes(&Some(u128::MAX), 17);
+    assert_metadata_bytes(&MetadataVariant::Empty, 4);
+    assert_metadata_bytes(&MetadataVariant::Payload(10), 13);
+    assert_metadata_bytes(&MetadataVariant::Pair(10, 1), 8);
+    assert_metadata_bytes(&MetadataVariant::Fields { enabled: true }, 6);
+}
+
+#[test]
+fn retained_metadata_shares_value_bytes_across_transfer_and_first_failure() {
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 1,
+        max_encoded_bytes: 23,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+    admission.validate_metadata(&[u128::MAX]).unwrap(); // 16 + count prefix
+    admission.validate_metadata_string("name").unwrap(); // 4 + length prefix
+    admission.validate(&RuntimeValue::Unit).unwrap();
+    let mut resumed = transfer(admission).resume();
+    let error =
+        AwbcRuntimeValueSnapshotError::Resource(crate::entry::RuntimeSchemaError::BudgetExceeded {
+            budget: "encoded_bytes",
+        });
+    assert_eq!(resumed.validate_metadata_string(""), Err(error.clone()));
+    assert_eq!(resumed.validate_metadata(&()), Err(error.clone()));
+    assert_eq!(
+        transfer(resumed).resume().validate_metadata_collection(0),
+        Err(error)
+    );
+}
+
+#[test]
+fn retained_metadata_strings_accumulate_without_consuming_value_nodes() {
+    let mut admission = RuntimeRetainedValueAdmission::standalone(RuntimeSchemaLimits {
+        max_nodes: 0,
+        max_string_bytes: 4,
+        max_encoded_bytes: 10,
+        ..RuntimeSchemaLimits::engine_default()
+    });
+    admission.validate_metadata_string("name").unwrap();
+    admission.validate_metadata_string("same").unwrap();
+    assert_eq!(
+        admission.validate_metadata(&"more"),
+        Err(AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes"
+            },
+        ))
+    );
+}
+
 fn transfer(admission: RuntimeRetainedValueAdmission) -> RuntimeRetainedValueAdmissionState {
     match admission.try_into_state() {
         Ok(state) => state,

@@ -553,8 +553,7 @@ fn exhausted_storage_work_rejects_before_reading_the_next_column_header() {
     ));
 }
 
-#[test]
-fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matching() {
+fn retained_effect_instantiation_fixture() -> ([AwbcRuntimeValueSnapshot; 2], RuntimeSchemaLimits) {
     let binding: crate::program_types::RuntimeFunctionEffectInstantiation =
         serde_json::from_value(serde_json::json!({
             "context": semantic(250),
@@ -591,6 +590,12 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
         max_validation_work: 5,
         ..RuntimeSchemaLimits::engine_default()
     };
+    (images, exact)
+}
+
+#[test]
+fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matching() {
+    let (images, exact) = retained_effect_instantiation_fixture();
     for image in images {
         image.validate_graph_limits(exact).unwrap();
         let before = serde_json::to_vec(&image).unwrap();

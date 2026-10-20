@@ -3,6 +3,7 @@
 use arcweft_id::{EffectId, EffectIdError};
 use std::{collections::BTreeSet, fmt};
 use thiserror::Error;
+
 /// Parse failure while constructing an effect set from source labels.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid effect at index {index}: {source}")]
@@ -15,6 +16,12 @@ pub struct EffectSetParseError {
 /// Deterministically ordered set of canonical effects.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectSet(BTreeSet<EffectId>);
+
+impl serde::Serialize for EffectSet {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter().map(EffectId::as_str))
+    }
+}
 
 impl EffectSet {
     pub fn new() -> Self {

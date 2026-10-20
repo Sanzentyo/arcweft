@@ -149,22 +149,15 @@ impl RuntimeRegistryStateUpdate {
         admission: &mut RuntimeRetainedValueAdmission,
     ) -> Result<(), AwbcRuntimeValueSnapshotError> {
         admission.admit_composite(origin, |_, resources| {
-            resources.encoded_metadata_string(key.scope().as_str())?;
+            resources.metadata_string(key.scope().as_str())?;
             resources.encoded_metadata_count(key.segments().len())?;
             for segment in key.segments() {
-                resources.encoded_metadata_string(segment.as_str())?;
+                resources.metadata_string(segment.as_str())?;
             }
             resources.encoded_metadata_fixed(expected.as_bytes())?;
             resources.encoded_metadata_fixed(&[u8::from(binding.is_some())])?;
             if let Some(binding) = binding {
-                resources.encoded_metadata_fixed(binding.context().as_bytes())?;
-                resources.encoded_metadata_count(binding.source_rows().len())?;
-                for row in binding.source_rows() {
-                    resources.encoded_metadata_count(row.len())?;
-                    for effect in row {
-                        resources.encoded_metadata_string(effect.as_str())?;
-                    }
-                }
+                resources.function_instantiation(binding)?;
             }
             Ok(())
         })

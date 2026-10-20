@@ -7,30 +7,47 @@ use crate::{
     plan::{RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope},
 };
 
-#[test]
-fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
-    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+fn retained_effect_binding_fixture() -> (AwbcProgram, RuntimeFunctionEffectInstantiation) {
     let semantic = RuntimeSemanticTypeId::from_bytes([0xa7; 32]);
-    let mut program = AwbcProgram::default();
-    program.runtime_types = vec![
-        AwbcRuntimeType::unit(),
-        AwbcRuntimeType::new(
-            semantic,
-            AwbcRuntimeTypeShape::Function {
-                contract: RuntimeFunctionTypeContract::new(
-                    RuntimeTypeBinder::new(0, 0, 1),
-                    EffectPredicate::unconstrained(),
-                    EffectFormula::empty(),
-                ),
-                parameters: vec![],
-                result: AwbcTypeId(0),
-            },
-        ),
-    ];
+    let program = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::unit(),
+            AwbcRuntimeType::new(
+                semantic,
+                AwbcRuntimeTypeShape::Function {
+                    contract: RuntimeFunctionTypeContract::new(
+                        RuntimeTypeBinder::new(0, 0, 1),
+                        EffectPredicate::unconstrained(),
+                        EffectFormula::empty(),
+                    ),
+                    parameters: vec![],
+                    result: AwbcTypeId(0),
+                },
+            ),
+        ],
+        ..AwbcProgram::default()
+    };
     let binding = RuntimeFunctionEffectInstantiation {
         context: semantic,
         effects: vec![crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()].into(),
     };
+    (program, binding)
+}
+
+#[test]
+fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+    let (program, binding) = retained_effect_binding_fixture();
+    let semantic = binding.context;
+    let encoded = serde_json::to_value(&binding).unwrap();
+    assert_eq!(
+        encoded,
+        serde_json::json!({"context": semantic, "effects": [["io.read"]]})
+    );
+    assert_eq!(
+        serde_json::from_value::<RuntimeFunctionEffectInstantiation>(encoded).unwrap(),
+        binding
+    );
     let limits = RuntimeSchemaLimits::engine_default();
     assert_eq!(
         RuntimeFunctionEffectInstantiation::with_value_relation::<
@@ -125,10 +142,7 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
     use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
     use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
 
-    let binding = RuntimeFunctionEffectInstantiation {
-        context: RuntimeSemanticTypeId::from_bytes([0xa7; 32]),
-        effects: vec![crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()].into(),
-    };
+    let (program, binding) = retained_effect_binding_fixture();
     // Context + row count + label count + string length + UTF-8 label.
     let binding_bytes = 32 + 1 + 1 + 1 + 7;
     let limits = RuntimeSchemaLimits {
@@ -138,14 +152,26 @@ fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission(
     let error = RuntimeSchemaError::BudgetExceeded {
         budget: "encoded_bytes",
     };
+    assert_eq!(
+        RuntimeFunctionEffectInstantiation::with_value_relation::<_, _, RuntimeSchemaError>(
+            &program,
+            ValueAdmissionOrigin::Live,
+            Some(&binding),
+            &ValidationWork::new(RuntimeSchemaLimits {
+                max_encoded_bytes: binding_bytes,
+                ..limits
+            }),
+            |_| Ok(()),
+        ),
+        Ok(Some(()))
+    );
     let mut admission = ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live);
     admission.function_instantiation(&binding).unwrap();
     admission
         .validate_view(crate::value::RuntimeValue::Unit.view(), 0, None)
         .unwrap();
-    let state = match admission.try_into_state() {
-        Ok(state) => state,
-        Err(_) => panic!("temporary validator handles must not escape admission"),
+    let Ok(state) = admission.try_into_state() else {
+        panic!("temporary validator handles must not escape admission");
     };
     let mut resumed = state.resume();
     let mut alias = resumed.work();
