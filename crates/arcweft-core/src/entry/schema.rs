@@ -639,6 +639,16 @@ trait CanonicalSink {
     fn bytes_written(&self) -> u64;
 }
 
+impl CanonicalSink for value_budget::ValidationWork {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.charge_encoded_bytes(bytes.len())
+    }
+
+    fn bytes_written(&self) -> u64 {
+        self.encoded_bytes()
+    }
+}
+
 #[derive(Default)]
 struct CanonicalByteCount(u64);
 

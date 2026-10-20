@@ -593,6 +593,28 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
     };
     for image in images {
         image.validate_graph_limits(exact).unwrap();
+        let before = serde_json::to_vec(&image).unwrap();
+        let value_bytes = crate::entry::schema::value_encoding::snapshot_view_bytes(image.view())
+            .unwrap()
+            .len() as u64;
+        // Context, row/label counts and both length-prefixed effect labels.
+        let exact_bytes = RuntimeSchemaLimits {
+            max_encoded_bytes: value_bytes + 32 + 1 + 1 + 1 + 9 + 1 + 12,
+            ..exact
+        };
+        image.validate_graph_limits(exact_bytes).unwrap();
+        let short_bytes = RuntimeSchemaLimits {
+            max_encoded_bytes: exact_bytes.max_encoded_bytes - 1,
+            ..exact_bytes
+        };
+        assert_eq!(
+            image.validate_graph_limits(short_bytes),
+            Err(AwbcRuntimeValueSnapshotError::Resource(
+                RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes"
+                }
+            ))
+        );
         for limits in [
             RuntimeSchemaLimits {
                 max_depth: 2,
@@ -617,6 +639,16 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
             ));
         }
         for owner in owners() {
+            assert_eq!(
+                image
+                    .clone()
+                    .into_runtime_value_for_program_with_limits(&owner, short_bytes),
+                Err(AwbcRuntimeValueSnapshotError::Resource(
+                    RuntimeSchemaError::BudgetExceeded {
+                        budget: "encoded_bytes"
+                    }
+                ))
+            );
             assert!(matches!(
                 image.clone().into_runtime_value_for_program_with_limits(
                     &owner,
@@ -630,6 +662,7 @@ fn retained_effect_instantiations_obey_inert_metadata_limits_before_type_matchin
                 ))
             ));
         }
+        assert_eq!(serde_json::to_vec(&image).unwrap(), before);
     }
 }
 

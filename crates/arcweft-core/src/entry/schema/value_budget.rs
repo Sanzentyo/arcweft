@@ -20,6 +20,7 @@ pub(crate) struct ValidationWork(Rc<RefCell<ValidationWorkState>>);
 pub(crate) struct ValidationWorkState {
     limits: RuntimeSchemaLimits,
     consumed: u64,
+    encoded_bytes: u64,
     failure: Option<RuntimeSchemaError>,
 }
 
@@ -40,6 +41,7 @@ impl ValidationWork {
         Self(Rc::new(RefCell::new(ValidationWorkState {
             limits,
             consumed: 0,
+            encoded_bytes: 0,
             failure: None,
         })))
     }
@@ -63,6 +65,69 @@ impl ValidationWork {
     /// can report only admissibility. A prior hard failure remains final.
     pub(crate) fn retain_failure(&self, error: RuntimeSchemaError) {
         self.0.borrow_mut().failure.get_or_insert(error);
+    }
+
+    pub(super) fn encoded_bytes(&self) -> u64 {
+        self.0.borrow().encoded_bytes
+    }
+
+    /// Values, descriptors and retained declaration metadata spend the same
+    /// byte allowance. A cloned work handle cannot refresh that allowance.
+    pub(super) fn charge_encoded_bytes(&mut self, count: usize) -> Result<(), RuntimeSchemaError> {
+        let mut state = self.0.borrow_mut();
+        if let Some(error) = &state.failure {
+            return Err(error.clone());
+        }
+        let next = u64::try_from(count)
+            .ok()
+            .and_then(|count| state.encoded_bytes.checked_add(count));
+        match next {
+            Some(next) if next <= state.limits.max_encoded_bytes => {
+                state.encoded_bytes = next;
+                Ok(())
+            }
+            _ => {
+                let error = RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                };
+                state.failure = Some(error.clone());
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn encoded_metadata_fixed(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<(), RuntimeSchemaError> {
+        self.encode_metadata(|writer| writer.extend(bytes))
+    }
+
+    pub(crate) fn encoded_metadata_count(
+        &mut self,
+        count: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        self.encode_metadata(|writer| writer.len(count))
+    }
+
+    pub(crate) fn encoded_metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
+        self.encode_metadata(|writer| writer.string(text))
+    }
+
+    fn encode_metadata(
+        &mut self,
+        encode: impl FnOnce(&mut super::CanonicalWriter<'_, Self>) -> Result<(), RuntimeSchemaError>,
+    ) -> Result<(), RuntimeSchemaError> {
+        let limits = self.limits();
+        let result = encode(&mut super::CanonicalWriter {
+            sink: self,
+            max_encoded_bytes: limits.max_encoded_bytes,
+            max_string_bytes: Some(limits.max_string_bytes),
+        });
+        if let Err(error) = &result {
+            self.retain_failure(error.clone());
+        }
+        result
     }
 
     pub(crate) fn charge(&mut self, depth: usize) -> Result<(), RuntimeSchemaError> {

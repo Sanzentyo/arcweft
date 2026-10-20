@@ -454,7 +454,8 @@ impl RuntimeFunctionEffectInstantiation {
     }
 
     /// Charges the retained declaration solution before matching or copying its
-    /// rows. Metadata contributes work and depth, not logical payload nodes.
+    /// rows. Metadata contributes work, depth and canonical resource bytes,
+    /// without manufacturing logical payload nodes or changing value digests.
     pub(crate) fn validate_resource_limits(
         &self,
         depth: usize,
@@ -463,12 +464,16 @@ impl RuntimeFunctionEffectInstantiation {
     ) -> Result<(), crate::entry::RuntimeSchemaError> {
         work.charge(depth)?;
         budget.collection(self.effects.len())?;
+        work.encoded_metadata_fixed(self.context.as_bytes())?;
+        work.encoded_metadata_count(self.effects.len())?;
         for row in self.effects.iter() {
             work.charge(depth + 1)?;
             budget.collection(row.len())?;
+            work.encoded_metadata_count(row.len())?;
             for effect in row.iter() {
                 work.charge(depth + 2)?;
                 budget.string(effect.as_str())?;
+                work.encoded_metadata_string(effect.as_str())?;
             }
         }
         Ok(())

@@ -461,11 +461,10 @@ pub(crate) fn validate_admitted_view<V: ValueValidation>(
 }
 
 /// Resource ownership for an admission containing several complete values and
-/// partial places. Logical nodes, encoded complete-value bytes and relation
-/// work accumulate across descendants; visiting another value grants no quota.
+/// partial places. Logical nodes, encoded value/descriptor/instantiation bytes
+/// and relation work accumulate across descendants; another value grants no quota.
 pub(crate) struct ValueResourceAdmission<Work = ValidationWork> {
     budget: ValueBudget,
-    sink: super::CanonicalCountingSink,
     work: Work,
     origin: ValueAdmissionOrigin,
     encoding: ValueEncoding,
@@ -479,7 +478,6 @@ impl<Work> ValueResourceAdmission<Work> {
     fn map_work<Next>(self, map: impl FnOnce(Work) -> Next) -> ValueResourceAdmission<Next> {
         ValueResourceAdmission {
             budget: self.budget,
-            sink: self.sink,
             work: map(self.work),
             origin: self.origin,
             encoding: self.encoding,
@@ -504,7 +502,6 @@ impl ValueResourceAdmission {
     pub(crate) fn try_into_state(self) -> Result<ValueResourceAdmissionState, Self> {
         let Self {
             budget,
-            sink,
             work,
             origin,
             encoding,
@@ -513,7 +510,6 @@ impl ValueResourceAdmission {
         match work.try_into_state() {
             Ok(work) => Ok(ValueResourceAdmission {
                 budget,
-                sink,
                 work,
                 origin,
                 encoding,
@@ -521,7 +517,6 @@ impl ValueResourceAdmission {
             }),
             Err(work) => Err(Self {
                 budget,
-                sink,
                 work,
                 origin,
                 encoding,
@@ -548,7 +543,6 @@ impl ValueResourceAdmission {
     ) -> Self {
         Self {
             budget: ValueBudget::new(limits),
-            sink: super::CanonicalCountingSink::default(),
             work: ValidationWork::new(limits),
             origin,
             encoding,
@@ -592,12 +586,13 @@ impl ValueResourceAdmission {
     fn admit_descriptor(
         &mut self,
         visit: impl FnOnce(
-            &mut DescriptorAdmission<'_, '_, super::CanonicalCountingSink, NoSchemaValidation<'_>>,
+            &mut DescriptorAdmission<'_, '_, ValidationWork, NoSchemaValidation<'_>>,
         ) -> Result<(), RuntimeSchemaError>,
     ) -> Result<(), RuntimeSchemaError> {
         let limits = self.work.limits();
+        let mut sink = self.work.clone();
         let mut writer = CanonicalWriter {
-            sink: &mut self.sink,
+            sink: &mut sink,
             max_encoded_bytes: limits.max_encoded_bytes,
             max_string_bytes: Some(limits.max_string_bytes),
         };
@@ -624,13 +619,10 @@ impl ValueResourceAdmission {
     ) -> Result<(), RuntimeSchemaError> {
         let limits = self.work.limits();
         let encoding = self.encoding;
+        let mut sink = self.work.clone();
         let mut writer = CanonicalWriter {
-            sink: &mut self.sink,
-            max_encoded_bytes: if matches!(encoding, ValueEncoding::Snapshot) {
-                limits.max_encoded_bytes
-            } else {
-                u64::MAX
-            },
+            sink: &mut sink,
+            max_encoded_bytes: limits.max_encoded_bytes,
             max_string_bytes: Some(limits.max_string_bytes),
         };
         let mut program_storage = false;
@@ -684,7 +676,7 @@ impl ValueResourceAdmission {
     /// same byte bank as its value payloads, without fabricating value nodes.
     pub(crate) fn encoded_metadata_string(&mut self, text: &str) -> Result<(), RuntimeSchemaError> {
         self.metadata_string(text)?;
-        self.encode_metadata(|writer| writer.string(text))
+        self.work.encoded_metadata_string(text)
     }
 
     pub(crate) fn encoded_metadata_count(
@@ -693,7 +685,7 @@ impl ValueResourceAdmission {
     ) -> Result<(), RuntimeSchemaError> {
         self.work.collection(count)?;
         self.work.charge(0)?;
-        self.encode_metadata(|writer| writer.len(count))
+        self.work.encoded_metadata_count(count)
     }
 
     pub(crate) fn encoded_metadata_fixed(
@@ -701,25 +693,7 @@ impl ValueResourceAdmission {
         bytes: &[u8],
     ) -> Result<(), RuntimeSchemaError> {
         self.work.charge(0)?;
-        self.encode_metadata(|writer| writer.extend(bytes))
-    }
-
-    fn encode_metadata(
-        &mut self,
-        encode: impl FnOnce(
-            &mut CanonicalWriter<'_, super::CanonicalCountingSink>,
-        ) -> Result<(), RuntimeSchemaError>,
-    ) -> Result<(), RuntimeSchemaError> {
-        let limits = self.work.limits();
-        let result = encode(&mut CanonicalWriter {
-            sink: &mut self.sink,
-            max_encoded_bytes: limits.max_encoded_bytes,
-            max_string_bytes: Some(limits.max_string_bytes),
-        });
-        if let Err(error) = &result {
-            self.work.retain_failure(error.clone());
-        }
-        result
+        self.work.encoded_metadata_fixed(bytes)
     }
 
     pub(crate) fn partial_record(

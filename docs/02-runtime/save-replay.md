@@ -170,6 +170,11 @@ field inventory と independent provenance を検証する。destination の型�
 満たすことを要求し、残る子は destination の field 型で検証する。
 部分ヘッダの名前・instantiation・深さ・子数も複製前に制限する。完全値の
 canonical byte 計上は、部分 place や frame wire 全体の byte 計上を代替しない。
+effect instantiation の declaration context、row count、各 row の label count と
+UTF-8 label は、関係式への複製前に同じ累積 byte 枠で検査する。count と文字列長は
+共通 canonical primitive で計上し、value digest や保存 wire を変更しない。
+完全値・descriptor・instantiation の検査で別々の byte 枠を作らず、admission handle
+の複製や一時的な owned state への移行も元の消費量と最初の失敗を保持する。
 継続状態と session の総予算は、それぞれの owner の継続契約を要求する。
 
 Product が保存 Fiber を検証する場合も inert storage を借用し、検証だけを目的とした

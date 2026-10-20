@@ -67,6 +67,15 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
         ),
         (
             RuntimeSchemaLimits {
+                max_encoded_bytes: 41,
+                ..limits
+            },
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            },
+        ),
+        (
+            RuntimeSchemaLimits {
                 max_depth: 0,
                 ..limits
             },
@@ -109,6 +118,54 @@ fn retained_effect_binding_resources_precede_matching_and_relation_entry() {
             assert!(!entered, "resource rejection precedes relation entry");
         }
     }
+}
+
+#[test]
+fn retained_effect_binding_bytes_share_values_aliases_and_transferred_admission() {
+    use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
+    use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits};
+
+    let binding = RuntimeFunctionEffectInstantiation {
+        context: RuntimeSemanticTypeId::from_bytes([0xa7; 32]),
+        effects: vec![crate::effect_row::EffectSet::from_labels(["io.read"]).unwrap()].into(),
+    };
+    // Context + row count + label count + string length + UTF-8 label.
+    let binding_bytes = 32 + 1 + 1 + 1 + 7;
+    let limits = RuntimeSchemaLimits {
+        max_encoded_bytes: binding_bytes + 1,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let error = RuntimeSchemaError::BudgetExceeded {
+        budget: "encoded_bytes",
+    };
+    let mut admission = ValueResourceAdmission::snapshot(limits, ValueAdmissionOrigin::Live);
+    admission.function_instantiation(&binding).unwrap();
+    admission
+        .validate_view(crate::value::RuntimeValue::Unit.view(), 0, None)
+        .unwrap();
+    let state = match admission.try_into_state() {
+        Ok(state) => state,
+        Err(_) => panic!("temporary validator handles must not escape admission"),
+    };
+    let mut resumed = state.resume();
+    let mut alias = resumed.work();
+    assert_eq!(
+        resumed.validate_view(crate::value::RuntimeValue::Unit.view(), 0, None),
+        Err(error.clone())
+    );
+    assert_eq!(alias.charge(0), Err(error.clone()));
+    assert_eq!(resumed.function_instantiation(&binding), Err(error.clone()));
+
+    // A second independently retained binding does not receive another byte bank.
+    let mut admission = ValueResourceAdmission::snapshot(
+        RuntimeSchemaLimits {
+            max_encoded_bytes: 2 * binding_bytes - 1,
+            ..limits
+        },
+        ValueAdmissionOrigin::InertSnapshot,
+    );
+    admission.function_instantiation(&binding).unwrap();
+    assert_eq!(admission.function_instantiation(&binding), Err(error));
 }
 
 #[test]

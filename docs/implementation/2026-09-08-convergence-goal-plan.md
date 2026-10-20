@@ -22059,3 +22059,72 @@ The complete Source/all14-family public switch, all reverse consumers, Generic
 Match/Presentation/persistence acceptance, strict lint, Tier2 and real Native/Web
 capture/parity remain open. The full goal remains active; no broad completion is
 claimed from this accepted formatter slice.
+
+### 2026-10-20 — one cumulative byte authority for retained instantiations
+
+Inspected main 713c4d84a871e26970ec049372ac4b066641f980 (parent
+730ccb529ac230a07e8cbb68e08f1f119ad8f03c,
+tree 77aacc50b84f9dcf185dcc399948da033f71cb70,
+raw patch SHA256 a5839ac11cee7118b4bd38db3ddd7d76c13d76da4076dcd1719b8fc45f20ef09).
+Fresh remote/advertised main, published blob and all 3933 frozen inputs matched.
+The same 14 tracked and three untracked held entries remain untouched.
+
+R1759 full Compiler execution finished successfully: all 588 tests across 24
+binaries passed (three slow), zero skipped, 245.802s. Actual terminal keys matched
+R1757 and all 3932 runtime/source hashes matched. This completes that full
+Compiler selection for the formatter implementation before the resource change
+below; it is not a passing run for the new resource semantics.
+
+Root startup inspection confirmed a prerequisite resource-boundary gap:
+RuntimeFunctionEffectInstantiation checked work/depth, collection counts and
+individual label lengths, but not cumulative bytes before cloning effect rows
+into relation formulas. Values/descriptors used a private counter separate from
+the shared ValidationWork, so retaining another instantiation could not spend
+that same byte allowance. The Root execution change remains required: AWBC
+prepare_startup runs a default backend/formatter in the constructor, run_function
+creates a fresh 1000000-instruction fiber, and Native StructuredRootEvaluator
+uses standalone scratch evaluation. Driver restore constructs a fresh executor
+before installing the saved formatter/state. Supplying a formatter alone would
+leave the backend, shared allowance and restore re-execution defects unresolved.
+A full startup phase must retain the actual initializer frame through budget
+yield and publish the Root and initial Flow atomically after success.
+
+The existing private ValidationWorkState now owns the cumulative encoded-byte
+counter alongside work and the sticky first failure. ValidationWork implements
+the existing canonical sink directly. ValueResourceAdmission no longer owns a
+parallel byte counter: values, descriptors and metadata all write through the
+same work handle. Transferring admission to its owned state and resuming keeps
+that counter; aliases cannot grant another allowance. The original canonical
+count/string primitives account for declaration context, effect rows and labels
+before matching/copying. No value digest, saved wire shape, contract version,
+layer edge, dependency, I/O or unsafe is added or changed. Limits are enforced,
+not enlarged. Stable save/restore documentation reflects this owner boundary.
+
+New regression coverage checks metadata plus value exact boundaries, another
+retained binding, alias failure propagation and owned-state transfer. The
+existing relation-entry test now rejects aggregate bytes before both a known
+and an unknown semantic context can reach the closure. Inert nominal-record
+and variant tests include exact total bytes and one-byte-short rejection before
+either Native or AWBC type matching; prior work/depth/count/string assertions
+remain and the inert serialized input is unchanged on rejection.
+
+R1760 Core catalogue passed (3m13s): all 1936 selected, zero exclusions, including
+all three required regression cases. Some final test/refactoring edits overlapped
+that catalogue build; its result is inventory/compile evidence for its observed
+inputs, not runtime acceptance. R1761 runs the same complete Core lib/tests
+selection against final source (handle 45146). R1762 ordinary workspace
+all-feature/all-target locked Clippy is live (59444). R1763 fresh consumer
+catalogue is live (47308): the retained resolved graph has 53 packages including
+Core, with unchanged 99 manifest/lock inputs; all 52 other reverse consumers
+are selected without a narrowing test filter. Owner and consumer executions
+are kept separate to avoid rerunning the same Core suite without a new reason.
+The immutable 3933-input snapshot is retained; its derived 3932-input runtime
+snapshot excludes only this operational note. Recover the actual terminal
+receipts, audit exact cases/source, run the consumer selection, complete
+workspace check and repair failures without weakening coverage or budgets.
+
+This is a checkpoint under the user's explicit intermediate-commit instruction;
+execution and broad acceptance remain pending. Root startup, the complete
+Source/all14-family public switch, Generic Match/Presentation/persistence,
+strict lint, Tier2 and real Native/Web capture/parity remain required. The goal
+is active and unchanged.
