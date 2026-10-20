@@ -34,11 +34,6 @@ pub(in crate::app) fn run_runtime_steps(
         host_config
             .bundle_assets
             .map(|assets| assets.product.clone()),
-        host_config
-            .bundle_assets
-            .map(RuntimeBundleAssets::plain_text_context_proof)
-            .transpose()?
-            .flatten(),
     )
     .map_err(|error| {
         eprintln!(
@@ -70,11 +65,6 @@ pub(in crate::app) fn run_runtime_flow_steps(
         host_config
             .bundle_assets
             .map(|assets| assets.product.clone()),
-        host_config
-            .bundle_assets
-            .map(RuntimeBundleAssets::plain_text_context_proof)
-            .transpose()?
-            .flatten(),
     )
     .map_err(|error| {
         eprintln!("error: failed to start explicit Flow invocation: {error}");
@@ -249,20 +239,6 @@ pub(in crate::app) struct RuntimeBundleAssets<'a> {
     pub(in crate::app) product: &'a arcweft_core::awbc::product_step::AwbcProductProgram,
     pub(in crate::app) artifact_identity: BundleArtifactIdentity,
     pub(in crate::app) context: arcweft_core::value::RuntimeBundleAssetContext,
-}
-
-impl RuntimeBundleAssets<'_> {
-    pub(in crate::app) fn plain_text_context_proof(
-        self,
-    ) -> Result<Option<arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof>, ExitCode>
-    {
-        self.bundle
-            .validate_dialogue_content_contract()
-            .map_err(|error| {
-                eprintln!("error: source runtime dialogue contract is invalid: {error}");
-                ExitCode::FAILURE
-            })
-    }
 }
 
 #[derive(Clone, Copy)]

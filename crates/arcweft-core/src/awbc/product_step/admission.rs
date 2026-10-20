@@ -16,6 +16,8 @@ use super::AwbcProductStepBuildError;
 pub struct AwbcProductProgram {
     pub(super) program: Arc<AwbcProgram>,
     pub(super) task_source: Option<RuntimeTaskSourceProgram>,
+    plain_text_context_template_proof:
+        Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
 }
 
 impl AwbcProductProgram {
@@ -36,10 +38,46 @@ impl AwbcProductProgram {
         .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
             message: error.to_string(),
         })?;
+        program
+            .validated_plain_text_context_template()
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
         Ok(Self {
             program,
             task_source,
+            plain_text_context_template_proof: None,
         })
+    }
+
+    /// Retains the upper catalog's admitted fact with this exact executable.
+    /// Once attached, invocation, replacement and restore keep that fact with
+    /// the same program/Source owner rather than accepting an independent pair.
+    pub fn with_plain_text_context_template_proof(
+        mut self,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let reference = self
+            .program
+            .validated_plain_text_context_template()
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
+        if reference.is_none_or(|reference| !proof.matches_ref(reference)) {
+            return Err(AwbcProductStepBuildError::InvalidProgram {
+                message: "plain-text context proof does not match the AWBC program pointer"
+                    .to_owned(),
+            });
+        }
+        self.plain_text_context_template_proof = Some(proof);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn plain_text_context_template_proof(
+        &self,
+    ) -> Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof> {
+        self.plain_text_context_template_proof
     }
 
     /// Retains the actual executable's type authority for host value admission.

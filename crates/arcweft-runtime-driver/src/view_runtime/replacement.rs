@@ -5,7 +5,7 @@ use std::num::NonZeroU64;
 
 use arcweft_bundle::resource_codec::SourceSetRevision;
 use arcweft_bundle::resource_codec::view::{
-    ValidatedViewProduct, ValidatedViewStyleResource, ViewStyleResource,
+    ValidatedViewProduct, ValidatedViewStyleResource, ViewProgramAdmissionError, ViewStyleResource,
 };
 use arcweft_view::{
     AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId, ViewRegistry,
@@ -175,9 +175,14 @@ impl BundleViewRuntime {
                 super::ViewProgramRuntimeAuthority::CoreProgramFree
             }
             super::ViewProgramRuntimeAuthority::Awbc(awbc) => {
-                super::ViewProgramRuntimeAuthority::Awbc(
-                    candidate.admit_awbc_program(awbc.program_arc())?,
-                )
+                let program = candidate.admit_awbc_program(awbc.program_arc())?;
+                let program = match awbc.plain_text_context_template_proof() {
+                    Some(proof) => program
+                        .with_plain_text_context_template_proof(proof)
+                        .map_err(ViewProgramAdmissionError::from)?,
+                    None => program,
+                };
+                super::ViewProgramRuntimeAuthority::Awbc(program)
             }
         };
         let candidate_catalog = match &self.program_runtime {

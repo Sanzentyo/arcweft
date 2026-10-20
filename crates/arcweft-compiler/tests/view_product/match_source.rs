@@ -378,7 +378,6 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
         AwbcEntryId(0),
         64,
         generation,
-        None,
     )
     .unwrap();
     let before = entry.snapshot().unwrap();
@@ -394,7 +393,7 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
     let replacement = Arc::new(code.as_ref().clone());
     let replacement_owner = super::admit_view_awbc(&compiled, Arc::clone(&replacement));
     entry
-        .replace_admitted_program_preserving_state(replacement_owner, None)
+        .replace_admitted_program_preserving_state(replacement_owner)
         .unwrap();
     assert!(Arc::ptr_eq(&entry.program_arc(), &replacement));
     assert_eq!(entry.snapshot().unwrap(), before);
@@ -434,10 +433,9 @@ fn admitted_view_source_reaches_entry_flow_replacement_and_inert_restore() {
         .clone()
         .seal_flow_invocation(compiled.runtime_plan().plan.flows()[0].id.clone(), [])
         .unwrap();
-    let mut flow = ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
-        admitted, invocation, None,
-    )
-    .unwrap();
+    let mut flow =
+        ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(admitted, invocation)
+            .unwrap();
     assert!(flow.program_owner().same_program(&owner));
     let output = flow.step_with_pure_backend(
         RuntimeStepInput::default(),

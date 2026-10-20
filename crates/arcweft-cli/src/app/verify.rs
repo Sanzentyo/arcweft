@@ -239,10 +239,6 @@ fn verify_types_runtime_self_check(
             options.executor,
             pure_config,
             source_runtime.map(|runtime| runtime.product.clone()),
-            source_runtime
-                .map(|runtime| runtime.bundle_assets().plain_text_context_proof())
-                .transpose()?
-                .flatten(),
         )
         .map_err(|error| {
             eprintln!(

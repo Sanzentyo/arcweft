@@ -10,7 +10,6 @@ pub mod logical_identity;
 pub mod patch;
 mod product;
 pub mod product_awbc;
-pub use product_awbc::AdmittedBundleProgram;
 pub mod release;
 pub mod resource_codec;
 pub mod resource_type_manifests;
@@ -921,10 +920,17 @@ impl ArcweftBundle {
 
     /// Admits the exact executable and its original Source against this
     /// bundle's complete View product. Callers retain the returned authority.
-    pub fn admit_runtime_program(&self) -> Result<AdmittedBundleProgram, BundleCodecError> {
+    pub fn admit_runtime_program(
+        &self,
+    ) -> Result<arcweft_core::awbc::product_step::AwbcProductProgram, BundleCodecError> {
         let (product, plain_text_context) = self.validate_schema_and_kind()?;
         let program = product.admit_awbc_program(self.product_awbc.program_lease())?;
-        Ok(AdmittedBundleProgram::new(program, plain_text_context))
+        Ok(match plain_text_context {
+            Some(proof) => program
+                .with_plain_text_context_template_proof(proof)
+                .map_err(resource_codec::view::ViewProgramAdmissionError::from)?,
+            None => program,
+        })
     }
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {

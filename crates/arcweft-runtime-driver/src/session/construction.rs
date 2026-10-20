@@ -8,10 +8,10 @@ use super::{
     BundleViewRuntime, BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId,
     FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
     GenerationRuntimeTable, PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget,
-    RootCommandHostCallCatalog, RuntimeDialoguePlainTextContextTemplateProof, RuntimeTaskRegistry,
-    SessionEnvironmentState, SwapSession, SystemPaletteSet, ViewProgramResource,
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    RootCommandHostCallCatalog, RuntimeTaskRegistry, SessionEnvironmentState, SwapSession,
+    SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
+    ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
 use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::value::RuntimeFormatContext;
@@ -24,7 +24,6 @@ pub(super) struct SessionRuntime {
     pub(super) generation: GenerationId,
     pub(super) program: AwbcProductProgram,
     pub(super) entry: AwbcEntryId,
-    pub(super) plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     pub(super) dialogue_content: DialogueContentCatalog,
     pub(super) character_dialogue_schema:
         Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
@@ -239,7 +238,6 @@ impl SessionRuntime {
         generation: GenerationId,
         program: AwbcProductProgram,
         entry: AwbcEntryId,
-        plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let runtime = Self {
@@ -247,7 +245,6 @@ impl SessionRuntime {
             generation,
             program,
             entry,
-            plain_text_context_proof,
             dialogue_content: resources.dialogue_content,
             character_dialogue_schema: resources.character_dialogue_schema,
             character_presentation: resources.character_presentation,
@@ -285,7 +282,6 @@ impl SessionRuntime {
             self.program.clone(),
             entry,
             self.generation,
-            self.plain_text_context_proof,
         )?;
         executor.set_format_context(RuntimeFormatContext::new(self.active_locale.clone()));
         Ok(executor)
@@ -309,7 +305,6 @@ impl SessionRuntime {
             self.generation,
             self.program.clone(),
             entry,
-            self.plain_text_context_proof,
             SessionRuntimeResources {
                 dialogue_content: self.dialogue_content.clone(),
                 character_dialogue_schema: self.character_dialogue_schema.clone(),
@@ -383,16 +378,20 @@ pub(super) fn build_session_runtime(
         .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_focus_navigation);
-    let view_product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
-        Some(bundle.source_map.clone()),
-        bundle.view_program.clone(),
-        bundle.view_style.clone(),
+    let view_product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_from_borrowed(
+        Some(&bundle.source_map),
+        bundle.view_program.as_ref(),
+        bundle.view_style.as_ref(),
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
     let program = view_product
         .admit_awbc_program(program)
         .map_err(BundleViewRuntimeError::from)?;
+    let program = match plain_text_context_proof {
+        Some(proof) => program.with_plain_text_context_template_proof(proof)?,
+        None => program,
+    };
     let view_runtime = BundleViewRuntime::try_new_with_admitted_program(
         view_product,
         bundle.view_text.clone(),
@@ -465,7 +464,6 @@ pub(super) fn build_session_runtime(
         generation,
         program,
         entry,
-        plain_text_context_proof,
         resources,
     )
     .map_err(BundleSessionError::from)

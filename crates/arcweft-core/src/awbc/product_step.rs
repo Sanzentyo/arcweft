@@ -1497,8 +1497,6 @@ pub struct AwbcProductStepExecutor {
     pub(super) program: AwbcProductProgram,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     format_context: crate::value::RuntimeFormatContext,
-    plain_text_context_template_proof:
-        Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     fiber: FiberState,
     /// Generation used by future producer admissions. Existing fibers and
     /// launches retain their own creation generation across compatible swaps.
@@ -1709,7 +1707,11 @@ impl AwbcProductStepExecutor {
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
         )?;
-        self.replace_admitted_program_preserving_state(program, proof)
+        let program = match proof {
+            Some(proof) => program.with_plain_text_context_template_proof(proof)?,
+            None => program,
+        };
+        self.replace_admitted_program_preserving_state(program)
     }
 
     /// Replaces code and its original Source as one admitted owner. A failed
@@ -1717,20 +1719,7 @@ impl AwbcProductStepExecutor {
     pub fn replace_admitted_program_preserving_state(
         &mut self,
         program: AwbcProductProgram,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let template = program
-            .validated_plain_text_context_template()
-            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-                message: error.to_string(),
-            })?;
-        if proof.is_some_and(|proof| template.is_none_or(|reference| !proof.matches_ref(reference)))
-        {
-            return Err(AwbcProductStepBuildError::InvalidProgram {
-                message: "plain-text context proof does not match the AWBC program pointer"
-                    .to_owned(),
-            });
-        }
         let fingerprint = Self::artifact_fingerprint(&program)?;
         let snapshot =
             self.snapshot()
@@ -1738,12 +1727,10 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
         let previous_program = std::mem::replace(&mut self.program, program);
-        let previous_proof = std::mem::replace(&mut self.plain_text_context_template_proof, proof);
         let observations = match self.validate_snapshot(&snapshot) {
             Ok(observations) => observations,
             Err(error) => {
                 self.program = previous_program;
-                self.plain_text_context_template_proof = previous_proof;
                 return Err(error);
             }
         };
@@ -1838,14 +1825,12 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
         generation: GenerationId,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         Self::for_admitted_root(
             program,
             crate::awbc::fiber::AwbcFiberRoot::Entry(entry),
             budget_quantum,
             generation,
-            proof,
         )
     }
 
@@ -1866,7 +1851,11 @@ impl AwbcProductStepExecutor {
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
         )?;
-        Self::for_admitted_root(admitted, origin, budget_quantum, generation, proof)
+        let admitted = match proof {
+            Some(proof) => admitted.with_plain_text_context_template_proof(proof)?,
+            None => admitted,
+        };
+        Self::for_admitted_root(admitted, origin, budget_quantum, generation)
     }
 
     fn for_admitted_root(
@@ -1874,20 +1863,7 @@ impl AwbcProductStepExecutor {
         origin: crate::awbc::fiber::AwbcFiberRoot,
         budget_quantum: u64,
         generation: GenerationId,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let template = program
-            .validated_plain_text_context_template()
-            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
-                message: error.to_string(),
-            })?;
-        if proof.is_some_and(|proof| template.is_none_or(|reference| !proof.matches_ref(reference)))
-        {
-            return Err(AwbcProductStepBuildError::InvalidProgram {
-                message: "plain-text context proof does not match the AWBC program pointer"
-                    .to_owned(),
-            });
-        }
         let mut root_startup = match origin.entry() {
             Some(entry) => root::prepare_startup(&program.program, entry)?,
             None => None,
@@ -1964,7 +1940,6 @@ impl AwbcProductStepExecutor {
         }
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
         let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
-        executor.plain_text_context_template_proof = proof;
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
             executor.install_root_startup(startup);
@@ -1981,7 +1956,6 @@ impl AwbcProductStepExecutor {
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
         budget_quantum: u64,
         generation: GenerationId,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let function = program.flow_function(flow).ok_or_else(|| {
             AwbcProductStepBuildError::InvalidProgram {
@@ -1993,7 +1967,6 @@ impl AwbcProductStepExecutor {
             crate::awbc::fiber::AwbcFiberRoot::Function(function),
             budget_quantum,
             generation,
-            proof,
         )?;
         executor
             .fiber
@@ -2138,7 +2111,6 @@ impl AwbcProductStepExecutor {
             program,
             artifact_fingerprint,
             format_context: crate::value::RuntimeFormatContext::default(),
-            plain_text_context_template_proof: None,
             fiber,
             runtime_generation,
             facade_fiber,
@@ -2546,7 +2518,7 @@ impl AwbcProductStepExecutor {
     }
 
     fn vm_execution_context(&self) -> VmExecutionContext {
-        match self.plain_text_context_template_proof {
+        match self.program.plain_text_context_template_proof() {
             Some(proof) => VmExecutionContext::for_program_with_plain_text_context_proof(
                 self.artifact_fingerprint,
                 self.program_arc(),

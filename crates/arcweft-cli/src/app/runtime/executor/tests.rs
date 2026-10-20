@@ -107,7 +107,6 @@ fn runtime_executor_selection_starts_the_actual_tier_and_original_product_entry(
             tier,
             RuntimePureAcceleratorConfig::default(),
             Some(product.clone()),
-            None,
         )
         .unwrap();
         assert_eq!(executor.executor.tier(), expected);
@@ -133,7 +132,6 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
         CliRuntimeExecutorTier::AwbcProduct,
         RuntimePureAcceleratorConfig::default(),
         Some(product.clone()),
-        None,
     )
     .unwrap();
     let owner = RuntimeProgramOwner::Awbc(product.program_arc());
@@ -148,7 +146,6 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
         invocation(plan.clone()),
         CliRuntimeExecutorTier::AwbcProduct,
         Some(product),
-        None,
     );
     let mut pure = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig::default(),
@@ -190,7 +187,6 @@ fn runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_f
             CliRuntimeExecutorTier::AwbcProduct,
             RuntimePureAcceleratorConfig::default(),
             None,
-            None,
         )
         .is_err()
     );
@@ -200,7 +196,6 @@ fn runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_f
             CliRuntimeExecutorTier::AwbcProduct,
             RuntimePureAcceleratorConfig::default(),
             None,
-            None,
         )
         .is_err()
     );
@@ -208,7 +203,6 @@ fn runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_f
         RuntimeExecutorTemplate::new(
             invocation(plan.clone()),
             CliRuntimeExecutorTier::AwbcProduct,
-            None,
             None,
         )
         .instantiate()
@@ -226,7 +220,6 @@ fn runtime_executor_product_never_falls_back_for_missing_executable_or_foreign_f
             CliRuntimeExecutorTier::AwbcProduct,
             RuntimePureAcceleratorConfig::default(),
             Some(foreign),
-            None,
         )
         .is_err()
     );

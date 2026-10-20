@@ -265,10 +265,9 @@ impl BundleSession {
             compatibility,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
         ) {
-            let replacement = self.executor.replace_admitted_product_awbc_program(
-                next_runtime.program.clone(),
-                next_runtime.plain_text_context_proof,
-            );
+            let replacement = self
+                .executor
+                .replace_admitted_product_awbc_program(next_runtime.program.clone());
             if let Err(error) = replacement {
                 self.swap.abort_prepared();
                 return Err(BundleSessionError::from(error).into());

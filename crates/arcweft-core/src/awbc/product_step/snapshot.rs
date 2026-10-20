@@ -3242,7 +3242,6 @@ impl AwbcProductStepExecutor {
         let budget_quantum = self.fiber.budget.quantum;
         let original_generation = self.runtime_generation;
         let format_context = self.format_context.clone();
-        let plain_text_context_template_proof = self.plain_text_context_template_proof;
         let target_generation = saved.runtime_generation;
         let old_root = rollback.root.clone();
         drop(self);
@@ -3253,7 +3252,6 @@ impl AwbcProductStepExecutor {
                 origin,
                 budget_quantum,
                 generation,
-                plain_text_context_template_proof,
             )?;
             executor.format_context = format_context.clone();
             Ok::<_, super::AwbcProductStepBuildError>(executor)

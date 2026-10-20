@@ -451,6 +451,93 @@ fn assert_plain_text_message(error: &crate::value::RuntimeArcError, expected: &s
 }
 
 #[test]
+fn admitted_program_context_proof_survives_pure_invocation_and_owned_restore() {
+    use crate::awbc::product_step::{
+        AwbcProductExecutorSaveSnapshot, AwbcProductProgram, AwbcProductStepExecutor,
+    };
+    use crate::step::{RuntimeStepInput, RuntimeStepOptions};
+
+    let mut fixture = context_fixture(ContextReceiver::Option, false);
+    let id = arcweft_id::runtime_program::RuntimePureProgramId::from_checked_digest([0x79; 32]);
+    let program = std::sync::Arc::make_mut(&mut fixture.program);
+    program.functions[0].kind = AwbcFunctionKind::Ordinary;
+    program.blocks[0].safe_point = AwbcSafePointKind::CallableBoundary;
+    program.entries.clear();
+    program.flow_bindings.clear();
+    program.flow_executables.clear();
+    let signature = &program.signatures[program.functions[0].signature.index()];
+    let binding = crate::awbc::schema::AwbcPureProgramBinding {
+        program: id,
+        function: AwbcFunctionId(0),
+        function_type: None,
+        input_types: signature
+            .params
+            .iter()
+            .map(|ty| program.runtime_types[ty.index()].semantic_identity())
+            .collect(),
+        result_type: program.runtime_types[signature.result.unwrap().index()].semantic_identity(),
+    };
+    program.pure_programs.push(binding);
+    let admitted = AwbcProductProgram::admit(
+        std::sync::Arc::clone(&fixture.program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..AwbcVerifyContext::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .unwrap();
+
+    for with_proof in [false, true] {
+        let program = if with_proof {
+            admitted
+                .clone()
+                .with_plain_text_context_template_proof(fixture.proof)
+                .unwrap()
+        } else {
+            admitted.clone()
+        };
+        let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
+            program,
+            id,
+            vec![RuntimeValue::option_none(), callback(&fixture)],
+            crate::task::GenerationId::new(7),
+            64,
+        )
+        .unwrap();
+        let before = executor.snapshot().unwrap();
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&fixture.program));
+        let inert = AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+        let inert = serde_json::from_slice(&serde_json::to_vec(&inert).unwrap()).unwrap();
+        executor = executor
+            .restore_inert_snapshot_owned(inert)
+            .unwrap_or_else(|(_, error)| panic!("{error}"));
+        assert_eq!(executor.snapshot().unwrap(), before);
+        let output = executor.step_with_pure_backend(
+            RuntimeStepInput::default(),
+            RuntimeStepOptions {
+                mode: crate::step::RuntimeStepMode::Drain,
+                budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+                ..RuntimeStepOptions::default()
+            },
+            &mut crate::pure::VmRuntimePureCallBackend::default(),
+        );
+        let result = executor.take_program_result().unwrap();
+        if with_proof {
+            assert!(output.output.diagnostics.is_empty(), "{output:?}");
+            let error = context_error(&result.unwrap().1);
+            assert_plain_text_message(&error, "lazy context");
+            assert!(error.source().is_none());
+        } else {
+            assert!(!output.output.diagnostics.is_empty());
+            assert!(result.is_none());
+        }
+    }
+}
+
+#[test]
 fn verified_lazy_context_success_never_invokes_callback_or_requires_content_proof() {
     for receiver in [ContextReceiver::Result, ContextReceiver::Option] {
         let fixture = context_fixture(receiver, true);

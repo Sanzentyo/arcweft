@@ -4,7 +4,6 @@ use arcweft_core::awbc::schema::AwbcEntryId;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
-use arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{RuntimeExecutorStats, runtime_executor_stats};
 use std::sync::Arc;
@@ -22,7 +21,6 @@ pub(in crate::app) struct RuntimeExecutorTemplate {
     invocation: RuntimeFlowInvocation,
     tier: ArcweftExecutionTier,
     product: Option<AwbcProductProgram>,
-    plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
 }
 
 impl RuntimeExecutorTemplate {
@@ -30,13 +28,11 @@ impl RuntimeExecutorTemplate {
         invocation: RuntimeFlowInvocation,
         tier: CliRuntimeExecutorTier,
         product: Option<AwbcProductProgram>,
-        plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Self {
         Self {
             invocation,
             tier: arcweft_execution_tier(tier),
             product,
-            plain_text_context,
         }
     }
 
@@ -52,7 +48,6 @@ impl RuntimeExecutorTemplate {
                         "Product AWBC execution requires the compiled executable".to_owned()
                     })?,
                     invocation,
-                    self.plain_text_context,
                 )
                 .map_err(|error| error.to_string())?
             }
@@ -93,7 +88,6 @@ impl RuntimeExecutorInstance {
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
         product: Option<AwbcProductProgram>,
-        plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, String> {
         let plan = Arc::new(plan);
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan);
@@ -115,7 +109,6 @@ impl RuntimeExecutorInstance {
                     product,
                     AwbcEntryId(index),
                     arcweft_core::task::GenerationId::new(0),
-                    plain_text_context,
                 )
                 .map_err(|error| error.to_string())?
             }
@@ -136,7 +129,6 @@ impl RuntimeExecutorInstance {
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
         product: Option<AwbcProductProgram>,
-        plain_text_context: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, String> {
         let pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
         let executor = match arcweft_execution_tier(tier) {
@@ -146,7 +138,6 @@ impl RuntimeExecutorInstance {
                         "Product AWBC execution requires the compiled executable".to_owned()
                     })?,
                     invocation,
-                    plain_text_context,
                 )
                 .map_err(|error| error.to_string())?
             }

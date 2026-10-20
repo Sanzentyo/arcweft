@@ -10,43 +10,6 @@ use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// One bundle's admitted executable, original Source and cross-section text
-/// context. Only complete bundle admission constructs this execution input.
-#[derive(Clone, Debug)]
-pub struct AdmittedBundleProgram {
-    program: arcweft_core::awbc::product_step::AwbcProductProgram,
-    plain_text_context: Option<arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof>,
-}
-
-impl AdmittedBundleProgram {
-    pub(super) fn new(
-        program: arcweft_core::awbc::product_step::AwbcProductProgram,
-        plain_text_context: Option<
-            arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof,
-        >,
-    ) -> Self {
-        Self {
-            program,
-            plain_text_context,
-        }
-    }
-
-    /// Borrows the exact admitted executable and its original Source.
-    pub fn program(&self) -> &arcweft_core::awbc::product_step::AwbcProductProgram {
-        &self.program
-    }
-
-    /// Transfers both accepted inputs to the runtime activation owner.
-    pub fn into_parts(
-        self,
-    ) -> (
-        arcweft_core::awbc::product_step::AwbcProductProgram,
-        Option<arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof>,
-    ) {
-        (self.program, self.plain_text_context)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProductExecutablePayload {
     AwbcV1,

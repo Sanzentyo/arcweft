@@ -95,9 +95,12 @@ The saved Need registry resolves its inert Source assertions through the retaine
 admitted program; a raw code/type lease cannot authorize Source reconstruction.
 
 Bundle admission returns that executable authority using the complete View
-product accepted by the same bundle validation. Its admitted bundle-program
-authority also retains the plain-text context proof checked against the actual
-dialogue catalog and transfers both inputs to runtime activation. Borrowed View
+product accepted by the same bundle validation. The Core admitted AWBC program
+also retains the optional plain-text context proof checked against the actual
+dialogue catalog. Activation, pure invocation, continuation, compatible replacement
+and owned restore retain that same complete program authority. The proof is not
+an independent executor, session or rollback column. A program without that
+catalog fact does not authorize String context conversion. Borrowed View
 candidates enter
 source and resource validation before canonical codec materialization. Agent
 controllers and native bundle runners retain the returned executable/Source

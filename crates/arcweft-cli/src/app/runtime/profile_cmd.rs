@@ -50,7 +50,6 @@ pub(in crate::app) fn runtime_profile_command(
             options.executor,
             pure_config,
             Some(runtime.product.clone()),
-            runtime.bundle_assets().plain_text_context_proof()?,
         )
         .map_err(|error| {
             eprintln!(

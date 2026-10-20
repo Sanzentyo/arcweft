@@ -171,16 +171,10 @@ impl AwbcProductStepExecutor {
         if let Err(reason) = committed {
             let admitted = self.program.clone();
             let format_context = self.format_context.clone();
-            let plain_text_proof = self.plain_text_context_template_proof;
             drop(self);
-            let mut executor = Self::for_admitted_root(
-                admitted,
-                old_origin,
-                old_quantum,
-                old_generation,
-                plain_text_proof,
-            )
-            .expect("the unchanged original program configuration remains constructible");
+            let mut executor =
+                Self::for_admitted_root(admitted, old_origin, old_quantum, old_generation)
+                    .expect("the unchanged original program configuration remains constructible");
             executor.format_context = format_context;
             executor
                 .restore_rollback_image(image)
@@ -300,7 +294,6 @@ impl AwbcProductStepExecutor {
                 AwbcFiberRoot::Program(id),
                 budget_quantum,
                 generation,
-                None,
             )?;
             Ok::<_, AwbcProductStepBuildError>((executor, inputs))
         })();

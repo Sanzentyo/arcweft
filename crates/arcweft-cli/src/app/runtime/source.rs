@@ -83,14 +83,10 @@ pub(in crate::app) fn source_runtime_program_from_compiled(
         adapter_override,
     )?
     .bundle;
-    let product = compiled_project
-        .view_product()
-        .product()
-        .admit_awbc_program(bundle.product_awbc().program_lease())
-        .map_err(|error| {
-            eprintln!("error: source runtime executable admission failed: {error}");
-            ExitCode::FAILURE
-        })?;
+    let product = bundle.admit_runtime_program().map_err(|error| {
+        eprintln!("error: source runtime executable admission failed: {error}");
+        ExitCode::FAILURE
+    })?;
     let bundle_artifact_identity = bundle
         .logical_identity()
         .map(|identity| BundleArtifactIdentity::LogicalBundle { identity })

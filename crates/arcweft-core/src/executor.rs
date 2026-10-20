@@ -419,10 +419,8 @@ impl ArcweftRuntimeExecutor {
         program: AwbcProductProgram,
         entry: AwbcEntryId,
         generation: GenerationId,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let vm =
-            AwbcProductStepExecutor::for_admitted_entry(program, entry, 64, generation, proof)?;
+        let vm = AwbcProductStepExecutor::for_admitted_entry(program, entry, 64, generation)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -476,14 +474,17 @@ impl ArcweftRuntimeExecutor {
             crate::plan::RuntimeTaskSourceArtifactLimits::default(),
             None,
         )?;
-        Self::from_admitted_awbc_product_flow_invocation(program, invocation, proof)
+        let program = match proof {
+            Some(proof) => program.with_plain_text_context_template_proof(proof)?,
+            None => program,
+        };
+        Self::from_admitted_awbc_product_flow_invocation(program, invocation)
     }
 
     /// Transfers a checked Flow packet under the actual admitted executable.
     pub fn from_admitted_awbc_product_flow_invocation(
         program: AwbcProductProgram,
         invocation: RuntimeFlowInvocation,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let (_source_plan, flow, bindings) = invocation.into_parts();
         let vm = AwbcProductStepExecutor::for_admitted_flow_invocation(
@@ -492,7 +493,6 @@ impl ArcweftRuntimeExecutor {
             bindings,
             64,
             GenerationId::new(0),
-            proof,
         )?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
@@ -800,12 +800,11 @@ impl ArcweftRuntimeExecutor {
     pub fn replace_admitted_product_awbc_program(
         &mut self,
         program: AwbcProductProgram,
-        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<(), AwbcProductStepBuildError> {
         match &mut self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
                 .vm
-                .replace_admitted_program_preserving_state(program, proof),
+                .replace_admitted_program_preserving_state(program),
             _ => Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "code-compatible Product AWBC replacement requires Product AWBC tier"
                     .to_owned(),
