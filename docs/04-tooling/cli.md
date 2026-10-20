@@ -242,6 +242,14 @@ selection uses its typed entry identity; explicit Flow inputs are checked again
 against that program's function signature before execution. Repeated bench
 invocations retain the same immutable AWBC program. Source bundle Content
 execution also carries the validated dialogue catalog/template join.
+
+After a bounded headless run, the CLI publishes its report in both plain and
+JSON modes. A typed failed execution returns exit code `1`; a completed
+execution returns `0`. Reaching the requested step/operation limit while the
+invocation is still running is a successful bounded observation and also
+returns `0`, with the actual running state retained in the report. JSON mode
+does not change the exit-code policy. Plain failure reports use `failed:`.
+
 JSON reports `executor = "bytecode_vm"`, `"aot"`, or `"awbc_product"` so performance and correctness
 runs can confirm the execution tier. `--pure-backend auto` is the default and
 lets ordinary flow code call lowered pure helpers through the runtime

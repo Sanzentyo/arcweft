@@ -30,7 +30,7 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleVirtualFileSpace,
     patch::{PatchCompatibility, encode_patch_bundle},
 };
-use arcweft_core::engine::FlowStatusLabelStyle;
+use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::RuntimeEntryKind;
 use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, resolve::ResolvedLaunchProfile};
 #[cfg(feature = "native-player")]
@@ -179,44 +179,51 @@ fn runtime_run_headless_command(
         steps: trace.steps,
         final_status: trace.final_status.status_label(FlowStatusLabelStyle::Debug),
     };
-    print_runtime_run_report(selection, &report, options.json)
+    finish_runtime_run_report(selection, &report, &trace.final_status, options.json)
 }
 
-fn print_runtime_run_report(
+fn finish_runtime_run_report(
     selection: &SourceSelection,
     report: &RuntimeRunReport,
+    status: &FlowFiberStatus,
     json: bool,
 ) -> Result<(), ExitCode> {
+    let failed = matches!(status, FlowFiberStatus::Failed(_));
     if json {
-        return print_json(report);
-    }
-
-    for step in &report.steps {
+        print_json(report)?;
+    } else {
+        for step in &report.steps {
+            println!(
+                "step {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
+                step.index,
+                step.flow_events.len(),
+                step.line_effects.len(),
+                step.task_requests.len(),
+                step.diagnostics.len() + step.assertion_diagnostics.len()
+            );
+            for event in &step.flow_events {
+                println!("  event {event}");
+            }
+            for effect in &step.line_effects {
+                println!("  effect {effect}");
+            }
+            for diagnostic in &step.assertion_diagnostics {
+                eprintln!("error[{}]: {}", diagnostic.code, diagnostic.message);
+            }
+        }
         println!(
-            "step {}: {} flow event(s), {} effect(s), {} task request(s), {} diagnostic(s)",
-            step.index,
-            step.flow_events.len(),
-            step.line_effects.len(),
-            step.task_requests.len(),
-            step.diagnostics.len() + step.assertion_diagnostics.len()
+            "{}: {} ({} step(s), final_status={})",
+            if failed { "failed" } else { "ok" },
+            selection.path().display(),
+            report.steps.len(),
+            report.final_status
         );
-        for event in &step.flow_events {
-            println!("  event {event}");
-        }
-        for effect in &step.line_effects {
-            println!("  effect {effect}");
-        }
-        for diagnostic in &step.assertion_diagnostics {
-            eprintln!("error[{}]: {}", diagnostic.code, diagnostic.message);
-        }
     }
-    println!(
-        "ok: {} ({} step(s), final_status={})",
-        selection.path().display(),
-        report.steps.len(),
-        report.final_status
-    );
-    Ok(())
+    if failed {
+        Err(ExitCode::FAILURE)
+    } else {
+        Ok(())
+    }
 }
 
 fn require_runtime_verification_safety(

@@ -88,3 +88,6 @@ fn check_keeps_explicit_id_lint_on_the_independent_lint_path() {
     assert!(!stderr.contains("syntax.assert."));
     fs::remove_file(path).expect("remove temporary Arcweft source");
 }
+
+#[path = "check_core_cli/runtime_exit.rs"]
+mod runtime_exit;
