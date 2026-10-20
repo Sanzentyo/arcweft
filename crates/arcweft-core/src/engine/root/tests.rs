@@ -316,6 +316,46 @@ fn native_reducer_frame_allocation_failure_traps_before_execution() {
 }
 
 #[test]
+fn native_reducer_restore_rejects_aliased_split_and_unallocated_fiber_identities() {
+    let (plan, mut engine) = fixture();
+    let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));
+    let step = engine.step(input(&plan, 1), options(1));
+    assert!(step.output.diagnostics.is_empty(), "{:?}", step.output);
+    let original = engine.inert_rollback_image().unwrap();
+    assert_eq!(original.fiber.id.0, 0);
+    assert_eq!(original.child_fibers[0].id.0, 1);
+    assert_eq!(original.next_fiber_id, 2);
+    let mut aliased = original.clone();
+    aliased.child_fibers[0].id = aliased.fiber.id;
+    aliased.child_fibers[0].persistent_id = aliased.fiber.persistent_id;
+    aliased.child_fibers[0].execution = aliased.fiber.execution;
+    assert!(Engine::from_rollback_image(aliased, &owner).is_err());
+    let mut split_persistent = original.clone();
+    split_persistent.child_fibers[0].persistent_id = split_persistent.fiber.persistent_id;
+    assert!(Engine::from_rollback_image(split_persistent, &owner).is_err());
+    let mut split_execution = original.clone();
+    split_execution.child_fibers[0].execution = split_execution.fiber.execution;
+    assert!(Engine::from_rollback_image(split_execution, &owner).is_err());
+    let mut stale_cursor = original.clone();
+    stale_cursor.next_fiber_id = stale_cursor.child_fibers[0].id.0;
+    assert!(Engine::from_rollback_image(stale_cursor, &owner).is_err());
+    let mut overflow = original.clone();
+    overflow.child_fibers[0].id = FlowFiberId(u64::MAX);
+    assert!(Engine::from_rollback_image(overflow, &owner).is_err());
+    let mut foreign_main = original.clone();
+    foreign_main.fiber.id = FlowFiberId(2);
+    foreign_main.fiber.persistent_id = RuntimePersistentFiberId::from_allocated(3);
+    foreign_main.fiber.execution = crate::runtime_id::ExecutionInstanceId::from_allocated(
+        std::num::NonZeroU64::new(3).unwrap(),
+    );
+    foreign_main.next_fiber_id = 3;
+    assert!(Engine::from_rollback_image(foreign_main, &owner).is_err());
+    let restored = Engine::from_rollback_image(original.clone(), &owner).unwrap();
+    assert_eq!(restored.inert_rollback_image().unwrap(), original);
+    assert_eq!(engine.inert_rollback_image().unwrap(), original);
+}
+
+#[test]
 fn native_reducer_restore_rejects_missing_duplicate_and_forged_role_owners() {
     let (plan, mut engine) = fixture();
     let owner = RuntimeProgramOwner::Plan(Arc::clone(&plan));

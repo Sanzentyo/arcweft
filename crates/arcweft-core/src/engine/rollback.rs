@@ -783,6 +783,13 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
         }
         admission.validate_metadata_collection(self.latest_need_publications.len())?;
         admission.validate_metadata_collection(self.child_fibers.len())?;
+        let invalid_identity = || crate::value::AwbcRuntimeValueSnapshotError::Message {
+            message: "native fiber identities do not follow their original allocator".into(),
+        };
+        if self.fiber.id.0 != 0 {
+            return Err(invalid_identity());
+        }
+        let mut fiber_ids = BTreeSet::new();
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
             admission.validate_metadata(&(
                 fiber.id,
@@ -790,6 +797,13 @@ impl<V, N, P, R, F, D> Engine<V, N, P, R, F, D> {
                 fiber.execution,
                 &fiber.owner,
             ))?;
+            if fiber.id.0 >= self.next_fiber_id
+                || !fiber_ids.insert(fiber.id.0)
+                || fiber.id.0.checked_add(1) != Some(fiber.persistent_id.get())
+                || fiber.execution.get().get() != fiber.persistent_id.get()
+            {
+                return Err(invalid_identity());
+            }
         }
         Ok(())
     }

@@ -23397,3 +23397,34 @@ the prior compiler41/workspace/wasm results apply to941494, and are not relabele
 as new executions of this later patch. Complete prospective retained admission,
 allocator identities, AWBC migration and all other original acceptance remain
 unfinished. The complete original goal stays active.
+Checkpoint-failure repair `2dae402cc676c5140b8a9f94c4eb72eb1c1c9c45` was pushed
+and verified against fresh advertised main, all3 blobs/3939 inputs and held14,
+zero drift; index empty and baseline advanced with owned0. Parent
+`941494f5de0aa66967dc352dd766f712b2392a1e`, tree
+`b97afe2cd7f6d53bea8980ba5f63f5e6e672e371`, patch SHA256
+`834daeadb9abe42e8767fd87bc87dac094157c2dcff7f142e53d336bccdecb6a`.
+
+Native allocator identity admission is now implemented in the common Engine
+metadata owner, validation pending on R1910. The main executor ordinal remains0;
+every live ordinal must be below the original next cursor, unique, and correlate
+with its allocated persistent/execution IDs (ordinal+1). The existing bounded
+metadata collection admission precedes the identity set allocation. Both live
+rollback projection and inert restore use this rule before value copies. The
+new real-frame cold-restore regression rejects a child aliased to main, split
+persistent/execution identities, a stale cursor, overflow and a foreign main;
+it also round-trips the untouched image and confirms the live owner unchanged.
+All current native constructors were inspected; no separate ID assignment path
+was observed. This does not complete prospective retained-graph admission or
+AWBC reducer/restore work. No changes to target/jobs/profile settings or held14.
+R1910 discovered2137 Core/driver cases, all matched, including the new allocator
+identity regression. R1911 passed every2137 case, zero skipped,162.537s (one API
+compile case121.290s). Exact terminal keys and3938 runtime/spec hashes matched,
+held14 unchanged. All native dialogue/line-task constructors still produce admitted
+identities, and all six Root frame regressions pass. R1912 ordinary Core all-
+target/all-feature/locked Clippy passed in42.99s, warnings remain; strict Clippy
+is not claimed. R1913 structure passed:3160 files,3030 Rust files,1723412 physical
+Rust LOC,97 packages,376 review triggers, zero blocking violations. Both check/
+lint input audits match3938 frozen inputs. No Cargo graph change occurred.
+The common Engine metadata owner owns this allocator rule, not a Root-specific
+identity table. Full future-graph admission, AWBC real reducer frames/atomic
+restore and the complete original goal remain active and unfinished.
