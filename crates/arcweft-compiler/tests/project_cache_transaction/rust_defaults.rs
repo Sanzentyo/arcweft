@@ -556,7 +556,10 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
     use arcweft_core::root::RootEventInput;
     use arcweft_runtime_driver::{
         clock::RuntimeClockStep,
-        session::{BundleSession, BundleStepInput, RootReplayRecordingError, RootReplayTraceV1},
+        session::{
+            BundleSession, BundleStepInput, RecordedRootOutcomeV1, RootReplayError,
+            RootReplayRecordingError, RootReplayTraceV1,
+        },
     };
     let (bundle, event, options) = root_replay_fixture("root-replay-initialization");
     let mut unrecorded = BundleSession::new(&bundle, options.clone()).unwrap();
@@ -611,9 +614,41 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
     assert!(wire.get("identity").is_none());
     let decoded: RootReplayTraceV1 = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded, trace);
-    let replay = BundleSession::replay_root_trace(&bundle, options, &decoded).unwrap();
+    let replay = BundleSession::replay_root_trace(&bundle, options.clone(), &decoded).unwrap();
     assert_eq!(replay.transitions_verified, 1);
     assert!(!replay.terminal_trap);
+    let max_items = bundle.product_awbc_program().entries[0]
+        .roles
+        .stateful()
+        .unwrap()
+        .command_policy
+        .root_limits
+        .schema
+        .max_sequence_items;
+    let mut oversized = decoded;
+    let RecordedRootOutcomeV1::Committed {
+        command_digests, ..
+    } = &mut oversized.transitions[0].outcome
+    else {
+        panic!("the recorded reducer committed");
+    };
+    command_digests.resize(
+        usize::try_from(max_items).unwrap() + 1,
+        oversized.initializer_state_digest,
+    );
+    let Err(RootReplayError::Snapshot(error)) =
+        BundleSession::replay_root_trace(&bundle, options, &oversized)
+    else {
+        panic!("oversized transcript metadata must fail retained admission");
+    };
+    assert_eq!(
+        *error,
+        arcweft_core::value::AwbcRuntimeValueSnapshotError::Resource(
+            arcweft_core::entry::RuntimeSchemaError::BudgetExceeded {
+                budget: "sequence_items"
+            }
+        )
+    );
 }
 
 #[test]

@@ -61,6 +61,13 @@ durable Root の transition event と成功した external outcome は、Core �
 実行時の入力を同じ executable owner に束縛して構築する。trace の contract version
 は `1` とする。
 
+recorder は実行前の保持値検証から実行後の結果検証まで同じ資源枠を保持する。
+identity、sequence、digest、external result の metadata と値を別の allowance に
+逃がさず、全 transition の借用結果を検証してから command digest 一覧をコピーする。
+借用結果と保持結果は同じ `RecordedRootOutcomeV1` grammar を使う。replay もこの
+保持値検証を session の構築前に行い、過大な metadata を値や session の構築後へ
+延期しない。
+
 Root の記録 step が失敗した場合、`RootReplayStepError::BeforeStep` は未実行の
 入力と clock を返し、`AfterStep` は実行済みの `BundleSessionStep` を返す。
 どちらも recorder を呼出し前の状態に保つ。実行済みの出力には host work が含まれ

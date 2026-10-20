@@ -56,10 +56,10 @@ pub struct RecordedRootTransitionV1 {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RecordedRootOutcomeV1 {
+pub enum RecordedRootOutcomeV1<Digests = Vec<RuntimeValueDigest>> {
     Committed {
         state_digest: RuntimeValueDigest,
-        command_digests: Vec<RuntimeValueDigest>,
+        command_digests: Digests,
     },
     Rejected {
         error_digest: RuntimeValueDigest,
@@ -179,6 +179,8 @@ pub struct RootReplayReportV1 {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayError {
+    #[error("root replay retained value admission failed: {0}")]
+    Snapshot(#[source] Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
     #[error("unsupported root replay schema version {actual}; expected exactly 1")]
     UnsupportedSchema { actual: u32 },
     #[error("root replay engine identity `{actual}` does not equal `{expected}`")]

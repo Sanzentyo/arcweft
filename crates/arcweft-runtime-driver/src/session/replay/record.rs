@@ -17,8 +17,8 @@ use arcweft_core::root::{RootTransitionOutcome, TransitionSequence};
 use arcweft_core::value::{AwbcRuntimeValueSnapshot, RuntimeRetainedValueAdmission};
 use std::collections::VecDeque;
 
-#[derive(Clone, Debug)]
 struct RootReplayStepCapture {
+    admission: RuntimeRetainedValueAdmission,
     pending_events: VecDeque<AwbcRuntimeValueSnapshot>,
     external_outcomes: Vec<RecordedExternalOutcome>,
     added_root_events: usize,
@@ -159,6 +159,7 @@ impl RootReplayRecorderV1 {
             session.executor.program_owner(),
             self.roles.command_policy.root_limits.schema,
         );
+        admission.validate_metadata(&(&self.identity, self.initializer_state_digest))?;
         admission.validate_metadata_collection(self.transitions.len())?;
         admission.validate_metadata_collection(self.pending_events.len())?;
         admission.validate_metadata_collection(self.external_outcomes.len())?;
@@ -172,22 +173,13 @@ impl RootReplayRecorderV1 {
                 })?,
         )?;
         for transition in &self.transitions {
-            admission
-                .validate_typed_snapshot(&transition.event, self.roles.event.semantic_identity)?;
+            transition.admit_retained(&mut admission, self.roles.event.semantic_identity)?;
         }
         for event in &self.pending_events {
             admission.validate_typed_snapshot(event, self.roles.event.semantic_identity)?;
         }
         for outcome in &self.external_outcomes {
-            admission.validate_metadata_string(&outcome.request.0)?;
-            match &outcome.outcome {
-                RecordedExternalOutcomeResultV1::Success(value) => {
-                    admission.validate_snapshot(value)?
-                }
-                RecordedExternalOutcomeResultV1::Failure { message, .. } => {
-                    admission.validate_metadata_string(message)?
-                }
-            }
+            outcome.admit_retained(&mut admission)?;
         }
         let explicit_count = session
             .pending_deferred_root_events
@@ -230,8 +222,15 @@ impl RootReplayRecorderV1 {
             inputs.push((&event.payload.0, Some(self.roles.event.semantic_identity)));
         }
         let mut routed_count = 0;
+        let explicit_pending = self
+            .pending_events
+            .len()
+            .checked_add(explicit_count)
+            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                message: "pending replay event count overflowed".into(),
+            })?;
         for result in &input.host_call_results {
-            admission.validate_metadata_string(&result.id.0)?;
+            let mut root_event_sequence = None;
             let pending = session.pending_root_command_results.get(&result.id);
             match &result.outcome {
                 Ok(payload) => {
@@ -250,21 +249,37 @@ impl RootReplayRecorderV1 {
                     let expected = routed.then_some(self.roles.event.semantic_identity);
                     inputs.push((&payload.0, expected));
                     if routed {
+                        let offset = explicit_pending
+                            .checked_add(routed_count)
+                            .and_then(|offset| u64::try_from(offset).ok())
+                            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                                message: "pending replay event count does not fit u64".into(),
+                            })?;
+                        root_event_sequence = Some(
+                            root.next_sequence
+                                .get()
+                                .checked_add(offset)
+                                .map(TransitionSequence::from_u64)
+                                .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                                    message: "recorded root-event sequence overflowed".into(),
+                                })?,
+                        );
                         inputs.push((&payload.0, expected));
                         routed_count += 1;
                     }
                 }
-                Err(error) => admission.validate_metadata_string(&error.message)?,
+                Err(error) => admission.validate_metadata(&(
+                    RecordedHostCallErrorKindV1::from(error.kind),
+                    &error.message,
+                ))?,
             }
+            admission.validate_metadata(&(position, &result.id, root_event_sequence))?;
         }
-        let pending_count = self
-            .pending_events
-            .len()
-            .checked_add(explicit_count)
-            .and_then(|count| count.checked_add(routed_count))
-            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+        let pending_count = explicit_pending.checked_add(routed_count).ok_or_else(|| {
+            RootReplayRecordingError::RuntimeInspection {
                 message: "pending replay event count overflowed".into(),
-            })?;
+            }
+        })?;
         admission.validate_metadata_collection(
             self.transitions
                 .len()
@@ -302,19 +317,14 @@ impl RootReplayRecorderV1 {
                             pending.route == RootCommandHostResultRoute::RootEventPayload
                         })
                     {
-                        let offset = u64::try_from(pending_events.len()).map_err(|_| {
-                            RootReplayRecordingError::RuntimeInspection {
-                                message: "pending replay event count does not fit u64".to_owned(),
-                            }
-                        })?;
+                        let offset = u64::try_from(pending_events.len())
+                            .expect("every routed offset passed borrowed preflight");
                         let sequence = root
                             .next_sequence
                             .get()
                             .checked_add(offset)
                             .map(TransitionSequence::from_u64)
-                            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
-                                message: "recorded root-event sequence overflowed".to_owned(),
-                            })?;
+                            .expect("every routed sequence passed borrowed preflight");
                         pending_events.push_back(
                             captured
                                 .next()
@@ -337,6 +347,7 @@ impl RootReplayRecorderV1 {
             });
         }
         Ok(RootReplayStepCapture {
+            admission,
             added_root_events: pending_events.len() - prior_pending_events,
             pending_events,
             external_outcomes,
@@ -359,6 +370,11 @@ impl RootReplayRecorderV1 {
                 return Err(RootReplayRecordingError::InitializationMismatch);
             }
             initializer_state_digest = Some(initialization.state_digest);
+        }
+        if initializer_state_digest != self.initializer_state_digest {
+            capture
+                .admission
+                .validate_metadata(&initializer_state_digest)?;
         }
         if step.root_transitions.is_empty() && capture.added_root_events > 0 {
             let pending = session
@@ -386,13 +402,12 @@ impl RootReplayRecorderV1 {
             })?
             .runtime();
         let program = RuntimeProgramTypes::Awbc(&runtime.program);
-        let mut transitions = Vec::with_capacity(step.root_transitions.len());
-        for outcome in &step.root_transitions {
-            let event = capture
-                .pending_events
-                .pop_front()
-                .expect("cardinality was checked");
-            let expected_sequence = u64::try_from(self.transitions.len() + transitions.len())
+        capture
+            .admission
+            .validate_metadata_collection(step.root_transitions.len())?;
+        let mut admitted = Vec::with_capacity(step.root_transitions.len());
+        for (outcome, event) in step.root_transitions.iter().zip(&capture.pending_events) {
+            let expected_sequence = u64::try_from(self.transitions.len() + admitted.len())
                 .expect("Vec index fits u64 on supported platforms");
             if outcome.sequence().get() != expected_sequence {
                 return Err(RootReplayRecordingError::SequenceMismatch {
@@ -403,22 +418,31 @@ impl RootReplayRecorderV1 {
             let event_digest = self
                 .roles
                 .event
-                .accepts_snapshot(
-                    program,
-                    &event,
-                    self.roles.command_policy.root_limits.schema,
-                )
+                .accepts_snapshot(program, event, self.roles.command_policy.root_limits.schema)
                 .map_err(|error| RootReplayRecordingError::InvalidEvent {
                     transition: expected_sequence,
                     message: error.to_string(),
                 })?;
-            transitions.push(RecordedRootTransitionV1 {
-                sequence: outcome.sequence(),
-                event,
-                event_digest,
-                outcome: RecordedRootOutcomeV1::from(outcome),
-            });
+            let borrowed = RecordedRootOutcomeV1::from(outcome);
+            capture
+                .admission
+                .validate_metadata(&(outcome.sequence(), event_digest, &borrowed))?;
+            admitted.push((outcome.sequence(), event_digest, borrowed));
         }
+        let transitions = admitted
+            .into_iter()
+            .map(
+                |(sequence, event_digest, outcome)| RecordedRootTransitionV1 {
+                    sequence,
+                    event: capture
+                        .pending_events
+                        .pop_front()
+                        .expect("cardinality was checked"),
+                    event_digest,
+                    outcome: outcome.capture_admitted(),
+                },
+            );
+        let transitions: Vec<_> = transitions.collect();
         if matches!(
             step.root_transitions.last(),
             Some(RootTransitionOutcome::Trapped { .. })
@@ -495,27 +519,6 @@ impl RootReplayRecorderV1 {
             transitions: self.transitions,
             external_outcomes: self.external_outcomes,
         })
-    }
-}
-
-impl From<&RootTransitionOutcome> for RecordedRootOutcomeV1 {
-    fn from(value: &RootTransitionOutcome) -> Self {
-        match value {
-            RootTransitionOutcome::Committed {
-                state_digest,
-                command_digests,
-                ..
-            } => Self::Committed {
-                state_digest: *state_digest,
-                command_digests: command_digests.clone(),
-            },
-            RootTransitionOutcome::Rejected { error_digest, .. } => Self::Rejected {
-                error_digest: *error_digest,
-            },
-            RootTransitionOutcome::Trapped { failure_digest, .. } => Self::Trapped {
-                failure_digest: *failure_digest,
-            },
-        }
     }
 }
 

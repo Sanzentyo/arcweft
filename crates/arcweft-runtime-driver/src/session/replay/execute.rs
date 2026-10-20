@@ -89,45 +89,14 @@ fn replay_root_trace_with(
 ) -> Result<RootReplayReportV1, RootReplayError> {
     let roles = preflight(bundle, options, trace, artifact)?;
     let program = RuntimeProgramTypes::Awbc(bundle.product_awbc_program());
-    validate_trace_shape(trace)?;
     let mut admission = RuntimeRetainedValueAdmission::for_program(
         RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&bundle.product_awbc.program)),
         roles.command_policy.root_limits.schema,
     );
-    admission
-        .validate_metadata_collection(trace.transitions.len())
-        .map_err(|error| RootReplayError::ArtifactInspection {
-            message: error.to_string(),
-        })?;
-    admission
-        .validate_metadata_collection(trace.external_outcomes.len())
-        .map_err(|error| RootReplayError::ArtifactInspection {
-            message: error.to_string(),
-        })?;
-    for transition in &trace.transitions {
-        admission
-            .validate_typed_snapshot(&transition.event, roles.event.semantic_identity)
-            .map_err(|error| RootReplayError::EventDivergence {
-                entry: trace.identity.entry.canonical_label(),
-                transition: transition.sequence.get(),
-                message: error.to_string(),
-            })?;
-    }
-    for (index, external) in trace.external_outcomes.iter().enumerate() {
-        admission
-            .validate_metadata_string(&external.request.0)
-            .map_err(|error| external_error(trace, index, &error.to_string()))?;
-        match &external.outcome {
-            RecordedExternalOutcomeResultV1::Success(value) => {
-                admission
-                    .validate_snapshot(value)
-                    .map_err(|error| external_error(trace, index, &error.to_string()))?
-            }
-            RecordedExternalOutcomeResultV1::Failure { message, .. } => admission
-                .validate_metadata_string(message)
-                .map_err(|error| external_error(trace, index, &error.to_string()))?,
-        }
-    }
+    trace
+        .admit_retained(&mut admission, roles.event.semantic_identity)
+        .map_err(|error| RootReplayError::Snapshot(Box::new(error)))?;
+    validate_trace_shape(trace)?;
 
     let mut session = start().map_err(|error| RootReplayError::SessionStart {
         message: error.to_string(),

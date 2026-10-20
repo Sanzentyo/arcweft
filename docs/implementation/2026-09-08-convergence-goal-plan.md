@@ -23009,3 +23009,76 @@ frames and remove their synchronous evaluators. Native foreign-call cold rollbac
 full restore failure atomicity, complete reverse consumers, earlier56 CLI failures,
 Presentation ABI, strict Clippy, cross-tier/visual acceptance and all other
 original unfinished requirements remain open. The goal remains active.
+
+### 2026-10-20: shared replay metadata admission across the executed step
+
+The preceding custody cut was published and verified as
+`404afe5360578451b934cbe21ba8151c2b4b36eb`, parent
+`9a1c59f56399a645e525a03e795f41c4e6da1454`, tree
+`ccd6fad331e0fd422cb72e86a3c650dbf5433691`, raw patch SHA256
+`d5924d3a92d549c21c73a224ac729bfab42d35c210036a611f23238dce4af689`.
+Fresh fetch and advertised main, all6 published blobs and3935 frozen inputs
+matched; held14 were unchanged, the index was empty and the baseline advanced.
+The previous goal turn made implementation, validation and publication progress.
+
+Inspected main remains that full404afe SHA for this cut. Seven owned source/test/
+spec paths (one new replay admission module) plus this note coexist with the
+unchanged held14 tracked paths and held untracked files. The actual changed-owner
+reverse closure is10 packages and all99 manifest/lock inputs remain unchanged.
+The full freeze has3936 inputs; its runtime specialization excludes only this
+operational note and has3935 inputs, including the new module and maintained spec.
+
+RootReplayStepCapture now exclusively carries the original retained-admission
+bank from borrowed input preflight through executed-result commit. It is no
+longer Clone. Existing trace identity, initialization digest, sequence/digest/
+outcome metadata, external-result headers/failure metadata, retained values and
+pending events are admitted before copying. Routed external-event sequence
+overflow is rejected during borrowed preflight, before projecting snapshots.
+After execution, every transition's borrowed outcome metadata is admitted before
+any command-digest list is copied or recorder state changes. The previously
+published owned BeforeStep/AfterStep failure packets preserve the corresponding
+input/output when these checks reject.
+
+RecordedRootOutcomeV1 has one collection parameter with the existing owned Vec
+as its default. Borrowed command-digest slices and owned output use the same
+enum and serde grammar. The old allocating From<&RootTransitionOutcome> path
+was deleted; the context-free conversion now borrows, and only the enclosing
+recorder's admitted projection copies command digests. No second outcome enum,
+codec version, program authority or compatibility reader was added. The new
+private admission module owns reusable replay-component admission; core retains
+the value/type/resource authority, and recording/execution retain their own
+sequencing. Replay checks complete retained metadata before trace-shape helpers
+allocate their correlation sets or the session is constructed. Rejections retain
+the structured snapshot source in RootReplayError::Snapshot.
+
+R1863 development driver/compiler all-target/all-feature/locked check passed.
+R1864 selected exactly driver176, including the two new admission tests. Core
+was included only for feature alignment and intentionally excluded by the package
+filter; the catalogue contains176 cases, not an assertion that Core has no tests.
+R1865 passed the exact176 cases, zero skipped,4.263s. The new tests prove the
+borrowed/owned JSON grammar agrees and external-failure metadata accumulates and
+retains its first failure with zero value-node/encoded-value-byte allowance.
+R1866 passed all39 compiler project_cache_transaction cases, zero skipped,1.929s.
+The real record/JSON/replay case additionally submits65537 command digests under
+the selected65536-item policy and receives the structured sequence_items budget
+failure. The success lifecycle and both owned recording-failure tests still pass.
+Exact case-key audits and all3935 runtime/source/spec hashes match for both runs.
+
+R1867 workspace all-target/all-feature/locked check passed in31.39s. R1868
+ordinary workspace Clippy passed in1m18s; warnings remain and strict Clippy is not
+claimed. Both3935-input audits have zero drift. R1869 structure passed:3157 files,
+3027 Rust files,1722543 physical Rust LOC,97 packages,376 review triggers and zero
+blocking violations. The new module has no I/O or new layer edge. The unchanged
+Core sources/tests retain their R1853 evidence; complete reverse-consumer and
+final workspace execution acceptance remain open rather than being inferred
+from these selected owner runs.
+
+Next: connect replay trace bytes to the existing strict typed JSON save reader
+and its DecodeBudget, preserving structured codec failures and rejecting unknown/
+duplicate fields, trailing data and resource excess before typed construction.
+Complete digest/expected-key admission before live construction and then migrate
+Root reducers to ordinary frames with the common instruction allowance/backend.
+Native foreign-call cold rollback, full restore failure atomicity, all14 host
+families, Generic Match/retained View completion, the earlier56 CLI failures,
+Presentation ABI, strict Clippy, full reverse/Tier2/visual acceptance and every
+other original unfinished requirement remain open. The full goal stays active.
