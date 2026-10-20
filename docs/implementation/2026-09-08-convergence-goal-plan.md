@@ -22267,3 +22267,25 @@ exercise a real external callable, selected locale, budget yield, cold restore,
 no repeated initializer call and failure before either Root/Flow publication.
 Do not add a second phase table, fallback backend or fresh synchronous budget.
 Root, Presentation and the complete original goal remain unfinished and active.
+
+### 2026-10-20 — Root call scope correction during fixed-source verification
+
+Inspected main 2e9a0a687ca8c6a78e3ac802ed15ec617cbe266c. R1769/R1770/R1771
+remain on their original live handles; executable inputs stay fixed. Root
+migration must include reducers, not only initialization: Engine::run_root_phase
+constructs StructuredRootEvaluator without the selected backend/formatter;
+RootRuntime::step drains queued events through its synchronous evaluator;
+ProductRootEvaluator uses run_function's independent million-instruction fiber.
+Neither tier charges those reducer instructions to the ordinary step allowance.
+
+Frame staging must also be separated from execution: activate_function_prepared
+currently supplies a temporary default VM backend to start_function_site_call.
+Program/Function continuations avoid the expression shortcut, but adding an
+initializer continuation alone would permit that shortcut unless the actual
+activation boundary is repaired. Stage the full admitted frame without execution
+and use the selected backend only during budgeted steps. Keep pending reduction
+context on its Root transaction owner, move affine event inputs once, and commit
+state plus the complete command batch atomically after result admission. Retain
+existing normal-save blockers while implementing verified pending-initializer
+restore and ordinary budget-yield continuation. This refines the required Root
+implementation; no Root execution fix is claimed from investigation alone.
