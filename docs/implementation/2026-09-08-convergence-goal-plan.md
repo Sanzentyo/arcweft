@@ -22947,3 +22947,65 @@ ordinary frames/shared budget/backend and full restore failure atomicity remain
 open, as do complete reverse consumers, the earlier56 CLI failures, Presentation
 ABI, cross-tier/visual acceptance and every original unfinished requirement.
 This is an intermediate publication, not completion of the active goal.
+
+### 2026-10-20: replay snapshot acceptance and owned recording failures
+
+The preceding intermediate cut was published as
+`9a1c59f56399a645e525a03e795f41c4e6da1454`, parent
+`5ea44f6e19e380e58b018d311717fa4564f8d8cc`, tree
+`20c67f24afdd78da1719173a4b02f8fe85e592b6`, raw patch SHA256
+`2072239cd282bb12f074c5133932a1124ce5e4f923c7d9d62533c30b7010afcd`.
+Fresh fetch and advertised remote main, all13 published blobs and3935 frozen
+inputs matched; held14 were unchanged, the index was empty, and the baseline
+advanced to that full SHA before this next cut began.
+
+R1852 discovered exactly2129 Core/driver cases with zero excluded, including all
+five new qualifier/resource/batch cases. R1853 passed that exact set:2129 passed,
+zero failed/skipped,312.833s; the API compile case took258.459s and completed.
+R1854 passed the unchanged37-case compiler integration set, zero skipped,2.375s.
+The real session trace now records initialization and a reducer transition,
+round-trips its inert nominal event through JSON at schema1 and successfully
+replays it. Native selected-locale initialization, AWBC Rust-call cold restore
+without repeat and Drain continuation also remain passing in the same set.
+Case-key comparison and3934 runtime/source/spec input hashes matched for both
+runs. R1855 workspace check and R1856 ordinary workspace Clippy passed for those
+same3934 inputs; Clippy took12m04s including Cargo queue time and still reports
+warnings. These terminal results supersede the pending status in the previous
+checkpoint and the earlier fixture/nominal-serde failures, not strict acceptance.
+
+Inspected main remains `9a1c59f56399a645e525a03e795f41c4e6da1454` for this next
+cut, with five owned source/test/spec paths plus this note and held14 unchanged.
+RootReplayStepError now carries two exclusive failure states. BeforeStep returns
+the original owned BundleStepInput and clock before ordinary execution. AfterStep
+returns the actual owned BundleSessionStep after execution, including its emitted
+work; callers cannot confuse a recording error with an unexecuted step. Both
+paths preserve recorder state because all recorder changes publish only after
+commit validation. The snapshot error also preserves its structured source.
+The error packet has no Clone or serde, and does not copy live input/output.
+The maintained save/replay chapter records this custody contract and inert trace
+values. No new dependency, layer edge, codec version or compatibility reader was
+introduced. The driver owns the step boundary and error custody; its session
+facade only exports the new type. The compiler fixture owns shared construction
+of the real validated bundle used by the three replay lifecycle tests.
+
+R1858 selected all39 compiler project_cache_transaction cases, including both
+new failures and the original successful record/replay lifecycle. R1859 passed
+all39, zero skipped,2.031s. One new test rejects an incorrectly typed event,
+returns its exact input and clock, and proves the session is still fresh. The
+other first commits an unrecorded event, then observes an actual second transition
+inside AfterStep's SequenceMismatch error and proves the recorder is unchanged.
+The test permits ordinary multi-step progress without weakening the eventual
+sequence/output assertions. Exact case keys and3934 frozen hashes matched.
+R1860 workspace all-target/all-feature/locked check passed in29.16s; R1861
+ordinary workspace Clippy passed in1m14s. Both3934-input audits have zero drift.
+R1862 structural audit passed:3156 files,3026 Rust files,1722366 physical Rust LOC,
+97 packages,376 review triggers and zero blocking violations. The Core value
+admission sources/tests from R1853 are unchanged in this cut; do not repeat all
+2129 tests solely for this error-packet publication.
+
+Next: complete trace metadata/digest and bounded codec admission before copying
+or live construction, then migrate Root reducers onto ordinary shared-budget
+frames and remove their synchronous evaluators. Native foreign-call cold rollback,
+full restore failure atomicity, complete reverse consumers, earlier56 CLI failures,
+Presentation ABI, strict Clippy, cross-tier/visual acceptance and all other
+original unfinished requirements remain open. The goal remains active.

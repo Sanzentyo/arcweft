@@ -54,6 +54,18 @@ pub struct ReplayTrace {
 }
 ```
 
+durable Root の transition event と成功した external outcome は、Core の
+`AwbcRuntimeValueSnapshot` で保持する。live nominal value の serde reader は
+使わず、記録時は元 program と選択された Root policy で保持済みの値と新規入力を
+一括検証してから snapshot を複製する。replay は全 snapshot を inert のまま検証し、
+実行時の入力を同じ executable owner に束縛して構築する。trace の contract version
+は `1` とする。
+
+Root の記録 step が失敗した場合、`RootReplayStepError::BeforeStep` は未実行の
+入力と clock を返し、`AfterStep` は実行済みの `BundleSessionStep` を返す。
+どちらも recorder を呼出し前の状態に保つ。実行済みの出力には host work が含まれ
+得るため、記録の失敗を未実行と解釈して同じ入力を再送しない。
+
 ## Hot reload
 
 ```text

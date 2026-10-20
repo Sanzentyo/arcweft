@@ -473,20 +473,18 @@ fn awbc_root_initialization_uses_remaining_drain_allowance_for_initial_flow() {
     assert!(matches!(step.fiber_status, FlowFiberStatus::Done(_)));
 }
 
-#[test]
-fn root_replay_records_observed_initialization_before_queued_event_transition() {
+fn root_replay_fixture(
+    name: &str,
+) -> (
+    arcweft_bundle::ArcweftBundle,
+    RuntimeValue,
+    arcweft_runtime_driver::session::BundleSessionOptions,
+) {
     use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
-    use arcweft_core::{root::RootEventInput, step::RuntimeStepMode};
-    use arcweft_runtime_driver::{
-        clock::RuntimeClockStep,
-        session::{
-            BundleSession, BundleSessionOptions, BundleStepInput, RootReplayRecordingError,
-            RootReplayTraceV1,
-        },
-    };
+    use arcweft_core::step::RuntimeStepMode;
+    use arcweft_runtime_driver::session::BundleSessionOptions;
     let source = ROOT_LOCALE_SOURCE.replace("default_string()", "\"initial\"");
-    let compiled =
-        compile_rust_project(&metadata(), &source, "root-replay-initialization").unwrap();
+    let compiled = compile_rust_project(&metadata(), &source, name).unwrap();
     let lowered = compiled.runtime_plan();
     let program = AwbcLowerer::new(
         &lowered.plan,
@@ -550,6 +548,17 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
         max_ops: 1,
         ..BundleSessionOptions::default()
     };
+    (bundle, event, options)
+}
+
+#[test]
+fn root_replay_records_observed_initialization_before_queued_event_transition() {
+    use arcweft_core::root::RootEventInput;
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{BundleSession, BundleStepInput, RootReplayRecordingError, RootReplayTraceV1},
+    };
+    let (bundle, event, options) = root_replay_fixture("root-replay-initialization");
     let mut unrecorded = BundleSession::new(&bundle, options.clone()).unwrap();
     let mut early_input = BundleStepInput::default();
     early_input
@@ -605,6 +614,110 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
     let replay = BundleSession::replay_root_trace(&bundle, options, &decoded).unwrap();
     assert_eq!(replay.transitions_verified, 1);
     assert!(!replay.terminal_trap);
+}
+
+#[test]
+fn root_replay_recording_rejection_returns_unexecuted_input_and_clock() {
+    use arcweft_core::root::RootEventInput;
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{BundleSession, BundleStepInput, RootReplayStepError},
+    };
+    let (bundle, _, options) = root_replay_fixture("root-replay-unexecuted-input");
+    let mut session = BundleSession::new(&bundle, options).unwrap();
+    let mut recorder = session.start_root_replay_recording().unwrap();
+    let before = recorder.clone().finish();
+    let clock = RuntimeClockStep::from_millis(1, 1).unwrap();
+    let mut input = BundleStepInput::default();
+    input
+        .root_events
+        .push(RootEventInput::new(RuntimeValue::Unit.into()));
+    let failure = session
+        .step_with_clock_recording(clock, input, &mut recorder)
+        .unwrap_err();
+    let RootReplayStepError::BeforeStep {
+        clock: returned_clock,
+        input,
+        error,
+    } = failure
+    else {
+        panic!("invalid input must be returned before execution");
+    };
+    assert_eq!(returned_clock, clock);
+    assert_eq!(input.root_events.len(), 1);
+    assert!(matches!(input.root_events[0].payload.0, RuntimeValue::Unit));
+    assert!(matches!(
+        error,
+        arcweft_runtime_driver::session::RootReplayRecordingError::Snapshot(_)
+    ));
+    assert_eq!(recorder.finish(), before);
+    assert_eq!(
+        session.start_root_replay_recording().unwrap().finish(),
+        before
+    );
+}
+
+#[test]
+fn root_replay_recording_after_step_failure_returns_the_actual_transition() {
+    use arcweft_core::root::RootEventInput;
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{BundleSession, BundleStepInput, RootReplayRecordingError, RootReplayStepError},
+    };
+    let (bundle, event, options) = root_replay_fixture("root-replay-executed-output");
+    let mut session = BundleSession::new(&bundle, options).unwrap();
+    let mut recorder = session.start_root_replay_recording().unwrap();
+    let mut input = BundleStepInput::default();
+    input
+        .root_events
+        .push(RootEventInput::new(event.clone().into()));
+    let mut advanced = false;
+    for number in 1..=128 {
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(number, 1).unwrap(),
+            std::mem::take(&mut input),
+        );
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        if let [outcome] = &step.root_transitions[..] {
+            assert_eq!(outcome.sequence().get(), 0);
+            advanced = true;
+            break;
+        }
+    }
+    assert!(
+        advanced,
+        "the ordinary session must commit the unrecorded event"
+    );
+    input.root_events.push(RootEventInput::new(event.into()));
+    for number in 129..=256 {
+        let clock = RuntimeClockStep::from_millis(number, 1).unwrap();
+        let before = recorder.clone().finish();
+        match session.step_with_clock_recording(clock, std::mem::take(&mut input), &mut recorder) {
+            Ok(step) => {
+                assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+                assert!(step.root_transitions.is_empty());
+            }
+            Err(RootReplayStepError::BeforeStep { error, .. }) => {
+                panic!("the event must reach ordinary execution: {error}");
+            }
+            Err(RootReplayStepError::AfterStep { step, error }) => {
+                assert_eq!(
+                    error,
+                    RootReplayRecordingError::SequenceMismatch {
+                        expected: 0,
+                        actual: 1
+                    }
+                );
+                assert_eq!(step.clock, clock);
+                assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+                assert_eq!(step.root_transitions.len(), 1);
+                assert_eq!(step.root_transitions[0].sequence().get(), 1);
+                assert_eq!(recorder.finish(), before);
+                return;
+            }
+        }
+    }
+    panic!("an executed sequence mismatch must return its actual step output");
 }
 
 #[test]

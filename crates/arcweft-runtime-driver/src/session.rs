@@ -114,7 +114,8 @@ pub use self::replay::{
     ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
     RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1, RootReplayError,
-    RootReplayRecorderV1, RootReplayRecordingError, RootReplayReportV1, RootReplayTraceV1,
+    RootReplayRecorderV1, RootReplayRecordingError, RootReplayReportV1, RootReplayStepError,
+    RootReplayTraceV1,
 };
 pub use self::root_command::{
     RootCommandHostArgument, RootCommandHostCallBinding, RootCommandHostCallCatalog,

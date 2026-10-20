@@ -8,7 +8,8 @@ use super::model::{
     ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
     RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1,
-    RootReplayIdentityV1, RootReplayRecorderV1, RootReplayRecordingError, RootReplayTraceV1,
+    RootReplayIdentityV1, RootReplayRecorderV1, RootReplayRecordingError, RootReplayStepError,
+    RootReplayTraceV1,
 };
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
@@ -32,15 +33,31 @@ impl BundleSession {
     }
 
     /// Executes one ordinary session step and records its typed root behavior.
+    /// A failure returns the unexecuted input or the actual executed output;
+    /// the recorder retains its state from before the call.
     pub fn step_with_clock_recording(
         &mut self,
         clock: RuntimeClockStep,
         input: BundleStepInput,
         recorder: &mut RootReplayRecorderV1,
-    ) -> Result<BundleSessionStep, RootReplayRecordingError> {
-        let capture = recorder.capture_step(self, &input)?;
+    ) -> Result<BundleSessionStep, RootReplayStepError> {
+        let capture = match recorder.capture_step(self, &input) {
+            Ok(capture) => capture,
+            Err(error) => {
+                return Err(RootReplayStepError::BeforeStep {
+                    clock,
+                    input: Box::new(input),
+                    error,
+                });
+            }
+        };
         let step = self.step_with_clock(clock, input);
-        recorder.commit_step(self, capture, &step)?;
+        if let Err(error) = recorder.commit_step(self, capture, &step) {
+            return Err(RootReplayStepError::AfterStep {
+                step: Box::new(step),
+                error,
+            });
+        }
         Ok(step)
     }
 }

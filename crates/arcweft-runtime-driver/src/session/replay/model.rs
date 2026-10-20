@@ -1,6 +1,9 @@
 //! Versioned root replay data and public diagnostics.
 
-use super::super::{BundleSessionArtifactIdentity, EntryRuntimeId, RuntimeHostCallId};
+use super::super::{
+    BundleSessionArtifactIdentity, BundleSessionStep, BundleStepInput, EntryRuntimeId,
+    RuntimeClockStep, RuntimeHostCallId,
+};
 use arcweft_core::entry::{
     EntryBindingIdentity, RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeValueDigest,
     TypeLayoutHash,
@@ -112,7 +115,7 @@ pub struct RootReplayRecorderV1 {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayRecordingError {
     #[error("root replay snapshot admission failed: {0}")]
-    Snapshot(Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
+    Snapshot(#[source] Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
     #[error("root replay initializer has not completed")]
     InitializationPending,
     #[error("root replay initialization does not match the selected entry")]
@@ -143,6 +146,26 @@ impl From<arcweft_core::value::AwbcRuntimeValueSnapshotError> for RootReplayReco
     fn from(error: arcweft_core::value::AwbcRuntimeValueSnapshotError) -> Self {
         Self::Snapshot(Box::new(error))
     }
+}
+
+/// A recording failure preserves custody at the actual execution boundary.
+/// The recorder is unchanged by the failed call. An executed step may already
+/// have produced host work; its owned output must be handled before continuing.
+#[derive(Debug, Error, PartialEq)]
+pub enum RootReplayStepError {
+    #[error("root replay input was rejected before execution: {error}")]
+    BeforeStep {
+        clock: RuntimeClockStep,
+        input: Box<BundleStepInput>,
+        #[source]
+        error: RootReplayRecordingError,
+    },
+    #[error("root replay recording failed after execution: {error}")]
+    AfterStep {
+        step: Box<BundleSessionStep>,
+        #[source]
+        error: RootReplayRecordingError,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
