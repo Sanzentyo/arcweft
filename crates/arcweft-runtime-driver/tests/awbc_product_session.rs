@@ -1136,7 +1136,7 @@ fn session_restore_preflights_root_presence_and_preserves_executor() {
             },
         )
         .unwrap_err();
-    assert!(matches!(error, BundleSessionSaveError::Decode { message }
+    assert!(matches!(error, BundleSessionSaveError::Root { message }
         if message.contains("root presence")));
     assert!(!visited);
     assert_eq!(session.snapshot_session().unwrap(), before);

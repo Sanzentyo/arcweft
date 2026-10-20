@@ -24086,3 +24086,28 @@ The complete original convergence objective remains active,including the53
 reverse-consumer and workspace/Tier2/Native-Web/presentation11/CLI and other
 previously recorded acceptance gaps. R1957 is the latest actual runtime evidence;
 do not substitute a smaller completed goal or mark the project complete.
+
+### 2026-10-21 — close replay evidence and migrate remaining Root assertions
+
+Inspected main `2af4f2052443e236f3875857802272bd6121290d`; only the14 held
+paths and three held untracked entries preceded this cut. The preceding turn
+only rechecked the already completed clean receipt (no implementation progress).
+The clean is not repeated. Resume the complete convergence objective.
+
+R1962 is terminal actual100:186 run,183 passed,three failed,2263 skipped,
+12.794s. Its complete terminal case set matches R1956 and all3938 frozen inputs
+match. All three formerly failing Root replay cases,including preserved one-op
+and added128-op replay,now pass. Both Fiber category and generation-pin cases
+also pass. The three remaining failures are two obsolete Root error-category
+assertions and the genuine catalog-before-executable-admission failure.
+R1963 session30050 was polled to terminal0:ordinary four-package all-target/
+all-feature/locked Clippy passed18m11s with warnings. It is not strict Clippy.
+No Rust/spec edits occurred until that terminal observation.
+
+The two remaining Root refusal assertions now require the owning RootSnapshot/
+Root variants. Their rejection,root-presence message,catalog non-invocation,
+original executor snapshot and exported-wire equality checks remain unchanged.
+This is a test-consumer migration of the already published typed boundary,not
+a new production behavior. The user explicitly permits intermediate commits
+without proving each intermediate commit fully works. The catalog-order defect
+remains open;the next runtime run and staged-admission implementation follow.
