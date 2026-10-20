@@ -692,6 +692,7 @@ struct ReservedPureHelper {
     definition: super::RuntimeFunctionDefinitionIdentity,
     name: String,
     inputs: Box<[super::RuntimeCallableParameter]>,
+    result: RuntimePlanTypeId,
     output_abi: super::RuntimePureOutputType,
     scalar_eval_supported: bool,
     origin: super::RuntimePureHelperOrigin,
@@ -704,6 +705,7 @@ struct ReservedTraitMethod {
     identity: super::RuntimeTraitMethodIdentity,
     receiver: super::RuntimeReceiverMode,
     inputs: Box<[super::RuntimeCallableParameter]>,
+    result: RuntimePlanTypeId,
     output_abi: super::RuntimePureOutputType,
     body: Option<crate::value::RuntimeExpr>,
 }
@@ -1405,7 +1407,7 @@ impl RuntimePlanBuilder {
         let lowered = match body {
             RuntimeFunctionSiteBodySeed::Expression(body) => {
                 let body = body_context.lower_expression(body)?;
-                require_reserved_result("function result", result, body.ty())?;
+                body_context.require_expression_assignable("function result", result, body.ty())?;
                 body_context.validate_function_body_locals(&body, inputs)?;
                 RuntimeFunctionSiteBody::Expression(body)
             }
@@ -2543,6 +2545,7 @@ impl RuntimePlanBuilder {
             definition: seed.definition,
             name: seed.name,
             inputs,
+            result,
             output_abi: seed.output_abi,
             scalar_eval_supported: seed.scalar_eval_supported,
             origin: seed.origin,
@@ -2590,7 +2593,11 @@ impl RuntimePlanBuilder {
             .map(|input| input.local())
             .collect::<Vec<_>>();
         let body = self.lower_expression(body)?;
-        require_reserved_result("pure helper result", result, body.ty())?;
+        self.root_body_context().require_expression_assignable(
+            "pure helper result",
+            result,
+            body.ty(),
+        )?;
         self.validate_callable_body_locals(&body, &inputs, &[])?;
         self.pure_helpers[helper_id.0].body = Some(body);
         Ok(())
@@ -2672,6 +2679,7 @@ impl RuntimePlanBuilder {
             identity: seed.identity,
             receiver: seed.receiver,
             inputs,
+            result,
             output_abi: seed.output_abi,
             body: None,
         });
@@ -2720,7 +2728,11 @@ impl RuntimePlanBuilder {
             .map(|input| input.local())
             .collect::<Vec<_>>();
         let body = self.lower_expression(body)?;
-        require_reserved_result("trait method result", result, body.ty())?;
+        self.root_body_context().require_expression_assignable(
+            "trait method result",
+            result,
+            body.ty(),
+        )?;
         self.validate_callable_body_locals(&body, &inputs, &[])?;
         self.trait_methods[method_id.0].body = Some(body);
         Ok(())
@@ -2891,6 +2903,7 @@ impl RuntimePlanBuilder {
                     id: super::RuntimePureHelperId(index),
                     name: helper.name,
                     inputs: helper.inputs,
+                    result: helper.result,
                     output_type: helper.output_abi,
                     expr,
                     scalar_eval_supported: helper.scalar_eval_supported,
@@ -2912,6 +2925,7 @@ impl RuntimePlanBuilder {
                     identity: method.identity,
                     receiver: method.receiver,
                     inputs: method.inputs,
+                    result: method.result,
                     output_type: method.output_abi,
                     body,
                 }
@@ -3500,21 +3514,8 @@ fn push_row<T>(
     Ok(index)
 }
 
-fn require_reserved_result(
-    context: &'static str,
-    expected: RuntimePlanTypeId,
-    actual: RuntimePlanTypeId,
-) -> Result<(), RuntimePlanBuildError> {
-    if expected == actual {
-        Ok(())
-    } else {
-        Err(RuntimePlanBuildError::TypeMismatch {
-            context,
-            expected,
-            actual,
-        })
-    }
-}
+#[cfg(test)]
+mod result_assignability;
 
 #[cfg(test)]
 mod tests {

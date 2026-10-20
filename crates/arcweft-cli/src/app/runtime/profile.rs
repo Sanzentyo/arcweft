@@ -215,7 +215,12 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
         },
     )?;
     let runtime_plan_report = compiled.runtime_plan().clone();
-    let plan = runtime_plan_report.plan;
+    let mut plan = runtime_plan_report.plan;
+    plan.bind_artifact(execution_diagnostics.artifact())
+        .map_err(|error| {
+            eprintln!("error: failed to bind accepted runtime plan generation: {error}");
+            ExitCode::FAILURE
+        })?;
     let dialogue_content_catalog = runtime_plan_report.dialogue_content_catalog;
     let character_presentation_catalog = runtime_plan_report.character_presentation_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;

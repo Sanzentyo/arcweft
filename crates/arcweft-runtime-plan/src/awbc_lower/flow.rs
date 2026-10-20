@@ -416,7 +416,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let result_type = crate::awbc_lower::pattern::admitted_plan_type(
             self.inventory,
             self.plan,
-            helper.expr.ty(),
+            helper.result,
         );
         let signature = self.inventory.intern_signature(
             parameter_types,

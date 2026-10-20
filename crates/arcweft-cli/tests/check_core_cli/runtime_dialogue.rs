@@ -14,7 +14,7 @@ flow run {
 fn assert_source_dialogue_report(output: &CommandOutput) {
     output.assert_success();
     let report: serde_json::Value = serde_json::from_str(&output.stdout()).expect("runtime report");
-    assert_eq!(report["final_status"], "running", "{report}");
+    assert_eq!(report["final_status"], "dialogue", "{report}");
     let steps = report["steps"].as_array().expect("runtime steps");
     assert!(
         steps.iter().any(|step| step["flow_events"]
@@ -53,6 +53,8 @@ fn headless_dialogue_binds_original_generation_for_entry_and_flow_in_every_tier(
                 source.as_os_str(),
                 OsStr::new("--executor"),
                 OsStr::new(executor),
+                OsStr::new("--mode"),
+                OsStr::new("drain"),
                 OsStr::new("--steps"),
                 OsStr::new("2"),
                 OsStr::new("--max-ops"),
@@ -61,6 +63,8 @@ fn headless_dialogue_binds_original_generation_for_entry_and_flow_in_every_tier(
             ];
             if explicit_flow {
                 args.extend([OsStr::new("--flow"), OsStr::new("run")]);
+            } else {
+                args.extend([OsStr::new("--entry"), OsStr::new("entry.run")]);
             }
             assert_source_dialogue_report(
                 &CommandOutput::run(args).expect("run real headless CLI"),
@@ -82,13 +86,16 @@ fn bundled_dialogue_binds_original_generation_for_report_and_resumable_hosts() {
     )
     .expect("admitted AWFB");
     let options = arcweft_runtime_host::BundleRunnerOptions {
+        entry: Some(
+            arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.run").unwrap(),
+        ),
         steps: 2,
         max_ops: 64,
         ..arcweft_runtime_host::BundleRunnerOptions::default()
     };
     let report = arcweft_runtime_host::run_bundle_with_native_adapters(&bundle, &options, &[])
         .expect("bundle report host binds its producer");
-    assert_eq!(report.final_status, "running");
+    assert_eq!(report.final_status, "dialogue");
     assert!(report.steps.iter().all(|step| step.diagnostics.is_empty()));
     assert!(report.steps.iter().any(|step| {
         step.flow_events
@@ -102,7 +109,7 @@ fn bundled_dialogue_binds_original_generation_for_report_and_resumable_hosts() {
     )
     .expect("resumable host binds its producer");
     while session.step().expect("step admitted bundle").is_some() {}
-    assert_eq!(session.final_status(), "running");
+    assert_eq!(session.final_status(), "dialogue");
     assert!(
         session
             .steps()

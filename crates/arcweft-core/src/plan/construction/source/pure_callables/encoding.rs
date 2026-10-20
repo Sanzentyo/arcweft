@@ -193,10 +193,10 @@ fn emit(
             });
         }
         counts.helper(row.inputs.len(), row.name.len())?;
-        reference("result type", row.expr.ty().get().get(), limits.type_count)?;
+        reference("result type", row.result.get().get(), limits.type_count)?;
         writer.count(index + 1)?;
         writer.bytes(row.definition.as_bytes())?;
-        writer.u32(row.expr.ty().get().get())?;
+        writer.u32(row.result.get().get())?;
         writer.byte(row.output_type.semantic_tag())?;
         writer.string(&row.name)?;
         writer.byte(u8::from(row.scalar_eval_supported))?;
@@ -224,10 +224,10 @@ fn emit(
         .into_iter()
         .try_fold(0usize, |sum, n| sum.checked_add(n).ok_or(Error::Arithmetic))?;
         counts.method(row.inputs.len(), labels)?;
-        reference("result type", row.body.ty().get().get(), limits.type_count)?;
+        reference("result type", row.result.get().get(), limits.type_count)?;
         writer.count(index + 1)?;
         writer.bytes(row.definition.as_bytes())?;
-        writer.u32(row.body.ty().get().get())?;
+        writer.u32(row.result.get().get())?;
         writer.byte(row.output_type.semantic_tag())?;
         writer.byte(match row.receiver {
             RuntimeReceiverMode::Owned => 0,

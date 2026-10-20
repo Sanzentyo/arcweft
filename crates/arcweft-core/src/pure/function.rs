@@ -620,7 +620,7 @@ impl<'a> RuntimePureFunctionRef<'a> {
 
     pub fn result_type(self) -> crate::runtime_id::RuntimePlanTypeId {
         match self.authority {
-            RuntimePureFunctionAuthority::Recipe(helper) => helper.expr.ty(),
+            RuntimePureFunctionAuthority::Recipe(helper) => helper.result,
             RuntimePureFunctionAuthority::Function(function) => function.result(),
         }
     }

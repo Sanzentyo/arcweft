@@ -572,10 +572,10 @@ impl Engine {
                 let result_ty = self
                     .plan
                     .type_table()
-                    .get(method.body.ty())
-                    .ok_or(RuntimeEvalError::InvalidExpressionType(method.body.ty()))?;
+                    .get(method.result)
+                    .ok_or(RuntimeEvalError::InvalidExpressionType(method.result))?;
                 let RuntimePlanTypeProjection::Result { error, .. } = result_ty.projection() else {
-                    return Err(RuntimeEvalError::InvalidExpressionType(method.body.ty()));
+                    return Err(RuntimeEvalError::InvalidExpressionType(method.result));
                 };
                 let error_layout = crate::value::project_display_layout(&self.plan, *error)
                     .map_err(|error| {

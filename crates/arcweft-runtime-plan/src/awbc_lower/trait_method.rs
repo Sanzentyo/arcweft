@@ -65,7 +65,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
             frame.finish(),
         );
         let public_id = self.inventory.intern_string(&public_label);
-        let result = admitted_plan_type(self.inventory, self.plan, method.body.ty());
+        let result = admitted_plan_type(self.inventory, self.plan, method.result);
         let signature =
             self.inventory
                 .intern_signature(parameters, Some(result), AwbcEffectSetId(0));

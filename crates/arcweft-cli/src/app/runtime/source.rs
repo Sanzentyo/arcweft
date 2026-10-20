@@ -214,6 +214,14 @@ view SourceProbe(enabled: bool = true) {
         let mut phases = Vec::new();
         let runtime = compile_source_runtime_program(&selection, None, &mut phases)
             .expect("source runtime plan and bundle compile");
+        assert_eq!(
+            runtime.plan.artifact(),
+            Some(runtime.execution_diagnostics.artifact())
+        );
+        assert_eq!(
+            runtime.bundle.manifest.runtime.artifact_fingerprint,
+            runtime.execution_diagnostics.artifact()
+        );
         assert!(
             !runtime
                 .bundle

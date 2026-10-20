@@ -781,6 +781,8 @@ pub struct RuntimePureHelper {
     pub id: RuntimePureHelperId,
     pub name: String,
     pub inputs: Box<[RuntimeCallableParameter]>,
+    /// Declared result contract, independent of a narrower expression body.
+    pub result: RuntimePlanTypeId,
     pub output_type: RuntimePureOutputType,
     pub expr: RuntimeExpr,
     pub scalar_eval_supported: bool,
@@ -878,6 +880,8 @@ pub struct RuntimeTraitMethod {
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
     pub inputs: Box<[RuntimeCallableParameter]>,
+    /// Declared result contract, independent of a narrower expression body.
+    pub result: RuntimePlanTypeId,
     pub output_type: RuntimePureOutputType,
     pub body: RuntimeExpr,
 }

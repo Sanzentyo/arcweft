@@ -26,7 +26,7 @@ impl RuntimeProgramTypes<'_> {
                 };
                 let state = plan.local_declarations().get(receiver.local())?.ty();
                 let RuntimePlanTypeProjection::Option { item, .. } =
-                    plan.type_table().get(method.body.ty())?.projection()
+                    plan.type_table().get(method.result)?.projection()
                 else {
                     return None;
                 };

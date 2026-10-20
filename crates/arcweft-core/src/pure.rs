@@ -885,9 +885,9 @@ fn validate_pure_helper_contract(
         }
     }
     if helper.output_type != RuntimePureOutputType::Value
-        && pure_scalar_projection(plan, helper.expr.ty()) != Some(helper.output_type)
+        && pure_scalar_projection(plan, helper.result) != Some(helper.output_type)
     {
-        return Err(RuntimeEvalError::InvalidExpressionType(helper.expr.ty()));
+        return Err(RuntimeEvalError::InvalidExpressionType(helper.result));
     }
     Ok(())
 }
@@ -2276,10 +2276,10 @@ impl<'a> PureEvaluator<'a> {
                 let result_ty = self
                     .plan
                     .type_table()
-                    .get(method.body.ty())
-                    .ok_or(RuntimeEvalError::InvalidExpressionType(method.body.ty()))?;
+                    .get(method.result)
+                    .ok_or(RuntimeEvalError::InvalidExpressionType(method.result))?;
                 let RuntimePlanTypeProjection::Result { error, .. } = result_ty.projection() else {
-                    return Err(RuntimeEvalError::InvalidExpressionType(method.body.ty()));
+                    return Err(RuntimeEvalError::InvalidExpressionType(method.result));
                 };
                 let error_layout = crate::value::project_display_layout(self.plan, *error)
                     .map_err(|error| {
@@ -2348,7 +2348,7 @@ impl<'a> PureEvaluator<'a> {
                                 RuntimeReceiverMode::Owned,
                                 &receiver,
                                 &[argument],
-                                method.body.ty(),
+                                method.result,
                             )?;
                             match crate::value::project_display_result(result, &error_layout)
                                 .map_err(|error| {
@@ -2656,9 +2656,9 @@ impl<'a> PureEvaluator<'a> {
         if receiver.ty() != receiver_ty {
             return Err(RuntimeEvalError::InvalidExpressionType(receiver.ty()));
         }
-        if method.body.ty() != result_ty
+        if method.result != result_ty
             || (method.output_type != RuntimePureOutputType::Value
-                && pure_scalar_projection(self.plan, method.body.ty()) != Some(method.output_type))
+                && pure_scalar_projection(self.plan, method.result) != Some(method.output_type))
         {
             return Err(RuntimeEvalError::InvalidExpressionType(result_ty));
         }

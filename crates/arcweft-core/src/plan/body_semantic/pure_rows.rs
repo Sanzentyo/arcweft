@@ -140,6 +140,7 @@ impl RuntimePureHelper {
         encoder.tag(0);
         encoder.digest(self.definition.as_bytes());
         context.write_pure_inputs(&mut encoder, &self.inputs)?;
+        context.write_type(&mut encoder, self.result)?;
         encoder.tag(self.output_type.semantic_tag());
         context.write_expression(&mut encoder, &self.expr)?;
         encoder.finish().map_err(Into::into)
@@ -173,6 +174,7 @@ impl RuntimeTraitMethod {
             RuntimeReceiverMode::MutRef => 2,
         });
         context.write_pure_inputs(&mut encoder, &self.inputs)?;
+        context.write_type(&mut encoder, self.result)?;
         encoder.tag(self.output_type.semantic_tag());
         context.write_expression(&mut encoder, &self.body)?;
         encoder.finish().map_err(Into::into)

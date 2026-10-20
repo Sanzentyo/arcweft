@@ -3,6 +3,44 @@ use super::super::pattern::tests::{declarations, frames, meter, resources};
 use super::*;
 
 #[test]
+fn widened_callable_results_keep_declared_types_through_original_source_replay() {
+    use super::super::expression::{RuntimeExpressionSourceHandles, tests::replay_functions};
+    use crate::plan::construction::result_assignability::{Boundary, define};
+    for boundary in [Boundary::Function, Boundary::Helper, Boundary::TraitMethod] {
+        let plan = define(boundary, 3, 1).unwrap();
+        let bytes = encode(&plan);
+        let (mut source, functions) = source(&plan);
+        let callables =
+            PreparedRuntimePureCallableSources::preflight(&bytes, limits(&plan), &mut source.meter)
+                .unwrap()
+                .reserve(&mut source, &functions)
+                .unwrap();
+        let handles = RuntimeExpressionSourceHandles {
+            states: &[],
+            specializations: &[],
+            helpers: &callables.helpers,
+            methods: &callables.methods,
+            attempts: &[],
+        };
+        replay_functions(&plan, &mut source, &functions, &handles);
+        let seal = RuntimeTaskPlanSealLimits::default();
+        let restored = source
+            .prepare_image(seal)
+            .unwrap()
+            .seal(seal, None)
+            .unwrap()
+            .into_plan();
+        assert_eq!(restored.pure_helpers(), plan.pure_helpers());
+        assert_eq!(restored.trait_methods(), plan.trait_methods());
+        assert_eq!(restored.function_sites(), plan.function_sites());
+        assert_eq!(
+            restored.executable_semantic_digest(),
+            plan.executable_semantic_digest()
+        );
+    }
+}
+
+#[test]
 fn original_expression_sources_replay_helper_method_and_function_bodies_with_original_signatures() {
     use super::super::expression::{RuntimeExpressionSourceHandles, tests::replay_functions};
     let plan = fixture();

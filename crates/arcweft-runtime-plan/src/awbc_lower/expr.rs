@@ -336,7 +336,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         let result = self.frame.temp(admitted_plan_type(
                             self.inventory,
                             self.plan,
-                            body.body.ty(),
+                            body.result,
                         ));
                         (Some(lowered), Some(result))
                     }

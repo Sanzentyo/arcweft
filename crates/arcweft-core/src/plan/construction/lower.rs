@@ -1257,7 +1257,7 @@ impl RuntimePlanBodyConstruction<'_> {
 
     /// An exact producer-owned opaque value may flow into that producer's
     /// admitted top type. Its runtime value retains the exact identity.
-    fn require_expression_assignable(
+    pub(super) fn require_expression_assignable(
         &self,
         context: &'static str,
         expected: RuntimePlanTypeId,

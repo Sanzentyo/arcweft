@@ -87,6 +87,11 @@ numeric acceleration and built-in data adapters keep their normal budgets and
 dispatch. A retained session selects a producer by the exact calling executable
 lease, including when an older fiber remains live after replacement. An absent
 or foreign generation is refused before producing a CharacterDialogue value.
+Callable expression results use the same admitted assignment relation as local
+bindings and branches: producer-wide opaque and declared Choice results retain
+the actual value's exact identity. This applies to function sites, pure helpers
+and trait methods. Native source plans bind the existing accepted runtime-plan
+artifact key before executable lowering; they do not derive a second identity.
 
 `RuntimeStepStats.pure` reports per-step pure helper calls, batch calls, batch
 item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
