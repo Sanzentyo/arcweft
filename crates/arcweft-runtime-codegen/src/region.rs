@@ -4,15 +4,15 @@ use arcweft_core::awbc::fiber::{
     FiberResumeTarget, FiberSafePoint, FiberState, FiberStateError, FiberStatus, FiberSuspension,
     FiberSuspensionReason, FiberTrap,
 };
+use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::awbc::schema::{
     AwbcBlockId, AwbcDigest, AwbcFunctionId, AwbcHostCallId, AwbcOpcode, AwbcProgram,
     AwbcRegisterId, AwbcResumePointId, AwbcSafePointKind, AwbcSourceMapId, AwbcTrapCode,
     AwbcTypeId,
 };
 use arcweft_core::task::RuntimeProgramOwner;
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::value::{RuntimeFormatContext, RuntimeValue};
 use std::fmt;
-use std::sync::Arc;
 
 pub const COMPILED_REGION_ABI_VERSION: u32 = 1;
 
@@ -50,7 +50,8 @@ pub trait CompiledRegion: Send + Sync {
 pub struct CompiledRegionInput<'a> {
     /// Exact generation-pinned program lease from the owning runtime session.
     /// Callable creation and activation must retain this allocation.
-    pub program: &'a Arc<AwbcProgram>,
+    pub program: &'a AwbcProductProgram,
+    pub format_context: &'a RuntimeFormatContext,
     pub fiber: &'a mut FiberState,
     pub instruction_budget: u64,
 }
@@ -182,17 +183,19 @@ impl From<FiberStateError> for CompiledApplyError {
 pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
     region: &R,
     identity: CompiledExecutionIdentity,
-    program: &Arc<AwbcProgram>,
+    program: &AwbcProductProgram,
+    format_context: &RuntimeFormatContext,
     fiber: &mut FiberState,
     instruction_budget: u64,
 ) -> Result<CompiledTransition, CompiledApplyError> {
-    validate_metadata(region.metadata(), identity, program.as_ref(), fiber)?;
+    validate_metadata(region.metadata(), identity, program, fiber)?;
     let available = instruction_budget.min(fiber.budget.remaining);
     let entry_budget = fiber.budget;
-    let owner = RuntimeProgramOwner::Awbc(Arc::clone(program));
+    let owner = RuntimeProgramOwner::Awbc(program.program_arc());
     let checkpoint = fiber.checkpoint(&owner)?;
     let result = region.step(CompiledRegionInput {
         program,
+        format_context,
         fiber,
         instruction_budget: available,
     });
@@ -210,7 +213,7 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
                 consumed: result.consumed,
             });
         }
-        return apply_exit(program.as_ref(), fiber, result.exit);
+        return apply_exit(program, fiber, result.exit);
     }
     if matches!(result.exit, CompiledStepExit::Failed(_)) {
         fiber.restore(checkpoint.clone(), &owner)?;
@@ -225,7 +228,7 @@ pub fn execute_compiled_region<R: CompiledRegion + ?Sized>(
             available,
         });
     }
-    apply_exit(program.as_ref(), fiber, result.exit)
+    apply_exit(program, fiber, result.exit)
 }
 
 fn validate_metadata(

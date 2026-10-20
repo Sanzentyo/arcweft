@@ -48,6 +48,7 @@ struct External {
     target: RuntimeCallTarget,
     value: RuntimeValue,
     calls: usize,
+    format_context: crate::value::RuntimeFormatContext,
 }
 impl RuntimeExternalCallBackend for External {
     fn call_external(
@@ -58,10 +59,14 @@ impl RuntimeExternalCallBackend for External {
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
         assert_eq!(target, &self.target);
         assert!(args.is_empty());
+        assert_eq!(
+            context.execution_context().unwrap().format_context(),
+            &self.format_context,
+        );
         let RuntimeProgramOwner::Plan(plan) = context.program_owner().unwrap() else {
             panic!("selected Plan")
         };
-        assert!(Arc::ptr_eq(plan, &self.plan));
+        assert!(Arc::ptr_eq(&plan, &self.plan));
         assert_eq!(
             context.result_type(),
             Some(RuntimeSemanticTypeId::from_bytes([37; 32]))
@@ -81,6 +86,7 @@ fn pure_program_external_calls_keep_selected_owner_and_validate_results() {
         target,
         value: RuntimeValue::Bool(true),
         calls: 0,
+        format_context: crate::value::RuntimeFormatContext::default(),
     });
     assert_eq!(
         evaluate_pure_program_with_backend(&plan, program, &[], &mut backend).unwrap(),
@@ -111,6 +117,29 @@ fn pure_program_external_calls_keep_selected_owner_and_validate_results() {
         backend.external.calls, 2,
         "bad bindings and arity do not reach the external implementation"
     );
+}
+
+#[test]
+fn nested_pure_program_external_calls_retain_the_selected_locale() {
+    let (plan, program, target) = fixture();
+    let format_context =
+        crate::value::RuntimeFormatContext::new(arcweft_id::LocaleTag::try_new("en-US").unwrap());
+    let execution =
+        RuntimeProgramExecutionContext::native(Arc::clone(&plan), format_context.clone());
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(External {
+        plan,
+        target,
+        value: RuntimeValue::Bool(true),
+        calls: 0,
+        format_context,
+    });
+    assert_eq!(
+        execution
+            .evaluate_pure_program(program, &[], &mut backend)
+            .unwrap(),
+        RuntimeValue::Bool(true),
+    );
+    assert_eq!(backend.external.calls, 1);
 }
 
 #[test]
@@ -193,6 +222,7 @@ fn borrowed_program_inputs_reject_nested_affine_values_before_execution() {
         target,
         value: RuntimeValue::Bool(true),
         calls: 0,
+        format_context: crate::value::RuntimeFormatContext::default(),
     });
     let args = [
         RuntimeValue::Bool(false),

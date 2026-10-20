@@ -195,7 +195,7 @@ fn data_shape_context(
         .expect("DataShape context rows are valid");
     let plan = Arc::new(builder.finish().expect("DataShape context plan is sealed"));
     RuntimeExternalCallContext::for_program(
-        RuntimeProgramOwner::Plan(plan),
+        arcweft_core::pure::RuntimeProgramExecutionContext::native(plan, Default::default()),
         argument_types,
         shape_type,
         RuntimeSchemaLimits::engine_default(),

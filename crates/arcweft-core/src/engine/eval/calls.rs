@@ -11,8 +11,9 @@ use crate::value::{
     RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeIntrinsic, RuntimeIterator,
 };
 use crate::{
-    entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId, pure::RuntimeExternalCallContext,
-    task::RuntimeProgramOwner,
+    entry::RuntimeSchemaLimits,
+    pattern::RuntimeSemanticTypeId,
+    pure::{RuntimeExternalCallContext, RuntimeProgramExecutionContext},
 };
 
 fn is_context_intrinsic(intrinsic: RuntimeIntrinsic) -> bool {
@@ -54,7 +55,10 @@ impl Engine {
                 self.evaluate_external_call_args(callee, args, pure_backend)?;
             let result_type = self.external_call_semantic_type(callee, result_type)?;
             let context = RuntimeExternalCallContext::for_program(
-                RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                RuntimeProgramExecutionContext::native(
+                    Arc::clone(&self.plan),
+                    self.format_context().clone(),
+                ),
                 argument_types,
                 result_type,
                 RuntimeSchemaLimits::engine_default(),

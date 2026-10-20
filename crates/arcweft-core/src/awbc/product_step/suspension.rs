@@ -791,7 +791,8 @@ impl AwbcProductStepExecutor {
             inputs.push(item.clone());
         }
         let value = super::run_function(
-            &self.program.program,
+            &self.program,
+            &self.format_context,
             function,
             inputs,
             backend,

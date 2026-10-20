@@ -56,6 +56,24 @@ impl RuntimeExecutorTemplate {
         };
         Ok(RuntimeExecutorCore { executor })
     }
+
+    pub(in crate::app) fn pure_backend(
+        &self,
+        config: RuntimePureAcceleratorConfig,
+    ) -> Result<RuntimePureAccelerator, String> {
+        match self.tier {
+            ArcweftExecutionTier::AwbcProduct => Ok(RuntimePureAccelerator::with_awbc_program(
+                config,
+                self.product.clone().ok_or_else(|| {
+                    "Product AWBC execution requires the compiled executable".to_owned()
+                })?,
+            )),
+            _ => Ok(RuntimePureAccelerator::with_config(
+                config,
+                self.invocation.plan(),
+            )),
+        }
+    }
 }
 
 impl RuntimeExecutorCore {
@@ -90,8 +108,7 @@ impl RuntimeExecutorInstance {
         product: Option<AwbcProductProgram>,
     ) -> Result<Self, String> {
         let plan = Arc::new(plan);
-        let pure = RuntimePureAccelerator::with_config(pure_config, &plan);
-        let executor = match arcweft_execution_tier(tier) {
+        let (executor, pure) = match arcweft_execution_tier(tier) {
             ArcweftExecutionTier::AwbcProduct => {
                 let product = product.ok_or_else(|| {
                     "Product AWBC execution requires the compiled executable".to_owned()
@@ -105,20 +122,23 @@ impl RuntimeExecutorInstance {
                     })?;
                 let index = u32::try_from(index)
                     .map_err(|_| "Product AWBC entry index exceeds u32".to_owned())?;
-                ArcweftRuntimeExecutor::from_admitted_awbc_product(
+                let pure = RuntimePureAccelerator::with_awbc_program(pure_config, product.clone());
+                let executor = ArcweftRuntimeExecutor::from_admitted_awbc_product(
                     product,
                     AwbcEntryId(index),
                     arcweft_core::task::GenerationId::new(0),
                 )
-                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+                (executor, pure)
             }
             tier => {
+                let pure = RuntimePureAccelerator::with_config(pure_config, &plan);
                 let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(plan, tier)
                     .map_err(|error| error.to_string())?;
                 executor
                     .start_structured_entry(entry)
                     .map_err(|error| error.to_string())?;
-                executor
+                (executor, pure)
             }
         };
         Ok(Self { executor, pure })
@@ -130,19 +150,25 @@ impl RuntimeExecutorInstance {
         pure_config: RuntimePureAcceleratorConfig,
         product: Option<AwbcProductProgram>,
     ) -> Result<Self, String> {
-        let pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
-        let executor = match arcweft_execution_tier(tier) {
+        let (executor, pure) = match arcweft_execution_tier(tier) {
             ArcweftExecutionTier::AwbcProduct => {
-                ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
-                    product.ok_or_else(|| {
-                        "Product AWBC execution requires the compiled executable".to_owned()
-                    })?,
-                    invocation,
+                let product = product.ok_or_else(|| {
+                    "Product AWBC execution requires the compiled executable".to_owned()
+                })?;
+                let pure = RuntimePureAccelerator::with_awbc_program(pure_config, product.clone());
+                let executor = ArcweftRuntimeExecutor::from_admitted_awbc_product_flow_invocation(
+                    product, invocation,
                 )
-                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?;
+                (executor, pure)
             }
-            tier => ArcweftRuntimeExecutor::from_runtime_flow_invocation(invocation, tier)
-                .map_err(|error| error.to_string())?,
+            tier => {
+                let pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
+                let executor =
+                    ArcweftRuntimeExecutor::from_runtime_flow_invocation(invocation, tier)
+                        .map_err(|error| error.to_string())?;
+                (executor, pure)
+            }
         };
         Ok(Self { executor, pure })
     }

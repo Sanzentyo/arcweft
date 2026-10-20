@@ -24,6 +24,19 @@ use arcweft_interaction_model::dialogue::{
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::sync::Arc;
 
+fn admit_standalone_awbc(
+    program: &Arc<AwbcProgram>,
+) -> arcweft_core::awbc::product_step::AwbcProductProgram {
+    arcweft_core::awbc::product_step::AwbcProductProgram::admit(
+        Arc::clone(program),
+        arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+        arcweft_core::awbc::verify::AwbcVerifyContext::default(),
+        arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .expect("the source-backed standalone callable program is admitted")
+}
+
 pub(super) fn assert_native_return(source: &str, expected: &str) {
     let compiled = compile_source(source).expect("callable program compiles");
     let [flow] = compiled.plan.flows() else {
@@ -184,7 +197,7 @@ pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
         *blake3::hash(&encoded).as_bytes(),
     )
     .expect("canonical callable program fingerprint");
-    let context = vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let context = vm::VmExecutionContext::for_program(artifact, admit_standalone_awbc(&program));
     let mut host = CharacterDialogueVmHost {
         schema: schema.as_ref(),
         produced: Vec::new(),
@@ -261,7 +274,7 @@ pub(super) fn execute_decoded_awbc_character_dialogue_calls(
         *blake3::hash(&encoded).as_bytes(),
     )
     .expect("canonical CharacterDialogue program fingerprint");
-    let context = vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let context = vm::VmExecutionContext::for_program(artifact, admit_standalone_awbc(&program));
     let mut host = CharacterDialogueVmHost {
         schema: schema.as_ref(),
         produced: Vec::new(),

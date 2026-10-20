@@ -59,9 +59,7 @@ pub struct VmStepOptions {
 pub struct VmExecutionContext {
     artifact: RuntimeArtifactFingerprint,
     format_context: crate::value::RuntimeFormatContext,
-    program_owner: Option<RuntimeProgramOwner>,
-    plain_text_context_template_proof:
-        Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    program: Option<super::product_step::AwbcProductProgram>,
 }
 
 impl VmExecutionContext {
@@ -70,36 +68,21 @@ impl VmExecutionContext {
         Self {
             artifact,
             format_context: crate::value::RuntimeFormatContext::default(),
-            program_owner: None,
-            plain_text_context_template_proof: None,
+            program: None,
         }
     }
 
     /// Binds runtime callable construction and activation to the exact shared
-    /// AWBC program allocation already leased by the product session.
+    /// admitted AWBC program already leased by the product session.
     #[must_use]
     pub fn for_program(
         artifact: RuntimeArtifactFingerprint,
-        program: std::sync::Arc<AwbcProgram>,
+        program: super::product_step::AwbcProductProgram,
     ) -> Self {
         Self {
             artifact,
             format_context: crate::value::RuntimeFormatContext::default(),
-            program_owner: Some(RuntimeProgramOwner::Awbc(program)),
-            plain_text_context_template_proof: None,
-        }
-    }
-
-    pub(crate) fn for_program_with_plain_text_context_proof(
-        artifact: RuntimeArtifactFingerprint,
-        program: std::sync::Arc<AwbcProgram>,
-        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
-    ) -> Self {
-        Self {
-            artifact,
-            format_context: crate::value::RuntimeFormatContext::default(),
-            program_owner: Some(RuntimeProgramOwner::Awbc(program)),
-            plain_text_context_template_proof: Some(proof),
+            program: Some(program),
         }
     }
 
@@ -121,35 +104,51 @@ impl VmExecutionContext {
         &self.format_context
     }
 
-    fn program_owner(&self, program: &AwbcProgram) -> Result<RuntimeProgramOwner, VmError> {
-        let owner = self
-            .program_owner
+    fn admitted_program(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<&super::product_step::AwbcProductProgram, VmError> {
+        let admitted = self
+            .program
             .as_ref()
             .ok_or(VmError::MissingExecutionContext)?;
-        if !matches!(owner, RuntimeProgramOwner::Awbc(leased) if std::ptr::eq(leased.as_ref(), program))
-        {
+        if !std::ptr::eq(&**admitted, program) {
             return Err(VmError::Runtime(
                 "VM execution context leases a different AWBC program".to_owned(),
             ));
         }
-        Ok(owner.clone())
+        Ok(admitted)
+    }
+
+    pub(crate) fn program_owner(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<RuntimeProgramOwner, VmError> {
+        Ok(RuntimeProgramOwner::Awbc(
+            self.admitted_program(program)?.program_arc(),
+        ))
+    }
+
+    pub(crate) fn execution_context(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<crate::pure::RuntimeProgramExecutionContext, VmError> {
+        Ok(crate::pure::RuntimeProgramExecutionContext::awbc(
+            self.admitted_program(program)?.clone(),
+            self.format_context.clone(),
+        ))
     }
 
     pub(crate) fn plain_text_context_template_proof(
         &self,
         program: &AwbcProgram,
     ) -> Result<Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>, VmError> {
-        let reference = program
-            .validated_plain_text_context_template()
-            .map_err(|error| VmError::Runtime(error.to_string()))?;
-        if let Some(proof) = self.plain_text_context_template_proof
-            && reference.is_none_or(|reference| !proof.matches_ref(reference))
-        {
-            return Err(VmError::Runtime(
-                "plain-text context proof does not match the AWBC program pointer".to_owned(),
-            ));
+        if self.program.is_none() {
+            return Ok(None);
         }
-        Ok(self.plain_text_context_template_proof)
+        Ok(self
+            .admitted_program(program)?
+            .plain_text_context_template_proof())
     }
 }
 

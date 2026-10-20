@@ -184,9 +184,9 @@ impl RuntimeExternalCallBackend for RustDefaults {
         assert_eq!(context.argument_types(), Some([].as_slice()));
         assert!(match (context.program_owner().unwrap(), &self.owner) {
             (RuntimeProgramOwner::Plan(left), RuntimeProgramOwner::Plan(right)) =>
-                Arc::ptr_eq(left, right),
+                Arc::ptr_eq(&left, right),
             (RuntimeProgramOwner::Awbc(left), RuntimeProgramOwner::Awbc(right)) =>
-                Arc::ptr_eq(left, right),
+                Arc::ptr_eq(&left, right),
             _ => false,
         });
         if self.wrong_result {

@@ -166,6 +166,12 @@ host's admitted backend and validates its returned runtime value against the
 field row before conversion. A caller without a provider receives an explicit
 missing-default error. `has_default` alone never synthesizes a value.
 
+Program-bound external calls retain a `RuntimeProgramExecutionContext` containing
+the actual Native plan or admitted AWBC program and the current formatter
+context. The decode provider invokes defaults through that retained context.
+Nested evaluation preserves original Source, catalog proof and locale; it does
+not re-admit a raw AWBC type lease or select a program from the accelerator cache.
+
 For an existing primitive or foreign `Default` implementation, declare the
 same concrete wrapper without writing an orphan trait implementation:
 

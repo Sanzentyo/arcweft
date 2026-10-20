@@ -108,6 +108,13 @@ lease through activation. The pure accelerator's cache owns either its exact
 Native plan or its admitted AWBC program; Native cache slots require a function
 capability from the matching Native plan.
 
+Program-bound external calls transfer a `RuntimeProgramExecutionContext` with
+that complete executable authority and the current formatter context. Product
+VM entry, child, dialogue activation, root callable, choice-condition and task
+request execution retain this context. Nested data-field defaults execute
+through the same authority and locale. Raw program owners remain nominal
+type/value-codec leases and cannot construct this AWBC execution context.
+
 Borrowed pure-program inputs use the same activation admission as owned inputs.
 Custody, the complete positional ABI, binding patterns and the selected frame
 must be prepared before copying a borrowed packet. Copy permission is checked

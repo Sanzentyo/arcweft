@@ -21762,3 +21762,89 @@ also still selects the Native plan and must use its actual admitted executable.
 Original shared resource allowance, complete Source/public switching and all14
 families, Presentation, remaining semantic/execution failures, strict lint,
 Tier2 and Native/Web capture/parity remain required. The full goal is open.
+
+### 2026-10-20 — Complete execution context crosses nested calls
+
+The prior proof-owner evidence is published at
+`440c7d6c8b97c38f52fe9dcbd1364fcbc2aa2679`, parent
+`df15de520c46065b92a8fb45dcb0b68feb0529c9`, tree
+`34b522c720eca3aed9376131e6c7f12a49d139b8`, patch SHA-256
+`57c4a1e66b3c20f0e29574e8ba17e8e89b122540e01be756743a7186744ad5e3`.
+Fresh remote, blob and all 3931 inputs matched. Inspected that main with no
+in-scope dirty paths before this migration; held14 and the three unrelated
+untracked entries remained. This cut changes 33 implementation/contract paths
+plus this ledger; one implementation file is newly added.
+
+RuntimeProgramExecutionContext now owns a private Native-plan/admitted-AWBC
+choice and the selected RuntimeFormatContext. External call contexts retain
+that complete authority; raw RuntimeProgramOwner is derived only for legitimate
+nominal type/value-codec roles. The data.decode default provider executes the
+selected pure-program binding through the retained context. Deleted its raw
+Plan/AWBC default-execution dispatcher and AWBC readmission with absent View
+authority. Both Native and AWBC nested pure execution install the actual
+formatter before stepping and retain existing borrowed-input admission.
+
+VmExecutionContext now retains AwbcProductProgram rather than independent raw
+code and text-proof columns. Removed the independent-proof constructor and
+migrated all users. ProductVmHost borrows the actual VM context; entry, child,
+dialogue activation, root-callable, choice-condition and task-request helpers
+retain code/Source/proof and formatter context. Compiled-region input and its
+transactional dispatcher now require an admitted program plus caller formatter;
+ABI version remains 1. Updated compiler and standalone fixtures at their real
+admission boundaries. The genuinely unbound compact-helper statistics test uses
+an explicit unbound artifact context and grants no Source or callable authority.
+
+CLI entry/Flow execution and repeated script benches now create the accelerator
+from their actual selected executable. AWBC no longer installs a Native-plan
+cache. Existing tier, entry, Flow and repeat assertions now also check exact
+executor/accelerator program identity. Added a Native nested-external locale
+regression and extended the AWBC context-proof/owned-restore test to execute
+through the complete context. Three existing compiler View match/repeat/update
+parity cases now exercise that same complete context with their real View
+admission. Their assertions, input/capture conditions and execution allowances
+remain intact. These runtime extensions still need terminal execution evidence.
+
+R1736's preliminary library check found a missed choice-condition helper call
+and failed (E0061/E0277); that call now carries the admitted program and formatter.
+R1737 all-feature/all-target locked check over Core, Accelerator, Codegen,
+Compiler and CLI passed (1m32s), before the final CLI cache-selection edit.
+Diff review then corrected the CLI entry branch's tuple return placement, and
+removed its now-unused benchmark imports. R1738's four-owner library catalogue
+completed with exit0: all 2201 cases selected, none excluded. The new locale,
+extended proof/restore, Source/PNG and codegen exact-lease cases are present once.
+R1740 is running that complete selection (live handle 34020), with no terminal
+acceptance claim yet. Audit its exact cases and fixed runtime inputs. R1739 structural
+gate passed: 3155 files, 3025 Rust files, 1718920 physical Rust lines,
+97 packages, 376 review triggers and zero blocking violations. The ownership
+change stays in Core and existing consumer edges; no I/O, unsafe or new contract
+version was introduced. The five roots retain the same actual 53-package reverse
+closure and unchanged 99 manifest/lock inputs.
+
+The final pre-execution snapshot contains 3933 inputs. Its derived runtime
+snapshot retains all 3932 hashes other than this operational ledger; the complete
+original snapshot is preserved. The new context module and the newly touched
+plugins contract are added to the earlier footprint. No runtime source is
+excluded. Publishing this coherent checkpoint with execution still pending
+follows the user's explicit intermediate-commit instruction.
+
+R1723 has now terminated: actual exit100, all 7083 selected cases executed,
+7025 passed (50 slow), 58 failed, 39 existing default exclusions, 2399.798s.
+The exact catalogue/terminal key set matched; 47 original source inputs had
+changed by audit, so this is failed mixed-input evidence, not current acceptance.
+The failures are 56 CLI check cases and two API compile cases (Agent REPL and
+Tooling). Compared with R1701, the prior Source/PNG and IME failures are absent;
+the two API failures are new to that run. The observed Agent REPL E0599 mixed
+old Core metadata with changed Bundle source. Diagnose current API behavior
+with fresh fixed inputs; do not restore an obsolete API to repair that result.
+
+Current runtime tests, compiler View/default execution, full public/reverse
+consumer coverage, workspace/target checks and ordinary/strict lint remain to
+be completed for this cut. Further producer inspection found two View handler
+call sites still using the standalone admitted helper: the backend-taking View
+evaluation/dispatch APIs do not carry a formatter context. Migrate those APIs and
+their Session/standalone callers to explicit selected formatter input; do not
+infer locale from a backend or reconstruct Source. Root startup still uses its existing default
+formatter before session locale installation; this cut does not prove all
+bootstrap locale behavior. Original shared resource allowance, complete Source
+public switching/all14 families, Presentation, semantic/execution repairs,
+Tier2 and actual Native/Web capture/parity remain required. The full goal is open.

@@ -1136,7 +1136,8 @@ trait CompiledRegion: Send + Sync {
     fn step(&self, input: CompiledRegionInput<'_>) -> CompiledRegionResult;
 }
 struct CompiledRegionInput<'a> {
-    program: &'a AwbcProgram,
+    program: &'a AwbcProductProgram,
+    format_context: &'a RuntimeFormatContext,
     fiber: &'a mut FiberState,
     instruction_budget: u64,
 }
@@ -1151,6 +1152,11 @@ blocks. It must preserve register layout, operation order, exact numeric
 semantics, source IDs, and safe-point exits. It receives no host trait or raw
 function pointer. Native loaders and executable memory remain outside this
 crate.
+
+The execution input retains the admitted executable, original Source and
+catalog facts, together with the caller's selected formatter context. Region
+execution constructs its VM context from that same admitted owner. A raw code
+or type lease cannot replace it or authorize Source readmission.
 
 `CompiledStepExit` mapping is:
 

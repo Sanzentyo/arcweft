@@ -19,11 +19,9 @@ use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan,
 };
-use arcweft_runtime_accelerator::RuntimePureAccelerator;
 use arcweft_runtime_host::{NativeFileRoots, host_system_info};
 use arcweft_test::{BenchSection, ScriptBench, ScriptCommand, ScriptExpectation};
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Copy)]
@@ -342,13 +340,21 @@ fn run_bench_flow_section(
                 );
             }
         };
-    let pure_plan = Arc::clone(invocation.plan());
     let executor_template = RuntimeExecutorTemplate::new(
         invocation,
         options.executor,
         Some(runtime.bundle_assets.product.clone()),
     );
-    let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
+    let mut pure = match executor_template.pure_backend(runtime.pure_config) {
+        Ok(pure) => pure,
+        Err(error) => {
+            return ScriptBenchSectionRunSummary::new(
+                &section.name,
+                ScriptBenchSectionStatus::Failed,
+                vec![error],
+            );
+        }
+    };
     for (phase, count) in [
         (BenchPhase::Warmup, options.warmup),
         (BenchPhase::Measured, options.iterations.get()),

@@ -1,6 +1,9 @@
 //! Product AWBC integration for the tier-neutral durable root transaction.
 
-use super::{AwbcProductStepBuildError, AwbcProductStepExecutor, ProductStepError, run_function};
+use super::{
+    AwbcProductProgram, AwbcProductStepBuildError, AwbcProductStepExecutor, ProductStepError,
+    run_function,
+};
 use crate::awbc::fiber::{FiberState, FiberTrap};
 use crate::awbc::schema::{AwbcEntryId, AwbcProgram, AwbcTrapCode};
 use crate::pure::RuntimeCallBackend;
@@ -10,10 +13,9 @@ use crate::root::{
 };
 use crate::step::{RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepOutput};
 use crate::value::RuntimeValue;
-use std::sync::Arc;
 
 pub(super) fn prepare_startup(
-    program: &Arc<AwbcProgram>,
+    program: &AwbcProductProgram,
     entry: AwbcEntryId,
 ) -> Result<Option<RootStartup>, AwbcProductStepBuildError> {
     let Some(contract) = startup_contract(program, entry).map_err(|error| {
@@ -28,13 +30,14 @@ pub(super) fn prepare_startup(
     let mut fallback_stats = crate::step::RuntimePureCallStats::default();
     let mut evaluator = ProductRootEvaluator {
         program,
+        format_context: &crate::value::RuntimeFormatContext::default(),
         backend: &mut backend,
         fallback_stats: &mut fallback_stats,
     };
     RootRuntime::start(
         contract,
         &mut evaluator,
-        crate::program_types::RuntimeProgramTypes::Awbc(program.as_ref()),
+        crate::program_types::RuntimeProgramTypes::Awbc(program),
     )
     .map(Some)
     .map_err(|error| AwbcProductStepBuildError::RootStartup {
@@ -199,7 +202,8 @@ impl AwbcProductStepExecutor {
         };
         let result = {
             let mut evaluator = ProductRootEvaluator {
-                program: &self.program.program,
+                program: &self.program,
+                format_context: &self.format_context,
                 backend: pure_backend,
                 fallback_stats: &mut self.compact_pure_stats,
             };
@@ -254,7 +258,8 @@ impl AwbcProductStepExecutor {
 }
 
 struct ProductRootEvaluator<'a, B> {
-    program: &'a Arc<AwbcProgram>,
+    program: &'a AwbcProductProgram,
+    format_context: &'a crate::value::RuntimeFormatContext,
     backend: &'a mut B,
     fallback_stats: &'a mut crate::step::RuntimePureCallStats,
 }
@@ -279,6 +284,7 @@ impl<B: RuntimeCallBackend> RootCallableEvaluator for ProductRootEvaluator<'_, B
             })?;
         run_function(
             self.program,
+            self.format_context,
             executable.function,
             args,
             self.backend,

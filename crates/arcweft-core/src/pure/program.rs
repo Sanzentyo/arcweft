@@ -19,6 +19,22 @@ pub fn evaluate_pure_program_with_backend(
     args: &[RuntimeValue],
     backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
+    evaluate_pure_program_with_format_context(
+        plan,
+        program,
+        args,
+        &crate::value::RuntimeFormatContext::default(),
+        backend,
+    )
+}
+
+pub(super) fn evaluate_pure_program_with_format_context(
+    plan: &Arc<RuntimePlan>,
+    program: RuntimePureProgramId,
+    args: &[RuntimeValue],
+    format_context: &crate::value::RuntimeFormatContext,
+    backend: &mut impl RuntimeCallBackend,
+) -> Result<RuntimeValue, RuntimeEvalError> {
     let error = |reason: &str| RuntimeEvalError::UnsupportedPure {
         name: program.to_string(),
         reason: reason.to_owned(),
@@ -80,6 +96,7 @@ pub fn evaluate_pure_program_with_backend(
     let mut engine =
         crate::engine::Engine::for_borrowed_program_invocation(Arc::clone(plan), program, args)
             .map_err(|reason| *reason)?;
+    engine.set_format_context(format_context.clone());
     let output = engine.step_with_pure_backend(
         crate::step::RuntimeStepInput::default(),
         crate::step::RuntimeStepOptions {
@@ -203,7 +220,10 @@ impl PureEvaluator<'_> {
             .ok_or_else(|| error("pure external result type is missing"))?
             .semantic_identity();
         let context = RuntimeExternalCallContext::for_program(
-            RuntimeProgramOwner::Plan(Arc::clone(self.plan)),
+            RuntimeProgramExecutionContext::native(
+                Arc::clone(self.plan),
+                self.format_context.clone(),
+            ),
             semantic_types,
             result,
             RuntimeSchemaLimits::engine_default(),

@@ -1233,7 +1233,7 @@ fn verify(program: AwbcProgram) -> std::sync::Arc<AwbcProgram> {
 fn context(program: &std::sync::Arc<AwbcProgram>) -> crate::awbc::vm::VmExecutionContext {
     let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5a; 32])
         .expect("test artifact fingerprint is valid");
-    crate::awbc::vm::VmExecutionContext::for_program(artifact, std::sync::Arc::clone(program))
+    crate::awbc::vm::VmExecutionContext::for_program(artifact, admitted_program(program))
 }
 
 fn step(

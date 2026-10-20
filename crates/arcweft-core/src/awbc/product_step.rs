@@ -121,6 +121,22 @@ pub fn evaluate_admitted_pure_program_with_backend(
     args: &[RuntimeValue],
     backend: &mut impl RuntimeCallBackend,
 ) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
+    evaluate_admitted_pure_program_with_format_context(
+        admitted,
+        pure_program,
+        args,
+        &crate::value::RuntimeFormatContext::default(),
+        backend,
+    )
+}
+
+pub(crate) fn evaluate_admitted_pure_program_with_format_context(
+    admitted: &AwbcProductProgram,
+    pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
+    args: &[RuntimeValue],
+    format_context: &crate::value::RuntimeFormatContext,
+    backend: &mut impl RuntimeCallBackend,
+) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
     let program = &admitted.program;
     let binding = program.pure_program_binding(pure_program).ok_or_else(|| {
         crate::awbc::vm::VmError::Runtime(format!(
@@ -168,6 +184,7 @@ pub fn evaluate_admitted_pure_program_with_backend(
         1_000_000,
     )
     .map_err(|error| crate::awbc::vm::VmError::Runtime(error.to_string()))?;
+    executor.set_format_context(format_context.clone());
     backend.record_awbc_pure_program_call();
     let output = executor.step_with_pure_backend(
         RuntimeStepInput::default(),
@@ -1865,7 +1882,7 @@ impl AwbcProductStepExecutor {
         generation: GenerationId,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let mut root_startup = match origin.entry() {
-            Some(entry) => root::prepare_startup(&program.program, entry)?,
+            Some(entry) => root::prepare_startup(&program, entry)?,
             None => None,
         };
         let mut fiber = if origin == crate::awbc::fiber::AwbcFiberRoot::Empty {
@@ -2518,15 +2535,8 @@ impl AwbcProductStepExecutor {
     }
 
     fn vm_execution_context(&self) -> VmExecutionContext {
-        match self.program.plain_text_context_template_proof() {
-            Some(proof) => VmExecutionContext::for_program_with_plain_text_context_proof(
-                self.artifact_fingerprint,
-                self.program_arc(),
-                proof,
-            ),
-            None => VmExecutionContext::for_program(self.artifact_fingerprint, self.program_arc()),
-        }
-        .with_format_context(self.format_context.clone())
+        VmExecutionContext::for_program(self.artifact_fingerprint, self.program.clone())
+            .with_format_context(self.format_context.clone())
     }
 
     /// Internal continuation is a projection of the admitted frame and child
@@ -2598,12 +2608,12 @@ impl AwbcProductStepExecutor {
             }
         };
         let mut candidate_stats = self.compact_pure_stats;
+        let context = self.vm_execution_context();
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+            context: &context,
         };
-        let context = self.vm_execution_context();
         match step_with_host_context(
             &self.program,
             &mut self.fiber,
@@ -2766,9 +2776,7 @@ impl AwbcProductStepExecutor {
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
-                    program_owner: crate::task::RuntimeProgramOwner::Awbc(
-                        self.program.program_arc(),
-                    ),
+                    context: &context,
                 };
                 step_with_host_context(
                     &self.program,
@@ -3018,12 +3026,12 @@ impl AwbcProductStepExecutor {
         }
         child.fiber.replenish_budget();
         let mut candidate_stats = self.compact_pure_stats;
+        let context = self.vm_execution_context();
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+            context: &context,
         };
-        let context = self.vm_execution_context();
         let terminal_exit = matches!(
             child.fiber.status,
             FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
@@ -5497,7 +5505,8 @@ impl AwbcProductStepExecutor {
         for (relative_index, option) in candidates.into_iter().enumerate() {
             if let Some(condition) = option.condition {
                 match run_function(
-                    &self.program.program,
+                    &self.program,
+                    &self.format_context,
                     condition,
                     Vec::new(),
                     pure_backend,

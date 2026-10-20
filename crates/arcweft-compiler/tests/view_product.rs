@@ -3881,8 +3881,11 @@ fn authored_view_matches_select_core_patterns_and_export_arm_bindings() {
             let mut product_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
             assert_eq!(
                 selected,
-                arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
-                    &admit_view_awbc(&compiled, Arc::clone(&awbc)),
+                arcweft_core::pure::RuntimeProgramExecutionContext::awbc(
+                    admit_view_awbc(&compiled, Arc::clone(&awbc)),
+                    arcweft_core::value::RuntimeFormatContext::default(),
+                )
+                .evaluate_pure_program(
                     selection.execution.program,
                     &core_inputs,
                     &mut product_backend
@@ -4414,12 +4417,11 @@ view Main(reverse: bool) {
         let mut backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
         assert_eq!(
             values,
-            arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
-                &admit_view_awbc(&compiled, Arc::clone(&awbc)),
-                repeat.source.execution.program,
-                &core_inputs,
-                &mut backend
+            arcweft_core::pure::RuntimeProgramExecutionContext::awbc(
+                admit_view_awbc(&compiled, Arc::clone(&awbc)),
+                arcweft_core::value::RuntimeFormatContext::default(),
             )
+            .evaluate_pure_program(repeat.source.execution.program, &core_inputs, &mut backend)
             .unwrap()
         );
         let frame = runtime.evaluate(std::slice::from_ref(&handle), &inputs, false);
@@ -5702,14 +5704,16 @@ view Main() {
         }
     }
     let native_result = native_result.expect("native transition must terminate");
-    let decoded_result =
-        arcweft_core::awbc::product_step::evaluate_admitted_pure_program_with_backend(
-            &admit_view_awbc(&compiled, Arc::clone(&awbc)),
-            program,
-            &[initial],
-            &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
-        )
-        .unwrap();
+    let decoded_result = arcweft_core::pure::RuntimeProgramExecutionContext::awbc(
+        admit_view_awbc(&compiled, Arc::clone(&awbc)),
+        arcweft_core::value::RuntimeFormatContext::default(),
+    )
+    .evaluate_pure_program(
+        program,
+        &[initial],
+        &mut arcweft_core::pure::VmRuntimePureCallBackend::default(),
+    )
+    .unwrap();
     let arcweft_core::value::RuntimeValue::Tuple(outputs) = &decoded_result else {
         panic!("transition must return its publication tuple");
     };

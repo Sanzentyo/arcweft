@@ -7,9 +7,8 @@ use arcweft_core::{
         RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
         RuntimeVariantIdentity,
     },
-    program_types::{
-        RuntimeDataFieldDefaultRequest, RuntimeProgramDataShapes, RuntimeProgramTypes,
-    },
+    program_types::{RuntimeProgramDataShapes, RuntimeProgramTypes},
+    pure::RuntimeProgramExecutionContext,
     task::RuntimeProgramOwner,
     value::{
         RuntimeAgentValue, RuntimeDataShape, RuntimeInt, RuntimeSeq, RuntimeUInt, RuntimeValue,
@@ -28,7 +27,8 @@ use super::{
 };
 
 struct DataCall<'a> {
-    owner: &'a RuntimeProgramOwner,
+    execution: &'a RuntimeProgramExecutionContext,
+    owner: RuntimeProgramOwner,
     types: RuntimeProgramTypes<'a>,
     argument_types: &'a [RuntimeSemanticTypeId],
     result_type: RuntimeSemanticTypeId,
@@ -103,12 +103,13 @@ fn validate_data_call_context<'a>(
         ("data.shape", 0 | 1) | ("data.encode" | "data.decode", 2 | 3) => args.len(),
         _ => return Err(data_runtime_error(label, "invalid data call arity")),
     };
-    let owner = context.program_owner().ok_or_else(|| {
+    let execution = context.execution_context().ok_or_else(|| {
         data_runtime_error(
             label,
             "requires a selected program-bound external call context",
         )
     })?;
+    let owner = execution.program_owner();
     let argument_types = context.argument_types().ok_or_else(|| {
         data_runtime_error(label, "selected call has no argument type identities")
     })?;
@@ -124,7 +125,7 @@ fn validate_data_call_context<'a>(
     let limits = context
         .limits()
         .ok_or_else(|| data_runtime_error(label, "selected call has no runtime schema limits"))?;
-    let types = owner.types();
+    let types = execution.types();
     for (semantic_type, value) in argument_types.iter().copied().zip(args) {
         types
             .validate_live_value(semantic_type, value, limits)
@@ -168,13 +169,13 @@ fn validate_data_call_context<'a>(
                 ));
             }
             if let [value_type, _, shape_type] = argument_types {
-                validate_shape_child(owner, label, *shape_type, *value_type)?;
+                validate_shape_child(&owner, label, *shape_type, *value_type)?;
             }
         } else {
             if args.len() == 2 {
                 require_nominal_variant_type(&types, ok_type, "DataValue", label)?;
             } else {
-                validate_shape_child(owner, label, argument_types[2], ok_type)?;
+                validate_shape_child(&owner, label, argument_types[2], ok_type)?;
             }
             if !matches!(
                 types
@@ -190,6 +191,7 @@ fn validate_data_call_context<'a>(
         }
     }
     Ok(DataCall {
+        execution,
         owner,
         types,
         argument_types,
@@ -335,7 +337,7 @@ fn decode_call(
     let bytes = runtime_value_to_bytes(&args[0])?;
     let defaults = RuntimeDataDefaultProvider {
         accelerator: RefCell::new(accelerator),
-        owner: call.owner,
+        execution: call.execution,
         shapes,
         limits: call.limits,
     };
@@ -358,7 +360,7 @@ fn validate_shape_value(
         ));
     };
     witness
-        .validate_for(call.owner, shape_type, value_type)
+        .validate_for(&call.owner, shape_type, value_type)
         .map_err(|error| data_runtime_error(label, error.to_string()))
 }
 
@@ -658,7 +660,7 @@ fn data_enum_case_value(
 
 struct RuntimeDataDefaultProvider<'a, 'program> {
     accelerator: RefCell<&'a mut RuntimePureAccelerator>,
-    owner: &'a RuntimeProgramOwner,
+    execution: &'a RuntimeProgramExecutionContext,
     shapes: &'a RuntimeProgramDataShapes<'program>,
     limits: RuntimeSchemaLimits,
 }
@@ -687,7 +689,9 @@ impl FieldDefaultProvider for RuntimeDataDefaultProvider<'_, '_> {
                 "runtime default producer reentered the active codec backend",
             )
         })?;
-        let value = evaluate_default_program(&mut accelerator, self.owner, &default)
+        let value = self
+            .execution
+            .evaluate_pure_program(default.program(), &[], &mut **accelerator)
             .map_err(|error| DataError::new(DataErrorKind::Custom, error.to_string()))?;
         default
             .validate_result(&value, self.limits)
@@ -699,33 +703,6 @@ impl FieldDefaultProvider for RuntimeDataDefaultProvider<'_, '_> {
             default.program_types(),
             self.limits,
         )
-    }
-}
-
-fn evaluate_default_program(
-    accelerator: &mut RuntimePureAccelerator,
-    owner: &RuntimeProgramOwner,
-    request: &RuntimeDataFieldDefaultRequest<'_>,
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    match owner {
-        RuntimeProgramOwner::Plan(plan) => arcweft_core::pure::evaluate_pure_program_with_backend(
-            plan,
-            request.program(),
-            &[],
-            accelerator,
-        ),
-        RuntimeProgramOwner::Awbc(program_owner) => {
-            arcweft_core::awbc::product_step::evaluate_pure_program_with_backend(
-                program_owner,
-                request.program(),
-                &[],
-                accelerator,
-            )
-            .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: "data field default".to_owned(),
-                reason: error.to_string(),
-            })
-        }
     }
 }
 

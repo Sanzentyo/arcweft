@@ -362,18 +362,15 @@ fn callback(fixture: &ContextFixture) -> RuntimeValue {
 
 fn context(fixture: &ContextFixture, with_proof: bool) -> crate::awbc::vm::VmExecutionContext {
     let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x41; 32]).unwrap();
-    if with_proof {
-        crate::awbc::vm::VmExecutionContext::for_program_with_plain_text_context_proof(
-            artifact,
-            std::sync::Arc::clone(&fixture.program),
-            fixture.proof,
-        )
+    let program = admitted_program(&fixture.program);
+    let program = if with_proof {
+        program
+            .with_plain_text_context_template_proof(fixture.proof)
+            .unwrap()
     } else {
-        crate::awbc::vm::VmExecutionContext::for_program(
-            artifact,
-            std::sync::Arc::clone(&fixture.program),
-        )
-    }
+        program
+    };
+    crate::awbc::vm::VmExecutionContext::for_program(artifact, program)
 }
 
 fn context_fiber(fixture: &ContextFixture, receiver: RuntimeValue) -> FiberState {
@@ -499,6 +496,22 @@ fn admitted_program_context_proof_survives_pure_invocation_and_owned_restore() {
         } else {
             admitted.clone()
         };
+        let execution = crate::pure::RuntimeProgramExecutionContext::awbc(
+            program.clone(),
+            crate::value::RuntimeFormatContext::new(
+                arcweft_id::LocaleTag::try_new("en-US").unwrap(),
+            ),
+        );
+        let nested = execution.evaluate_pure_program(
+            id,
+            &[RuntimeValue::option_none(), callback(&fixture)],
+            &mut crate::pure::VmRuntimePureCallBackend::default(),
+        );
+        if with_proof {
+            assert_plain_text_message(&context_error(&nested.unwrap()), "lazy context");
+        } else {
+            assert!(nested.is_err());
+        }
         let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
             program,
             id,
@@ -1302,10 +1315,11 @@ fn verified_lazy_context_callback_survives_budget_snapshot_without_replay() {
             ],
         )
         .unwrap();
-    let context = crate::awbc::vm::VmExecutionContext::for_program_with_plain_text_context_proof(
+    let context = crate::awbc::vm::VmExecutionContext::for_program(
         crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x41; 32]).unwrap(),
-        std::sync::Arc::clone(&fixture.program),
-        fixture.proof,
+        admitted_program(&fixture.program)
+            .with_plain_text_context_template_proof(fixture.proof)
+            .unwrap(),
     );
     let output = crate::awbc::vm::step_with_host_context(
         &fixture.program,

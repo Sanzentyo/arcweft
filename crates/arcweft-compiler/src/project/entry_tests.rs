@@ -963,8 +963,14 @@ entry agent @entry.agent.controller {
         *blake3::hash(&encoded).as_bytes(),
     )
     .expect("Agent AWBC fingerprint");
-    let context =
-        arcweft_core::awbc::vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let context = arcweft_core::awbc::vm::VmExecutionContext::for_program(
+        artifact,
+        compiled
+            .view_product()
+            .product()
+            .admit_awbc_program(Arc::clone(&program))
+            .expect("the selected Agent executable retains its compiled View authority"),
+    );
     let mut host = arcweft_core::awbc::vm::RejectingVmHost;
     let mut fiber = arcweft_core::awbc::fiber::FiberState::for_entry(
         &program,

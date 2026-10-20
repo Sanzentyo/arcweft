@@ -2,6 +2,7 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 
 use crate::{
     awbc::{
+        product_step::AwbcProductProgram,
         product_step::execution::ProductVmHost,
         schema::{
             AwbcBlock, AwbcBlockId, AwbcDialogueContentSlot, AwbcDialogueContentTemplate,
@@ -12,6 +13,7 @@ use crate::{
             AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
             AwbcTypeId,
         },
+        verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{VmError, VmExecutionContext},
     },
     effect::RuntimeArtifactFingerprint,
@@ -512,20 +514,29 @@ fn evaluate_context(
     backend: &mut impl RuntimeCallBackend,
     fallback_stats: &mut crate::step::RuntimePureCallStats,
 ) -> Result<RuntimeValue, VmError> {
-    let context = if let Some(proof) = proof {
-        VmExecutionContext::for_program_with_plain_text_context_proof(
-            fixture.artifact,
-            Arc::clone(&fixture.program),
-            proof,
-        )
+    let program = AwbcProductProgram::admit(
+        Arc::clone(&fixture.program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..AwbcVerifyContext::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let program = if let Some(proof) = proof {
+        program
+            .with_plain_text_context_template_proof(proof)
+            .map_err(|error| VmError::Runtime(error.to_string()))?
     } else {
-        VmExecutionContext::for_program(fixture.artifact, Arc::clone(&fixture.program))
+        program
     };
-    let program_owner = RuntimeProgramOwner::Awbc(Arc::clone(&fixture.program));
+    let context = VmExecutionContext::for_program(fixture.artifact, program);
     let mut host = ProductVmHost {
         backend,
         fallback_stats,
-        program_owner,
+        context: &context,
     };
     let intrinsic_id = fixture
         .program

@@ -91,7 +91,17 @@ fn assert_returns_42(compiled: CompiledSource, program: AwbcProgram) {
     )
     .expect("Flow program fingerprint");
     let program = Arc::new(program);
-    let context = vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let context = vm::VmExecutionContext::for_program(
+        artifact,
+        arcweft_core::awbc::product_step::AwbcProductProgram::admit(
+            Arc::clone(&program),
+            arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+            arcweft_core::awbc::verify::AwbcVerifyContext::default(),
+            arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .expect("the standalone Flow program is admitted"),
+    );
     let mut host = vm::RejectingVmHost;
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 1, 65_536).expect("AWBC main starts");

@@ -9,6 +9,7 @@ use crate::region::{
     execute_compiled_region,
 };
 use arcweft_core::awbc::fiber::{FiberCursor, FiberSafePoint, FiberState};
+use arcweft_core::awbc::product_step::AwbcProductProgram;
 use arcweft_core::awbc::schema::*;
 use arcweft_core::awbc::vm::cancel_fiber;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
@@ -18,10 +19,21 @@ use arcweft_core::plan::{
 };
 use arcweft_core::runtime_id::RuntimeCallableStateId;
 use arcweft_core::task::RuntimeProgramOwner;
-use arcweft_core::value::{RuntimeCallableValue, RuntimeValue};
+use arcweft_core::value::{RuntimeCallableValue, RuntimeFormatContext, RuntimeValue};
 use std::sync::Arc;
 
 const PROGRAM_DIGEST: AwbcDigest = AwbcDigest([7; 32]);
+
+fn admit(program: AwbcProgram) -> AwbcProductProgram {
+    AwbcProductProgram::admit(
+        Arc::new(program),
+        arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+        arcweft_core::awbc::verify::AwbcVerifyContext::default(),
+        arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .expect("the source-free region fixture is admitted before execution")
+}
 
 #[derive(Clone, Copy)]
 enum RegionBehavior {
@@ -289,15 +301,22 @@ fn identity() -> CompiledExecutionIdentity {
 
 #[test]
 fn compiled_continue_uses_dispatcher_budget_accounting() {
-    let program = Arc::new(program());
+    let program = admit(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Continue,
     };
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
 
-    let transition = execute_compiled_region(&region, identity(), &program, &mut fiber, 10)
-        .expect("compiled transition");
+    let transition = execute_compiled_region(
+        &region,
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect("compiled transition");
 
     assert_eq!(transition, CompiledTransition::Continue);
     assert_eq!(fiber.line_cursor, 42);
@@ -307,15 +326,22 @@ fn compiled_continue_uses_dispatcher_budget_accounting() {
 
 #[test]
 fn compiled_fallback_restores_the_entry_checkpoint() {
-    let program = Arc::new(program());
+    let program = admit(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Fallback { consumed: 0 },
     };
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
 
-    let transition = execute_compiled_region(&region, identity(), &program, &mut fiber, 10)
-        .expect("VM fallback");
+    let transition = execute_compiled_region(
+        &region,
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect("VM fallback");
 
     assert!(matches!(transition, CompiledTransition::FallbackToVm(_)));
     assert_eq!(fiber.line_cursor, 0);
@@ -325,15 +351,22 @@ fn compiled_fallback_restores_the_entry_checkpoint() {
 
 #[test]
 fn compiled_fallback_must_not_consume_instruction_budget() {
-    let program = Arc::new(program());
+    let program = admit(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Fallback { consumed: 1 },
     };
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
 
-    let error = execute_compiled_region(&region, identity(), &program, &mut fiber, 10)
-        .expect_err("fallback budget contract must fail");
+    let error = execute_compiled_region(
+        &region,
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect_err("fallback budget contract must fail");
 
     assert_eq!(
         error,
@@ -345,7 +378,7 @@ fn compiled_fallback_must_not_consume_instruction_budget() {
 
 #[test]
 fn compiled_region_rejects_a_cancelled_entry_without_reclassifying_it() {
-    let program = Arc::new(program());
+    let program = admit(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Continue,
@@ -359,7 +392,14 @@ fn compiled_region_rejects_a_cancelled_entry_without_reclassifying_it() {
         arcweft_core::awbc::vm::VmExit::Cancelled
     ));
     assert_eq!(
-        execute_compiled_region(&region, identity(), &program, &mut fiber, 10),
+        execute_compiled_region(
+            &region,
+            identity(),
+            &program,
+            &RuntimeFormatContext::default(),
+            &mut fiber,
+            10
+        ),
         Err(CompiledApplyError::InvalidEntry)
     );
     assert_eq!(
@@ -446,7 +486,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         frame_layout: AwbcFrameLayoutId(0),
         kind: AwbcSafePointKind::CallableBoundary,
     });
-    let program = Arc::new(program);
+    let program = admit(program);
 
     let region = TestRegion {
         metadata: metadata_at(&program, AwbcFunctionId(1), AwbcBlockId(2)),
@@ -462,8 +502,15 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         )
         .expect("push callee");
 
-    let transition = execute_compiled_region(&region, identity(), &program, &mut fiber, 10)
-        .expect("compiled return");
+    let transition = execute_compiled_region(
+        &region,
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect("compiled return");
 
     assert_eq!(transition, CompiledTransition::Continue);
     assert_eq!(fiber.frames.len(), 1);
@@ -555,7 +602,7 @@ fn awbc_region_lowering_rejects_host_boundary_without_opt_in() {
 
 #[test]
 fn awbc_region_baseline_executes_through_compact_vm() {
-    let program = Arc::new(program());
+    let program = admit(program());
     let report = lower_awbc_regions(
         &program,
         &AwbcRegionLowerOptions {
@@ -567,8 +614,15 @@ fn awbc_region_baseline_executes_through_compact_vm() {
     let region = report.regions[0].clone();
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
 
-    let transition = execute_compiled_region(region.as_ref(), identity(), &program, &mut fiber, 10)
-        .expect("baseline AWBC region executes");
+    let transition = execute_compiled_region(
+        region.as_ref(),
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect("baseline AWBC region executes");
 
     assert_eq!(transition, CompiledTransition::Returned(None));
     assert_eq!(
@@ -579,17 +633,17 @@ fn awbc_region_baseline_executes_through_compact_vm() {
 
 #[test]
 fn awbc_region_project_call_uses_the_exact_program_lease() {
-    let program = Arc::new(callable_project_call_program());
+    let program = admit(callable_project_call_program());
     let callable_state =
         RuntimeCallableStateId::from_zero_based(0).expect("first callable state identity");
     let callable = RuntimeCallableValue::try_new(
-        RuntimeProgramOwner::Awbc(program.clone()),
+        RuntimeProgramOwner::Awbc(program.program_arc()),
         callable_state,
         Vec::<RuntimeValue>::new(),
     )
     .expect("callable retains the exact session program lease");
     let report = lower_awbc_regions(
-        program.as_ref(),
+        &program,
         &AwbcRegionLowerOptions {
             generation: ProgramGenerationId(1),
             program_digest: PROGRAM_DIGEST,
@@ -607,16 +661,23 @@ fn awbc_region_project_call_uses_the_exact_program_lease() {
             })
             .expect("ProjectCall block is eligible for the baseline region")
             .clone();
-    let mut fiber = FiberState::for_entry(program.as_ref(), AwbcEntryId(0), 1, 10)
-        .expect("callable program fiber");
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("callable program fiber");
     fiber
         .active_frame_mut()
         .expect("caller frame")
         .set_register(AwbcRegisterId(0), RuntimeValue::Callable(callable))
         .expect("install leased callable callee");
 
-    let transition = execute_compiled_region(region.as_ref(), identity(), &program, &mut fiber, 10)
-        .expect("compiled ProjectCall executes with its exact program owner");
+    let transition = execute_compiled_region(
+        region.as_ref(),
+        identity(),
+        &program,
+        &RuntimeFormatContext::default(),
+        &mut fiber,
+        10,
+    )
+    .expect("compiled ProjectCall executes with its exact program owner");
 
     assert_eq!(transition, CompiledTransition::Returned(None));
     assert_eq!(

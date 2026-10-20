@@ -635,7 +635,23 @@ impl DataProgramFixture {
         result: usize,
     ) -> RuntimeExternalCallContext {
         RuntimeExternalCallContext::for_program(
-            self.owner.clone(),
+            arcweft_core::pure::RuntimeProgramExecutionContext::awbc(
+                arcweft_core::awbc::product_step::AwbcProductProgram::admit(
+                    match &self.owner {
+                        RuntimeProgramOwner::Awbc(program) => Arc::clone(program),
+                        RuntimeProgramOwner::Plan(_) => unreachable!(),
+                    },
+                    arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+                    arcweft_core::awbc::verify::AwbcVerifyContext {
+                        require_entrypoint: false,
+                        ..arcweft_core::awbc::verify::AwbcVerifyContext::default()
+                    },
+                    arcweft_core::plan::RuntimeTaskSourceArtifactLimits::default(),
+                    None,
+                )
+                .expect("source-free codec fixture is admitted"),
+                arcweft_core::value::RuntimeFormatContext::default(),
+            ),
             argument_types,
             semantic(result),
             RuntimeSchemaLimits::engine_default(),

@@ -1220,15 +1220,12 @@ impl super::AwbcProductStepExecutor {
         let mut candidate = Some(fiber);
         let result: Result<ProductActivationProgress, ProductStepError> = (|| {
             let mut candidate_stats = self.compact_pure_stats;
+            let context = self.vm_execution_context();
             let mut host = super::ProductVmHost {
                 backend: pure_backend,
                 fallback_stats: &mut candidate_stats,
-                program_owner: crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+                context: &context,
             };
-            let context = crate::awbc::vm::VmExecutionContext::for_program(
-                self.artifact_fingerprint,
-                self.program_arc(),
-            );
             let step = crate::awbc::vm::step_with_host_context(
                 &self.program,
                 candidate.as_mut().expect("activation fiber remains owned"),

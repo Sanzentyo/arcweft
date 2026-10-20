@@ -110,6 +110,12 @@ fn runtime_executor_selection_starts_the_actual_tier_and_original_product_entry(
         )
         .unwrap();
         assert_eq!(executor.executor.tier(), expected);
+        assert!(
+            executor
+                .pure
+                .program_owner()
+                .same_program(&executor.program_owner())
+        );
         if tier == CliRuntimeExecutorTier::AwbcProduct {
             assert!(
                 executor
@@ -137,6 +143,7 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
     let owner = RuntimeProgramOwner::Awbc(product.program_arc());
     assert_eq!(executor.executor.tier(), ArcweftExecutionTier::AwbcProduct);
     assert!(executor.program_owner().same_program(&owner));
+    assert!(executor.pure.program_owner().same_program(&owner));
     assert_eq!(
         finish(&mut executor),
         &FlowFiberStatus::Done(FlowExit::Return("flow_result".to_owned()))
@@ -147,10 +154,10 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
         CliRuntimeExecutorTier::AwbcProduct,
         Some(product),
     );
-    let mut pure = RuntimePureAccelerator::with_config(
-        RuntimePureAcceleratorConfig::default(),
-        template.invocation.plan(),
-    );
+    let mut pure = template
+        .pure_backend(RuntimePureAcceleratorConfig::default())
+        .unwrap();
+    assert!(pure.program_owner().same_program(&owner));
     for _ in 0..2 {
         let mut executor = template.instantiate().unwrap();
         assert_eq!(executor.executor.tier(), ArcweftExecutionTier::AwbcProduct);

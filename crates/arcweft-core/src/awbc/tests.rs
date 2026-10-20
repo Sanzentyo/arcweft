@@ -1881,8 +1881,7 @@ fn step_with_callable_context(
 ) -> Result<super::vm::VmStepOutput, super::vm::VmError> {
     let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5a; 32])
         .expect("test artifact fingerprint is valid");
-    let context =
-        super::vm::VmExecutionContext::for_program(artifact, std::sync::Arc::clone(program));
+    let context = super::vm::VmExecutionContext::for_program(artifact, admitted_program(program));
     super::vm::step_with_host_context(
         program,
         fiber,
@@ -1890,6 +1889,22 @@ fn step_with_callable_context(
         &context,
         &mut super::vm::RejectingVmHost,
     )
+}
+
+fn admitted_program(
+    program: &std::sync::Arc<AwbcProgram>,
+) -> super::product_step::AwbcProductProgram {
+    super::product_step::AwbcProductProgram::admit(
+        std::sync::Arc::clone(program),
+        AwbcVerifyBudget::default(),
+        AwbcVerifyContext {
+            require_entrypoint: false,
+            ..AwbcVerifyContext::default()
+        },
+        crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+        None,
+    )
+    .expect("standalone execution fixture is admitted before constructing its VM context")
 }
 
 fn project_call_invoke_program() -> AwbcProgram {

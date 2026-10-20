@@ -283,7 +283,8 @@ impl CompiledRegion for BaselineAwbcRegion {
             Ok(bytes) => match arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
                 *blake3::hash(&bytes).as_bytes(),
             ) {
-                Ok(artifact) => VmExecutionContext::for_program(artifact, input.program.clone()),
+                Ok(artifact) => VmExecutionContext::for_program(artifact, input.program.clone())
+                    .with_format_context(input.format_context.clone()),
                 Err(_) => {
                     let at = input
                         .fiber

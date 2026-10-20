@@ -42,16 +42,15 @@ use crate::value::{
     sum_i64_sequence_ref,
 };
 use crate::{
-    entry::RuntimeSchemaLimits,
-    pattern::RuntimeSemanticTypeId,
-    program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
-    task::RuntimeProgramOwner,
+    entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId,
+    program_types::RuntimeProgramTypeError, task::RuntimeProgramOwner,
 };
 use std::sync::Arc;
 
 mod aot;
 mod function;
 mod program;
+mod program_context;
 mod repeated_batch;
 mod runtime_backend;
 pub use function::{
@@ -60,6 +59,7 @@ pub use function::{
     RuntimePureFunctionView,
 };
 pub use program::evaluate_pure_program_with_backend;
+pub use program_context::RuntimeProgramExecutionContext;
 pub use repeated_batch::RuntimePureRepeatedI64Batch;
 
 /// Request for evaluating a deterministic pure helper expression.
@@ -216,7 +216,7 @@ pub struct RuntimeExternalCallContext {
 #[derive(Clone, Debug)]
 enum RuntimeExternalCallContextState {
     Program {
-        owner: RuntimeProgramOwner,
+        execution: RuntimeProgramExecutionContext,
         argument_types: Box<[RuntimeSemanticTypeId]>,
         result_type: RuntimeSemanticTypeId,
         limits: RuntimeSchemaLimits,
@@ -225,19 +225,16 @@ enum RuntimeExternalCallContextState {
 }
 
 impl RuntimeExternalCallContext {
-    /// Binds an external call to the exact selected program and its semantic
-    /// argument and result types.
+    /// Binds an external call to its complete execution context and exact
+    /// semantic argument and result types.
     pub fn for_program(
-        owner: RuntimeProgramOwner,
+        execution: RuntimeProgramExecutionContext,
         argument_types: impl IntoIterator<Item = RuntimeSemanticTypeId>,
         result_type: RuntimeSemanticTypeId,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimeProgramTypeError> {
         let argument_types = argument_types.into_iter().collect::<Box<[_]>>();
-        let types = match &owner {
-            RuntimeProgramOwner::Plan(plan) => RuntimeProgramTypes::Plan(plan),
-            RuntimeProgramOwner::Awbc(program) => RuntimeProgramTypes::Awbc(program),
-        };
+        let types = execution.types();
         argument_types
             .iter()
             .copied()
@@ -245,7 +242,7 @@ impl RuntimeExternalCallContext {
             .try_for_each(|semantic_type| types.require_type(semantic_type))?;
         Ok(Self {
             state: RuntimeExternalCallContextState::Program {
-                owner,
+                execution,
                 argument_types,
                 result_type,
                 limits,
@@ -264,9 +261,16 @@ impl RuntimeExternalCallContext {
 
     /// Returns the exact selected program owner for a typed call.
     #[must_use]
-    pub const fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
+    pub fn program_owner(&self) -> Option<RuntimeProgramOwner> {
+        self.execution_context()
+            .map(RuntimeProgramExecutionContext::program_owner)
+    }
+
+    /// Retains the executable and formatter for nested default execution.
+    #[must_use]
+    pub const fn execution_context(&self) -> Option<&RuntimeProgramExecutionContext> {
         match &self.state {
-            RuntimeExternalCallContextState::Program { owner, .. } => Some(owner),
+            RuntimeExternalCallContextState::Program { execution, .. } => Some(execution),
             RuntimeExternalCallContextState::Unbound => None,
         }
     }

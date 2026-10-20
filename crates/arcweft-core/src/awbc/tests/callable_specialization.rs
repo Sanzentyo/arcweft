@@ -245,7 +245,7 @@ fn callable_specialization_table_round_trips_and_vm_uses_the_admitted_state_rela
     let leased_program = Arc::new(decoded);
     let execution = super::super::vm::VmExecutionContext::for_program(
         RuntimeArtifactFingerprint::try_from_bytes([0x91; 32]).unwrap(),
-        leased_program.clone(),
+        super::admitted_program(&leased_program),
     );
     let mut fiber = FiberState::for_entry(&leased_program, AwbcEntryId(0), 1, 8).unwrap();
     let mut host = super::super::vm::RejectingVmHost;

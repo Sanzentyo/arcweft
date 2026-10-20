@@ -1,21 +1,18 @@
 use crate::awbc::fiber::FiberState;
-use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
+use crate::awbc::schema::{AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
 use crate::awbc::vm::{
     VmError, VmExecutionContext, VmExit, VmHost, VmNestedCallExit, VmStepOptions,
     step_with_host_context,
 };
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, RuntimeExternalCallContext};
-use crate::step::{
-    RuntimeStepInput, RuntimeStepOutput, input_event_text_payload, input_event_trigger_name,
-};
+use crate::step::{RuntimeStepInput, input_event_text_payload, input_event_trigger_name};
 use crate::value::RuntimeValue;
 use crate::{entry::RuntimeSchemaLimits, stream::StreamRuntimeId, task::RuntimeProgramOwner};
-use std::sync::Arc;
 
 pub(super) struct ProductVmHost<'a, B> {
     pub(super) backend: &'a mut B,
     pub(super) fallback_stats: &'a mut crate::step::RuntimePureCallStats,
-    pub(super) program_owner: RuntimeProgramOwner,
+    pub(super) context: &'a VmExecutionContext,
 }
 
 impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
@@ -27,7 +24,9 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         fields: &[arcweft_interaction_model::dialogue::CharacterDialoguePatchField<RuntimeValue>],
         result_type: crate::pattern::RuntimeSemanticTypeId,
     ) -> Result<RuntimeValue, VmError> {
-        if !owner.same_program(&self.program_owner) {
+        if !matches!(owner, RuntimeProgramOwner::Awbc(program)
+            if owner.same_program(&self.context.program_owner(program)?))
+        {
             return Err(VmError::Runtime(
                 "CharacterDialogue producer received a foreign AWBC program".to_owned(),
             ));
@@ -79,7 +78,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             })?;
             let result_type = semantic_type_for_awbc(program, result_type)?;
             RuntimeExternalCallContext::for_program(
-                self.program_owner.clone(),
+                self.context.execution_context(program)?,
                 argument_types,
                 result_type,
                 RuntimeSchemaLimits::engine_default(),
@@ -140,26 +139,27 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
 }
 
 pub(super) fn run_function(
-    program: &Arc<AwbcProgram>,
+    program: &super::AwbcProductProgram,
+    format_context: &crate::value::RuntimeFormatContext,
     function: AwbcFunctionId,
     args: Vec<RuntimeValue>,
     backend: &mut impl RuntimeCallBackend,
     fallback_stats: &mut crate::step::RuntimePureCallStats,
 ) -> Result<RuntimeValue, VmError> {
-    let context = context_for_program(program)?;
+    let context = context_for_program(program)?.with_format_context(format_context.clone());
     let mut host = ProductVmHost {
         backend,
         fallback_stats,
-        program_owner: RuntimeProgramOwner::Awbc(Arc::clone(program)),
+        context: &context,
     };
-    run_function_with_host(program, function, args, context, &mut host)
+    run_function_with_host(program, function, args, &context, &mut host)
 }
 
 fn run_function_with_host(
     program: &AwbcProgram,
     function: AwbcFunctionId,
     args: Vec<RuntimeValue>,
-    context: VmExecutionContext,
+    context: &VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<RuntimeValue, VmError> {
     let mut fiber = FiberState::for_function(
@@ -179,7 +179,7 @@ fn run_function_with_host(
             VmStepOptions {
                 max_instructions: 1024,
             },
-            &context,
+            context,
             host,
         )?;
         match output.exit {
@@ -214,7 +214,7 @@ fn run_function_with_host(
     }
 }
 
-fn context_for_program(program: &Arc<AwbcProgram>) -> Result<VmExecutionContext, VmError> {
+fn context_for_program(program: &super::AwbcProductProgram) -> Result<VmExecutionContext, VmError> {
     let encoded = program
         .encode_canonical()
         .map_err(|error| VmError::Runtime(error.to_string()))?;
@@ -222,10 +222,7 @@ fn context_for_program(program: &Arc<AwbcProgram>) -> Result<VmExecutionContext,
         *blake3::hash(&encoded).as_bytes(),
     )
     .map_err(|error| VmError::Runtime(error.to_string()))?;
-    Ok(VmExecutionContext::for_program(
-        artifact,
-        Arc::clone(program),
-    ))
+    Ok(VmExecutionContext::for_program(artifact, program.clone()))
 }
 
 fn semantic_type_for_awbc(
@@ -256,13 +253,15 @@ mod same_fiber_tests {
                 scalar_eval_supported: false,
                 origin: crate::awbc::schema::AwbcPureHelperOrigin::EngineOwned,
             });
-        let program = Arc::new(program);
+        let context = VmExecutionContext::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x31; 32]).unwrap(),
+        );
         let mut backend = crate::pure::VmRuntimePureCallBackend::default();
         let mut fallback_stats = crate::step::RuntimePureCallStats::default();
         let mut host = ProductVmHost {
             backend: &mut backend,
             fallback_stats: &mut fallback_stats,
-            program_owner: RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+            context: &context,
         };
         assert_eq!(
             host.try_call_pure_helper(&program, crate::awbc::schema::AwbcPureHelperId(0), &[])
