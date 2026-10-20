@@ -94,6 +94,7 @@ fn replay_root_trace_with(
         message: error.to_string(),
     })?;
     let mut initialization_steps = 0_u64;
+    let mut initialization_host_requests = 0_usize;
     let initial = loop {
         let initial = session
             .executor
@@ -120,9 +121,18 @@ fn replay_root_trace_with(
                 message: "initializer did not make executable progress".to_owned(),
             });
         }
-        if !step.root_transitions.is_empty() || !step.requested_host_calls.is_empty() {
+        let initialized = session
+            .executor
+            .product_root_state_snapshot()
+            .is_some_and(|root| root.phase.state_value().is_some());
+        if !step.root_transitions.is_empty()
+            || (!initialized && !step.requested_host_calls.is_empty())
+        {
             return Err(RootReplayError::UnexpectedTransition);
         }
+        initialization_host_requests = initialization_host_requests
+            .checked_add(step.requested_host_calls.len())
+            .ok_or(RootReplayError::UnexpectedTransition)?;
         for outcome in &step.root_initializations {
             if outcome.entry != trace.identity.entry
                 || outcome.binding != trace.identity.binding
@@ -153,6 +163,7 @@ fn replay_root_trace_with(
     let entry_label = trace.identity.entry.public_label().into_string();
     let mut progress = ReplayProgress::new(trace, durable_state_digest);
     progress.replay_step = initialization_steps;
+    progress.suppressed_host_requests = initialization_host_requests;
     while progress.transition_index < trace.transitions.len() {
         let batch =
             progress.prepare_transition_batch(&session, trace, &roles, &entry_label, program)?;

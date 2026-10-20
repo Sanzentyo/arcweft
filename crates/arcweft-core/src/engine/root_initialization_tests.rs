@@ -89,6 +89,17 @@ fn native_root_constructor_and_zero_budget_do_not_initialize_or_lose_ingress() {
 }
 
 #[test]
+fn native_root_initialization_uses_remaining_drain_allowance_for_initial_flow() {
+    let (_, mut engine) = fixture();
+    let result = engine.step(RuntimeStepInput::default(), options(64));
+    assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+    assert!(result.stats.executed_ops > 1);
+    assert!(result.stats.executed_ops <= 64);
+    assert_eq!(result.output.root_initializations.len(), 1);
+    assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
 fn native_pending_initializer_cold_rollback_keeps_its_authenticated_frame() {
     let (plan, engine) = fixture();
     let owner = crate::task::RuntimeProgramOwner::Plan(Arc::clone(&plan));

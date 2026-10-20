@@ -243,7 +243,7 @@ pub enum AwbcProductStepBuildError {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub(super) enum ProductStepError {
     #[error(transparent)]
-    Root(#[from] crate::root::RootRuntimeError),
+    Root(Box<crate::root::RootRuntimeError>),
     #[error(transparent)]
     Vm(#[from] crate::awbc::vm::VmError),
     #[error("{0}")]
@@ -279,6 +279,12 @@ pub(super) enum ProductStepError {
     RuntimeIdentity(#[from] crate::runtime_id::RuntimeIdExhausted),
     #[error(transparent)]
     Fiber(#[from] crate::awbc::fiber::FiberStateError),
+}
+
+impl From<crate::root::RootRuntimeError> for ProductStepError {
+    fn from(error: crate::root::RootRuntimeError) -> Self {
+        Self::Root(Box::new(error))
+    }
 }
 
 impl From<crate::presentation::RuntimeCommandQueueError> for ProductStepError {

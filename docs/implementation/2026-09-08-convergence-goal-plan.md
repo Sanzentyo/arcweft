@@ -22758,3 +22758,76 @@ AWBC helper allowance, so their ordinary-frame migration remains required.
 Recorder pre-copy admission and failure-atomic recording, complete restore
 failure atomicity, the56 earlier CLI failures, typed Presentation ABI, and all
 other original acceptance remain open. Keep the full goal active.
+
+### 2026-10-20: Root initializer completion and ordinary Drain continuation
+
+Published checkpoint `dcfcd32b33f897d21c83d53337cc05e242225dda` was verified
+against fresh origin/main and ls-remote: parent
+`a61f4a0d49b38cf5fa74653ad86ba11b4a6a41f2`, tree
+`8711ee3551e07a87358db291bcb8bb533c60be18`, raw patch SHA256
+`8257209e6553c93593afbfd5e1b0f4839718688c26b04cbffdec98a64948f63a`.
+All20 published blobs and3935 inputs matched; the index was empty and held14
+were unchanged. The publication baseline advanced only after verification.
+
+R1822 selected all2123 Core/driver cases (Core1949 plus driver174), including
+the three new Native initializer cases. R1826 passed that exact set:2123 passed,
+zero skipped,142.539s, one API-compile case slow at108.765s. Exact case keys and
+all3934 runtime/source/spec hashes matched. This operational note alone is
+excluded from executable-input auditing; publication auditing includes it.
+R1823 ordinary workspace Clippy passed,12m36s including lock wait; its3934 hashes
+matched before the subsequent source edits. Existing warnings and introduced
+lint sites mean this is not strict-Clippy acceptance. R1824 structure passed:
+3156 files/3026 Rust files/1721449 physical Rust LOC/97 packages/376 review
+triggers/zero blocking violations.
+
+R1825 executed the exact two foreign-initializer cases and failed both during
+lowering because the Rust fixture adapter supplied no command policy. The fixture
+now explicitly selects deny-all with the normal Root limits. R1827 then selected
+all36 integration cases, including a new real-session replay test. R1829 executed
+all36:34 passed, two failed, zero skipped,1.416s; exact cases and3934 hashes
+matched. Native selected-locale initialization passed. The AWBC test reached
+execution but completion rejected its retained root frame. Replay construction
+rejected the fixture's default Style fingerprint against the compiled accepted
+presentation contract. Neither failure was suppressed or relabeled as a pass.
+
+The completion repair uses the existing rule for releasing a returned root
+frame: lexical metadata and Copy locals may remain, affine owners and unfinished
+cleanups may not. The initial Flow requires that one authenticated returned
+initializer frame, rather than an impossible empty frame inventory. Its frame
+and next allocator position are prepared while the result is still borrowed;
+binding the admitted state then has no fallible work. This preserves the fiber
+identity and does not reset/reuse frame IDs. The replay fixture installs the
+complete accepted View/Style/Text and Character presentation generation.
+Typed Root error sources are boxed in the execution error algebras; their kinds
+remain available. Two test-only imports were scoped to cfg(test).
+
+Supersedes the checkpoint's initialization-only early return: the maintained
+runtime-step contract requires Drain to continue until blocked/done/failed or
+budget exhaustion. Initialization publishes an outcome but does not itself stop
+ordinary execution. Both executors now use the remaining allowance for the initial
+Flow. New tests retain a64-op Drain allowance and require completion of that Flow;
+the one-op, zero-op, cold rollback and exactly-once assertions remain. Replay also
+counts/suppresses Flow host requests issued after initialization in the same
+ordinary step, while rejecting host work before initialization completes.
+
+R1828 and R1832 ordinary owner Clippy passed on successive development shapes;
+R1831 workspace all-target/all-feature/locked check passed in4m38s before the final
+Drain changes. R1835 structure passed before those two added Drain tests:
+3156/3026/1721602 physical Rust LOC/97 packages/376 review triggers/zero blocking.
+The shared ProductStepError still causes result_large_err at the new completion
+method and the cohesive replay test exceeds the100-line lint threshold; neither
+is claimed as strict acceptance. R1830 integration catalogue and R1833 owner run
+were launched before the final Drain edits; inspect actual terminal results and
+compiled cases before using them. R1836 is the new owner catalogue. The final
+Drain freeze owns9 source/test paths, has3935 inputs including this note's prior
+content, retains the53-package reverse closure and99 unchanged manifest/lock
+inputs, and observed zero outside-owned/held drift.
+
+Next: execute the exact37-case integration and2124-case Core/driver catalogues
+against the fixed final inputs, repair any failures, and publish the completion
+repair with actual results. No post-Drain success is claimed here. The Root
+reducer adapters still execute synchronously outside the shared instruction
+allowance. Their ordinary-frame migration, Native foreign-call cold rollback,
+recorder pre-copy/failure atomicity, full restore failure atomicity, complete
+reverse consumers, earlier56 CLI failures, Presentation ABI, cross-tier/visual
+acceptance and every other original requirement remain open. The goal is active.

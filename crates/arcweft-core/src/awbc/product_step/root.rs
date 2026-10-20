@@ -4,11 +4,15 @@ use super::{
     AwbcProductProgram, AwbcProductStepBuildError, AwbcProductStepExecutor, ProductStepError,
     run_function,
 };
-use crate::awbc::fiber::{FiberState, FiberTrap};
+#[cfg(test)]
+use crate::awbc::fiber::FiberState;
+use crate::awbc::fiber::FiberTrap;
 use crate::awbc::schema::{AwbcEntryId, AwbcProgram, AwbcTrapCode};
 use crate::pure::RuntimeCallBackend;
+#[cfg(test)]
+use crate::root::RootStartup;
 use crate::root::{
-    RootCallableEvaluationError, RootCallableEvaluator, RootRuntime, RootRuntimeError, RootStartup,
+    RootCallableEvaluationError, RootCallableEvaluator, RootRuntime, RootRuntimeError,
     RootStartupContract,
 };
 use crate::step::{RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepOutput};
@@ -116,6 +120,7 @@ impl AwbcProductStepExecutor {
             ));
         };
         let inputs = validate_function_argument_value_refs(&program, function, &[value])?;
+        let prepared = self.fiber.prepare_initial_flow(&program, entry, inputs)?;
         let Some(FiberTerminalValue::Returned(Some(value))) = self.fiber.terminal.take() else {
             return Err(ProductStepError::Internal(
                 "initializer return owner changed during admission".into(),
@@ -136,16 +141,14 @@ impl AwbcProductStepExecutor {
                 return Err(error.into());
             }
         };
-        let prepared = startup.stage_flow(|_, binding| {
-            self.fiber
-                .prepare_initial_flow(&program, entry, inputs, vec![binding.value])
+        let staged = startup.stage_flow(|_, binding| {
+            Ok::<_, std::convert::Infallible>(prepared.bind_state(binding.value))
         });
-        let (root, frame, outcome) = match prepared {
+        let (root, frame, outcome) = match staged {
             Ok(prepared) => prepared,
             Err(rejected) => {
-                let (root, error) = *rejected;
-                self.root = Some(root);
-                return Err(error.into());
+                let (_, impossible) = *rejected;
+                match impossible {}
             }
         };
         self.fiber.commit_initial_flow(frame);

@@ -134,12 +134,13 @@ fn compile_rust_project(
         .try_with_rust_manifest(rust)
         .map_err(|error| error.to_string())?;
     let (project, registration, env) = fixture_with_manifest(source, fixture_name, &manifest);
+    let context = context(env, registration).with_command_policy(
+        arcweft_core::entry::RuntimeCommandPolicy::deny_all(
+            arcweft_core::entry::RootExecutionLimits::engine_default(),
+        ),
+    );
     AttachedCompiler::new(&project)
-        .compile(
-            &project,
-            &context(env, registration),
-            &mut RecordingCache::default(),
-        )
+        .compile(&project, &context, &mut RecordingCache::default())
         .map_err(|error| format!("{error:?}"))
 }
 
@@ -229,7 +230,7 @@ fn assert_view_locale(frame: &arcweft_runtime_driver::view_runtime::BundleViewFr
     );
 }
 
-const ROOT_LOCALE_SOURCE: &str = r#"
+const ROOT_LOCALE_SOURCE: &str = r"
 struct GameState { locale: String }
 enum GameEvent { Start }
 fn initial_game_state() -> GameState effects {} {
@@ -248,7 +249,7 @@ entry game @entry.game.main {
     reducer = reduce_game
     goto @flow.opening
 }
-"#;
+";
 
 #[test]
 fn native_root_initializer_uses_budgeted_frame_and_selected_rust_locale() {
@@ -306,7 +307,7 @@ fn native_root_initializer_uses_budgeted_frame_and_selected_rust_locale() {
             .borrow()
             .locales
             .iter()
-            .map(|locale| locale.as_str())
+            .map(arcweft_id::LocaleTag::as_str)
             .collect::<Vec<_>>(),
         ["ja-JP"]
     );
@@ -331,6 +332,10 @@ fn native_root_initializer_uses_budgeted_frame_and_selected_rust_locale() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one lifecycle test owns the real Rust call, cold restore, frame identity and exactly-once locale assertions"
+)]
 fn awbc_root_initializer_resumes_after_rust_call_without_repeating_it() {
     use arcweft_core::{
         awbc::{fiber::AwbcFiberRoot, product_step::AwbcProductStepExecutor, schema::AwbcEntryId},
@@ -412,7 +417,7 @@ fn awbc_root_initializer_resumes_after_rust_call_without_repeating_it() {
             .borrow()
             .locales
             .iter()
-            .map(|locale| locale.as_str())
+            .map(arcweft_id::LocaleTag::as_str)
             .collect::<Vec<_>>(),
         ["ja-JP"]
     );
@@ -441,6 +446,153 @@ fn awbc_root_initializer_resumes_after_rust_call_without_repeating_it() {
         executor.step_with_pure_backend(RuntimeStepInput::default(), options(1), &mut backend);
     assert!(next.output.root_initializations.is_empty());
     assert_eq!(observations.borrow().locales.len(), 1);
+}
+
+#[test]
+fn awbc_root_initialization_uses_remaining_drain_allowance_for_initial_flow() {
+    use arcweft_core::{
+        awbc::{product_step::AwbcProductStepExecutor, schema::AwbcEntryId},
+        engine::FlowFiberStatus,
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    };
+    let source = ROOT_LOCALE_SOURCE.replace("default_string()", "\"initial\"");
+    let (_, code) = compile_rust(&metadata(), &source).unwrap();
+    let mut executor = AwbcProductStepExecutor::for_entry_arc(code, AwbcEntryId(0), 64).unwrap();
+    let step = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            mode: RuntimeStepMode::Drain,
+            budget: RuntimeStepBudget { max_ops: 64 },
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert!(step.output.diagnostics.is_empty(), "{:?}", step.output);
+    assert!(step.stats.executed_ops > 1);
+    assert!(step.stats.executed_ops <= 64);
+    assert_eq!(step.output.root_initializations.len(), 1);
+    assert!(matches!(step.fiber_status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn root_replay_records_observed_initialization_before_queued_event_transition() {
+    use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
+    use arcweft_core::{root::RootEventInput, step::RuntimeStepMode};
+    use arcweft_runtime_driver::{
+        clock::RuntimeClockStep,
+        session::{
+            BundleSession, BundleSessionOptions, BundleStepInput, RootReplayRecordingError,
+            RootReplayTraceV1,
+        },
+    };
+    let source = ROOT_LOCALE_SOURCE.replace("default_string()", "\"initial\"");
+    let compiled =
+        compile_rust_project(&metadata(), &source, "root-replay-initialization").unwrap();
+    let lowered = compiled.runtime_plan();
+    let program = AwbcLowerer::new(
+        &lowered.plan,
+        &lowered.dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let runtime = BundleRuntimeSummary {
+        artifact_fingerprint: arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&program.encode_canonical().unwrap()).as_bytes(),
+        )
+        .unwrap(),
+        entry_flow: None,
+        flows: program.flow_executables.len(),
+        bytecode_instructions: program.instructions.len(),
+        line_task_groups: program.line_task_groups.len(),
+        stream_plans: program.stream_plans.len(),
+    };
+    let mut bundle = ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            entry: Some("entry.game.main".to_owned()),
+            adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime,
+        },
+        compiled.view_product().product().source_map().clone(),
+        program,
+        lowered.dialogue_content_catalog.clone(),
+    )
+    .unwrap();
+    bundle = bundle
+        .try_with_validated_view_product(compiled.view_product().product())
+        .unwrap();
+    if let Some(text) = compiled.view_product().text() {
+        bundle = bundle.with_view_text(text.clone());
+    }
+    if let Some(catalog) = &lowered.character_presentation_catalog {
+        bundle = bundle.with_character_presentation_catalog(catalog.as_ref().clone());
+    }
+    if let Some(generation) = &lowered.character_dialogue_generation {
+        bundle = bundle.with_character_dialogue_generation(generation.as_ref().clone());
+    }
+    let program = bundle.product_awbc_program();
+    let roles = program.entries[0].roles.stateful().unwrap();
+    let event = RuntimeProgramTypes::Awbc(program)
+        .try_variant_value(
+            roles.event.semantic_identity,
+            0,
+            None,
+            roles.command_policy.root_limits.schema,
+        )
+        .unwrap();
+    let options = BundleSessionOptions {
+        mode: RuntimeStepMode::Drain,
+        max_ops: 1,
+        ..BundleSessionOptions::default()
+    };
+    let mut session = BundleSession::new(&bundle, options.clone()).unwrap();
+    let mut recorder = session.start_root_replay_recording().unwrap();
+    assert_eq!(
+        recorder.clone().finish(),
+        Err(RootReplayRecordingError::InitializationPending)
+    );
+    let mut input = BundleStepInput::default();
+    input.root_events.push(RootEventInput::new(event.into()));
+    let mut initialized = None;
+    let mut transitioned = false;
+    for step_number in 1..=128 {
+        let step = session
+            .step_with_clock_recording(
+                RuntimeClockStep::from_millis(step_number, 1).unwrap(),
+                std::mem::take(&mut input),
+                &mut recorder,
+            )
+            .unwrap();
+        assert!(step.diagnostics.is_empty(), "{:?}", step.diagnostics);
+        assert!(step.stats.executed_ops <= 1);
+        if let [outcome] = &step.root_initializations[..] {
+            assert!(initialized.replace(outcome.state_digest).is_none());
+            assert!(step.root_transitions.is_empty());
+        }
+        if !step.root_transitions.is_empty() {
+            assert!(initialized.is_some());
+            assert_eq!(step.root_transitions.len(), 1);
+            transitioned = true;
+            break;
+        }
+    }
+    assert!(transitioned);
+    let trace = recorder.finish().unwrap();
+    assert_eq!(Some(trace.initializer_state_digest), initialized);
+    assert_eq!(trace.transitions.len(), 1);
+    let wire = serde_json::to_value(&trace).unwrap();
+    assert_eq!(wire["schema_version"], 1);
+    assert!(wire.get("identity").is_none());
+    let decoded: RootReplayTraceV1 = serde_json::from_value(wire).unwrap();
+    assert_eq!(decoded, trace);
+    let replay = BundleSession::replay_root_trace(&bundle, options, &decoded).unwrap();
+    assert_eq!(replay.transitions_verified, 1);
+    assert!(!replay.terminal_trap);
 }
 
 #[test]

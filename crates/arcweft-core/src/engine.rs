@@ -4425,9 +4425,6 @@ impl Engine {
         output: &RuntimeStepOutput,
         executed_ops: usize,
     ) -> bool {
-        if !output.root_initializations.is_empty() {
-            return true;
-        }
         if self.hard_stop_reason(output).is_some() {
             if matches!(mode, RuntimeStepMode::Drain | RuntimeStepMode::Server)
                 && output.has_host_requests()

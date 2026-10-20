@@ -2693,7 +2693,7 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error(transparent)]
-    RootRuntime(#[from] crate::root::RootRuntimeError),
+    RootRuntime(Box<crate::root::RootRuntimeError>),
     #[error(transparent)]
     IteratorWitness(#[from] RuntimeIteratorWitnessError),
     #[error("program {program} input {position} cannot transfer detached custody: {source}")]
@@ -2866,6 +2866,12 @@ pub enum RuntimeEvalError {
         expected: &'static str,
         actual: String,
     },
+}
+
+impl From<crate::root::RootRuntimeError> for RuntimeEvalError {
+    fn from(error: crate::root::RootRuntimeError) -> Self {
+        Self::RootRuntime(Box::new(error))
+    }
 }
 
 /// A checked language-expression failure that a selected formatter may retain

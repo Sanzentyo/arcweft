@@ -245,6 +245,14 @@ pub(crate) struct PreparedInitialFlow {
     frame: FiberFrame,
     cursor: FiberCursor,
     next_frame_instance: RuntimeIdCursor,
+    state_register: AwbcRegisterId,
+}
+
+impl PreparedInitialFlow {
+    pub(crate) fn bind_state(mut self, value: RuntimeValue) -> Self {
+        self.frame.registers[self.state_register.index()] = value.into();
+        self
+    }
 }
 
 impl PreparedFunctionInputBinding {
@@ -1546,8 +1554,11 @@ impl FiberState {
     /// Their affine owners and unfinished cleanup work cannot be discarded by
     /// a program continuation.
     pub(crate) fn program_continuation_ready(&self) -> bool {
+        matches!(self.root, AwbcFiberRoot::Program(_)) && self.returned_root_frame_releasable()
+    }
+
+    fn returned_root_frame_releasable(&self) -> bool {
         self.status == FiberStatus::Returned
-            && matches!(self.root, AwbcFiberRoot::Program(_))
             && matches!(self.terminal, Some(FiberTerminalValue::Returned(Some(_))))
             && self.suspension.is_none()
             && self.frames.len() <= 1
@@ -1755,11 +1766,10 @@ impl FiberState {
         program: &AwbcProgram,
         entry: AwbcEntryId,
         prepared: PreparedFunctionInputBinding,
-        args: Vec<RuntimeValue>,
     ) -> Result<PreparedInitialFlow, FiberStateError> {
         if self.root != AwbcFiberRoot::RootInitializer(entry)
-            || self.status != FiberStatus::Returned
-            || !self.frames.is_empty()
+            || self.frames.len() != 1
+            || !self.returned_root_frame_releasable()
         {
             return Err(FiberStateError::InvalidFrame);
         }
@@ -1771,18 +1781,18 @@ impl FiberState {
             return Err(FiberStateError::RouteSelectionRequired);
         };
         let function = *function;
-        if function != prepared.function || args.len() != prepared.parameter_registers.len() {
+        if function != prepared.function {
             return Err(FiberStateError::InvalidFrame);
         }
+        let [state_register] = &prepared.parameter_registers[..] else {
+            return Err(FiberStateError::InvalidFrame);
+        };
         let mut next_frame_instance = self.next_frame_instance;
         let instance = RuntimeFrameInstanceId::from_allocated(
             next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
         );
         let mut frame = FiberFrame::new(instance, program, function, None)?;
         frame.type_instantiation = prepared.type_instantiation.map(std::sync::Arc::new);
-        for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
-            frame.registers[register.index()] = value.into();
-        }
         let block = program
             .functions
             .get(function.index())
@@ -1798,6 +1808,7 @@ impl FiberState {
                 instruction_offset: 0,
             },
             next_frame_instance,
+            state_register: *state_register,
         })
     }
 

@@ -276,9 +276,6 @@ impl AwbcProductStepExecutor {
         output: &RuntimeStepOutput,
         executed_ops: usize,
     ) -> bool {
-        if !output.root_initializations.is_empty() {
-            return true;
-        }
         if self.fiber.status == FiberStatus::Trapped {
             return true;
         }
