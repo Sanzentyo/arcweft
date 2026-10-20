@@ -23295,3 +23295,57 @@ pending. AWBC's synchronous ProductRootEvaluator/million-op helper are still ope
 as are full restore failure atomicity, original Native Rust-call cold execution,
 all53 reverse consumers, all prior56 CLI failures, presentation ABI, strict Clippy,
 Tier2/visual/final workspace acceptance and the rest of the original active goal.
+Native frame checkpoint `261e5e9018bf51c7e747114a780cade27ff03130` was published
+and all14 blobs/3939 inputs, parent/tree/raw patch and fresh advertised main were
+verified, zero drift; index empty and baseline advanced with held14 unchanged.
+Tree `af2fd21c73a4bd1bb581ac4ada80f0e2ad779d93`, patch SHA256
+`be4949395bf19abf584151cb461b1b9d5ff6ae61affb5a340037e5640b827a53`.
+This is the user-authorized intermediate checkpoint; final passing validation
+was explicitly not claimed. R1892 discovered2135 Core/driver cases, all matched,
+including all four new reducer cases. R1894 ran exactly2135:2131 passed, four
+failed, zero skipped,155.128s; all four reducer cases passed, including cold
+rollback with one completed selected-backend call, original Plan/locale, ordered
+later transitions, trapped/allocator failure and forged frame rejection.
+The exact2135 execution keys and3938 frozen runtime/spec inputs matched, held14
+unchanged. The terminal audit used completed execution lines before Summary;
+the default final-status report listed only failures, so the standard post-summary
+parser did not cover passes. No missing cases were relabeled as executed.
+
+All four failures used the existing default reusable_need fixture (String
+payload) in places declaring Need<Unit> or Need<i64>. The pattern guard also
+assigned an arbitrary semantic ID to i64. Those positive fixtures now use the
+existing full producer constructor with explicit matching Unit/i64 outcomes and
+the canonical primitive semantic identity. Move-once, exact TaskSpec pointer,
+scalar guard selection and affine rejection assertions remain. The pure move
+case additionally rejects a String-payload handle against the declared Unit
+Need. Production value admission was not relaxed. Final re-execution is pending.
+
+R1898 actual all-target/all-feature Cargo inverse graph matches all53 metadata
+packages (including workspace package arcweft). The initial audit regex omitted
+that plain package name; both that observation and corrected zero-drift audit
+remain saved. R1899 repeated structure on published sources and passed:3160 files,
+3030 Rust files,1723239 physical Rust LOC,97 packages,376 triggers, zero blocking.
+All3938 runtime/spec hashes matched. AWBC migration and every other acceptance
+listed above remain open; the complete goal remains active.
+R1900 reran the same complete2135 catalog after the fixture repairs:2135 passed,
+zero failed/skipped,143.127s (one API compile case107.006s). The standard final-
+status case-key audit and all3938 runtime/spec hashes match; held14 unchanged.
+R1901 compiler41 is building. Workspace check/ordinary Clippy are not yet rerun
+for these Root changes. The fixture repair is a coherent tested checkpoint;
+its successful owner suite does not replace the remaining53-package acceptance.
+
+Additional Root work remains in the active implementation: native frame ingress
+currently preflights the argument group under Root limits, while the complete
+prospective executor graph (old retained graph plus new frame/state-copy metadata)
+needs one admission before copying. A failure of the subsequent whole-executor
+rollback preflight currently marks the main fiber failed and can strand an active
+reducer child; convert that path into a Root trap and reclaim its frame. Native
+rollback also needs allocator/unique fiber identity validation in its general
+owner, beyond the phase/role bijection now checked. Do not claim those hostile
+resource/identity cases from the four normal new reducer tests. AWBC must retain
+the actual child return value, add the authenticated reducer origin and common
+budget scheduling, and validate Root/child coupling at live/inert boundaries.
+Its restore_rollback_image currently clears self.root before fallible product
+restore; finish failure atomic ownership as part of that migration. Existing
+restore_snapshot_owned already captures/drops/rebuilds the sole live owner and
+provides the established ownership pattern. No AWBC source edit has landed yet.

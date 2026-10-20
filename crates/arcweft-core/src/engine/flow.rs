@@ -1848,7 +1848,7 @@ mod ownership_tests {
 
     #[test]
     fn project_call_rest_materialization_moves_two_affine_sources_once() {
-        let unit = RuntimeSemanticTypeId::from_bytes([0x81; 32]);
+        let unit = crate::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
         let need = RuntimeSemanticTypeId::from_bytes([0x82; 32]);
         let sequence = RuntimeSemanticTypeId::from_bytes([0x83; 32]);
         let mut builder = RuntimePlanBuilder::new();
@@ -1906,8 +1906,14 @@ mod ownership_tests {
         )
         .expect("each physical source has one destination");
         let engine = Engine::new(plan);
-        let first = crate::tests::reusable_need("need.project.rest.first");
-        let second = crate::tests::reusable_need("need.project.rest.second");
+        let first = crate::tests::reusable_need_with_outcome(
+            "need.project.rest.first",
+            crate::task::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Unit),
+        );
+        let second = crate::tests::reusable_need_with_outcome(
+            "need.project.rest.second",
+            crate::task::TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::Unit),
+        );
         let operands = vec![
             vec![RuntimeValue::NeedHandle(first.clone())],
             vec![RuntimeValue::NeedHandle(second.clone())],

@@ -3399,28 +3399,38 @@ mod tests {
 
     #[test]
     fn guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple() {
+        let integer = RuntimeCheckedType::Signed(crate::value::RuntimeSignedIntWidth::I64)
+            .semantic_identity_digest();
+        let affine_need = || {
+            crate::tests::reusable_need_with_outcome(
+                "need.guard.affine",
+                crate::task::TaskOutcomeContract::new(RuntimeCheckedType::Signed(
+                    crate::value::RuntimeSignedIntWidth::I64,
+                )),
+            )
+        };
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
             .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(identity(101), RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(
-                        identity(102),
+                        integer,
                         RuntimePlanTypeProjection::Signed(crate::value::RuntimeSignedIntWidth::I64),
                     ),
                     RuntimePlanTypeSeed::new(
                         identity(103),
-                        RuntimePlanTypeProjection::Need(identity(102)),
+                        RuntimePlanTypeProjection::Need(integer),
                     ),
                     RuntimePlanTypeSeed::new(
                         identity(104),
                         RuntimePlanTypeProjection::Tuple(
-                            vec![identity(102), identity(103)].into_boxed_slice(),
+                            vec![integer, identity(103)].into_boxed_slice(),
                         ),
                     ),
                 ],
                 [
-                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_a"), identity(102)),
+                    RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_a"), integer),
                     RuntimeLocalDeclarationSeed::new(manual_local_source("arcweft-core.fixture.pattern.guard_copies_only_selected_scalar_sibling_before_moving_affine_tuple.binding_b"), identity(103)),
                 ],
             )
@@ -3431,7 +3441,7 @@ mod tests {
                 RuntimePatternSeedKind::Tuple(
                     vec![
                         RuntimePatternSeed::new(
-                            identity(102),
+                            integer,
                             RuntimePatternSeedKind::Bind {
                                 mutable: false,
                                 local: admitted.local_ids()[0].clone(),
@@ -3472,7 +3482,7 @@ mod tests {
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
+            RuntimeValue::NeedHandle(affine_need()),
         ]);
         let guard = crate::value::RuntimeExpr::from_admitted_parts_with_guard_copy_locals(
             admitted.type_ids()[0],
@@ -3498,9 +3508,7 @@ mod tests {
             .expect("owned tuple bind")
             .expect("matched tuple");
         assert!(bindings.iter().any(|binding| {
-            binding.local == affine
-                && binding.value
-                    == RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine"))
+            binding.local == affine && binding.value == RuntimeValue::NeedHandle(affine_need())
         }));
 
         let affine_guard = crate::value::RuntimeExpr::from_admitted_parts_with_guard_copy_locals(
@@ -3515,7 +3523,7 @@ mod tests {
         );
         let value = RuntimeValue::Tuple(vec![
             RuntimeValue::i64(7),
-            RuntimeValue::NeedHandle(crate::tests::reusable_need("need.guard.affine")),
+            RuntimeValue::NeedHandle(affine_need()),
         ]);
         assert!(matches!(
             prepare_runtime_pattern_guard_bindings(&plan, &pattern, &value, &affine_guard, None),

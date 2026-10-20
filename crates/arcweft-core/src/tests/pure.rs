@@ -81,14 +81,29 @@ fn pure_value_backend_moves_an_affine_need_argument_into_its_result() {
         input.passing(),
         Some(crate::plan::RuntimeFunctionParameterPassing::Affine)
     );
-    let value = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"));
+    let need_type = plan.type_table().id_for_semantic(need).unwrap();
+    assert!(
+        !plan
+            .value_matches_type(
+                need_type,
+                &RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.wrong_payload")),
+            )
+            .unwrap()
+    );
+    let affine_need = || {
+        crate::tests::reusable_need_with_outcome(
+            "need.pure.affine",
+            crate::task::TaskOutcomeContract::new(RuntimeCheckedType::Unit),
+        )
+    };
+    let value = RuntimeValue::NeedHandle(affine_need());
     assert!(!value.ownership().permits_copy());
     let mut backend = VmRuntimePureCallBackend::default();
     assert_eq!(
         backend
             .call_values(helper, vec![value])
             .expect("affine argument transfers into pure result"),
-        RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.affine"))
+        RuntimeValue::NeedHandle(affine_need())
     );
 }
 
@@ -160,7 +175,10 @@ fn pure_collect_intrinsic_moves_affine_sequence_items() {
     let plan = Arc::new(builder.finish().expect("collect helper seals"));
     let helper = RuntimePureFunctionRef::resolve(&plan, plan.pure_helpers()[0].id)
         .expect("collect helper reference");
-    let item = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.pure.collect"));
+    let item = RuntimeValue::NeedHandle(crate::tests::reusable_need_with_outcome(
+        "need.pure.collect",
+        crate::task::TaskOutcomeContract::new(RuntimeCheckedType::Unit),
+    ));
     let original = match &item {
         RuntimeValue::NeedHandle(handle) => handle.spec() as *const crate::task::TaskSpec,
         _ => unreachable!(),
