@@ -22342,3 +22342,36 @@ the user's explicit instruction to commit/push accumulated dirty work without
 requiring every intermediate commit to be proven operational. The complete
 reverse closure remains Core plus 52 consumers; no workload is reduced. Root,
 Presentation, remaining Source/public switch and full-goal acceptance remain open.
+
+### 2026-10-20 — resource-kind publication and structural evidence
+
+Published a9a65e462263767c21272471646e8dccac927661, parent
+fca23878744cf5e2a55ab94a1c8330119c49b137, tree
+3238ffc43e60f8f67ce8e8517b3788ecf07c135d, raw patch SHA256
+dd162773763ebffe4820a9bcaf6e86bca90fd3836a8d8f21bb6aeae3ee413f17.
+Fresh fetch/advertised main, all 24 blobs and all 3933 source inputs matched;
+the source baseline advanced to owned0/held14 without changing held files.
+R1775's four original formatter/cleanup cases each passed with unchanged tests;
+its two new error-category failures and 523 unexecuted cases remain recorded.
+
+R1781 structure gate passed: 3155 files, 3025 Rust files, 1719706 physical Rust
+LOC, 97 packages, 376 review triggers and zero blocking violations. Core remains
+the Sans-I/O owner; its 53-package reverse closure and all 99 manifest/lock
+inputs are unchanged. Schema (44923 bytes/1393 LOC, +5), value_budget
+(16099/450, +69), value_encoding (66938/1820, +21), function_contract
+(53245/1443, +2) and AWBC metadata codec (61575/1653, +5) keep their existing
+responsibilities and test boundaries. The public limit field belongs to schema,
+the two counters and shared failure to ValidationWork, grammar traversal to the
+existing owners, and wire projection to the codec. No I/O, duplicated catalog,
+dependency edge, facade widening or unrelated state cluster is added; existing
+size-trigger cohesion dispositions remain applicable.
+
+Execution queue at this note: R1777 consumer catalogue handle94351; R1778 full
+Core no-fail-fast handle88772; R1779 workspace Clippy handle85743; R1780 fixed
+workspace check handle27106; R1782 Core doctests handle21700. The same handles
+were polled live; consumer compilation owns the Cargo build lock and the other
+commands wait normally. Do not restart because observation expires. Inspect
+terminal receipts, audit exact cases plus corrected-runtime hashes, then run the
+unchanged 52-consumer selection from R1769 against the rebuilt sources. R1776
+finished exit0 but has the documented overlapping-source limitation. No pending
+check is claimed passed, and no full-goal completion is claimed.
