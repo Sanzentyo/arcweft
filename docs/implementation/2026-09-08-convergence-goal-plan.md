@@ -22222,3 +22222,48 @@ Presentation calls, confirmed at the current lower.rs boundary. They require
 completing the eleven-operation Presentation ABI, not altering samples/assertions
 or emitting string calls. Root initializer/backend/formatter/shared-budget
 activation, the remaining Source/public switch and full goal remain open.
+
+### 2026-10-20 — metadata publication, lint delta and full execution queue
+
+Published 58260564eaabc2e005cdc3cff06d5f0a6893aa64, parent
+fe7e9dd131ae89bb2e1ac85dddae63806250ed0c, tree
+955004ccb65e427134bf1b5f1ce5dbc5b07ca16d, raw patch SHA256
+edeae7fd938cf9ef4de2cbd72e4467574739d7609cd16b6936534b90a84a1a18.
+Fresh advertised main, all 12 blobs, parent/tree/patch and 3933 inputs matched;
+baseline is owned0/held14. R1767 ordinary Core all-feature/all-target locked
+Clippy passed. Its elapsed 23m04s includes the build-lock wait. Core library
+tests have 2915 warnings (2391 duplicates); exact normalized warning/file
+comparison in touched owners removes the four introduced patterns plus one
+existing field-initialization warning, with zero additions. All 3932 fixed
+runtime/source hashes matched. Strict lint acceptance remains open.
+
+R1763 consumer catalogue passed: 5190 total, 5151 selected, 39 existing default
+exclusions. It covers all 52 selected reverse consumers; 49 have named host tests.
+The facade arcweft, arcweft-bundle-assets and arcweft-render-web have no named
+host tests in this selection, so compile evidence is not relabeled execution.
+R1764 observed workspace check exit0 after 29m30s, but overlapped migration;
+R1770 is the fresh fixed-source workspace check, live handle 12173.
+
+R1766 catalogue includes all 1887 Core library cases, selecting the three
+original regressions; it is not executed separately because R1768's complete
+catalogue passed with 1940/1940 selected, no exclusions, and all seven byte
+regressions plus admitted proof/owned restore present. R1771 runs that full
+Core lib/tests selection (21318). R1769 runs the exact R1763 52-consumer selection
+(6914), with normal Cargo rebuilding the current sources before execution.
+Source is fixed under task-metadata-byte-bank-20261020-runtime (3932 hashes;
+only this note excluded). Poll the same live handles, then audit exact terminal
+case sets and hashes before changing executable source. Repair real failures
+and retain the original operation/copy/capture/budget conditions.
+
+Next Root implementation decision: initializer execution belongs to the ordinary
+entry-owned execution frame and its selected backend/formatter/shared allowance.
+Represent pending initialization by the actual selected Entry invocation origin,
+retain the real initializer frame across budget yield and restore, and commit
+Root plus initial Flow only after the initializer result and Flow binding both
+admit. Queue typed first-step Root events until initialization commits. Restore
+must reconstruct the pending/active phase without running an initializer in a
+constructor. Migrate Native and AWBC frame/return/origin/save validators together;
+exercise a real external callable, selected locale, budget yield, cold restore,
+no repeated initializer call and failure before either Root/Flow publication.
+Do not add a second phase table, fallback backend or fresh synchronous budget.
+Root, Presentation and the complete original goal remain unfinished and active.
