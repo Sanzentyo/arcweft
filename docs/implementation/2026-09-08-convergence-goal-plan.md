@@ -22499,3 +22499,28 @@ This intermediate cut publishes three Core files plus this record under the
 user's frequent-checkpoint instruction; pending execution is reported explicitly.
 The 56 CLI failures from the earlier full consumer run and Root's remaining
 lifecycle migration continue to be required work, not accepted exceptions.
+
+### 2026-10-20 — frame preparation publication and map parity evidence
+
+Published d981370fee86460ee11722ebba65c833e6e85d28, parent
+df61f2160e5e516ed411d2e0b14917fa83094a24, tree
+e3440281ba70f7db576ce2d3f985a57712ca4c5f, raw patch SHA256
+cc22a57af6389b192e10d78bb3788f0b20bd2914d66160af28379d8b880e3f82.
+Fresh advertised main, all4 blobs and all3933 source inputs matched. Baseline
+advanced to owned0/held14, with the three held untracked entries preserved.
+
+R1791 completed actual exit0: all3 selected Source map cases passed (one slow),
+477 filter exclusions, 324.861s. The exact R1787 case set and all3932 fixed
+runtime/source hashes matched, held14 unchanged. Batch/sum output and copy
+counts, the complete128-element Native/AWBC comparison under Drain64/Drain1/
+OneOp64, zero inappropriate fusion, exact physical-call counters and the
+original apply-span charge remain asserted. No workload or budget is reduced.
+This duration is execution evidence, not a comparative performance benchmark.
+R1792 fixed Core evidence remains all1940 passed/zero skipped in34.020s.
+
+The frame-preparation prerequisite is delivered; Root initializers/reducers
+still require ordinary-frame scheduling with the selected backend/formatter,
+the shared step allowance and failure-atomic pending-initializer restore.
+The full5151-consumer result remains5095 passed/56 CLI failures/39 exclusions,
+and all other original acceptance, including strict lint and final cross-tier
+execution/capture checks, remains open. The goal is active and unchanged.
