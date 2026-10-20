@@ -709,18 +709,13 @@ impl ArcweftRuntimeExecutor {
     }
 
     pub fn restore_product_rollback_image(
-        &mut self,
+        self,
         image: AwbcProductExecutorSnapshot,
-    ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
-        match &mut self.inner {
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
-                .vm
-                .restore_rollback_image(image)
-                .map_err(|error| ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
-                    message: error.to_string(),
-                }),
-            _ => unreachable!("Product rollback restore requires Product executor"),
-        }
+    ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
+        self.restore_snapshot_with_policy(
+            ArcweftRuntimeExecutorSnapshot::AwbcProduct(image),
+            crate::task::NeedProducerRestorePolicy::Rollback,
+        )
     }
 
     /// Retains the exact selected program for an asynchronous host result.
@@ -874,11 +869,19 @@ impl ArcweftRuntimeExecutor {
         self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
     ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
+        self.restore_snapshot_with_policy(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
+    }
+
+    fn restore_snapshot_with_policy(
+        self,
+        snapshot: ArcweftRuntimeExecutorSnapshot,
+        policy: crate::task::NeedProducerRestorePolicy,
+    ) -> Result<Self, ArcweftRuntimeExecutorOwnedRestoreError> {
         match (self.inner, snapshot) {
             (
                 ArcweftRuntimeExecutorInner::AwbcProduct(executor),
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
-            ) => match executor.vm.restore_snapshot_owned(snapshot) {
+            ) => match executor.vm.restore_snapshot_transaction(snapshot, policy) {
                 Ok(vm) => Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
                     Box::new(AwbcProductExecutor { vm }),
                 ))),

@@ -260,6 +260,9 @@ wire payload を元 program と Source lease に結び付けた inert image に�
 Root・product・View・presentation を session の同じ資源枠で検証する。
 Root と product の実行値は、旧 executor を破棄した後にだけ構築する。復元途中の
 失敗では候補を破棄し、元の完全な inert image から旧 executor を戻す。
+Product の復元 API は実行 owner を消費し、成功時は復元済み owner、失敗時は
+元の owner とエラーを返す。保存された実フレームから構築し、起動用の空フレームや
+仮の引数で代用しない。main fiber の identity は最初の割当 identity と照合する。
 durable Root の live／inert 共通 grammar は failure も保持する。failure は Ready
 phase の現在の transition cursor に対応し、message と digest が一致しなければ
 受け入れない。wire は failure が無い場合も明示的な `null` を要求する。

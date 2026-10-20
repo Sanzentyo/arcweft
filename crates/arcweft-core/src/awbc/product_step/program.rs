@@ -128,9 +128,6 @@ impl AwbcProductStepExecutor {
             }
         };
         self.dialogues = super::dialogue::ProductDialogueStore::from_published(custody);
-        let old_origin = self.fiber.root;
-        let old_generation = self.runtime_generation;
-        let old_quantum = self.fiber.budget.quantum;
         let Some(FiberTerminalValue::Returned(Some(result))) = self.fiber.terminal.take() else {
             unreachable!("the complete borrowed continuation proof retains its result")
         };
@@ -170,15 +167,17 @@ impl AwbcProductStepExecutor {
         })();
         if let Err(reason) = committed {
             let admitted = self.program.clone();
+            let fingerprint = self.artifact_fingerprint;
             let format_context = self.format_context.clone();
             drop(self);
-            let mut executor =
-                Self::for_admitted_root(admitted, old_origin, old_quantum, old_generation)
-                    .expect("the unchanged original program configuration remains constructible");
-            executor.format_context = format_context;
-            executor
-                .restore_rollback_image(image)
-                .expect("the original executor restores after the candidate owner is dropped");
+            let executor = Self::from_admitted_snapshot(
+                admitted,
+                fingerprint,
+                format_context,
+                image,
+                crate::task::NeedProducerRestorePolicy::Rollback,
+            )
+            .expect("the original executor restores after the candidate owner is dropped");
             return Err(RuntimeProgramContinuationError {
                 reason,
                 executor: Box::new(executor),

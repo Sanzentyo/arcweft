@@ -398,7 +398,7 @@ fn awbc_root_initializer_resumes_after_rust_call_without_repeating_it() {
                     .unwrap();
             assert_eq!(observations.borrow().locales.len(), 1);
             executor.set_format_context(format.clone());
-            executor.restore_rollback_image(image).unwrap();
+            executor = executor.restore_rollback_image(image).unwrap();
             assert_eq!(executor.compact_fiber().instance, fiber_instance);
             restored = true;
         }

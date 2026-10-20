@@ -23783,3 +23783,65 @@ actual saved frames,then repair generation,diagnostic ownership and phased
 resource/catalog/executable admission without weakening assertions or quotas.
 The complete original acceptance goal remains active. The one requested clean
 already succeeded(265286 files,323.8GiB);do not repeat it or move build artifacts.
+Root failure lifecycle checkpoint `df5a425676ae8cf3190156c204ec9a8614274ba0`
+is pushed and verified:parent `f2ec718442eb356af93216fb2139fa0a6292141d`,tree
+`4376409b8b21496f7170824e1ced9acf4cfcfe4c`,patch SHA256
+`6a6b75dd0762a3359114feaaa49d7e8da82ec500586968c80a02b48e874da280`.
+All13 published blobs and3939 inputs match; held14 is unchanged,index empty,
+advertised main verified,and baseline advanced to owned0.
+
+### 2026-10-20 — reconstruct Product owners from their actual saved frames
+
+Removed the borrowed Product restore entry point and its argumentless startup
+shell transaction. Resume and rollback consume the sole runnable owner,preflight
+the complete inert candidate,capture the original image,drop the old owner,then
+construct directly from the actual saved main fiber and the retained original
+program/Source,fingerprint and formatter. On target failure,partial candidate
+owners drop before the original image is rebuilt and returned with the error.
+Program-continuation failure uses the same admitted constructor. No fake origin,
+placeholder arguments,unsafe ownership extraction or vacant Product wrapper is
+introduced. The main fiber must retain its initial allocated identity; the
+existing public rollback regression now also rejects swapping unique issued
+main/child identities while preserving the original complete image.
+
+Snapshot validation is now wholly inert:it no longer materializes observations
+alongside the old owner. Code replacement drops old observation values only
+after full candidate admission and reconstructs them against the selected Source;
+a binding failure reinstalls the original program and original observation image.
+Core facade rollback now consumes/returns its owner through the same restore
+policy dispatcher. All direct Core,driver,compiler and runtime-plan consumers
+were migrated; assertion meanings and execution budgets are unchanged. Maintained
+save documentation records the consuming API and real-frame construction.
+
+R1949/R1950 development workspace checks exposed mechanical migration compile
+errors(NonZero identity comparison,loop owner reassignment,and a wrongly removed
+mutable test binding);all have been repaired in the frozen candidate. Neither
+failed check is claimed as a final compile pass. R1951
+`task-final-r1951-owned-restore-catalog` is still building the selected catalog:
+Core Product cases,all awbc_product_parity cases,and compiler Root cases across
+four packages/all features/locked. Wrapper PID60592 was confirmed live; its exec
+session id was not retained. Observe its named terminal receipt/process rather
+than restart the command. R1953 `task-final-r1953-owned-restore-clippy` is live
+session13396,waiting on the same build lock. Continue that handle. One newly
+unused returned-owner binding at product_step/tests.rs:2258 remains a warning
+and should be cleaned up at the next edit cut without weakening the rejection.
+
+R1954 structural gate passed:3160 files,3030 Rust files,1724274 physical Rust LOC,
+97 packages,376 review triggers,zero blocking violations. All3938 frozen runtime/
+spec inputs match before and after the command. Freeze:
+`task-owned-restore-20261020-final-runtime.source-freeze.json`;only this note is
+excluded. Ownership remains Product snapshot/VM,Root domain and driver session
+commit;no dependency edges or contract-version markers changed. This is a
+reviewed intermediate checkpoint under the user's explicit policy; runtime and
+lint acceptance are still pending,not silently assumed.
+
+Once R1951 terminates,inspect the exact selected catalog including both formerly
+failing AwaitMany regressions and the compiler Root-initializer no-repeat case,
+then execute that same filter with nextest. Do not repeat the clean or reduce
+coverage/budgets/jobs. R1946's other four driver failures remain open:generation
+storage versus finished execution pin,Fiber diagnostic preservation,and staged
+resource/catalog/executable admission. Session reconstruction should use the
+selected program's complete inert image directly rather than spawn an entry as
+a restore shell;preserve historical execution generations after ContentOnly
+retirement. The entire original convergence goal and all broader acceptance
+requirements remain active;this checkpoint is progress,not completion.

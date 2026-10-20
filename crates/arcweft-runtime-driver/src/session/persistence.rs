@@ -743,14 +743,14 @@ impl BundleSession {
         ) = match restored {
             Ok(restored) => restored,
             Err(error) => {
-                let mut rollback = self
+                let rollback = self
                     .runtime_images
                     .get(active_generation)
                     .expect("validated active generation has a runtime image")
                     .runtime()
                     .spawn_executor_for_entry(old_entry)
                     .expect("captured Product owner can rebuild its selected entry");
-                rollback
+                let rollback = rollback
                     .restore_product_rollback_image(old_image)
                     .expect("captured inert image restores the exact prior Product owner");
                 self.executor.install_after_restore(rollback);

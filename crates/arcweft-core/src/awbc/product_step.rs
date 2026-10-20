@@ -1758,11 +1758,28 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
         let previous_program = std::mem::replace(&mut self.program, program);
-        let observations = match self.validate_snapshot(&snapshot) {
+        if let Err(error) = self.validate_snapshot(&snapshot) {
+            self.program = previous_program;
+            return Err(error);
+        }
+        // Observation values may be affine. Drop their previous live owner
+        // before binding the admitted inert image to the replacement Source.
+        drop(std::mem::take(&mut self.facade_fiber.frame.observations));
+        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        let observations = match snapshot
+            .observations
+            .clone()
+            .into_admitted_live_for_program(&owner)
+        {
             Ok(observations) => observations,
-            Err(error) => {
+            Err(message) => {
                 self.program = previous_program;
-                return Err(error);
+                let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+                self.facade_fiber.frame.observations = snapshot
+                    .observations
+                    .into_admitted_live_for_program(&owner)
+                    .expect("the original admitted observation image remains restorable");
+                return Err(AwbcProductStepBuildError::RestoreSnapshot { message });
             }
         };
         self.facade_fiber.frame.observations = observations;

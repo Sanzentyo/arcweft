@@ -13,7 +13,6 @@ use crate::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskExitPolicy, LineTaskLiveSnapshot,
     LineTaskLiveState, LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag, ScopeExit,
 };
-use crate::observation::RuntimeObservationState;
 use crate::runtime_id::{
     DialogueActivationId, RuntimeDialogueEffectCallbackActivationId, RuntimeLineHandleToken,
     RuntimeLineTaskNodeId, RuntimePersistentFiberId,
@@ -1794,6 +1793,11 @@ impl AwbcProductExecutorSnapshot {
                 }
             })?;
         }
+        if snapshot.fiber.instance.get() != std::num::NonZeroU64::MIN {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "Product main fiber does not own the initial fiber identity".to_owned(),
+            });
+        }
         let mut fiber_instances = BTreeSet::new();
         for fiber in std::iter::once(&snapshot.fiber)
             .chain(snapshot.child_fibers.iter().map(|child| &child.fiber))
@@ -3241,44 +3245,53 @@ impl AwbcProductStepExecutor {
 
     /// Restores the complete inert executor while retaining producer identity.
     pub fn restore_rollback_image(
-        &mut self,
+        self,
         image: AwbcProductExecutorSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
+    ) -> Result<Self, (Self, AwbcProductStepBuildError)> {
         self.restore_snapshot_transaction(image, crate::task::NeedProducerRestorePolicy::Rollback)
     }
 
-    fn restore_snapshot_transaction(
-        &mut self,
+    pub(crate) fn restore_snapshot_transaction(
+        self,
         image: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        self.validate_snapshot(&image)?;
-        let rollback =
-            self.snapshot()
-                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                    message: error.to_string(),
-                })?;
-        let admitted = self.program.clone();
-        let origin = self.fiber.root;
-        let quantum = self.fiber.budget.quantum;
-        let generation = self.runtime_generation;
-        let format_context = self.format_context.clone();
-        let build = || {
-            let mut shell = Self::for_admitted_root(admitted.clone(), origin, quantum, generation)?;
-            shell.format_context = format_context.clone();
-            Ok::<_, AwbcProductStepBuildError>(shell)
-        };
-        let shell = build()?;
-        drop(std::mem::replace(self, shell));
-        match self.install_snapshot(image, policy) {
-            Ok(()) => Ok(()),
+    ) -> Result<Self, (Self, AwbcProductStepBuildError)> {
+        if let Err(error) = self.validate_snapshot(&image) {
+            return Err((self, error));
+        }
+        let rollback = match self.snapshot() {
+            Ok(snapshot) => snapshot,
             Err(error) => {
-                let shell =
-                    build().expect("the original admitted executor shell remains constructible");
-                drop(std::mem::replace(self, shell));
-                self.install_snapshot(rollback, crate::task::NeedProducerRestorePolicy::Rollback)
-                    .expect("the original complete inert executor image remains restorable");
-                Err(error)
+                return Err((
+                    self,
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: error.to_string(),
+                    },
+                ));
+            }
+        };
+        let admitted = self.program.clone();
+        let fingerprint = self.artifact_fingerprint;
+        let format_context = self.format_context.clone();
+        drop(self);
+        match Self::from_admitted_snapshot(
+            admitted.clone(),
+            fingerprint,
+            format_context.clone(),
+            image,
+            policy,
+        ) {
+            Ok(executor) => Ok(executor),
+            Err(error) => {
+                let original = Self::from_admitted_snapshot(
+                    admitted,
+                    fingerprint,
+                    format_context,
+                    rollback,
+                    crate::task::NeedProducerRestorePolicy::Rollback,
+                )
+                .expect("the original complete inert executor image remains restorable");
+                Err((original, error))
             }
         }
     }
@@ -3307,13 +3320,10 @@ impl AwbcProductStepExecutor {
     /// retaining its original Source leases. Failure rebuilds the original
     /// executor from the same internal snapshot grammar.
     pub fn restore_snapshot_owned(
-        mut self,
+        self,
         saved: AwbcProductExecutorSnapshot,
     ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
-        match self.restore_snapshot(saved) {
-            Ok(()) => Ok(self),
-            Err(error) => Err((self, error)),
-        }
+        self.restore_snapshot_transaction(saved, crate::task::NeedProducerRestorePolicy::Resume)
     }
 
     /// Visits values in the one live executor graph without materializing a
@@ -3570,22 +3580,15 @@ impl AwbcProductStepExecutor {
         })
     }
 
-    pub fn restore_snapshot(
-        &mut self,
-        snapshot: AwbcProductExecutorSnapshot,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        self.restore_snapshot_transaction(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
-    }
-
-    fn install_snapshot(
-        &mut self,
+    pub(super) fn from_admitted_snapshot(
+        program: super::AwbcProductProgram,
+        fingerprint: crate::effect::RuntimeArtifactFingerprint,
+        format_context: crate::value::RuntimeFormatContext,
         snapshot: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        let observations = self.validate_snapshot(&snapshot)?;
+    ) -> Result<Self, AwbcProductStepBuildError> {
         let mut snapshot = snapshot;
-        let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        self.root = None;
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let root = snapshot
             .root
             .take()
@@ -3614,9 +3617,10 @@ impl AwbcProductStepExecutor {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid root fiber snapshot: {error}"),
             })?;
-        self.fiber = fiber;
-        drop(std::mem::take(&mut self.child_fibers));
-        self.child_fibers = snapshot
+        let mut executor =
+            Self::for_fiber(program, fiber, fingerprint, snapshot.runtime_generation);
+        executor.format_context = format_context;
+        executor.child_fibers = snapshot
             .child_fibers
             .into_iter()
             .map(|child| {
@@ -3636,45 +3640,49 @@ impl AwbcProductStepExecutor {
             .collect::<Result<Vec<_>, String>>()
             .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?
             .into();
-        self.dialogue_effect_callback_activations = snapshot.dialogue_effect_callback_activations;
-        self.entry_bound = snapshot.entry_bound;
-        drop(std::mem::take(&mut self.dialogues));
-        self.dialogues = self.restore_dialogue_store(snapshot.dialogues)?;
-        self.active_choice = snapshot
+        executor.dialogue_effect_callback_activations =
+            snapshot.dialogue_effect_callback_activations;
+        executor.entry_bound = snapshot.entry_bound;
+        executor.dialogues = executor.restore_dialogue_store(snapshot.dialogues)?;
+        executor.active_choice = snapshot
             .active_choice
-            .map(|active| self.restore_active_choice(active))
+            .map(|active| executor.restore_active_choice(active))
             .transpose()?;
-        self.pending_host_call = snapshot.pending_host_call.map(|pending| PendingHostCall {
+        executor.pending_host_call = snapshot.pending_host_call.map(|pending| PendingHostCall {
             call: pending.call,
             id: RuntimeHostCallId(pending.id),
         });
-        self.started_tasks = snapshot.started_tasks;
-        self.task_publications = snapshot.task_publications;
-        self.need_publications = snapshot.need_publications;
-        self.need_producers = NeedProducerRegistry::default();
-        self.need_producers
+        executor.started_tasks = snapshot.started_tasks;
+        executor.task_publications = snapshot.task_publications;
+        executor.need_publications = snapshot.need_publications;
+        executor.need_producers = NeedProducerRegistry::default();
+        executor
+            .need_producers
             .restore_admitted_registry_with_policy(need_producers, policy)
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: format!("invalid Need producer registry snapshot: {error}"),
             })?;
-        self.queued_task_events = queued_task_events;
-        self.emitted_content = snapshot.emitted_content;
-        self.stream_sequences = snapshot.stream_sequences;
-        self.next_generation = snapshot.next_generation;
-        self.next_fiber_instance = snapshot.next_fiber_instance;
-        self.dialogue_occurrences = snapshot
+        executor.queued_task_events = queued_task_events;
+        executor.emitted_content = snapshot.emitted_content;
+        executor.stream_sequences = snapshot.stream_sequences;
+        executor.next_generation = snapshot.next_generation;
+        executor.next_fiber_instance = snapshot.next_fiber_instance;
+        executor.dialogue_occurrences = snapshot
             .dialogue_occurrences
             .into_iter()
             .map(|row| ((row.owner, row.content), row.next))
             .collect();
-        self.next_host_call_sequence = snapshot.next_host_call_sequence;
-        self.next_audio_sequence = snapshot.next_audio_sequence;
-        self.compact_pure_stats = snapshot.compact_pure_stats;
-        self.root = root;
-        self.facade_fiber.frame.observations = observations;
-        self.rebuild_facade_stream_states_from_compact();
-        self.sync_facade();
-        Ok(())
+        executor.next_host_call_sequence = snapshot.next_host_call_sequence;
+        executor.next_audio_sequence = snapshot.next_audio_sequence;
+        executor.compact_pure_stats = snapshot.compact_pure_stats;
+        executor.root = root;
+        executor.facade_fiber.frame.observations = snapshot
+            .observations
+            .into_admitted_live_for_program(&program_owner)
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+        executor.rebuild_facade_stream_states_from_compact();
+        executor.sync_facade();
+        Ok(executor)
     }
 
     fn restore_dialogue_store(
@@ -3782,7 +3790,7 @@ impl AwbcProductStepExecutor {
     pub(super) fn validate_snapshot(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
-    ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
+    ) -> Result<(), AwbcProductStepBuildError> {
         use crate::awbc::fiber::AwbcFiberRoot;
         let same_entry_phase = snapshot.fiber.root.entry().is_some()
             && snapshot.fiber.root.entry() == self.fiber.root.entry()
@@ -3808,12 +3816,7 @@ impl AwbcProductStepExecutor {
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
-        snapshot.admit_retained(&owner, &mut admission)?;
-        snapshot
-            .observations
-            .clone()
-            .into_admitted_live_for_program(&owner)
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })
+        snapshot.admit_retained(&owner, &mut admission)
     }
     fn restore_active_choice(
         &self,

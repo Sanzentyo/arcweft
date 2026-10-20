@@ -494,7 +494,7 @@ mod tests {
         ));
         drop(executor);
         let mut restored = AwbcProductStepExecutor::for_entry_arc(raw, AwbcEntryId(0), 64).unwrap();
-        restored.restore_snapshot(image.clone()).unwrap();
+        restored = restored.restore_snapshot_owned(image.clone()).unwrap();
         assert_eq!(restored.inert_rollback_image().unwrap(), image);
         let done = restored.step(crate::step::RuntimeStepInput::default(), options(1));
         assert_eq!(done.stats.executed_ops, 1);
@@ -523,13 +523,13 @@ mod tests {
         let original = executor.inert_rollback_image().unwrap();
         let mut missing = original.clone();
         missing.child_fibers.clear();
-        assert!(executor.restore_rollback_image(missing).is_err());
+        let (executor, _) = executor.restore_rollback_image(missing).unwrap_err();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         let mut duplicate = original.clone();
         duplicate
             .child_fibers
             .push(duplicate.child_fibers[0].clone());
-        assert!(executor.restore_rollback_image(duplicate).is_err());
+        let (executor, _) = executor.restore_rollback_image(duplicate).unwrap_err();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
     }
 
@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(original.child_fibers.len(), 1);
         let mut invalid = original.clone();
         invalid.next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
-        assert!(executor.restore_rollback_image(invalid).is_err());
+        let (mut executor, _) = executor.restore_rollback_image(invalid).unwrap_err();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         for instance in [
             original.fiber.instance,
@@ -564,10 +564,24 @@ mod tests {
         ] {
             let mut invalid = original.clone();
             invalid.child_fibers[0].fiber.instance = instance;
-            assert!(executor.restore_rollback_image(invalid).is_err());
+            let (recovered, _) = executor.restore_rollback_image(invalid).unwrap_err();
+            executor = recovered;
             assert_eq!(executor.inert_rollback_image().unwrap(), original);
         }
-        executor.restore_rollback_image(original.clone()).unwrap();
+        let mut invalid = original.clone();
+        std::mem::swap(
+            &mut invalid.fiber.instance,
+            &mut invalid.child_fibers[0].fiber.instance,
+        );
+        let (recovered, error) = executor.restore_rollback_image(invalid).unwrap_err();
+        executor = recovered;
+        assert!(matches!(
+            error,
+            AwbcProductStepBuildError::RestoreSnapshot { ref message }
+                if message.contains("main fiber")
+        ));
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        executor = executor.restore_rollback_image(original.clone()).unwrap();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         let mut invalid = original.clone();
         invalid.root = None;
@@ -680,9 +694,10 @@ mod tests {
         let before = executor.inert_rollback_image().unwrap();
         let mut invalid = before.clone();
         invalid.root = Some(pending);
+        let (executor, error) = executor.restore_snapshot_owned(invalid).unwrap_err();
         assert!(matches!(
-            executor.restore_snapshot(invalid),
-            Err(AwbcProductStepBuildError::RestoreSnapshot { .. })
+            error,
+            AwbcProductStepBuildError::RestoreSnapshot { .. }
         ));
         assert_eq!(executor.inert_rollback_image().unwrap(), before);
     }

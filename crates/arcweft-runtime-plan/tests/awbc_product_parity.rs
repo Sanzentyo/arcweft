@@ -1104,13 +1104,10 @@ fn dense_constants_preserve_exact_bits_in_native_decoded_awbc_and_saved_results(
         .unwrap();
         let bytes = serde_json::to_vec(&save).unwrap();
         let decoded_save: AwbcProductExecutorSaveSnapshot = serde_json::from_slice(&bytes).unwrap();
-        executor
-            .restore_snapshot(
-                decoded_save
-                    .into_live_for_program(executor.admitted_program())
-                    .unwrap(),
-            )
+        let snapshot = decoded_save
+            .into_live_for_program(executor.admitted_program())
             .unwrap();
+        executor = executor.restore_snapshot_owned(snapshot).unwrap();
         let (returned_id, value) = executor.take_program_result().unwrap().unwrap();
         assert_eq!(returned_id, id);
         assert_dense_bits(&value, ty, &f32_bits, &f64_bits);

@@ -975,8 +975,8 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
         64,
     )
     .expect("restore candidate starts against the same AWBC program");
-    restored
-        .restore_snapshot(snapshot)
+    restored = restored
+        .restore_snapshot_owned(snapshot)
         .expect("product snapshot admits the completed AWBC Mark source");
     assert!(matches!(
         restored.dialogues.active_line().expect("restored line").result(),
@@ -1415,8 +1415,8 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let restored_snapshot = save
         .into_live_for_program(executor.admitted_program())
         .expect("suspended activation host call decodes");
-    executor
-        .restore_snapshot(restored_snapshot)
+    executor = executor
+        .restore_snapshot_owned(restored_snapshot)
         .expect("activation host call restores with its suspended fiber");
 
     let (_, repeated_output) =
@@ -1510,8 +1510,8 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
     let restored_snapshot = save
         .into_live_for_program(executor.admitted_program())
         .expect("reached lexical defer packet decodes");
-    executor
-        .restore_snapshot(restored_snapshot)
+    executor = executor
+        .restore_snapshot_owned(restored_snapshot)
         .expect("lexical scope and defer packet restore together");
     {
         let transaction = executor
@@ -1793,10 +1793,10 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         );
         let mut unpaired = product_snapshot(executor);
         unpaired.child_fibers[0].owner = super::AwbcProductChildFiberOwnerSnapshot::Independent;
-        let mut rejected =
+        let rejected =
             AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
                 .expect("unpaired restore candidate starts");
-        assert!(rejected.restore_snapshot(unpaired).is_err());
+        assert!(rejected.restore_snapshot_owned(unpaired).is_err());
 
         let save = AwbcProductExecutorSaveSnapshot::from_live(
             &product_snapshot(executor),
@@ -1809,8 +1809,8 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
         let mut restored =
             AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
                 .expect("paired restore candidate starts");
-        restored
-            .restore_snapshot(restored_snapshot)
+        restored = restored
+            .restore_snapshot_owned(restored_snapshot)
             .expect("inflight defer restores only with its exact child owner");
         *executor = restored;
 
@@ -2255,8 +2255,8 @@ fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
 
     let mut tampered = snapshot;
     tampered.live_flow_bindings[0].flow = replacement;
-    let error = executor
-        .restore_snapshot(tampered)
+    let (executor, error) = executor
+        .restore_snapshot_owned(tampered)
         .expect_err("snapshot identity must not be inferred from a matching public label");
     assert!(matches!(
         error,
@@ -2320,8 +2320,8 @@ fn snapshot_restore_rejects_same_label_choice_target_substitution() {
         .expect("active choice")
         .option_indices[0] = 1;
 
-    let error = executor
-        .restore_snapshot(snapshot)
+    let (executor, error) = executor
+        .restore_snapshot_owned(snapshot)
         .expect_err("same-label target substitution must not restore");
     assert!(matches!(
         error,
@@ -4447,7 +4447,8 @@ fn host_suspension_admits_original_site_and_arguments_before_restore() {
                 crate::value::AwbcRuntimeValueSnapshotError::from(FiberStateError::InvalidFrame)
             );
         }
-        assert!(executor.restore_snapshot(snapshot).is_err());
+        let (recovered, _) = executor.restore_snapshot_owned(snapshot).unwrap_err();
+        executor = recovered;
         assert_eq!(
             product_snapshot(&executor),
             before,
@@ -4629,7 +4630,7 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
         panic!("typed Need remains suspended");
     };
     *item_type = AwbcTypeId(1);
-    assert!(executor.restore_snapshot(tampered).is_err());
+    let (executor, _) = executor.restore_snapshot_owned(tampered).unwrap_err();
 
     let snapshot = product_snapshot(&executor);
     let saved = AwbcProductExecutorSaveSnapshot::from_live(
@@ -4799,8 +4800,8 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
             sequence: TaskSequence(3),
         },
     );
-    let error = executor
-        .restore_snapshot(future_observation)
+    let (executor, error) = executor
+        .restore_snapshot_owned(future_observation)
         .expect_err("a waiter cannot claim a producer revision it has not accepted");
     assert!(matches!(
         error,
@@ -4827,8 +4828,8 @@ fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revisio
         generation,
     )
     .expect("restore executor starts");
-    restored
-        .restore_snapshot(restored_live)
+    restored = restored
+        .restore_snapshot_owned(restored_live)
         .expect("Restartable launch and publication revision restore");
     assert!(restored.restartable_dispatches().iter().any(|dispatch| {
         dispatch.submission.task_id() == task_spec.task_id() && dispatch.needs_reensure
@@ -4995,8 +4996,8 @@ fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
     forged.need_producers.launches[0].state = crate::task::RuntimeNeedProducerState::Ready(
         crate::value::AwbcRuntimeValueSnapshot::Bool(true),
     );
-    let error = accepted
-        .restore_snapshot(forged)
+    let (_accepted, error) = accepted
+        .restore_snapshot_owned(forged)
         .expect_err("restored Ready payload must match its selected Need<T>");
     assert!(
         matches!(
@@ -5055,8 +5056,8 @@ fn await_many_admission_frontier_survives_product_save_restore_and_rebind() {
         .into_live_for_program(executor.admitted_program())
         .expect("program-bound restore");
     let mut restored = await_many_executor(&program, await_many_items(), generation);
-    restored
-        .restore_snapshot(restored_live)
+    restored = restored
+        .restore_snapshot_owned(restored_live)
         .expect("accepted receipts restore");
     let next_generation = GenerationId::new(8);
     restored
@@ -5171,8 +5172,8 @@ fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
         .into_live_for_program(executor.admitted_program())
         .expect("partial AwaitMany continuation restores");
     let mut restored = await_many_executor(&program, items, generation);
-    restored
-        .restore_snapshot(restored_live)
+    restored = restored
+        .restore_snapshot_owned(restored_live)
         .expect("partial AwaitMany identity and links validate");
 
     let ready = producer_task_event(
@@ -6935,8 +6936,8 @@ fn blocked_defer_front_keeps_running_tail_and_host_resume_within_the_caller_budg
     let mut restored =
         AwbcProductStepExecutor::for_entry_arc(executor.program_arc(), AwbcEntryId(0), 64)
             .expect("restore destination starts");
-    restored
-        .restore_snapshot(restored_snapshot)
+    restored = restored
+        .restore_snapshot_owned(restored_snapshot)
         .expect("exact paired owners install");
     let blocked_child = product_snapshot(&executor).child_fibers.remove(0);
     let drain = RuntimeStepOptions {
