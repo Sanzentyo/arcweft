@@ -23349,3 +23349,51 @@ Its restore_rollback_image currently clears self.root before fallible product
 restore; finish failure atomic ownership as part of that migration. Existing
 restore_snapshot_owned already captures/drops/rebuilds the sole live owner and
 provides the established ownership pattern. No AWBC source edit has landed yet.
+Fixture checkpoint `941494f5de0aa66967dc352dd766f712b2392a1e` was published and
+verified against fresh advertised main:all4 blobs,3939 inputs, held14, parent/
+tree/raw patch, zero drift and empty index; baseline advanced with owned0.
+Parent `261e5e9018bf51c7e747114a780cade27ff03130`, tree
+`f8a486063e6293db73b2aedfdd2e1699947670f9`, patch SHA256
+`7c488f32ea5d71e751a4fde751748f9d3653bb50731d90e8a909d56c1ad5f7cc`.
+
+R1901 passed all41 compiler cases, zero skipped,1.793s; exact prior catalog keys
+and3938 frozen runtime/spec inputs matched, held14 unchanged. R1902 workspace
+all-target/all-feature/locked check passed in3m35s. R1903 ordinary workspace
+Clippy passed in5m09s, warnings remain; strict Clippy is still open. R1904 checked
+Core, runtime-driver and render-web for wasm32-unknown-unknown, all targets/
+features/locked, and passed in3m26s. This is compilation, not browser execution
+or visual parity. R1905 structure passed:3160 files,3030 Rust files,1723271
+physical Rust LOC,97 packages,376 triggers, zero blocking violations. All four
+check/lint/structure audits match3938 runtime/spec inputs with held14 unchanged.
+These supersede their pending statuses, not the remaining acceptance. Next is
+the native reducer checkpoint-admission failure/trapped-frame regression and
+complete retained/allocator admission, followed by AWBC real reducer frames and
+failure-atomic restore. The complete original goal remains active.
+The next native failure repair is now implemented, validation pending on R1906:
+when whole-executor rollback admission rejects a selected Root child before its
+VM operation, the child frame is dropped, Root complete_reduction receives the
+actual failure and publishes Trapped, then the main executor fails. This removes
+the stranded Evaluating child; normal child owners retain their existing path.
+The new regression uses an invalid retained foreground value against its real
+Flow-state formal, checks zero backend calls, old committed state, no commands,
+no child/queued events, a Root inert image that remains admissible, and no later
+reexecution. It exercises the common checkpoint rejection path, not a complete
+prospective quota proof. Exact pre-copy admission of the complete future graph
+and allocator identity validation remain open. In particular, dialogue store/
+frame rollback currently creates its own admission banks; do not call an extracted
+Engine-only preflight a complete unified future-graph bank without migrating
+those owners too. No whole-goal completion is claimed.
+R1906 discovered2136 Core/driver cases, all matched, including the new checkpoint
+rejection regression. R1907 passed every2136 case, zero skipped,143.986s (the API
+compile case113.840s). Exact terminal keys and3938 runtime/spec hashes match,
+held14 unchanged. The failed main-frame admission now produces exactly one Root
+trap, drops its frame and queued events, retains committed state, invokes no
+backend and performs no later VM work. R1908 ordinary Core all-target/all-feature/
+locked Clippy passed in1m58s with warnings; strict acceptance remains open. R1909
+structure passed:3160 files,3030 Rust files,1723358 physical Rust LOC,97 packages,
+376 triggers, zero blocking violations. Both input audits match3938 frozen inputs.
+This error-path cut adds no public type/ABI/dependency/target configuration change;
+the prior compiler41/workspace/wasm results apply to941494, and are not relabeled
+as new executions of this later patch. Complete prospective retained admission,
+allocator identities, AWBC migration and all other original acceptance remain
+unfinished. The complete original goal stays active.

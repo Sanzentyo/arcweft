@@ -3961,13 +3961,40 @@ impl Engine {
         if self.child_fibers.is_empty() {
             return false;
         }
-        let image = match self.inert_rollback_image() {
-            Ok(image) => image,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return true;
-            }
-        };
+        let image =
+            match self.inert_rollback_image() {
+                Ok(image) => image,
+                Err(error) => {
+                    if self.child_fibers.front().is_some_and(|child| {
+                        matches!(child.owner, FlowFiberOwner::RootReducer { .. })
+                    }) {
+                        let FlowFiber {
+                            frame,
+                            owner: FlowFiberOwner::RootReducer { entry },
+                            ..
+                        } = self
+                            .child_fibers
+                            .pop_front()
+                            .expect("selected Root child remains owned")
+                        else {
+                            unreachable!("selected child has its Root reducer owner")
+                        };
+                        drop(frame);
+                        if let Err(root_error) = self.finish_root_reduction(
+                            &entry,
+                            Err(RootCallableEvaluationError::new(error.clone())),
+                            output,
+                        ) {
+                            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                                RuntimeDiagnosticCategory::Internal,
+                                root_error,
+                            ));
+                        }
+                    }
+                    self.fail_eval(error, output);
+                    return true;
+                }
+            };
         let mut candidate = std::mem::replace(
             self,
             Self::new_with_shared_plan(Arc::clone(&self.plan), self.generation),

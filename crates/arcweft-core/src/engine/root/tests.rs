@@ -228,6 +228,66 @@ fn native_reducer_backend_trap_keeps_committed_state_and_removes_active_frame() 
 }
 
 #[test]
+fn native_reducer_checkpoint_rejection_traps_without_running_or_stranding_its_frame() {
+    let (plan, mut engine) = fixture();
+    let state_identity = engine.root().unwrap().roles().state.semantic_identity;
+    let local = plan
+        .function_sites()
+        .iter()
+        .flat_map(|function| function.parameter_inputs())
+        .find(|input| {
+            let declaration = plan.local_declarations().get(input.input_local()).unwrap();
+            plan.type_table()
+                .get(declaration.ty())
+                .unwrap()
+                .semantic_identity()
+                == state_identity
+        })
+        .unwrap()
+        .input_local();
+    engine.fiber.frame.env.set_root(
+        local,
+        RuntimeValue::String("invalid retained foreground value".to_owned()),
+    );
+    assert!(engine.inert_rollback_image().is_err());
+    let committed = engine
+        .root()
+        .unwrap()
+        .active()
+        .phase
+        .state_value()
+        .unwrap()
+        .clone();
+    let calls = Rc::new(Cell::new(0));
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(ReducerBackend {
+        plan: Arc::clone(&plan),
+        calls: Rc::clone(&calls),
+        fail: false,
+    });
+    let step = engine.step_with_pure_backend(input(&plan, 2), options(64), &mut backend);
+    assert_eq!(step.stop_reason, RuntimeStepStopReason::Failed);
+    assert!(
+        matches!(&step.output.root_transitions[..], [RootTransitionOutcome::Trapped { sequence, .. }] if sequence.get() == 0)
+    );
+    assert!(step.output.root_commands.is_empty());
+    assert_eq!(calls.get(), 0);
+    assert!(engine.child_fibers.is_empty());
+    let root = engine.root().unwrap();
+    assert_eq!(root.active().phase.state_value(), Some(&committed));
+    assert!(!root.active().reducer_active());
+    assert_eq!(root.active().pending_event_count(), 0);
+    assert!(root.failure().is_some());
+    root.inert_rollback_image(&RuntimeProgramOwner::Plan(Arc::clone(&plan)))
+        .unwrap();
+    let failed =
+        engine.step_with_pure_backend(RuntimeStepInput::default(), options(64), &mut backend);
+    assert_eq!(failed.stop_reason, RuntimeStepStopReason::Failed);
+    assert_eq!(failed.stats.executed_ops, 0);
+    assert!(failed.output.root_transitions.is_empty());
+    assert_eq!(calls.get(), 0);
+}
+
+#[test]
 fn native_reducer_frame_allocation_failure_traps_before_execution() {
     let (plan, mut engine) = fixture();
     let committed = engine
