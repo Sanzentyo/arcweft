@@ -1107,24 +1107,37 @@ fn session_restore_preflights_root_presence_and_preserves_executor() {
     let mut session = product_session_from_bytes(&bytes);
     let before = session.snapshot_session().unwrap();
     let original = exported_session_json(&session);
-    assert!(before.root.is_none());
-    let mut invalid = session
-        .snapshot_session()
-        .expect("independent rejection candidate");
-    invalid.root = Some(arcweft_core::root::RootStateSnapshotV1 {
-        state_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.State").unwrap(),
-        state_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
-        event_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.Event").unwrap(),
-        event_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
-        phase: arcweft_core::root::RootPhase::Initialized {
-            value: arcweft_core::value::RuntimePayload(RuntimeValue::Unit),
-            reducer: arcweft_core::root::RootReducerPhase::Ready,
-        },
-        next_sequence: arcweft_core::root::TransitionSequence::from_u64(0),
-    });
-    let error = session.restore_session_snapshot(invalid).unwrap_err();
-    assert!(matches!(error, BundleSessionSaveError::Root { message }
+    assert!(before.executor.state.root.is_none());
+    let mut invalid = original.clone();
+    invalid["executor"]["state"]["root"] =
+        serde_json::to_value(arcweft_core::root::RootStateSaveSnapshotV1 {
+            state_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.State")
+                .unwrap(),
+            state_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
+            event_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.Event")
+                .unwrap(),
+            event_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
+            phase: arcweft_core::root::RootPhase::Initialized {
+                value: arcweft_core::value::AwbcRuntimeValueSnapshot::Unit,
+                reducer: arcweft_core::root::RootReducerPhase::Ready,
+            },
+            next_sequence: arcweft_core::root::TransitionSequence::from_u64(0),
+        })
+        .unwrap();
+    let mut visited = false;
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &encode_session_json_value(&invalid),
+            &arcweft_save::SaveDecodeOptions::default(),
+            |_| {
+                visited = true;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+    assert!(matches!(error, BundleSessionSaveError::Decode { message }
         if message.contains("root presence")));
+    assert!(!visited);
     assert_eq!(session.snapshot_session().unwrap(), before);
     assert_eq!(exported_session_json(&session), original);
 }

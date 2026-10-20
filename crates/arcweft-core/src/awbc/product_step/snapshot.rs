@@ -356,6 +356,7 @@ impl ProductChildFiberOwner {
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductExecutorSnapshot {
+    pub root: Option<crate::root::RootRuntimeRollbackImage>,
     pub runtime_generation: crate::task::GenerationId,
     pub fiber: AwbcFiberStateSnapshot,
     pub child_fibers: Vec<AwbcProductChildFiberSnapshot>,
@@ -391,6 +392,7 @@ pub struct AwbcProductExecutorSnapshot {
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductExecutorSaveSnapshot {
+    pub root: Option<crate::root::RootStateSaveSnapshotV1>,
     pub runtime_generation: crate::task::GenerationId,
     pub fiber: AwbcFiberStateSnapshot,
     pub child_fibers: Vec<AwbcProductChildFiberSaveSnapshot>,
@@ -418,14 +420,6 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub next_audio_sequence: u64,
     pub compact_pure_stats: crate::step::RuntimePureCallStats,
     pub observations: crate::observation::RuntimeObservationSaveSnapshot,
-}
-
-/// Inert rollback image of the complete AWBC Product owner, including the
-/// root transaction which is intentionally persisted by its separate schema.
-#[derive(Clone, Debug, PartialEq)]
-pub struct AwbcProductExecutorRollbackImage {
-    pub product: AwbcProductExecutorSnapshot,
-    pub root: Option<crate::root::RootRuntimeRollbackImage>,
 }
 
 /// One waiter-scoped Need publication cursor. This is a row instead of a
@@ -1670,6 +1664,13 @@ fn snapshot_active_dialogue(
 }
 
 impl AwbcProductExecutorSnapshot {
+    pub fn active_entry_snapshot_identity(
+        &self,
+        program: &crate::awbc::schema::AwbcProgram,
+    ) -> Result<crate::entry::ActiveEntrySnapshotV1, crate::root::RootRuntimeError> {
+        self.fiber.root.active_entry_snapshot_identity(program)
+    }
+
     /// Inspects inert values directly, retaining storage provenance and the
     /// original Source leases without projecting a wire image or live owner.
     pub fn visit_borrowed_runtime_values<E>(
@@ -1682,6 +1683,9 @@ impl AwbcProductExecutorSnapshot {
                 &mut visit,
             )
         };
+        if let Some(owner) = &self.root {
+            owner.visit_stored_value_roots(&mut root)?;
+        }
         self.fiber.visit_saved_value_roots(&mut root)?;
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut root)?;
@@ -1700,7 +1704,7 @@ impl AwbcProductExecutorSnapshot {
     }
 
     /// Admits the complete original-program image before copying or activating any value.
-    fn admit_retained(
+    pub fn admit_retained(
         &self,
         owner: &crate::task::RuntimeProgramOwner,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -1758,6 +1762,38 @@ impl AwbcProductExecutorSnapshot {
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
+        snapshot
+            .fiber
+            .root
+            .admit_executor_roots(
+                snapshot.root.as_ref(),
+                program,
+                snapshot.child_fibers.iter().map(|child| {
+                    (
+                        child.fiber.root,
+                        child.fiber.status,
+                        matches!(child.owner, AwbcProductChildFiberOwnerSnapshot::Independent),
+                        matches!(
+                            child
+                                .fiber
+                                .suspension
+                                .as_ref()
+                                .map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        ),
+                    )
+                }),
+            )
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
+        if let Some(root) = &snapshot.root {
+            root.admit_retained(admission).map_err(|error| {
+                AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
+        }
         let mut fiber_instances = BTreeSet::new();
         for fiber in std::iter::once(&snapshot.fiber)
             .chain(snapshot.child_fibers.iter().map(|child| &child.fiber))
@@ -2729,6 +2765,9 @@ impl AwbcProductExecutorSaveSnapshot {
         &self,
         visit: &mut impl FnMut(&AwbcRuntimeValueSnapshot) -> Result<(), E>,
     ) -> Result<(), E> {
+        if let Some(value) = self.root.as_ref().and_then(|root| root.phase.state_value()) {
+            visit(value)?;
+        }
         self.fiber.visit_saved_value_roots(&mut *visit)?;
         for child in &self.child_fibers {
             child.fiber.visit_saved_value_roots(&mut *visit)?;
@@ -2798,8 +2837,17 @@ impl AwbcProductExecutorSaveSnapshot {
     pub(crate) fn from_admitted(
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<Self, AwbcProductSaveError> {
+        let root = snapshot
+            .root
+            .as_ref()
+            .map(crate::root::RootStateSaveSnapshotV1::from_runtime_image)
+            .transpose()
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
         let dialogues = snapshot.dialogues.clone();
         Ok(Self {
+            root,
             runtime_generation: snapshot.runtime_generation,
             fiber: snapshot.fiber.clone(),
             child_fibers: snapshot
@@ -2858,6 +2906,18 @@ impl AwbcProductExecutorSaveSnapshot {
         program: &super::AwbcProductProgram,
     ) -> Result<AwbcProductExecutorSnapshot, String> {
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
+        let root = self
+            .root
+            .map(|root| {
+                let active = self
+                    .fiber
+                    .root
+                    .active_entry_snapshot_identity(program)
+                    .map_err(|error| error.to_string())?;
+                root.into_runtime_image(&active, &owner)
+                    .map_err(|error| error.to_string())
+            })
+            .transpose()?;
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
@@ -2889,6 +2949,7 @@ impl AwbcProductExecutorSaveSnapshot {
         }
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
+            root,
             runtime_generation: self.runtime_generation,
             fiber: self.fiber,
             child_fibers: self
@@ -3174,97 +3235,29 @@ fn expected_deferred_children(
 impl AwbcProductStepExecutor {
     pub fn inert_rollback_image(
         &self,
-    ) -> Result<AwbcProductExecutorRollbackImage, AwbcProductSaveError> {
-        self.fiber
-            .root
-            .admit_executor_roots(
-                self.root.as_ref(),
-                &self.program,
-                self.child_fibers.iter().map(|child| {
-                    (
-                        child.fiber.root,
-                        child.fiber.status,
-                        matches!(child.owner, ProductChildFiberOwner::Independent),
-                        matches!(
-                            child
-                                .fiber
-                                .suspension
-                                .as_ref()
-                                .map(|suspension| &suspension.reason),
-                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
-                        ),
-                    )
-                }),
-            )
-            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
-                message: error.to_string(),
-            })?;
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let root = self
-            .root
-            .as_ref()
-            .map(|root| {
-                root.inert_rollback_image(&owner)
-                    .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })
-            })
-            .transpose()?;
-        Ok(AwbcProductExecutorRollbackImage {
-            product: self.snapshot()?,
-            root,
-        })
+    ) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        self.snapshot()
     }
 
-    /// Replaces the complete executor from an admitted inert image. The old
-    /// live owner is dropped before restoration, and rebuilt on any failure.
+    /// Restores the complete inert executor while retaining producer identity.
     pub fn restore_rollback_image(
         &mut self,
-        image: AwbcProductExecutorRollbackImage,
+        image: AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
-            owner.clone(),
-            crate::entry::RuntimeSchemaLimits::engine_default(),
-        );
-        image
-            .product
-            .fiber
-            .root
-            .admit_executor_roots(
-                image.root.as_ref(),
-                &self.program,
-                image.product.child_fibers.iter().map(|child| {
-                    (
-                        child.fiber.root,
-                        child.fiber.status,
-                        matches!(child.owner, AwbcProductChildFiberOwnerSnapshot::Independent),
-                        matches!(
-                            child
-                                .fiber
-                                .suspension
-                                .as_ref()
-                                .map(|suspension| &suspension.reason),
-                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
-                        ),
-                    )
-                }),
-            )
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
-        if let Some(root) = &image.root {
-            root.admit_retained(&mut admission).map_err(|error| {
-                AwbcProductStepBuildError::RestoreSnapshot {
+        self.restore_snapshot_transaction(image, crate::task::NeedProducerRestorePolicy::Rollback)
+    }
+
+    fn restore_snapshot_transaction(
+        &mut self,
+        image: AwbcProductExecutorSnapshot,
+        policy: crate::task::NeedProducerRestorePolicy,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        self.validate_snapshot(&image)?;
+        let rollback =
+            self.snapshot()
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
-                }
-            })?;
-        }
-        image.product.admit_retained(&owner, &mut admission)?;
-        self.validate_snapshot_for_origin(&image.product, true)?;
-        let rollback = self.inert_rollback_image().map_err(|error| {
-            AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            }
-        })?;
+                })?;
         let admitted = self.program.clone();
         let origin = self.fiber.root;
         let quantum = self.fiber.budget.quantum;
@@ -3277,64 +3270,17 @@ impl AwbcProductStepExecutor {
         };
         let shell = build()?;
         drop(std::mem::replace(self, shell));
-        match self.install_rollback_image(image) {
+        match self.install_snapshot(image, policy) {
             Ok(()) => Ok(()),
             Err(error) => {
                 let shell =
                     build().expect("the original admitted executor shell remains constructible");
                 drop(std::mem::replace(self, shell));
-                self.install_rollback_image(rollback)
-                    .expect("the original inert executor image remains restorable");
+                self.install_snapshot(rollback, crate::task::NeedProducerRestorePolicy::Rollback)
+                    .expect("the original complete inert executor image remains restorable");
                 Err(error)
             }
         }
-    }
-
-    fn install_rollback_image(
-        &mut self,
-        image: AwbcProductExecutorRollbackImage,
-    ) -> Result<(), AwbcProductStepBuildError> {
-        image
-            .product
-            .fiber
-            .root
-            .admit_executor_roots(
-                image.root.as_ref(),
-                &self.program,
-                image.product.child_fibers.iter().map(|child| {
-                    (
-                        child.fiber.root,
-                        child.fiber.status,
-                        matches!(child.owner, AwbcProductChildFiberOwnerSnapshot::Independent),
-                        matches!(
-                            child
-                                .fiber
-                                .suspension
-                                .as_ref()
-                                .map(|suspension| &suspension.reason),
-                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
-                        ),
-                    )
-                }),
-            )
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
-                message: error.to_string(),
-            })?;
-        let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
-        // A fresh executor shell may already contain its startup root. Drop
-        // that live owner before materializing the inert root rollback image.
-        self.root = None;
-        let root = image
-            .root
-            .map(|image| crate::root::RootRuntime::from_rollback_image(image, &owner))
-            .transpose()
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
-        self.restore_snapshot_with_policy(
-            image.product,
-            crate::task::NeedProducerRestorePolicy::Rollback,
-        )?;
-        self.root = root;
-        Ok(())
     }
 
     /// Replaces this runnable executor from an inert save snapshot without
@@ -3361,64 +3307,12 @@ impl AwbcProductStepExecutor {
     /// retaining its original Source leases. Failure rebuilds the original
     /// executor from the same internal snapshot grammar.
     pub fn restore_snapshot_owned(
-        self,
+        mut self,
         saved: AwbcProductExecutorSnapshot,
     ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
-        let rollback = match self.inert_rollback_image() {
-            Ok(image) => image,
-            Err(error) => {
-                return Err((
-                    self,
-                    super::AwbcProductStepBuildError::RestoreSnapshot {
-                        message: error.to_string(),
-                    },
-                ));
-            }
-        };
-        let program = self.program_arc();
-        let admitted = self.program.clone();
-        let origin = self.fiber.root;
-        let budget_quantum = self.fiber.budget.quantum;
-        let original_generation = self.runtime_generation;
-        let format_context = self.format_context.clone();
-        let target_generation = saved.runtime_generation;
-        let old_root = rollback.root.clone();
-        drop(self);
-
-        let build = |generation| {
-            let mut executor = super::AwbcProductStepExecutor::for_admitted_root(
-                admitted.clone(),
-                origin,
-                budget_quantum,
-                generation,
-            )?;
-            executor.format_context = format_context.clone();
-            Ok::<_, super::AwbcProductStepBuildError>(executor)
-        };
-        let restored = (|| {
-            let mut executor = build(target_generation)?;
-            let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
-            executor.restore_snapshot(saved)?;
-            // `restore_snapshot` historically leaves root state untouched.
-            // Rebuild that same root from the inert image after dropping the
-            // fresh shell's startup root.
-            executor.root = None;
-            executor.root = old_root
-                .map(|image| crate::root::RootRuntime::from_rollback_image(image, &owner))
-                .transpose()
-                .map_err(|message| super::AwbcProductStepBuildError::RestoreSnapshot { message })?;
-            Ok::<_, super::AwbcProductStepBuildError>(executor)
-        })();
-        match restored {
-            Ok(executor) => Ok(executor),
-            Err(error) => {
-                let mut original = build(original_generation)
-                    .expect("the captured executor configuration remains constructible");
-                original
-                    .restore_rollback_image(rollback)
-                    .expect("an inert image captured from this executor restores to its program");
-                Err((original, error))
-            }
+        match self.restore_snapshot(saved) {
+            Ok(()) => Ok(self),
+            Err(error) => Err((self, error)),
         }
     }
 
@@ -3539,11 +3433,42 @@ impl AwbcProductStepExecutor {
         Ok((need_producers, queued_task_events))
     }
     pub fn snapshot(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        self.fiber
+            .root
+            .admit_executor_roots(
+                self.root.as_ref(),
+                &self.program,
+                self.child_fibers.iter().map(|child| {
+                    (
+                        child.fiber.root,
+                        child.fiber.status,
+                        matches!(child.owner, ProductChildFiberOwner::Independent),
+                        matches!(
+                            child
+                                .fiber
+                                .suspension
+                                .as_ref()
+                                .map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        ),
+                    )
+                }),
+            )
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
             owner.clone(),
             crate::entry::RuntimeSchemaLimits::engine_default(),
         );
+        if let Some(root) = &self.root {
+            root.admit_retained(&mut admission).map_err(|error| {
+                AwbcProductSaveError::InvalidSnapshot {
+                    message: error.to_string(),
+                }
+            })?;
+        }
         self.admit_fiber_state(&mut admission)?;
         self.admit_task_state(&mut admission)?;
         self.dialogues
@@ -3553,6 +3478,12 @@ impl AwbcProductStepExecutor {
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
+        let root = self
+            .root
+            .as_ref()
+            .map(|root| root.snapshot_admitted(&owner))
+            .transpose()
+            .map_err(|message| AwbcProductSaveError::InvalidSnapshot { message })?;
         let (need_producers, queued_task_events) = self.snapshot_admitted_task_state(&owner)?;
         let fiber =
             AwbcFiberStateSnapshot::from_admitted_live(&self.fiber, &owner).map_err(|error| {
@@ -3586,6 +3517,7 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         Ok(AwbcProductExecutorSnapshot {
+            root,
             runtime_generation: self.runtime_generation,
             fiber,
             child_fibers,
@@ -3642,19 +3574,26 @@ impl AwbcProductStepExecutor {
         &mut self,
         snapshot: AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
-        self.restore_snapshot_with_policy(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
+        self.restore_snapshot_transaction(snapshot, crate::task::NeedProducerRestorePolicy::Resume)
     }
 
-    fn restore_snapshot_with_policy(
+    fn install_snapshot(
         &mut self,
         snapshot: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let observations = self.validate_snapshot_for_origin(
-            &snapshot,
-            matches!(policy, crate::task::NeedProducerRestorePolicy::Rollback),
-        )?;
+        let observations = self.validate_snapshot(&snapshot)?;
+        let mut snapshot = snapshot;
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
+        self.root = None;
+        let root = snapshot
+            .root
+            .take()
+            .map(|image| {
+                crate::root::RootRuntime::from_admitted_rollback_image(image, &program_owner)
+            })
+            .transpose()
+            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         let queued_task_events = snapshot
             .queued_task_events
             .into_iter()
@@ -3731,6 +3670,7 @@ impl AwbcProductStepExecutor {
         self.next_host_call_sequence = snapshot.next_host_call_sequence;
         self.next_audio_sequence = snapshot.next_audio_sequence;
         self.compact_pure_stats = snapshot.compact_pure_stats;
+        self.root = root;
         self.facade_fiber.frame.observations = observations;
         self.rebuild_facade_stream_states_from_compact();
         self.sync_facade();
@@ -3843,17 +3783,8 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
-        self.validate_snapshot_for_origin(snapshot, false)
-    }
-
-    fn validate_snapshot_for_origin(
-        &self,
-        snapshot: &AwbcProductExecutorSnapshot,
-        restoring_root_image: bool,
-    ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
         use crate::awbc::fiber::AwbcFiberRoot;
-        let same_entry_phase = restoring_root_image
-            && snapshot.fiber.root.entry().is_some()
+        let same_entry_phase = snapshot.fiber.root.entry().is_some()
             && snapshot.fiber.root.entry() == self.fiber.root.entry()
             && matches!(
                 (snapshot.fiber.root, self.fiber.root),

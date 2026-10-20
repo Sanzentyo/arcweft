@@ -334,25 +334,9 @@ impl AwbcProductStepExecutor {
     pub fn active_entry_snapshot_identity(
         &self,
     ) -> Result<crate::entry::ActiveEntrySnapshotV1, RootRuntimeError> {
-        let selected = self
-            .fiber
+        self.fiber
             .root
-            .entry()
-            .ok_or(RootRuntimeError::SnapshotRoleMismatch("entry origin"))?;
-        let entry = self
-            .program
-            .entries
-            .get(selected.index())
-            .ok_or_else(|| RootRuntimeError::MissingEntry(selected.0.to_string()))?;
-        let kind = entry
-            .kind
-            .runtime_kind(&self.program.strings)
-            .ok_or_else(|| RootRuntimeError::MissingEntry(entry.runtime_id.canonical_label()))?;
-        Ok(crate::entry::ActiveEntrySnapshotV1 {
-            id: entry.runtime_id.clone(),
-            kind,
-            binding: entry.binding,
-        })
+            .active_entry_snapshot_identity(&self.program)
     }
 
     #[must_use]
@@ -363,55 +347,6 @@ impl AwbcProductStepExecutor {
     #[must_use]
     pub fn root_save_blockers(&self) -> Option<crate::root::RootSaveBlockers> {
         self.root.as_ref().map(RootRuntime::save_blockers)
-    }
-
-    pub fn restore_root_snapshot(
-        &mut self,
-        active: &crate::entry::ActiveEntrySnapshotV1,
-        snapshot: Option<crate::root::RootStateSnapshotV1>,
-    ) -> Result<(), RootRuntimeError> {
-        let selected = self
-            .fiber
-            .root
-            .entry()
-            .ok_or(RootRuntimeError::SnapshotRoleMismatch("entry origin"))?;
-        let entry = self
-            .program
-            .entries
-            .get(selected.index())
-            .ok_or_else(|| RootRuntimeError::MissingEntry(selected.0.to_string()))?;
-        let kind = entry
-            .kind
-            .runtime_kind(&self.program.strings)
-            .ok_or_else(|| RootRuntimeError::MissingEntry(entry.runtime_id.canonical_label()))?;
-        if active.id != entry.runtime_id || active.kind != kind || active.binding != entry.binding {
-            return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
-        }
-        let initializing = snapshot.as_ref().is_some_and(|snapshot| {
-            matches!(snapshot.phase, crate::root::RootPhase::Initializing { .. })
-        });
-        if initializing
-            != matches!(
-                self.fiber.root,
-                crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
-            )
-        {
-            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer frame"));
-        }
-        let contract = startup_contract(&self.program, selected)?;
-        let candidate = match (contract, snapshot) {
-            (Some(contract), Some(snapshot)) => Some(RootRuntime::from_snapshot(
-                contract,
-                snapshot,
-                crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
-            )?),
-            (None, None) => None,
-            (Some(_), None) | (None, Some(_)) => {
-                return Err(RootRuntimeError::SnapshotRoleMismatch("root presence"));
-            }
-        };
-        self.root = candidate;
-        Ok(())
     }
 
     pub(super) fn run_root_phase(
@@ -547,14 +482,14 @@ mod tests {
         assert!(first.output.root_transitions.is_empty());
         assert!(executor.root.as_ref().unwrap().active().reducer_active());
         let image = executor.inert_rollback_image().unwrap();
-        assert_eq!(image.product.child_fibers.len(), 1);
+        assert_eq!(image.child_fibers.len(), 1);
         assert!(matches!(
-            image.product.child_fibers[0].fiber.root,
+            image.child_fibers[0].fiber.root,
             crate::awbc::fiber::AwbcFiberRoot::RootReducer(AwbcEntryId(0))
         ));
         drop(executor);
         let mut restored = AwbcProductStepExecutor::for_entry_arc(raw, AwbcEntryId(0), 64).unwrap();
-        restored.restore_rollback_image(image.clone()).unwrap();
+        restored.restore_snapshot(image.clone()).unwrap();
         assert_eq!(restored.inert_rollback_image().unwrap(), image);
         let done = restored.step(crate::step::RuntimeStepInput::default(), options(1));
         assert_eq!(done.stats.executed_ops, 1);
@@ -582,14 +517,13 @@ mod tests {
         executor.step(input, options(1));
         let original = executor.inert_rollback_image().unwrap();
         let mut missing = original.clone();
-        missing.product.child_fibers.clear();
+        missing.child_fibers.clear();
         assert!(executor.restore_rollback_image(missing).is_err());
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         let mut duplicate = original.clone();
         duplicate
-            .product
             .child_fibers
-            .push(duplicate.product.child_fibers[0].clone());
+            .push(duplicate.child_fibers[0].clone());
         assert!(executor.restore_rollback_image(duplicate).is_err());
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
     }
@@ -612,24 +546,54 @@ mod tests {
         let first = executor.step(input, options(1));
         assert_eq!(first.stats.executed_ops, 1);
         let original = executor.inert_rollback_image().unwrap();
-        assert_eq!(original.product.child_fibers.len(), 1);
+        assert_eq!(original.child_fibers.len(), 1);
         let mut invalid = original.clone();
-        invalid.product.next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
+        invalid.next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
         assert!(executor.restore_rollback_image(invalid).is_err());
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         for instance in [
-            original.product.fiber.instance,
+            original.fiber.instance,
             crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
-                original.product.next_fiber_instance.next().unwrap(),
+                original.next_fiber_instance.next().unwrap(),
             ),
         ] {
             let mut invalid = original.clone();
-            invalid.product.child_fibers[0].fiber.instance = instance;
+            invalid.child_fibers[0].fiber.instance = instance;
             assert!(executor.restore_rollback_image(invalid).is_err());
             assert_eq!(executor.inert_rollback_image().unwrap(), original);
         }
         executor.restore_rollback_image(original.clone()).unwrap();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        let mut invalid = original.clone();
+        invalid.root = None;
+        let (executor, error) = executor.restore_snapshot_owned(invalid).unwrap_err();
+        assert!(matches!(
+            error,
+            AwbcProductStepBuildError::RestoreSnapshot { .. }
+        ));
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        let executor = executor.restore_snapshot_owned(original.clone()).unwrap();
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+    }
+
+    #[test]
+    fn awbc_snapshot_root_and_flow_share_one_value_allowance() {
+        let (_, executor) = reducer_fixture();
+        let snapshot = executor.snapshot().unwrap();
+        let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+        for (max_nodes, accepted) in [(1, false), (2, true)] {
+            let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+                owner.clone(),
+                crate::entry::RuntimeSchemaLimits {
+                    max_nodes,
+                    ..crate::entry::RuntimeSchemaLimits::engine_default()
+                },
+            );
+            assert_eq!(
+                snapshot.admit_retained(&owner, &mut admission).is_ok(),
+                accepted
+            );
+        }
     }
 
     #[test]
@@ -658,7 +622,10 @@ mod tests {
             .unwrap();
         let pending = RootRuntime::prepare(contract, types)
             .unwrap()
-            .snapshot_state();
+            .inert_rollback_image(&crate::task::RuntimeProgramOwner::Awbc(
+                program.program_arc(),
+            ))
+            .unwrap();
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         bind_startup(&program, &mut fiber, Some(&startup)).unwrap();
         let fingerprint = AwbcProductStepExecutor::artifact_fingerprint(&program).unwrap();
@@ -669,11 +636,12 @@ mod tests {
             crate::task::GenerationId::new(0),
         );
         executor.install_root_startup(startup);
-        let active = executor.active_entry_snapshot_identity().unwrap();
         let before = executor.inert_rollback_image().unwrap();
+        let mut invalid = before.clone();
+        invalid.root = Some(pending);
         assert!(matches!(
-            executor.restore_root_snapshot(&active, Some(pending)),
-            Err(RootRuntimeError::SnapshotRoleMismatch("initializer frame"))
+            executor.restore_snapshot(invalid),
+            Err(AwbcProductStepBuildError::RestoreSnapshot { .. })
         ));
         assert_eq!(executor.inert_rollback_image().unwrap(), before);
     }

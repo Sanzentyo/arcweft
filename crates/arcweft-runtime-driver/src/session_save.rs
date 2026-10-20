@@ -10,12 +10,12 @@ use crate::view_runtime::{BundleViewRuntimeSaveSnapshot, BundleViewRuntimeSnapsh
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_character::presentation_name::CharacterPresentationSemanticDigest;
-use arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot;
+use arcweft_core::awbc::product_step::{
+    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
+};
 use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
-use arcweft_core::root::RootStateSaveSnapshotV1;
-pub use arcweft_core::root::RootStateSnapshotV1;
 use arcweft_core::task::{
     GenerationId, LogicalEpoch, NeedId, RuntimeProgramOwner, TaskId, TaskPublicationRevision,
     TaskSequence,
@@ -51,18 +51,17 @@ pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BundleSessionSnapshot<
-    R = RootStateSnapshotV1,
     P = BundlePresentationSnapshot,
     V = BundleViewRuntimeSnapshot,
+    S = AwbcProductExecutorSnapshot,
 > {
     pub generation: BundleSessionGenerationSnapshot,
     pub active_locale: LocaleTag,
     #[serde(deserialize_with = "deserialize_required_option")]
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
-    pub root: Option<R>,
     pub runtime: BundleSessionRuntimeSnapshot,
-    pub executor: BundleSessionExecutorSnapshot,
+    pub executor: BundleSessionExecutorSnapshot<S>,
     pub presentation: P,
     /// Exact per-mount range/scroll state, including off-window item descriptors.
     pub view_virtualization: ViewVirtualizationSnapshot,
@@ -75,12 +74,52 @@ pub struct BundleSessionSnapshot<
 /// The in-memory snapshot also retains the inert AWBC value DTO. Decoding a
 /// save never creates a second live affine owner beside the active executor.
 pub(crate) type BundleSessionSavePayload = BundleSessionSnapshot<
-    RootStateSaveSnapshotV1,
+    BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot>,
+    BundleViewRuntimeSaveSnapshot,
+    AwbcProductExecutorSaveSnapshot,
+>;
+
+pub(crate) type BundleSessionBoundSavePayload = BundleSessionSnapshot<
     BundlePresentationSnapshot<arcweft_text_model::LineDisplayFrameSnapshot>,
     BundleViewRuntimeSaveSnapshot,
 >;
 
-pub(crate) type BundleSessionExecutorSavePayload = BundleSessionExecutorSnapshot;
+pub(crate) type BundleSessionExecutorSavePayload =
+    BundleSessionExecutorSnapshot<AwbcProductExecutorSaveSnapshot>;
+
+impl<P, V> BundleSessionSnapshot<P, V> {
+    pub(crate) fn admit_executor(
+        &self,
+        owner: &RuntimeProgramOwner,
+        admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
+    ) -> Result<(), String> {
+        let RuntimeProgramOwner::Awbc(program) = owner else {
+            return Err("session snapshot requires its original Product AWBC owner".to_owned());
+        };
+        if self.executor.generation != self.generation.active_generation
+            || self.executor.state.runtime_generation != self.executor.generation
+        {
+            return Err(
+                "session executor generation differs from its selected storage generation"
+                    .to_owned(),
+            );
+        }
+        let selected = self
+            .executor
+            .state
+            .active_entry_snapshot_identity(program)
+            .map_err(|error| error.to_string())?;
+        if selected != self.active_entry {
+            return Err(
+                "session active entry differs from its complete executor snapshot".to_owned(),
+            );
+        }
+        self.executor
+            .state
+            .admit_retained(owner, admission)
+            .map_err(|error| error.to_string())
+    }
+}
 
 impl Clone for BundleSessionSavePayload {
     fn clone(&self) -> Self {
@@ -89,7 +128,6 @@ impl Clone for BundleSessionSavePayload {
             active_locale: self.active_locale.clone(),
             character_presentation: self.character_presentation.clone(),
             active_entry: self.active_entry.clone(),
-            root: self.root.clone(),
             runtime: self.runtime.clone(),
             executor: self.executor.clone(),
             presentation: self.presentation.clone(),
@@ -117,12 +155,7 @@ impl BundleSessionSavePayload {
             .view_runtime
             .admit_resources(&mut admission)
             .map_err(|error| error.to_string())?;
-        RootStateSnapshotV1::admit_optional_retained(
-            snapshot.root.as_ref(),
-            &snapshot.active_entry,
-            &mut admission,
-        )
-        .map_err(|error| error.to_string())?;
+        snapshot.admit_executor(program_owner, &mut admission)?;
         snapshot
             .presentation
             .admit_retained(&mut admission, dialogue_schema)?;
@@ -131,18 +164,14 @@ impl BundleSessionSavePayload {
             active_locale: snapshot.active_locale.clone(),
             character_presentation: snapshot.character_presentation.clone(),
             active_entry: snapshot.active_entry.clone(),
-            root: snapshot
-                .root
-                .as_ref()
-                .map(|root| {
-                    RootStateSaveSnapshotV1::from_live(root, &snapshot.active_entry, program_owner)
-                })
-                .transpose()
-                .map_err(|error| error.to_string())?,
             runtime: snapshot.runtime.clone(),
             executor: BundleSessionExecutorSavePayload {
                 generation: snapshot.executor.generation,
-                state: snapshot.executor.state.clone(),
+                state: AwbcProductExecutorSaveSnapshot::from_live(
+                    &snapshot.executor.state,
+                    program_owner,
+                )
+                .map_err(|error| error.to_string())?,
             },
             presentation: snapshot.presentation.clone().try_map_frames(|frame| {
                 if dialogue_schema.is_some() && frame.effective.admitted().is_none() {
@@ -165,8 +194,34 @@ impl BundleSessionSavePayload {
         })
     }
 
+    pub(crate) fn bind_executor(
+        self,
+        context: &arcweft_core::executor::ArcweftRuntimeExecutor,
+    ) -> Result<BundleSessionBoundSavePayload, String> {
+        let state = context
+            .bind_product_save_snapshot(self.executor.state)
+            .map_err(|error| error.to_string())?;
+        Ok(BundleSessionBoundSavePayload {
+            generation: self.generation,
+            active_locale: self.active_locale,
+            character_presentation: self.character_presentation,
+            active_entry: self.active_entry,
+            runtime: self.runtime,
+            executor: BundleSessionExecutorSnapshot {
+                generation: self.executor.generation,
+                state,
+            },
+            presentation: self.presentation,
+            view_virtualization: self.view_virtualization,
+            view_runtime: self.view_runtime,
+        })
+    }
+}
+
+impl BundleSessionBoundSavePayload {
     pub(crate) fn admit_retained(
         &self,
+        program_owner: &RuntimeProgramOwner,
         admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<(), String> {
@@ -176,12 +231,7 @@ impl BundleSessionSavePayload {
         self.view_runtime
             .admit_resources(admission)
             .map_err(|error| error.to_string())?;
-        RootStateSaveSnapshotV1::admit_optional_retained(
-            self.root.as_ref(),
-            &self.active_entry,
-            admission,
-        )
-        .map_err(|error| error.to_string())?;
+        self.admit_executor(program_owner, admission)?;
         self.presentation
             .try_visit_frames(|frame| frame.admit_retained_metadata(admission))?;
         self.presentation
@@ -193,17 +243,11 @@ impl BundleSessionSavePayload {
         program_owner: &RuntimeProgramOwner,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
     ) -> Result<BundleSessionSnapshot, String> {
-        let root = self
-            .root
-            .map(|root| root.into_live(&self.active_entry, program_owner))
-            .transpose()
-            .map_err(|error| error.to_string())?;
         Ok(BundleSessionSnapshot {
             generation: self.generation,
             active_locale: self.active_locale,
             character_presentation: self.character_presentation,
             active_entry: self.active_entry,
-            root,
             runtime: self.runtime,
             executor: BundleSessionExecutorSnapshot {
                 generation: self.executor.generation,
@@ -283,12 +327,12 @@ where
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BundleSessionExecutorSnapshot {
+pub struct BundleSessionExecutorSnapshot<S = AwbcProductExecutorSnapshot> {
     /// Generation that owns the Product AWBC fiber state.
     pub generation: GenerationId,
     /// Inert Product AWBC state. It becomes live only after the old executor
     /// has relinquished sole ownership during restore.
-    pub state: AwbcProductExecutorSaveSnapshot,
+    pub state: S,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

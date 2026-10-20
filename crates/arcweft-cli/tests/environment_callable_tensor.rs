@@ -94,7 +94,7 @@ fn environment_tensor_value_preserves_elements_and_one_op_restoration() {
                 options(),
                 &mut awbc_backend,
             );
-            let snapshot = executor.inert_rollback_image().unwrap().product;
+            let snapshot = executor.inert_rollback_image().unwrap();
             let wire =
                 arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
                     &snapshot,
@@ -109,7 +109,7 @@ fn environment_tensor_value_preserves_elements_and_one_op_restoration() {
                 .unwrap_or_else(|(_, error)| {
                     panic!("restore the original tensor program: {error}")
                 });
-            assert_eq!(restored.inert_rollback_image().unwrap().product, snapshot);
+            assert_eq!(restored.inert_rollback_image().unwrap(), snapshot);
             awbc = Some(restored);
             step
         });

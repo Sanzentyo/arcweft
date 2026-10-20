@@ -194,12 +194,12 @@ fn program_continuation_accepts_detached_prefix_and_retains_awbc_need_result_con
             .diagnostics
             .is_empty()
     );
-    let before = executor.inert_rollback_image().unwrap().product;
+    let before = executor.inert_rollback_image().unwrap();
     assert!(matches!(
         executor.take_program_result(),
         Err(crate::value::ownership::RuntimeDetachedValueError::NeedProducerCustodyRequired { .. })
     ));
-    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    assert_eq!(executor.inert_rollback_image().unwrap(), before);
     let mut executor = executor
         .continue_program(id, vec![RuntimeProgramInput::PreviousResult])
         .unwrap();
@@ -265,7 +265,7 @@ fn program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frame
         .unwrap();
     let invocation_frontiers = executor.need_producers.invocation_frontiers();
     let launch_frontiers = executor.need_producers.launch_frontiers();
-    let image = executor.inert_rollback_image().unwrap().product;
+    let image = executor.inert_rollback_image().unwrap();
     let executor = executor.restore_snapshot_owned(image).unwrap();
     let restored = executor
         .need_producers
@@ -304,7 +304,7 @@ fn program_continuation_moves_live_handle_with_need_context_and_fresh_awbc_frame
 fn program_continuation_rejects_duplicate_or_invalid_inputs_with_original_awbc_owner() {
     use crate::program_invocation::{RuntimeProgramContinuationFailure, RuntimeProgramInput};
     let (executor, id, _) = completed_handle_program();
-    let before = executor.inert_rollback_image().unwrap().product;
+    let before = executor.inert_rollback_image().unwrap();
     let (reason, executor, inputs) = executor
         .continue_program(
             id,
@@ -320,7 +320,7 @@ fn program_continuation_rejects_duplicate_or_invalid_inputs_with_original_awbc_o
         RuntimeProgramContinuationFailure::ResultUseCount { count: 2 }
     ));
     assert_eq!(inputs.len(), 2);
-    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    assert_eq!(executor.inert_rollback_image().unwrap(), before);
     let (reason, executor, inputs) = executor
         .continue_program(
             id,
@@ -341,7 +341,7 @@ fn program_continuation_rejects_duplicate_or_invalid_inputs_with_original_awbc_o
         inputs[0],
         RuntimeProgramInput::Detached(RuntimeValue::Bool(true))
     );
-    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    assert_eq!(executor.inert_rollback_image().unwrap(), before);
 }
 
 #[test]
@@ -353,7 +353,7 @@ fn program_continuation_rolls_back_awbc_context_and_inputs_after_custody_revisio
         .unwrap();
     let custody = crate::tests::program_custody::published_at_final_revision(custody);
     executor.dialogues = super::dialogue::ProductDialogueStore::from_published(custody);
-    let before = executor.inert_rollback_image().unwrap().product;
+    let before = executor.inert_rollback_image().unwrap();
     let (reason, executor, inputs) = executor
         .continue_program(
             id,
@@ -377,7 +377,7 @@ fn program_continuation_rolls_back_awbc_context_and_inputs_after_custody_revisio
             RuntimeProgramInput::PreviousResult
         ]
     );
-    assert_eq!(executor.inert_rollback_image().unwrap().product, before);
+    assert_eq!(executor.inert_rollback_image().unwrap(), before);
 }
 
 #[test]
@@ -409,7 +409,7 @@ fn detached_program_result_rejection_retains_awbc_value_and_saved_owner() {
     executor.fiber.terminal = Some(FiberTerminalValue::Returned(Some(value)));
     assert!(executor.take_program_result().is_err());
     assert!(executor.take_program_result().is_err());
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let executor = executor.restore_snapshot_owned(saved.clone()).unwrap();
     let Some(FiberTerminalValue::Returned(Some(value))) = &executor.fiber.terminal else {
         panic!("rejected export must keep its live result")
@@ -418,7 +418,7 @@ fn detached_program_result_rejection_retains_awbc_value_and_saved_owner() {
         value.affine_line_handles().unwrap()[0].token(),
         &fixture.token
     );
-    assert_eq!(executor.inert_rollback_image().unwrap().product, saved);
+    assert_eq!(executor.inert_rollback_image().unwrap(), saved);
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn empty_fiber_restore_has_no_executable_cursor_or_return_owner() {
         .fiber
         .validate_for_program(&executor.program)
         .unwrap();
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let executor = executor.restore_snapshot_owned(saved.clone()).unwrap();
     executor
         .fiber
@@ -649,7 +649,7 @@ fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
         roles,
         vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
     );
-    let inert = executor.inert_rollback_image().unwrap().product;
+    let inert = executor.inert_rollback_image().unwrap();
     let mut inert_roles = Vec::new();
     inert
         .visit_borrowed_runtime_values(|value| {
@@ -6805,7 +6805,7 @@ fn product_observation_inert_rollback_retains_typed_signal_and_metric_values() {
         .inert_rollback_image()
         .expect("complete inert Product image");
     let wire = AwbcProductExecutorSaveSnapshot::from_live(
-        &image.product,
+        &image,
         &crate::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
     )
     .unwrap();

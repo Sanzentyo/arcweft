@@ -73,6 +73,29 @@ pub enum AwbcFiberRoot {
 }
 
 impl AwbcFiberRoot {
+    pub(crate) fn active_entry_snapshot_identity(
+        self,
+        program: &AwbcProgram,
+    ) -> Result<crate::entry::ActiveEntrySnapshotV1, crate::root::RootRuntimeError> {
+        use crate::root::RootRuntimeError;
+        let selected = self
+            .entry()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("entry origin"))?;
+        let entry = program
+            .entries
+            .get(selected.index())
+            .ok_or_else(|| RootRuntimeError::MissingEntry(selected.0.to_string()))?;
+        let kind = entry
+            .kind
+            .runtime_kind(&program.strings)
+            .ok_or_else(|| RootRuntimeError::MissingEntry(entry.runtime_id.canonical_label()))?;
+        Ok(crate::entry::ActiveEntrySnapshotV1 {
+            id: entry.runtime_id.clone(),
+            kind,
+            binding: entry.binding,
+        })
+    }
+
     pub(crate) fn admit_executor_roots<P>(
         self,
         root: Option<&crate::root::RootRuntime<P>>,

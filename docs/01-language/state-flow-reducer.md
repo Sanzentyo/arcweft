@@ -50,6 +50,10 @@ initializer と reducer は、選択済み backend・formatter と同じ step al
 使う通常の executable frame で進める。budget による中断は言語上の `await`
 とは区別する。
 
+Root と、それを初期化・更新する実際の fiber は、一つの executor snapshot に
+含めて保存・復元する。Root の状態だけを後から差し替えて対応を補わない。
+復元対象全体を検証し、失敗時は元の Root・fiber・queue を保持する。
+
 実行中の reducer は、その entry の reducer role に対応する一つの executor
 fiber が所有する。継続中は通常 Flow と後続 event より優先して進め、budget を
 使い切った時点の frame と元 state を保持する。rollback は phase、entry、role、

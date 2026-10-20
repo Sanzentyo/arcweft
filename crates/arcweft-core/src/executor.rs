@@ -1,6 +1,6 @@
 use crate::aot::AotProgram;
 use crate::awbc::product_step::{
-    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductProgram,
+    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot, AwbcProductProgram,
     AwbcProductSaveError, AwbcProductStepBuildError, AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
@@ -80,7 +80,7 @@ impl ArcweftExecutionTier {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArcweftRuntimeExecutorSnapshot {
-    AwbcProduct(AwbcProductExecutorSaveSnapshot),
+    AwbcProduct(AwbcProductExecutorSnapshot),
 }
 
 #[derive(Debug, Error)]
@@ -267,13 +267,8 @@ impl AotExecutor {
 impl AwbcProductExecutor {
     pub(crate) fn snapshot_for_save(
         &self,
-    ) -> Result<AwbcProductExecutorSaveSnapshot, AwbcProductSaveError> {
-        let needs = self.vm.quiescence_blocking_needs();
-        if !needs.is_empty() {
-            return Err(AwbcProductSaveError::NeedsQuiescence { needs });
-        }
-        let snapshot = self.vm.snapshot_for_save()?;
-        AwbcProductExecutorSaveSnapshot::from_admitted(&snapshot)
+    ) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        self.vm.snapshot_for_save()
     }
 }
 
@@ -701,7 +696,7 @@ impl ArcweftRuntimeExecutor {
 
     pub fn product_inert_rollback_image(
         &self,
-    ) -> Result<AwbcProductExecutorRollbackImage, ArcweftRuntimeExecutorSnapshotError> {
+    ) -> Result<AwbcProductExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
                 .vm
@@ -715,7 +710,7 @@ impl ArcweftRuntimeExecutor {
 
     pub fn restore_product_rollback_image(
         &mut self,
-        image: AwbcProductExecutorRollbackImage,
+        image: AwbcProductExecutorSnapshot,
     ) -> Result<(), ArcweftRuntimeExecutorSnapshotError> {
         match &mut self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
@@ -846,6 +841,35 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    /// Binds an inert save to the exact admitted Product program and Source leases.
+    /// No runtime payload or executable frame is constructed here.
+    pub fn bind_product_save_snapshot(
+        &self,
+        saved: AwbcProductExecutorSaveSnapshot,
+    ) -> Result<AwbcProductExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
+        let ArcweftRuntimeExecutorInner::AwbcProduct(executor) = &self.inner else {
+            return Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
+                tier: self.tier().as_str(),
+            });
+        };
+        let snapshot = saved
+            .into_live_for_program(executor.vm.admitted_program())
+            .map_err(|message| ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message })?;
+        let owner = self.program_owner();
+        snapshot
+            .admit_retained(
+                &owner,
+                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
+                    owner.clone(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ),
+            )
+            .map_err(|error| ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
+                message: error.to_string(),
+            })?;
+        Ok(snapshot)
+    }
+
     pub fn restore_snapshot(
         self,
         snapshot: ArcweftRuntimeExecutorSnapshot,
@@ -854,7 +878,7 @@ impl ArcweftRuntimeExecutor {
             (
                 ArcweftRuntimeExecutorInner::AwbcProduct(executor),
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot),
-            ) => match executor.vm.restore_inert_snapshot_owned(snapshot) {
+            ) => match executor.vm.restore_snapshot_owned(snapshot) {
                 Ok(vm) => Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
                     Box::new(AwbcProductExecutor { vm }),
                 ))),
@@ -930,23 +954,6 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_)
             | ArcweftRuntimeExecutorInner::Vacant => None,
-        }
-    }
-
-    pub fn restore_product_root_snapshot(
-        &mut self,
-        active: &ActiveEntrySnapshotV1,
-        snapshot: Option<RootStateSnapshotV1>,
-    ) -> Result<(), RootRuntimeError> {
-        match &mut self.inner {
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
-                executor.vm.restore_root_snapshot(active, snapshot)
-            }
-            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
-            | ArcweftRuntimeExecutorInner::StructuredAot(_)
-            | ArcweftRuntimeExecutorInner::Vacant => {
-                Err(RootRuntimeError::SnapshotRoleMismatch("executor tier"))
-            }
         }
     }
 

@@ -161,8 +161,17 @@ flow main() {
         let result = executor.step_with_pure_backend(input, options, &mut awbc_backend);
         let snapshot = match executor.snapshot().expect("save every OneOp boundary") {
             ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) => {
+                let saved =
+                    arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
+                        &saved,
+                        &executor.program_owner(),
+                    )
+                    .unwrap();
                 let bytes = serde_json::to_vec(&saved).unwrap();
-                ArcweftRuntimeExecutorSnapshot::AwbcProduct(serde_json::from_slice(&bytes).unwrap())
+                let decoded = serde_json::from_slice(&bytes).unwrap();
+                ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                    executor.bind_product_save_snapshot(decoded).unwrap(),
+                )
             }
         };
         let expected = snapshot.clone();

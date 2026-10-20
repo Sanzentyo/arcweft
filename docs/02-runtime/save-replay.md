@@ -219,8 +219,11 @@ live Fiber の構築・複製を行わない。terminal の return summary は�
 sequence の物理 storage kind・元 program の callable arity を含む共通 borrowed
 label projection と照合してから復元する。文字列 label は元の値を借用する。
 
-Product image は root／child／dialogue の fiber、対話 ledger と frame、Need registry、
-queued publication、観測値を同じ original program の累積 admission で検証する。
+Product image は Root transaction と root／child／dialogue の fiber、対話 ledger と
+frame、Need registry、queued publication、観測値を同じ original program の累積
+admission で検証する。Root の phase・entry・role と実際の継続 frame の対応も、この
+完全な image の検証に含める。public restore と rollback は同じ所有単位を置き換え、
+Root だけを後置で復元する入口は持たない。
 save 変換の公開入口も同じ image owner の検証を通してから inert 値を複製する。
 対話 frame と phase／closing／pending operation は live／inert 共通の owning grammar
 を使い、inert specialization だけが Clone と serde reader を持つ。registry の元の
@@ -251,7 +254,12 @@ Root の値 inventory には、確定済み command の payload も含める。
 durable Root snapshot と session snapshot も、それぞれ一つの owning grammar の
 live／inert 特殊化を使う。live snapshot の無条件 Clone と直接の JSON reader／writer
 は与えず、Root の entry／layout／type／資源検証は保存形態間で同じ実装を使う。
-復元時の Root は、候補 session から所有権をそのまま移す。
+session の Root は executor snapshot に含め、外側に別の Root を保持しない。
+wire の Root は `executor.state.root` に置き、save の version は `1` のまま更新する。
+wire payload を元 program と Source lease に結び付けた inert image に変換してから、
+Root・product・View・presentation を session の同じ資源枠で検証する。
+Root と product の実行値は、旧 executor を破棄した後にだけ構築する。復元途中の
+失敗では候補を破棄し、元の完全な inert image から旧 executor を戻す。
 
 Native Engine も live／inert で一つの owning grammar を使い、inert 特殊化だけに
 Clone を与える。復元は外側が保持する元 Plan の lease を要求し、候補が同じ内容の

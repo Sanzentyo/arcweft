@@ -27,7 +27,7 @@ pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSaveSnapshot,
     AwbcProductChildFiberOwnerSnapshot, AwbcProductChildFiberSaveSnapshot,
     AwbcProductChildFiberSnapshot, AwbcProductDialogueEffectSaveSnapshot,
-    AwbcProductExecutorRollbackImage, AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
+    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
     AwbcProductLineTaskCancelSnapshot, AwbcProductLineTaskExitPolicySnapshot,
     AwbcProductLineTaskExitSnapshot, AwbcProductLineTaskFiberPhaseSnapshot,
     AwbcProductLineTaskJoinSnapshot, AwbcProductLineTaskLiveSnapshot,
@@ -1659,6 +1659,17 @@ impl AwbcProductStepExecutor {
     /// MustBeQuiescent producer is reported as a typed deferral; Sans-I/O
     /// Product code never waits for a host task.
     pub fn snapshot_for_save(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        if let Some(root) = &self.root {
+            let blockers = root.save_blockers();
+            if blockers.reducer_active
+                || blockers.pending_events != 0
+                || blockers.pending_commands != 0
+            {
+                return Err(AwbcProductSaveError::InvalidSnapshot {
+                    message: format!("Root save requires quiescence: {blockers:?}"),
+                });
+            }
+        }
         let needs = self.quiescence_blocking_needs();
         if !needs.is_empty() {
             return Err(AwbcProductSaveError::NeedsQuiescence { needs });

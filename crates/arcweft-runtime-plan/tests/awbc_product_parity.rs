@@ -458,7 +458,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
     )
     .unwrap();
     assert_eq!(executor.compact_fiber().root, AwbcFiberRoot::Program(id));
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let wire = AwbcProductExecutorSaveSnapshot::from_live(
         &saved,
         &arcweft_core::task::RuntimeProgramOwner::Awbc(executor.program_arc()),
@@ -481,7 +481,7 @@ fn owned_program_root_retains_affine_inputs_and_result_across_save_restore() {
         "{:?}",
         result.output.diagnostics
     );
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let mut forged = saved.clone();
     forged.fiber.terminal = Some(arcweft_core::awbc::fiber::FiberTerminalValue::Returned(
         Some(arcweft_core::value::AwbcRuntimeValueSnapshot::Bool(true)),
@@ -551,13 +551,13 @@ fn owned_unit_program_retains_its_typed_result_across_save_restore() {
             .diagnostics
             .is_empty()
     );
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let mut executor = executor.restore_snapshot_owned(saved).unwrap();
     assert_eq!(
         executor.take_program_result().unwrap(),
         Some((id, RuntimeValue::Unit))
     );
-    let saved = executor.inert_rollback_image().unwrap().product;
+    let saved = executor.inert_rollback_image().unwrap();
     let mut executor = executor.restore_snapshot_owned(saved).unwrap();
     assert_eq!(executor.take_program_result().unwrap(), None);
 }

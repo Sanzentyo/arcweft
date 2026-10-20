@@ -23602,3 +23602,91 @@ This slice removes an unused public execution route and migrates its domain
 tests; broader post-migration consumer/backend/restore/visual acceptance is
 still required. The checkpoint publishes these two Rust files and this note,
 preserving the same held inventory; the original goal remains active.
+
+Root API checkpoint `4f4b1d640793e2bb4c93643e44b28f9a6b58c532` was pushed and
+verified against fetched/advertised main, all3 blobs/3939 inputs, held14,zero drift
+and an empty index. Parent `4fffaf024a09365c508a6ec367af92daf3807bf0`, tree
+`9adc1f44e28daa8e6fa41ee44a83fe278d999b41`, patch SHA256
+`8040c1fed254df3fac077983cbb1f9b7c695d85c74e75aef673e3e0cb3531b02`.
+The baseline advanced to owned0 before this turn. Previous goal turn is progress;
+there is no external blocker and the complete goal remains active.
+
+### 2026-10-20 — make Root part of the complete Product/session snapshot
+
+Inspected main `4f4b1d640793e2bb4c93643e44b28f9a6b58c532`, held14 tracked changes
+and three untracked entries preserved. Product snapshots now include the complete
+inert Root owner. The separate rollback wrapper type and product-only restore
+path are removed; borrowed/owned Resume and Rollback share one transaction,
+validate the complete candidate first, drop the old executor before constructing
+restored payloads, and rebuild the original complete image after any late error.
+Same-entry initializer/Flow phase changes require the matching Root image. The
+selected runtime generation is retained rather than replaced from untrusted data.
+Root, main/child fibers, task state, dialogue state and observations share capture
+and restore admission; the Root visitor includes queued events/committed commands.
+
+The runtime facade now carries the same complete Source-bound inert snapshot.
+Only the save DTO has a wire codec. Session storage has one generic grammar over
+presentation, View and executor storage roles. It binds the save DTO to the
+original admitted Product/Source, admits Root/product/View/presentation in one
+session bank, then constructs live presentation/View values. Root lives at
+executor.state.root, with no separate outer session Root or post-product Root
+setter. Session entry and generation headers are checked against the complete
+executor before replacement. Contract markers remain1; there is no legacy reader.
+Runtime-plan parity and compiler cancellation/static-selector tests use this
+complete owner and explicitly project/bind the save DTO around JSON round trips.
+Existing execution counts, Source/backend observations and cold-restore assertions
+remain. Root tests now exercise public cold Resume, owned success/rejection and
+the shared Root/Flow value allowance. The stateless-session hostile Root test
+injects the inert Root DTO at the save boundary and retains its no-mutation checks;
+it also checks that rejection precedes the custom value-validator callback.
+
+R1931 dev Core check failed on two migration omissions (the generic phase query
+and a removed wrapper field); fixed. R1932 Core check passed1m28 before later
+changes. R1933 Core/driver check found one old hostile-Root fixture; migrated.
+R1934 Core/driver all-target/all-feature check passed36.59s. R1935 workspace check
+failed on four runtime-plan parity wrapper accesses; fixed. R1936 then found
+compiler test consumers relying on direct snapshot serde; moved them through the
+save DTO and exact Source binding. R1938 workspace check is running(session26126).
+No post-migration behavior, lint or broad acceptance pass is claimed yet.
+
+Faithful save acceptance remains open:the complete in-memory Root image retains
+RootRuntime.failure, while the existing durable RootStateSaveSnapshotV1 projects
+state/phase/cursor without that failure. Add executable failed-Root save/restore
+evidence and reconcile that wire lifecycle before claiming complete faithful
+restoration. Successful reducer return/backend/formatter, complete future-owner
+pre-copy resource admission, all14 families, Generic Match/retained View/
+presentation ABI/CLI/Tier2/visual/reverse-consumer and final acceptance also remain
+required. Do not repeat clean or move/copy artifacts, create branches/worktrees,
+or tune profiles/jobs. Continue implementation; this is not a completion claim.
+
+R1938 found two further removed-wrapper accesses in CLI's standalone
+environment_callable_tensor integration test; migrated them without touching the
+held CLI check tests. R1940 workspace all-target/all-feature/locked check now
+passes6.06s. This is compile evidence, not execution of the new Root quota,
+round-trip or consumer tests. R1939 structure passes:3160 files,3030 Rust files,
+1723940 physical Rust LOC,97 packages,376 review triggers,zero blocking findings.
+The tensor edits do not change physical LOC or graph edges. Ordinary/strict
+Clippy, post-migration nextest and the Root failure wire gap remain pending under
+the user's explicit intermediate-checkpoint policy.
+
+Ownership review:the existing Product snapshot grammar now owns Root as well as
+its correlated frames, rather than exposing two independently restorable owners.
+snapshot.rs is171677 bytes/4078 physical LOC versus4147 at the inspected base;
+the transaction removes the separate rollback wrapper and duplicated owned restore
+loop. root.rs is67201 bytes/1807 LOC versus1789, with generic phase/retained-value
+inspection on the same Root owner; root/snapshot.rs is12383 bytes/315 LOC versus264
+and owns the inert durable projection/binding. Session's one storage grammar is
+23713 bytes/574 LOC versus530; persistence is45447 bytes/1062 LOC versus1100.
+Source binding belongs to Core, the session bank includes the complete executor,
+and driver retains host/presentation commit responsibility. No state side table,
+dependency edge, I/O owner or contract-version exception was introduced.
+
+R1942 repeats the structural gate on the final frozen candidate and passes with
+the same3160/3030/1723940/97/376/0 counts; all3938 runtime/spec inputs match before
+and after that command. R1939's post-check comparison is explicitly qualified as
+retrospective because the two CLI wrapper-field edits followed that scan; use
+R1942 for final-byte structure evidence. R1940 compiles the final consumer edits.
+This is an intermediate18-path checkpoint with runtime/lint acceptance pending,
+as authorized by the user. Next execute the failed-Root durable round trip and
+finish the missing failure lifecycle, then validate the complete owner/consumer
+matrix. Preserve the complete objective and the inherited dirty inventory.

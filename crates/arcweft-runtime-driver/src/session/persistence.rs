@@ -1,5 +1,6 @@
 //! Foreground runtime activation and atomic session snapshot persistence.
 
+use crate::session_save::BundleSessionBoundSavePayload;
 use arcweft_core::plan::RuntimeDialogueContentApplicationKey;
 use arcweft_core::value::{RuntimeBundleAssetOpaqueRole, RuntimeFormatContext};
 
@@ -65,20 +66,6 @@ impl<'a> SessionRestoreValueValidator<'a> {
         result.map_err(|message| BundleSessionSaveError::RuntimeValueValidation { message })
     }
 
-    fn visit_root(
-        &mut self,
-        root: Option<&crate::session_save::RootStateSnapshotV1>,
-    ) -> Result<(), BundleSessionSaveError> {
-        let result = root
-            .and_then(|root| root.phase.state_value())
-            .map_or(Ok(()), |value| {
-                arcweft_core::value::visit_runtime_value_graph(&value.0, |value| {
-                    self.validate_value(value.into())
-                })
-            });
-        self.finish(result)
-    }
-
     fn visit_presentation(
         &mut self,
         presentation: &BundlePresentationSnapshot,
@@ -93,7 +80,6 @@ impl<'a> SessionRestoreValueValidator<'a> {
         &mut self,
         snapshot: &BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
-        self.visit_root(snapshot.root.as_ref())?;
         let result = snapshot
             .executor
             .state
@@ -109,19 +95,8 @@ impl<'a> SessionRestoreValueValidator<'a> {
 
     fn visit_payload(
         &mut self,
-        payload: &BundleSessionSavePayload,
+        payload: &BundleSessionBoundSavePayload,
     ) -> Result<(), BundleSessionSaveError> {
-        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
-        let result = payload
-            .root
-            .as_ref()
-            .and_then(|root| root.retained_value())
-            .map_or(Ok(()), |value| {
-                value
-                    .try_visit(limits, |value| self.validate_value(value))
-                    .map_err(|error| error.to_string())
-            });
-        self.finish(result)?;
         let result = payload
             .executor
             .state
@@ -227,10 +202,6 @@ impl BundleSession {
             .ok_or_else(|| BundleSessionSaveError::UnsupportedExecutorTier {
                 tier: self.executor.tier().as_str().to_owned(),
             })?;
-        let root = self.executor.product_root_state_snapshot();
-        // The root snapshot is projected from this sealed live root. Its
-        // state/event payloads passed recursive unrestricted admission before
-        // root execution could retain or copy them.
         let next_step_index =
             u64::try_from(self.next_step_index).map_err(|_| BundleSessionSaveError::Encode {
                 message: "next step index does not fit the final u64 session field".to_owned(),
@@ -246,7 +217,6 @@ impl BundleSession {
             active_locale: self.active_locale.clone(),
             character_presentation: self.character_presentation_snapshot(&self.presentation)?,
             active_entry,
-            root,
             runtime: BundleSessionRuntimeSnapshot {
                 source_label: self.source_label.clone(),
                 next_step_index,
@@ -443,8 +413,12 @@ impl BundleSession {
             .images()
             .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
             .find(|schema| schema.program_owner().same_program(&program_owner));
+        let payload = payload
+            .bind_executor(&self.executor)
+            .map_err(|message| BundleSessionSaveError::Decode { message })?;
         payload
             .admit_retained(
+                &program_owner,
                 &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
                     program_owner.clone(),
                     arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
@@ -496,8 +470,9 @@ impl BundleSession {
         &self,
         snapshot: &BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
+        let owner = self.executor.program_owner();
         let mut admission = arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-            self.executor.program_owner(),
+            owner.clone(),
             arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
         );
         snapshot
@@ -512,15 +487,9 @@ impl BundleSession {
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;
-        crate::session_save::RootStateSnapshotV1::admit_optional_retained(
-            snapshot.root.as_ref(),
-            &snapshot.active_entry,
-            &mut admission,
-        )
-        .map_err(|error| BundleSessionSaveError::Root {
-            message: error.to_string(),
-        })?;
-        let owner = self.executor.program_owner();
+        snapshot
+            .admit_executor(&owner, &mut admission)
+            .map_err(|message| BundleSessionSaveError::Root { message })?;
         let schema = self
             .runtime_images
             .images()
@@ -557,7 +526,6 @@ impl BundleSession {
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
         self.validate_presentation_runtime_context(&snapshot.presentation)?;
         validate_dialogue_content_frames(&self.dialogue_content, &snapshot.presentation)?;
-        let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;
         let BundleSessionExecutorSnapshot { generation, state } = snapshot.executor;
         if generation != active_generation {
@@ -608,7 +576,6 @@ impl BundleSession {
         let old_image = self.executor.product_inert_rollback_image()?;
         let old_entry =
             old_image
-                .product
                 .fiber
                 .root
                 .entry()
@@ -642,11 +609,6 @@ impl BundleSession {
             let mut restored_executor = restored_executor
                 .restore_snapshot(executor_snapshot)
                 .map_err(|error| BundleSessionSaveError::from(error.into_parts().1))?;
-            restored_executor
-                .restore_product_root_snapshot(&active_entry, snapshot.root)
-                .map_err(|error| BundleSessionSaveError::Root {
-                    message: error.to_string(),
-                })?;
             let restored_launches = restored_executor.restartable_dispatches();
             let restored_tasks = RuntimeTaskRegistry::restore_restartable(
                 &restartable_tasks,

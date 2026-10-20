@@ -276,7 +276,9 @@ impl ActiveRootState {
     pub fn pending_command_count(&self) -> usize {
         self.committed_commands.len()
     }
+}
 
+impl<P> ActiveRootState<P> {
     #[must_use]
     pub const fn reducer_active(&self) -> bool {
         matches!(
@@ -572,6 +574,32 @@ impl RootStartupContract {
 }
 
 impl<P> RootRuntime<P> {
+    #[must_use]
+    pub fn save_blockers(&self) -> RootSaveBlockers {
+        RootSaveBlockers {
+            reducer_active: self.active.reducer_active(),
+            pending_events: u32::try_from(self.active.queued_events.len()).unwrap_or(u32::MAX),
+            pending_commands: u32::try_from(self.active.committed_commands.len())
+                .unwrap_or(u32::MAX),
+        }
+    }
+
+    pub(crate) fn visit_stored_value_roots<E>(
+        &self,
+        mut visitor: impl FnMut(&P) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Some(value) = self.active.phase.state_value() {
+            visitor(value)?;
+        }
+        for event in &self.active.queued_events {
+            visitor(&event.payload)?;
+        }
+        for envelope in &self.active.committed_commands {
+            visitor(envelope.command.payload())?;
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub const fn active(&self) -> &ActiveRootState<P> {
         &self.active
@@ -1127,16 +1155,6 @@ impl RootRuntime {
             event_layout: self.active.event_layout,
             phase,
             next_sequence: self.active.next_sequence,
-        }
-    }
-
-    #[must_use]
-    pub fn save_blockers(&self) -> RootSaveBlockers {
-        RootSaveBlockers {
-            reducer_active: self.active.reducer_active(),
-            pending_events: u32::try_from(self.active.queued_events.len()).unwrap_or(u32::MAX),
-            pending_commands: u32::try_from(self.active.committed_commands.len())
-                .unwrap_or(u32::MAX),
         }
     }
 

@@ -25,6 +25,8 @@ impl Clone for RootStateSaveSnapshotV1 {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootStateSaveSnapshotError {
+    #[error("Root save requires quiescence: {blockers:?}")]
+    NotQuiescent { blockers: super::RootSaveBlockers },
     #[error(transparent)]
     Root(#[from] RootRuntimeError),
     #[error(transparent)]
@@ -161,6 +163,55 @@ root_snapshot_admission_api!(RootStateSnapshotV1);
 root_snapshot_admission_api!(RootStateSaveSnapshotV1);
 
 impl RootStateSaveSnapshotV1 {
+    pub(crate) fn from_runtime_image(
+        root: &super::RootRuntimeRollbackImage,
+    ) -> Result<Self, RootStateSaveSnapshotError> {
+        let blockers = root.save_blockers();
+        if blockers.reducer_active || blockers.pending_events != 0 || blockers.pending_commands != 0
+        {
+            return Err(RootStateSaveSnapshotError::NotQuiescent { blockers });
+        }
+        Ok(Self {
+            state_identity: root.active.state_identity.clone(),
+            state_layout: root.active.state_layout,
+            event_identity: root.active.event_identity.clone(),
+            event_layout: root.active.event_layout,
+            phase: root.active.phase.clone(),
+            next_sequence: root.active.next_sequence,
+        })
+    }
+
+    pub(crate) fn into_runtime_image(
+        self,
+        active: &crate::entry::ActiveEntrySnapshotV1,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<super::RootRuntimeRollbackImage, RootStateSaveSnapshotError> {
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        );
+        self.admit_retained(active, &mut admission)?;
+        let roles = Self::selected_roles(active, owner)?.clone();
+        Ok(super::RootRuntime {
+            active: super::ActiveRootState {
+                entry: active.id.clone(),
+                binding: active.binding,
+                state_identity: self.state_identity,
+                state_layout: self.state_layout,
+                event_identity: self.event_identity,
+                event_layout: self.event_layout,
+                phase: self.phase,
+                next_sequence: self.next_sequence,
+                queued_events: Default::default(),
+                committed_commands: Default::default(),
+            },
+            reducer: roles.reducer.clone(),
+            limits: roles.command_policy.root_limits,
+            roles,
+            failure: None,
+        })
+    }
+
     /// Borrows the existing inert state carrier for pre-construction catalog
     /// inspection. Selected-entry admission remains the original authority.
     #[must_use]

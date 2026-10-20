@@ -2026,12 +2026,18 @@ entry cli @entry.main { goto @flow.main }
                         .expect("AWBC cancellation step snapshots");
                     let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(saved) =
                         snapshot;
+                    let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(
+                        &saved, &current.program_owner(),
+                    ).expect("project the cancellation boundary to its save grammar");
                     let bytes = serde_json::to_vec(&saved).expect("encode cancellation save DTO");
                     let decoded = serde_json::from_slice::<
                         arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot,
                     >(&bytes)
                     .expect("decode cancellation save DTO");
                     assert_eq!(decoded, saved);
+                    let decoded = current
+                        .bind_product_save_snapshot(decoded)
+                        .expect("bind cancellation save to the original program and Source");
                     awbc = Some(
                         awbc.take()
                             .expect("AWBC executor transfers to its restore")
