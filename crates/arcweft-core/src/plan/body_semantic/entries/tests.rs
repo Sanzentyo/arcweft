@@ -365,7 +365,10 @@ fn stateful_plan_root_snapshot(
         state_layout: roles.state.layout,
         event_identity: roles.event.identity.clone(),
         event_layout: roles.event.layout,
-        value: crate::value::RuntimePayload(value),
+        phase: crate::root::RootPhase::Initialized {
+            value: crate::value::RuntimePayload(value),
+            reducer: crate::root::RootReducerPhase::Ready,
+        },
         next_sequence: crate::root::TransitionSequence::from_u64(27),
     };
     (active, snapshot)
@@ -432,7 +435,7 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
     assert_eq!(decoded.into_live(&active, &owner).unwrap(), snapshot);
     let original = serde_json::to_value(&wire).unwrap();
     let mut wrong_value = original.clone();
-    wrong_value["value"] =
+    wrong_value["phase"]["value"] =
         serde_json::to_value(crate::value::AwbcRuntimeValueSnapshot::Bool(true)).unwrap();
     let mut wrong_layout = original.clone();
     wrong_layout["state_layout"] =
@@ -443,7 +446,7 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
         assert_eq!(serde_json::to_vec(&wire).unwrap(), bytes);
     }
     let mut wrong_callable = original;
-    wrong_callable["value"] =
+    wrong_callable["phase"]["value"] =
         serde_json::to_value(crate::value::AwbcRuntimeValueSnapshot::Callable(
             crate::value::AwbcRuntimeCallableSnapshot {
                 state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
@@ -465,7 +468,7 @@ fn root_wire_uses_original_entry_roles_and_rejects_forged_payload_atomically() {
     wrong_entry.binding = EntryBindingIdentity::from_bytes([0; 32]);
     assert!(wire.clone().into_live(&wrong_entry, &owner).is_err());
     assert!(RootStateSaveSnapshotV1::from_live(&snapshot, &wrong_entry, &owner).is_err());
-    assert_eq!(snapshot.value, stateful_plan_root_snapshot(&owner).1.value);
+    assert_eq!(snapshot.phase, stateful_plan_root_snapshot(&owner).1.phase);
 }
 
 #[test]

@@ -451,7 +451,10 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
             Err(RootRuntimeError::InvalidInitialValue(_))
         ));
         let mut snapshot = snapshot;
-        snapshot.value = RuntimePayload(invalid);
+        snapshot.phase = RootPhase::Initialized {
+            value: RuntimePayload(invalid),
+            reducer: RootReducerPhase::Ready,
+        };
         assert!(matches!(
             RootRuntime::from_snapshot(fixture.contract.clone(), snapshot, program),
             Err(RootRuntimeError::InvalidSnapshotValue(_))
@@ -487,7 +490,10 @@ fn root_state_copy_obligation_rejects_nested_affine_value_at_both_ingresses() {
             state_layout: fixture.contract.roles.state.layout,
             event_identity: fixture.contract.roles.event.identity.clone(),
             event_layout: fixture.contract.roles.event.layout,
-            value: RuntimePayload(fixture.state(affine_value())),
+            phase: RootPhase::Initialized {
+                value: RuntimePayload(fixture.state(affine_value())),
+                reducer: RootReducerPhase::Ready,
+            },
             next_sequence: TransitionSequence::ZERO,
         };
         assert!(matches!(
@@ -515,7 +521,7 @@ fn reducer_receives_one_owned_affine_event_without_copying_it() {
         assert_eq!(args.len(), 2);
         assert!(args[1].ownership() == crate::value::ownership::RuntimeValueOwnership::Affine);
         assert_eq!(
-            root.snapshot_state().value.0,
+            root.snapshot_state().phase.state_value().unwrap().0,
             fixture.state(RuntimeValue::Bool(false))
         );
     }
@@ -574,16 +580,19 @@ fn retained_awbc_root_fixture() -> (RootRuntime, crate::task::RuntimeProgramOwne
         state_layout: contract.roles.state.layout,
         event_identity: contract.roles.event.identity.clone(),
         event_layout: contract.roles.event.layout,
-        value: RuntimePayload(
-            owner
-                .types()
-                .try_record_value(
-                    contract.roles.state.semantic_identity,
-                    vec![],
-                    contract.roles.command_policy.root_limits.schema,
-                )
-                .unwrap(),
-        ),
+        phase: RootPhase::Initialized {
+            value: RuntimePayload(
+                owner
+                    .types()
+                    .try_record_value(
+                        contract.roles.state.semantic_identity,
+                        vec![],
+                        contract.roles.command_policy.root_limits.schema,
+                    )
+                    .unwrap(),
+            ),
+            reducer: RootReducerPhase::Ready,
+        },
         next_sequence: TransitionSequence::ZERO,
     };
     (
@@ -606,18 +615,185 @@ fn retained_root_fixture(
         state_layout: contract.roles.state.layout,
         event_identity: contract.roles.event.identity.clone(),
         event_layout: contract.roles.event.layout,
-        value: RuntimePayload(
-            owner
-                .types()
-                .try_record_value(semantic(1), vec![], limits.schema)
-                .unwrap(),
-        ),
+        phase: RootPhase::Initialized {
+            value: RuntimePayload(
+                owner
+                    .types()
+                    .try_record_value(semantic(1), vec![], limits.schema)
+                    .unwrap(),
+            ),
+            reducer: RootReducerPhase::Ready,
+        },
         next_sequence: TransitionSequence::ZERO,
     };
     (
         RootRuntime::from_snapshot(contract, snapshot, owner.types()).unwrap(),
         owner,
     )
+}
+
+fn active_entry_for_root(
+    owner: &crate::task::RuntimeProgramOwner,
+    contract: &RootStartupContract,
+) -> crate::entry::ActiveEntrySnapshotV1 {
+    let kind = match owner {
+        crate::task::RuntimeProgramOwner::Plan(plan) => plan
+            .entries()
+            .iter()
+            .find(|entry| entry.id == contract.entry)
+            .unwrap()
+            .kind
+            .clone(),
+        crate::task::RuntimeProgramOwner::Awbc(program) => program
+            .entries
+            .iter()
+            .find(|entry| entry.runtime_id == contract.entry)
+            .unwrap()
+            .kind
+            .runtime_kind(&program.strings)
+            .unwrap(),
+    };
+    crate::entry::ActiveEntrySnapshotV1 {
+        id: contract.entry.clone(),
+        kind,
+        binding: contract.roles.binding,
+    }
+}
+
+#[test]
+fn pending_initializer_has_no_value_and_round_trips_under_zero_value_allowance() {
+    for (initialized, owner) in [
+        retained_root_fixture(RootExecutionLimits::engine_default()),
+        retained_awbc_root_fixture(),
+    ] {
+        let contract =
+            RootStartupContract::from_program(owner.types(), &initialized.active.entry).unwrap();
+        let pending = RootRuntime::prepare(contract.clone(), owner.types()).unwrap();
+        assert_eq!(
+            pending.initializer_callable().unwrap(),
+            &contract.roles.initializer
+        );
+        assert!(pending.active.phase.state_value().is_none());
+        let mut visited = 0;
+        pending.visit_runtime_values(|_| visited += 1);
+        assert_eq!(visited, 0);
+        assert_eq!(pending.save_blockers(), RootSaveBlockers::default());
+        let allowance = RuntimeSchemaLimits {
+            max_nodes: 0,
+            max_encoded_bytes: 0,
+            ..RuntimeSchemaLimits::engine_default()
+        };
+        let mut admission =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), allowance);
+        pending.admit_retained(&mut admission).unwrap();
+        let image = pending.inert_rollback_image(&owner).unwrap();
+        assert_eq!(
+            RootRuntime::from_rollback_image(image, &owner).unwrap(),
+            pending
+        );
+
+        let active = active_entry_for_root(&owner, &contract);
+        let live = pending.snapshot_state();
+        let wire = RootStateSaveSnapshotV1::from_live(&live, &active, &owner).unwrap();
+        assert!(wire.retained_value().is_none());
+        let encoded = serde_json::to_vec(&wire).unwrap();
+        let decoded: RootStateSaveSnapshotV1 = serde_json::from_slice(&encoded).unwrap();
+        let mut admission =
+            crate::value::RuntimeRetainedValueAdmission::for_program(owner.clone(), allowance);
+        decoded.admit_retained(&active, &mut admission).unwrap();
+        let restored = decoded.into_live(&active, &owner).unwrap();
+        assert_eq!(restored, live);
+        assert_eq!(
+            RootRuntime::from_snapshot(contract.clone(), restored, owner.types()).unwrap(),
+            pending
+        );
+
+        let mut wrong_coordinate = pending.snapshot_state();
+        let RootPhase::Initializing {
+            state_parameter, ..
+        } = &mut wrong_coordinate.phase
+        else {
+            unreachable!()
+        };
+        *state_parameter = crate::entry::FlowParameterCoordinate::from_position(1);
+        assert!(RootStateSaveSnapshotV1::from_live(&wrong_coordinate, &active, &owner).is_err());
+        let mut wrong_sequence = pending.snapshot_state();
+        wrong_sequence.next_sequence = TransitionSequence::from_u64(1);
+        assert!(RootRuntime::from_snapshot(contract, wrong_sequence, owner.types()).is_err());
+        assert_eq!(pending.snapshot_state(), live);
+    }
+}
+
+#[test]
+fn rejected_initializer_retains_pending_owner_and_queued_events_before_retry() {
+    for (initialized, owner) in [
+        retained_root_fixture(RootExecutionLimits::engine_default()),
+        retained_awbc_root_fixture(),
+    ] {
+        let contract =
+            RootStartupContract::from_program(owner.types(), &initialized.active.entry).unwrap();
+        let mut pending = RootRuntime::prepare(contract.clone(), owner.types()).unwrap();
+        let event = owner
+            .types()
+            .try_record_value(
+                contract.roles.event.semantic_identity,
+                vec![],
+                pending.limits.schema,
+            )
+            .unwrap();
+        pending
+            .ingress(
+                vec![RootEventInput::new(RuntimePayload(event))],
+                owner.types(),
+            )
+            .unwrap();
+        assert!(matches!(
+            pending.begin_reduction(),
+            Err(RootRuntimeError::InitializationPending)
+        ));
+        let before = pending.inert_rollback_image(&owner).unwrap();
+        let rejected = pending
+            .complete_initialization(RuntimeValue::Bool(false), owner.types())
+            .unwrap_err();
+        assert!(matches!(
+            rejected.error,
+            RootRuntimeError::InvalidInitialValue(_)
+        ));
+        assert_eq!(rejected.root.inert_rollback_image(&owner).unwrap(), before);
+        let value = owner
+            .types()
+            .try_record_value(
+                contract.roles.state.semantic_identity,
+                vec![],
+                rejected.root.limits.schema,
+            )
+            .unwrap();
+        let mut startup = rejected
+            .root
+            .complete_initialization(value, owner.types())
+            .unwrap();
+        assert_eq!(startup.initial_flow, contract.initial_flow);
+        assert_eq!(
+            startup.initial_state_binding.parameter,
+            contract.initial_state_parameter
+        );
+        assert_eq!(
+            &startup.initial_state_binding.value,
+            &startup.root.active.phase.state_value().unwrap().0
+        );
+        assert_eq!(startup.root.active.pending_event_count(), 1);
+        assert!(matches!(
+            startup.root.initializer_callable(),
+            Err(RootRuntimeError::InitializationAlreadyCompleted)
+        ));
+        let _invocation = startup.root.begin_reduction().unwrap().unwrap();
+        assert!(startup.root.active.reducer_active());
+        let active = active_entry_for_root(&owner, &contract);
+        assert!(
+            RootStateSaveSnapshotV1::from_live(&startup.root.snapshot_state(), &active, &owner)
+                .is_err()
+        );
+    }
 }
 
 #[test]
@@ -730,7 +906,7 @@ fn canonical_result_payload_reduces_and_bad_nested_state_never_commits() {
         assert_eq!(outcome.outcomes.len(), 1);
         assert_eq!(evaluator.calls, 1);
         assert_eq!(
-            root.snapshot_state().value.0,
+            root.snapshot_state().phase.state_value().unwrap().0,
             fixture.state(RuntimeValue::Bool(false))
         );
         let before = root.snapshot_state();
@@ -771,7 +947,7 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
     let fixture = Fixture::new();
     for program in fixture.programs() {
         let mut root = fixture.start(program);
-        let before = root.snapshot_state();
+        let mut before = root.snapshot_state();
         assert!(matches!(
             root.complete_reduction(
                 Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
@@ -785,7 +961,11 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
         let (callable, args) = invocation.into_parts();
         assert_eq!(callable, fixture.contract.roles.reducer);
         assert_eq!(args.len(), 2);
-        assert_eq!(args[0], before.value.0);
+        assert_eq!(args[0], before.phase.state_value().unwrap().0);
+        let RootPhase::Initialized { reducer, .. } = &mut before.phase else {
+            unreachable!()
+        };
+        *reducer = RootReducerPhase::Evaluating;
         assert_eq!(root.snapshot_state(), before);
         assert!(matches!(
             root.begin_reduction(),
@@ -913,7 +1093,12 @@ fn suspended_reducer_phase_and_event_frontier_survive_inert_rollback() {
                 ..
             }
         ));
-        assert_eq!(restored.snapshot_state(), root.snapshot_state());
+        let mut expected = root.snapshot_state();
+        let RootPhase::Initialized { reducer, .. } = &mut expected.phase else {
+            unreachable!()
+        };
+        *reducer = RootReducerPhase::Ready;
+        assert_eq!(restored.snapshot_state(), expected);
         assert_eq!(restored.active.pending_event_count(), 0);
     }
 }

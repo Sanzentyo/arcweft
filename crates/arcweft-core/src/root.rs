@@ -89,10 +89,121 @@ impl RootReducerInvocation {
     }
 }
 
+/// The root's execution phase and its sole committed state, when one exists.
+/// Initializer execution never manufactures a placeholder state value.
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "phase", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(bound(
+    serialize = "P: crate::value::InertRuntimeValueStorage",
+    deserialize = "P: crate::value::InertRuntimeValueStorage"
+))]
+pub enum RootPhase<P> {
+    Initializing {
+        flow: FlowRuntimeId,
+        state_parameter: crate::entry::FlowParameterCoordinate,
+    },
+    Initialized {
+        value: P,
+        reducer: RootReducerPhase,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-enum RootReducerPhase {
+pub enum RootReducerPhase {
     Ready,
     Evaluating,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum RootPhaseHeader<'a> {
+    Initializing {
+        flow: &'a FlowRuntimeId,
+        state_parameter: crate::entry::FlowParameterCoordinate,
+    },
+    Initialized {
+        reducer: RootReducerPhase,
+    },
+}
+
+impl<P> RootPhase<P> {
+    #[must_use]
+    pub const fn state_value(&self) -> Option<&P> {
+        match self {
+            Self::Initializing { .. } => None,
+            Self::Initialized { value, .. } => Some(value),
+        }
+    }
+
+    const fn header(&self) -> RootPhaseHeader<'_> {
+        match self {
+            Self::Initializing {
+                flow,
+                state_parameter,
+            } => RootPhaseHeader::Initializing {
+                flow,
+                state_parameter: *state_parameter,
+            },
+            Self::Initialized { reducer, .. } => RootPhaseHeader::Initialized { reducer: *reducer },
+        }
+    }
+
+    fn validate_initialization(
+        &self,
+        contract: &RootStartupContract,
+        sequence: TransitionSequence,
+    ) -> Result<(), RootRuntimeError> {
+        if let Self::Initializing {
+            flow,
+            state_parameter,
+        } = self
+            && (flow != &contract.initial_flow
+                || *state_parameter != contract.initial_state_parameter
+                || sequence != TransitionSequence::ZERO)
+        {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer phase"));
+        }
+        Ok(())
+    }
+
+    fn try_map<Q, E>(self, map: impl FnOnce(P) -> Result<Q, E>) -> Result<RootPhase<Q>, E> {
+        Ok(match self {
+            Self::Initializing {
+                flow,
+                state_parameter,
+            } => RootPhase::Initializing {
+                flow,
+                state_parameter,
+            },
+            Self::Initialized { value, reducer } => RootPhase::Initialized {
+                value: map(value)?,
+                reducer,
+            },
+        })
+    }
+
+    fn try_map_ref<Q, E>(&self, map: impl FnOnce(&P) -> Result<Q, E>) -> Result<RootPhase<Q>, E> {
+        Ok(match self {
+            Self::Initializing {
+                flow,
+                state_parameter,
+            } => RootPhase::Initializing {
+                flow: flow.clone(),
+                state_parameter: *state_parameter,
+            },
+            Self::Initialized { value, reducer } => RootPhase::Initialized {
+                value: map(value)?,
+                reducer: *reducer,
+            },
+        })
+    }
+}
+
+impl Clone for RootPhase<crate::value::AwbcRuntimeValueSnapshot> {
+    fn clone(&self) -> Self {
+        self.try_map_ref::<_, std::convert::Infallible>(|value| Ok(value.clone()))
+            .unwrap_or_else(|never| match never {})
+    }
 }
 
 pub use crate::value::RuntimeCommand;
@@ -143,11 +254,10 @@ pub struct ActiveRootState<P = RuntimePayload> {
     pub state_layout: TypeLayoutHash,
     pub event_identity: crate::entry::RuntimeNominalTypeId,
     pub event_layout: TypeLayoutHash,
-    pub value: P,
+    pub phase: RootPhase<P>,
     pub next_sequence: TransitionSequence,
     queued_events: VecDeque<SequencedRootEvent<P>>,
     committed_commands: VecDeque<RuntimeCommandEnvelope<P>>,
-    reducer_phase: RootReducerPhase,
 }
 
 impl ActiveRootState {
@@ -163,7 +273,13 @@ impl ActiveRootState {
 
     #[must_use]
     pub const fn reducer_active(&self) -> bool {
-        matches!(self.reducer_phase, RootReducerPhase::Evaluating)
+        matches!(
+            self.phase,
+            RootPhase::Initialized {
+                reducer: RootReducerPhase::Evaluating,
+                ..
+            }
+        )
     }
 }
 
@@ -195,11 +311,10 @@ impl Clone for ActiveRootState<crate::value::AwbcRuntimeValueSnapshot> {
             state_layout: self.state_layout,
             event_identity: self.event_identity.clone(),
             event_layout: self.event_layout,
-            value: self.value.clone(),
+            phase: self.phase.clone(),
             next_sequence: self.next_sequence,
             queued_events: self.queued_events.clone(),
             committed_commands: self.committed_commands.clone(),
-            reducer_phase: self.reducer_phase,
         }
     }
 }
@@ -234,6 +349,15 @@ pub struct RootStartup {
     pub initializer_state_digest: RuntimeValueDigest,
 }
 
+/// A rejected initializer retains its pending root and queued events.
+#[derive(Debug, Error)]
+#[error("{error}")]
+pub struct RejectedRootInitialization {
+    #[source]
+    pub error: RootRuntimeError,
+    pub root: RootRuntime,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RootStepResult {
     pub outcomes: Vec<RootTransitionOutcome>,
@@ -262,6 +386,10 @@ pub enum RootRuntimeError {
     NotStateful(String),
     #[error("runtime entry `{0}` references a missing initializer helper")]
     MissingInitializer(String),
+    #[error("root initialization is still pending")]
+    InitializationPending,
+    #[error("root initialization has already completed")]
+    InitializationAlreadyCompleted,
     #[error("runtime entry `{0}` references a missing reducer helper")]
     MissingReducer(String),
     #[error("runtime entry `{0}` references missing initial-flow executable metadata")]
@@ -347,39 +475,71 @@ impl RootStartupContract {
         entry_id: &EntryRuntimeId,
     ) -> Result<Self, RootRuntimeError> {
         plan.verify()?;
-        let entry = plan
-            .entries
-            .iter()
-            .find(|entry| entry.id == *entry_id)
+        Self::from_program(
+            crate::program_types::RuntimeProgramTypes::Plan(plan),
+            entry_id,
+        )
+    }
+
+    /// Resolves the selected entry's exact startup ABI from either original inventory.
+    pub fn from_program(
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        entry_id: &EntryRuntimeId,
+    ) -> Result<Self, RootRuntimeError> {
+        let entry = program
+            .entry(entry_id)
             .ok_or_else(|| RootRuntimeError::MissingEntry(entry_id.canonical_label()))?;
-        let RuntimeEntryRoles::Stateful(roles) = &entry.roles else {
-            return Err(RootRuntimeError::NotStateful(entry.id.canonical_label()));
+        let RuntimeEntryRoles::Stateful(roles) = entry.roles() else {
+            return Err(RootRuntimeError::NotStateful(entry_id.canonical_label()));
         };
-        plan.flow_executables
-            .iter()
-            .find(|flow| {
-                flow.flow == roles.initial_flow.flow && flow.contract == roles.initial_flow.contract
-            })
-            .ok_or_else(|| {
-                RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())
-            })?;
-        let initial_flow = plan
-            .flows
-            .schema(&roles.initial_flow.flow)
-            .cloned()
-            .ok_or_else(|| {
-                RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())
-            })?;
-        let [state_parameter] = initial_flow.parameters.as_slice() else {
-            return Err(RootRuntimeError::MissingInitialFlowExecutable(
-                entry.id.canonical_label(),
-            ));
+        let missing = || RootRuntimeError::MissingInitialFlowExecutable(entry_id.canonical_label());
+        let state_parameter = match program {
+            crate::program_types::RuntimeProgramTypes::Plan(plan) => {
+                plan.flow_executables()
+                    .iter()
+                    .find(|flow| {
+                        flow.flow == roles.initial_flow.flow
+                            && flow.contract == roles.initial_flow.contract
+                    })
+                    .ok_or_else(missing)?;
+                let schema = plan
+                    .flow_schemas()
+                    .iter()
+                    .find(|schema| schema.flow == roles.initial_flow.flow)
+                    .ok_or_else(missing)?;
+                let [parameter] = schema.parameters.as_slice() else {
+                    return Err(missing());
+                };
+                parameter.coordinate
+            }
+            crate::program_types::RuntimeProgramTypes::Awbc(program) => {
+                let executable = program
+                    .flow_executables
+                    .iter()
+                    .find(|flow| {
+                        flow.metadata.flow == roles.initial_flow.flow
+                            && flow.metadata.contract == roles.initial_flow.contract
+                    })
+                    .ok_or_else(missing)?;
+                let function = program
+                    .functions
+                    .get(executable.function.index())
+                    .ok_or_else(missing)?;
+                let signature = program
+                    .signatures
+                    .get(function.signature.index())
+                    .ok_or_else(missing)?;
+                if signature.params.len() != 1 {
+                    return Err(missing());
+                }
+                crate::entry::FlowParameterCoordinate::from_position(0)
+            }
         };
         Ok(Self {
-            entry: entry.id.clone(),
+            entry: entry_id.clone(),
             roles: roles.as_ref().clone(),
-            initial_flow: initial_flow.flow,
-            initial_state_parameter: state_parameter.coordinate,
+            initial_flow: roles.initial_flow.flow.clone(),
+            initial_state_parameter: state_parameter,
         })
     }
 }
@@ -415,7 +575,7 @@ impl<P> RootRuntime<P> {
             &self.active.event_identity,
             self.active.event_layout,
             self.active.next_sequence,
-            self.active.reducer_phase,
+            self.active.phase.header(),
             &self.roles,
             &self.reducer,
             self.limits,
@@ -463,6 +623,19 @@ impl<P> RootRuntime<P> {
         .map_err(|error| invalid(error.to_string()))?;
         roles.state.validate_for_program(owner.types())?;
         roles.event.validate_for_program(owner.types())?;
+        if matches!(self.active.phase, RootPhase::Initializing { .. }) {
+            let contract = RootStartupContract::from_program(owner.types(), &self.active.entry)
+                .map_err(|error| invalid(error.to_string()))?;
+            self.active
+                .phase
+                .validate_initialization(&contract, self.active.next_sequence)
+                .map_err(|error| invalid(error.to_string()))?;
+            if !self.active.committed_commands.is_empty() || self.failure.is_some() {
+                return Err(invalid(
+                    "uninitialized root contains a completed transition".to_owned(),
+                ));
+            }
+        }
         if !self
             .limits
             .permits_pending_events(self.active.queued_events.len())
@@ -479,8 +652,11 @@ impl<P> RootRuntime<P> {
             .next_sequence
             .get()
             .checked_add(u64::from(matches!(
-                self.active.reducer_phase,
-                RootReducerPhase::Evaluating
+                self.active.phase,
+                RootPhase::Initialized {
+                    reducer: RootReducerPhase::Evaluating,
+                    ..
+                }
             )));
         for event in &self.active.queued_events {
             admission.validate_metadata(&event.sequence)?;
@@ -537,26 +713,28 @@ impl<P> RootRuntime<P> {
                 owner.ok_or_else(|| crate::value::AwbcRuntimeValueSnapshotError::Message {
                     message: "root requires its original program".to_owned(),
                 })?;
-            let state = self.active.value.borrowed_view();
-            state.admit_ownership(
-                crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
-                resources,
-                0,
-            )?;
-            owner
-                .types()
-                .value_type(roles.state.semantic_identity)?
-                .validate_snapshot_storage(state, &resources.work(), P::admission_origin())?;
-            crate::entry::schema::value_encoding::visit_admitted_storage(
-                state,
-                &resources.work(),
-                validate_replay_safe_node,
-            )?;
-            crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
-                state,
-                Some(owner),
-                resources,
-            )?;
+            if let Some(value) = self.active.phase.state_value() {
+                let state = value.borrowed_view();
+                state.admit_ownership(
+                    crate::value::ownership::RuntimeValueOwnershipRequirement::Unrestricted,
+                    resources,
+                    0,
+                )?;
+                owner
+                    .types()
+                    .value_type(roles.state.semantic_identity)?
+                    .validate_snapshot_storage(state, &resources.work(), P::admission_origin())?;
+                crate::entry::schema::value_encoding::visit_admitted_storage(
+                    state,
+                    &resources.work(),
+                    validate_replay_safe_node,
+                )?;
+                crate::value::AwbcRuntimeValueSnapshot::validate_admitted_storage_view(
+                    state,
+                    Some(owner),
+                    resources,
+                )?;
+            }
             for event in &self.active.queued_events {
                 let value = event.payload.borrowed_view();
                 resources.validate_view(value, 0, None)?;
@@ -662,7 +840,10 @@ impl RootRuntime {
                 state_layout: self.active.state_layout,
                 event_identity: self.active.event_identity.clone(),
                 event_layout: self.active.event_layout,
-                value: image(self.active.value.value())?,
+                phase: self
+                    .active
+                    .phase
+                    .try_map_ref(|payload| image(payload.value()))?,
                 next_sequence: self.active.next_sequence,
                 queued_events: self
                     .active
@@ -691,7 +872,6 @@ impl RootRuntime {
                         })
                     })
                     .collect::<Result<_, String>>()?,
-                reducer_phase: self.active.reducer_phase,
             },
             roles: self.roles.clone(),
             reducer: self.reducer.clone(),
@@ -739,7 +919,9 @@ impl RootRuntime {
                 state_layout: image.state_layout,
                 event_identity: image.event_identity,
                 event_layout: image.event_layout,
-                value: RuntimePayload(value(image.value)?),
+                phase: image
+                    .phase
+                    .try_map(|image| value(image).map(RuntimePayload))?,
                 next_sequence: image.next_sequence,
                 queued_events: image
                     .queued_events
@@ -767,7 +949,6 @@ impl RootRuntime {
                         })
                     })
                     .collect::<Result<_, String>>()?,
-                reducer_phase: image.reducer_phase,
             },
             roles,
             reducer,
@@ -775,15 +956,11 @@ impl RootRuntime {
             failure,
         })
     }
-    /// Executes the state initializer and constructs the root/flow candidates.
-    ///
-    /// The caller atomically installs both candidates only after its flow
-    /// constructor succeeds.
-    pub fn start(
+    /// Admits startup metadata without executing the initializer or creating state.
+    pub fn prepare(
         contract: RootStartupContract,
-        evaluator: &mut impl RootCallableEvaluator,
         program: crate::program_types::RuntimeProgramTypes<'_>,
-    ) -> Result<RootStartup, RootRuntimeError> {
+    ) -> Result<Self, RootRuntimeError> {
         contract.validate_types(program)?;
         let RootStartupContract {
             entry,
@@ -791,49 +968,101 @@ impl RootRuntime {
             initial_flow,
             initial_state_parameter,
         } = contract;
-        let value = evaluator
-            .evaluate_root_callable(&roles.initializer, Vec::new())
-            .map_err(RootRuntimeError::Initializer)?;
-        let payload = RuntimePayload(value);
         let limits = roles.command_policy.root_limits;
-        if !payload.0.ownership().permits_copy() {
-            return Err(RootRuntimeError::AffineRootState {
-                phase: "initializer",
-            });
-        }
-        let initializer_state_digest = roles
-            .state
-            .accepts_payload(program, &payload, limits.schema)
-            .map_err(RootRuntimeError::InvalidInitialValue)?;
         let active = ActiveRootState {
-            entry: entry.clone(),
+            entry,
             binding: roles.binding,
             state_identity: roles.state.identity.clone(),
             state_layout: roles.state.layout,
             event_identity: roles.event.identity.clone(),
             event_layout: roles.event.layout,
-            value: payload.clone(),
+            phase: RootPhase::Initializing {
+                flow: initial_flow,
+                state_parameter: initial_state_parameter,
+            },
             next_sequence: TransitionSequence::ZERO,
             queued_events: VecDeque::new(),
             committed_commands: VecDeque::new(),
-            reducer_phase: RootReducerPhase::Ready,
         };
-        let root = Self {
+        Ok(Self {
             active,
             reducer: roles.reducer.clone(),
             roles,
             limits,
             failure: None,
+        })
+    }
+
+    /// The role whose ordinary executable frame initializes this root.
+    pub fn initializer_callable(&self) -> Result<&RuntimeCallableRole, RootRuntimeError> {
+        if matches!(self.active.phase, RootPhase::Initializing { .. }) {
+            Ok(&self.roles.initializer)
+        } else {
+            Err(RootRuntimeError::InitializationAlreadyCompleted)
+        }
+    }
+
+    /// Constructs root/flow candidates after the initializer frame returns.
+    /// The executable owner publishes both only after its flow constructor succeeds.
+    pub fn complete_initialization(
+        mut self,
+        value: RuntimeValue,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<RootStartup, Box<RejectedRootInitialization>> {
+        let payload = RuntimePayload(value);
+        let prepared = (|| {
+            let RootPhase::Initializing {
+                flow,
+                state_parameter,
+            } = &self.active.phase
+            else {
+                return Err(RootRuntimeError::InitializationAlreadyCompleted);
+            };
+            if !payload.0.ownership().permits_copy() {
+                return Err(RootRuntimeError::AffineRootState {
+                    phase: "initializer",
+                });
+            }
+            let digest = self
+                .roles
+                .state
+                .accepts_payload(program, &payload, self.limits.schema)
+                .map_err(RootRuntimeError::InvalidInitialValue)?;
+            Ok((flow.clone(), *state_parameter, digest))
+        })();
+        let (initial_flow, initial_state_parameter, initializer_state_digest) = match prepared {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                return Err(Box::new(RejectedRootInitialization { error, root: self }));
+            }
+        };
+        let flow_value = payload.0.clone();
+        self.active.phase = RootPhase::Initialized {
+            value: payload,
+            reducer: RootReducerPhase::Ready,
         };
         Ok(RootStartup {
             initial_flow,
             initial_state_binding: RuntimeFlowParameterBinding {
                 parameter: initial_state_parameter,
-                value: payload.0.clone(),
+                value: flow_value,
             },
-            root,
+            root: self,
             initializer_state_digest,
         })
+    }
+
+    pub fn start(
+        contract: RootStartupContract,
+        evaluator: &mut impl RootCallableEvaluator,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<RootStartup, RootRuntimeError> {
+        let root = Self::prepare(contract, program)?;
+        let value = evaluator
+            .evaluate_root_callable(root.initializer_callable()?, Vec::new())
+            .map_err(RootRuntimeError::Initializer)?;
+        root.complete_initialization(value, program)
+            .map_err(|rejected| rejected.error)
     }
 
     #[must_use]
@@ -844,7 +1073,9 @@ impl RootRuntime {
     /// Visits the sole live root state, queued events and committed commands without
     /// manufacturing another owner. Save and rollback admission use this view.
     pub fn visit_runtime_values(&self, mut visitor: impl FnMut(&crate::value::RuntimeValue)) {
-        visitor(self.active.value.value());
+        if let Some(value) = self.active.phase.state_value() {
+            visitor(value.value());
+        }
         for event in &self.active.queued_events {
             visitor(event.payload.value());
         }
@@ -865,16 +1096,23 @@ impl RootRuntime {
 
     #[must_use]
     pub fn snapshot_state(&self) -> RootStateSnapshotV1 {
-        assert!(
-            self.active.value.0.ownership().permits_copy(),
-            "admitted root state must remain recursively unrestricted"
-        );
+        let phase = self
+            .active
+            .phase
+            .try_map_ref::<_, std::convert::Infallible>(|value| {
+                assert!(
+                    value.0.ownership().permits_copy(),
+                    "admitted root state must remain recursively unrestricted"
+                );
+                Ok(value.clone())
+            })
+            .unwrap_or_else(|never| match never {});
         RootStateSnapshotV1 {
             state_identity: self.active.state_identity.clone(),
             state_layout: self.active.state_layout,
             event_identity: self.active.event_identity.clone(),
             event_layout: self.active.event_layout,
-            value: self.active.value.clone(),
+            phase,
             next_sequence: self.active.next_sequence,
         }
     }
@@ -897,6 +1135,9 @@ impl RootRuntime {
         program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<Self, RootRuntimeError> {
         contract.validate_types(program)?;
+        snapshot
+            .phase
+            .validate_initialization(&contract, snapshot.next_sequence)?;
         let RootStartupContract {
             entry,
             roles,
@@ -916,13 +1157,18 @@ impl RootRuntime {
             return Err(RootRuntimeError::SnapshotRoleMismatch("event"));
         }
         let limits = roles.command_policy.root_limits;
-        if !snapshot.value.0.ownership().permits_copy() {
-            return Err(RootRuntimeError::AffineRootState { phase: "saved" });
+        if let RootPhase::Initialized { value, reducer } = &snapshot.phase {
+            if *reducer != RootReducerPhase::Ready {
+                return Err(RootRuntimeError::SnapshotRoleMismatch("active reducer"));
+            }
+            if !value.0.ownership().permits_copy() {
+                return Err(RootRuntimeError::AffineRootState { phase: "saved" });
+            }
+            roles
+                .state
+                .accepts_payload(program, value, limits.schema)
+                .map_err(RootRuntimeError::InvalidSnapshotValue)?;
         }
-        roles
-            .state
-            .accepts_payload(program, &snapshot.value, limits.schema)
-            .map_err(RootRuntimeError::InvalidSnapshotValue)?;
         Ok(Self {
             active: ActiveRootState {
                 entry,
@@ -931,11 +1177,10 @@ impl RootRuntime {
                 state_layout: snapshot.state_layout,
                 event_identity: snapshot.event_identity,
                 event_layout: snapshot.event_layout,
-                value: snapshot.value,
+                phase: snapshot.phase,
                 next_sequence: snapshot.next_sequence,
                 queued_events: VecDeque::new(),
                 committed_commands: VecDeque::new(),
-                reducer_phase: RootReducerPhase::Ready,
             },
             reducer: roles.reducer.clone(),
             roles,
@@ -1077,6 +1322,9 @@ impl RootRuntime {
         if self.active.reducer_active() {
             return Err(RootRuntimeError::ReducerAlreadyActive);
         }
+        let RootPhase::Initialized { value, reducer } = &mut self.active.phase else {
+            return Err(RootRuntimeError::InitializationPending);
+        };
         if self
             .active
             .queued_events
@@ -1088,10 +1336,10 @@ impl RootRuntime {
         let Some(event) = self.active.queued_events.pop_front() else {
             return Ok(None);
         };
-        self.active.reducer_phase = RootReducerPhase::Evaluating;
+        *reducer = RootReducerPhase::Evaluating;
         Ok(Some(RootReducerInvocation {
             callable: self.reducer.clone(),
-            args: vec![self.active.value.0.clone(), event.payload.0],
+            args: vec![value.0.clone(), event.payload.0],
         }))
     }
 
@@ -1124,7 +1372,9 @@ impl RootRuntime {
                     value,
                 } => self.reject_reduction(sequence, code, message, value),
             });
-        self.active.reducer_phase = RootReducerPhase::Ready;
+        if let RootPhase::Initialized { reducer, .. } = &mut self.active.phase {
+            *reducer = RootReducerPhase::Ready;
+        }
         Ok(match disposition {
             Ok(outcome) => outcome,
             Err(failure) => {
@@ -1203,7 +1453,10 @@ impl RootRuntime {
                 "ingress admitted an unconsumable terminal transition sequence",
             )
         })?;
-        self.active.value = state;
+        let RootPhase::Initialized { value, .. } = &mut self.active.phase else {
+            return Err(Self::failure_for(sequence, "root state is not initialized"));
+        };
+        *value = state;
         self.active.next_sequence = next_sequence;
         self.active.committed_commands.extend(envelopes);
         Ok(RootTransitionOutcome::Committed {
@@ -1490,7 +1743,7 @@ pub struct RootStateSnapshot<P> {
     pub state_layout: TypeLayoutHash,
     pub event_identity: crate::entry::RuntimeNominalTypeId,
     pub event_layout: TypeLayoutHash,
-    pub value: P,
+    pub phase: RootPhase<P>,
     pub next_sequence: TransitionSequence,
 }
 

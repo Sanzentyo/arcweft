@@ -17,7 +17,7 @@ impl Clone for RootStateSaveSnapshotV1 {
             state_layout: self.state_layout,
             event_identity: self.event_identity.clone(),
             event_layout: self.event_layout,
-            value: self.value.clone(),
+            phase: self.phase.clone(),
             next_sequence: self.next_sequence,
         }
     }
@@ -50,6 +50,7 @@ impl<P> super::RootStateSnapshot<P> {
             &self.event_identity,
             self.event_layout,
             self.next_sequence,
+            self.phase.header(),
         ))?;
         let owner =
             admission
@@ -74,7 +75,21 @@ impl<P> super::RootStateSnapshot<P> {
             .state
             .validate_for_program(owner.types())
             .map_err(RootRuntimeError::InvalidSnapshotValue)?;
-        let value = self.value.borrowed_value();
+        let value = match &self.phase {
+            super::RootPhase::Initializing { .. } => {
+                let contract = super::RootStartupContract::from_program(owner.types(), &active.id)?;
+                self.phase
+                    .validate_initialization(&contract, self.next_sequence)?;
+                return Ok(());
+            }
+            super::RootPhase::Initialized {
+                value,
+                reducer: super::RootReducerPhase::Ready,
+            } => value.borrowed_value(),
+            super::RootPhase::Initialized { .. } => {
+                return Err(RootRuntimeError::SnapshotRoleMismatch("active reducer").into());
+            }
+        };
         let expected = roles.state.semantic_identity;
         let entry_limits = roles.command_policy.root_limits.schema;
         admission.validate_typed_borrowed(value, expected)?;
@@ -149,8 +164,8 @@ impl RootStateSaveSnapshotV1 {
     /// Borrows the existing inert state carrier for pre-construction catalog
     /// inspection. Selected-entry admission remains the original authority.
     #[must_use]
-    pub fn retained_value(&self) -> crate::value::RuntimeBorrowedValue<'_> {
-        (&self.value).into()
+    pub fn retained_value(&self) -> Option<crate::value::RuntimeBorrowedValue<'_>> {
+        self.phase.state_value().map(Into::into)
     }
 
     pub fn from_live(
@@ -168,10 +183,12 @@ impl RootStateSaveSnapshotV1 {
             state_layout: snapshot.state_layout,
             event_identity: snapshot.event_identity.clone(),
             event_layout: snapshot.event_layout,
-            value: crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
-                snapshot.value.value(),
-                owner,
-            )?,
+            phase: snapshot.phase.try_map_ref(|payload| {
+                crate::value::AwbcRuntimeValueSnapshot::from_admitted_runtime_value(
+                    payload.value(),
+                    owner,
+                )
+            })?,
             next_sequence: snapshot.next_sequence,
         })
     }
@@ -187,13 +204,15 @@ impl RootStateSaveSnapshotV1 {
             roles.command_policy.root_limits.schema,
         );
         self.admit_retained(active, &mut admission)?;
-        let value = RuntimePayload(self.value.into_admitted_runtime_value(owner)?);
+        let phase = self
+            .phase
+            .try_map(|value| value.into_admitted_runtime_value(owner).map(RuntimePayload))?;
         Ok(RootStateSnapshotV1 {
             state_identity: self.state_identity,
             state_layout: self.state_layout,
             event_identity: self.event_identity,
             event_layout: self.event_layout,
-            value,
+            phase,
             next_sequence: self.next_sequence,
         })
     }

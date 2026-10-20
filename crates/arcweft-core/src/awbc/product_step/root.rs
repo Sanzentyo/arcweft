@@ -52,27 +52,14 @@ fn startup_contract(
     let Some(entry_record) = program.entries.get(entry.index()) else {
         return Err(RootRuntimeError::MissingEntry(entry.0.to_string()));
     };
-    let crate::plan::RuntimeEntryRoles::Stateful(roles) = &entry_record.roles else {
+    let crate::plan::RuntimeEntryRoles::Stateful(_) = &entry_record.roles else {
         return Ok(None);
     };
-    program
-        .flow_executables
-        .iter()
-        .find(|executable| {
-            executable.metadata.flow == roles.initial_flow.flow
-                && executable.metadata.contract == roles.initial_flow.contract
-        })
-        .ok_or_else(|| {
-            RootRuntimeError::MissingInitialFlowExecutable(
-                entry_record.runtime_id.canonical_label(),
-            )
-        })?;
-    Ok(Some(RootStartupContract {
-        entry: entry_record.runtime_id.clone(),
-        roles: roles.as_ref().clone(),
-        initial_flow: roles.initial_flow.flow.clone(),
-        initial_state_parameter: crate::entry::FlowParameterCoordinate::from_position(0),
-    }))
+    RootStartupContract::from_program(
+        crate::program_types::RuntimeProgramTypes::Awbc(program),
+        &entry_record.runtime_id,
+    )
+    .map(Some)
 }
 
 pub(super) fn bind_startup(
@@ -167,6 +154,13 @@ impl AwbcProductStepExecutor {
             .ok_or_else(|| RootRuntimeError::MissingEntry(entry.runtime_id.canonical_label()))?;
         if active.id != entry.runtime_id || active.kind != kind || active.binding != entry.binding {
             return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
+        }
+        if snapshot.as_ref().is_some_and(|snapshot| {
+            matches!(snapshot.phase, crate::root::RootPhase::Initializing { .. })
+        }) {
+            // Existing Entry origins authenticate an initial Flow. Pending
+            // initialization requires its own authenticated callable origin.
+            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer frame"));
         }
         let contract = startup_contract(&self.program, selected)?;
         let candidate = match (contract, snapshot) {
@@ -291,5 +285,56 @@ impl<B: RuntimeCallBackend> RootCallableEvaluator for ProductRootEvaluator<'_, B
             self.fallback_stats,
         )
         .map_err(|error| RootCallableEvaluationError::new(error.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_restore_rejects_initializing_state_for_flow_origin_without_mutation() {
+        let raw = std::sync::Arc::new(crate::awbc::stateful_root_fixture());
+        let program = AwbcProductProgram::admit(
+            raw,
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext::default(),
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .unwrap();
+        let contract = startup_contract(&program, AwbcEntryId(0)).unwrap().unwrap();
+        let types = crate::program_types::RuntimeProgramTypes::Awbc(&program);
+        let value = types
+            .try_record_value(
+                contract.roles.state.semantic_identity,
+                vec![],
+                contract.roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let startup = RootRuntime::prepare(contract.clone(), types)
+            .unwrap()
+            .complete_initialization(value, types)
+            .unwrap();
+        let pending = RootRuntime::prepare(contract, types)
+            .unwrap()
+            .snapshot_state();
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        bind_startup(&program, &mut fiber, Some(&startup)).unwrap();
+        let fingerprint = AwbcProductStepExecutor::artifact_fingerprint(&program).unwrap();
+        let mut executor = AwbcProductStepExecutor::for_fiber(
+            program,
+            fiber,
+            fingerprint,
+            crate::task::GenerationId::new(0),
+        );
+        executor.install_root_startup(startup);
+        let active = executor.active_entry_snapshot_identity().unwrap();
+        let before = executor.inert_rollback_image().unwrap();
+        assert!(matches!(
+            executor.restore_root_snapshot(&active, Some(pending)),
+            Err(RootRuntimeError::SnapshotRoleMismatch("initializer frame"))
+        ));
+        assert_eq!(executor.inert_rollback_image().unwrap(), before);
     }
 }

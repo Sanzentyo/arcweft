@@ -69,11 +69,13 @@ impl<'a> SessionRestoreValueValidator<'a> {
         &mut self,
         root: Option<&crate::session_save::RootStateSnapshotV1>,
     ) -> Result<(), BundleSessionSaveError> {
-        let result = root.map_or(Ok(()), |root| {
-            arcweft_core::value::visit_runtime_value_graph(&root.value.0, |value| {
-                self.validate_value(value.into())
-            })
-        });
+        let result = root
+            .and_then(|root| root.phase.state_value())
+            .map_or(Ok(()), |value| {
+                arcweft_core::value::visit_runtime_value_graph(&value.0, |value| {
+                    self.validate_value(value.into())
+                })
+            });
         self.finish(result)
     }
 
@@ -110,11 +112,15 @@ impl<'a> SessionRestoreValueValidator<'a> {
         payload: &BundleSessionSavePayload,
     ) -> Result<(), BundleSessionSaveError> {
         let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
-        let result = payload.root.as_ref().map_or(Ok(()), |root| {
-            root.retained_value()
-                .try_visit(limits, |value| self.validate_value(value))
-                .map_err(|error| error.to_string())
-        });
+        let result = payload
+            .root
+            .as_ref()
+            .and_then(|root| root.retained_value())
+            .map_or(Ok(()), |value| {
+                value
+                    .try_visit(limits, |value| self.validate_value(value))
+                    .map_err(|error| error.to_string())
+            });
         self.finish(result)?;
         let result = payload
             .executor

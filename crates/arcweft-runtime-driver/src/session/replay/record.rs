@@ -78,7 +78,11 @@ impl RootReplayRecorderV1 {
             .state
             .accepts_payload(
                 RuntimeProgramTypes::Awbc(&runtime.program),
-                &root.value,
+                root.phase.state_value().ok_or_else(|| {
+                    RootReplayRecordingError::RuntimeInspection {
+                        message: "root initialization is pending".to_owned(),
+                    }
+                })?,
                 roles.command_policy.root_limits.schema,
             )
             .map_err(|error| RootReplayRecordingError::RuntimeInspection {

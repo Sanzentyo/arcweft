@@ -22615,3 +22615,94 @@ and the synchronous adapters can be removed. Shared step allowance and the
 selected backend/formatter still require real execution tests. All other
 original acceptance, including the56 CLI failures, remains open. No goal status
 change or scope reduction is made by these intermediate publications.
+
+### 2026-10-20 — state-free Root initialization phase and save grammar
+
+Inspected main b55a2f14ecf0edf9b46a4d442e301e87c3b1e5f5. This cut owns
+nine Core/driver Rust files, the maintained state/flow/reducer contract and this
+record; held14 tracked changes and the three held untracked entries are retained.
+No branch, checkout, build-artifact relocation, concurrency/profile tuning or
+additional clean was used.
+
+RootPhase<P> is the sole phase/value grammar for live Root, inert rollback and
+the version-one root snapshot. Initializing owns the original initial Flow and
+parameter coordinate, with no P value. Initialized owns one committed P and a
+nested Ready/Evaluating reducer state; changing that substate does not move or
+clone P. prepare constructs metadata only, initializer_callable exposes its
+exact role, and complete_initialization constructs the root/Flow candidates
+after unrestricted/type/layout/resource admission. Its boxed rejection packet
+retains the whole pending Root, including queued events, for the owning caller.
+One necessary state copy goes to the Flow candidate after admission; the
+previous spare state copy is removed. Atomic publication remains the caller's
+responsibility after Flow construction succeeds.
+
+The root snapshot's raw value field is replaced directly by this phase; there
+is no legacy reader or placeholder Unit/state. Driver asset visitation and replay
+inspection use the optional actual state. Normal snapshot admission rejects an
+active reducer, while rollback preserves its committed value and phase. Pending
+initialization validates the original selected entry's Flow ABI and zero cursor.
+RootStartupContract::from_program now resolves both Plan and AWBC startup from
+their original metadata; the duplicated AWBC startup projection is removed.
+Current Product Entry origins authenticate Flow frames, so restoring pending
+initialization onto one is rejected before mutation. This guard deliberately
+does not claim that an initializer-specific execution origin exists yet.
+
+Three new tests cover zero-value-allowance pending construction and live/inert/
+wire cold round trips in both program representations, rejected initialization
+retaining queued events, and the real Product restore boundary rejecting an
+initializing Root paired with a Flow origin without changing its rollback image.
+Existing whole-snapshot assertions now include the expected reducer phase;
+affine event, metadata, mutation-rejection and workload assertions are retained.
+Saved shapes evolve in place at version1. The maintained chapter states the
+complete phase/frame/budget target; it is not an implementation-completion claim.
+
+R1802 and R1803 were actual compile101 during field migration (ten Core fixture
+accesses, then two replay accesses); all reported accesses were migrated.
+R1804 built an overlapping development catalogue while the final tests/guard
+were being added, so it is not fixed-input acceptance. R1805 then built the exact
+fixed catalogue:2120 selected, zero excluded, Core1946 and driver174, including
+all three new cases and the retained wire/affine guards. R1809 executed that exact
+set:2120 passed, zero skipped,130.047s (one API compile case slow at101.482s).
+Its3933 executable/source/spec inputs matched with zero drift, held14 unchanged.
+R1806 workspace check all targets/features/locked passed in2m35s; R1807 ordinary
+workspace Clippy all targets/features/locked passed in6m00s, including two new
+Root lint sites subsequently repaired. R1810 Core all-feature doctests passed
+all73, zero ignored/filtered,2.58s. Each terminal input audit matched all3933
+inputs; this operational note alone was excluded.
+
+The final lint delta boxes the entire rejected-initialization packet instead of
+only its Root, and collapses the phase validation condition. R1811 rebuilt all2120
+owner cases and selected16 Root/wire cases, with2104 deliberate filter exclusions.
+R1813 passed all16 in0.360s; exact case keys and all3933 current hashes matched.
+No driver-named case matches that final narrow filter: driver174 execution is
+R1809 evidence for the preceding shape, and its binaries compiled again in
+R1811. R1812 ordinary Core/driver all-target/all-feature Clippy passed in3m22s;
+both introduced Root diagnostic sites are gone without an allow, all3933 hashes
+matched. Existing warnings remain; strict Clippy is not accepted. The full2120
+run and workspace checks are preceding-shape evidence, combined with the final
+16-case/public-error-packet delta checks, not relabeled as another complete run.
+
+R1808 structural gate passed:3155 files/3025 Rust files/1720450 physical Rust LOC/
+97 packages/376 review triggers/zero blocking violations. Before the two-line lint
+cleanup, root.rs was65990 bytes/1770 LOC versus1512 at the base (growth258);
+root/snapshot.rs10238 bytes/264 LOC, Product root12513 bytes/340 LOC, Root tests
+42176 bytes/1119 LOC. Root still cohesively owns phase, state, event and command
+transactions; its phase-header projection borrows metadata and stores no second
+authority. No new dependency, facade export or I/O boundary is introduced. The
+actual resolved Core/driver reverse closure is53; all99 manifest/lock inputs
+match the retained graph. Complete consumer execution and final cross-tier/
+visual acceptance remain required by the full goal.
+
+Next is actual executable integration, not another phase-design request:
+replace constructor evaluation with authenticated initializer frame origins in
+Native and AWBC, pair those origins with the saved phase before live restore,
+and publish Root plus initial Flow atomically when the frame completes. The
+selected backend/formatter and shared step allowance must cover initializer
+and reducer instructions; max_ops0 must execute neither. Replay recording needs
+the actual initialization result at that boundary rather than an eagerly
+manufactured initial digest. Queued first-step events, yield/cold restore and
+foreign Rust calls under the selected locale still require execution evidence.
+Keep pre-copy admission under the enclosing frame/session allowance when wiring
+the Root inputs. Both synchronous evaluator adapters and the million-instruction
+AWBC helper remain to be removed when those consumers migrate. The earlier56
+CLI failures and every other original acceptance remain open; the goal is active.

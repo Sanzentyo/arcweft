@@ -34,6 +34,22 @@ initializer の結果、入力 event、reducer が確定する state、保存か
 state は、実行中のプログラムが持つ型定義と layout に従う。entry binding に
 別の schema のコピーを持たせない。
 
+Root の所有状態は、state 値をまだ持たない初期化中と、committed state を
+一つ保持する初期化済みに分ける。初期化済みの Root は reducer の待機／実行を
+区別し、その切替のために state を複製しない。reducer frame への入力に必要な
+state の Copy は、元 program の型・layout・資源上限を検証した後に行う。
+event はその frame へ一度だけ移し、戻り値の state と command 列をすべて
+検証してから一括で確定する。
+
+初期化中の保存は、選択 entry、初期 Flow、state parameter の座標と実際の
+initializer frame の継続位置を保持する。仮の state や constructor 内の再実行で
+復元を補わない。通常保存は実行中 reducer、待機 event、未 dispatch command を
+拒否し、命令単位の rollback image は実行中 phase と元の committed state を
+保持する。保存契約は version `1` の形をその場で更新し、旧 reader は残さない。
+initializer と reducer は、選択済み backend・formatter と同じ step allowance を
+使う通常の executable frame で進める。budget による中断は言語上の `await`
+とは区別する。
+
 ## Event
 
 ```arcw

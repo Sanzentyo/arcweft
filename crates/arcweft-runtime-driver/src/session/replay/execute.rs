@@ -101,7 +101,11 @@ fn replay_root_trace_with(
         .state
         .accepts_payload(
             program,
-            &initial.value,
+            initial.phase.state_value().ok_or_else(|| {
+                RootReplayError::InvalidInitializerState {
+                    message: "root initialization is pending".to_owned(),
+                }
+            })?,
             roles.command_policy.root_limits.schema,
         )
         .map_err(|error| RootReplayError::InvalidInitializerState {
@@ -700,7 +704,9 @@ fn compare_outcomes(
         .state
         .accepts_payload(
             program,
-            &after.value,
+            after.phase.state_value().ok_or_else(|| {
+                outcome_divergence(entry, last.sequence(), "root initialization is pending")
+            })?,
             roles.command_policy.root_limits.schema,
         )
         .map_err(|error| outcome_divergence(entry, last.sequence(), &error.to_string()))?;

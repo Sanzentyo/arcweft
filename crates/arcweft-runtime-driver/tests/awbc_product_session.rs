@@ -1116,7 +1116,10 @@ fn session_restore_preflights_root_presence_and_preserves_executor() {
         state_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
         event_identity: arcweft_core::entry::RuntimeNominalTypeId::try_new("test.Event").unwrap(),
         event_layout: arcweft_core::entry::TypeLayoutHash::from_bytes([0; 32]),
-        value: arcweft_core::value::RuntimePayload(RuntimeValue::Unit),
+        phase: arcweft_core::root::RootPhase::Initialized {
+            value: arcweft_core::value::RuntimePayload(RuntimeValue::Unit),
+            reducer: arcweft_core::root::RootReducerPhase::Ready,
+        },
         next_sequence: arcweft_core::root::TransitionSequence::from_u64(0),
     });
     let error = session.restore_session_snapshot(invalid).unwrap_err();
