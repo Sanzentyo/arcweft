@@ -53,6 +53,9 @@ initializer と reducer は、選択済み backend・formatter と同じ step al
 Root と、それを初期化・更新する実際の fiber は、一つの executor snapshot に
 含めて保存・復元する。Root の状態だけを後から差し替えて対応を補わない。
 復元対象全体を検証し、失敗時は元の Root・fiber・queue を保持する。
+reducer の trap は committed state と transition cursor を変えず、Root に failure を
+保持する。通常保存もその failure を保存・復元し、復元によって実行可能な Root に
+戻さない。failure の phase・sequence・message digest は復元前に照合する。
 
 実行中の reducer は、その entry の reducer role に対応する一つの executor
 fiber が所有する。継続中は通常 Flow と後続 event より優先して進め、budget を

@@ -107,6 +107,7 @@ fn replay_root_trace_with(
         let initial = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayError::RootState(Box::new(error)))?
             .ok_or(RootReplayError::MissingRoot)?;
         if initial.phase.state_value().is_some() {
             break initial;
@@ -132,6 +133,7 @@ fn replay_root_trace_with(
         let initialized = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayError::RootState(Box::new(error)))?
             .is_some_and(|root| root.phase.state_value().is_some());
         if !step.root_transitions.is_empty()
             || (!initialized && !step.requested_host_calls.is_empty())
@@ -150,6 +152,14 @@ fn replay_root_trace_with(
             }
         }
     };
+    if initial.failure.is_some()
+        || initial.next_sequence != arcweft_core::root::TransitionSequence::ZERO
+    {
+        return Err(RootReplayError::InvalidInitializerState {
+            message: "replay requires a fresh initialized Root without a failed transition"
+                .to_owned(),
+        });
+    }
     let durable_state_digest = roles
         .state
         .accepts_payload(
@@ -339,6 +349,7 @@ impl ReplayProgress {
         let before = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayError::RootState(Box::new(error)))?
             .ok_or(RootReplayError::MissingRoot)?;
         let clock = RuntimeClockStep::from_millis(self.replay_step, 1)
             .map_err(|_| RootReplayError::UnexpectedTransition)?;
@@ -367,6 +378,7 @@ impl ReplayProgress {
         let after = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayError::RootState(Box::new(error)))?
             .ok_or(RootReplayError::MissingRoot)?;
         self.durable_state_digest = compare_outcomes(
             &trace.transitions

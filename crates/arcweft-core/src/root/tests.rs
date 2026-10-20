@@ -561,11 +561,16 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
     let fixture = Fixture::new();
     for program in fixture.programs() {
         let root = fixture.start(program);
-        let snapshot = root.snapshot_state();
+        let snapshot = root.snapshot_state().unwrap();
         assert_eq!(
-            RootRuntime::from_snapshot(fixture.contract.clone(), root.snapshot_state(), program)
-                .unwrap()
-                .snapshot_state(),
+            RootRuntime::from_snapshot(
+                fixture.contract.clone(),
+                root.snapshot_state().unwrap(),
+                program
+            )
+            .unwrap()
+            .snapshot_state()
+            .unwrap(),
             snapshot
         );
         let invalid = fixture.state(RuntimeValue::String("not Bool".into()));
@@ -618,6 +623,7 @@ fn root_state_copy_obligation_rejects_nested_affine_value_at_both_ingresses() {
                 reducer: RootReducerPhase::Ready,
             },
             next_sequence: TransitionSequence::ZERO,
+            failure: None,
         };
         assert!(matches!(
             RootRuntime::from_snapshot(fixture.contract.clone(), snapshot, program),
@@ -646,7 +652,12 @@ fn reducer_receives_one_owned_affine_event_without_copying_it() {
         assert!(matches!(result, RootTransitionOutcome::Committed { .. }));
         assert!(root.begin_reduction().unwrap().is_none());
         assert_eq!(
-            root.snapshot_state().phase.state_value().unwrap().0,
+            root.snapshot_state()
+                .unwrap()
+                .phase
+                .state_value()
+                .unwrap()
+                .0,
             fixture.state(RuntimeValue::Bool(false))
         );
     }
@@ -719,6 +730,7 @@ fn retained_awbc_root_fixture() -> (RootRuntime, crate::task::RuntimeProgramOwne
             reducer: RootReducerPhase::Ready,
         },
         next_sequence: TransitionSequence::ZERO,
+        failure: None,
     };
     (
         RootRuntime::from_snapshot(contract, snapshot, owner.types()).unwrap(),
@@ -750,6 +762,7 @@ fn retained_root_fixture(
             reducer: RootReducerPhase::Ready,
         },
         next_sequence: TransitionSequence::ZERO,
+        failure: None,
     };
     (
         RootRuntime::from_snapshot(contract, snapshot, owner.types()).unwrap(),
@@ -786,6 +799,106 @@ fn active_entry_for_root(
 }
 
 #[test]
+fn failed_root_durable_lifecycle_round_trips_and_rejects_forged_headers() {
+    for (mut root, owner) in [
+        retained_root_fixture(RootExecutionLimits::engine_default()),
+        retained_awbc_root_fixture(),
+    ] {
+        let event = owner
+            .types()
+            .try_record_value(
+                root.roles.event.semantic_identity,
+                vec![],
+                root.limits.schema,
+            )
+            .unwrap();
+        root.ingress(
+            vec![RootEventInput::new(RuntimePayload(event))],
+            owner.types(),
+        )
+        .unwrap();
+        drop(root.begin_reduction().unwrap().unwrap());
+        let outcome = root
+            .complete_reduction(
+                Err(RootCallableEvaluationError::new("failed Root lifecycle")),
+                owner.types(),
+            )
+            .unwrap();
+        assert!(matches!(outcome, RootTransitionOutcome::Trapped { .. }));
+        let contract =
+            RootStartupContract::from_program(owner.types(), &root.active.entry).unwrap();
+        let active = active_entry_for_root(&owner, &contract);
+        let before = root.snapshot_state().unwrap();
+        let saved = RootStateSaveSnapshotV1::from_live(&before, &active, &owner).unwrap();
+        let encoded = serde_json::to_vec(&saved).unwrap();
+        let decoded: RootStateSaveSnapshotV1 = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, saved);
+        let live = decoded.into_live(&active, &owner).unwrap();
+        let mut restored = RootRuntime::from_snapshot(contract, live, owner.types()).unwrap();
+        assert_eq!(restored.snapshot_state().unwrap(), before);
+        assert!(matches!(
+            restored.begin_reduction(),
+            Err(RootRuntimeError::Failed)
+        ));
+
+        for mutation in 0..5 {
+            let mut invalid = saved.clone();
+            let RootRuntimeFailure::Transition {
+                sequence,
+                message,
+                digest,
+            } = invalid.failure.as_mut().unwrap();
+            match mutation {
+                0 => *sequence = TransitionSequence::from_u64(1),
+                1 => message.push('!'),
+                2 => *digest = RuntimeValueDigest::from_bytes([0; 32]),
+                3 => {
+                    let RootPhase::Initialized { reducer, .. } = &mut invalid.phase else {
+                        unreachable!()
+                    };
+                    *reducer = RootReducerPhase::Evaluating;
+                }
+                4 => {
+                    *sequence = TransitionSequence::from_u64(u64::MAX);
+                    invalid.next_sequence = *sequence;
+                }
+                _ => unreachable!(),
+            }
+            assert!(invalid.into_live(&active, &owner).is_err());
+            assert_eq!(restored.snapshot_state().unwrap(), before);
+        }
+        let mut missing = serde_json::to_value(&saved).unwrap();
+        missing.as_object_mut().unwrap().remove("failure");
+        assert!(serde_json::from_value::<RootStateSaveSnapshotV1>(missing).is_err());
+        let mut unknown = serde_json::to_value(&saved).unwrap();
+        unknown["failure"]["kind"] = serde_json::json!("unknown_failure");
+        assert!(serde_json::from_value::<RootStateSaveSnapshotV1>(unknown).is_err());
+    }
+}
+
+#[test]
+fn root_state_capture_rejects_oversized_failure_metadata_before_copying() {
+    let (mut root, _) = retained_awbc_root_fixture();
+    let size =
+        usize::try_from(RuntimeSchemaLimits::engine_default().max_metadata_bytes).unwrap() + 1;
+    let message = "m".repeat(size);
+    let pointer = message.as_ptr();
+    let digest = RootRuntimeFailure::message_digest(&message);
+    root.failure = Some(RootRuntimeFailure::Transition {
+        sequence: root.active.next_sequence,
+        message,
+        digest,
+    });
+    assert!(matches!(
+        root.snapshot_state(),
+        Err(RootRuntimeError::InvalidSnapshotMetadata(_))
+    ));
+    let RootRuntimeFailure::Transition { message, .. } = root.failure.as_ref().unwrap();
+    assert_eq!(message.as_ptr(), pointer);
+    assert_eq!(message.len(), size);
+}
+
+#[test]
 fn pending_initializer_has_no_value_and_round_trips_under_zero_value_allowance() {
     for (initialized, owner) in [
         retained_root_fixture(RootExecutionLimits::engine_default()),
@@ -818,7 +931,7 @@ fn pending_initializer_has_no_value_and_round_trips_under_zero_value_allowance()
         );
 
         let active = active_entry_for_root(&owner, &contract);
-        let live = pending.snapshot_state();
+        let live = pending.snapshot_state().unwrap();
         let wire = RootStateSaveSnapshotV1::from_live(&live, &active, &owner).unwrap();
         assert!(wire.retained_value().is_none());
         let encoded = serde_json::to_vec(&wire).unwrap();
@@ -833,7 +946,7 @@ fn pending_initializer_has_no_value_and_round_trips_under_zero_value_allowance()
             pending
         );
 
-        let mut wrong_coordinate = pending.snapshot_state();
+        let mut wrong_coordinate = pending.snapshot_state().unwrap();
         let RootPhase::Initializing {
             state_parameter, ..
         } = &mut wrong_coordinate.phase
@@ -842,10 +955,10 @@ fn pending_initializer_has_no_value_and_round_trips_under_zero_value_allowance()
         };
         *state_parameter = crate::entry::FlowParameterCoordinate::from_position(1);
         assert!(RootStateSaveSnapshotV1::from_live(&wrong_coordinate, &active, &owner).is_err());
-        let mut wrong_sequence = pending.snapshot_state();
+        let mut wrong_sequence = pending.snapshot_state().unwrap();
         wrong_sequence.next_sequence = TransitionSequence::from_u64(1);
         assert!(RootRuntime::from_snapshot(contract, wrong_sequence, owner.types()).is_err());
-        assert_eq!(pending.snapshot_state(), live);
+        assert_eq!(pending.snapshot_state().unwrap(), live);
     }
 }
 
@@ -915,8 +1028,12 @@ fn rejected_initializer_retains_pending_owner_and_queued_events_before_retry() {
         assert!(startup.root.active.reducer_active());
         let active = active_entry_for_root(&owner, &contract);
         assert!(
-            RootStateSaveSnapshotV1::from_live(&startup.root.snapshot_state(), &active, &owner)
-                .is_err()
+            RootStateSaveSnapshotV1::from_live(
+                &startup.root.snapshot_state().unwrap(),
+                &active,
+                &owner
+            )
+            .is_err()
         );
     }
 }
@@ -1032,10 +1149,15 @@ fn canonical_result_payload_reduces_and_bad_nested_state_never_commits() {
         assert!(matches!(outcome, RootTransitionOutcome::Committed { .. }));
         assert!(root.begin_reduction().unwrap().is_none());
         assert_eq!(
-            root.snapshot_state().phase.state_value().unwrap().0,
+            root.snapshot_state()
+                .unwrap()
+                .phase
+                .state_value()
+                .unwrap()
+                .0,
             fixture.state(RuntimeValue::Bool(false))
         );
-        let before = root.snapshot_state();
+        let before = root.snapshot_state().unwrap();
         root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
             .unwrap();
         let invocation = root.begin_reduction().unwrap().unwrap();
@@ -1043,8 +1165,21 @@ fn canonical_result_payload_reduces_and_bad_nested_state_never_commits() {
         let outcome = root
             .complete_reduction(Ok(reduction(fixture.state(RuntimeValue::Unit))), program)
             .unwrap();
-        assert!(matches!(outcome, RootTransitionOutcome::Trapped { .. }));
-        assert_eq!(root.snapshot_state(), before);
+        let RootTransitionOutcome::Trapped {
+            sequence,
+            failure_digest,
+            message,
+        } = outcome
+        else {
+            panic!("invalid nested state traps the transition");
+        };
+        let mut expected = before;
+        expected.failure = Some(RootRuntimeFailure::Transition {
+            sequence,
+            message,
+            digest: failure_digest,
+        });
+        assert_eq!(root.snapshot_state().unwrap(), expected);
     }
 }
 
@@ -1072,7 +1207,7 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
     let fixture = Fixture::new();
     for program in fixture.programs() {
         let mut root = fixture.start(program);
-        let mut before = root.snapshot_state();
+        let mut before = root.snapshot_state().unwrap();
         assert!(matches!(
             root.complete_reduction(
                 Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
@@ -1091,12 +1226,12 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
             unreachable!()
         };
         *reducer = RootReducerPhase::Evaluating;
-        assert_eq!(root.snapshot_state(), before);
+        assert_eq!(root.snapshot_state().unwrap(), before);
         assert!(matches!(
             root.begin_reduction(),
             Err(RootRuntimeError::ReducerAlreadyActive)
         ));
-        assert_eq!(root.snapshot_state(), before);
+        assert_eq!(root.snapshot_state().unwrap(), before);
 
         root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
             .unwrap();
@@ -1110,12 +1245,12 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
         assert!(matches!(completed, RootTransitionOutcome::Committed { .. }));
         assert_eq!(completed.sequence().get(), 0);
         assert_eq!(root.active.next_sequence.get(), 1);
-        let after = root.snapshot_state();
+        let after = root.snapshot_state().unwrap();
         assert!(matches!(
             root.complete_reduction(Ok(RuntimeValue::Unit), program),
             Err(RootRuntimeError::NoActiveReducer)
         ));
-        assert_eq!(root.snapshot_state(), after);
+        assert_eq!(root.snapshot_state().unwrap(), after);
 
         let _next = root.begin_reduction().unwrap().unwrap();
         let completed = root
@@ -1141,22 +1276,30 @@ fn suspended_reducer_failure_does_not_publish_and_clears_following_events() {
             )),
         ] {
             let mut root = fixture.start(program);
-            let before = root.snapshot_state();
+            let before = root.snapshot_state().unwrap();
             root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
                 .unwrap();
             let _invocation = root.begin_reduction().unwrap().unwrap();
             root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
                 .unwrap();
             let completed = root.complete_reduction(returned, program).unwrap();
-            assert!(matches!(
-                completed,
-                RootTransitionOutcome::Trapped {
-                    sequence: TransitionSequence::ZERO,
-                    ..
-                }
-            ));
+            let RootTransitionOutcome::Trapped {
+                sequence,
+                failure_digest,
+                message,
+            } = completed
+            else {
+                panic!("invalid result or executable trap fails the transition");
+            };
+            assert_eq!(sequence, TransitionSequence::ZERO);
             assert_eq!(root.active.pending_command_count(), 0);
-            assert_eq!(root.snapshot_state(), before);
+            let mut expected = before;
+            expected.failure = Some(RootRuntimeFailure::Transition {
+                sequence,
+                message,
+                digest: failure_digest,
+            });
+            assert_eq!(root.snapshot_state().unwrap(), expected);
             assert_eq!(root.active.pending_event_count(), 0);
             assert!(!root.active.reducer_active());
             assert!(matches!(
@@ -1206,19 +1349,26 @@ fn suspended_reducer_phase_and_event_frontier_survive_inert_rollback() {
                 owner.types(),
             )
             .unwrap();
-        assert!(matches!(
-            outcome,
-            RootTransitionOutcome::Trapped {
-                sequence: TransitionSequence::ZERO,
-                ..
-            }
-        ));
-        let mut expected = root.snapshot_state();
+        let RootTransitionOutcome::Trapped {
+            sequence,
+            failure_digest,
+            message,
+        } = outcome
+        else {
+            panic!("restored invocation traps without committing state");
+        };
+        assert_eq!(sequence, TransitionSequence::ZERO);
+        let mut expected = root.snapshot_state().unwrap();
         let RootPhase::Initialized { reducer, .. } = &mut expected.phase else {
             unreachable!()
         };
         *reducer = RootReducerPhase::Ready;
-        assert_eq!(restored.snapshot_state(), expected);
+        expected.failure = Some(RootRuntimeFailure::Transition {
+            sequence,
+            message,
+            digest: failure_digest,
+        });
+        assert_eq!(restored.snapshot_state().unwrap(), expected);
         assert_eq!(restored.active.pending_event_count(), 0);
     }
 }

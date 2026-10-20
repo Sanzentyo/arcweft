@@ -399,6 +399,7 @@ fn stateful_plan_root_snapshot(
             reducer: crate::root::RootReducerPhase::Ready,
         },
         next_sequence: crate::root::TransitionSequence::from_u64(27),
+        failure: None,
     };
     (active, snapshot)
 }

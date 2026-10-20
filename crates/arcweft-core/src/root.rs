@@ -408,7 +408,8 @@ pub struct RejectedRootInitialization {
     pub root: RootRuntime,
 }
 
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[derive(Clone, Debug, Error, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RootRuntimeFailure {
     #[error("root transition {sequence} failed: {message}")]
     Transition {
@@ -416,6 +417,47 @@ pub enum RootRuntimeFailure {
         message: String,
         digest: RuntimeValueDigest,
     },
+}
+
+impl RootRuntimeFailure {
+    fn for_transition(sequence: TransitionSequence, message: &str) -> Self {
+        Self::Transition {
+            sequence,
+            message: message.to_owned(),
+            digest: Self::message_digest(message),
+        }
+    }
+
+    fn message_digest(message: &str) -> RuntimeValueDigest {
+        RuntimeValueDigest::from_bytes(blake3::hash(message.as_bytes()).into())
+    }
+
+    fn validate_state(
+        &self,
+        phase: RootPhaseHeader<'_>,
+        next_sequence: TransitionSequence,
+    ) -> Result<(), RootRuntimeError> {
+        let Self::Transition {
+            sequence,
+            message,
+            digest,
+        } = self;
+        if !matches!(
+            phase,
+            RootPhaseHeader::Initialized {
+                reducer: RootReducerPhase::Ready
+            }
+        ) {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("failure phase"));
+        }
+        if *sequence != next_sequence || sequence.next().is_none() {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("failure sequence"));
+        }
+        if *digest != Self::message_digest(message) {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("failure digest"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -450,6 +492,8 @@ pub enum RootRuntimeError {
     SnapshotRoleMismatch(&'static str),
     #[error("saved root value is invalid: {0}")]
     InvalidSnapshotValue(#[source] crate::program_types::RuntimeProgramTypeError),
+    #[error("saved root metadata is invalid: {0}")]
+    InvalidSnapshotMetadata(#[source] crate::value::AwbcRuntimeValueSnapshotError),
     #[error("root-event batch is not valid: {0}")]
     InvalidEvent(#[source] crate::program_types::RuntimeProgramTypeError),
     #[error("root-event queue exceeds the selected runtime limit of {limit}")]
@@ -639,13 +683,14 @@ impl<P> RootRuntime<P> {
             &self.reducer,
             self.limits,
         ))?;
-        if let Some(RootRuntimeFailure::Transition {
-            sequence,
-            message,
-            digest,
-        }) = &self.failure
-        {
-            admission.validate_metadata(&(sequence, message, digest))?;
+        if let Some(failure) = &self.failure {
+            admission.validate_metadata(failure)?;
+            failure
+                .validate_state(self.active.phase.header(), self.active.next_sequence)
+                .map_err(|error| invalid(error.to_string()))?;
+            if !self.active.queued_events.is_empty() {
+                return Err(invalid("failed Root retains queued events".to_owned()));
+            }
         }
         admission.validate_metadata_collection(self.active.queued_events.len())?;
         admission.validate_metadata_collection(self.active.committed_commands.len())?;
@@ -1136,7 +1181,16 @@ impl RootRuntime {
     }
 
     #[must_use]
-    pub fn snapshot_state(&self) -> RootStateSnapshotV1 {
+    pub fn snapshot_state(&self) -> Result<RootStateSnapshotV1, RootRuntimeError> {
+        let mut metadata = crate::value::RuntimeRetainedValueAdmission::standalone(
+            RuntimeSchemaLimits::engine_default(),
+        );
+        if let Some(failure) = &self.failure {
+            metadata
+                .validate_metadata(failure)
+                .map_err(RootRuntimeError::InvalidSnapshotMetadata)?;
+            failure.validate_state(self.active.phase.header(), self.active.next_sequence)?;
+        }
         let phase = self
             .active
             .phase
@@ -1148,14 +1202,15 @@ impl RootRuntime {
                 Ok(value.clone())
             })
             .unwrap_or_else(|never| match never {});
-        RootStateSnapshotV1 {
+        Ok(RootStateSnapshotV1 {
             state_identity: self.active.state_identity.clone(),
             state_layout: self.active.state_layout,
             event_identity: self.active.event_identity.clone(),
             event_layout: self.active.event_layout,
             phase,
             next_sequence: self.active.next_sequence,
-        }
+            failure: self.failure.clone(),
+        })
     }
 
     /// Constructs a candidate root from the final session payload after exact
@@ -1166,6 +1221,15 @@ impl RootRuntime {
         program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<Self, RootRuntimeError> {
         contract.validate_types(program)?;
+        let mut metadata = crate::value::RuntimeRetainedValueAdmission::standalone(
+            RuntimeSchemaLimits::engine_default(),
+        );
+        if let Some(failure) = &snapshot.failure {
+            metadata
+                .validate_metadata(failure)
+                .map_err(RootRuntimeError::InvalidSnapshotMetadata)?;
+            failure.validate_state(snapshot.phase.header(), snapshot.next_sequence)?;
+        }
         snapshot
             .phase
             .validate_initialization(&contract, snapshot.next_sequence)?;
@@ -1216,7 +1280,7 @@ impl RootRuntime {
             reducer: roles.reducer.clone(),
             roles,
             limits,
-            failure: None,
+            failure: snapshot.failure,
         })
     }
 
@@ -1400,9 +1464,10 @@ impl RootRuntime {
         }
         let sequence = self.active.next_sequence;
         let disposition = returned
-            .map_err(|error| Self::failure_for(sequence, &error.to_string()))
+            .map_err(|error| RootRuntimeFailure::for_transition(sequence, &error.to_string()))
             .and_then(|value| {
-                parse_reducer_result(value).map_err(|message| Self::failure_for(sequence, &message))
+                parse_reducer_result(value)
+                    .map_err(|message| RootRuntimeFailure::for_transition(sequence, &message))
             })
             .and_then(|returned| match returned {
                 ParsedReducerResult::Committed(reduction) => {
@@ -1447,7 +1512,7 @@ impl RootRuntime {
         let commands = commands.into_vec();
         let state = RuntimePayload(state);
         if !state.0.ownership().permits_copy() {
-            return Err(Self::failure_for(
+            return Err(RootRuntimeFailure::for_transition(
                 sequence,
                 "reducer state contains an affine value that root execution must copy",
             ));
@@ -1456,10 +1521,10 @@ impl RootRuntime {
             .roles
             .state
             .accepts_payload(program, &state, self.limits.schema)
-            .map_err(|error| Self::failure_for(sequence, &error.to_string()))?;
+            .map_err(|error| RootRuntimeFailure::for_transition(sequence, &error.to_string()))?;
         let command_digests =
             validate_commands(&commands, &self.roles.command_policy.admitted, self.limits)
-                .map_err(|message| Self::failure_for(sequence, &message))?;
+                .map_err(|message| RootRuntimeFailure::for_transition(sequence, &message))?;
         let envelopes = commands
             .into_iter()
             .enumerate()
@@ -1471,7 +1536,10 @@ impl RootRuntime {
                         command,
                     })
                     .map_err(|_| {
-                        Self::failure_for(sequence, "command vector index does not fit u32")
+                        RootRuntimeFailure::for_transition(
+                            sequence,
+                            "command vector index does not fit u32",
+                        )
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1481,22 +1549,28 @@ impl RootRuntime {
             .len()
             .checked_add(envelopes.len())
             .ok_or_else(|| {
-                Self::failure_for(sequence, "pending root command count overflows usize")
+                RootRuntimeFailure::for_transition(
+                    sequence,
+                    "pending root command count overflows usize",
+                )
             })?;
         if !self.limits.permits_pending_commands(pending_commands) {
-            return Err(Self::failure_for(
+            return Err(RootRuntimeFailure::for_transition(
                 sequence,
                 "pending root commands exceed the selected runtime limit",
             ));
         }
         let next_sequence = sequence.next().ok_or_else(|| {
-            Self::failure_for(
+            RootRuntimeFailure::for_transition(
                 sequence,
                 "ingress admitted an unconsumable terminal transition sequence",
             )
         })?;
         let RootPhase::Initialized { value, .. } = &mut self.active.phase else {
-            return Err(Self::failure_for(sequence, "root state is not initialized"));
+            return Err(RootRuntimeFailure::for_transition(
+                sequence,
+                "root state is not initialized",
+            ));
         };
         *value = state;
         self.active.next_sequence = next_sequence;
@@ -1516,9 +1590,9 @@ impl RootRuntime {
         value: RuntimeValue,
     ) -> Result<RootTransitionOutcome, RootRuntimeFailure> {
         let error_digest = validate_replay_safe_payload(&RuntimePayload(value), self.limits.schema)
-            .map_err(|message| Self::failure_for(sequence, &message))?;
+            .map_err(|message| RootRuntimeFailure::for_transition(sequence, &message))?;
         let next_sequence = sequence.next().ok_or_else(|| {
-            Self::failure_for(
+            RootRuntimeFailure::for_transition(
                 sequence,
                 "ingress admitted an unconsumable terminal transition sequence",
             )
@@ -1530,15 +1604,6 @@ impl RootRuntime {
             message,
             error_digest,
         })
-    }
-
-    fn failure_for(sequence: TransitionSequence, message: &str) -> RootRuntimeFailure {
-        let digest = RuntimeValueDigest::from_bytes(blake3::hash(message.as_bytes()).into());
-        RootRuntimeFailure::Transition {
-            sequence,
-            message: message.to_owned(),
-            digest,
-        }
     }
 }
 
@@ -1787,6 +1852,8 @@ pub struct RootStateSnapshot<P> {
     pub event_layout: TypeLayoutHash,
     pub phase: RootPhase<P>,
     pub next_sequence: TransitionSequence,
+    #[serde(deserialize_with = "snapshot::deserialize_required_failure")]
+    pub failure: Option<RootRuntimeFailure>,
 }
 
 /// Live version-one root snapshot; constructing another owner requires

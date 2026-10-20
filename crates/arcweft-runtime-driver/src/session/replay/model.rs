@@ -116,6 +116,8 @@ pub struct RootReplayRecorderV1 {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayRecordingError {
+    #[error("Root snapshot inspection failed: {0}")]
+    RootState(#[source] Box<arcweft_core::root::RootRuntimeError>),
     #[error("root replay snapshot admission failed: {0}")]
     Snapshot(#[source] Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
     #[error("root replay initializer has not completed")]
@@ -181,6 +183,8 @@ pub struct RootReplayReportV1 {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayError {
+    #[error("Root snapshot inspection failed: {0}")]
+    RootState(#[source] Box<arcweft_core::root::RootRuntimeError>),
     #[error("root replay codec rejected the trace: {0}")]
     Codec(#[source] Box<arcweft_data::DataError>),
     #[error("root replay retained value admission failed: {0}")]

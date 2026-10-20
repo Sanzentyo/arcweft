@@ -938,12 +938,14 @@ impl ArcweftRuntimeExecutor {
     }
 
     #[must_use]
-    pub fn product_root_state_snapshot(&self) -> Option<RootStateSnapshotV1> {
+    pub fn product_root_state_snapshot(
+        &self,
+    ) -> Result<Option<RootStateSnapshotV1>, RootRuntimeError> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_state_snapshot(),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_)
-            | ArcweftRuntimeExecutorInner::Vacant => None,
+            | ArcweftRuntimeExecutorInner::Vacant => Ok(None),
         }
     }
 

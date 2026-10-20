@@ -260,6 +260,12 @@ wire payload を元 program と Source lease に結び付けた inert image に�
 Root・product・View・presentation を session の同じ資源枠で検証する。
 Root と product の実行値は、旧 executor を破棄した後にだけ構築する。復元途中の
 失敗では候補を破棄し、元の完全な inert image から旧 executor を戻す。
+durable Root の live／inert 共通 grammar は failure も保持する。failure は Ready
+phase の現在の transition cursor に対応し、message と digest が一致しなければ
+受け入れない。wire は failure が無い場合も明示的な `null` を要求する。
+failure metadata は hash・state／message の複製前に資源検証し、検証に失敗した
+状態取得はエラーとして返す。replay はそのエラーを Root の不在に変換せず、
+failure を持つ Root や進行済み Root を初期状態として記録・再生しない。
 
 Native Engine も live／inert で一つの owning grammar を使い、inert 特殊化だけに
 Clone を与える。復元は外側が保持する元 Plan の lease を要求し、候補が同じ内容の

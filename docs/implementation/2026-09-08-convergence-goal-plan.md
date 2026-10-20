@@ -23690,3 +23690,96 @@ This is an intermediate18-path checkpoint with runtime/lint acceptance pending,
 as authorized by the user. Next execute the failed-Root durable round trip and
 finish the missing failure lifecycle, then validate the complete owner/consumer
 matrix. Preserve the complete objective and the inherited dirty inventory.
+
+Complete-owner checkpoint `f2ec718442eb356af93216fb2139fa0a6292141d` is pushed
+and verified:parent `4f4b1d640793e2bb4c93643e44b28f9a6b58c532`, tree
+`4a770e39203a22250891232e36d282a604959360`, patch SHA256
+`ac2823f9469bba37adafb0c35eb05fb7d9856bb1ae67382b728e756864255874`;
+all18 published blobs/3939 inputs, held14,empty index,advertised main and zero
+drift match. Baseline advanced to owned0. This goal turn is implementation and
+publication progress, not a blocker or a claim of behavioral acceptance.
+
+Added awbc_failed_root_save_round_trip_preserves_the_complete_executor on top of
+that checkpoint. It drives the real Nop/Trap reducer with two ops, requires one
+Trapped transition and a present Root failure, round-trips the save DTO through
+JSON, restores the complete owner and requires exact image equality. The assertion
+is intentionally kept while repairing the observed wire lifecycle omission.
+R1941 task-final-r1941-root-failure-dev-cases is running(session73219), selecting
+the complete awbc::product_step::root::tests module with Core/driver/runtime-plan
+all features. Continue that exact live handle; do not restart on a timeout or edit
+the frozen Rust before its terminal result. The runtime freeze is
+task-root-failure-20261020-runtime.source-freeze.json(3938 inputs). This note alone
+is excluded from that freeze. Root quota/public restore regressions are selected
+as well; no new passing runtime result is claimed yet. Next use the failure result
+to carry the final Root failure lifecycle through the version1 save grammar,
+update affected constructors/consumers without weakening state/atomicity checks,
+then run the required owner and reverse-consumer acceptance. The full original
+goal remains active and all previously recorded acceptance gaps remain in scope.
+
+### 2026-10-20 — retain the failed Root lifecycle in durable state
+
+Inspected main `f2ec718442eb356af93216fb2139fa0a6292141d`; held14 tracked paths
+and three untracked entries remain preserved. R1941 completed:6 tests ran,5 passed,
+one failed,2287 filtered,0.300s,actual exit100. The failed exact-image comparison
+shows restored failure None against original Some(Transition(sequence0,"Root
+reducer trapped",digest)); all3938 frozen runtime/spec inputs match. This is
+dev evidence without a separate catalog-key audit. The public restore/ownership,
+shared quota and initializer-phase cases passed on that checkpoint.
+
+RootStateSnapshot's shared live/inert grammar now carries optional failure with
+its transition sequence,message and digest. The field is explicitly required by
+the inert reader, even for None; no old reader is retained and version stays1.
+Projection/binding/restore now transfer that failure. RootRuntimeFailure owns
+construction and validates Ready phase,exact non-exhausted transition cursor and
+message digest after metadata admission. Complete inert Root admission uses the
+same validation and rejects queued events on a failed Root.
+
+Root state capture is now fallible:failure metadata is bounded and validated
+before state/message copies. The runtime facade and replay recording/execution
+propagate typed RootState errors instead of converting inspection failure to an
+absent Root. Existing trap tests still compare all prior state/header/cursor data,
+with expected failure built from the emitted Trapped outcome. R1943 Core/driver
+all-target/all-feature check passed2m35s before the final two domain regressions.
+Those regressions cover durable failed-state round trips,failed reentry,forged
+sequence/message/digest/phase/exhaustion,missing/unknown failure wire shape,and
+oversized failure metadata rejected before capture while retaining its buffer.
+
+R1944 task-final-r1944-root-failure-dev-cases is running(session22534), with the
+union of awbc::product_step::root::tests and root::tests across Core/driver/
+runtime-plan all features. Continue the same confirmed-live handle; do not restart
+or edit the frozen Rust on an observation timeout. Runtime freeze:
+task-root-failure-lifecycle-20261020-runtime.source-freeze.json(3938 inputs),only
+this operational note excluded. No R1944 pass is claimed yet. After its result,
+repair any failure, check replay start guards for a failed zero-sequence Root,
+complete specification/consumer updates and required owner/reverse-consumer/
+workspace/Clippy/target acceptance,then commit/push the coherent lifecycle cut.
+The complete original goal remains active; this turn changes implementation and
+adds a passing compile check,not a completion or blocking claim.
+
+R1944 completed:23 selected cases,22 passed,one obsolete exact-image expectation
+failed,2272 filtered,0.559s,actual exit100. The new failed-Root wire round trip
+and domain forgery/metadata regressions passed. Updated the remaining rollback
+expectation to retain the emitted Trapped failure while preserving every prior
+state/phase/cursor assertion. Fresh replay recording/execution now rejects failed
+zero-sequence Roots as well as advanced Roots.
+
+R1945 catalog matched2295 and excluded0 across Core/driver/runtime-plan. R1946
+completed660.602s:2295 run,2289 passed(two slow),six failed,zero skipped,actual
+exit100. Exact terminal catalog keys and3938 frozen runtime/spec inputs match;
+held14 is unchanged. Failures remain:two AwaitMany argument-bearing root restores
+construct an argumentless startup shell; ContentOnly presentation generation
+capture rejects the older selected execution generation; same-label flow and cold
+observation callable refusals lose the Fiber diagnostic category; catalog refusal
+is incorrectly preceded by executable-frame validation. These are concrete
+remaining restore acceptance failures,not a passing suite or a completed goal.
+
+R1947 workspace all-target/all-feature locked check passed5m17s. R1948 ordinary
+workspace all-target/all-feature locked Clippy passed6m48s with warnings; this is
+not a strict-lint pass. Those commands used the final lifecycle code. This13-path
+lifecycle checkpoint is published under the user's explicit intermediate-commit
+policy,which does not require every intermediate state to execute successfully.
+Next remove dummy startup construction through a consuming owner restore from
+actual saved frames,then repair generation,diagnostic ownership and phased
+resource/catalog/executable admission without weakening assertions or quotas.
+The complete original acceptance goal remains active. The one requested clean
+already succeeded(265286 files,323.8GiB);do not repeat it or move build artifacts.

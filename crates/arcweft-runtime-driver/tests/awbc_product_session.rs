@@ -1122,6 +1122,7 @@ fn session_restore_preflights_root_presence_and_preserves_executor() {
                 reducer: arcweft_core::root::RootReducerPhase::Ready,
             },
             next_sequence: arcweft_core::root::TransitionSequence::from_u64(0),
+            failure: None,
         })
         .unwrap();
     let mut visited = false;

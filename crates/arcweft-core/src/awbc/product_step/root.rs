@@ -340,8 +340,13 @@ impl AwbcProductStepExecutor {
     }
 
     #[must_use]
-    pub fn root_state_snapshot(&self) -> Option<crate::root::RootStateSnapshotV1> {
-        self.root.as_ref().map(RootRuntime::snapshot_state)
+    pub fn root_state_snapshot(
+        &self,
+    ) -> Result<Option<crate::root::RootStateSnapshotV1>, RootRuntimeError> {
+        self.root
+            .as_ref()
+            .map(RootRuntime::snapshot_state)
+            .transpose()
     }
 
     #[must_use]
@@ -574,6 +579,42 @@ mod tests {
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         let executor = executor.restore_snapshot_owned(original.clone()).unwrap();
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
+    }
+
+    #[test]
+    fn awbc_failed_root_save_round_trip_preserves_the_complete_executor() {
+        let (_, mut executor) = reducer_fixture();
+        let roles = executor.root.as_ref().unwrap().roles();
+        let event = crate::program_types::RuntimeProgramTypes::Awbc(&executor.program)
+            .try_record_value(
+                roles.event.semantic_identity,
+                vec![],
+                roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let mut input = crate::step::RuntimeStepInput::default();
+        input.root_events.push(crate::root::RootEventInput::new(
+            crate::value::RuntimePayload(event),
+        ));
+        let trapped = executor.step(input, options(2));
+        assert_eq!(trapped.stats.executed_ops, 2);
+        assert!(matches!(
+            trapped.output.root_transitions.as_slice(),
+            [crate::root::RootTransitionOutcome::Trapped { .. }]
+        ));
+        assert!(executor.root.as_ref().unwrap().failure().is_some());
+        let before = executor.snapshot().unwrap();
+        let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program_arc());
+        let saved =
+            super::super::AwbcProductExecutorSaveSnapshot::from_live(&before, &owner).unwrap();
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let decoded: super::super::AwbcProductExecutorSaveSnapshot =
+            serde_json::from_slice(&bytes).unwrap();
+        let image = decoded
+            .into_live_for_program(executor.admitted_program())
+            .unwrap();
+        let executor = executor.restore_snapshot_owned(image).unwrap();
+        assert_eq!(executor.snapshot().unwrap(), before);
     }
 
     #[test]

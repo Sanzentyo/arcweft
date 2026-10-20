@@ -85,12 +85,14 @@ impl RootReplayRecorderV1 {
         let root = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayRecordingError::RootState(Box::new(error)))?
             .ok_or(RootReplayRecordingError::MissingRoot)?;
         let blockers = session
             .executor
             .product_root_save_blockers()
             .ok_or(RootReplayRecordingError::MissingRoot)?;
         if root.next_sequence != TransitionSequence::ZERO
+            || root.failure.is_some()
             || blockers.reducer_active
             || blockers.pending_events > 0
             || blockers.pending_commands > 0
@@ -153,6 +155,7 @@ impl RootReplayRecorderV1 {
         let root = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayRecordingError::RootState(Box::new(error)))?
             .ok_or(RootReplayRecordingError::MissingRoot)?;
         let position = RecordedExternalOutcomePositionV1::BeforeTransition(root.next_sequence);
         let mut admission = RuntimeRetainedValueAdmission::for_program(
@@ -478,6 +481,7 @@ impl RootReplayRecorderV1 {
         let root = session
             .executor
             .product_root_state_snapshot()
+            .map_err(|error| RootReplayRecordingError::RootState(Box::new(error)))?
             .ok_or(RootReplayRecordingError::MissingRoot)?;
         if active.id != self.identity.entry
             || active.kind != self.identity.entry_kind

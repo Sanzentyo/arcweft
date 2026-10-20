@@ -19,6 +19,7 @@ impl Clone for RootStateSaveSnapshotV1 {
             event_layout: self.event_layout,
             phase: self.phase.clone(),
             next_sequence: self.next_sequence,
+            failure: self.failure.clone(),
         }
     }
 }
@@ -53,7 +54,11 @@ impl<P> super::RootStateSnapshot<P> {
             self.event_layout,
             self.next_sequence,
             self.phase.header(),
+            &self.failure,
         ))?;
+        if let Some(failure) = &self.failure {
+            failure.validate_state(self.phase.header(), self.next_sequence)?;
+        }
         let owner =
             admission
                 .program_owner()
@@ -178,6 +183,7 @@ impl RootStateSaveSnapshotV1 {
             event_layout: root.active.event_layout,
             phase: root.active.phase.clone(),
             next_sequence: root.active.next_sequence,
+            failure: root.failure.clone(),
         })
     }
 
@@ -208,7 +214,7 @@ impl RootStateSaveSnapshotV1 {
             reducer: roles.reducer.clone(),
             limits: roles.command_policy.root_limits,
             roles,
-            failure: None,
+            failure: self.failure,
         })
     }
 
@@ -241,6 +247,7 @@ impl RootStateSaveSnapshotV1 {
                 )
             })?,
             next_sequence: snapshot.next_sequence,
+            failure: snapshot.failure.clone(),
         })
     }
 
@@ -265,6 +272,7 @@ impl RootStateSaveSnapshotV1 {
             event_layout: self.event_layout,
             phase,
             next_sequence: self.next_sequence,
+            failure: self.failure,
         })
     }
 
@@ -312,4 +320,13 @@ impl RootStateSaveSnapshotV1 {
         }
         Ok(entry.roles())
     }
+}
+
+pub(super) fn deserialize_required_failure<'de, D>(
+    deserializer: D,
+) -> Result<Option<super::RootRuntimeFailure>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(deserializer)
 }
