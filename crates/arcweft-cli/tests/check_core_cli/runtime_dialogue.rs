@@ -1,7 +1,7 @@
 use super::{CommandOutput, temp_arcw};
 use std::{ffi::OsStr, fs, path::Path};
 
-const SOURCE: &str = r#"
+const SOURCE: &str = r"
 entry cli @entry.run { goto @flow.run }
 pub character alice {}
 fn configured() -> CharacterDialogue { @<character.alice>() }
@@ -9,7 +9,7 @@ flow run {
     let speaker = configured()
     speaker()[Ready[p]]
 }
-"#;
+";
 
 fn assert_source_dialogue_report(output: &CommandOutput) {
     output.assert_success();

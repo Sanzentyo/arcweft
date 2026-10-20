@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_core::value::RuntimeFormatContext;
 
 struct ProgramExternal {
     owner: RuntimeProgramOwner,
@@ -42,7 +43,7 @@ fn installed_external_context_keeps_the_original_program_and_borrowed_arguments(
     let context = RuntimeExternalCallContext::for_program(
         arcweft_core::pure::RuntimeProgramExecutionContext::native(
             Arc::clone(&plan),
-            Default::default(),
+            RuntimeFormatContext::default(),
         ),
         [scalar],
         scalar,
@@ -68,7 +69,7 @@ fn installed_external_context_keeps_the_original_program_and_borrowed_arguments(
     let foreign = RuntimeExternalCallContext::for_program(
         arcweft_core::pure::RuntimeProgramExecutionContext::native(
             Arc::new((*plan).clone()),
-            Default::default(),
+            RuntimeFormatContext::default(),
         ),
         [scalar],
         scalar,

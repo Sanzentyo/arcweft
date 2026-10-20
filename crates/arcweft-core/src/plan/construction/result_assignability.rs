@@ -33,42 +33,46 @@ fn opaque(tag: u8, name: &str, admission: RuntimeOpaqueTypeAdmission) -> Runtime
     )
 }
 
+fn declarations() -> [RuntimePlanTypeSeed; 6] {
+    [
+        opaque(
+            1,
+            "std.test.result",
+            RuntimeOpaqueTypeAdmission::ExactIdentity,
+        ),
+        opaque(
+            2,
+            "std.test.result",
+            RuntimeOpaqueTypeAdmission::ExactIdentity,
+        ),
+        opaque(
+            3,
+            "std.test.result",
+            RuntimeOpaqueTypeAdmission::ProducerWide,
+        ),
+        opaque(
+            4,
+            "std.test.other",
+            RuntimeOpaqueTypeAdmission::ExactIdentity,
+        ),
+        RuntimePlanTypeSeed::new(
+            semantic(5),
+            RuntimePlanTypeProjection::Choice(Box::new([semantic(1), semantic(2)])),
+        ),
+        RuntimePlanTypeSeed::new(semantic(6), RuntimePlanTypeProjection::Bool),
+    ]
+}
+
 pub(super) fn define(
     boundary: Boundary,
     expected: u8,
     actual: u8,
-) -> Result<RuntimePlan, RuntimePlanBuildError> {
+) -> Result<RuntimePlan, Box<RuntimePlanBuildError>> {
     let mut builder = RuntimePlanBuilder::new();
     let parameter = RuntimeFunctionParameterIdentity::from_accepted_identity([0x70; 32]);
     let admitted = builder
         .admit_type_batch(
-            [
-                opaque(
-                    1,
-                    "std.test.result",
-                    RuntimeOpaqueTypeAdmission::ExactIdentity,
-                ),
-                opaque(
-                    2,
-                    "std.test.result",
-                    RuntimeOpaqueTypeAdmission::ExactIdentity,
-                ),
-                opaque(
-                    3,
-                    "std.test.result",
-                    RuntimeOpaqueTypeAdmission::ProducerWide,
-                ),
-                opaque(
-                    4,
-                    "std.test.other",
-                    RuntimeOpaqueTypeAdmission::ExactIdentity,
-                ),
-                RuntimePlanTypeSeed::new(
-                    semantic(5),
-                    RuntimePlanTypeProjection::Choice(Box::new([semantic(1), semantic(2)])),
-                ),
-                RuntimePlanTypeSeed::new(semantic(6), RuntimePlanTypeProjection::Bool),
-            ],
+            declarations(),
             [RuntimeLocalDeclarationSeed::new(
                 RuntimeLocalDeclarationSource::Parameter(parameter),
                 semantic(6),
@@ -140,6 +144,11 @@ pub(super) fn define(
         }
     }
     let plan = builder.finish()?;
+    assert_result_contract(&plan, boundary, expected, actual);
+    Ok(plan)
+}
+
+fn assert_result_contract(plan: &RuntimePlan, boundary: Boundary, expected: u8, actual: u8) {
     let (declared, body) = match boundary {
         Boundary::Function => {
             let function = plan.function_sites().iter().next().unwrap();
@@ -165,7 +174,6 @@ pub(super) fn define(
         plan.type_table().get(body).unwrap().semantic_identity(),
         semantic(actual)
     );
-    Ok(plan)
 }
 
 #[test]
@@ -186,7 +194,7 @@ fn every_callable_result_refuses_narrowing_foreign_producers_and_unrelated_alter
             assert!(
                 matches!(
                     define(boundary, expected, actual),
-                    Err(RuntimePlanBuildError::TypeMismatch { .. })
+                    Err(error) if matches!(*error, RuntimePlanBuildError::TypeMismatch { .. })
                 ),
                 "{boundary:?} accepted invalid result {expected} <- {actual}"
             );
