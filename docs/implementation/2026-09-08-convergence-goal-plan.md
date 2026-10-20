@@ -24156,3 +24156,78 @@ artifact move/copy,profile or jobs change. The next semantic change remains
 general staged resource/catalog/executable admission under one aggregate bank;
 preserve affine-before-callback and aggregate quota refusals. Full convergence,
 53-rdeps/workspace/Tier2,Native-Web and all earlier acceptance gaps remain open.
+
+### 2026-10-21 — distinguish borrowed admission from live construction
+
+Binding checkpoint `da55b57fbc508ab7e68ec020d5fc21910a112372` is pushed and
+verified:parent `eaf4ba7bda80da8b95779878f66ea1bd6ae13a95`,tree
+`d10c35f36f9b9797cc33f424d8ea1fb91049cdb8`,patch SHA256
+`7e66c98973c5260ebc8a651fc58bcc51df6ea2de04e823aecf507ac02138bf85`.
+All four published blobs/3939 inputs,held14,advertised main and empty index
+matched;baseline advanced to owned0. R1966 catalog completed0 (6m18s):2450
+named cases,187 matched,2263 excluded. R1967 ran those exact187 cases:186 pass,
+one fail,2263 skipped,2.387s,actual100. The new bind-then-owned-refusal regression
+passes. All3938 inputs and eight catalog-built binaries match before/after;
+only metadata was extracted for nextest,no artifact copied/moved. R1968 ordinary
+four-package all-target/all-feature Clippy passed0,3m55s including lock wait;
+all3938 inputs match. All three runner handles84098/7282/65589 are now closed.
+
+Supersedes the earlier interpretation that the last failure required catalog
+before executable *validation*. The maintained save/replay contract,including
+its originating commit `59dc4b2f384804c59b87fe69cb16bd74987635ea`,requires
+borrowed Copy/type/resource admission BEFORE catalog and catalog BEFORE live
+construction/owner movement. Its test used function99 as a construction-failure
+sentinel while complete Product preflight was still unfinished. Original frame
+function/layout/invocation binding supplies the retained inputs' expected types;
+the now-inert validator must authenticate that context without activating it.
+Deferring that authentication would contradict the borrowed type preflight.
+The originating implementation note also explicitly distinguished unfinished
+whole-Product metadata/value/type/capture/layout preconstruction. Current Core
+admit_retained performs borrowed checks;Driver invokes catalog while the original
+executor is installed,then consumes it only inside restore_session_snapshot_admitted.
+
+The catalog-refusal test retains both wire/snapshot callbacks,the exact rejection
+messages,one asset visit,original program identity and complete prior snapshot,
+and the success case's single visit/retained observation equality. Those cases
+now use valid original frames. A separate regression retains the same invalid
+function99 plus unaccepted asset for BOTH entries and requires typed Fiber
+refusal,zero callbacks,exact Source/snapshot/exported-wire equality. This tests
+both ordered stages instead of conflating validation with construction. The
+stable chapter clarifies this existing contract. No production check or resource,
+type,Copy,capture,batch or budget condition is relaxed;no fake valid frame or
+resource-bypass proof is introduced. This is a material correction to the earlier
+operational diagnosis,not a claim that general bounded construction is complete.
+
+Next evidence:the unchanged four-package selection plus this added named test
+must list188 cases and run the exact set;owner Driver Clippy covers the changed
+test consumer. The previous Core/other-consumer Clippy evidence is reused for
+unchanged bytes. General construction/descriptor/session quotas,bounded save
+output,53-rdeps/workspace/Tier2 and the full original convergence requirements
+remain active. Do not recreate a resource/catalog/executable split merely to
+preserve the old sentinel's unsupported error-precedence assumption.
+
+R1969 catalog completed101 because the new test attempted to Clone the live
+BundleSessionSnapshot,whose owning View intentionally has no Clone. Replaced
+that test-only copy with an independent snapshot_session capture;no Clone or
+parallel live owner was added. R1970/71 were not launched on that failed catalog.
+R1972 repaired catalog completed0,14.88s:2451 named cases,188 matched,2263
+excluded. It explicitly includes both ordered-stage tests,the new Core binding
+case and the existing affine-before-catalog case. R1973 completed0:all188 pass,
+2263 skipped,2.604s. Exact catalog keys,all3938 frozen inputs and all eight built
+binaries match. This validates the selected four-package slice,not the complete
+reverse closure. R1974 Driver all-target/all-feature/locked ordinary Clippy is
+live session61508;continue it and audit this same freeze after terminal.
+
+The resolved graph still has97 packages and99 unchanged manifest/lock inputs.
+The Core/runtime/plan/compiler union has53 transitive workspace consumers.
+R1975 root-reverse catalog is live session26163:explicitly selects the52 non-CLI
+members,with --lib --tests --all-features --locked and rdeps(=arcweft-core).
+This matches the non-CLI test-workspace surface while avoiding unrelated Cargo
+package builds. The CLI member's lib/bin and six canonical integration targets
+remain separate required work;default-feature and broader final acceptance also
+remain distinct. Freeze:task-root-closure-20261021-runtime.source-freeze.json,
+3938 inputs,only this note excluded. No Rust/spec edit is permitted to masquerade
+as evidence on these frozen bytes. Inspect the terminal catalog before running
+the exact set with --no-tests fail/--no-fail-fast;record real failures and all
+selected/excluded/no-host-test inventories. Do not restart the live handle or
+change jobs,features,profiles,coverage or budgets to reduce this work.

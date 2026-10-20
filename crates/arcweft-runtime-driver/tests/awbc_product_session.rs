@@ -2609,17 +2609,13 @@ fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot(
         RuntimeValue::Tuple(vec![image_handle_for_bytes(b"unaccepted image")]),
         &owner,
     );
-    let mut payload = arcweft_save::decode_strict_typed_json_save::<serde_json::Value>(
+    let payload = arcweft_save::decode_strict_typed_json_save::<serde_json::Value>(
         &save,
         &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
         BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         &arcweft_save::SaveDecodeOptions::default(),
     )
     .expect("inert payload decodes");
-    // This independently invalid executor would fail when restored. Catalog
-    // rejection must happen while the original owner is still installed.
-    payload["executor"]["state"]["fiber"]["frames"][0]["function"] = 99.into();
-    let save = encode_session_json_value(&payload);
     let mut seen = 0;
     let error = session
         .import_session_save_bytes_with_value_validator(
@@ -2645,7 +2641,6 @@ fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot(
     let mut snapshot = session
         .snapshot_session()
         .expect("independent catalog candidate");
-    snapshot.executor.state.fiber.frames[0].function = AwbcFunctionId(99);
     snapshot.executor.state.observations =
         serde_json::from_value(payload["executor"]["state"]["observations"].clone())
             .expect("observations remain inert");
@@ -2693,6 +2688,68 @@ fn session_catalog_refusal_precedes_executor_construction_for_wire_and_snapshot(
             .observations,
         expected
     );
+}
+
+#[test]
+fn session_frame_admission_precedes_catalog_for_wire_and_snapshot() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let before = session
+        .snapshot_session()
+        .expect("the original session snapshots");
+    let original_wire = exported_session_json(&session);
+    let owner = session.program_owner();
+    let save = session_save_with_observation_value(
+        &session,
+        RuntimeValue::Tuple(vec![image_handle_for_bytes(b"unaccepted image")]),
+        &owner,
+    );
+    let mut payload = arcweft_save::decode_strict_typed_json_save::<serde_json::Value>(
+        &save,
+        &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+        BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+        &arcweft_save::SaveDecodeOptions::default(),
+    )
+    .expect("the candidate remains inert");
+    // Original frame signatures/layouts supply the retained values' type
+    // obligations. This borrowed admission must finish before external code.
+    payload["executor"]["state"]["fiber"]["frames"][0]["function"] = 99.into();
+    let mut visited = 0;
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &encode_session_json_value(&payload),
+            &arcweft_save::SaveDecodeOptions::default(),
+            |_| {
+                visited += 1;
+                Err("catalog must not inspect an invalid frame".into())
+            },
+        )
+        .expect_err("borrowed frame admission refuses before catalog and activation");
+    assert!(matches!(error, BundleSessionSaveError::Fiber { .. }));
+    assert_eq!(visited, 0);
+    assert!(session.program_owner().same_program(&owner));
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original_wire);
+
+    let mut snapshot = session
+        .snapshot_session()
+        .expect("an independent in-memory candidate");
+    snapshot.executor.state.fiber.frames[0].function = AwbcFunctionId(99);
+    snapshot.executor.state.observations =
+        serde_json::from_value(payload["executor"]["state"]["observations"].clone())
+            .expect("observation assets remain inert");
+    let mut visited = 0;
+    let error = session
+        .restore_session_snapshot_with_value_validator(snapshot, |_| {
+            visited += 1;
+            Err("catalog must not inspect an invalid frame".into())
+        })
+        .expect_err("the in-memory entry has the same borrowed preflight");
+    assert!(matches!(error, BundleSessionSaveError::Fiber { .. }));
+    assert_eq!(visited, 0);
+    assert!(session.program_owner().same_program(&owner));
+    assert_eq!(session.snapshot_session().unwrap(), before);
+    assert_eq!(exported_session_json(&session), original_wire);
 }
 
 #[test]

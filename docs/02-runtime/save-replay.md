@@ -545,6 +545,10 @@ session catalog validator に借用値のまま渡してから live executor／V
 開始する。wire は inert root／Product／View／presentation、in-memory snapshot は
 同じ各 owner の保持値を走査する。Copy・型・資源の借用 admission が catalog
 callback に先行し、catalog の拒否は既存 session の owner を移動・破棄しない。
+この型検証には、保持値の expected type を供給する元 frame の function・layout・
+invocation binding の照合も含む。不正な frame は外部 callback より前に拒否する。
+catalog はこの借用検証後、live payload／frame の構築と既存 owner の移動より前に
+検証する。
 save DTO を元の program／Source に結び付ける操作は、未信頼の inert image を
 返す。この binding は frame の admission や実行能力を発行しない。完全な
 retained group の検証は復元側が所有し、binding 側で独立した全量検証の予算を
