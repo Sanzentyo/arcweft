@@ -192,9 +192,8 @@ fn assert_awbc_returns(program: &AwbcProgram) {
             needs
         }) if needs.len() == 1
     ));
-    let error = product
-        .restore_snapshot(product.snapshot().unwrap())
-        .unwrap_err();
+    let candidate = product.snapshot().unwrap();
+    let (mut product, error) = product.restore_snapshot_owned(candidate).unwrap_err();
     assert!(
         error
             .to_string()
@@ -221,9 +220,8 @@ fn assert_awbc_returns(program: &AwbcProgram) {
         Some("42")
     );
     let image = product.snapshot().unwrap();
-    product
-        .restore_snapshot(product.snapshot().unwrap())
-        .unwrap();
+    let candidate = product.snapshot().unwrap();
+    product = product.restore_snapshot_owned(candidate).unwrap();
     assert_eq!(product.snapshot().unwrap(), image);
 }
 

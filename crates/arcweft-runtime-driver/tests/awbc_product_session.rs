@@ -2802,8 +2802,8 @@ fn live_product_observation_restore_and_hotpatch_install_the_checked_program_own
             &foreign_owner,
         )
         .unwrap();
-    executor
-        .restore_snapshot(snapshot)
+    executor = executor
+        .restore_snapshot_owned(snapshot)
         .expect("live snapshot admits and rebinds observations");
     let RuntimeValue::Callable(callable) =
         executor.fiber().frame.observations.signals()["signal.callback"].value()

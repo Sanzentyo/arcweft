@@ -23845,3 +23845,55 @@ selected program's complete inert image directly rather than spawn an entry as
 a restore shell;preserve historical execution generations after ContentOnly
 retirement. The entire original convergence goal and all broader acceptance
 requirements remain active;this checkpoint is progress,not completion.
+Owned real-frame checkpoint `aba629fb23f11e4d927b54025fceec6c4af03fc2` is pushed
+and verified:parent `df5a425676ae8cf3190156c204ec9a8614274ba0`,tree
+`4302984a04cf2e9b134b3cad4df6c49ace83a055`,patch SHA256
+`d89c7b5b67fd0df881ad7503b353b71c168594d5473fe90ba089fcb76bf90535`.
+All11 blobs/3939 inputs,held14,advertised main and empty index match;baseline
+advanced to owned0. This remains an intermediate checkpoint,not acceptance.
+
+### 2026-10-21 — finish the consuming restore API consumers
+
+R1951's actual compiler output rejects four remaining removed-API calls:two in
+compiler/src/project/tests/producer_slots.rs,one in driver's live observation
+integration,and one in compiler's dialogue_readiness integration. A complete
+workspace call-site inspection distinguishes the remaining valid facade/input
+controller methods. Migrated these four calls directly to consuming restore,
+binding the returned owner on success and recovering it from the error tuple.
+Capture the candidate before moving its receiver;the producer test still checks
+the actual Need refusal and exact unchanged image before resuming it. No old
+borrowed API or compatibility shim was reintroduced. Existing assertions and
+budgets remain intact.
+
+The failed R1951 catalog is still finishing other Cargo jobs(wrapper PID60592
+was confirmed live). It cannot yield a passing catalog. These three consumer
+files were deliberately repaired after their compiler failures were observed,
+while that already-failed build drains;do not claim a frozen-source pass or an
+exact catalog audit for this failed development command. Its receipt's base is
+captured at command completion,not a guarantee of the initial source version.
+R1952 queue(session4453) awaits that receipt,inspects required cases and refuses
+execution if the catalog failed. R1953 Clippy(session13396) was queued on the build
+lock. Let those exact handles settle;do not restart for an observation timeout.
+Then build a fresh catalog on the repaired sources and include producer_slots,
+dialogue_readiness and the live-observation restore regression along with the
+original Product/parity/compiler Root slice. This is an intermediate consumer
+repair checkpoint under the user's explicit policy;successful compilation and
+runtime/lint acceptance remain pending.
+
+Two reviewed draft patches are saved outside the workspace,not applied:
+TEMP/arcweft-1011-convergence-resume-cb798c1d/task-session-entry-restore-20261021.patch
+and task-session-generation-lease-20261021.patch. The first replaces driver's
+startup/rollback shells by consuming the actual original executor,selects an exact
+entry contract while preserving its original Source and historical execution
+generation,and keeps the candidate owner available for a later View/task refusal.
+The second distinguishes session storage generation from completed execution
+identity and retains generation leases for a nonterminal Root even after its
+initial Flow has returned. A Root can still accept future events until failure;
+current finish_step_lifecycle releases its generation based only on Flow status.
+Add real stateful ContentOnly/event execution coverage from root_replay_fixture,
+plus historical-generation and missing-live-pin refusal/atomicity cases. Review
+and apply the drafts only after the old source-sensitive jobs settle. Keep the
+strict current-invocation restore guard as the other legitimate restore target.
+The other driver diagnostic-category and resource/catalog/executable-order
+failures remain open,as do all original broader requirements. No clean,branch,
+worktree,artifact move/profile/jobs change is authorized or needed here.
