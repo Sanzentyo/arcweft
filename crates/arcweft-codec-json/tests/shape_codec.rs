@@ -595,10 +595,38 @@ fn json_codec_checks_input_limit_before_parse() {
 
 #[test]
 fn json_codec_rejects_trailing_non_whitespace() {
-    let error = JsonCodec
-        .decode_value(br"null true", &TypeShape::Unit, &DecodeOptions::default())
-        .expect_err("trailing");
-    assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+    let mut relaxed = DecodeOptions::default();
+    relaxed.limits.allow_trailing_data = true;
+    for input in [br"null true".as_slice(), br"null [", br"null !"] {
+        let error = JsonCodec
+            .decode_value(input, &TypeShape::Unit, &DecodeOptions::default())
+            .expect_err("a complete value precedes the suffix");
+        assert_eq!(error.kind(), &DataErrorKind::TrailingData);
+        assert_eq!(
+            JsonCodec::validate_document(input, &relaxed.limits)
+                .unwrap_err()
+                .kind(),
+            &DataErrorKind::TrailingData,
+        );
+        assert_eq!(
+            JsonCodec
+                .decode_value(input, &TypeShape::Unit, &relaxed)
+                .unwrap(),
+            Value::Unit,
+        );
+    }
+    for input in [br"nu".as_slice(), br"[0,", br#"{"a":"#] {
+        let error = JsonCodec
+            .decode_value(input, &TypeShape::Unit, &DecodeOptions::default())
+            .expect_err("the initial value is incomplete");
+        assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+        assert_eq!(
+            JsonCodec::validate_document(input, &relaxed.limits)
+                .unwrap_err()
+                .kind(),
+            &DataErrorKind::InvalidEncoding,
+        );
+    }
 }
 
 #[test]

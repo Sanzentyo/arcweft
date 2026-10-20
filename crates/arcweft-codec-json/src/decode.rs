@@ -34,7 +34,7 @@ fn parse<P: Projection>(input: &[u8], limits: &DecodeLimits, strict: bool) -> Re
     if strict {
         deserializer
             .end()
-            .map_err(|error| super::json_error(&error))?;
+            .map_err(|error| DataError::new(DataErrorKind::TrailingData, error.to_string()))?;
     }
     Ok(value)
 }

@@ -23167,3 +23167,78 @@ backend remain open, along with Native foreign-call cold rollback, full restore
 failure atomicity, all14 host families, Generic Match/retained View completion,
 earlier56 CLI failures, Presentation ABI, strict Clippy and full Tier2/visual and
 final workspace acceptance. The original full goal remains active.
+
+### 2026-10-20: replay-byte execution evidence and precise JSON document-end errors
+
+The preceding intermediate reader cut was published and verified as
+`866004bed3580432a1c875d1bc2eaabf80c38e2b`, parent
+`232684b98889de86f4ffb5dbc4caac634188e7a8`, tree
+`c2c9e556c6a6c6e932476a8fbefc0a5c34123386`, raw patch SHA256
+`9cc33f19ac85c0b542c9de3ea7b65a5efb2d06d052171ed31940717b68c5a7d7`.
+All11 published blobs and3937 frozen inputs matched fresh/advertised main;
+held14 were unchanged, the index was empty and the baseline advanced. The last
+goal turn made implementation/publication progress and polled its live checks.
+
+R1873 selected199 Save/driver cases. R1874 passed that exact set, zero skipped,
+175.880s, with the public API compile case completing in172.189s. Pointer aliasing,
+complete JSON resource preflight before construction, strict duplicate-key and
+wide-number/float-bit cases all passed. R1875 selected41 compiler integration
+cases. R1876 executed them all:40 passed, one failed, zero skipped,2.628s. The
+actual AWFB record/save/byte-replay identity case passed, as did the original
+record/replay and both owned failure packets. The remaining packet matrix reached
+trailing JSON and received InvalidEncoding instead of TrailingData. Both runs'
+case-key audits and3936 runtime/source/spec hashes matched. This supersedes their
+previous pending status without claiming the failed matrix passed.
+
+Inspection found that the shared JSON parser used its generic syntax-error
+conversion for deserializer.end() even after a complete root value had parsed.
+That state now returns the existing structured TrailingData kind, preserving the
+Serde message. Initial-value parsing keeps its original structured resource/
+duplicate failures and InvalidEncoding syntax class. The change is at the common
+document-end boundary for raw decoding and validation-only preflight; no string
+matching, Root-specific exception, alternate parser or relaxed strict-reader path
+was added. The old overbroad error-kind assertion was replaced with the precise
+kind while retaining rejection and adding incomplete-value and explicit relaxed
+prefix cases. Save's existing trailing-payload test also requires TrailingData.
+The compiler packet matrix's expectations were not weakened.
+
+Current base is the full866004 SHA above, with four owned source/test/spec paths
+plus this note and held14 unchanged. There are no new Cargo changes; all99
+manifest/lock inputs still match R1872 metadata SHA256
+`ce471236b6d8f6e08775533e0ad4eed28cb58360adbc6acdd800eaf848a7ef9f`.
+The JSON-owner reverse closure is56. R1887's host Cargo tree had55: render-web's
+render-wgpu dependency is wasm-only. R1888 reran the tree with --target all and
+exactly matched all56 metadata packages. The original host observation is retained;
+it was not silently relabeled as an all-target graph.
+
+R1881 discovered exactly215 JSON/Save/driver cases. R1882 passed all215, zero
+skipped,6.652s, including the same raw/preflight document-end grammar, malformed
+first values, explicit relaxed raw prefixes, strict Save payloads and borrowed
+envelope/source checks. R1883 passed all41 compiler cases, zero skipped,4.337s.
+The complete packet rejection matrix now passes, including both kinds of trailing
+data, unknown flattened/nested fields, escaped duplicates, resource policy,
+schema/version/codec/checksum rejection and actual logical/AWFB byte replay.
+Exact case keys and3936 input hashes match for both executions.
+
+R1884 workspace all-target/all-feature/locked check passed in42.91s. R1885 ordinary
+workspace Clippy passed in2m00s, with warnings remaining; strict acceptance is not
+claimed. R1886 structure passed:3158 files,3028 Rust files,1722845 physical Rust LOC,
+97 packages,376 review triggers and zero blocking violations. R1889 checked
+arcweft-codec-json and arcweft-render-web on installed wasm32-unknown-unknown,
+all targets/features/locked, and passed in1m37s. All three check/lint input audits
+match3936 frozen inputs with held14 unchanged. The full publication freeze also
+includes this note and has3937 inputs. This is compile evidence for wasm, not
+browser execution or visual parity; all56-package execution acceptance remains
+open. The source change stays in the existing JSON parser's owning boundary.
+
+Next: remove Root's synchronous evaluator execution by staging authentic ordinary
+reducer frames with the common instruction allowance, backend, formatter, original
+program and rollback identity. RootRuntime already exposes begin_reduction and
+complete_reduction; both backend run_root_phase paths still call synchronous
+evaluators and must be migrated, with argument admission before copying and
+actual Native/AWBC stop/resume/cold-restore evidence. Bounded output encoding,
+remaining pre-live digest/expected-key admission, Native foreign-call cold rollback,
+full restore failure atomicity, all14 host families, Generic Match/retained View,
+earlier56 CLI failures, Presentation ABI, strict Clippy, full reverse/Tier2/visual
+and final workspace acceptance and all other original requirements remain open.
+The complete original goal remains active.

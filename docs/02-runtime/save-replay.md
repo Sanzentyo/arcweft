@@ -67,6 +67,9 @@ AWFB の両入口で caller の `SaveDecodeOptions` を適用し、JSON 全体�
 重複 key・末尾 data の検証後に inert DTO を decode する。未知 field も拒否し、
 `DataError` の kind・path を保持したまま replay の codec error として返す。
 trace の decode が成功するまで artifact/session の構築を開始しない。
+完全な JSON value の後の非空白 suffix は、通常の strict decode と typed preflight
+の両方で `TrailingData` として報告する。最初の value 自体の構文不正は
+`InvalidEncoding` と区別し、strict typed reader は末尾 data を許可しない。
 
 recorder は実行前の保持値検証から実行後の結果検証まで同じ資源枠を保持する。
 identity、sequence、digest、external result の metadata と値を別の allowance に

@@ -780,6 +780,7 @@ mod typed_json_tests {
         )
         .unwrap_err();
 
+        assert_eq!(error.kind(), &DataErrorKind::TrailingData);
         assert!(error.to_string().contains("trailing characters"));
     }
 
