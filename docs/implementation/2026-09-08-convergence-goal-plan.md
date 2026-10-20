@@ -22128,3 +22128,44 @@ execution and broad acceptance remain pending. Root startup, the complete
 Source/all14-family public switch, Generic Match/Presentation/persistence,
 strict lint, Tier2 and real Native/Web capture/parity remain required. The goal
 is active and unchanged.
+
+### 2026-10-20 — byte authority publication and current verification handoff
+
+Published checkpoint 465dda3263a82f854a3140a31007f88bb5b300d1, parent
+713c4d84a871e26970ec049372ac4b066641f980,
+tree 6043b178c10f2125d48e6b3ead3df98b9c2954cb,
+raw patch SHA256 b15b9f50ba80e779cf9eec8690ba12d1efa5dbdcc51e39ca0eb85e423f68b83d.
+Normal push succeeded. Fresh fetch/advertised main, all eight published blobs,
+parent/tree/patch and all 3933 publication inputs matched; baseline advanced to
+owned0/held14. Executable source has remained fixed since its runtime snapshot.
+
+R1762 ordinary workspace all-feature/all-target locked Clippy passed in 5m18s.
+Core library tests have 2920 warnings (2391 duplicates), four more than R1758:
+two extended tests exceed the line lint (109 and 108 lines), and the new transfer
+assertion can use let-else with an explicit Err pattern. These change-caused
+warnings remain to repair after R1761's fixed-input terminal audit. Preserve all
+assertions while sharing the inert fixture and the relation fixture. This
+ordinary success does not establish strict lint acceptance.
+
+R1765 structural gate passed: 3155 scanned files, 3025 Rust files, 1719378 physical
+Rust lines, 97 workspace packages, 376 review triggers and zero blocking
+violations. The existing schema work owner now holds the byte counter; no new
+layer edge or second allowance was introduced. Both R1762 and R1765 were audited
+against all 3932 fixed runtime/source hashes with zero drift. The statement
+above that metadata shares the bank refers to instantiations and explicitly
+encoded owner metadata; plain metadata-string validation and complete enclosing
+wire admission retain their separately documented obligations.
+
+R1761 is confirmed live at handle 45146: compilation finished in 5m05s, then all
+1936 tests in 13 binaries began, including the Core API compile fixture. R1763
+consumer catalogue is confirmed live at 47308, and R1764 workspace check at
+73382. Retain and poll these same handles; no observation gap authorizes a
+restart. Next: audit R1761's terminal case set with R1760 and the byte-bank
+runtime freeze, repair actual failures or the four new lint warnings, inspect
+R1763's full 52-consumer inventory and execute that selection, then audit R1764.
+Do not treat Core's catalogue as an execution result or a consumer catalogue as
+a passing reverse-closure run. The previously passed full Compiler 588-case run
+proves the earlier formatter source only.
+
+The complete goal and the Root startup implementation remain open. No additional
+clean, job/profile/OS tuning, branch/worktree or artifact movement occurred.
