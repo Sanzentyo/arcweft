@@ -2,7 +2,6 @@
 
 use super::{
     AwbcProductProgram, AwbcProductStepBuildError, AwbcProductStepExecutor, ProductStepError,
-    run_function,
 };
 #[cfg(test)]
 use crate::awbc::fiber::FiberState;
@@ -12,8 +11,7 @@ use crate::pure::RuntimeCallBackend;
 #[cfg(test)]
 use crate::root::RootStartup;
 use crate::root::{
-    RootCallableEvaluationError, RootCallableEvaluator, RootRuntime, RootRuntimeError,
-    RootStartupContract,
+    RootCallableEvaluationError, RootRuntime, RootRuntimeError, RootStartupContract,
 };
 use crate::step::{RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepOutput};
 use crate::value::RuntimeValue;
@@ -74,6 +72,160 @@ fn bind_startup(
 }
 
 impl AwbcProductStepExecutor {
+    pub(super) fn root_has_pending_reduction(&self) -> bool {
+        self.root.as_ref().is_some_and(|root| {
+            root.failure().is_none()
+                && matches!(
+                    root.active().phase,
+                    crate::root::RootPhase::Initialized { .. }
+                )
+                && root.active().pending_event_count() != 0
+        })
+    }
+
+    pub(super) fn prepare_root_reducer(&mut self, output: &mut RuntimeStepOutput) -> bool {
+        let Some(root) = &self.root else {
+            return true;
+        };
+        if root.failure().is_some() {
+            return false;
+        }
+        if matches!(
+            root.active().phase,
+            crate::root::RootPhase::Initializing { .. }
+        ) || root.active().reducer_active()
+            || root.active().pending_event_count() == 0
+            || matches!(
+                output.root_transitions.last(),
+                Some(crate::root::RootTransitionOutcome::Rejected { .. })
+            )
+        {
+            return true;
+        }
+        if let Err(message) = self.stage_root_reducer() {
+            let root = self.root.as_mut().expect("selected Root remains owned");
+            match root.trap_pending_reduction(
+                RootCallableEvaluationError::new(message.clone()),
+                crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
+            ) {
+                Ok(outcome) => output.root_transitions.push(outcome),
+                Err(error) => output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Internal,
+                    error.to_string(),
+                )),
+            }
+            self.fail_with_error(ProductStepError::Internal(message), output);
+            return false;
+        }
+        true
+    }
+
+    fn stage_root_reducer(&mut self) -> Result<(), String> {
+        let root = self.root.as_ref().expect("selected Root remains owned");
+        let inputs = root
+            .pending_reduction_inputs()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Root reducer has no pending event".to_owned())?;
+        let entry = self
+            .fiber
+            .root
+            .entry()
+            .ok_or_else(|| "Root entry origin is missing".to_owned())?;
+        let origin = crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry);
+        let function = origin
+            .validate(&self.program)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Root reducer function is missing".to_owned())?;
+        if !self.program.callable_executables.iter().any(|executable| {
+            executable.role == *inputs.callable && executable.function == function
+        }) {
+            return Err("Root reducer origin differs from its original role".into());
+        }
+        let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
+            crate::task::RuntimeProgramOwner::Awbc(self.program_arc()),
+            root.roles().command_policy.root_limits.schema,
+        );
+        admission
+            .validate_metadata(&origin)
+            .map_err(|error| error.to_string())?;
+        for value in inputs.arguments {
+            admission
+                .validate_owned_borrowed(value.into())
+                .map_err(|error| error.to_string())?;
+        }
+        let prepared = crate::awbc::fiber::validate_function_argument_value_refs(
+            &self.program,
+            function,
+            &inputs.arguments,
+        )
+        .map_err(|error| error.to_string())?;
+        let mut next_instance = self.next_fiber_instance;
+        let instance = crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+            next_instance
+                .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+                .map_err(|error| error.to_string())?,
+        );
+        let (_, args) = self
+            .root
+            .as_mut()
+            .expect("selected Root remains owned")
+            .begin_reduction()
+            .map_err(|error| error.to_string())?
+            .expect("borrowed admission found the next event")
+            .into_parts();
+        let fiber = crate::awbc::fiber::FiberState::for_function_with_arguments_prepared(
+            &self.program,
+            origin,
+            args,
+            prepared,
+            instance,
+            self.runtime_generation.get(),
+            self.fiber.budget.quantum.max(1),
+        );
+        self.next_fiber_instance = next_instance;
+        self.child_fibers.push_front(super::ProductChildFiber {
+            owner: super::ProductChildFiberOwner::Independent,
+            fiber,
+            runtime_generation: self.runtime_generation,
+            pending_host_call: None,
+        });
+        Ok(())
+    }
+
+    pub(super) fn finish_root_reducer(
+        &mut self,
+        entry: AwbcEntryId,
+        returned: Result<RuntimeValue, RootCallableEvaluationError>,
+        output: &mut RuntimeStepOutput,
+    ) -> Result<(), String> {
+        let selected = self
+            .program
+            .entries
+            .get(entry.index())
+            .ok_or_else(|| "unknown Root entry".to_owned())?;
+        let root = self
+            .root
+            .as_mut()
+            .filter(|root| root.active().entry == selected.runtime_id)
+            .ok_or_else(|| "Root reducer returned to a different entry".to_owned())?;
+        let previous = root.active().pending_command_count();
+        let outcome = root
+            .complete_reduction(
+                returned,
+                crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
+            )
+            .map_err(|error| error.to_string())?;
+        output.root_transitions.push(outcome);
+        output
+            .root_commands
+            .extend(root.committed_commands().skip(previous).cloned());
+        if let Some(failure) = root.failure() {
+            let message = failure.to_string();
+            self.fail_with_error(ProductStepError::Internal(message), output);
+        }
+        Ok(())
+    }
+
     pub(super) fn complete_root_initializer(
         &mut self,
         output: &mut RuntimeStepOutput,
@@ -266,7 +418,7 @@ impl AwbcProductStepExecutor {
         &mut self,
         events: Vec<crate::root::RootEventInput>,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
+        _pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         let Some(root) = self.root.as_mut() else {
             if events.is_empty() {
@@ -278,52 +430,16 @@ impl AwbcProductStepExecutor {
             ));
             return false;
         };
-        let result = {
-            if matches!(
-                root.active().phase,
-                crate::root::RootPhase::Initializing { .. }
-            ) {
-                return match root.ingress(
-                    events,
-                    crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
-                ) {
-                    Ok(()) => true,
-                    Err(error) => {
-                        output.diagnostics.push(RuntimeDiagnostic::categorized(
-                            RuntimeDiagnosticCategory::Input,
-                            error.to_string(),
-                        ));
-                        false
-                    }
-                };
-            }
-            let mut evaluator = ProductRootEvaluator {
-                program: &self.program,
-                format_context: &self.format_context,
-                backend: pure_backend,
-                fallback_stats: &mut self.compact_pure_stats,
-            };
-            root.step(
+        let result = if root.active().pending_command_count() != 0 {
+            Err(RootRuntimeError::PendingCommandsAwaitingDispatch)
+        } else {
+            root.ingress(
                 events,
-                &mut evaluator,
                 crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
             )
         };
         match result {
-            Ok(result) => {
-                let failed = result.failed;
-                output.root_transitions.extend(result.outcomes);
-                output.root_commands.extend(result.commands);
-                if failed {
-                    let message = root
-                        .failure()
-                        .map_or_else(|| "root reducer trapped".to_owned(), ToString::to_string);
-                    self.fail_with_error(ProductStepError::Internal(message), output);
-                    false
-                } else {
-                    true
-                }
-            }
+            Ok(()) => true,
             Err(error) => {
                 let step_input_rejection = matches!(
                     &error,
@@ -353,46 +469,130 @@ impl AwbcProductStepExecutor {
     }
 }
 
-struct ProductRootEvaluator<'a, B> {
-    program: &'a AwbcProductProgram,
-    format_context: &'a crate::value::RuntimeFormatContext,
-    backend: &'a mut B,
-    fallback_stats: &'a mut crate::step::RuntimePureCallStats,
-}
-
-impl<B: RuntimeCallBackend> RootCallableEvaluator for ProductRootEvaluator<'_, B> {
-    fn evaluate_root_callable(
-        &mut self,
-        callable: &crate::plan::RuntimeCallableRole,
-        args: Vec<RuntimeValue>,
-    ) -> Result<RuntimeValue, RootCallableEvaluationError> {
-        let executable = self
-            .program
-            .callable_executables
-            .iter()
-            .find(|executable| executable.role == *callable)
-            .ok_or_else(|| {
-                RootCallableEvaluationError::new(format!(
-                    "missing Product AWBC callable `{}` with contract {:?}",
-                    callable.callable.as_str(),
-                    callable.contract
-                ))
-            })?;
-        run_function(
-            self.program,
-            self.format_context,
-            executable.function,
-            args,
-            self.backend,
-            self.fallback_stats,
-        )
-        .map_err(|error| RootCallableEvaluationError::new(error.to_string()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reducer_fixture() -> (std::sync::Arc<AwbcProgram>, AwbcProductStepExecutor) {
+        let mut raw = crate::awbc::stateful_root_fixture();
+        let instruction = u32::try_from(raw.instructions.len()).unwrap();
+        raw.instructions
+            .push(crate::awbc::schema::AwbcInstruction::Nop);
+        raw.blocks[2].instructions = crate::awbc::schema::AwbcTableRange::new(instruction, 1);
+        let raw = std::sync::Arc::new(raw);
+        let program = AwbcProductProgram::admit(
+            std::sync::Arc::clone(&raw),
+            crate::awbc::verify::AwbcVerifyBudget::default(),
+            crate::awbc::verify::AwbcVerifyContext::default(),
+            crate::plan::RuntimeTaskSourceArtifactLimits::default(),
+            None,
+        )
+        .unwrap();
+        let contract = startup_contract(&program, AwbcEntryId(0)).unwrap().unwrap();
+        let types = crate::program_types::RuntimeProgramTypes::Awbc(&program);
+        let state = types
+            .try_record_value(
+                contract.roles.state.semantic_identity,
+                vec![],
+                contract.roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let startup = RootRuntime::prepare(contract, types)
+            .unwrap()
+            .complete_initialization(state, types)
+            .unwrap();
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        bind_startup(&program, &mut fiber, Some(&startup)).unwrap();
+        let fingerprint = AwbcProductStepExecutor::artifact_fingerprint(&program).unwrap();
+        let mut executor = AwbcProductStepExecutor::for_fiber(
+            program,
+            fiber,
+            fingerprint,
+            crate::task::GenerationId::new(0),
+        );
+        executor.install_root_startup(startup);
+        (raw, executor)
+    }
+
+    fn options(max_ops: usize) -> crate::step::RuntimeStepOptions {
+        crate::step::RuntimeStepOptions {
+            mode: crate::step::RuntimeStepMode::Drain,
+            budget: crate::step::RuntimeStepBudget { max_ops },
+            ..crate::step::RuntimeStepOptions::default()
+        }
+    }
+
+    #[test]
+    fn awbc_reducer_zero_budget_and_cold_restore_preserve_actual_instruction_frame() {
+        let (raw, mut executor) = reducer_fixture();
+        let roles = executor.root.as_ref().unwrap().roles();
+        let event = crate::program_types::RuntimeProgramTypes::Awbc(&executor.program)
+            .try_record_value(
+                roles.event.semantic_identity,
+                vec![],
+                roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let mut input = crate::step::RuntimeStepInput::default();
+        input.root_events.push(crate::root::RootEventInput::new(
+            crate::value::RuntimePayload(event),
+        ));
+        let zero = executor.step(input, options(0));
+        assert_eq!(zero.stats.executed_ops, 0);
+        assert!(zero.output.root_transitions.is_empty());
+        assert!(!executor.root.as_ref().unwrap().active().reducer_active());
+        let first = executor.step(crate::step::RuntimeStepInput::default(), options(1));
+        assert_eq!(first.stats.executed_ops, 1);
+        assert!(first.output.diagnostics.is_empty(), "{:?}", first.output);
+        assert!(first.output.root_transitions.is_empty());
+        assert!(executor.root.as_ref().unwrap().active().reducer_active());
+        let image = executor.inert_rollback_image().unwrap();
+        assert_eq!(image.product.child_fibers.len(), 1);
+        assert!(matches!(
+            image.product.child_fibers[0].fiber.root,
+            crate::awbc::fiber::AwbcFiberRoot::RootReducer(AwbcEntryId(0))
+        ));
+        drop(executor);
+        let mut restored = AwbcProductStepExecutor::for_entry_arc(raw, AwbcEntryId(0), 64).unwrap();
+        restored.restore_rollback_image(image.clone()).unwrap();
+        assert_eq!(restored.inert_rollback_image().unwrap(), image);
+        let done = restored.step(crate::step::RuntimeStepInput::default(), options(1));
+        assert_eq!(done.stats.executed_ops, 1);
+        assert!(matches!(&done.output.root_transitions[..],
+            [crate::root::RootTransitionOutcome::Trapped { sequence, .. }] if sequence.get() == 0));
+        assert!(!restored.root.as_ref().unwrap().active().reducer_active());
+        assert!(restored.child_fibers.is_empty());
+    }
+
+    #[test]
+    fn awbc_reducer_rollback_rejects_missing_and_duplicate_origins_without_mutation() {
+        let (_, mut executor) = reducer_fixture();
+        let roles = executor.root.as_ref().unwrap().roles();
+        let event = crate::program_types::RuntimeProgramTypes::Awbc(&executor.program)
+            .try_record_value(
+                roles.event.semantic_identity,
+                vec![],
+                roles.command_policy.root_limits.schema,
+            )
+            .unwrap();
+        let mut input = crate::step::RuntimeStepInput::default();
+        input.root_events.push(crate::root::RootEventInput::new(
+            crate::value::RuntimePayload(event),
+        ));
+        executor.step(input, options(1));
+        let original = executor.inert_rollback_image().unwrap();
+        let mut missing = original.clone();
+        missing.product.child_fibers.clear();
+        assert!(executor.restore_rollback_image(missing).is_err());
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+        let mut duplicate = original.clone();
+        duplicate
+            .product
+            .child_fibers
+            .push(duplicate.product.child_fibers[0].clone());
+        assert!(executor.restore_rollback_image(duplicate).is_err());
+        assert_eq!(executor.inert_rollback_image().unwrap(), original);
+    }
 
     #[test]
     fn root_restore_rejects_initializing_state_for_flow_origin_without_mutation() {

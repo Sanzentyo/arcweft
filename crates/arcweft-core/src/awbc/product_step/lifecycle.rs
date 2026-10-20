@@ -230,6 +230,7 @@ impl AwbcProductStepExecutor {
             self.fiber.status,
             FiberStatus::Returned | FiberStatus::Cancelled
         ) && self.child_fibers.is_empty()
+            && !self.root_has_pending_reduction()
         {
             return RuntimeStepStopReason::Done;
         }
@@ -283,6 +284,7 @@ impl AwbcProductStepExecutor {
             self.fiber.status,
             FiberStatus::Returned | FiberStatus::Cancelled
         ) && self.child_fibers.is_empty()
+            && !self.root_has_pending_reduction()
         {
             return true;
         }
@@ -341,7 +343,7 @@ impl AwbcProductStepExecutor {
     }
 
     fn product_status(&self) -> AwbcProductExecutorStatus {
-        if !self.child_fibers.is_empty()
+        if (!self.child_fibers.is_empty() || self.root_has_pending_reduction())
             && matches!(
                 self.fiber.status,
                 FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Suspended

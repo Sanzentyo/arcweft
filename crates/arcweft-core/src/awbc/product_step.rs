@@ -1960,6 +1960,11 @@ impl AwbcProductStepExecutor {
                 crate::awbc::fiber::AwbcFiberRoot::Empty => {
                     unreachable!("empty origin is handled above")
                 }
+                crate::awbc::fiber::AwbcFiberRoot::RootReducer(_) => {
+                    return Err(AwbcProductStepBuildError::FiberState {
+                        message: "Root reducer requires its owning executor".into(),
+                    });
+                }
             };
             fiber.map_err(|error| AwbcProductStepBuildError::FiberState {
                 message: error.to_string(),
@@ -2494,7 +2499,25 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> usize {
         let mut executed_ops = 0_usize;
-        while executed_ops < options.budget.max_ops && self.has_attemptable_work() {
+        while executed_ops < options.budget.max_ops {
+            if !self.prepare_root_reducer(output) || !self.has_attemptable_work() {
+                break;
+            }
+            if self.child_fibers.front().is_some_and(|child| {
+                matches!(
+                    child.fiber.root,
+                    crate::awbc::fiber::AwbcFiberRoot::RootReducer(_)
+                )
+            }) {
+                if !self.step_next_child(output, pure_backend, input, need_states) {
+                    break;
+                }
+                executed_ops = executed_ops.saturating_add(1);
+                if self.should_return_to_host(options.mode, output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
             if self.fiber.status == FiberStatus::Suspended {
                 let progress =
                     self.resume_main_suspension(input, need_states, output, pure_backend);
@@ -2557,7 +2580,8 @@ impl AwbcProductStepExecutor {
     /// Internal continuation is a projection of the admitted frame and child
     /// owners, rather than of the parent's outward Suspended status alone.
     fn has_internal_work(&self) -> bool {
-        self.fiber.status == FiberStatus::Running
+        self.root_has_pending_reduction()
+            || self.fiber.status == FiberStatus::Running
             || (matches!(
                 self.fiber
                     .suspension
@@ -2931,6 +2955,25 @@ impl AwbcProductStepExecutor {
         input: &mut RuntimeStepInput,
         need_states: &mut Vec<RuntimeNeedState>,
     ) -> bool {
+        if let Some(child) = self.child_fibers.front_mut()
+            && matches!(
+                child.fiber.root,
+                crate::awbc::fiber::AwbcFiberRoot::RootReducer(_)
+            )
+            && matches!(
+                child
+                    .fiber
+                    .suspension
+                    .as_ref()
+                    .map(|suspension| &suspension.reason),
+                Some(FiberSuspensionReason::BudgetYield)
+            )
+        {
+            if let Err(error) = child.fiber.resume_budget_yield(&self.program) {
+                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+                return true;
+            }
+        }
         let Some(front) = self.child_fibers.front() else {
             return false;
         };
@@ -2959,6 +3002,18 @@ impl AwbcProductStepExecutor {
         {
             Ok(checkpoint) => checkpoint,
             Err(error) => {
+                if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = front.fiber.root {
+                    self.child_fibers.pop_front();
+                    if let Err(root_error) = self.finish_root_reducer(
+                        entry,
+                        Err(crate::root::RootCallableEvaluationError::new(
+                            error.to_string(),
+                        )),
+                        output,
+                    ) {
+                        self.fail_with_error(ProductStepError::Internal(root_error), output);
+                    }
+                }
                 self.fail_with_error(error.into(), output);
                 return true;
             }
@@ -3095,7 +3150,7 @@ impl AwbcProductStepExecutor {
                 },
             )
         };
-        let vm_output = match vm_result {
+        let mut vm_output = match vm_result {
             Ok(vm_output) => vm_output,
             Err(error) => {
                 let message = error.to_string();
@@ -3135,22 +3190,78 @@ impl AwbcProductStepExecutor {
                         }
                     }
                     ProductChildFiberOwner::Independent => {
-                        if !self.rollback_selected_child_step(
-                            child,
-                            checkpoint,
-                            pending_host_call_before,
-                            resume_journal,
-                            need_states,
-                            output,
+                        if matches!(
+                            child.fiber.root,
+                            crate::awbc::fiber::AwbcFiberRoot::RootReducer(_)
                         ) {
+                            child.fiber.mark_trapped(FiberTrap {
+                                code: AwbcTrapCode::InternalInvariant,
+                                message: Some(message.clone()),
+                                source_map: None,
+                            });
+                            crate::awbc::vm::VmStepOutput {
+                                executed: 0,
+                                exit: VmExit::Trapped(FiberTrap {
+                                    code: AwbcTrapCode::InternalInvariant,
+                                    message: Some(message),
+                                    source_map: None,
+                                }),
+                                observations: Vec::new(),
+                            }
+                        } else {
+                            if !self.rollback_selected_child_step(
+                                child,
+                                checkpoint,
+                                pending_host_call_before,
+                                resume_journal,
+                                need_states,
+                                output,
+                            ) {
+                                return true;
+                            }
+                            self.fail_with_error(ProductStepError::Internal(message), output);
                             return true;
                         }
-                        self.fail_with_error(ProductStepError::Internal(message), output);
-                        return true;
                     }
                 }
             }
         };
+        if let crate::awbc::fiber::AwbcFiberRoot::RootReducer(entry) = child.fiber.root {
+            let returned = match &mut vm_output.exit {
+                VmExit::Returned(value) => Some(value.take().ok_or_else(|| {
+                    crate::root::RootCallableEvaluationError::new("Root reducer returned no value")
+                })),
+                VmExit::Trapped(trap) => Some(Err(crate::root::RootCallableEvaluationError::new(
+                    trap.message
+                        .clone()
+                        .unwrap_or_else(|| "Root reducer trapped".into()),
+                ))),
+                VmExit::Running | VmExit::BudgetYield(_) => None,
+                _ if matches!(
+                    child
+                        .fiber
+                        .suspension
+                        .as_ref()
+                        .map(|suspension| &suspension.reason),
+                    Some(FiberSuspensionReason::BudgetYield)
+                ) =>
+                {
+                    None
+                }
+                _ => Some(Err(crate::root::RootCallableEvaluationError::new(
+                    "pure Root reducer attempted to suspend",
+                ))),
+            };
+            self.compact_pure_stats = candidate_stats;
+            if let Some(returned) = returned {
+                if let Err(error) = self.finish_root_reducer(entry, returned, output) {
+                    self.fail_with_error(ProductStepError::Internal(error), output);
+                }
+            } else {
+                self.child_fibers.push_front(child);
+            }
+            return true;
+        }
         if let VmExit::DialogueResultSelected(value) = vm_output.exit {
             // VmExit is the first-delivery owner. The child remains the sole
             // live carrier until result-selection admission moves it to the

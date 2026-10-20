@@ -23428,3 +23428,60 @@ lint input audits match3938 frozen inputs. No Cargo graph change occurred.
 The common Engine metadata owner owns this allocator rule, not a Root-specific
 identity table. Full future-graph admission, AWBC real reducer frames/atomic
 restore and the complete original goal remain active and unfinished.
+## 2026-10-20 — AWBC Root reducers enter ordinary fibers (validation pending)
+
+Previous goal turn made progress through four published native checkpoints;
+current inspected main is `28a833a82bed9fb008b389ff4a11e205ce8e2dbe` with held14
+tracked/3 untracked unchanged. Its publication was verified:parent
+`2dae402cc676c5140b8a9f94c4eb72eb1c1c9c45`, tree
+`dce8d3e96be75bfa612f579bc2fc210d7b66eb4e`, patch SHA256
+`99a8c03f912d18a27b52531fa829f3f5154b367a9cbaf83a8883f3701583dccd`,
+all3 blobs/3939 inputs, fresh advertised main, zero drift and baseline owned0.
+
+The AWBC production prelude now ingresses only. Authentic RootReducer(entry)
+origins resolve their actual reducer role and two-parameter function signature.
+Borrowed state/event admission and positional ABI checks precede begin_reduction;
+a new fiber/frame uses the executor's actual cursor and the ordinary child VM
+step path with max_instructions1, selected backend/formatter and shared caller
+allowance. The existing Independent child owner is the executor owner; the fiber
+origin is the sole Root-specific role authority. The Root child stays at front,
+its real returned value goes to Root commit, and failures trap without commands
+or a stranded child. ProductRootEvaluator was deleted; generic run_function has
+other pure-program consumers and was not removed. Pending Root work survives a
+completed foreground and zero allowance. Root/child phase, entry, role, count,
+priority and running state are checked at rollback image capture/restore.
+
+R1914 Core all-target/all-feature/locked dev check passed in1m25s before the final
+checkpoint-failure handling and two new test bodies; it is not final acceptance.
+R1915 dev execution of awbc::product_step::root::tests is running. New cases use
+an admitted real stateful program with a reducer Nop followed by its real trap,
+checking zero/one-op, actual pending frame cold restore, one trap/old state, and
+missing/duplicate origin rejection before replacement. This is not proof of a
+successful reducer return or actual Rust-call no-repeat; those remain required.
+Full owner suite, compiler integration, dependency closure/check/Clippy/wasm and
+all final acceptance for this migration remain pending.
+
+Restore failure atomicity is still open: restore_rollback_image currently drops
+self.root before later fallible product restore. Public product-only snapshot/
+restore entrypoints and restore_snapshot_owned must also couple reducer origin
+with the retained Root authority before copies; do not infer complete boundary
+coverage from the rollback-image checks. Complete future-graph resource admission
+(including dialogue banks), Source Native/AWBC backend parity, all14 families,
+Generic Match/retained View/presentation ABI/old CLI failures/strict Clippy/Tier2/
+visual/full workspace acceptance and the complete original goal remain active.
+No new clean, branch/worktree, artifact relocation or job/profile tuning ran.
+R1915 dev run completed:three selected cases,two passed,one failed,1960 excluded,
+0.070s. Missing/duplicate reducer-origin rejection and the prior initializer
+phase rejection passed. The new cold reducer test passed its zero/one-op and
+actual pending-frame checks, then failed restoring into a fresh shell with
+`saved fiber origin differs from the selected invocation`:the shell starts as
+RootInitializer(entry), whereas the captured initialized parent is Entry(entry).
+The internal Rollback-policy validation now admits only that same-entry phase
+pair after the complete Root-image/origin preflight; public product-only snapshot
+validation retains exact invocation origin. No function/program/foreign entry
+origin is accepted by that exception. Assertion and test remain unchanged.
+BudgetYield is also kept as a resumable instruction boundary, with cold image
+admission permitting only that specific pure-fiber suspension. R1916 is running
+against these later changes; its live handle is session37144. Final passing
+behavior is not yet claimed. The planned checkpoint may be rough under the
+user's explicit intermediate-commit policy; retain the failed R1915 evidence.

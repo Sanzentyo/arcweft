@@ -3162,7 +3162,25 @@ impl AwbcProductStepExecutor {
     ) -> Result<AwbcProductExecutorRollbackImage, AwbcProductSaveError> {
         self.fiber
             .root
-            .admit_root_phase(self.root.as_ref(), &self.program)
+            .admit_executor_roots(
+                self.root.as_ref(),
+                &self.program,
+                self.child_fibers.iter().map(|child| {
+                    (
+                        child.fiber.root,
+                        child.fiber.status,
+                        matches!(child.owner, ProductChildFiberOwner::Independent),
+                        matches!(
+                            child
+                                .fiber
+                                .suspension
+                                .as_ref()
+                                .map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        ),
+                    )
+                }),
+            )
             .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
                 message: error.to_string(),
             })?;
@@ -3191,7 +3209,25 @@ impl AwbcProductStepExecutor {
             .product
             .fiber
             .root
-            .admit_root_phase(image.root.as_ref(), &self.program)
+            .admit_executor_roots(
+                image.root.as_ref(),
+                &self.program,
+                image.product.child_fibers.iter().map(|child| {
+                    (
+                        child.fiber.root,
+                        child.fiber.status,
+                        matches!(child.owner, AwbcProductChildFiberOwnerSnapshot::Independent),
+                        matches!(
+                            child
+                                .fiber
+                                .suspension
+                                .as_ref()
+                                .map(|suspension| &suspension.reason),
+                            Some(crate::awbc::fiber::FiberSuspensionReason::BudgetYield)
+                        ),
+                    )
+                }),
+            )
             .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                 message: error.to_string(),
             })?;
@@ -3525,7 +3561,10 @@ impl AwbcProductStepExecutor {
         snapshot: AwbcProductExecutorSnapshot,
         policy: crate::task::NeedProducerRestorePolicy,
     ) -> Result<(), AwbcProductStepBuildError> {
-        let observations = self.validate_snapshot(&snapshot)?;
+        let observations = self.validate_snapshot_for_origin(
+            &snapshot,
+            matches!(policy, crate::task::NeedProducerRestorePolicy::Rollback),
+        )?;
         let program_owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let queued_task_events = snapshot
             .queued_task_events
@@ -3715,7 +3754,24 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
-        if snapshot.fiber.root != self.fiber.root {
+        self.validate_snapshot_for_origin(snapshot, false)
+    }
+
+    fn validate_snapshot_for_origin(
+        &self,
+        snapshot: &AwbcProductExecutorSnapshot,
+        restoring_root_image: bool,
+    ) -> Result<RuntimeObservationState, AwbcProductStepBuildError> {
+        use crate::awbc::fiber::AwbcFiberRoot;
+        let same_entry_phase = restoring_root_image
+            && snapshot.fiber.root.entry().is_some()
+            && snapshot.fiber.root.entry() == self.fiber.root.entry()
+            && matches!(
+                (snapshot.fiber.root, self.fiber.root),
+                (AwbcFiberRoot::Entry(_), AwbcFiberRoot::RootInitializer(_))
+                    | (AwbcFiberRoot::RootInitializer(_), AwbcFiberRoot::Entry(_))
+            );
+        if snapshot.fiber.root != self.fiber.root && !same_entry_phase {
             return Err(AwbcProductStepBuildError::RestoreSnapshot {
                 message: "saved fiber origin differs from the selected invocation".to_owned(),
             });

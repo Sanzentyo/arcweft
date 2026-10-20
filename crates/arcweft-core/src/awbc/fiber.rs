@@ -66,12 +66,54 @@ impl From<FiberStateError> for crate::value::AwbcRuntimeValueSnapshotError {
 pub enum AwbcFiberRoot {
     Entry(AwbcEntryId),
     RootInitializer(AwbcEntryId),
+    RootReducer(AwbcEntryId),
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
     Function(AwbcFunctionId),
     Empty,
 }
 
 impl AwbcFiberRoot {
+    pub(crate) fn admit_executor_roots<P>(
+        self,
+        root: Option<&crate::root::RootRuntime<P>>,
+        program: &AwbcProgram,
+        children: impl Iterator<Item = (Self, FiberStatus, bool, bool)>,
+    ) -> Result<(), FiberStateError> {
+        if matches!(self, Self::RootReducer(_)) {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        self.admit_root_phase(root, program)?;
+        let mut reducers = 0;
+        for (position, (origin, status, independent, budget_yield)) in children.enumerate() {
+            if matches!(origin, Self::RootReducer(_)) {
+                if position != 0
+                    || !independent
+                    || !(status == FiberStatus::Running
+                        || (status == FiberStatus::Suspended && budget_yield))
+                {
+                    return Err(FiberStateError::InvalidFrame);
+                }
+                origin.admit_root_phase(root, program)?;
+                reducers += 1;
+            } else if matches!(origin, Self::RootInitializer(_)) {
+                return Err(FiberStateError::InvalidFrame);
+            }
+        }
+        let active = root.is_some_and(|root| {
+            matches!(
+                root.active().phase,
+                crate::root::RootPhase::Initialized {
+                    reducer: crate::root::RootReducerPhase::Evaluating,
+                    ..
+                }
+            )
+        });
+        if reducers != usize::from(active) {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        Ok(())
+    }
+
     pub(crate) fn admit_root_phase<P>(
         self,
         root: Option<&crate::root::RootRuntime<P>>,
@@ -81,6 +123,18 @@ impl AwbcFiberRoot {
             .entry()
             .and_then(|entry| program.entries.get(entry.index()));
         match (self, root, selected) {
+            (Self::RootReducer(_), Some(root), Some(entry))
+                if root.active().entry == entry.runtime_id
+                    && matches!(
+                        root.active().phase,
+                        crate::root::RootPhase::Initialized {
+                            reducer: crate::root::RootReducerPhase::Evaluating,
+                            ..
+                        }
+                    ) =>
+            {
+                Ok(())
+            }
             (Self::RootInitializer(_), Some(root), Some(entry))
                 if root.active().entry == entry.runtime_id
                     && matches!(
@@ -106,14 +160,19 @@ impl AwbcFiberRoot {
     }
     pub const fn entry(self) -> Option<AwbcEntryId> {
         match self {
-            Self::Entry(entry) | Self::RootInitializer(entry) => Some(entry),
+            Self::Entry(entry) | Self::RootInitializer(entry) | Self::RootReducer(entry) => {
+                Some(entry)
+            }
             Self::Program(_) | Self::Function(_) | Self::Empty => None,
         }
     }
 
-    fn validate(self, program: &AwbcProgram) -> Result<Option<AwbcFunctionId>, FiberStateError> {
+    pub(crate) fn validate(
+        self,
+        program: &AwbcProgram,
+    ) -> Result<Option<AwbcFunctionId>, FiberStateError> {
         match self {
-            Self::RootInitializer(entry) => {
+            Self::RootInitializer(entry) | Self::RootReducer(entry) => {
                 let entry_record = program
                     .entries
                     .get(entry.index())
@@ -125,7 +184,14 @@ impl AwbcFiberRoot {
                 let function = program
                     .callable_executables
                     .iter()
-                    .find(|executable| executable.role == roles.initializer)
+                    .find(|executable| {
+                        executable.role
+                            == match self {
+                                Self::RootInitializer(_) => roles.initializer.clone(),
+                                Self::RootReducer(_) => roles.reducer.clone(),
+                                _ => unreachable!("matched Root function origin"),
+                            }
+                    })
                     .ok_or(FiberStateError::InvalidFrame)?
                     .function;
                 let row = program
@@ -136,7 +202,12 @@ impl AwbcFiberRoot {
                     .signatures
                     .get(row.signature.index())
                     .ok_or(FiberStateError::InvalidFrame)?;
-                if !signature.params.is_empty() {
+                let arity = if matches!(self, Self::RootReducer(_)) {
+                    2
+                } else {
+                    0
+                };
+                if signature.params.len() != arity {
                     return Err(FiberStateError::InvalidFrame);
                 }
                 Ok(Some(function))
