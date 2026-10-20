@@ -2230,6 +2230,39 @@ fn queued_ready_restore_requires_the_exact_admitted_outcome_and_correlation() {
 }
 
 #[test]
+fn inert_save_binding_defers_frame_admission_to_owned_restore() {
+    use crate::executor::{ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot};
+
+    let executor = ArcweftRuntimeExecutor::from_awbc_product(return_program(), AwbcEntryId(0))
+        .expect("the original program is admitted");
+    let owner = executor.program_owner();
+    let before = executor
+        .snapshot()
+        .expect("the original executor snapshots");
+    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(image) = &before;
+    let mut saved = AwbcProductExecutorSaveSnapshot::from_live(image, &owner).unwrap();
+    saved.fiber.frames[0].function = AwbcFunctionId(u32::MAX);
+
+    let bound = executor
+        .bind_product_save_snapshot(saved)
+        .expect("binding an inert image does not issue frame admission");
+    assert_eq!(bound.fiber.frames[0].function, AwbcFunctionId(u32::MAX));
+    assert!(executor.program_owner().same_program(&owner));
+    assert_eq!(executor.snapshot().unwrap(), before);
+
+    let refused = executor
+        .restore_snapshot(ArcweftRuntimeExecutorSnapshot::AwbcProduct(bound))
+        .expect_err("the real restore must reject the untrusted executable frame");
+    let (executor, error) = refused.into_parts();
+    assert!(matches!(
+        error,
+        crate::executor::ArcweftRuntimeExecutorSnapshotError::ProductAwbc { .. }
+    ));
+    assert!(executor.program_owner().same_program(&owner));
+    assert_eq!(executor.snapshot().unwrap(), before);
+}
+
+#[test]
 fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
     let program = return_program();
     let original = program.flow_bindings[0].flow.clone();

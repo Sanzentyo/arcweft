@@ -24111,3 +24111,48 @@ This is a test-consumer migration of the already published typed boundary,not
 a new production behavior. The user explicitly permits intermediate commits
 without proving each intermediate commit fully works. The catalog-order defect
 remains open;the next runtime run and staged-admission implementation follow.
+
+### 2026-10-21 — make Source binding distinct from executable admission
+
+Root assertion checkpoint `eaf4ba7bda80da8b95779878f66ea1bd6ae13a95` is pushed
+and verified:parent `2af4f2052443e236f3875857802272bd6121290d`,tree
+`ceab67ea1868a811cb8113d17e2aca35cfe92bf5`,patch SHA256
+`7ee4734c27ec57e4ebb6cf5a42c12a9cd75718b93b9215e9e449f448888aed2d`.
+All three blobs/3939 inputs,the14 held paths,advertised main and empty index
+matched;baseline advanced to owned0. R1965 then completed actual100:186 run,
+185 passed,one failed,2263 skipped,3.635s. Both migrated Root assertions pass.
+The sole failure is session_catalog_refusal_precedes_executor_construction_for_
+wire_and_snapshot. Exact R1956 catalog keys and all3938 source inputs match.
+
+Removed the facade binder's independent complete-snapshot admission. Binding
+still uses the actual admitted program and original Source metadata;it returns
+an inert,untrusted image and grants no execution or Copy capability. Driver's
+complete retained-group admission and consuming Core restore remain mandatory.
+Both compiler users already bind and then consume the normal restore;Driver
+binds and then admits its complete session. The stable chapter and API docs now
+state this distinction. No consumer can restore a frame merely by binding it.
+
+The new behavioral regression binds an inert missing-function candidate,
+checks original owner/snapshot equality,then requires the actual consuming
+restore to reject it and return the exact unchanged original executor. This
+removes a duplicate allowance and an early executable check;it does not yet
+solve the remaining Driver full-admission-before-catalog ordering defect.
+Need/Root binding's own bounded metadata authentication remains unchanged.
+
+R1966 catalog is live session84098 on this candidate,using the same selection
+as R1956 plus the new named Core case (expected187 matches). R1968 ordinary
+four-package Clippy is live session7282. Runtime/spec bytes are frozen in
+task-inert-binding-20261021-runtime.source-freeze.json (3938 inputs);only this
+operational note is excluded. Poll the exact handles;do not restart on timeout.
+After the catalog passes,inspect the187 cases and run R1967 with the same
+selection,then audit its terminal set and frozen inputs. This intermediate
+publication uses the user's explicit permission not to require every checkpoint
+to run successfully;new tests/lints are pending,not reported as passes.
+
+Ownership review:the existing facade owns Source binding;the enclosing session/
+consuming executor still owns complete admission and activation. No parallel
+runtime model,new dependency,unsafe,contract-version change,branch/worktree,
+artifact move/copy,profile or jobs change. The next semantic change remains
+general staged resource/catalog/executable admission under one aggregate bank;
+preserve affine-before-callback and aggregate quota refusals. Full convergence,
+53-rdeps/workspace/Tier2,Native-Web and all earlier acceptance gaps remain open.

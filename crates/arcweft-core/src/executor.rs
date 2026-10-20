@@ -867,7 +867,8 @@ impl ArcweftRuntimeExecutor {
     }
 
     /// Binds an inert save to the exact admitted Product program and Source leases.
-    /// No runtime payload or executable frame is constructed here.
+    /// The returned image remains untrusted: the enclosing restore must admit its
+    /// complete retained group before constructing any runtime payload or frame.
     pub fn bind_product_save_snapshot(
         &self,
         saved: AwbcProductExecutorSaveSnapshot,
@@ -877,20 +878,9 @@ impl ArcweftRuntimeExecutor {
                 tier: self.tier().as_str(),
             });
         };
-        let snapshot = saved
+        saved
             .into_live_for_program(executor.vm.admitted_program())
-            .map_err(ArcweftRuntimeExecutorSnapshotError::from)?;
-        let owner = self.program_owner();
-        snapshot
-            .admit_retained(
-                &owner,
-                &mut crate::value::RuntimeRetainedValueAdmission::for_program(
-                    owner.clone(),
-                    crate::entry::RuntimeSchemaLimits::engine_default(),
-                ),
-            )
-            .map_err(ArcweftRuntimeExecutorSnapshotError::from)?;
-        Ok(snapshot)
+            .map_err(ArcweftRuntimeExecutorSnapshotError::from)
     }
 
     pub fn restore_snapshot(
