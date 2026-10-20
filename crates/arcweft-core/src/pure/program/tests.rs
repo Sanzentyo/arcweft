@@ -144,7 +144,7 @@ fn nested_pure_program_external_calls_retain_the_selected_locale() {
     assert!(matches!(
         execution.evaluate_pure_program(program, &[], &mut backend),
         Err(RuntimeProgramExecutionError::Native(error))
-            if matches!(*error, RuntimeEvalError::UnsupportedPure { name, .. } if name == program.to_string())
+            if matches!(error.as_ref(), RuntimeEvalError::UnsupportedPure { name, .. } if name == &program.to_string())
     ));
     assert_eq!(backend.external.calls, 2);
     assert!(matches!(
