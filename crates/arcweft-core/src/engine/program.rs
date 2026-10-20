@@ -293,9 +293,12 @@ impl Engine {
         }
         self.main_started = true;
         self.fiber.frame.status = FlowFiberStatus::Running;
-        let mut output = crate::step::RuntimeStepOutput::default();
-        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
-        self.start_function_site_call(
+        let plan_owner = Arc::clone(&self.plan);
+        let declaration = plan_owner
+            .validate_function_site_inputs(site, &captures, &parameters)
+            .expect("complete borrowed preflight admits the same owned program inputs");
+        self.stage_admitted_function_site_call(
+            declaration,
             captures,
             parameters,
             FunctionCallFrame::new(
@@ -310,11 +313,8 @@ impl Engine {
                     }
                 },
             ),
-            &mut output,
-            &mut backend,
         )
         .expect("complete borrowed preflight admits the same owned program inputs");
-        debug_assert_eq!(output, crate::step::RuntimeStepOutput::default());
     }
 
     /// Consumes a completed program executor into another admitted program.

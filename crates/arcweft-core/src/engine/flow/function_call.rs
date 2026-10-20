@@ -26,7 +26,6 @@ impl Engine {
         let site = frame.site;
         let plan_owner = Arc::clone(&self.plan);
         let declaration = plan_owner.validate_function_site_inputs(site, &captures, &args)?;
-        frame.type_instantiation = declaration.type_instantiation.clone();
         let executable = matches!(declaration.body(), RuntimeFunctionSiteBody::Executable(_));
         if executable
             && declaration.is_eager_pure_candidate()
@@ -41,6 +40,7 @@ impl Engine {
             // VM runtime backends decline executable scalar calls so the
             // original budgeted frame remains active. Only an admitted AOT/JIT
             // capability can complete this physical fast path.
+            frame.type_instantiation = declaration.type_instantiation;
             frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
@@ -53,18 +53,12 @@ impl Engine {
             )
         {
             let value = self.evaluate_function_site(site, captures, args, pure_backend)?;
+            frame.type_instantiation = declaration.type_instantiation;
             frame.caller_pending_ops = std::mem::take(&mut self.fiber.frame.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
         }
-        let body = declaration.body().clone();
-        let ops = match body {
-            RuntimeFunctionSiteBody::Expression(body) => {
-                vec![crate::plan::FlowOp::ReturnExpr(body)]
-            }
-            RuntimeFunctionSiteBody::Executable(executable) => executable.ops().to_vec(),
-        };
-        let staged = declaration.stage_owned_inputs(captures, args)?;
+        self.stage_admitted_function_site_call(declaration, captures, args, frame)?;
         if executable
             && let Ok(function) = crate::pure::RuntimePureFunctionRef::resolve(&plan_owner, site)
             && function.scalar_eval_supported
@@ -74,6 +68,30 @@ impl Engine {
         {
             pure_backend.record_interpreted_function_call(function);
         }
+        Ok(())
+    }
+
+    /// Installs the already admitted site and owned inputs without evaluating
+    /// its body. Activation and budgeted calls share this frame boundary;
+    /// only the owning execution step supplies a backend for actual work.
+    pub(in crate::engine) fn stage_admitted_function_site_call(
+        &mut self,
+        declaration: crate::plan::RuntimeFunctionInputAdmission<'_>,
+        captures: Vec<RuntimeValue>,
+        args: Vec<RuntimeValue>,
+        mut frame: FunctionCallFrame,
+    ) -> Result<(), RuntimeEvalError> {
+        let site = declaration.site();
+        debug_assert_eq!(frame.site, site);
+        let body = declaration.body().clone();
+        let ops = match body {
+            RuntimeFunctionSiteBody::Expression(body) => {
+                vec![crate::plan::FlowOp::ReturnExpr(body)]
+            }
+            RuntimeFunctionSiteBody::Executable(executable) => executable.ops().to_vec(),
+        };
+        let staged = declaration.stage_owned_inputs(captures, args)?;
+        frame.type_instantiation = declaration.type_instantiation;
         self.fiber.frame.env.push_function_scope(
             site,
             staged.len(),

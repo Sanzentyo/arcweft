@@ -20,6 +20,7 @@ pub(crate) use flow_ops::{RuntimeFlowTreeEvent, try_visit_ops_events};
 mod flows;
 mod format_attempt;
 mod function_inputs;
+pub(crate) use function_inputs::RuntimeFunctionInputAdmission;
 mod function_sites;
 mod inventory;
 pub use inventory::RuntimePlanInventory;

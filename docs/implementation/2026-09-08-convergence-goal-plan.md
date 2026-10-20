@@ -22421,3 +22421,81 @@ full case-set, Source and execution audit remains required; no consumer pass is
 claimed. Keep the executable inputs fixed while this receipt is outstanding.
 Root initialization/reducers and all other original acceptance remain open;
 these successful checks do not complete or narrow the active goal.
+
+### 2026-10-20 — full resource-kind consumer result and frame preparation
+
+Inspected main df61f2160e5e516ed411d2e0b14917fa83094a24. R1783 completed
+actual exit100: 5151 executed, 5095 passed (60 slow), 56 failed, 39 existing
+default exclusions, 1846.351s of test execution. All56 failures are in
+arcweft-cli::check. The exact retained R1763 case set and all3932 corrected
+resource-kind inputs matched, held14 unchanged. Selection is all52 consumers,
+49 with named host tests; arcweft, arcweft-bundle-assets and arcweft-render-web
+have no named host cases in this selection. Compilation is not their execution.
+The earlier allocation-failed catalogue and interrupted run remain distinct.
+
+Failure investigation confirms explicit Compiler rejection of the missing typed
+Presentation ABI, RichText observations stopped on full/001 while assertions
+request later lines, JLREQ geometry failures, and CLI fixture/verification
+failures reaching parse/final-type diagnostics before their intended obligation.
+For example proof fixtures report syntax.proof.missing_parameters; bare promote
+applications report sema.final_analysis. These observations do not justify
+weakening assertions or declaring every fixture obsolete. Resolve the accepted
+typed contract with its real producers/consumers. All failure records remain
+open. The observed full-grammar report contains80 objects, one rich_text
+dialogue_view and zero diagnostics, so that failure is not an absent View frame.
+
+After the terminal/hash audit, three owned Core files begin the Root execution
+prerequisite: one backend-free stage_admitted_function_site_call installs the
+existing admitted FunctionSite inputs, instantiation, function scope, original
+body operations and return continuation. Program/function activation uses that
+boundary directly and deletes its temporary default VM backend and output.
+Ordinary budgeted calls retain their existing scalar capability and expression
+paths, and record interpreted calls only after successful frame activation.
+Input admission still uses the executor's retained plan Arc; no new admission
+bank, codec, dependency, contract version or public facade API is introduced.
+The existing input-admission token gains crate-internal name visibility for
+this owner boundary. Existing full-formal, affine custody, rollback, budget,
+backend and cleanup tests supply behavior coverage; source spelling is not a gate.
+
+Root startup/reducer scheduling, selected backend/formatter propagation and
+pending-initializer restore are not implemented by this prerequisite. Complete
+their lifecycle migration in Native/AWBC and driver consumers next. R1784 builds
+the unchanged full Core catalogue for the frame-staging bytes; no passing result
+for these new bytes is claimed yet. Preserve the original full-goal scope.
+
+Frame-staging validation refinement: R1784 compiled all1940 cases, including
+the exact full-formal/custody/rollback/backend guards. R1786 ordinary Core
+Clippy exited0 but exposed the new helper's unconsumed admission parameter and
+additional instantiation-clone assignments. Activation now consumes that token's
+existing instantiation after pattern staging; successful fast returns transfer
+it directly as well. No warning suppression or replacement error wrapper is
+introduced. The shared RuntimeEvalError large-error warnings remain strict-lint
+debt, including the new helper return site. R1785 overlaps this ownership repair
+and cannot prove the final fixed bytes. R1788 is the corrected Core catalogue.
+R1787 selects the existing three Source array-map tests (batch/sum, original
+low/OneOp budgets and exact apply-span charging) in the actual CLI reverse
+consumer. This private activation change keeps public/serialized contracts and
+the Cargo graph unchanged; Core's full owner suite and those exact Native/AWBC
+counter/budget cases target the affected boundary. The complete53-package goal
+acceptance still remains required after the Root/public-contract migration.
+
+R1785 subsequently finished actual exit0/all1940 passed, but its overlap audit
+records one changed runtime input (function_call.rs); it is not final fixed-input
+acceptance. R1788 failed actual101 at Windows LINK LNK1104 because the same Core
+api_compile exe was executing in R1785. No process was killed and no artifact
+was moved/cleaned. After observing R1785 terminal0, R1790 rebuilt normally and
+compiled all1940 corrected Core cases. R1787's catalogue contains480 CLI check
+cases, selecting exactly the three original map cases (477 filter exclusions).
+R1789 corrected ordinary Core Clippy passed with2915 warnings/2391 duplicates;
+the admission-consumption and assignment-clone repair uses moves, not a lint
+allowance. Shared large-error and other strict lint debt remains open.
+
+The fixed source is task-function-frame-staging-20261020-corrected-runtime,
+3932 inputs with only this note excluded. R1792 full Core run completed exit0,
+all1940 passed/zero skipped; its exact catalogue and all3932 input hashes matched,
+held14 unchanged. R1791 exact map run remains live at74347 and still requires
+its terminal case/hash audit.
+This intermediate cut publishes three Core files plus this record under the
+user's frequent-checkpoint instruction; pending execution is reported explicitly.
+The 56 CLI failures from the earlier full consumer run and Root's remaining
+lifecycle migration continue to be required work, not accepted exceptions.
