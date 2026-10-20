@@ -24,7 +24,8 @@ use std::sync::Arc;
 
 const PROGRAM_DIGEST: AwbcDigest = AwbcDigest([7; 32]);
 
-fn admit(program: AwbcProgram) -> AwbcProductProgram {
+fn admit(mut program: AwbcProgram) -> AwbcProductProgram {
+    program.canonicalize_string_table();
     AwbcProductProgram::admit(
         Arc::new(program),
         arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
@@ -134,6 +135,18 @@ fn program() -> AwbcProgram {
                 "flow.main",
             )
             .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
+        }],
+        flow_executables: vec![AwbcFlowExecutable {
+            metadata: arcweft_core::entry::RuntimeFlowExecutable {
+                flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                    [0x31; 32],
+                    "flow.main",
+                )
+                .expect("test checked Flow identity"),
+                contract: arcweft_core::entry::FlowContractHash::from_bytes([0x31; 32]),
+                controller: None,
+            },
             function: AwbcFunctionId(0),
         }],
         blocks: vec![
@@ -437,6 +450,13 @@ fn cache_key_digest_is_deterministic_and_backend_sensitive() {
 #[test]
 fn compiled_nested_return_restores_caller_and_writes_destination() {
     let mut program = program();
+    let result_text = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+    program.strings.push("compiled".to_owned());
+    program.constants.push(AwbcConstant::String(result_text));
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(0),
+    });
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
         ty: AwbcTypeId(1),
@@ -445,7 +465,12 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
     });
     program.frame_layouts.push(AwbcFrameLayout {
         scopes: Vec::new(),
-        slots: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(1),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
         max_scope_depth: 0,
     });
     program.signatures.push(AwbcSignature {
@@ -475,9 +500,11 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
     program.blocks[1].safe_point = AwbcSafePointKind::CallableBoundary;
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(1),
-        instructions: AwbcTableRange::new(0, 0),
-        terminator: AwbcTerminator::Return { value: None },
-        safe_point: AwbcSafePointKind::FlowEntry,
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
         source_map: None,
     });
     program.resume_points.push(AwbcResumePoint {

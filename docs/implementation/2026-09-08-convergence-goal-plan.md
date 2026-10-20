@@ -21848,3 +21848,64 @@ formatter before session locale installation; this cut does not prove all
 bootstrap locale behavior. Original shared resource allowance, complete Source
 public switching/all14 families, Presentation, semantic/execution repairs,
 Tier2 and actual Native/Web capture/parity remain required. The full goal is open.
+
+### 2026-10-20 — Admitted codec and region fixtures; complete library execution
+
+The complete-context implementation is published at
+`de13d6ae5ca19371d6fb77c4a4cb5419155e8a21`, parent
+`440c7d6c8b97c38f52fe9dcbd1364fcbc2aa2679`, tree
+`87cf5b4f7d9b3b1dd0761a1fe2c94a948514113a`, patch SHA-256
+`d1d722e49dcba32e6c0e2db31eaa6635b1fa955157c31ef8e68e26cc0be7c0b1`.
+Fresh remote/advertised main, all 34 blobs and 3933 inputs matched. Inspected
+that main before these two fixture repairs, with owned0/held14 and the same
+three unrelated untracked entries. The runtime code is unchanged in this cut.
+
+R1740 terminated with actual exit100: 2201 executed, 2188 passed, 13 failed,
+zero skipped, 54.516s. Exact terminal keys and all 3932 runtime hashes matched.
+All 1882 Core and 191 CLI cases passed, including the new actual-locale probe,
+extended proof/restore execution and actual accelerator/executor identity.
+The six Accelerator and seven Codegen failures were pre-existing fixture shapes
+newly exposed by real admission: unsorted codec strings, missing exact entry
+Flow executable metadata, and an invalid synthetic callee safe point/body.
+
+Codec fixtures now canonicalize strings and all typed references before leasing
+the program. Codegen fixtures likewise canonicalize their owned program, carry
+the existing Flow's actual executable metadata, and give the synthetic String
+callee a matching temporary/result instruction and CallableBoundary safe point.
+Its body produces the same `compiled` value already returned by the test region.
+The original assertions, caller destination/rollback checks, consumed counts,
+budget10, exact lease check, operation amounts and backend selection remain.
+No production verifier, admission, assertion or budget was relaxed.
+
+R1741 catalogued all 128 Accelerator/Codegen library cases, zero exclusions.
+R1742 ran that complete two-package all-feature locked selection: exit0,
+128 passed, zero skipped, 9.156s. Exact cases and all 3933 pre-run hashes matched.
+That package selection has a distinct dependency-feature unification and was
+compiled normally; no job/profile tuning or build-artifact relocation was used.
+R1743 then reran the original four-package all-feature locked selection under
+its original feature unification: all 2201 passed, zero skipped, 44.686s.
+The actual per-package inventory is Core1882, CLI191, Accelerator116, Codegen12.
+Its exact catalogue/terminal keys and all 3933 pre-run hashes matched, held14
+unchanged. Both original failed evidence and successful audits are retained.
+The two test-file owners have an actual 11-package reverse closure; this does
+not narrow the still-required Core contract's 53-package consumer acceptance.
+
+R1744 is the complete Compiler library/integration catalogue build (live handle
+21010); after actual terminal success inspect the complete inventory and execute
+that same selection. R1745 workspace all-feature/all-target locked check is live
+at 85102. R1746 ordinary all-feature/all-target locked Clippy over nine changed
+owners is live at 28267; neither command has terminal acceptance evidence yet,
+and ordinary Clippy never substitutes for the required strict lint result.
+Their pre-run snapshot is retained; a derived snapshot excludes only this
+operational ledger and keeps the same 3932 other hashes for evidence publication.
+
+Next, migrate the View backend-taking evaluation/dispatch APIs to explicit
+RuntimeFormatContext and pass the Session's selected locale. Besides the two
+standalone-helper handler sites, the expression evaluator constructs an admitted
+executor without installing formatter context. Its expression_evaluations cache
+currently matches owner Arc, program and inputs, but no formatter dependency.
+Include the selected formatter in cache validity and applicable saved/admission
+metadata, preserving the shared frame operation budget and all atomic state
+publication checks. Root startup's locale installation and the full outstanding
+Source/all14/Presentation/semantic/persistence/strict-lint/Tier2/Native-Web
+acceptance remain required. This is progress toward the unchanged full goal.

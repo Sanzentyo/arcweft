@@ -616,6 +616,7 @@ impl DataProgramFixture {
         let mut program = AwbcProgram::default();
         program.strings = strings;
         program.runtime_types = std::mem::take(&mut runtime_types);
+        program.canonicalize_string_table();
         let _ = (
             format_owner_id,
             format_layout,
