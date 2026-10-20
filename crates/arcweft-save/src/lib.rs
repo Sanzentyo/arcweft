@@ -263,10 +263,12 @@ fn validate_migration_steps(
     })
 }
 
+/// Encodes under the default envelope limits, admitting the borrowed header
+/// before invoking the codec or allocating its bounded output.
 pub fn encode_save(
     value: &Value,
     shape: &TypeShape,
-    schema_id: SaveSchemaId,
+    schema_id: &SaveSchemaId,
     schema_version: u32,
     codec_id: &str,
     registry: &CodecRegistry,
@@ -275,7 +277,7 @@ pub fn encode_save(
     SaveEnvelopeLimits::default().encode_value(
         value,
         shape,
-        &schema_id,
+        schema_id,
         schema_version,
         codec.as_ref(),
     )
