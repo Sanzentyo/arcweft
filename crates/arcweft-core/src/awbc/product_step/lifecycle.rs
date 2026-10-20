@@ -29,6 +29,11 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
     ) {
         let (category, code, message) = match error {
+            ProductStepError::Root(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
             ProductStepError::Vm(error) => (
                 RuntimeDiagnosticCategory::Internal,
                 AwbcTrapCode::InternalInvariant,
@@ -150,6 +155,9 @@ impl AwbcProductStepExecutor {
 
     pub(super) fn record_error(&self, error: ProductStepError, output: &mut RuntimeStepOutput) {
         let (category, message) = match error {
+            ProductStepError::Root(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
             ProductStepError::Vm(error) => (RuntimeDiagnosticCategory::Internal, error.to_string()),
             ProductStepError::Input(message) => (RuntimeDiagnosticCategory::Input, message),
             ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
@@ -268,6 +276,9 @@ impl AwbcProductStepExecutor {
         output: &RuntimeStepOutput,
         executed_ops: usize,
     ) -> bool {
+        if !output.root_initializations.is_empty() {
+            return true;
+        }
         if self.fiber.status == FiberStatus::Trapped {
             return true;
         }

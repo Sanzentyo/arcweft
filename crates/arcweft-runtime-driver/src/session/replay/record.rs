@@ -9,7 +9,7 @@ use super::model::{
     ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
     RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
     RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1,
-    RootReplayRecorderV1, RootReplayRecordingError, RootReplayTraceV1,
+    RootReplayIdentityV1, RootReplayRecorderV1, RootReplayRecordingError, RootReplayTraceV1,
 };
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
@@ -74,20 +74,22 @@ impl RootReplayRecorderV1 {
         if root.next_sequence != TransitionSequence::ZERO {
             return Err(RootReplayRecordingError::AlreadyAdvanced);
         }
-        let initializer_state_digest = roles
-            .state
-            .accepts_payload(
-                RuntimeProgramTypes::Awbc(&runtime.program),
-                root.phase.state_value().ok_or_else(|| {
-                    RootReplayRecordingError::RuntimeInspection {
-                        message: "root initialization is pending".to_owned(),
-                    }
-                })?,
-                roles.command_policy.root_limits.schema,
-            )
-            .map_err(|error| RootReplayRecordingError::RuntimeInspection {
-                message: error.to_string(),
-            })?;
+        let initializer_state_digest = root
+            .phase
+            .state_value()
+            .map(|value| {
+                roles
+                    .state
+                    .accepts_payload(
+                        RuntimeProgramTypes::Awbc(&runtime.program),
+                        value,
+                        roles.command_policy.root_limits.schema,
+                    )
+                    .map_err(|error| RootReplayRecordingError::RuntimeInspection {
+                        message: error.to_string(),
+                    })
+            })
+            .transpose()?;
         let entry_kind = entry
             .kind
             .runtime_kind(&runtime.program.strings)
@@ -95,7 +97,7 @@ impl RootReplayRecorderV1 {
                 message: "active entry kind is invalid".to_owned(),
             })?;
         Ok(Self {
-            trace: RootReplayTraceV1 {
+            identity: RootReplayIdentityV1 {
                 schema_version: ROOT_REPLAY_SCHEMA_VERSION,
                 engine_identity: ROOT_REPLAY_ENGINE_IDENTITY.to_owned(),
                 artifact: session.active_generation().artifact_identity,
@@ -108,10 +110,10 @@ impl RootReplayRecorderV1 {
                 state_layout: roles.state.layout,
                 event_identity: roles.event.identity.clone(),
                 event_layout: roles.event.layout,
-                initializer_state_digest,
-                transitions: Vec::new(),
-                external_outcomes: Vec::new(),
             },
+            initializer_state_digest,
+            transitions: Vec::new(),
+            external_outcomes: Vec::new(),
             roles: roles.as_ref().clone(),
             pending_events: VecDeque::new(),
         })
@@ -200,8 +202,26 @@ impl RootReplayRecorderV1 {
         step: &BundleSessionStep,
     ) -> Result<(), RootReplayRecordingError> {
         self.validate_session_identity(session)?;
+        let mut initializer_state_digest = self.initializer_state_digest;
+        for initialization in &step.root_initializations {
+            if initializer_state_digest.is_some()
+                || initialization.entry != self.identity.entry
+                || initialization.binding != self.identity.binding
+            {
+                return Err(RootReplayRecordingError::InitializationMismatch);
+            }
+            initializer_state_digest = Some(initialization.state_digest);
+        }
         if step.root_transitions.is_empty() && capture.added_root_events > 0 {
-            return Err(RootReplayRecordingError::RootIngressRejected);
+            let pending = session
+                .executor
+                .product_root_save_blockers()
+                .map(|blockers| {
+                    blockers.pending_events as usize + usize::from(blockers.reducer_active)
+                });
+            if pending != Some(capture.pending_events.len()) {
+                return Err(RootReplayRecordingError::RootIngressRejected);
+            }
         }
         if step.root_transitions.len() > capture.pending_events.len() {
             return Err(RootReplayRecordingError::OutcomeCardinality {
@@ -225,7 +245,7 @@ impl RootReplayRecorderV1 {
                 .pending_events
                 .pop_front()
                 .expect("cardinality was checked");
-            let expected_sequence = u64::try_from(self.trace.transitions.len())
+            let expected_sequence = u64::try_from(self.transitions.len())
                 .expect("Vec index fits u64 on supported platforms");
             if outcome.sequence().get() != expected_sequence {
                 return Err(RootReplayRecordingError::SequenceMismatch {
@@ -246,7 +266,7 @@ impl RootReplayRecorderV1 {
                     transition: expected_sequence,
                     message: error.to_string(),
                 })?;
-            self.trace.transitions.push(RecordedRootTransitionV1 {
+            self.transitions.push(RecordedRootTransitionV1 {
                 sequence: outcome.sequence(),
                 event,
                 event_digest,
@@ -259,10 +279,9 @@ impl RootReplayRecorderV1 {
         ) {
             capture.pending_events.clear();
         }
+        self.initializer_state_digest = initializer_state_digest;
         self.pending_events = capture.pending_events;
-        self.trace
-            .external_outcomes
-            .extend(capture.external_outcomes);
+        self.external_outcomes.extend(capture.external_outcomes);
         Ok(())
     }
 
@@ -270,9 +289,10 @@ impl RootReplayRecorderV1 {
         &self,
         session: &BundleSession,
     ) -> Result<(), RootReplayRecordingError> {
-        if session.active_generation().artifact_identity != self.trace.artifact
-            || session.active_locale != self.trace.active_locale
-            || session.executor.format_context().data_identity() != self.trace.format_data_identity
+        if session.active_generation().artifact_identity != self.identity.artifact
+            || session.active_locale != self.identity.active_locale
+            || session.executor.format_context().data_identity()
+                != self.identity.format_data_identity
         {
             return Err(RootReplayRecordingError::SessionIdentityChanged);
         }
@@ -287,13 +307,13 @@ impl RootReplayRecorderV1 {
             .executor
             .product_root_state_snapshot()
             .ok_or(RootReplayRecordingError::MissingRoot)?;
-        if active.id != self.trace.entry
-            || active.kind != self.trace.entry_kind
-            || active.binding != self.trace.binding
-            || root.state_identity != self.trace.state_identity
-            || root.state_layout != self.trace.state_layout
-            || root.event_identity != self.trace.event_identity
-            || root.event_layout != self.trace.event_layout
+        if active.id != self.identity.entry
+            || active.kind != self.identity.entry_kind
+            || active.binding != self.identity.binding
+            || root.state_identity != self.identity.state_identity
+            || root.state_layout != self.identity.state_layout
+            || root.event_identity != self.identity.event_identity
+            || root.event_layout != self.identity.event_layout
         {
             return Err(RootReplayRecordingError::SessionIdentityChanged);
         }
@@ -309,8 +329,8 @@ impl RootReplayRecorderV1 {
                 count: self.pending_events.len(),
             });
         }
-        let transition_count = u64::try_from(self.trace.transitions.len()).unwrap_or(u64::MAX);
-        for outcome in &mut self.trace.external_outcomes {
+        let transition_count = u64::try_from(self.transitions.len()).unwrap_or(u64::MAX);
+        for outcome in &mut self.external_outcomes {
             if matches!(
                 outcome.position,
                 RecordedExternalOutcomePositionV1::BeforeTransition(sequence)
@@ -319,7 +339,14 @@ impl RootReplayRecorderV1 {
                 outcome.position = RecordedExternalOutcomePositionV1::AfterTransitions;
             }
         }
-        Ok(self.trace)
+        Ok(RootReplayTraceV1 {
+            identity: self.identity,
+            initializer_state_digest: self
+                .initializer_state_digest
+                .ok_or(RootReplayRecordingError::InitializationPending)?,
+            transitions: self.transitions,
+            external_outcomes: self.external_outcomes,
+        })
     }
 }
 

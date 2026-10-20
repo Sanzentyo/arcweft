@@ -229,6 +229,220 @@ fn assert_view_locale(frame: &arcweft_runtime_driver::view_runtime::BundleViewFr
     );
 }
 
+const ROOT_LOCALE_SOURCE: &str = r#"
+struct GameState { locale: String }
+enum GameEvent { Start }
+fn initial_game_state() -> GameState effects {} {
+    let text = default_string();
+    GameState { locale = text }
+}
+fn reduce_game(current: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError> effects {} {
+    Ok(Reduction.unchanged(current))
+}
+flow @flow.opening opening(current: GameState) {}
+entry game @entry.game.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.opening
+}
+"#;
+
+#[test]
+fn native_root_initializer_uses_budgeted_frame_and_selected_rust_locale() {
+    use arcweft_core::{
+        engine::{Engine, FlowFiberStatus},
+        root::RootPhase,
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+        task::GenerationId,
+        value::RuntimeFormatContext,
+    };
+
+    let (plan, _) = compile_rust(&metadata(), ROOT_LOCALE_SOURCE).unwrap();
+    let entry = plan.entries()[0].id.clone();
+    let mut engine = Engine::new_with_generation(Arc::clone(&plan), GenerationId::new(0));
+    engine.start_entry(&entry).unwrap();
+    assert!(matches!(
+        engine.root().unwrap().active().phase,
+        RootPhase::Initializing { .. }
+    ));
+    let observations = std::rc::Rc::new(RefCell::new(ViewLocaleObservations::default()));
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(ViewLocaleProbe {
+        owner: RuntimeProgramOwner::Plan(Arc::clone(&plan)),
+        observations: std::rc::Rc::clone(&observations),
+    });
+    engine.set_format_context(RuntimeFormatContext::new(
+        arcweft_id::LocaleTag::try_new("ja-JP").unwrap(),
+    ));
+    let options = |max_ops| RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops },
+        ..RuntimeStepOptions::default()
+    };
+    let zero = engine.step_with_pure_backend(RuntimeStepInput::default(), options(0), &mut backend);
+    assert_eq!(zero.stats.executed_ops, 0);
+    assert!(zero.output.diagnostics.is_empty());
+    assert!(zero.output.root_initializations.is_empty());
+    assert!(observations.borrow().locales.is_empty());
+    let mut completed = false;
+    for _ in 0..64 {
+        let result =
+            engine.step_with_pure_backend(RuntimeStepInput::default(), options(1), &mut backend);
+        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+        assert!(result.stats.executed_ops <= 1);
+        if let [outcome] = &result.output.root_initializations[..] {
+            assert_eq!(outcome.entry, entry);
+            assert_eq!(result.stats.executed_ops, 1);
+            assert!(matches!(result.fiber_status, FlowFiberStatus::Running));
+            completed = true;
+            break;
+        }
+    }
+    assert!(completed);
+    assert_eq!(
+        observations
+            .borrow()
+            .locales
+            .iter()
+            .map(|locale| locale.as_str())
+            .collect::<Vec<_>>(),
+        ["ja-JP"]
+    );
+    let RuntimeValue::NominalRecord(state) = &engine
+        .root()
+        .unwrap()
+        .active()
+        .phase
+        .state_value()
+        .unwrap()
+        .0
+    else {
+        panic!("nominal state")
+    };
+    assert_eq!(state.fields(), &[RuntimeValue::String("ja-JP".to_owned())]);
+    engine.set_format_context(RuntimeFormatContext::new(
+        arcweft_id::LocaleTag::try_new("fr-FR").unwrap(),
+    ));
+    let next = engine.step_with_pure_backend(RuntimeStepInput::default(), options(1), &mut backend);
+    assert!(next.output.root_initializations.is_empty());
+    assert_eq!(observations.borrow().locales.len(), 1);
+}
+
+#[test]
+fn awbc_root_initializer_resumes_after_rust_call_without_repeating_it() {
+    use arcweft_core::{
+        awbc::{fiber::AwbcFiberRoot, product_step::AwbcProductStepExecutor, schema::AwbcEntryId},
+        root::RootPhase,
+        step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+        value::RuntimeFormatContext,
+    };
+    let (_, code) = compile_rust(&metadata(), ROOT_LOCALE_SOURCE).unwrap();
+    let mut executor =
+        AwbcProductStepExecutor::for_entry_arc(Arc::clone(&code), AwbcEntryId(0), 64).unwrap();
+    let fiber_instance = executor.compact_fiber().instance;
+    let initializer_frame = executor.compact_fiber().frames[0].instance;
+    assert_eq!(
+        executor.compact_fiber().root,
+        AwbcFiberRoot::RootInitializer(AwbcEntryId(0))
+    );
+    assert!(matches!(
+        executor.root().unwrap().active().phase,
+        RootPhase::Initializing { .. }
+    ));
+    let observations = std::rc::Rc::new(RefCell::new(ViewLocaleObservations::default()));
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(ViewLocaleProbe {
+        owner: RuntimeProgramOwner::Awbc(Arc::clone(&code)),
+        observations: std::rc::Rc::clone(&observations),
+    });
+    let format = RuntimeFormatContext::new(arcweft_id::LocaleTag::try_new("ja-JP").unwrap());
+    executor.set_format_context(format.clone());
+    let options = |max_ops| RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops },
+        ..RuntimeStepOptions::default()
+    };
+    let zero =
+        executor.step_with_pure_backend(RuntimeStepInput::default(), options(0), &mut backend);
+    assert_eq!(zero.stats.executed_ops, 0);
+    assert!(zero.output.diagnostics.is_empty());
+    assert!(zero.output.root_initializations.is_empty());
+    assert!(observations.borrow().locales.is_empty());
+    let mut restored = false;
+    let mut completed = false;
+    for _ in 0..128 {
+        let result =
+            executor.step_with_pure_backend(RuntimeStepInput::default(), options(1), &mut backend);
+        assert!(result.output.diagnostics.is_empty(), "{:?}", result.output);
+        assert!(result.stats.executed_ops <= 1);
+        if !restored
+            && observations.borrow().locales.len() == 1
+            && executor
+                .root()
+                .unwrap()
+                .active()
+                .phase
+                .state_value()
+                .is_none()
+        {
+            let image = executor.inert_rollback_image().unwrap();
+            drop(executor);
+            executor =
+                AwbcProductStepExecutor::for_entry_arc(Arc::clone(&code), AwbcEntryId(0), 64)
+                    .unwrap();
+            assert_eq!(observations.borrow().locales.len(), 1);
+            executor.set_format_context(format.clone());
+            executor.restore_rollback_image(image).unwrap();
+            assert_eq!(executor.compact_fiber().instance, fiber_instance);
+            restored = true;
+        }
+        if let [_] = &result.output.root_initializations[..] {
+            completed = true;
+            break;
+        }
+    }
+    assert!(
+        restored,
+        "cold restore occurs after the actual Rust call and before initialization commits"
+    );
+    assert!(completed);
+    assert_eq!(
+        observations
+            .borrow()
+            .locales
+            .iter()
+            .map(|locale| locale.as_str())
+            .collect::<Vec<_>>(),
+        ["ja-JP"]
+    );
+    assert_eq!(
+        executor.compact_fiber().root,
+        AwbcFiberRoot::Entry(AwbcEntryId(0))
+    );
+    assert_eq!(executor.compact_fiber().instance, fiber_instance);
+    assert_ne!(
+        executor.compact_fiber().frames[0].instance,
+        initializer_frame
+    );
+    let RuntimeValue::NominalRecord(state) = &executor
+        .root()
+        .unwrap()
+        .active()
+        .phase
+        .state_value()
+        .unwrap()
+        .0
+    else {
+        panic!("nominal state")
+    };
+    assert_eq!(state.fields(), &[RuntimeValue::String("ja-JP".to_owned())]);
+    let next =
+        executor.step_with_pure_backend(RuntimeStepInput::default(), options(1), &mut backend);
+    assert!(next.output.root_initializations.is_empty());
+    assert_eq!(observations.borrow().locales.len(), 1);
+}
+
 #[test]
 fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache() {
     use arcweft_runtime_driver::{

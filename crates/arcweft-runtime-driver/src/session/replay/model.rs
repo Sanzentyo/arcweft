@@ -18,9 +18,9 @@ use thiserror::Error;
 pub const ROOT_REPLAY_SCHEMA_VERSION: u32 = 1;
 pub const ROOT_REPLAY_ENGINE_IDENTITY: &str = "arcweft.root-replay.v1";
 
-/// Complete identity and deterministic transition transcript for one root run.
+/// Immutable identity shared by a pending recorder and a completed trace.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RootReplayTraceV1 {
+pub struct RootReplayIdentityV1 {
     pub schema_version: u32,
     pub engine_identity: String,
     pub artifact: BundleSessionArtifactIdentity,
@@ -33,6 +33,13 @@ pub struct RootReplayTraceV1 {
     pub state_layout: TypeLayoutHash,
     pub event_identity: RuntimeNominalTypeId,
     pub event_layout: TypeLayoutHash,
+}
+
+/// A complete transcript always has an observed initializer result.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RootReplayTraceV1 {
+    #[serde(flatten)]
+    pub identity: RootReplayIdentityV1,
     pub initializer_state_digest: RuntimeValueDigest,
     pub transitions: Vec<RecordedRootTransitionV1>,
     pub external_outcomes: Vec<RecordedExternalOutcome>,
@@ -96,13 +103,20 @@ pub enum RecordedHostCallErrorKindV1 {
 /// Production recorder for root replay traces.
 #[derive(Clone, Debug)]
 pub struct RootReplayRecorderV1 {
-    pub(super) trace: RootReplayTraceV1,
+    pub(super) identity: RootReplayIdentityV1,
+    pub(super) initializer_state_digest: Option<RuntimeValueDigest>,
+    pub(super) transitions: Vec<RecordedRootTransitionV1>,
+    pub(super) external_outcomes: Vec<RecordedExternalOutcome>,
     pub(super) roles: RuntimeStatefulEntryRoles,
     pub(super) pending_events: VecDeque<RuntimePayload>,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayRecordingError {
+    #[error("root replay initializer has not completed")]
+    InitializationPending,
+    #[error("root replay initialization does not match the selected entry")]
+    InitializationMismatch,
     #[error("root replay recording requires a freshly started active generation")]
     NoActiveGeneration,
     #[error("root replay recording could not inspect the active runtime: {message}")]

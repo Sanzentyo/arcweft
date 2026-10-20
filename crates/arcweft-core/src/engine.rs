@@ -49,6 +49,8 @@ pub mod dialogue;
 pub mod eval;
 mod numeric_map;
 mod rollback;
+#[cfg(test)]
+mod root_initialization_tests;
 pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
@@ -1107,6 +1109,9 @@ impl FunctionCallFrame {
 /// resumes its materialization plan without reevaluating source operands.
 #[derive(Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation<P = crate::value::RuntimeCallablePendingGroup> {
+    RootInitializer {
+        entry: EntryRuntimeId,
+    },
     Program {
         program: arcweft_id::runtime_program::RuntimePureProgramId,
     },
@@ -1128,6 +1133,9 @@ type FunctionReturnContinuationRollbackImage =
 impl Clone for FunctionReturnContinuationRollbackImage {
     fn clone(&self) -> Self {
         match self {
+            Self::RootInitializer { entry } => Self::RootInitializer {
+                entry: entry.clone(),
+            },
             Self::Program { program } => Self::Program { program: *program },
             Self::Function { site } => Self::Function { site: *site },
             Self::CallableDefault { pending, result } => Self::CallableDefault {
@@ -1147,6 +1155,11 @@ impl FunctionReturnContinuation {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<FunctionReturnContinuationRollbackImage, String> {
         Ok(match self {
+            Self::RootInitializer { entry } => {
+                FunctionReturnContinuationRollbackImage::RootInitializer {
+                    entry: entry.clone(),
+                }
+            }
             Self::Program { program } => {
                 FunctionReturnContinuationRollbackImage::Program { program: *program }
             }
@@ -1191,6 +1204,9 @@ impl FunctionReturnContinuation {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<Self, String> {
         Ok(match image {
+            FunctionReturnContinuationRollbackImage::RootInitializer { entry } => {
+                Self::RootInitializer { entry }
+            }
             FunctionReturnContinuationRollbackImage::Program { program } => {
                 Self::Program { program }
             }
@@ -1949,6 +1965,13 @@ impl Engine {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
         }
+        self.fiber.frame.admit_root_phase(
+            self.root.as_ref(),
+            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
+        )?;
+        for child in &self.child_fibers {
+            child.frame.admit_root_phase(None::<&RootRuntime>, false)?;
+        }
         self.validate_scheduled_scope_state(&mut admission)?;
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {
             fiber
@@ -2441,36 +2464,65 @@ impl Engine {
                         message: error.to_string(),
                     }
                 })?;
-            let mut evaluator = StructuredRootEvaluator::new(&self.plan);
-            let startup = RootRuntime::start(
+            let root = RootRuntime::prepare(
                 contract,
-                &mut evaluator,
                 crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
             )
             .map_err(|error| EngineStartError::InvalidRootStartup {
                 entry: entry.canonical_label(),
                 message: error.to_string(),
             })?;
-            if !startup
-                .initial_state_binding
-                .value
-                .ownership()
-                .permits_copy()
-            {
-                return Err(EngineStartError::InvalidRootStartup {
+            let plan = Arc::clone(&self.plan);
+            let callable = root.initializer_callable().map_err(|error| {
+                EngineStartError::InvalidRootStartup {
                     entry: entry.canonical_label(),
-                    message: "root startup state must be unrestricted".to_owned(),
-                });
-            }
-            self.start_flow_invocation(
-                &startup.initial_flow,
-                Box::new([startup.initial_state_binding]),
+                    message: error.to_string(),
+                }
+            })?;
+            let site = plan
+                .callable_executables
+                .iter()
+                .find_map(|executable| {
+                    if executable.callable != callable.callable
+                        || executable.contract != callable.contract
+                    {
+                        return None;
+                    }
+                    match executable.code {
+                        RuntimeCallableExecutableCode::FunctionSite(site) => Some(site),
+                        RuntimeCallableExecutableCode::ControllerFlow(_) => None,
+                    }
+                })
+                .ok_or_else(|| EngineStartError::InvalidRootStartup {
+                    entry: entry.canonical_label(),
+                    message: RootRuntimeError::MissingInitializer(entry.canonical_label())
+                        .to_string(),
+                })?;
+            let declaration =
+                plan.validate_function_site_inputs(site, &[], &[])
+                    .map_err(|error| EngineStartError::InvalidRootStartup {
+                        entry: entry.canonical_label(),
+                        message: error.to_string(),
+                    })?;
+            self.stage_admitted_function_site_call(
+                declaration,
+                Vec::new(),
+                Vec::new(),
+                FunctionCallFrame::new(
+                    site,
+                    None,
+                    FunctionReturnContinuation::RootInitializer {
+                        entry: entry.clone(),
+                    },
+                ),
             )
             .map_err(|error| EngineStartError::InvalidRootStartup {
                 entry: entry.canonical_label(),
                 message: error.to_string(),
             })?;
-            self.root = Some(startup.root);
+            self.fiber.frame.status = FlowFiberStatus::Running;
+            self.main_started = true;
+            self.root = Some(root);
             return Ok(());
         }
         self.start_flow(&flow)
@@ -2479,6 +2531,75 @@ impl Engine {
     #[must_use]
     pub const fn root(&self) -> Option<&RootRuntime> {
         self.root.as_ref()
+    }
+
+    pub(in crate::engine) fn complete_root_initializer(
+        &mut self,
+        entry: &EntryRuntimeId,
+        value: RuntimeValue,
+        output: &mut RuntimeStepOutput,
+    ) -> Result<(), RuntimeEvalError> {
+        let plan = Arc::clone(&self.plan);
+        let root = self
+            .root
+            .as_ref()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("initializer root"))?;
+        if root.active().entry != *entry {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer entry").into());
+        }
+        let crate::root::RootPhase::Initializing { flow, .. } = &root.active().phase else {
+            return Err(RootRuntimeError::InitializationAlreadyCompleted.into());
+        };
+        let flow_index = self.flow_index(flow).ok_or_else(|| {
+            RootRuntimeError::MissingInitialFlowExecutable(entry.canonical_label())
+        })?;
+        let flow_site = plan
+            .flows
+            .flow(flow)
+            .ok_or_else(|| RootRuntimeError::MissingInitialFlowExecutable(entry.canonical_label()))?
+            .function_site();
+        // The complete Flow ingress is admitted while the return value is
+        // still borrowed, before Root copies it for the two owning candidates.
+        let declaration = plan.validate_function_site_input_refs(flow_site, &[], &[&value])?;
+        let root = self
+            .root
+            .take()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("initializer root"))?;
+        let startup = match root.complete_initialization(
+            value,
+            crate::program_types::RuntimeProgramTypes::Plan(&plan),
+        ) {
+            Ok(startup) => startup,
+            Err(rejected) => {
+                let crate::root::RejectedRootInitialization { root, error } = *rejected;
+                self.root = Some(root);
+                return Err(error.into());
+            }
+        };
+        let prepared = startup.stage_flow(|_, binding| {
+            let staged = declaration.stage_owned_inputs([], [binding.value])?;
+            Ok::<_, RuntimeEvalError>((declaration.site(), declaration.type_instantiation, staged))
+        });
+        let (root, (site, instantiation, staged), outcome) = match prepared {
+            Ok(prepared) => prepared,
+            Err(rejected) => {
+                let (root, error) = *rejected;
+                self.root = Some(root);
+                return Err(error);
+            }
+        };
+        self.fiber
+            .frame
+            .env
+            .bind_root_function(site, instantiation, staged);
+        self.fiber.frame.cursor = Some(FlowCursor {
+            flow_index,
+            op_index: 0,
+        });
+        self.fiber.frame.status = FlowFiberStatus::Running;
+        self.root = Some(root);
+        output.root_initializations.push(outcome);
+        Ok(())
     }
 
     pub fn acknowledge_root_commands(
@@ -2887,6 +3008,24 @@ impl Engine {
             return false;
         };
         let result = {
+            if matches!(
+                root.active().phase,
+                crate::root::RootPhase::Initializing { .. }
+            ) {
+                return match root.ingress(
+                    events,
+                    crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+                ) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        output.diagnostics.push(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Input,
+                            error.to_string(),
+                        ));
+                        false
+                    }
+                };
+            }
             let mut evaluator = StructuredRootEvaluator::new(&self.plan);
             root.step(
                 events,
@@ -4286,6 +4425,9 @@ impl Engine {
         output: &RuntimeStepOutput,
         executed_ops: usize,
     ) -> bool {
+        if !output.root_initializations.is_empty() {
+            return true;
+        }
         if self.hard_stop_reason(output).is_some() {
             if matches!(mode, RuntimeStepMode::Drain | RuntimeStepMode::Server)
                 && output.has_host_requests()

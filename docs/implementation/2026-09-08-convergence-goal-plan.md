@@ -22706,3 +22706,55 @@ Keep pre-copy admission under the enclosing frame/session allowance when wiring
 the Root inputs. Both synchronous evaluator adapters and the million-instruction
 AWBC helper remain to be removed when those consumers migrate. The earlier56
 CLI failures and every other original acceptance remain open; the goal is active.
+
+### 2026-10-20: executable Root initialization checkpoint
+
+Inspected base: `a61f4a0d49b38cf5fa74653ad86ba11b4a6a41f2` on existing main,
+also freshly fetched origin/main. The checkpoint owns19 source/test paths;
+the14 held tracked changes and three held untracked locations remain separate.
+The user explicitly permits intermediate commits without proving that every
+intermediate commit runs. This checkpoint is not complete runtime acceptance.
+
+Native now stages the exact initializer FunctionSite with a typed return
+continuation; AWBC starts an authenticated RootInitializer origin. Constructors
+perform metadata/input admission without evaluating initializer code. Ordinary
+steps supply the actual backend, formatter and allowance. Pending Root ingress
+queues events without running a reducer. Initializer return admits the initial
+Flow while the value is borrowed, then stages Root and Flow together before
+publishing either. AWBC keeps the fiber identity and advances its existing frame
+allocator. The old synchronous RootRuntime::start entrypoint is removed.
+
+Native rollback admission pairs the pending Root with its original initializer
+continuation. AWBC rollback and Root restore pair the phase with the actual fiber
+origin before replacement. The new completion outcome crosses step/session and
+replay boundaries. A recorder holds an optional observed initializer digest;
+only a completed trace requires it. Replay executes ordinary initialization
+steps instead of deriving a constructor-time state. Wire markers remain1.
+
+R1814, R1817 and R1818 were development compile failures for newly exhaustive
+continuation/error arms; those arms were migrated. R1820 workspace check with
+all targets/features/locked passed (7m28s including lock wait), with source edits
+overlapping its start, so it is development compilation evidence. R1824 structural
+gate passed with zero blocking violations. R1819 catalogued exactly the two
+Native/AWBC foreign-initializer integration cases (35 total,33 filter exclusions).
+R1821 later failed compilation101 because an additional Native integration test
+called private rollback APIs. That addition was removed without widening the API;
+the source returned to the frozen hash. Native cold rollback remains covered by
+the new internal Core test; Native foreign-call cold rollback is still required.
+
+At this publication cut R1822 owner catalogue, R1823 ordinary workspace Clippy,
+and R1825 foreign-initializer execution are still running/queued, not passes.
+The frozen3935 executable/source/spec inputs,99 manifest/lock inputs and actual
+53-package reverse closure were recorded before publication; outside-owned and
+held drift were zero. The new Core tests cover zero budget plus queued ingress,
+pending cold rollback, and forged initialized-phase/pending-frame rejection.
+The compiler tests exercise selected Rust-call locale in Native and AWBC and
+AWBC cold restore after that call. Their presence is not an execution result.
+
+Next: obtain these exact live process results, repair failures and migrate eager
+constructor consumers; execute the Core/driver owner suite and affected reverse
+consumers. Reducers still use synchronous evaluator adapters and an independent
+AWBC helper allowance, so their ordinary-frame migration remains required.
+Recorder pre-copy admission and failure-atomic recording, complete restore
+failure atomicity, the56 earlier CLI failures, typed Presentation ABI, and all
+other original acceptance remain open. Keep the full goal active.

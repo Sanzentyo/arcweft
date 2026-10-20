@@ -1,9 +1,10 @@
 //! Borrowed admission of native execution ownership before rollback projection.
 
 use super::{
-    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowFiberOwner, FlowOp,
-    FlowOpRollbackImage, FunctionCallFrame, FunctionReturnContinuation, NativeEngineRollbackImage,
-    NativeFlowExecutionFrame, NativeFormatAttemptFrame, NativeInvocationRoot, eval,
+    Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowFiberOwner,
+    FlowFiberStatus, FlowOp, FlowOpRollbackImage, FunctionCallFrame, FunctionReturnContinuation,
+    NativeEngineRollbackImage, NativeFlowExecutionFrame, NativeFormatAttemptFrame,
+    NativeInvocationRoot, eval,
 };
 use crate::runtime_id::DialogueActivationId;
 use crate::task::TaskPublicationCursor;
@@ -94,6 +95,31 @@ impl<P> FunctionReturnContinuation<P> {
             message: message.into(),
         };
         match self {
+            Self::RootInitializer { entry } => {
+                admission.validate_metadata(entry)?;
+                let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
+                else {
+                    return Err(invalid(
+                        "native initializer continuation requires its plan owner",
+                    ));
+                };
+                let roles = plan
+                    .entries()
+                    .iter()
+                    .find(|candidate| candidate.id == *entry)
+                    .and_then(|entry| entry.roles.stateful())
+                    .ok_or_else(|| invalid("native initializer entry is absent from its plan"))?;
+                if !plan.callable_executables().iter().any(|executable| {
+                    executable.callable == roles.initializer.callable
+                        && executable.contract == roles.initializer.contract
+                        && executable.code
+                            == crate::entry::RuntimeCallableExecutableCode::FunctionSite(site)
+                }) {
+                    return Err(invalid(
+                        "native initializer continuation does not match its entry role",
+                    ));
+                }
+            }
             Self::Program { program } => {
                 admission.validate_metadata(program)?;
                 let Some(crate::task::RuntimeProgramOwner::Plan(plan)) = admission.program_owner()
@@ -237,6 +263,48 @@ impl<V, O> NativeFormatAttemptFrame<V, O> {
 }
 
 impl<V, P, O, C, A, S> NativeFlowExecutionFrame<V, P, O, C, A, S> {
+    pub(super) fn admit_root_phase<Q>(
+        &self,
+        root: Option<&crate::root::RootRuntime<Q>>,
+        failed: bool,
+    ) -> Result<(), String>
+    where
+        C: ScopeControl<O>,
+    {
+        let mut functions = self
+            .control_stack
+            .iter()
+            .filter_map(ScopeControl::function_context);
+        let initializer = functions
+            .next()
+            .and_then(|context| context.initializer_entry);
+        if functions.any(|context| context.initializer_entry.is_some()) {
+            return Err("native initializer is not the invocation root".into());
+        }
+        match (root, initializer) {
+            (Some(root), Some(entry))
+                if root.active().entry == *entry
+                    && matches!(
+                        root.active().phase,
+                        crate::root::RootPhase::Initializing { .. }
+                    )
+                    && self.cursor.is_none() =>
+            {
+                Ok(())
+            }
+            (Some(root), None)
+                if !matches!(
+                    root.active().phase,
+                    crate::root::RootPhase::Initializing { .. }
+                ) || failed =>
+            {
+                Ok(())
+            }
+            (None, None) => Ok(()),
+            _ => Err("native Root phase does not match its initializer origin".into()),
+        }
+    }
+
     pub(super) fn admit_owned_values(
         &self,
         admission: &mut crate::value::RuntimeRetainedValueAdmission,
@@ -372,6 +440,7 @@ pub(super) struct FunctionContext<'a> {
     site: crate::runtime_id::RuntimeFunctionSiteId,
     entered: bool,
     instantiation: Option<&'a crate::program_types::RuntimeFunctionEffectInstantiation>,
+    initializer_entry: Option<&'a crate::plan::EntryRuntimeId>,
 }
 
 pub(super) trait ScopeControl<O> {
@@ -418,6 +487,10 @@ where
                 site: frame.site,
                 entered: frame.function_scope,
                 instantiation: frame.type_instantiation.as_deref(),
+                initializer_entry: match &frame.continuation {
+                    FunctionReturnContinuation::RootInitializer { entry } => Some(entry),
+                    _ => None,
+                },
             }),
             _ => None,
         }
@@ -797,6 +870,15 @@ impl NativeEngineRollbackImage {
         if let Some(root) = &self.root {
             root.admit_retained(&mut admission)
                 .map_err(|error| error.to_string())?;
+        }
+        self.fiber.frame.admit_root_phase(
+            self.root.as_ref(),
+            matches!(self.fiber.frame.status, FlowFiberStatus::Failed(_)),
+        )?;
+        for child in &self.child_fibers {
+            child
+                .frame
+                .admit_root_phase(None::<&crate::root::RootRuntimeRollbackImage>, false)?;
         }
         self.validate_scheduled_scope_state(&mut admission)?;
         for fiber in std::iter::once(&self.fiber).chain(&self.child_fibers) {

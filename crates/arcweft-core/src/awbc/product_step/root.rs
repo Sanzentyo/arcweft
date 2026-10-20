@@ -17,7 +17,7 @@ use crate::value::RuntimeValue;
 pub(super) fn prepare_startup(
     program: &AwbcProductProgram,
     entry: AwbcEntryId,
-) -> Result<Option<RootStartup>, AwbcProductStepBuildError> {
+) -> Result<Option<RootRuntime>, AwbcProductStepBuildError> {
     let Some(contract) = startup_contract(program, entry).map_err(|error| {
         AwbcProductStepBuildError::RootStartup {
             message: error.to_string(),
@@ -26,17 +26,8 @@ pub(super) fn prepare_startup(
     else {
         return Ok(None);
     };
-    let mut backend = crate::pure::VmRuntimePureCallBackend::default();
-    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
-    let mut evaluator = ProductRootEvaluator {
-        program,
-        format_context: &crate::value::RuntimeFormatContext::default(),
-        backend: &mut backend,
-        fallback_stats: &mut fallback_stats,
-    };
-    RootRuntime::start(
+    RootRuntime::prepare(
         contract,
-        &mut evaluator,
         crate::program_types::RuntimeProgramTypes::Awbc(program),
     )
     .map(Some)
@@ -62,7 +53,8 @@ fn startup_contract(
     .map(Some)
 }
 
-pub(super) fn bind_startup(
+#[cfg(test)]
+fn bind_startup(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     startup: Option<&RootStartup>,
@@ -78,7 +70,92 @@ pub(super) fn bind_startup(
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn install_root_startup(&mut self, startup: RootStartup) {
+    pub(super) fn complete_root_initializer(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+    ) -> Result<(), ProductStepError> {
+        use crate::awbc::fiber::{
+            AwbcFiberRoot, FiberTerminalValue, validate_function_argument_value_refs,
+        };
+        let AwbcFiberRoot::RootInitializer(entry) = self.fiber.root else {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer origin").into());
+        };
+        let program = self.program.clone();
+        let root = self
+            .root
+            .as_ref()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("initializer root"))?;
+        let selected = program
+            .entries
+            .get(entry.index())
+            .ok_or_else(|| RootRuntimeError::MissingEntry(entry.0.to_string()))?;
+        if root.active().entry != selected.runtime_id
+            || !matches!(
+                root.active().phase,
+                crate::root::RootPhase::Initializing { .. }
+            )
+        {
+            return Err(RootRuntimeError::SnapshotRoleMismatch("initializer phase").into());
+        }
+        let flow = &root.roles().initial_flow;
+        let function = program
+            .flow_executables
+            .iter()
+            .find(|candidate| {
+                candidate.metadata.flow == flow.flow && candidate.metadata.contract == flow.contract
+            })
+            .ok_or_else(|| {
+                RootRuntimeError::MissingInitialFlowExecutable(
+                    selected.runtime_id.canonical_label(),
+                )
+            })?
+            .function;
+        let Some(FiberTerminalValue::Returned(Some(value))) = &self.fiber.terminal else {
+            return Err(ProductStepError::Internal(
+                "initializer returned without its typed value".into(),
+            ));
+        };
+        let inputs = validate_function_argument_value_refs(&program, function, &[value])?;
+        let Some(FiberTerminalValue::Returned(Some(value))) = self.fiber.terminal.take() else {
+            return Err(ProductStepError::Internal(
+                "initializer return owner changed during admission".into(),
+            ));
+        };
+        let root = self
+            .root
+            .take()
+            .ok_or(RootRuntimeError::SnapshotRoleMismatch("initializer root"))?;
+        let startup = match root.complete_initialization(
+            value,
+            crate::program_types::RuntimeProgramTypes::Awbc(&program),
+        ) {
+            Ok(startup) => startup,
+            Err(rejected) => {
+                let crate::root::RejectedRootInitialization { root, error } = *rejected;
+                self.root = Some(root);
+                return Err(error.into());
+            }
+        };
+        let prepared = startup.stage_flow(|_, binding| {
+            self.fiber
+                .prepare_initial_flow(&program, entry, inputs, vec![binding.value])
+        });
+        let (root, frame, outcome) = match prepared {
+            Ok(prepared) => prepared,
+            Err(rejected) => {
+                let (root, error) = *rejected;
+                self.root = Some(root);
+                return Err(error.into());
+            }
+        };
+        self.fiber.commit_initial_flow(frame);
+        self.root = Some(root);
+        output.root_initializations.push(outcome);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn install_root_startup(&mut self, startup: RootStartup) {
         self.root = Some(startup.root);
         self.entry_bound = true;
     }
@@ -155,11 +232,15 @@ impl AwbcProductStepExecutor {
         if active.id != entry.runtime_id || active.kind != kind || active.binding != entry.binding {
             return Err(RootRuntimeError::SnapshotRoleMismatch("active entry"));
         }
-        if snapshot.as_ref().is_some_and(|snapshot| {
+        let initializing = snapshot.as_ref().is_some_and(|snapshot| {
             matches!(snapshot.phase, crate::root::RootPhase::Initializing { .. })
-        }) {
-            // Existing Entry origins authenticate an initial Flow. Pending
-            // initialization requires its own authenticated callable origin.
+        });
+        if initializing
+            != matches!(
+                self.fiber.root,
+                crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
+            )
+        {
             return Err(RootRuntimeError::SnapshotRoleMismatch("initializer frame"));
         }
         let contract = startup_contract(&self.program, selected)?;
@@ -195,6 +276,24 @@ impl AwbcProductStepExecutor {
             return false;
         };
         let result = {
+            if matches!(
+                root.active().phase,
+                crate::root::RootPhase::Initializing { .. }
+            ) {
+                return match root.ingress(
+                    events,
+                    crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
+                ) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        output.diagnostics.push(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Input,
+                            error.to_string(),
+                        ));
+                        false
+                    }
+                };
+            }
             let mut evaluator = ProductRootEvaluator {
                 program: &self.program,
                 format_context: &self.format_context,

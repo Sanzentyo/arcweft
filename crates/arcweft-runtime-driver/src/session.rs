@@ -204,6 +204,7 @@ pub struct BundleSessionStep {
     pub assertion_failures: Vec<RuntimeAssertionFailure>,
     pub observations: RuntimeObservationState,
     pub flow_events: Vec<FlowEvent>,
+    pub root_initializations: Vec<arcweft_core::root::RootInitializationOutcome>,
     pub root_transitions: Vec<RootTransitionOutcome>,
     pub root_commands: Vec<RuntimeCommandEnvelope>,
     pub deferred_root_events: Vec<RootEventInput>,
@@ -783,6 +784,7 @@ impl BundleSession {
 
         let mut stats = result.stats.clone();
         let mut output = result.output;
+        let root_initializations = std::mem::take(&mut output.root_initializations);
         let root_transitions = std::mem::take(&mut output.root_transitions);
         let root_commands = std::mem::take(&mut output.root_commands);
         let deferred_root_events = std::mem::take(&mut output.requests.root_events_next_step);
@@ -883,6 +885,7 @@ impl BundleSession {
             assertion_failures,
             observations,
             flow_events,
+            root_initializations,
             root_transitions,
             root_commands,
             deferred_root_events,

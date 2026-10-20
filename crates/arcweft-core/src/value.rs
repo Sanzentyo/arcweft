@@ -2693,6 +2693,8 @@ impl From<RuntimeLocalBinding> for RuntimeLocalSlot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
     #[error(transparent)]
+    RootRuntime(#[from] crate::root::RootRuntimeError),
+    #[error(transparent)]
     IteratorWitness(#[from] RuntimeIteratorWitnessError),
     #[error("program {program} input {position} cannot transfer detached custody: {source}")]
     ProgramInputCustody {

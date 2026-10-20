@@ -3160,6 +3160,12 @@ impl AwbcProductStepExecutor {
     pub fn inert_rollback_image(
         &self,
     ) -> Result<AwbcProductExecutorRollbackImage, AwbcProductSaveError> {
+        self.fiber
+            .root
+            .admit_root_phase(self.root.as_ref(), &self.program)
+            .map_err(|error| AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         let root = self
             .root
@@ -3181,6 +3187,14 @@ impl AwbcProductStepExecutor {
         &mut self,
         image: AwbcProductExecutorRollbackImage,
     ) -> Result<(), AwbcProductStepBuildError> {
+        image
+            .product
+            .fiber
+            .root
+            .admit_root_phase(image.root.as_ref(), &self.program)
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         let owner = crate::task::RuntimeProgramOwner::Awbc(self.program_arc());
         // A fresh executor shell may already contain its startup root. Drop
         // that live owner before materializing the inert root rollback image.

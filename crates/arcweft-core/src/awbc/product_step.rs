@@ -243,6 +243,8 @@ pub enum AwbcProductStepBuildError {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub(super) enum ProductStepError {
     #[error(transparent)]
+    Root(#[from] crate::root::RootRuntimeError),
+    #[error(transparent)]
     Vm(#[from] crate::awbc::vm::VmError),
     #[error("{0}")]
     Input(String),
@@ -292,6 +294,7 @@ impl ProductStepError {
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
             Self::Internal(_)
+            | Self::Root(_)
             | Self::ActivationTrap(_)
             | Self::Line(_)
             | Self::LineTaskCompletion(_)
@@ -311,6 +314,7 @@ impl ProductStepError {
             Self::Type(_) => AwbcTrapCode::TypeMismatch,
             Self::Host(_) => AwbcTrapCode::HostAbiMismatch,
             Self::Input(_)
+            | Self::Root(_)
             | Self::Internal(_)
             | Self::Line(_)
             | Self::LineTaskCompletion(_)
@@ -1474,6 +1478,9 @@ fn append_step_output(output: &mut RuntimeStepOutput, mut staged: RuntimeStepOut
         .requests
         .root_events_next_step
         .append(&mut staged.requests.root_events_next_step);
+    output
+        .root_initializations
+        .append(&mut staged.root_initializations);
     output.root_transitions.append(&mut staged.root_transitions);
     output.root_commands.append(&mut staged.root_commands);
 }
@@ -1871,7 +1878,7 @@ impl AwbcProductStepExecutor {
         budget_quantum: u64,
         generation: GenerationId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let mut root_startup = match origin.entry() {
+        let root_startup = match origin.entry() {
             Some(entry) => root::prepare_startup(&program, entry)?,
             None => None,
         };
@@ -1907,8 +1914,23 @@ impl AwbcProductStepExecutor {
             }
         } else {
             let fiber = match origin {
-                crate::awbc::fiber::AwbcFiberRoot::Entry(entry) => {
-                    FiberState::for_entry(&program, entry, generation.get(), budget_quantum.max(1))
+                crate::awbc::fiber::AwbcFiberRoot::Entry(entry)
+                | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(entry) => {
+                    if root_startup.is_some() {
+                        FiberState::for_root_initializer(
+                            &program,
+                            entry,
+                            generation.get(),
+                            budget_quantum.max(1),
+                        )
+                    } else {
+                        FiberState::for_entry(
+                            &program,
+                            entry,
+                            generation.get(),
+                            budget_quantum.max(1),
+                        )
+                    }
                 }
                 crate::awbc::fiber::AwbcFiberRoot::Program(id) => program
                     .pure_program_binding(id)
@@ -1937,7 +1959,6 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?
         };
-        root::bind_startup(&program, &mut fiber, root_startup.as_ref())?;
         if origin.entry().is_some() && root_startup.is_none() && !fiber.frames.is_empty() {
             fiber
                 .bind_flow_parameter_coordinates(&program, Vec::new())
@@ -1948,9 +1969,7 @@ impl AwbcProductStepExecutor {
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
         let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
         executor.entry_bound = true;
-        if let Some(startup) = root_startup.take() {
-            executor.install_root_startup(startup);
-        }
+        executor.root = root_startup;
         Ok(executor)
     }
 
@@ -2617,6 +2636,7 @@ impl AwbcProductStepExecutor {
                 if matches!(
                     self.fiber.root,
                     crate::awbc::fiber::AwbcFiberRoot::Program(_)
+                        | crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
                 ) && let VmExit::Returned(value) = &mut vm_output.exit
                 {
                     let Some(value) = value.take() else {
@@ -2686,6 +2706,15 @@ impl AwbcProductStepExecutor {
                         self.initialize_suspension(need_states, output, pure_backend);
                     }
                     VmExit::Returned(value) => {
+                        if matches!(
+                            self.fiber.root,
+                            crate::awbc::fiber::AwbcFiberRoot::RootInitializer(_)
+                        ) {
+                            if let Err(error) = self.complete_root_initializer(output) {
+                                self.fail_with_error(error, output);
+                            }
+                            return usize::try_from(vm_output.executed).unwrap_or(usize::MAX);
+                        }
                         let retained = match &self.fiber.terminal {
                             Some(FiberTerminalValue::Returned(value)) => value.as_ref(),
                             _ => None,
@@ -2752,14 +2781,19 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let mut fiber =
-            match FiberState::for_function(&self.program, self.fiber.root, transform, 0, 64) {
-                Ok(fiber) => fiber,
-                Err(error) => {
-                    self.record_error(ProductStepError::Internal(error.to_string()), output);
-                    return;
-                }
-            };
+        let mut fiber = match FiberState::for_function(
+            &self.program,
+            crate::awbc::fiber::AwbcFiberRoot::Function(transform),
+            transform,
+            0,
+            64,
+        ) {
+            Ok(fiber) => fiber,
+            Err(error) => {
+                self.record_error(ProductStepError::Internal(error.to_string()), output);
+                return;
+            }
+        };
         loop {
             let step = {
                 let context = self.vm_execution_context();

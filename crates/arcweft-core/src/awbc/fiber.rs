@@ -65,21 +65,82 @@ impl From<FiberStateError> for crate::value::AwbcRuntimeValueSnapshotError {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum AwbcFiberRoot {
     Entry(AwbcEntryId),
+    RootInitializer(AwbcEntryId),
     Program(arcweft_id::runtime_program::RuntimePureProgramId),
     Function(AwbcFunctionId),
     Empty,
 }
 
 impl AwbcFiberRoot {
+    pub(crate) fn admit_root_phase<P>(
+        self,
+        root: Option<&crate::root::RootRuntime<P>>,
+        program: &AwbcProgram,
+    ) -> Result<(), FiberStateError> {
+        let selected = self
+            .entry()
+            .and_then(|entry| program.entries.get(entry.index()));
+        match (self, root, selected) {
+            (Self::RootInitializer(_), Some(root), Some(entry))
+                if root.active().entry == entry.runtime_id
+                    && matches!(
+                        root.active().phase,
+                        crate::root::RootPhase::Initializing { .. }
+                    ) =>
+            {
+                Ok(())
+            }
+            (Self::Entry(_), Some(root), Some(entry))
+                if root.active().entry == entry.runtime_id
+                    && !matches!(
+                        root.active().phase,
+                        crate::root::RootPhase::Initializing { .. }
+                    ) =>
+            {
+                Ok(())
+            }
+            (Self::Entry(_), None, Some(entry)) if entry.roles.stateful().is_none() => Ok(()),
+            (Self::Program(_) | Self::Function(_) | Self::Empty, None, _) => Ok(()),
+            _ => Err(FiberStateError::InvalidFrame),
+        }
+    }
     pub const fn entry(self) -> Option<AwbcEntryId> {
         match self {
-            Self::Entry(entry) => Some(entry),
+            Self::Entry(entry) | Self::RootInitializer(entry) => Some(entry),
             Self::Program(_) | Self::Function(_) | Self::Empty => None,
         }
     }
 
     fn validate(self, program: &AwbcProgram) -> Result<Option<AwbcFunctionId>, FiberStateError> {
         match self {
+            Self::RootInitializer(entry) => {
+                let entry_record = program
+                    .entries
+                    .get(entry.index())
+                    .ok_or(FiberStateError::UnknownEntry(entry.0))?;
+                let roles = entry_record
+                    .roles
+                    .stateful()
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                let function = program
+                    .callable_executables
+                    .iter()
+                    .find(|executable| executable.role == roles.initializer)
+                    .ok_or(FiberStateError::InvalidFrame)?
+                    .function;
+                let row = program
+                    .functions
+                    .get(function.index())
+                    .ok_or(FiberStateError::UnknownFunction(function.0))?;
+                let signature = program
+                    .signatures
+                    .get(row.signature.index())
+                    .ok_or(FiberStateError::InvalidFrame)?;
+                if !signature.params.is_empty() {
+                    return Err(FiberStateError::InvalidFrame);
+                }
+                Ok(Some(function))
+            }
             Self::Entry(entry) => program
                 .entries
                 .get(entry.index())
@@ -175,6 +236,15 @@ pub(crate) struct PreparedFunctionInputBinding {
     function: AwbcFunctionId,
     type_instantiation: Option<crate::program_types::RuntimeFunctionEffectInstantiation>,
     parameter_registers: Box<[AwbcRegisterId]>,
+}
+
+/// An admitted initial Flow frame allocated from its existing fiber's cursor.
+pub(crate) struct PreparedInitialFlow {
+    owner: RuntimeFiberInstanceId,
+    entry: AwbcEntryId,
+    frame: FiberFrame,
+    cursor: FiberCursor,
+    next_frame_instance: RuntimeIdCursor,
 }
 
 impl PreparedFunctionInputBinding {
@@ -1665,6 +1735,83 @@ impl FiberState {
             generation,
             budget_quantum,
         )
+    }
+
+    pub(crate) fn for_root_initializer(
+        program: &AwbcProgram,
+        entry: AwbcEntryId,
+        generation: u64,
+        budget_quantum: u64,
+    ) -> Result<Self, FiberStateError> {
+        let root = AwbcFiberRoot::RootInitializer(entry);
+        let function = root
+            .validate(program)?
+            .ok_or(FiberStateError::InvalidFrame)?;
+        Self::for_function(program, root, function, generation, budget_quantum)
+    }
+
+    pub(crate) fn prepare_initial_flow(
+        &self,
+        program: &AwbcProgram,
+        entry: AwbcEntryId,
+        prepared: PreparedFunctionInputBinding,
+        args: Vec<RuntimeValue>,
+    ) -> Result<PreparedInitialFlow, FiberStateError> {
+        if self.root != AwbcFiberRoot::RootInitializer(entry)
+            || self.status != FiberStatus::Returned
+            || !self.frames.is_empty()
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let record = program
+            .entries
+            .get(entry.index())
+            .ok_or(FiberStateError::UnknownEntry(entry.0))?;
+        let AwbcEntryTarget::Function { function, .. } = &record.target else {
+            return Err(FiberStateError::RouteSelectionRequired);
+        };
+        let function = *function;
+        if function != prepared.function || args.len() != prepared.parameter_registers.len() {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        let mut next_frame_instance = self.next_frame_instance;
+        let instance = RuntimeFrameInstanceId::from_allocated(
+            next_frame_instance.take_next(RuntimeIdNamespace::FrameInstance)?,
+        );
+        let mut frame = FiberFrame::new(instance, program, function, None)?;
+        frame.type_instantiation = prepared.type_instantiation.map(std::sync::Arc::new);
+        for (register, value) in prepared.parameter_registers.into_iter().zip(args) {
+            frame.registers[register.index()] = value.into();
+        }
+        let block = program
+            .functions
+            .get(function.index())
+            .ok_or(FiberStateError::UnknownFunction(function.0))?
+            .entry_block;
+        Ok(PreparedInitialFlow {
+            owner: self.instance,
+            entry,
+            frame,
+            cursor: FiberCursor {
+                function,
+                block,
+                instruction_offset: 0,
+            },
+            next_frame_instance,
+        })
+    }
+
+    pub(crate) fn commit_initial_flow(&mut self, prepared: PreparedInitialFlow) {
+        debug_assert_eq!(self.instance, prepared.owner);
+        debug_assert_eq!(self.root, AwbcFiberRoot::RootInitializer(prepared.entry));
+        self.root = AwbcFiberRoot::Entry(prepared.entry);
+        self.frames = vec![prepared.frame];
+        self.cursor = prepared.cursor;
+        self.next_frame_instance = prepared.next_frame_instance;
+        self.status = FiberStatus::Running;
+        self.suspension = None;
+        self.terminal = None;
+        self.return_summary = None;
     }
 
     pub(crate) fn for_entry_with_instance(

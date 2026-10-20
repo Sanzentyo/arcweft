@@ -153,6 +153,7 @@ pub struct RuntimeStepOutput {
     pub flow_events: Vec<FlowEvent>,
     pub effects: RuntimeEffectBatch,
     pub requests: HostRequestBatch,
+    pub root_initializations: Vec<crate::root::RootInitializationOutcome>,
     pub root_transitions: Vec<RootTransitionOutcome>,
     pub root_commands: Vec<RuntimeCommandEnvelope>,
 }
@@ -824,6 +825,7 @@ impl RuntimeStepOutput {
         self.requests
             .line_commands
             .extend(other.requests.line_commands);
+        self.root_initializations.extend(other.root_initializations);
         self.root_transitions.extend(other.root_transitions);
         self.root_commands.extend(other.root_commands);
     }

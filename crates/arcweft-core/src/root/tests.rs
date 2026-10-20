@@ -381,13 +381,11 @@ impl Fixture {
         ))
     }
     fn start(&self, program: RuntimeProgramTypes<'_>) -> RootRuntime {
-        RootRuntime::start(
-            self.contract.clone(),
-            &mut ReturnValue::new(self.state(RuntimeValue::Bool(true))),
-            program,
-        )
-        .unwrap()
-        .root
+        RootRuntime::prepare(self.contract.clone(), program)
+            .unwrap()
+            .complete_initialization(self.state(RuntimeValue::Bool(true)), program)
+            .unwrap()
+            .root
     }
 }
 
@@ -443,11 +441,10 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
         );
         let invalid = fixture.state(RuntimeValue::String("not Bool".into()));
         assert!(matches!(
-            RootRuntime::start(
-                fixture.contract.clone(),
-                &mut ReturnValue::new(invalid.clone()),
-                program
-            ),
+            RootRuntime::prepare(fixture.contract.clone(), program)
+                .unwrap()
+                .complete_initialization(invalid.clone(), program)
+                .map_err(|rejected| rejected.error),
             Err(RootRuntimeError::InvalidInitialValue(_))
         ));
         let mut snapshot = snapshot;
@@ -461,12 +458,10 @@ fn initializer_and_snapshot_validate_nested_values_through_each_program() {
         ));
         let mut wrong_role = fixture.contract.clone();
         wrong_role.roles.event.layout = TypeLayoutHash::from_bytes([0; 32]);
-        let mut evaluator = ReturnValue::new(fixture.state(RuntimeValue::Bool(true)));
         assert!(matches!(
-            RootRuntime::start(wrong_role, &mut evaluator, program),
+            RootRuntime::prepare(wrong_role, program),
             Err(RootRuntimeError::InvalidRole { role: "event", .. })
         ));
-        assert_eq!(evaluator.calls, 0);
     }
 }
 
@@ -476,11 +471,10 @@ fn root_state_copy_obligation_rejects_nested_affine_value_at_both_ingresses() {
     for program in fixture.programs() {
         let value = fixture.state(affine_value());
         assert!(matches!(
-            RootRuntime::start(
-                fixture.contract.clone(),
-                &mut ReturnValue::new(value),
-                program,
-            ),
+            RootRuntime::prepare(fixture.contract.clone(), program)
+                .unwrap()
+                .complete_initialization(value, program)
+                .map_err(|rejected| rejected.error),
             Err(RootRuntimeError::AffineRootState {
                 phase: "initializer"
             })

@@ -445,7 +445,9 @@ impl Engine {
                 } => cleanups.is_empty() && match_guard.is_none(),
                 Control::FunctionCall(frame) => {
                     let continuation_avoids = match &frame.continuation {
-                        Return::Program { .. } | Return::Function { .. } => true,
+                        Return::Program { .. }
+                        | Return::Function { .. }
+                        | Return::RootInitializer { .. } => true,
                         Return::Bind { result } => result
                             .binding_declarations()
                             .all(|binding| !elided.contains(&binding.local())),

@@ -146,6 +146,11 @@ impl Engine {
         }
         self.fiber.frame.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
+            FunctionReturnContinuation::RootInitializer { entry } => {
+                if let Err(error) = self.complete_root_initializer(&entry, value, output) {
+                    self.fail_eval(error, output);
+                }
+            }
             FunctionReturnContinuation::Program { program } => {
                 if !plan_owner
                     .resolve_pure_program(program)

@@ -38,7 +38,7 @@ impl BundleSession {
                     message: error.to_string(),
                 })?;
         let mut replay_options = options.clone();
-        replay_options.active_locale = Some(trace.active_locale.clone());
+        replay_options.active_locale = Some(trace.identity.active_locale.clone());
         let start_options = replay_options.clone();
         replay_root_trace_with(
             bundle,
@@ -71,7 +71,7 @@ impl BundleSession {
             message: error.to_string(),
         })?;
         let mut replay_options = options.clone();
-        replay_options.active_locale = Some(trace.active_locale.clone());
+        replay_options.active_locale = Some(trace.identity.active_locale.clone());
         let start_options = replay_options.clone();
         replay_root_trace_with(&bundle, &options, trace, artifact, || {
             BundleSession::from_awfb_bytes(bytes, start_options)
@@ -93,10 +93,45 @@ fn replay_root_trace_with(
     let mut session = start().map_err(|error| RootReplayError::SessionStart {
         message: error.to_string(),
     })?;
-    let initial = session
-        .executor
-        .product_root_state_snapshot()
-        .ok_or(RootReplayError::MissingRoot)?;
+    let mut initialization_steps = 0_u64;
+    let initial = loop {
+        let initial = session
+            .executor
+            .product_root_state_snapshot()
+            .ok_or(RootReplayError::MissingRoot)?;
+        if initial.phase.state_value().is_some() {
+            break initial;
+        }
+        initialization_steps = initialization_steps.checked_add(1).ok_or_else(|| {
+            RootReplayError::InvalidInitializerState {
+                message: "initializer replay step counter overflowed".to_owned(),
+            }
+        })?;
+        let clock = RuntimeClockStep::from_millis(initialization_steps, 1)
+            .map_err(|_| RootReplayError::UnexpectedTransition)?;
+        let step = session.step_with_clock(clock, BundleStepInput::default());
+        if step.stats.executed_ops == 0
+            || matches!(
+                step.fiber_status,
+                arcweft_core::engine::FlowFiberStatus::Failed(_)
+            )
+        {
+            return Err(RootReplayError::InvalidInitializerState {
+                message: "initializer did not make executable progress".to_owned(),
+            });
+        }
+        if !step.root_transitions.is_empty() || !step.requested_host_calls.is_empty() {
+            return Err(RootReplayError::UnexpectedTransition);
+        }
+        for outcome in &step.root_initializations {
+            if outcome.entry != trace.identity.entry
+                || outcome.binding != trace.identity.binding
+                || outcome.state_digest != trace.initializer_state_digest
+            {
+                return Err(RootReplayError::InitializerDigestMismatch);
+            }
+        }
+    };
     let durable_state_digest = roles
         .state
         .accepts_payload(
@@ -115,8 +150,9 @@ fn replay_root_trace_with(
         return Err(RootReplayError::InitializerDigestMismatch);
     }
 
-    let entry_label = trace.entry.public_label().into_string();
+    let entry_label = trace.identity.entry.public_label().into_string();
     let mut progress = ReplayProgress::new(trace, durable_state_digest);
+    progress.replay_step = initialization_steps;
     while progress.transition_index < trace.transitions.len() {
         let batch =
             progress.prepare_transition_batch(&session, trace, &roles, &entry_label, program)?;
@@ -132,7 +168,7 @@ fn replay_root_trace_with(
     progress.inject_after_transitions(&mut session, trace)?;
 
     Ok(RootReplayReportV1 {
-        entry: trace.entry.clone(),
+        entry: trace.identity.entry.clone(),
         transitions_verified: progress.transition_index,
         external_outcomes_injected: progress.external_outcomes_injected,
         suppressed_host_requests: progress.suppressed_host_requests,
@@ -428,27 +464,27 @@ fn preflight(
     trace: &RootReplayTraceV1,
     artifact: BundleSessionArtifactIdentity,
 ) -> Result<RuntimeStatefulEntryRoles, RootReplayError> {
-    if trace.schema_version != ROOT_REPLAY_SCHEMA_VERSION {
+    if trace.identity.schema_version != ROOT_REPLAY_SCHEMA_VERSION {
         return Err(RootReplayError::UnsupportedSchema {
-            actual: trace.schema_version,
+            actual: trace.identity.schema_version,
         });
     }
-    if trace.engine_identity != ROOT_REPLAY_ENGINE_IDENTITY {
+    if trace.identity.engine_identity != ROOT_REPLAY_ENGINE_IDENTITY {
         return Err(RootReplayError::EngineIdentity {
             expected: ROOT_REPLAY_ENGINE_IDENTITY,
-            actual: trace.engine_identity.clone(),
+            actual: trace.identity.engine_identity.clone(),
         });
     }
-    if trace.artifact != artifact {
+    if trace.identity.artifact != artifact {
         return Err(RootReplayError::ArtifactMismatch);
     }
-    if trace.format_data_identity != RuntimeFormatDataIdentity::CURRENT {
+    if trace.identity.format_data_identity != RuntimeFormatDataIdentity::CURRENT {
         return Err(RootReplayError::FormatDataMismatch);
     }
     if options
         .active_locale
         .as_ref()
-        .is_some_and(|locale| locale != &trace.active_locale)
+        .is_some_and(|locale| locale != &trace.identity.active_locale)
     {
         return Err(RootReplayError::LocaleMismatch);
     }
@@ -465,9 +501,9 @@ fn preflight(
         }
     })?;
     let entry = &program.entries[selected.index()];
-    if trace.entry != entry.runtime_id {
+    if trace.identity.entry != entry.runtime_id {
         return Err(RootReplayError::EntryMismatch {
-            recorded: trace.entry.public_label().into_string(),
+            recorded: trace.identity.entry.public_label().into_string(),
             selected: entry.runtime_id.public_label().into_string(),
         });
     }
@@ -475,24 +511,28 @@ fn preflight(
         .kind
         .runtime_kind(&program.strings)
         .ok_or(RootReplayError::InvalidEntryKind)?;
-    if trace.entry_kind != kind {
+    if trace.identity.entry_kind != kind {
         return Err(RootReplayError::EntryKindMismatch);
     }
-    if trace.binding != entry.binding {
+    if trace.identity.binding != entry.binding {
         return Err(RootReplayError::BindingMismatch);
     }
     let RuntimeEntryRoles::Stateful(roles) = &entry.roles else {
         return Err(RootReplayError::EntryNotStateful {
-            entry: trace.entry.public_label().into_string(),
+            entry: trace.identity.entry.public_label().into_string(),
         });
     };
-    if trace.binding != roles.binding {
+    if trace.identity.binding != roles.binding {
         return Err(RootReplayError::BindingMismatch);
     }
-    if trace.state_identity != roles.state.identity || trace.state_layout != roles.state.layout {
+    if trace.identity.state_identity != roles.state.identity
+        || trace.identity.state_layout != roles.state.layout
+    {
         return Err(RootReplayError::StateRoleMismatch);
     }
-    if trace.event_identity != roles.event.identity || trace.event_layout != roles.event.layout {
+    if trace.identity.event_identity != roles.event.identity
+        || trace.identity.event_layout != roles.event.layout
+    {
         return Err(RootReplayError::EventRoleMismatch);
     }
     Ok(roles.as_ref().clone())
@@ -503,7 +543,7 @@ fn validate_trace_shape(trace: &RootReplayTraceV1) -> Result<(), RootReplayError
         let expected = u64::try_from(index).expect("Vec index fits u64 on supported platforms");
         if transition.sequence.get() != expected {
             return Err(RootReplayError::SequenceMismatch {
-                entry: trace.entry.public_label().into_string(),
+                entry: trace.identity.entry.public_label().into_string(),
                 transition: expected,
                 expected,
                 actual: transition.sequence.get(),
@@ -829,7 +869,7 @@ fn trace_index_for_sequence(
     sequence: TransitionSequence,
 ) -> Result<usize, RootReplayError> {
     let index = usize::try_from(sequence.get()).map_err(|_| RootReplayError::SequenceMismatch {
-        entry: trace.entry.public_label().into_string(),
+        entry: trace.identity.entry.public_label().into_string(),
         transition: sequence.get(),
         expected: u64::MAX,
         actual: sequence.get(),
@@ -840,7 +880,7 @@ fn trace_index_for_sequence(
         .is_none_or(|transition| transition.sequence != sequence)
     {
         return Err(RootReplayError::SequenceMismatch {
-            entry: trace.entry.public_label().into_string(),
+            entry: trace.identity.entry.public_label().into_string(),
             transition: sequence.get(),
             expected: u64::try_from(trace.transitions.len()).unwrap_or(u64::MAX),
             actual: sequence.get(),

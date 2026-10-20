@@ -349,6 +349,48 @@ pub struct RootStartup {
     pub initializer_state_digest: RuntimeValueDigest,
 }
 
+/// Published only when the initializer and initial Flow have both been admitted.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RootInitializationOutcome {
+    pub entry: EntryRuntimeId,
+    pub binding: EntryBindingIdentity,
+    pub state_digest: RuntimeValueDigest,
+}
+
+impl RootStartup {
+    /// Stages the initial Flow before either owning candidate is published.
+    /// A rejected Flow returns the original pending Root, including its events.
+    pub(crate) fn stage_flow<T, E>(
+        self,
+        stage: impl FnOnce(&FlowRuntimeId, RuntimeFlowParameterBinding) -> Result<T, E>,
+    ) -> Result<(RootRuntime, T, RootInitializationOutcome), Box<(RootRuntime, E)>> {
+        let Self {
+            mut root,
+            initial_flow,
+            initial_state_binding,
+            initializer_state_digest,
+        } = self;
+        let parameter = initial_state_binding.parameter;
+        match stage(&initial_flow, initial_state_binding) {
+            Ok(flow) => {
+                let outcome = RootInitializationOutcome {
+                    entry: root.active.entry.clone(),
+                    binding: root.active.binding,
+                    state_digest: initializer_state_digest,
+                };
+                Ok((root, flow, outcome))
+            }
+            Err(error) => {
+                root.active.phase = RootPhase::Initializing {
+                    flow: initial_flow,
+                    state_parameter: parameter,
+                };
+                Err(Box::new((root, error)))
+            }
+        }
+    }
+}
+
 /// A rejected initializer retains its pending root and queued events.
 #[derive(Debug, Error)]
 #[error("{error}")]
@@ -394,8 +436,6 @@ pub enum RootRuntimeError {
     MissingReducer(String),
     #[error("runtime entry `{0}` references missing initial-flow executable metadata")]
     MissingInitialFlowExecutable(String),
-    #[error("entry initializer failed: {0}")]
-    Initializer(#[source] RootCallableEvaluationError),
     #[error("root {role} role does not match the active program: {source}")]
     InvalidRole {
         role: &'static str,
@@ -545,6 +585,10 @@ impl RootStartupContract {
 }
 
 impl<P> RootRuntime<P> {
+    #[must_use]
+    pub const fn active(&self) -> &ActiveRootState<P> {
+        &self.active
+    }
     /// Borrows the complete retained root before capture or restoration.
     pub(crate) fn admit_retained(
         &self,
@@ -1050,24 +1094,6 @@ impl RootRuntime {
             root: self,
             initializer_state_digest,
         })
-    }
-
-    pub fn start(
-        contract: RootStartupContract,
-        evaluator: &mut impl RootCallableEvaluator,
-        program: crate::program_types::RuntimeProgramTypes<'_>,
-    ) -> Result<RootStartup, RootRuntimeError> {
-        let root = Self::prepare(contract, program)?;
-        let value = evaluator
-            .evaluate_root_callable(root.initializer_callable()?, Vec::new())
-            .map_err(RootRuntimeError::Initializer)?;
-        root.complete_initialization(value, program)
-            .map_err(|rejected| rejected.error)
-    }
-
-    #[must_use]
-    pub const fn active(&self) -> &ActiveRootState {
-        &self.active
     }
 
     /// Visits the sole live root state, queued events and committed commands without
