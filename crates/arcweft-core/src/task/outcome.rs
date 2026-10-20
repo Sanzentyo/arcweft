@@ -457,6 +457,24 @@ impl BoundTaskOutcome {
         self.validate_admitted_value_view(value.view(), owner, &mut resources)
     }
 
+    /// Checks a recorded result against its original outcome contract before
+    /// an inert value can construct a live carrier.
+    pub fn validate_snapshot(
+        &self,
+        value: &crate::value::AwbcRuntimeValueSnapshot,
+    ) -> Result<(), TaskOutcomeValueError> {
+        let (owner, limits) = match &self.ty {
+            BoundTaskOutcomeType::Standalone(_) => (None, RuntimeSchemaLimits::engine_default()),
+            BoundTaskOutcomeType::Program { owner, limits, .. } => (Some(owner), *limits),
+        };
+        let mut resources = crate::entry::schema::value_encoding::ValueResourceAdmission::snapshot(
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        );
+        resources.validate_view(value.view(), 0, None)?;
+        self.validate_admitted_value_view(value.view(), owner, &mut resources)
+    }
+
     /// Constructs and admits the canonical Result::Ok carrier.
     pub fn try_result_ok(
         &self,

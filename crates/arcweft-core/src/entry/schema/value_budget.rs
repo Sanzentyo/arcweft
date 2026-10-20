@@ -203,6 +203,23 @@ impl ValidationWork {
         self.charge_atoms(1, depth)
     }
 
+    /// Charges a metadata descent without opening another resource allowance.
+    pub(crate) fn descend(&mut self, depth: usize) -> Result<usize, RuntimeSchemaError> {
+        if let Some(error) = self.failure() {
+            return Err(error);
+        }
+        let Some(next) = depth.checked_add(1) else {
+            let error = RuntimeSchemaError::ValidationDepth {
+                path: "$".to_owned(),
+                limit: self.limits().max_depth,
+            };
+            self.retain_failure(error.clone());
+            return Err(error);
+        };
+        self.charge(next)?;
+        Ok(next)
+    }
+
     /// A bounded semantic atom may account for several units without opening
     /// another counter or walking an attacker-controlled count to reject it.
     pub(crate) fn charge_atoms(
@@ -412,6 +429,29 @@ mod source_metadata_tests {
     use crate::entry::schema::value_encoding::{ValueAdmissionOrigin, ValueResourceAdmission};
     use crate::plan::FlowRuntimeId;
     use crate::value::{AwbcRuntimeValueSnapshot, RuntimeEntityReference, RuntimeValue};
+
+    #[test]
+    fn metadata_descent_keeps_overflow_and_prior_failure_in_the_shared_bank() {
+        let mut work = ValidationWork::new(RuntimeSchemaLimits::engine_default());
+        let mut alias = work.clone();
+        let overflow = work.descend(usize::MAX).unwrap_err();
+        assert!(matches!(
+            overflow,
+            RuntimeSchemaError::ValidationDepth { .. }
+        ));
+        assert_eq!(alias.descend(0), Err(overflow.clone()));
+        assert_eq!(alias.failure(), Some(overflow));
+
+        let mut work = ValidationWork::new(RuntimeSchemaLimits {
+            max_validation_work: 0,
+            ..RuntimeSchemaLimits::engine_default()
+        });
+        let mut alias = work.clone();
+        let prior = work.charge(0).unwrap_err();
+        assert!(matches!(prior, RuntimeSchemaError::ValidationWork { .. }));
+        assert_eq!(alias.descend(usize::MAX), Err(prior.clone()));
+        assert_eq!(work.failure(), Some(prior));
+    }
 
     #[test]
     fn entity_resource_preflight_bounds_retained_flow_labels_in_live_and_inert_graphs() {

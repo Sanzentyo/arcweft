@@ -89,6 +89,22 @@ impl RuntimeNominalRole {
         program.accepts_value(self.semantic_identity, &payload.0, limits)
     }
 
+    /// Validates a persisted transcript value without constructing a live owner.
+    pub fn accepts_snapshot(
+        &self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        value: &crate::value::AwbcRuntimeValueSnapshot,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<super::RuntimeValueDigest, crate::program_types::RuntimeProgramTypeError> {
+        self.validate_for_program(program)?;
+        program.accepts_value_view(
+            self.semantic_identity,
+            value.view(),
+            limits,
+            crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+        )
+    }
+
     /// Admits an owned event that may be affine; no persistent digest is made.
     pub fn accepts_live_payload(
         &self,

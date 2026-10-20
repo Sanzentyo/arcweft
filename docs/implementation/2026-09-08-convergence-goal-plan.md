@@ -22885,3 +22885,65 @@ cycles, before wiring reducers into ordinary budgeted frames. Do not add a
 Root-only match exception or repair the synchronous evaluator slated for deletion.
 Recorder pre-copy/failure atomicity and all original outstanding requirements
 remain open. The goal stays active.
+
+### 2026-10-20: qualified materialized values and inert replay retention
+
+Inspected main at `5ea44f6e19e380e58b018d311717fa4564f8d8cc`. This cut owns
+12 source/test/spec paths plus this note; the held14 tracked paths and held
+untracked files remain untouched. The resolved reverse closure is53 packages;
+all99 manifest/lock inputs still match the retained resolved graph. Per the
+user's explicit checkpoint instruction, publish this coherent intermediate cut
+without waiting for every test to prove each intermediate commit runnable.
+
+Plan and AWBC value admission now follow Shared/Reference heads with the
+original scope authority and the same validation-work/depth bank. The materialized
+referent is checked normally, contributes canonical value bytes once, and gains
+no Copy/persistence permission. Tests cover wrong referents, exact encoded-byte
+allowance, affine referents, bounded hostile AWBC cycles and Plan's existing
+construction-time cycle rejection. R1848's earlier development run executed2127
+cases:2125 passed, two new fixture setups failed because their positive Plan
+fixture included an invalid self-cycle. The fixture now leaves that cycle only
+in hostile raw AWBC metadata and separately asserts Plan construction rejection.
+This repair has not yet received a terminal test result at this checkpoint.
+
+R1846's37-case integration run passed36 and failed the real replay JSON round
+trip after reaching the reducer: a live nominal variant cannot be serialized
+without program-bound snapshot admission. Recorded events, successful external
+outcomes and pending recorder events now retain AwbcRuntimeValueSnapshot instead
+of RuntimePayload. A general retained-admission batch API preflights every live
+input and its optional original type under one bank before projecting snapshots;
+new tests exercise cumulative byte/node limits, sticky failure, original Plan/
+AWBC type checks and rejection of a later affine input. Capture includes the
+previous retained history and pending queue in the same resource bank before
+copying the pending snapshots or new input snapshots. Routed successful host
+events account for both actual retained copies. Recorder transition additions
+are staged before updating recorder state. Replay preflights the entire inert
+value history before starting a session, checks bound result snapshots while
+borrowed, and restores live inputs only through the exact executable owner.
+Live nominal serde is unchanged; the trace schema marker stays1.
+
+R1851 development driver/compiler all-target/all-feature/locked check passed.
+The final runtime freeze has3934 inputs (only this operational note excluded),
+12 owned paths, held14 and zero source/held/outside-owned drift. R1855 workspace
+all-target/all-feature/locked check passed in1m10s and its3934 input hashes match.
+R1857 structural audit passed:3156 files,3026 Rust files,1722212 physical Rust LOC,
+97 packages,376 review triggers,zero blocking violations. The existing value
+validators remain their program's owners; the retained group API owns batch
+admission, while the driver owns replay sequencing and host-result correlation.
+No new layer edge, parallel type authority or I/O in core was introduced. The
+recording algorithm's growth is a cohesive borrowed-preflight/project/commit
+boundary; its new state is limited to replay's retained events and outcomes.
+
+R1852 final Core/driver catalogue, R1853 owner execution, R1854 all37 compiler
+project_cache_transaction cases and R1856 ordinary workspace Clippy are running
+or queued at this checkpoint. None is claimed passed. Their frozen source bytes
+remain fixed while this note is updated. Reconcile their actual terminal case
+sets and input hashes before reporting acceptance; do not launch duplicate runs
+because a command is waiting for the Cargo lock.
+
+Full bounded trace decoding/metadata admission, returning owned step output on
+post-step recording failure, Native foreign-call cold rollback, Root reducer
+ordinary frames/shared budget/backend and full restore failure atomicity remain
+open, as do complete reverse consumers, the earlier56 CLI failures, Presentation
+ABI, cross-tier/visual acceptance and every original unfinished requirement.
+This is an intermediate publication, not completion of the active goal.

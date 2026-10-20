@@ -2,8 +2,7 @@
 
 use super::super::root_command::RootCommandHostResultRoute;
 use super::super::{
-    BundleSession, BundleSessionStep, BundleStepInput, RuntimeClockStep, RuntimeHostCallError,
-    RuntimeHostCallErrorKind, RuntimePayload,
+    BundleSession, BundleSessionStep, BundleStepInput, RuntimeClockStep, RuntimeHostCallErrorKind,
 };
 use super::model::{
     ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
@@ -14,11 +13,12 @@ use super::model::{
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
 use arcweft_core::root::{RootTransitionOutcome, TransitionSequence};
+use arcweft_core::value::{AwbcRuntimeValueSnapshot, RuntimeRetainedValueAdmission};
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 struct RootReplayStepCapture {
-    pending_events: VecDeque<RuntimePayload>,
+    pending_events: VecDeque<AwbcRuntimeValueSnapshot>,
     external_outcomes: Vec<RecordedExternalOutcome>,
     added_root_events: usize,
 }
@@ -138,61 +138,184 @@ impl RootReplayRecorderV1 {
             .product_root_state_snapshot()
             .ok_or(RootReplayRecordingError::MissingRoot)?;
         let position = RecordedExternalOutcomePositionV1::BeforeTransition(root.next_sequence);
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            session.executor.program_owner(),
+            self.roles.command_policy.root_limits.schema,
+        );
+        admission.validate_metadata_collection(self.transitions.len())?;
+        admission.validate_metadata_collection(self.pending_events.len())?;
+        admission.validate_metadata_collection(self.external_outcomes.len())?;
+        admission.validate_metadata_collection(input.host_call_results.len())?;
+        admission.validate_metadata_collection(
+            self.external_outcomes
+                .len()
+                .checked_add(input.host_call_results.len())
+                .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                    message: "external outcome count overflowed".into(),
+                })?,
+        )?;
+        for transition in &self.transitions {
+            admission
+                .validate_typed_snapshot(&transition.event, self.roles.event.semantic_identity)?;
+        }
+        for event in &self.pending_events {
+            admission.validate_typed_snapshot(event, self.roles.event.semantic_identity)?;
+        }
+        for outcome in &self.external_outcomes {
+            admission.validate_metadata_string(&outcome.request.0)?;
+            match &outcome.outcome {
+                RecordedExternalOutcomeResultV1::Success(value) => {
+                    admission.validate_snapshot(value)?
+                }
+                RecordedExternalOutcomeResultV1::Failure { message, .. } => {
+                    admission.validate_metadata_string(message)?
+                }
+            }
+        }
+        let explicit_count = session
+            .pending_deferred_root_events
+            .len()
+            .checked_add(input.root_events.len())
+            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                message: "replay event count overflowed".into(),
+            })?;
+        let successes = input
+            .host_call_results
+            .iter()
+            .filter(|result| result.outcome.is_ok())
+            .count();
+        let routed_inputs = input
+            .host_call_results
+            .iter()
+            .filter(|result| {
+                result.outcome.is_ok()
+                    && session
+                        .pending_root_command_results
+                        .get(&result.id)
+                        .is_some_and(|pending| {
+                            pending.route == RootCommandHostResultRoute::RootEventPayload
+                        })
+            })
+            .count();
+        let maximum_inputs = successes
+            .checked_add(routed_inputs)
+            .and_then(|count| count.checked_add(explicit_count))
+            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                message: "replay input count overflowed".into(),
+            })?;
+        admission.validate_metadata_collection(maximum_inputs)?;
+        let mut inputs = Vec::with_capacity(maximum_inputs);
+        for event in session
+            .pending_deferred_root_events
+            .iter()
+            .chain(&input.root_events)
+        {
+            inputs.push((&event.payload.0, Some(self.roles.event.semantic_identity)));
+        }
+        let mut routed_count = 0;
+        for result in &input.host_call_results {
+            admission.validate_metadata_string(&result.id.0)?;
+            let pending = session.pending_root_command_results.get(&result.id);
+            match &result.outcome {
+                Ok(payload) => {
+                    if let Some(pending) = pending {
+                        pending.bound.validate_value(&payload.0).map_err(|error| {
+                            RootReplayRecordingError::RuntimeInspection {
+                                message: format!(
+                                    "root-command result violates its bound result type: {error}"
+                                ),
+                            }
+                        })?;
+                    }
+                    let routed = pending.is_some_and(|pending| {
+                        pending.route == RootCommandHostResultRoute::RootEventPayload
+                    });
+                    let expected = routed.then_some(self.roles.event.semantic_identity);
+                    inputs.push((&payload.0, expected));
+                    if routed {
+                        inputs.push((&payload.0, expected));
+                        routed_count += 1;
+                    }
+                }
+                Err(error) => admission.validate_metadata_string(&error.message)?,
+            }
+        }
+        let pending_count = self
+            .pending_events
+            .len()
+            .checked_add(explicit_count)
+            .and_then(|count| count.checked_add(routed_count))
+            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                message: "pending replay event count overflowed".into(),
+            })?;
+        admission.validate_metadata_collection(
+            self.transitions
+                .len()
+                .checked_add(pending_count)
+                .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                    message: "replay transition count overflowed".into(),
+                })?,
+        )?;
+        if !self
+            .roles
+            .command_policy
+            .root_limits
+            .permits_pending_events(pending_count)
+        {
+            return Err(RootReplayRecordingError::RuntimeInspection {
+                message: "pending replay events exceed the selected Root limit".into(),
+            });
+        }
+        let mut captured = admission.capture_unrestricted_values(&inputs)?.into_iter();
         let mut pending_events = self.pending_events.clone();
         let prior_pending_events = pending_events.len();
-        pending_events.extend(
-            session
-                .pending_deferred_root_events
-                .iter()
-                .map(|event| event.payload.clone()),
-        );
-        pending_events.extend(input.root_events.iter().map(|event| event.payload.clone()));
+        pending_events.extend(captured.by_ref().take(explicit_count));
         let mut external_outcomes = Vec::with_capacity(input.host_call_results.len());
         for result in &input.host_call_results {
-            let pending = session.pending_root_command_results.get(&result.id);
-            let route = pending.map(|pending| pending.route);
-            let checked_payload = match (pending, &result.outcome) {
-                (Some(pending), Ok(payload)) => Some(
-                    pending
-                        .bound
-                        .try_payload(payload.0.clone())
-                        .map_err(|error| RootReplayRecordingError::RuntimeInspection {
-                            message: format!(
-                                "root-command request `{}` returned a payload outside its declared result type: {error}",
-                                result.id.0
-                            ),
-                        })?,
-                ),
-                _ => None,
-            };
-            let root_event_sequence = match (route, checked_payload.as_ref()) {
-                (Some(RootCommandHostResultRoute::RootEventPayload), Some(payload)) => {
-                    let offset = u64::try_from(pending_events.len()).map_err(|_| {
-                        RootReplayRecordingError::RuntimeInspection {
-                            message: "pending replay event count does not fit u64".to_owned(),
-                        }
-                    })?;
-                    let sequence = root
-                        .next_sequence
-                        .get()
-                        .checked_add(offset)
-                        .map(TransitionSequence::from_u64)
-                        .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
-                            message: "recorded root-event sequence overflowed".to_owned(),
+            let mut root_event_sequence = None;
+            let outcome = match &result.outcome {
+                Ok(_) => {
+                    let snapshot = captured
+                        .next()
+                        .expect("every successful input has an admitted snapshot");
+                    if session
+                        .pending_root_command_results
+                        .get(&result.id)
+                        .is_some_and(|pending| {
+                            pending.route == RootCommandHostResultRoute::RootEventPayload
+                        })
+                    {
+                        let offset = u64::try_from(pending_events.len()).map_err(|_| {
+                            RootReplayRecordingError::RuntimeInspection {
+                                message: "pending replay event count does not fit u64".to_owned(),
+                            }
                         })?;
-                    pending_events.push_back(payload.clone());
-                    Some(sequence)
+                        let sequence = root
+                            .next_sequence
+                            .get()
+                            .checked_add(offset)
+                            .map(TransitionSequence::from_u64)
+                            .ok_or_else(|| RootReplayRecordingError::RuntimeInspection {
+                                message: "recorded root-event sequence overflowed".to_owned(),
+                            })?;
+                        pending_events.push_back(
+                            captured
+                                .next()
+                                .expect("routed inputs have a second admitted owner"),
+                        );
+                        root_event_sequence = Some(sequence);
+                    }
+                    RecordedExternalOutcomeResultV1::Success(snapshot)
                 }
-                _ => None,
+                Err(error) => RecordedExternalOutcomeResultV1::Failure {
+                    kind: error.kind.into(),
+                    message: error.message.clone(),
+                },
             };
-            let recorded_outcome = checked_payload.map_or_else(
-                || RecordedExternalOutcomeResultV1::from(&result.outcome),
-                RecordedExternalOutcomeResultV1::Success,
-            );
             external_outcomes.push(RecordedExternalOutcome {
                 position,
                 request: result.id.clone(),
-                outcome: recorded_outcome,
+                outcome,
                 root_event_sequence,
             });
         }
@@ -246,12 +369,13 @@ impl RootReplayRecorderV1 {
             })?
             .runtime();
         let program = RuntimeProgramTypes::Awbc(&runtime.program);
+        let mut transitions = Vec::with_capacity(step.root_transitions.len());
         for outcome in &step.root_transitions {
             let event = capture
                 .pending_events
                 .pop_front()
                 .expect("cardinality was checked");
-            let expected_sequence = u64::try_from(self.transitions.len())
+            let expected_sequence = u64::try_from(self.transitions.len() + transitions.len())
                 .expect("Vec index fits u64 on supported platforms");
             if outcome.sequence().get() != expected_sequence {
                 return Err(RootReplayRecordingError::SequenceMismatch {
@@ -259,11 +383,10 @@ impl RootReplayRecorderV1 {
                     actual: outcome.sequence().get(),
                 });
             }
-            let event = RuntimePayload(event.0);
             let event_digest = self
                 .roles
                 .event
-                .accepts_payload(
+                .accepts_snapshot(
                     program,
                     &event,
                     self.roles.command_policy.root_limits.schema,
@@ -272,7 +395,7 @@ impl RootReplayRecorderV1 {
                     transition: expected_sequence,
                     message: error.to_string(),
                 })?;
-            self.transitions.push(RecordedRootTransitionV1 {
+            transitions.push(RecordedRootTransitionV1 {
                 sequence: outcome.sequence(),
                 event,
                 event_digest,
@@ -286,6 +409,7 @@ impl RootReplayRecorderV1 {
             capture.pending_events.clear();
         }
         self.initializer_state_digest = initializer_state_digest;
+        self.transitions.extend(transitions);
         self.pending_events = capture.pending_events;
         self.external_outcomes.extend(capture.external_outcomes);
         Ok(())
@@ -373,18 +497,6 @@ impl From<&RootTransitionOutcome> for RecordedRootOutcomeV1 {
             },
             RootTransitionOutcome::Trapped { failure_digest, .. } => Self::Trapped {
                 failure_digest: *failure_digest,
-            },
-        }
-    }
-}
-
-impl From<&Result<RuntimePayload, RuntimeHostCallError>> for RecordedExternalOutcomeResultV1 {
-    fn from(value: &Result<RuntimePayload, RuntimeHostCallError>) -> Self {
-        match value {
-            Ok(payload) => Self::Success(payload.clone()),
-            Err(error) => Self::Failure {
-                kind: error.kind.into(),
-                message: error.message.clone(),
             },
         }
     }

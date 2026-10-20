@@ -1,15 +1,13 @@
 //! Versioned root replay data and public diagnostics.
 
-use super::super::{
-    BundleSessionArtifactIdentity, EntryRuntimeId, RuntimeHostCallId, RuntimePayload,
-};
+use super::super::{BundleSessionArtifactIdentity, EntryRuntimeId, RuntimeHostCallId};
 use arcweft_core::entry::{
     EntryBindingIdentity, RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeValueDigest,
     TypeLayoutHash,
 };
 use arcweft_core::plan::RuntimeEntryKind;
 use arcweft_core::root::TransitionSequence;
-use arcweft_core::value::RuntimeFormatDataIdentity;
+use arcweft_core::value::{AwbcRuntimeValueSnapshot, RuntimeFormatDataIdentity};
 use arcweft_id::LocaleTag;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -49,7 +47,7 @@ pub struct RootReplayTraceV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RecordedRootTransitionV1 {
     pub sequence: TransitionSequence,
-    pub event: RuntimePayload,
+    pub event: AwbcRuntimeValueSnapshot,
     pub event_digest: RuntimeValueDigest,
     pub outcome: RecordedRootOutcomeV1,
 }
@@ -86,7 +84,7 @@ pub struct RecordedExternalOutcome {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RecordedExternalOutcomeResultV1 {
-    Success(RuntimePayload),
+    Success(AwbcRuntimeValueSnapshot),
     Failure {
         kind: RecordedHostCallErrorKindV1,
         message: String,
@@ -108,11 +106,13 @@ pub struct RootReplayRecorderV1 {
     pub(super) transitions: Vec<RecordedRootTransitionV1>,
     pub(super) external_outcomes: Vec<RecordedExternalOutcome>,
     pub(super) roles: RuntimeStatefulEntryRoles,
-    pub(super) pending_events: VecDeque<RuntimePayload>,
+    pub(super) pending_events: VecDeque<AwbcRuntimeValueSnapshot>,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RootReplayRecordingError {
+    #[error("root replay snapshot admission failed: {0}")]
+    Snapshot(Box<arcweft_core::value::AwbcRuntimeValueSnapshotError>),
     #[error("root replay initializer has not completed")]
     InitializationPending,
     #[error("root replay initialization does not match the selected entry")]
@@ -137,6 +137,12 @@ pub enum RootReplayRecordingError {
     SequenceMismatch { expected: u64, actual: u64 },
     #[error("root replay recording left {count} root events unprocessed")]
     PendingEvents { count: usize },
+}
+
+impl From<arcweft_core::value::AwbcRuntimeValueSnapshotError> for RootReplayRecordingError {
+    fn from(error: arcweft_core::value::AwbcRuntimeValueSnapshotError) -> Self {
+        Self::Snapshot(Box::new(error))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

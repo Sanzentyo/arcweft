@@ -1,5 +1,96 @@
 use super::*;
 
+#[test]
+fn retained_capture_batch_spends_one_allowance_and_preserves_the_first_failure() {
+    let unit = RuntimeValue::Unit;
+    let flag = RuntimeValue::Bool(true);
+    let values = [(&unit, None), (&flag, None)];
+    let limits = RuntimeSchemaLimits {
+        max_nodes: 2,
+        max_encoded_bytes: 3,
+        ..RuntimeSchemaLimits::engine_default()
+    };
+    let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+    assert_eq!(
+        admission.capture_unrestricted_values(&values).unwrap(),
+        vec![
+            AwbcRuntimeValueSnapshot::Unit,
+            AwbcRuntimeValueSnapshot::Bool(true)
+        ]
+    );
+    let consumed = admission.validate(&unit).unwrap_err();
+    assert_eq!(
+        transfer(admission)
+            .resume()
+            .capture_unrestricted_values(&[]),
+        Err(consumed)
+    );
+
+    for (limits, budget) in [
+        (
+            RuntimeSchemaLimits {
+                max_nodes: 1,
+                ..limits
+            },
+            "nodes",
+        ),
+        (
+            RuntimeSchemaLimits {
+                max_encoded_bytes: 2,
+                ..limits
+            },
+            "encoded_bytes",
+        ),
+    ] {
+        let mut admission = RuntimeRetainedValueAdmission::standalone(limits);
+        let error = AwbcRuntimeValueSnapshotError::Resource(
+            crate::entry::RuntimeSchemaError::BudgetExceeded { budget },
+        );
+        assert_eq!(
+            admission.capture_unrestricted_values(&values),
+            Err(error.clone())
+        );
+        assert_eq!(admission.validate(&unit), Err(error));
+    }
+}
+
+#[test]
+fn retained_capture_batch_checks_later_types_and_affine_custody_without_moving_inputs() {
+    let flag = RuntimeValue::Bool(true);
+    let invalid = RuntimeValue::String("not a Bool".to_owned());
+    let affine = RuntimeValue::NeedHandle(crate::tests::reusable_need("need.retained-batch"));
+    let boolean = RuntimeSemanticTypeId::from_bytes([2; 32]);
+    for owner in crate::value::awbc_save::tests::owners() {
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        );
+        assert_eq!(
+            admission
+                .capture_unrestricted_values(&[(&flag, Some(boolean))])
+                .unwrap(),
+            vec![AwbcRuntimeValueSnapshot::Bool(true)]
+        );
+        let error = admission
+            .capture_unrestricted_values(&[(&flag, Some(boolean)), (&invalid, Some(boolean))])
+            .unwrap_err();
+        assert_eq!(
+            admission.capture_unrestricted_values(&[(&flag, None)]),
+            Err(error)
+        );
+
+        let mut admission = RuntimeRetainedValueAdmission::for_program(
+            owner,
+            RuntimeSchemaLimits::engine_default(),
+        );
+        assert_eq!(
+            admission.capture_unrestricted_values(&[(&flag, None), (&affine, None)]),
+            Err(AwbcRuntimeValueSnapshotError::AffineValue)
+        );
+        assert!(matches!(&affine, RuntimeValue::NeedHandle(_)));
+    }
+}
+
 fn assert_metadata_bytes(value: &(impl serde::Serialize + ?Sized), bytes: u64) {
     let limits = RuntimeSchemaLimits {
         max_nodes: 0,

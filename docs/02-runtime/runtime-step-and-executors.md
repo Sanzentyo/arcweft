@@ -14,6 +14,13 @@ Bool type; a guard without a final condition must declare Never. The executable
 semantic transcript commits that result type even when the guard transfers
 control, so later Source construction does not infer it from an absent value.
 
+`Shared` and `Reference` qualify the original executable type; they do not add
+a runtime value wrapper. Live and inert value admission follow these type heads
+under the same scope authority and metadata work/depth allowance, then validate
+the materialized referent. A qualifier-only cycle cannot manufacture an admitted
+value. The referent contributes its value nodes and canonical bytes once; qualifier traversal
+does not create another value bank or grant Copy or persistence rights.
+
 ```rust
 pub trait RuntimeExecutor {
     fn step(

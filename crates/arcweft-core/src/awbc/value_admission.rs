@@ -732,8 +732,18 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<AwbcTypeId>> ValueVali
                 }))
             }
             Expected::Type(ty) => {
-                if !self.context.permits_scope(self.row(ty)?.scope()) {
-                    return Err(Self::mismatch(value));
+                let mut ty = ty;
+                let mut qualifier_depth = 0;
+                loop {
+                    let row = self.row(ty)?;
+                    if !self.context.permits_scope(row.scope()) {
+                        return Err(Self::mismatch(value));
+                    }
+                    let (Type::Shared(inner) | Type::Reference(inner)) = row.shape() else {
+                        break;
+                    };
+                    qualifier_depth = self.work.descend(qualifier_depth)?;
+                    ty = *inner;
                 }
                 if let Type::Choice(alternatives) = self.row(ty)?.shape() {
                     self.work.collection(alternatives.len())?;

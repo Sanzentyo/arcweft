@@ -22,6 +22,7 @@ use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
 use arcweft_core::root::{RootStateSnapshotV1, RootTransitionOutcome, TransitionSequence};
 use arcweft_core::value::RuntimeFormatDataIdentity;
+use arcweft_core::{task::RuntimeProgramOwner, value::RuntimeRetainedValueAdmission};
 use std::collections::BTreeSet;
 
 impl BundleSession {
@@ -89,6 +90,44 @@ fn replay_root_trace_with(
     let roles = preflight(bundle, options, trace, artifact)?;
     let program = RuntimeProgramTypes::Awbc(bundle.product_awbc_program());
     validate_trace_shape(trace)?;
+    let mut admission = RuntimeRetainedValueAdmission::for_program(
+        RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&bundle.product_awbc.program)),
+        roles.command_policy.root_limits.schema,
+    );
+    admission
+        .validate_metadata_collection(trace.transitions.len())
+        .map_err(|error| RootReplayError::ArtifactInspection {
+            message: error.to_string(),
+        })?;
+    admission
+        .validate_metadata_collection(trace.external_outcomes.len())
+        .map_err(|error| RootReplayError::ArtifactInspection {
+            message: error.to_string(),
+        })?;
+    for transition in &trace.transitions {
+        admission
+            .validate_typed_snapshot(&transition.event, roles.event.semantic_identity)
+            .map_err(|error| RootReplayError::EventDivergence {
+                entry: trace.identity.entry.canonical_label(),
+                transition: transition.sequence.get(),
+                message: error.to_string(),
+            })?;
+    }
+    for (index, external) in trace.external_outcomes.iter().enumerate() {
+        admission
+            .validate_metadata_string(&external.request.0)
+            .map_err(|error| external_error(trace, index, &error.to_string()))?;
+        match &external.outcome {
+            RecordedExternalOutcomeResultV1::Success(value) => {
+                admission
+                    .validate_snapshot(value)
+                    .map_err(|error| external_error(trace, index, &error.to_string()))?
+            }
+            RecordedExternalOutcomeResultV1::Failure { message, .. } => admission
+                .validate_metadata_string(message)
+                .map_err(|error| external_error(trace, index, &error.to_string()))?,
+        }
+    }
 
     let mut session = start().map_err(|error| RootReplayError::SessionStart {
         message: error.to_string(),
@@ -176,7 +215,11 @@ fn replay_root_trace_with(
             program,
         )?;
     }
-    progress.inject_after_transitions(&mut session, trace)?;
+    progress.inject_after_transitions(
+        &mut session,
+        trace,
+        roles.command_policy.root_limits.schema,
+    )?;
 
     Ok(RootReplayReportV1 {
         entry: trace.identity.entry.clone(),
@@ -236,8 +279,12 @@ impl ReplayProgress {
             &self.used_external,
             RecordedExternalOutcomePositionV1::BeforeTransition(expected_sequence),
         );
-        let (host_results, supplied_sequences) =
-            prepare_external_batch(session, trace, &external_indices)?;
+        let (host_results, supplied_sequences) = prepare_external_batch(
+            session,
+            trace,
+            &external_indices,
+            roles.command_policy.root_limits.schema,
+        )?;
         self.mark_external_used(&external_indices)?;
 
         let mut batch_end = existing_queue_end.unwrap_or(self.transition_index);
@@ -260,12 +307,6 @@ impl ReplayProgress {
         }
 
         let explicit_start = existing_queue_end.map_or(self.transition_index, |end| end + 1);
-        let root_events = explicit_end.map_or_else(Vec::new, |end| {
-            trace.transitions[explicit_start..=end]
-                .iter()
-                .map(|transition| RootEventInput::new(transition.event.clone()))
-                .collect()
-        });
         validate_event_slice(
             trace,
             self.transition_index,
@@ -282,6 +323,25 @@ impl ReplayProgress {
             entry_label,
             program,
         )?;
+        let mut root_events = Vec::new();
+        if let Some(end) = explicit_end {
+            let owner = session.executor.program_owner();
+            for transition in &trace.transitions[explicit_start..=end] {
+                let value = transition
+                    .event
+                    .copy_unrestricted_typed_runtime_value_for_program_with_limits(
+                        &owner,
+                        roles.event.semantic_identity,
+                        roles.command_policy.root_limits.schema,
+                    )
+                    .map_err(|error| RootReplayError::EventDivergence {
+                        entry: entry_label.to_owned(),
+                        transition: transition.sequence.get(),
+                        message: error.to_string(),
+                    })?;
+                root_events.push(RootEventInput::new(value.into()));
+            }
+        }
         Ok(PreparedReplayBatch {
             expected_sequence,
             batch_end,
@@ -372,6 +432,7 @@ impl ReplayProgress {
         &mut self,
         session: &mut BundleSession,
         trace: &RootReplayTraceV1,
+        limits: arcweft_core::entry::RuntimeSchemaLimits,
     ) -> Result<(), RootReplayError> {
         let indices = external_indices_at(
             trace,
@@ -380,7 +441,7 @@ impl ReplayProgress {
         );
         if !indices.is_empty() {
             let (host_results, supplied_sequences) =
-                prepare_external_batch(session, trace, &indices)?;
+                prepare_external_batch(session, trace, &indices, limits)?;
             if !supplied_sequences.is_empty() {
                 return Err(external_error(
                     trace,
@@ -598,9 +659,9 @@ fn prepare_external_batch(
     session: &BundleSession,
     trace: &RootReplayTraceV1,
     indices: &[usize],
+    limits: arcweft_core::entry::RuntimeSchemaLimits,
 ) -> Result<(Vec<RuntimeHostCallResult>, Vec<TransitionSequence>), RootReplayError> {
     let mut requests = BTreeSet::new();
-    let mut results = Vec::with_capacity(indices.len());
     let mut supplied_sequences = Vec::new();
     for index in indices {
         let recorded = &trace.external_outcomes[*index];
@@ -613,18 +674,15 @@ fn prepare_external_batch(
         if let (Some(pending), RecordedExternalOutcomeResultV1::Success(payload)) =
             (pending_root_result, &recorded.outcome)
         {
-            pending
-                .bound
-                .try_payload(payload.0.clone())
-                .map_err(|error| {
-                    external_error(
-                        trace,
-                        *index,
-                        &format!(
-                            "successful root-command result violates its bound result type: {error}"
-                        ),
-                    )
-                })?;
+            pending.bound.validate_snapshot(payload).map_err(|error| {
+                external_error(
+                    trace,
+                    *index,
+                    &format!(
+                        "successful root-command result violates its bound result type: {error}"
+                    ),
+                )
+            })?;
         }
         let root_route = pending_root_result.map(|pending| pending.route);
         let successful_payload = match &recorded.outcome {
@@ -658,8 +716,12 @@ fn prepare_external_batch(
             }
             _ => {}
         }
-        results.push(recorded.clone().into_runtime_result());
     }
+    let owner = session.executor.program_owner();
+    let results = indices
+        .iter()
+        .map(|index| trace.external_outcomes[*index].runtime_result(&owner, limits))
+        .collect::<Result<Vec<_>, _>>()?;
     Ok((results, supplied_sequences))
 }
 
@@ -674,7 +736,7 @@ fn validate_event_slice(
     for transition in &trace.transitions[start..=end] {
         let digest = roles
             .event
-            .accepts_payload(
+            .accepts_snapshot(
                 program,
                 &transition.event,
                 roles.command_policy.root_limits.schema,
@@ -718,7 +780,7 @@ fn validate_supplied_events(
         let transition_index = trace_index_for_sequence(trace, *sequence)?;
         let digest = roles
             .event
-            .accepts_payload(program, payload, roles.command_policy.root_limits.schema)
+            .accepts_snapshot(program, payload, roles.command_policy.root_limits.schema)
             .map_err(|error| RootReplayError::EventDivergence {
                 entry: entry.to_owned(),
                 transition: sequence.get(),
@@ -920,19 +982,29 @@ fn external_error(trace: &RootReplayTraceV1, index: usize, message: &str) -> Roo
 }
 
 impl RecordedExternalOutcome {
-    fn into_runtime_result(self) -> RuntimeHostCallResult {
-        RuntimeHostCallResult {
-            id: self.request,
-            outcome: match self.outcome {
-                RecordedExternalOutcomeResultV1::Success(payload) => Ok(payload),
+    fn runtime_result(
+        &self,
+        owner: &RuntimeProgramOwner,
+        limits: arcweft_core::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeHostCallResult, RootReplayError> {
+        Ok(RuntimeHostCallResult {
+            id: self.request.clone(),
+            outcome: match &self.outcome {
+                RecordedExternalOutcomeResultV1::Success(payload) => Ok(payload
+                    .copy_unrestricted_runtime_value_for_program_with_limits(owner, limits)
+                    .map_err(|error| RootReplayError::ExternalOutcome {
+                        request: self.request.0.clone(),
+                        message: error.to_string(),
+                    })?
+                    .into()),
                 RecordedExternalOutcomeResultV1::Failure { kind, message } => {
                     Err(RuntimeHostCallError {
-                        kind: kind.into(),
-                        message,
+                        kind: (*kind).into(),
+                        message: message.clone(),
                     })
                 }
             },
-        }
+        })
     }
 }
 

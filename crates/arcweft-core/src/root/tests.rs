@@ -80,6 +80,10 @@ impl Fixture {
     }
 
     fn with_affine_field(affine: AffineField) -> Self {
+        Self::with_type_qualifiers(affine, false)
+    }
+
+    fn with_type_qualifiers(affine: AffineField, qualifiers: bool) -> Self {
         let opaque_schema = || Schema::ExactOpaque {
             owner: affine_owner(),
             arguments: Box::new([]),
@@ -184,6 +188,13 @@ impl Fixture {
                     arguments: Box::new([]),
                 },
             ));
+        }
+        if qualifiers {
+            types.extend([
+                RuntimePlanTypeSeed::new(semantic(7), Type::Reference(semantic(1))),
+                RuntimePlanTypeSeed::new(semantic(8), Type::Shared(semantic(7))),
+                RuntimePlanTypeSeed::new(semantic(9), Type::Reference(semantic(8))),
+            ]);
         }
         let mut builder = RuntimePlanBuilder::new();
         builder
@@ -293,6 +304,17 @@ impl Fixture {
                     arguments: vec![],
                 },
             ));
+        }
+        if qualifiers {
+            let reference = AwbcTypeId(u32::try_from(runtime_types.len()).unwrap());
+            let shared = AwbcTypeId(reference.0 + 1);
+            let cycle = AwbcTypeId(reference.0 + 3);
+            runtime_types.extend([
+                AwbcRuntimeType::new(semantic(7), AwbcType::Reference(AwbcTypeId(0))),
+                AwbcRuntimeType::new(semantic(8), AwbcType::Shared(reference)),
+                AwbcRuntimeType::new(semantic(9), AwbcType::Reference(shared)),
+                AwbcRuntimeType::new(semantic(10), AwbcType::Reference(cycle)),
+            ]);
         }
         let awbc = AwbcProgram {
             strings: vec![
@@ -425,6 +447,141 @@ fn reduction(state: RuntimeValue) -> RuntimeValue {
     RuntimeValue::result_ok(RuntimeValue::Reduction(
         RuntimeReductionValue::try_unchanged(owner, state).unwrap(),
     ))
+}
+
+#[test]
+fn qualified_values_preserve_referents_and_the_canonical_value_allowance() {
+    let fixture = Fixture::with_type_qualifiers(AffineField::None, true);
+    let value = fixture.state(RuntimeValue::Bool(true));
+    let mut limits = RuntimeSchemaLimits::engine_default();
+    let encoded = crate::entry::schema::canonical_runtime_value_bytes(
+        &value,
+        usize::try_from(limits.max_encoded_bytes).unwrap(),
+    )
+    .unwrap();
+    limits.max_encoded_bytes = u64::try_from(encoded.len()).unwrap();
+    for program in fixture.programs() {
+        let digest = program.accepts_value(semantic(1), &value, limits).unwrap();
+        for qualifier in 7..=9 {
+            assert_eq!(
+                program
+                    .accepts_value(semantic(qualifier), &value, limits)
+                    .unwrap(),
+                digest
+            );
+            program
+                .validate_live_value(semantic(qualifier), &value, limits)
+                .unwrap();
+            assert_eq!(
+                program
+                    .accepts_value_view(
+                        semantic(qualifier),
+                        value.view(),
+                        limits,
+                        crate::entry::schema::value_encoding::ValueAdmissionOrigin::InertSnapshot,
+                    )
+                    .unwrap(),
+                digest
+            );
+            assert!(
+                program
+                    .validate_live_value(semantic(qualifier), &RuntimeValue::Bool(true), limits)
+                    .is_err()
+            );
+            assert!(
+                program
+                    .validate_live_value(
+                        semantic(qualifier),
+                        &fixture.state(RuntimeValue::String("wrong".into())),
+                        limits
+                    )
+                    .is_err()
+            );
+        }
+        let too_small = RuntimeSchemaLimits {
+            max_encoded_bytes: limits.max_encoded_bytes - 1,
+            ..limits
+        };
+        assert!(matches!(
+            value_schema_error(
+                program
+                    .accepts_value(semantic(9), &value, too_small)
+                    .unwrap_err()
+            ),
+            crate::entry::RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes"
+            }
+        ));
+    }
+}
+
+fn value_schema_error(
+    error: crate::program_types::RuntimeProgramTypeError,
+) -> crate::entry::RuntimeSchemaError {
+    use crate::program_types::RuntimeProgramTypeError as Error;
+    match error {
+        Error::Resource(error) => *error,
+        Error::PlanValue(error) => match *error {
+            crate::plan::RuntimePlanValueAdmissionError::Value { source, .. } => source,
+            other => panic!("expected value admission failure: {other:?}"),
+        },
+        Error::AwbcValue(error) => match *error {
+            crate::awbc::value_admission::AwbcValueAdmissionError::Value { source, .. } => source,
+            other => panic!("expected value admission failure: {other:?}"),
+        },
+        other => panic!("expected schema failure: {other:?}"),
+    }
+}
+
+#[test]
+fn qualifier_cycles_and_affine_referents_preserve_validation_and_ownership_limits() {
+    let mut invalid = RuntimePlanBuilder::new();
+    assert!(matches!(
+        invalid.admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                semantic(10),
+                Type::Reference(semantic(10))
+            )],
+            [],
+        ),
+        Err(crate::plan::RuntimePlanBuildError::TypeGraph(
+            crate::plan::RuntimePlanTypeTableError::Cycle { .. }
+        ))
+    ));
+    let fixture = Fixture::with_type_qualifiers(AffineField::State, true);
+    let value = fixture.state(affine_value());
+    let limits = RuntimeSchemaLimits::engine_default();
+    assert!(!value.ownership().permits_copy());
+    for program in fixture.programs() {
+        program
+            .validate_live_value(semantic(9), &value, limits)
+            .unwrap();
+        assert!(program.accepts_value(semantic(9), &value, limits).is_err());
+        let bounded = RuntimeSchemaLimits {
+            max_validation_work: 1,
+            ..limits
+        };
+        assert!(matches!(
+            value_schema_error(
+                program
+                    .validate_live_value(semantic(9), &value, bounded)
+                    .unwrap_err()
+            ),
+            crate::entry::RuntimeSchemaError::ValidationWork { limit: 1, .. }
+        ));
+    }
+    let bounded = RuntimeSchemaLimits {
+        max_depth: 4,
+        ..limits
+    };
+    assert!(matches!(
+        value_schema_error(
+            RuntimeProgramTypes::Awbc(&fixture.awbc)
+                .validate_live_value(semantic(10), &value, bounded)
+                .unwrap_err()
+        ),
+        crate::entry::RuntimeSchemaError::ValidationDepth { limit: 4, .. }
+    ));
 }
 
 #[test]

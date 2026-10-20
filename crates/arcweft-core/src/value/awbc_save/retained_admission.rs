@@ -286,6 +286,29 @@ impl RuntimeRetainedValueAdmission {
         )
     }
 
+    /// Captures a complete Copy group only after every original input has passed
+    /// the same resource bank and its optional declared type. Untyped inputs
+    /// still require their complete stored program authority.
+    pub fn capture_unrestricted_values(
+        &mut self,
+        values: &[(&RuntimeValue, Option<RuntimeSemanticTypeId>)],
+    ) -> Result<Vec<AwbcRuntimeValueSnapshot>, AwbcRuntimeValueSnapshotError> {
+        self.validate_metadata_collection(values.len())?;
+        for (value, expected) in values {
+            self.validate_view(
+                value.view(),
+                ValueAdmissionOrigin::Live,
+                expected.map(RetainedTypeObligation::Stored),
+            )?;
+        }
+        values
+            .iter()
+            .map(|(value, _)| {
+                AwbcRuntimeValueSnapshot::from_admitted_storage(value, self.owner.as_ref())
+            })
+            .collect()
+    }
+
     /// Uses the original invocation frame's binding for a scoped live result.
     /// The binding is bounded and matched through the same program authority.
     pub fn validate_typed_in_invocation(

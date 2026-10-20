@@ -890,11 +890,18 @@ impl<'a, C: crate::program_types::RuntimeValueTypeContext<RuntimePlanTypeId>> Va
                 }))
             }
             Expected::Type(ty) => {
-                if !self
-                    .context
-                    .permits_scope(self.authority.declaration(ty).scope())
-                {
-                    return Err(Self::mismatch(value));
+                let mut ty = ty;
+                let mut qualifier_depth = 0;
+                loop {
+                    let row = self.authority.declaration(ty);
+                    if !self.context.permits_scope(row.scope()) {
+                        return Err(Self::mismatch(value));
+                    }
+                    let (Type::Shared(inner) | Type::Reference(inner)) = row.projection() else {
+                        break;
+                    };
+                    qualifier_depth = self.work.descend(qualifier_depth)?;
+                    ty = *inner;
                 }
                 if let Type::Choice(alternatives) = self.authority.declaration(ty).projection() {
                     self.work.collection(alternatives.len())?;
