@@ -232,6 +232,8 @@ pub enum AwbcProductStepBuildError {
     RootStartup { message: String },
     #[error("failed to restore product AWBC executor snapshot: {message}")]
     RestoreSnapshot { message: String },
+    #[error("failed to restore product AWBC root snapshot: {message}")]
+    RootSnapshot { message: String },
     #[error("failed to derive the accepted product AWBC artifact identity: {message}")]
     ArtifactIdentity { message: String },
     #[error(

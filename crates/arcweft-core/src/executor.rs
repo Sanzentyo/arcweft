@@ -110,6 +110,19 @@ pub enum ArcweftRuntimeExecutorSnapshotError {
     NeedsQuiescence { needs: Vec<NeedId> },
     #[error("product AWBC snapshot error: {message}")]
     ProductAwbc { message: String },
+    #[error("product AWBC root snapshot error: {message}")]
+    Root { message: String },
+}
+
+impl From<AwbcProductStepBuildError> for ArcweftRuntimeExecutorSnapshotError {
+    fn from(error: AwbcProductStepBuildError) -> Self {
+        match error {
+            AwbcProductStepBuildError::RootSnapshot { message } => Self::Root { message },
+            error => Self::ProductAwbc {
+                message: error.to_string(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -866,7 +879,7 @@ impl ArcweftRuntimeExecutor {
         };
         let snapshot = saved
             .into_live_for_program(executor.vm.admitted_program())
-            .map_err(|message| ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message })?;
+            .map_err(ArcweftRuntimeExecutorSnapshotError::from)?;
         let owner = self.program_owner();
         snapshot
             .admit_retained(
@@ -876,9 +889,7 @@ impl ArcweftRuntimeExecutor {
                     crate::entry::RuntimeSchemaLimits::engine_default(),
                 ),
             )
-            .map_err(|error| ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
-                message: error.to_string(),
-            })?;
+            .map_err(ArcweftRuntimeExecutorSnapshotError::from)?;
         Ok(snapshot)
     }
 
@@ -928,9 +939,7 @@ impl ArcweftRuntimeExecutor {
                     owner: Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(Box::new(
                         AwbcProductExecutor { vm },
                     ))),
-                    reason: ArcweftRuntimeExecutorSnapshotError::ProductAwbc {
-                        message: error.to_string(),
-                    },
+                    reason: error.into(),
                 }),
             },
             (inner, ArcweftRuntimeExecutorSnapshot::AwbcProduct(_)) => {

@@ -1794,12 +1794,12 @@ impl AwbcProductExecutorSnapshot {
                     )
                 }),
             )
-            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+            .map_err(|error| AwbcProductStepBuildError::RootSnapshot {
                 message: error.to_string(),
             })?;
         if let Some(root) = &snapshot.root {
             root.admit_retained(admission).map_err(|error| {
-                AwbcProductStepBuildError::RestoreSnapshot {
+                AwbcProductStepBuildError::RootSnapshot {
                     message: error.to_string(),
                 }
             })?;
@@ -2919,7 +2919,7 @@ impl AwbcProductExecutorSaveSnapshot {
     pub fn into_live_for_program(
         self,
         program: &super::AwbcProductProgram,
-    ) -> Result<AwbcProductExecutorSnapshot, String> {
+    ) -> Result<AwbcProductExecutorSnapshot, AwbcProductStepBuildError> {
         let owner = crate::task::RuntimeProgramOwner::Awbc(program.program_arc());
         let root = self
             .root
@@ -2928,9 +2928,14 @@ impl AwbcProductExecutorSaveSnapshot {
                     .fiber
                     .root
                     .active_entry_snapshot_identity(program)
-                    .map_err(|error| error.to_string())?;
-                root.into_runtime_image(&active, &owner)
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| AwbcProductStepBuildError::RootSnapshot {
+                        message: error.to_string(),
+                    })?;
+                root.into_runtime_image(&active, &owner).map_err(|error| {
+                    AwbcProductStepBuildError::RootSnapshot {
+                        message: error.to_string(),
+                    }
+                })
             })
             .transpose()?;
         let mut admission = crate::value::RuntimeRetainedValueAdmission::for_program(
@@ -2939,7 +2944,9 @@ impl AwbcProductExecutorSaveSnapshot {
         );
         admission
             .validate_metadata_collection(self.queued_task_events.len())
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         let need_publication_count = self.need_publications.len();
         let need_publications = self
             .need_publications
@@ -2947,20 +2954,27 @@ impl AwbcProductExecutorSaveSnapshot {
             .map(|row| ((row.waiter, row.correlation), row.cursor))
             .collect::<BTreeMap<_, _>>();
         if need_publications.len() != need_publication_count {
-            return Err("Need publication snapshot contains duplicate waiter/Need rows".to_owned());
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "Need publication snapshot contains duplicate waiter/Need rows".to_owned(),
+            });
         }
         let need_producers = restore_need_producer_registry(
             self.need_producers,
             program.task_source.as_ref(),
             &mut admission,
-        )?;
+        )
+        .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
         need_producers
             .admit_retained(&mut admission)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                message: error.to_string(),
+            })?;
         for event in &self.queued_task_events {
             event
                 .admit_retained(need_producers.task_spec(event.correlation), &mut admission)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?;
         }
         let queued_task_events = self.queued_task_events;
         Ok(AwbcProductExecutorSnapshot {
@@ -3322,11 +3336,8 @@ impl AwbcProductStepExecutor {
     ) -> Result<Self, (Self, super::AwbcProductStepBuildError)> {
         let saved = match saved.into_live_for_program(&self.program) {
             Ok(saved) => saved,
-            Err(message) => {
-                return Err((
-                    self,
-                    super::AwbcProductStepBuildError::RestoreSnapshot { message },
-                ));
+            Err(error) => {
+                return Err((self, error));
             }
         };
         self.restore_snapshot_owned(saved)
@@ -3616,7 +3627,7 @@ impl AwbcProductStepExecutor {
                 crate::root::RootRuntime::from_admitted_rollback_image(image, &program_owner)
             })
             .transpose()
-            .map_err(|message| AwbcProductStepBuildError::RestoreSnapshot { message })?;
+            .map_err(|message| AwbcProductStepBuildError::RootSnapshot { message })?;
         let queued_task_events = snapshot
             .queued_task_events
             .into_iter()

@@ -588,7 +588,7 @@ mod tests {
         let (executor, error) = executor.restore_snapshot_owned(invalid).unwrap_err();
         assert!(matches!(
             error,
-            AwbcProductStepBuildError::RestoreSnapshot { .. }
+            AwbcProductStepBuildError::RootSnapshot { .. }
         ));
         assert_eq!(executor.inert_rollback_image().unwrap(), original);
         let executor = executor.restore_snapshot_owned(original.clone()).unwrap();

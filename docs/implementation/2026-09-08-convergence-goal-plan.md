@@ -23988,3 +23988,101 @@ and ContentOnly fixes have not yet received their new runtime proof. The broader
 original goal,including all shared owner/Need/Generic Match/View/presentation11/
 CLI/native-web/rdeps requirements,remains active and unshrunk. Do not repeat the
 completed clean or move/copy artifacts,create branches/worktrees,or tune jobs.
+Entry/generation checkpoint `05eb50bbe12914e695ee03d7311fe2b7c1742c7a` is pushed
+and verified:parent `68cced924d7c9a9dae26edc8288d775f5080fcef`,tree
+`838919114a1350a80bb4e93382044b4a2961ad70`,patch SHA256
+`d4a8a7187e6a8776549ca538f066a1c3acbe960a3d9a6b60c4bde1a49d1a9f63`.
+All14 blobs/3939 inputs,held14,advertised main and empty index match;baseline
+advanced to owned0. This completed the implementation cut,not the broad goal.
+
+R1956 catalog completed0:2449 named cases across the selected libraries/four
+integration binaries,186 matched,2263 excluded. All ten required regressions
+were present. R1957 completed actual100:186 run,179 passed,seven failed,2263
+skipped,4.199s. Exact terminal keys match that catalog,and all3938 frozen runtime/
+spec inputs match. Both formerly failing AwaitMany cases,the original completed
+ContentOnly round trip,the new stateful Root generation/event case,Root failed
+state and ownership/rollback tests,and the migrated producer/dialogue/live
+observation consumers passed. Seven failures were three compiler Root replay
+cases reporting MissingOutcome(transition0),two misclassified Fiber refusals,
+the generation-pin refusal field,and catalog-before-executable validation.
+R1959 ordinary four-package all-target/all-feature Clippy completed0 with warnings,
+15m29s including its lock wait;all3938 final runtime/spec inputs match. This is
+not a strict-lint pass. R1956/57/59 handles98123/59317/45283 are all now closed.
+
+### 2026-10-21 — preserve restore diagnostic ownership and replay preemption
+
+Core's existing build-error algebra now distinguishes RootSnapshot from other
+executor failures. Root correlation,retained Root admission,wire Root binding
+and admitted Root materialization use that variant. Save-to-bound binding now
+returns the typed build error instead of a String;owned restore returns it
+without erasing its family. The executor facade's context-free From conversion
+keeps Root versus Product/fiber errors. Driver propagates those typed errors
+through both bound-wire and in-memory admission;codec syntax/shape errors keep
+Decode. Generation checks now identify the actual executor/storage/running-pin
+field instead of assigning every refusal to Root or one generic generation name.
+The existing bad-Root assertion now checks its owning RootSnapshot category;
+all refusal/no-mutation assertions remain. No message-content classifier or
+example-specific resolver was added.
+
+Replay used to demand an outcome from every step. It now checks the actual
+pending-event plus active-reducer count against the admitted trace batch after
+each step,and records the admitted frontier before continuing ordinary frames.
+Events/external outcomes are injected once across preemptions. A step with no
+instruction,phase or host-request progress still reports MissingOutcome. Committed/
+rejected/trapped comparisons,sequence,state/command digests and terminal-trap
+checks remain. Existing one-op replay tests are retained;the main observed
+initializer/event test additionally replays with a128-op drain and requires the
+same report. No original per-step budget,batch,fusion,copy or capture condition
+was weakened. The stable save/replay chapter records the same behavior.
+
+R1960 development workspace check completed101:the first progress comparison
+accidentally called RootPhase's private serialization header. Replaced it with
+borrowed public Initialized.reducer metadata in replay's own progress context;
+no private header was exposed. That already-failed command drained other jobs
+while this one consumer repair was made;do not claim a frozen-source pass for it.
+R1961 workspace all-target/all-feature/locked check passed1m18s,actual0. After
+that check only Root materialization's existing typed error variant selection
+changed in snapshot.rs;the source-audit records that exact one-path qualification.
+Final-byte runtime/Clippy checks are separate and still running.
+
+Final runtime freeze:task-session-errors-replay-20261021-runtime.source-freeze.json
+(3938 inputs;only this operational note excluded). R1962 runtime is live
+session48140. It uses the same package/feature/target/filter selection as R1956;
+no named tests changed,so the186-case inventory is reused and audited against
+its complete actual terminal set. The wrapper runs that audit after completion.
+R1963 ordinary Clippy is live session30050. Continue those exact handles and
+preserve the frozen Rust/spec inputs;do not restart merely for a timeout.
+R1964 structure(session94890) completed0 on the final candidate:3160 files,
+3030 Rust files,1724588 physical Rust LOC,97 packages,376 review triggers,zero
+blocking violations. All3938 runtime/spec inputs match before/after the gate.
+
+Ownership review:Root/fiber diagnostics are classified at their owning Core
+boundary and propagated through existing enums;there is no parallel error
+resolver. Replay owns its admitted-input frontier and reads public Root phase
+metadata without constructing a fake owner. The same complete executor snapshot
+and original program/Source remain authoritative. No Cargo dependency,unsafe,
+contract-version marker,profile/jobs change,branch/worktree or artifact copy/move
+was introduced. This is an intermediate checkpoint under the user's explicit
+policy;the new runtime result is not yet claimed.
+
+The remaining catalog-order failure must be fixed as general staged admission:
+resource/ownership preflight first,borrowed external catalog validation next,
+then executable/frame/type validation before live construction. Keep one total
+Root/product/View/presentation bank and remaining validation work;do not reset
+limits between phases or count every descendant again as a separate root. Keep
+View's affine-before-callback and aggregate quota refusals. Current concrete
+cause:Core facade bind_product_save_snapshot and session admit_executor perform
+full snapshot admission before the callback. Fiber validation.rs validate_structure
+looks up frame.function/layout before retained values. The snapshot's existing
+visit_borrowed_runtime_values walks descendants;its underlying saved-value-root
+inventory is the right granularity for a census. Generic live/inert fiber storage,
+Root and Need/dialogue owners should own their metadata/value resource traversal.
+A fabricated startup frame,Frame99 exception,unconditional catalog-first reorder,
+second runtime model or a fresh allowance would violate the target. Resolve the
+complete boundary and migrate its consumers,with immutable staged data/proof as
+needed. This is implementation work still owed,not an external blocker.
+
+The complete original convergence objective remains active,including the53
+reverse-consumer and workspace/Tier2/Native-Web/presentation11/CLI and other
+previously recorded acceptance gaps. R1957 is the latest actual runtime evidence;
+do not substitute a smaller completed goal or mark the project complete.

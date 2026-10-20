@@ -20,7 +20,9 @@ use super::model::{
 use arcweft_core::entry::{RuntimeStatefulEntryRoles, RuntimeValueDigest};
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
-use arcweft_core::root::{RootStateSnapshotV1, RootTransitionOutcome, TransitionSequence};
+use arcweft_core::root::{
+    RootPhase, RootStateSnapshotV1, RootTransitionOutcome, TransitionSequence,
+};
 use arcweft_core::value::RuntimeFormatDataIdentity;
 use arcweft_core::{task::RuntimeProgramOwner, value::RuntimeRetainedValueAdmission};
 use std::collections::BTreeSet;
@@ -366,11 +368,6 @@ impl ReplayProgress {
             entry_label,
             batch.expected_sequence,
         )?;
-        if step.root_transitions.is_empty() {
-            return Err(RootReplayError::MissingOutcome {
-                transition: batch.expected_sequence.get(),
-            });
-        }
         let expected_batch_len = batch.batch_end - self.transition_index + 1;
         if step.root_transitions.len() > expected_batch_len {
             return Err(RootReplayError::UnexpectedTransition);
@@ -380,6 +377,47 @@ impl ReplayProgress {
             .product_root_state_snapshot()
             .map_err(|error| RootReplayError::RootState(Box::new(error)))?
             .ok_or(RootReplayError::MissingRoot)?;
+        let trapped = matches!(
+            step.root_transitions.last(),
+            Some(RootTransitionOutcome::Trapped { .. })
+        );
+        let expected_pending = if trapped {
+            0
+        } else {
+            expected_batch_len - step.root_transitions.len()
+        };
+        let pending = session
+            .executor
+            .product_root_save_blockers()
+            .ok_or(RootReplayError::MissingRoot)?;
+        if pending.pending_events as usize + usize::from(pending.reducer_active) != expected_pending
+        {
+            return Err(RootReplayError::OutcomeDivergence {
+                entry: entry_label.to_owned(),
+                transition: batch.expected_sequence.get(),
+                message: "Root replay input frontier differs from the admitted transition batch"
+                    .to_owned(),
+            });
+        }
+        if step.root_transitions.is_empty() {
+            let phase_advanced = matches!(
+                (&before.phase, &after.phase),
+                (RootPhase::Initialized { reducer: before, .. },
+                 RootPhase::Initialized { reducer: after, .. }) if before != after
+            );
+            if step.stats.executed_ops == 0
+                && !phase_advanced
+                && step.requested_host_calls.is_empty()
+            {
+                return Err(RootReplayError::MissingOutcome {
+                    transition: batch.expected_sequence.get(),
+                });
+            }
+            // The batch is already admitted. Only its frames continue on the
+            // next step; its events and external outcomes must not be injected twice.
+            self.queued_through = Some(batch.batch_end);
+            return Ok(());
+        }
         self.durable_state_digest = compare_outcomes(
             &trace.transitions
                 [self.transition_index..self.transition_index + step.root_transitions.len()],
@@ -391,10 +429,7 @@ impl ReplayProgress {
             entry_label,
             program,
         )?;
-        self.terminal_trap = matches!(
-            step.root_transitions.last(),
-            Some(RootTransitionOutcome::Trapped { .. })
-        );
+        self.terminal_trap = trapped;
         self.transition_index += step.root_transitions.len();
         self.queued_through = if self.terminal_trap || self.transition_index > batch.batch_end {
             None

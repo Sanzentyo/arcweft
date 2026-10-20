@@ -413,19 +413,15 @@ impl BundleSession {
             .images()
             .filter_map(|image| image.runtime().character_dialogue_schema.as_deref())
             .find(|schema| schema.program_owner().same_program(&program_owner));
-        let payload = payload
-            .bind_executor(&self.executor)
-            .map_err(|message| BundleSessionSaveError::Decode { message })?;
-        payload
-            .admit_retained(
-                &program_owner,
-                &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
-                    program_owner.clone(),
-                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
-                ),
-                dialogue_schema,
-            )
-            .map_err(|message| BundleSessionSaveError::Decode { message })?;
+        let payload = payload.bind_executor(&self.executor)?;
+        payload.admit_retained(
+            &program_owner,
+            &mut arcweft_core::value::RuntimeRetainedValueAdmission::for_program(
+                program_owner.clone(),
+                arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+            ),
+            dialogue_schema,
+        )?;
         SessionRestoreValueValidator::new(validator).visit_payload(&payload)?;
         let snapshot = payload
             .into_admitted_snapshot(&program_owner, dialogue_schema)
@@ -487,9 +483,7 @@ impl BundleSession {
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;
-        snapshot
-            .admit_executor(&owner, &mut admission)
-            .map_err(|message| BundleSessionSaveError::Root { message })?;
+        snapshot.admit_executor(&owner, &mut admission)?;
         let schema = self
             .runtime_images
             .images()

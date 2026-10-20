@@ -92,38 +92,60 @@ impl<P, V> BundleSessionSnapshot<P, V> {
         &self,
         owner: &RuntimeProgramOwner,
         admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
-    ) -> Result<(), String> {
+    ) -> Result<(), BundleSessionSaveError> {
         let RuntimeProgramOwner::Awbc(program) = owner else {
-            return Err("session snapshot requires its original Product AWBC owner".to_owned());
+            return Err(BundleSessionSaveError::Root {
+                message: "session snapshot requires its original Product AWBC owner".to_owned(),
+            });
         };
-        if self.executor.generation != self.generation.active_generation
-            || self.executor.state.runtime_generation > self.executor.generation
-            || match self.runtime.runtime_generation_pin {
-                Some(pin) => {
-                    pin != self.executor.generation || pin != self.executor.state.runtime_generation
-                }
-                None => self.executor.state.requires_runtime_generation_pin(),
+        if self.executor.generation != self.generation.active_generation {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "executor_generation",
+                saved: format!("{:?}", self.executor.generation),
+                actual: format!("{:?}", self.generation.active_generation),
+            });
+        }
+        if self.executor.state.runtime_generation > self.executor.generation {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "executor_runtime_generation",
+                saved: format!("{:?}", self.executor.state.runtime_generation),
+                actual: format!("at most {:?}", self.executor.generation),
+            });
+        }
+        if match self.runtime.runtime_generation_pin {
+            Some(pin) => {
+                pin != self.executor.generation || pin != self.executor.state.runtime_generation
             }
-        {
-            return Err(
-                "session executor generation differs from its selected storage generation"
-                    .to_owned(),
-            );
+            None => self.executor.state.requires_runtime_generation_pin(),
+        } {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "runtime_generation_pin",
+                saved: format!("{:?}", self.runtime.runtime_generation_pin),
+                actual: format!(
+                    "execution {:?} in storage {:?}",
+                    self.executor.state.runtime_generation, self.executor.generation
+                ),
+            });
         }
         let selected = self
             .executor
             .state
             .active_entry_snapshot_identity(program)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| BundleSessionSaveError::Root {
+                message: error.to_string(),
+            })?;
         if selected != self.active_entry {
-            return Err(
-                "session active entry differs from its complete executor snapshot".to_owned(),
-            );
+            return Err(BundleSessionSaveError::Root {
+                message: "session active entry differs from its complete executor snapshot"
+                    .to_owned(),
+            });
         }
         self.executor
             .state
             .admit_retained(owner, admission)
-            .map_err(|error| error.to_string())
+            .map_err(|error| {
+                BundleSessionSaveError::from(ArcweftRuntimeExecutorSnapshotError::from(error))
+            })
     }
 }
 
@@ -161,7 +183,9 @@ impl BundleSessionSavePayload {
             .view_runtime
             .admit_resources(&mut admission)
             .map_err(|error| error.to_string())?;
-        snapshot.admit_executor(program_owner, &mut admission)?;
+        snapshot
+            .admit_executor(program_owner, &mut admission)
+            .map_err(|error| error.to_string())?;
         snapshot
             .presentation
             .admit_retained(&mut admission, dialogue_schema)?;
@@ -203,10 +227,10 @@ impl BundleSessionSavePayload {
     pub(crate) fn bind_executor(
         self,
         context: &arcweft_core::executor::ArcweftRuntimeExecutor,
-    ) -> Result<BundleSessionBoundSavePayload, String> {
+    ) -> Result<BundleSessionBoundSavePayload, BundleSessionSaveError> {
         let state = context
             .bind_product_save_snapshot(self.executor.state)
-            .map_err(|error| error.to_string())?;
+            .map_err(BundleSessionSaveError::from)?;
         Ok(BundleSessionBoundSavePayload {
             generation: self.generation,
             active_locale: self.active_locale,
@@ -230,18 +254,24 @@ impl BundleSessionBoundSavePayload {
         program_owner: &RuntimeProgramOwner,
         admission: &mut arcweft_core::value::RuntimeRetainedValueAdmission,
         dialogue_schema: Option<&arcweft_dialogue::CharacterDialogueRuntimeSchema>,
-    ) -> Result<(), String> {
+    ) -> Result<(), BundleSessionSaveError> {
         self.runtime
             .admit_metadata(admission)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| BundleSessionSaveError::Decode {
+                message: error.to_string(),
+            })?;
         self.view_runtime
             .admit_resources(admission)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| BundleSessionSaveError::Decode {
+                message: error.to_string(),
+            })?;
         self.admit_executor(program_owner, admission)?;
         self.presentation
-            .try_visit_frames(|frame| frame.admit_retained_metadata(admission))?;
+            .try_visit_frames(|frame| frame.admit_retained_metadata(admission))
+            .map_err(|message| BundleSessionSaveError::Decode { message })?;
         self.presentation
             .try_visit_frames(|frame| frame.admit_retained_values(admission, dialogue_schema))
+            .map_err(|message| BundleSessionSaveError::Decode { message })
     }
 
     pub(crate) fn into_admitted_snapshot(
@@ -480,6 +510,7 @@ impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
                 Self::NeedsQuiescence { needs }
             }
             ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message } => Self::Fiber { message },
+            ArcweftRuntimeExecutorSnapshotError::Root { message } => Self::Root { message },
         }
     }
 }

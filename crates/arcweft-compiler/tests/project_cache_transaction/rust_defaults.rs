@@ -722,6 +722,13 @@ fn root_replay_records_observed_initialization_before_queued_event_transition() 
     let replay = BundleSession::replay_root_trace(&bundle, options.clone(), &decoded).unwrap();
     assert_eq!(replay.transitions_verified, 1);
     assert!(!replay.terminal_trap);
+    let mut drain_options = options.clone();
+    drain_options.max_ops = 128;
+    assert_eq!(
+        BundleSession::replay_root_trace(&bundle, drain_options, &decoded).unwrap(),
+        replay,
+        "the same semantic transcript survives different frame preemption boundaries"
+    );
     let max_items = bundle.product_awbc_program().entries[0]
         .roles
         .stateful()

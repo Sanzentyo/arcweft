@@ -77,6 +77,11 @@ identity、sequence、digest、external result の metadata と値を別の allo
 借用結果と保持結果は同じ `RecordedRootOutcomeV1` grammar を使う。replay もこの
 保持値検証を session の構築前に行い、過大な metadata を値や session の構築後へ
 延期しない。
+replay は通常の Root frame と同じ step budget で進め、outcome がまだ無い間も
+受理済み event の frontier を保持する。継続 step に event や external outcome を
+再投入せず、各 step 後の pending／active reducer 数を残りの記録範囲と照合する。
+命令・phase・host request の進行が止まった場合は欠落 outcome として拒否し、
+完了時は従来どおり sequence・state／command digest・trap の終端性を照合する。
 
 Root の記録 step が失敗した場合、`RootReplayStepError::BeforeStep` は未実行の
 入力と clock を返し、`AfterStep` は実行済みの `BundleSessionStep` を返す。
@@ -270,6 +275,9 @@ session の storage generation と、完了済み frame が保持する過去の
 区別する。実行 pin は現在の実行世代と一致させ、pin を持たない完了済み executor
 の復元で frame の世代を書き換えない。後続 event を受け取る Root や未完了 fiber
 には pin を要求し、その実行が依存する generation を解放しない。
+Root の復元拒否、fiber の executable／value 拒否、generation の不一致は、元の
+所有境界を示す型付き error のまま session へ伝える。wire の構文／形状の decode
+error と、program に束縛した後の復元 error をそれぞれ保持する。
 durable Root の live／inert 共通 grammar は failure も保持する。failure は Ready
 phase の現在の transition cursor に対応し、message と digest が一致しなければ
 受け入れない。wire は failure が無い場合も明示的な `null` を要求する。
