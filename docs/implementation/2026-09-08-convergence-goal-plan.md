@@ -22375,3 +22375,23 @@ terminal receipts, audit exact cases plus corrected-runtime hashes, then run the
 unchanged 52-consumer selection from R1769 against the rebuilt sources. R1776
 finished exit0 but has the documented overlapping-source limitation. No pending
 check is claimed passed, and no full-goal completion is claimed.
+
+### 2026-10-20 — consumer build allocation failure and unchanged retry
+
+Inspected main 3f3e42473cefa5477911b70c7b68cde6d477d475, owned0/held14.
+R1777 terminated actual exit101 at 03:21:10.9958818Z after starting at
+03:06:34.8900178Z. It produced no catalogue and executed no tests. The retained
+failure audit records five allocation failures and Windows1455 mmap failures
+for arcweft_bundle; this is failed build evidence, not a test regression or a
+pass. Later read-only memory inspection observed available33033MiB and commit
+49835159552/75712552960 bytes; no OS, job-count or profile setting was changed.
+
+R1783 (handle46088) retries the exact R1769 52-package, all-feature, lib/tests,
+locked, no-fail-fast selection. Normal Cargo rebuilds incomplete outputs; no
+artifact is moved, copied or cleaned, and no family, test or assertion is removed.
+Use R1763's retained case inventory to audit the final complete case set; the
+failed R1777 catalogue cannot supply one. R1778 has started all1940 Core cases
+across13 binaries. Its same handle88772 remains live; R1779/1780/1782 retain
+handles85743/27106/21700. Source remains at the corrected-runtime freeze, with
+only operational notes changing. Poll these exact handles and terminal receipts;
+full acceptance remains pending, with Root and the complete original goal open.
