@@ -171,6 +171,8 @@ the actual Native plan or admitted AWBC program and the current formatter
 context. The decode provider invokes defaults through that retained context.
 Nested evaluation preserves original Source, catalog proof and locale; it does
 not re-admit a raw AWBC type lease or select a program from the accelerator cache.
+The execution boundary retains a typed Native/AWBC failure; conversion to a
+data-codec diagnostic occurs at the codec provider's existing domain boundary.
 
 For an existing primitive or foreign `Default` implementation, declare the
 same concrete wrapper without writing an orphan trait implementation:

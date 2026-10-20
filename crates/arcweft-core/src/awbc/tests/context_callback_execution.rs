@@ -510,7 +510,10 @@ fn admitted_program_context_proof_survives_pure_invocation_and_owned_restore() {
         if with_proof {
             assert_plain_text_message(&context_error(&nested.unwrap()), "lazy context");
         } else {
-            assert!(nested.is_err());
+            assert!(matches!(
+                nested,
+                Err(crate::pure::RuntimeProgramExecutionError::Awbc(_)),
+            ));
         }
         let mut executor = AwbcProductStepExecutor::for_admitted_program_invocation(
             program,

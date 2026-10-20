@@ -6,10 +6,9 @@ use super::{
 };
 use crate::dialogue::BundlePresentationInput;
 use arcweft_core::{
-    awbc::product_step::evaluate_admitted_pure_program_with_backend,
-    pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
+    pure::{RuntimeCallBackend, RuntimeProgramExecutionContext, VmRuntimePureCallBackend},
     task::RuntimeProgramOwner,
-    value::RuntimeValue,
+    value::{RuntimeFormatContext, RuntimeValue},
 };
 use arcweft_view::{ViewHandlerInvocation, ViewHandlerResultRole, ViewHandlerTransitionValueRole};
 
@@ -20,7 +19,11 @@ impl BundleViewRuntime {
         &mut self,
         invocation: &ViewHandlerInvocation,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
-        self.dispatch_invocation_with_backend(invocation, &mut VmRuntimePureCallBackend::default())
+        self.dispatch_invocation_with_backend(
+            invocation,
+            &RuntimeFormatContext::default(),
+            &mut VmRuntimePureCallBackend::default(),
+        )
     }
 
     /// Uses the caller's accepted external-call/format context for the same
@@ -28,6 +31,7 @@ impl BundleViewRuntime {
     pub fn dispatch_invocation_with_backend<B: RuntimeCallBackend>(
         &mut self,
         invocation: &ViewHandlerInvocation,
+        format_context: &RuntimeFormatContext,
         backend: &mut B,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
         let published = self
@@ -46,6 +50,9 @@ impl BundleViewRuntime {
             .get(&published.seal)
             .filter(|seal| seal.revision == published.revision)
             .ok_or(BundleViewEventDispatchError::UnknownBinding)?;
+        if &seal.format_context != format_context {
+            return Err(BundleViewEventDispatchError::InvocationMismatch);
+        }
         if let MountedViewHandlerPublication::DialogueAction(token) = &seal.publication {
             return token.presentation_input();
         }
@@ -76,6 +83,9 @@ impl BundleViewRuntime {
             owner.clone(),
             arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
         );
+        admission
+            .validate_metadata_string(format_context.active_locale().as_str())
+            .map_err(|_| invalid_result())?;
         for (input, (capture, schema)) in seal.captures.iter().zip(accepted.captures()).enumerate()
         {
             let invalid = || BundleViewEventDispatchError::InvalidStateInput {
@@ -141,15 +151,9 @@ impl BundleViewRuntime {
                 Ok(value)
             })
             .collect::<Result<Vec<_>, BundleViewEventDispatchError>>()?;
-        let result = evaluate_admitted_pure_program_with_backend(
-            program,
-            accepted.program(),
-            &arguments,
-            backend,
-        )
-        .map_err(|source| BundleViewEventDispatchError::ProgramExecution {
-            source: Box::new(source),
-        })?;
+        let result = RuntimeProgramExecutionContext::awbc(program.clone(), format_context.clone())
+            .evaluate_pure_program(accepted.program(), &arguments, backend)
+            .map_err(|source| BundleViewEventDispatchError::ProgramExecution { source })?;
         admission
             .validate_typed(&result, result_type)
             .map_err(|_| invalid_result())?;

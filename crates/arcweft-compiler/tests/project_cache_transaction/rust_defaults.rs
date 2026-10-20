@@ -120,10 +120,11 @@ fn compile_defaults(
     )
 }
 
-pub(super) fn compile_rust(
+fn compile_rust_project(
     rust: &ArcweftRustManifest,
     source: &str,
-) -> Result<(Arc<RuntimePlan>, Arc<AwbcProgram>), String> {
+    fixture_name: &str,
+) -> Result<CompiledProject, String> {
     let manifest = AdapterManifest::new("rust-defaults", "Rust default integration")
         .try_with_rust_package_mount(
             rust.package.id.clone(),
@@ -132,15 +133,21 @@ pub(super) fn compile_rust(
         .unwrap()
         .try_with_rust_manifest(rust)
         .map_err(|error| error.to_string())?;
-    let (project, registration, env) =
-        fixture_with_manifest(source, "rust-default-runtime", &manifest);
-    let compiled = AttachedCompiler::new(&project)
+    let (project, registration, env) = fixture_with_manifest(source, fixture_name, &manifest);
+    AttachedCompiler::new(&project)
         .compile(
             &project,
             &context(env, registration),
             &mut RecordingCache::default(),
         )
-        .map_err(|error| format!("{error:?}"))?;
+        .map_err(|error| format!("{error:?}"))
+}
+
+pub(super) fn compile_rust(
+    rust: &ArcweftRustManifest,
+    source: &str,
+) -> Result<(Arc<RuntimePlan>, Arc<AwbcProgram>), String> {
+    let compiled = compile_rust_project(rust, source, "rust-default-runtime")?;
     let lowered = compiled.runtime_plan();
     let program = AwbcLowerer::new(
         &lowered.plan,
@@ -170,6 +177,155 @@ struct RustDefaults {
     owner: RuntimeProgramOwner,
     factories: BTreeMap<RuntimeCallableId, Factory>,
     wrong_result: bool,
+}
+
+struct ViewLocaleProbe {
+    owner: RuntimeProgramOwner,
+    observations: std::rc::Rc<RefCell<ViewLocaleObservations>>,
+}
+
+#[derive(Default)]
+struct ViewLocaleObservations {
+    locales: Vec<arcweft_id::LocaleTag>,
+    targets: Vec<RuntimeCallTarget>,
+}
+
+impl RuntimeExternalCallBackend for ViewLocaleProbe {
+    fn call_external(
+        &mut self,
+        context: &RuntimeExternalCallContext,
+        target: &RuntimeCallTarget,
+        args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        assert!(target.callable_identity().is_some());
+        assert!(args.is_empty());
+        let execution = context.execution_context().unwrap();
+        assert!(execution.program_owner().same_program(&self.owner));
+        assert!(matches!(
+            execution
+                .types()
+                .checked_type(context.result_type().unwrap())
+                .unwrap(),
+            arcweft_core::pattern::RuntimeCheckedType::String,
+        ));
+        let locale = execution.format_context().active_locale().clone();
+        let result = RuntimeValue::String(locale.as_str().to_owned());
+        let mut observations = self.observations.borrow_mut();
+        observations.locales.push(locale);
+        observations.targets.push(target.clone());
+        Some(Ok(result))
+    }
+}
+
+fn assert_view_locale(frame: &arcweft_runtime_driver::view_runtime::BundleViewFrame, tag: &str) {
+    assert!(frame.diagnostics.is_empty(), "{frame:?}");
+    assert_eq!(frame.mounts.len(), 1);
+    assert_eq!(frame.mounts[0].text.len(), 1);
+    assert_eq!(
+        frame.mounts[0].text[0].value,
+        arcweft_runtime_driver::view_runtime::BundleViewTextValue::Plain {
+            value: tag.to_owned()
+        },
+    );
+}
+
+#[test]
+fn view_expression_locale_is_execution_input_and_invalidates_only_changed_cache() {
+    use arcweft_runtime_driver::{
+        presentation_handles::{
+            PresentationHandleKind, PresentationHandleRecord, PresentationResourceState,
+        },
+        view_runtime::BundleViewRuntime,
+    };
+    let compiled = compile_rust_project(
+        &metadata(),
+        "entry cli @entry.main { goto @flow.main }\nflow main() -> String { return \"done\" }\nview Main() { Text(default_string()) }\n",
+        "view-locale-execution",
+    ).unwrap();
+    let lowered = compiled.runtime_plan();
+    let code = AwbcLowerer::new(
+        &lowered.plan,
+        &lowered.dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .unwrap()
+    .program;
+    let code = arcweft_bundle::standard_view::install_dialogue_handler_awbc(code).unwrap();
+    let code = Arc::new(
+        AwbcProgram::decode_canonical(
+            &code.encode_canonical().unwrap(),
+            AwbcDecodeBudget::default(),
+        )
+        .unwrap(),
+    );
+    let product = compiled.view_product().product().as_ref().clone();
+    let text = compiled.view_product().text().cloned();
+    let mut runtime =
+        BundleViewRuntime::try_new_with_awbc(product.clone(), text.clone(), Arc::clone(&code))
+            .unwrap();
+    let handles = [PresentationHandleRecord::new(
+        arcweft_id::presentation::PresentationHandleId::try_new("view.locale").unwrap(),
+        PresentationHandleKind::View,
+        "view.Main".to_owned(),
+        None,
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    )];
+    let observations = std::rc::Rc::new(RefCell::new(ViewLocaleObservations::default()));
+    let mut backend = VmRuntimePureCallBackend::default().with_external_calls(ViewLocaleProbe {
+        owner: RuntimeProgramOwner::Awbc(Arc::clone(&code)),
+        observations: std::rc::Rc::clone(&observations),
+    });
+    for (tag, calls) in [("en-US", 1), ("en-US", 1), ("de-DE", 2), ("de-DE", 2)] {
+        let format = arcweft_core::value::RuntimeFormatContext::new(
+            arcweft_id::LocaleTag::try_new(tag).unwrap(),
+        );
+        let frame = runtime.evaluate_with_dialogue_and_backend(
+            &handles,
+            &[],
+            &[],
+            false,
+            &format,
+            &mut backend,
+        );
+        assert_view_locale(&frame, tag);
+        assert_eq!(observations.borrow().locales.len(), calls);
+    }
+    assert_eq!(
+        observations
+            .borrow()
+            .locales
+            .iter()
+            .map(arcweft_id::LocaleTag::as_str)
+            .collect::<Vec<_>>(),
+        ["en-US", "de-DE"]
+    );
+    assert!(
+        observations
+            .borrow()
+            .targets
+            .iter()
+            .all(|target| target == &observations.borrow().targets[0])
+    );
+    let saved = runtime.snapshot().unwrap();
+    let mut restored = BundleViewRuntime::try_new_with_awbc(product, text, code).unwrap();
+    restored.restore(&saved, &handles).unwrap();
+    assert_eq!(restored.snapshot().unwrap(), saved);
+    let format = arcweft_core::value::RuntimeFormatContext::new(
+        arcweft_id::LocaleTag::try_new("fr-FR").unwrap(),
+    );
+    let frame = restored.evaluate_with_dialogue_and_backend(
+        &handles,
+        &[],
+        &[],
+        false,
+        &format,
+        &mut backend,
+    );
+    assert_view_locale(&frame, "fr-FR");
+    assert_eq!(observations.borrow().locales.len(), 3);
 }
 
 impl RuntimeExternalCallBackend for RustDefaults {

@@ -21909,3 +21909,96 @@ metadata, preserving the shared frame operation budget and all atomic state
 publication checks. Root startup's locale installation and the full outstanding
 Source/all14/Presentation/semantic/persistence/strict-lint/Tier2/Native-Web
 acceptance remain required. This is progress toward the unchanged full goal.
+
+### 2026-10-20 — View formatter dependency and typed execution failures
+
+Inspected main `dfa39d791469870c87b0fcc47e10ba29b30fbcb3`, parent
+`de13d6ae5ca19371d6fb77c4a4cb5419155e8a21`, tree
+`d6c5ff1d31b8bc39d20e60e1e40f39135af55954`, patch SHA-256
+`ee4a4cfd89eda444b736818b68fa27958e2497a222d9c435d235a38306f821e5`.
+Its fresh remote, three blobs and 3933 source inputs had matched. This continuation
+started with owned0/held14 and the same three unrelated untracked entries.
+R1745 workspace all-feature/all-target locked check finished exit0 (3m26s).
+R1746 ordinary nine-owner Clippy finished exit0 (1m33s), warnings remaining;
+both source audits matched all 3932 inputs other than this operational ledger.
+The three newly introduced large-error warnings were identified at the complete
+execution context and its Native/AWBC format-aware helpers.
+
+RuntimeProgramExecutionError now retains typed Native/AWBC boxed causes, rather
+than flattening the AWBC failure into generic UnsupportedPure text. The two
+format-aware helper owners return boxed errors, preserving their original kinds.
+Native error conversions retain their existing From boundary and borrowed
+rejections keep their existing box. Removed the now-unused public admitted-
+program/default-formatter helper and migrated its remaining View consumers;
+the genuine standalone raw-program admission boundary still selects its explicit
+standalone default. No duplicate execution reader remains for admitted callers.
+
+Backend-taking View evaluation and event dispatch now require the caller's
+RuntimeFormatContext. Session passes its active locale explicitly. View expression
+executors install it before stepping; their memo hit predicate includes the
+formatter, alongside exact code, program ID and inputs. Handler seals retain the
+same formatter dependency and reseal on change. Dispatch rejects a formatter
+that differs from the presented seal before evaluating or copying captures.
+Locale metadata uses the existing retained-metadata meter before cloning.
+Cache hits still charge their original operation count against the same shared
+frame budget. Memo entries and handler seals are derived, omitted from saved
+View state and rebuilt after restore; no save schema/version change is needed.
+Updated all callers and the maintained runtime contracts. This stays within
+Core and existing Driver/Compiler edges, introduces no I/O or unsafe, and leaves
+all owned contract markers at 1. Original shared-allocation admission remains
+broader unfinished work; this is not a claim that it is solved.
+
+The existing standard-dialogue test now checks formatter mismatch rejection,
+locale-triggered resealing, stale-route rejection, reuse under an unchanged
+formatter and rebuilding after save/restore. Its earlier capture, dispatch-count
+and restore assertions remain. A new compiler/Rust-ABI View test executes an
+actual accepted foreign pure callable, observes its exact selected program and
+formatter, publishes its locale into Text, checks warm reuse and locale change,
+and cold-restores before selecting another locale. It reuses the real Rust
+manifest/project compiler and canonical AWBC/bundle admission. Test observation
+uses a shared local observer rather than private backend fields. Native/AWBC
+error tests inspect their typed cause variants and Native preflight rejects bad
+arity without invoking the backend.
+
+R1744's old full Compiler catalogue overlapped this migration and failed with
+an old two-argument dispatch method against the changed three-argument caller;
+no Compiler runtime acceptance came from it. R1747 exposed three missing Native
+error conversions at the new box boundary; R1748 exposed an attempted formatter
+setter absent from the generic backend trait. These were corrected at their
+owners; the executor and explicit call context own formatting. R1749 then found
+private-field access in the new test observer, corrected through shared test
+observation. R1750 completed the selected three-owner catalogue (three libraries
+and the view_runtime, view_product and project_cache_transaction integrations):
+all 2286 selected, zero exclusions, all six required execution/budget/atomicity
+cases present. This is not the complete 53-package reverse closure.
+
+R1751 ordinary all-feature/all-target locked Clippy over Core/Driver/Compiler
+passed in 5m16s. Core library-test warnings fell from 2920 to 2916 (2391 duplicates),
+including elimination of all three new large-error warnings. A new test's 106-line
+warning was repaired by sharing its actual frame assertion. Strict lint remains
+unmet. R1752 structural gate passed: 3155 files, 3025 Rust files, 1719227 physical
+Rust lines, 97 packages, 376 review triggers, zero blocking violations; ownership
+remains with the existing View evaluator/seal and Core execution/error types.
+
+R1753 ran the exact 2286 catalogue: exit100, 2284 passed (two slow), two failed,
+zero skipped, 153.338s; terminal keys and all 3933 frozen hashes matched. Existing
+View budget/atomicity tests and the extended dialogue-seal test passed. The new
+View fixture omitted the engine-owned standard handler/type fragment installed
+by actual bundle construction; it now uses that real installer. The Native
+negative assertion had assumed a lower-level InvalidExpressionType that the
+existing helper does not return after a failed frame. It now asserts the actual
+Native UnsupportedPure program identity and additionally checks the exact typed
+bad-arity preflight cause and unchanged backend count. No production condition,
+existing assertion, operation amount, budget, fusion, copy or capture is weakened.
+
+R1754 is running the same complete selection after those test repairs, live
+handle 99229. Its original 3933-input pre-run freeze is retained; the runtime
+snapshot excludes only this operational ledger and retains the same 3932 other
+hashes. Publication before terminal execution follows the user's intermediate-
+commit instruction. The unchanged 99 manifest/lock inputs retain the actual Core
+53-package reverse closure. Recover R1754, complete fresh Compiler/public/reverse
+consumer and workspace/target acceptance, and fix any change-caused failure.
+Root startup still needs the selected formatter/execution environment before its
+initializer runs. Full Source/all14 switching, Presentation, semantic/persistence
+repairs, strict lint, Tier2 and actual Native/Web capture/parity remain required.
+The full goal is active and unchanged.

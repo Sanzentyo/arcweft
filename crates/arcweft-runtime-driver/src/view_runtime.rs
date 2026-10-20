@@ -369,7 +369,7 @@ pub enum BundleViewEventDispatchError {
     InvalidDialogueAction { message: String },
     #[error("View handler execution failed: {source}")]
     ProgramExecution {
-        source: Box<arcweft_core::awbc::vm::VmError>,
+        source: arcweft_core::pure::RuntimeProgramExecutionError,
     },
     #[error("View handler state input {input} violates type {expected:?}")]
     InvalidStateInput {
@@ -704,6 +704,7 @@ struct MountedViewExpressionEvaluation {
     owner: Arc<AwbcProgram>,
     program: arcweft_id::runtime_program::RuntimePureProgramId,
     inputs: Box<[AwbcRuntimeValueSnapshot]>,
+    format_context: arcweft_core::value::RuntimeFormatContext,
     /// Exact immutable binding retained by this expression's original Core frame.
     type_instantiation:
         Option<Arc<arcweft_core::program_types::RuntimeFunctionEffectInstantiation>>,
@@ -749,6 +750,7 @@ enum MountedViewHandlerPublication {
 #[derive(Clone, Debug, PartialEq)]
 struct MountedViewHandlerSeal {
     captures: Box<[MountedViewHandlerInput]>,
+    format_context: arcweft_core::value::RuntimeFormatContext,
     publication: MountedViewHandlerPublication,
     revision: u64,
 }
@@ -1482,10 +1484,13 @@ impl BundleViewRuntime {
             }
             for cached in mount.expression_evaluations.values() {
                 admission.validate_metadata_collection(cached.inputs.len())?;
+                admission
+                    .validate_metadata_string(cached.format_context.active_locale().as_str())?;
             }
             for (key, seal) in &mount.handler_seals {
                 admission.validate_metadata_collection(key.path.segments().len())?;
                 admission.validate_metadata_collection(seal.captures.len())?;
+                admission.validate_metadata_string(seal.format_context.active_locale().as_str())?;
             }
         }
         self.axis_seeds.admit_resources(admission)

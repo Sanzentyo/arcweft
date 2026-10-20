@@ -23,6 +23,15 @@ enum RuntimeProgramExecutionOwner {
     Awbc(AwbcProductProgram),
 }
 
+/// Keeps the selected executor's typed failure and its source chain intact.
+#[derive(Clone, Debug, thiserror::Error, PartialEq)]
+pub enum RuntimeProgramExecutionError {
+    #[error(transparent)]
+    Native(#[from] Box<RuntimeEvalError>),
+    #[error(transparent)]
+    Awbc(#[from] Box<crate::awbc::vm::VmError>),
+}
+
 impl RuntimeProgramExecutionContext {
     #[must_use]
     pub fn native(program: Arc<RuntimePlan>, format_context: RuntimeFormatContext) -> Self {
@@ -74,7 +83,7 @@ impl RuntimeProgramExecutionContext {
         program: RuntimePureProgramId,
         args: &[RuntimeValue],
         backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
+    ) -> Result<RuntimeValue, RuntimeProgramExecutionError> {
         match &self.program {
             RuntimeProgramExecutionOwner::Native(plan) => {
                 super::program::evaluate_pure_program_with_format_context(
@@ -84,6 +93,7 @@ impl RuntimeProgramExecutionContext {
                     &self.format_context,
                     backend,
                 )
+                .map_err(RuntimeProgramExecutionError::Native)
             }
             RuntimeProgramExecutionOwner::Awbc(admitted) => {
                 crate::awbc::product_step::evaluate_admitted_pure_program_with_format_context(
@@ -93,10 +103,7 @@ impl RuntimeProgramExecutionContext {
                     &self.format_context,
                     backend,
                 )
-                .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                    name: program.to_string(),
-                    reason: error.to_string(),
-                })
+                .map_err(RuntimeProgramExecutionError::Awbc)
             }
         }
     }

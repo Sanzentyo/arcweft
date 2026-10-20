@@ -140,6 +140,19 @@ fn nested_pure_program_external_calls_retain_the_selected_locale() {
         RuntimeValue::Bool(true),
     );
     assert_eq!(backend.external.calls, 1);
+    backend.external.value = RuntimeValue::String("wrong result".to_owned());
+    assert!(matches!(
+        execution.evaluate_pure_program(program, &[], &mut backend),
+        Err(RuntimeProgramExecutionError::Native(error))
+            if matches!(*error, RuntimeEvalError::UnsupportedPure { name, .. } if name == program.to_string())
+    ));
+    assert_eq!(backend.external.calls, 2);
+    assert!(matches!(
+        execution.evaluate_pure_program(program, &[RuntimeValue::Bool(false)], &mut backend),
+        Err(RuntimeProgramExecutionError::Native(error))
+            if matches!(*error, RuntimeEvalError::TooManyPureArgs { max: 0, found: 1, .. })
+    ));
+    assert_eq!(backend.external.calls, 2);
 }
 
 #[test]

@@ -110,24 +110,14 @@ pub fn evaluate_pure_program_with_backend(
         None,
     )
     .map_err(|error| crate::awbc::vm::VmError::Runtime(error.to_string()))?;
-    evaluate_admitted_pure_program_with_backend(&admitted, pure_program, args, backend)
-}
-
-/// Executes through an already admitted executable/Source lease. This is the
-/// same invocation and result boundary as standalone pure-program evaluation.
-pub fn evaluate_admitted_pure_program_with_backend(
-    admitted: &AwbcProductProgram,
-    pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
-    args: &[RuntimeValue],
-    backend: &mut impl RuntimeCallBackend,
-) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
     evaluate_admitted_pure_program_with_format_context(
-        admitted,
+        &admitted,
         pure_program,
         args,
         &crate::value::RuntimeFormatContext::default(),
         backend,
     )
+    .map_err(|error| *error)
 }
 
 pub(crate) fn evaluate_admitted_pure_program_with_format_context(
@@ -136,7 +126,7 @@ pub(crate) fn evaluate_admitted_pure_program_with_format_context(
     args: &[RuntimeValue],
     format_context: &crate::value::RuntimeFormatContext,
     backend: &mut impl RuntimeCallBackend,
-) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
+) -> Result<RuntimeValue, Box<crate::awbc::vm::VmError>> {
     let program = &admitted.program;
     let binding = program.pure_program_binding(pure_program).ok_or_else(|| {
         crate::awbc::vm::VmError::Runtime(format!(
@@ -153,10 +143,10 @@ pub(crate) fn evaluate_admitted_pure_program_with_format_context(
             ))
         })?;
     if args.len() != binding.input_types.len() {
-        return Err(crate::awbc::vm::VmError::FunctionArgumentCount {
+        return Err(Box::new(crate::awbc::vm::VmError::FunctionArgumentCount {
             expected: binding.input_types.len(),
             actual: args.len(),
-        });
+        }));
     }
     for (position, (value, expected)) in args.iter().zip(&binding.input_types).enumerate() {
         let ty = program
@@ -171,9 +161,9 @@ pub(crate) fn evaluate_admitted_pure_program_with_format_context(
                 ))
             })?;
         if !runtime_value_matches_type(program, value, ty, 0) {
-            return Err(crate::awbc::vm::VmError::Runtime(format!(
+            return Err(Box::new(crate::awbc::vm::VmError::Runtime(format!(
                 "pure program {pure_program} input {position} violates its exact runtime type"
-            )));
+            ))));
         }
     }
     let mut executor = AwbcProductStepExecutor::for_borrowed_program_invocation(
@@ -217,9 +207,9 @@ pub(crate) fn evaluate_admitted_pure_program_with_format_context(
             ))
         })?;
     if !runtime_value_matches_type(program, &result, result_ty, 0) {
-        return Err(crate::awbc::vm::VmError::Runtime(format!(
+        return Err(Box::new(crate::awbc::vm::VmError::Runtime(format!(
             "pure program {pure_program} result violates its exact runtime type"
-        )));
+        ))));
     }
     Ok(result)
 }

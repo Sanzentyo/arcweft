@@ -59,7 +59,7 @@ pub use function::{
     RuntimePureFunctionView,
 };
 pub use program::evaluate_pure_program_with_backend;
-pub use program_context::RuntimeProgramExecutionContext;
+pub use program_context::{RuntimeProgramExecutionContext, RuntimeProgramExecutionError};
 pub use repeated_batch::RuntimePureRepeatedI64Batch;
 
 /// Request for evaluating a deterministic pure helper expression.

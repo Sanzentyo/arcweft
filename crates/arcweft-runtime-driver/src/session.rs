@@ -670,12 +670,13 @@ impl BundleSession {
         &mut self,
         invocation: &ViewHandlerInvocation,
     ) -> Result<(), BundleViewEventDispatchError> {
-        let mut backend =
-            self.make_pure_backend(RuntimeFormatContext::new(self.active_locale.clone()));
-        if let Some(input) = self
-            .view_runtime
-            .dispatch_invocation_with_backend(invocation, &mut backend)?
-        {
+        let format_context = RuntimeFormatContext::new(self.active_locale.clone());
+        let mut backend = self.make_pure_backend(format_context.clone());
+        if let Some(input) = self.view_runtime.dispatch_invocation_with_backend(
+            invocation,
+            &format_context,
+            &mut backend,
+        )? {
             self.pending_presentation_inputs.push(input);
         }
         Ok(())
@@ -1131,6 +1132,7 @@ impl BundleSession {
             &self.presentation.dialogue.view_inputs(),
             bindings,
             self.environment.effective().reduced_motion(),
+            &RuntimeFormatContext::new(self.active_locale.clone()),
             pure_backend,
         );
         if let Some(error) = clock_error {

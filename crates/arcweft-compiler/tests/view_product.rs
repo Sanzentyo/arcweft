@@ -5398,7 +5398,11 @@ view Main() {
     let before = runtime.snapshot().unwrap();
     let mut backend = VmRuntimePureCallBackend::default();
     assert!(matches!(
-        runtime.dispatch_invocation_with_backend(&invocation, &mut backend),
+        runtime.dispatch_invocation_with_backend(
+            &invocation,
+            &arcweft_core::value::RuntimeFormatContext::default(),
+            &mut backend,
+        ),
         Err(BundleViewEventDispatchError::ProgramExecution { .. })
     ));
     assert_eq!(backend.stats().awbc_pure_program_calls, 1);

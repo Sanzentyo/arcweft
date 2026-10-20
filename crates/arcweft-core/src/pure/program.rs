@@ -26,6 +26,7 @@ pub fn evaluate_pure_program_with_backend(
         &crate::value::RuntimeFormatContext::default(),
         backend,
     )
+    .map_err(|error| *error)
 }
 
 pub(super) fn evaluate_pure_program_with_format_context(
@@ -34,7 +35,7 @@ pub(super) fn evaluate_pure_program_with_format_context(
     args: &[RuntimeValue],
     format_context: &crate::value::RuntimeFormatContext,
     backend: &mut impl RuntimeCallBackend,
-) -> Result<RuntimeValue, RuntimeEvalError> {
+) -> Result<RuntimeValue, Box<RuntimeEvalError>> {
     let error = |reason: &str| RuntimeEvalError::UnsupportedPure {
         name: program.to_string(),
         reason: reason.to_owned(),
@@ -60,9 +61,9 @@ pub(super) fn evaluate_pure_program_with_format_context(
             .map(RuntimePlanTypeDeclaration::semantic_identity)
             != Some(binding.result_type())
     {
-        return Err(error(
+        return Err(Box::new(error(
             "pure program binding disagrees with its function signature",
-        ));
+        )));
     }
     for (input, &expected) in site.inputs().iter().zip(binding.input_types()) {
         let actual = plan
@@ -71,17 +72,17 @@ pub(super) fn evaluate_pure_program_with_format_context(
             .and_then(|local| plan.type_table().get(local.ty()))
             .map(RuntimePlanTypeDeclaration::semantic_identity);
         if actual != Some(expected) {
-            return Err(error(
+            return Err(Box::new(error(
                 "pure program input disagrees with its function local",
-            ));
+            )));
         }
     }
     if args.len() != site.inputs().len() {
-        return Err(RuntimeEvalError::TooManyPureArgs {
+        return Err(Box::new(RuntimeEvalError::TooManyPureArgs {
             helper: program.to_string(),
             max: site.inputs().len(),
             found: args.len(),
-        });
+        }));
     }
     for (input, value) in site.inputs().iter().zip(args) {
         let local = input.input_local();
@@ -89,13 +90,17 @@ pub(super) fn evaluate_pure_program_with_format_context(
             .local_declarations()
             .get(local)
             .ok_or(RuntimeEvalError::UnknownLocal(local))?;
-        if !plan.value_matches_type(declaration.ty(), value)? {
-            return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
+        if !plan
+            .value_matches_type(declaration.ty(), value)
+            .map_err(RuntimeEvalError::from)?
+        {
+            return Err(Box::new(RuntimeEvalError::InvalidExpressionType(
+                declaration.ty(),
+            )));
         }
     }
     let mut engine =
-        crate::engine::Engine::for_borrowed_program_invocation(Arc::clone(plan), program, args)
-            .map_err(|reason| *reason)?;
+        crate::engine::Engine::for_borrowed_program_invocation(Arc::clone(plan), program, args)?;
     engine.set_format_context(format_context.clone());
     let output = engine.step_with_pure_backend(
         crate::step::RuntimeStepInput::default(),
@@ -106,14 +111,22 @@ pub(super) fn evaluate_pure_program_with_format_context(
         },
         backend,
     );
-    let (_, result) = engine.take_program_result()?.ok_or_else(|| {
-        error(&format!(
-            "program did not return: {:?}; {:?}",
-            output.stop_reason, output.output.diagnostics
-        ))
-    })?;
-    if !plan.value_matches_type(site.result(), &result)? {
-        return Err(RuntimeEvalError::InvalidExpressionType(site.result()));
+    let (_, result) = engine
+        .take_program_result()
+        .map_err(RuntimeEvalError::from)?
+        .ok_or_else(|| {
+            error(&format!(
+                "program did not return: {:?}; {:?}",
+                output.stop_reason, output.output.diagnostics
+            ))
+        })?;
+    if !plan
+        .value_matches_type(site.result(), &result)
+        .map_err(RuntimeEvalError::from)?
+    {
+        return Err(Box::new(RuntimeEvalError::InvalidExpressionType(
+            site.result(),
+        )));
     }
     Ok(result)
 }

@@ -36,12 +36,11 @@ use arcweft_bundle::resource_codec::{
     ViewValueInputSource,
 };
 use arcweft_core::{
-    awbc::product_step::evaluate_admitted_pure_program_with_backend,
-    pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
+    pure::{RuntimeCallBackend, RuntimeProgramExecutionContext, VmRuntimePureCallBackend},
     task::RuntimeProgramOwner,
     value::{
         AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueOpaqueRole,
-        RuntimeDialogueViewValue, RuntimeEntityReference, RuntimeValue,
+        RuntimeDialogueViewValue, RuntimeEntityReference, RuntimeFormatContext, RuntimeValue,
     },
 };
 use arcweft_presentation::fx::{
@@ -230,6 +229,7 @@ struct ViewEvaluator<'a, B> {
     diagnostics: Vec<BundleViewDiagnostic>,
     program_runtime: &'a ViewProgramRuntimeAuthority,
     dialogue_schema: Option<&'a arcweft_dialogue::CharacterDialogueRuntimeSchema>,
+    format_context: &'a RuntimeFormatContext,
     pure_backend: &'a mut B,
     staged_event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
@@ -404,7 +404,14 @@ impl BundleViewRuntime {
         reduce_motion: bool,
     ) -> BundleViewFrame {
         let mut backend = VmRuntimePureCallBackend::default();
-        self.evaluate_with_dialogue_and_backend(handles, &[], bindings, reduce_motion, &mut backend)
+        self.evaluate_with_dialogue_and_backend(
+            handles,
+            &[],
+            bindings,
+            reduce_motion,
+            &RuntimeFormatContext::default(),
+            &mut backend,
+        )
     }
 
     /// Reconciles ordinary handles together with typed dialogue View occurrences.
@@ -425,6 +432,7 @@ impl BundleViewRuntime {
             dialogue,
             bindings,
             reduce_motion,
+            &RuntimeFormatContext::default(),
             &mut backend,
         )
     }
@@ -440,11 +448,13 @@ impl BundleViewRuntime {
         dialogue: &'a [DialogueViewInput<'a>],
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
+        format_context: &RuntimeFormatContext,
         pure_backend: &mut B,
     ) -> BundleViewFrame {
         let ingress = (|| {
             let mut admission = self.retained_value_admission();
             self.admit_retained_metadata(&mut admission)?;
+            admission.validate_metadata_string(format_context.active_locale().as_str())?;
             admission.validate_metadata_collection(bindings.len())?;
             for binding in bindings {
                 admission.validate_metadata_string(&binding.name)?;
@@ -541,6 +551,7 @@ impl BundleViewRuntime {
             },
             program_runtime: &self.program_runtime,
             dialogue_schema: self.dialogue_schema.as_deref(),
+            format_context,
             pure_backend,
             staged_event_tokens: BTreeMap::new(),
         };
@@ -1188,6 +1199,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             && std::sync::Arc::ptr_eq(&cached.owner, &program.program_arc())
             && cached.program == expression.program
             && cached.inputs.as_ref() == snapshots.as_slice()
+            && &cached.format_context == self.format_context
         {
             admission
                 .validate_typed_snapshot_in_invocation(
@@ -1222,6 +1234,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 u64::from(limit),
             )
             .map_err(|error| failure(error.into_parts().0.to_string()))?;
+        executor.set_format_context(self.format_context.clone());
         let output = executor.step_with_pure_backend(
             Default::default(),
             arcweft_core::step::RuntimeStepOptions {
@@ -1288,6 +1301,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 owner: program.program_arc(),
                 program: expression.program,
                 inputs: snapshots.into_boxed_slice(),
+                format_context: self.format_context.clone(),
                 type_instantiation,
                 result,
                 operations,
@@ -2555,7 +2569,12 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             program: program_id,
         };
         let revision = match mounted.handler_seals.get(&seal_key) {
-            Some(seal) if seal.captures.as_ref() == capture_snapshots.as_slice() => seal.revision,
+            Some(seal)
+                if seal.captures.as_ref() == capture_snapshots.as_slice()
+                    && &seal.format_context == self.format_context =>
+            {
+                seal.revision
+            }
             _ => {
                 let revision = mounted.next_handler_seal_revision;
                 mounted.next_handler_seal_revision = revision
@@ -2576,12 +2595,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             })
                             .collect::<Result<Vec<_>, _>>()
                             .map_err(|error| failure(error.to_string()))?;
-                        let value = evaluate_admitted_pure_program_with_backend(
-                            awbc,
-                            program_id,
-                            &arguments,
-                            self.pure_backend,
+                        let value = RuntimeProgramExecutionContext::awbc(
+                            awbc.clone(),
+                            self.format_context.clone(),
                         )
+                        .evaluate_pure_program(program_id, &arguments, self.pure_backend)
                         .map_err(|error| failure(error.to_string()))?;
                         MountedViewHandlerPublication::DialogueAction(
                             RuntimeDialogueActionToken::try_from_runtime_value(value)
@@ -2607,6 +2625,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 mounted.handler_seals.insert(
                     seal_key.clone(),
                     MountedViewHandlerSeal {
+                        format_context: self.format_context.clone(),
                         captures: capture_snapshots.into_boxed_slice(),
                         publication,
                         revision,

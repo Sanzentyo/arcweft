@@ -2843,6 +2843,7 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         &[first_input],
         &[],
         false,
+        &arcweft_core::value::RuntimeFormatContext::default(),
         &mut pure_backend,
     );
     assert!(first.diagnostics.is_empty(), "{first:#?}");
@@ -2872,6 +2873,7 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         &[unchanged_input],
         &[],
         false,
+        &arcweft_core::value::RuntimeFormatContext::default(),
         &mut pure_backend,
     );
     assert_eq!(pure_backend.stats().awbc_pure_program_calls, 1);
@@ -2883,6 +2885,7 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         &[changed_input],
         &[],
         false,
+        &arcweft_core::value::RuntimeFormatContext::default(),
         &mut pure_backend,
     );
     assert!(changed.diagnostics.is_empty(), "{changed:#?}");
@@ -2921,6 +2924,66 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         Err(BundleViewEventDispatchError::InvocationMismatch)
     );
 
+    let selected_format = arcweft_core::value::RuntimeFormatContext::new(
+        arcweft_id::LocaleTag::try_new("de-DE").unwrap(),
+    );
+    assert_eq!(
+        runtime.dispatch_invocation_with_backend(
+            &changed_invocation,
+            &selected_format,
+            &mut pure_backend,
+        ),
+        Err(BundleViewEventDispatchError::InvocationMismatch),
+    );
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 2);
+    let localized_input = input(target(2));
+    let localized = runtime.evaluate_with_dialogue_and_backend(
+        &[],
+        &[localized_input],
+        &[],
+        false,
+        &selected_format,
+        &mut pure_backend,
+    );
+    assert!(localized.diagnostics.is_empty(), "{localized:#?}");
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 3);
+    let localized_binding = &localized.mounts[0].events[0];
+    assert_ne!(localized_binding.route(), changed_binding.route());
+    assert_eq!(
+        runtime.dispatch_invocation(&changed_invocation),
+        Err(BundleViewEventDispatchError::UnknownBinding),
+    );
+    let localized_invocation = invocation_from_binding(localized_binding, 4);
+    assert_eq!(
+        runtime.dispatch_invocation(&localized_invocation),
+        Err(BundleViewEventDispatchError::InvocationMismatch),
+    );
+    assert_eq!(
+        runtime
+            .dispatch_invocation_with_backend(
+                &localized_invocation,
+                &selected_format,
+                &mut pure_backend,
+            )
+            .unwrap(),
+        changed_dispatch,
+    );
+    let repeated_input = input(target(2));
+    let repeated = runtime.evaluate_with_dialogue_and_backend(
+        &[],
+        &[repeated_input],
+        &[],
+        false,
+        &selected_format,
+        &mut pure_backend,
+    );
+    assert!(repeated.diagnostics.is_empty(), "{repeated:#?}");
+    assert_eq!(
+        repeated.mounts[0].events[0].route(),
+        localized_binding.route()
+    );
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 3);
+
     let snapshot = runtime.snapshot().expect("View runtime snapshots");
     let reconciled = [PresentationHandleRecord::new(
         handle.clone(),
@@ -2942,6 +3005,14 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         restored.dispatch_invocation(&changed_invocation),
         Err(BundleViewEventDispatchError::UnknownBinding)
     );
+    assert_eq!(
+        restored.dispatch_invocation_with_backend(
+            &localized_invocation,
+            &selected_format,
+            &mut pure_backend,
+        ),
+        Err(BundleViewEventDispatchError::UnknownBinding),
+    );
     let restored_input = input(target(2));
     let mut restored_backend = VmRuntimePureCallBackend::default();
     let restored_frame = restored.evaluate_with_dialogue_and_backend(
@@ -2949,6 +3020,7 @@ fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_st
         &[restored_input],
         &[],
         false,
+        &arcweft_core::value::RuntimeFormatContext::default(),
         &mut restored_backend,
     );
     assert!(restored_frame.diagnostics.is_empty(), "{restored_frame:#?}");

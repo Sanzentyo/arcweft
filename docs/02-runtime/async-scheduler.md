@@ -115,6 +115,20 @@ request execution retain this context. Nested data-field defaults execute
 through the same authority and locale. Raw program owners remain nominal
 type/value-codec leases and cannot construct this AWBC execution context.
 
+Backend-taking View evaluation and event dispatch also require the caller's
+explicit formatter context. A Session supplies its selected locale. Expression
+memoization and handler seals include that context as an execution dependency;
+changing it invalidates an expression result and reseals handler routes. Event
+dispatch rejects a formatter different from the presented seal before executing
+or copying captures. These derived caches and seals are rebuilt after restore.
+Their locale metadata enters the existing retained-metadata admission before
+cloning. Cached expression hits still charge the original operation count to
+the same shared frame value budget.
+
+Cross-tier pure execution returns RuntimeProgramExecutionError with the actual
+Native or AWBC cause. Its large executor errors remain boxed at the owning
+boundary; no string-only generic failure replaces their kinds or source chains.
+
 Borrowed pure-program inputs use the same activation admission as owned inputs.
 Custody, the complete positional ABI, binding patterns and the selected frame
 must be prepared before copying a borrowed packet. Copy permission is checked
