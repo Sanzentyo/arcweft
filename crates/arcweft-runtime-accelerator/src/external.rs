@@ -136,7 +136,12 @@ impl RuntimeExternalCallBackend for RuntimePureAccelerator {
         if let Some(result) = call_data_external(self, context, callee.as_label(), args) {
             return Some(result);
         }
-        let call = RuntimeAcceleratorExternalCall::from_target(callee)?;
+        let Some(call) = RuntimeAcceleratorExternalCall::from_target(callee) else {
+            return self
+                .external
+                .as_mut()
+                .and_then(|external| external.call_external(context, callee, args));
+        };
         Some(match (call, args) {
             (
                 RuntimeAcceleratorExternalCall::InferMatmulF32,
@@ -231,6 +236,20 @@ impl RuntimeExternalCallBackend for RuntimePureAccelerator {
                 reason: "argument shape is not supported by this adapter call".to_owned(),
             }),
         })
+    }
+
+    fn produce_character_dialogue(
+        &mut self,
+        owner: &arcweft_core::task::RuntimeProgramOwner,
+        operation: arcweft_interaction_model::dialogue::CharacterDialogueOperation,
+        target: RuntimeValue,
+        fields: &[arcweft_interaction_model::dialogue::CharacterDialoguePatchField<RuntimeValue>],
+        result_type: arcweft_core::pattern::RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.external
+            .as_mut()
+            .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?
+            .produce_character_dialogue(owner, operation, target, fields, result_type)
     }
 }
 

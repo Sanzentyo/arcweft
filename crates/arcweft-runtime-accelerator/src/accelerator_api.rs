@@ -19,6 +19,16 @@ use super::{
 };
 
 impl RuntimePureAccelerator {
+    /// Installs the accepted external runtime context. Numeric acceleration,
+    /// operation budgets and built-in data adapters keep their existing owner;
+    /// external producers receive Core's original program lease and operands.
+    pub fn set_external_calls(
+        &mut self,
+        external: impl arcweft_core::pure::RuntimeExternalCallBackend + Send + Sync + 'static,
+    ) {
+        self.external = Some(Box::new(external));
+    }
+
     /// Pins locale formatting for the VM fallback used by pure helpers.
     pub fn set_format_context(&mut self, context: arcweft_core::value::RuntimeFormatContext) {
         self.vm_scratch.set_format_context(context);
@@ -110,6 +120,7 @@ impl RuntimePureAccelerator {
             vm_scratch: VmPureFunctionScratch::default(),
             math: math::RuntimeMathAccelerator::new(config.math),
             math_prepare_cache: RuntimeMathPrepareCache::default(),
+            external: None,
         }
     }
 

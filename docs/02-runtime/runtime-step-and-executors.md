@@ -78,6 +78,16 @@ All tiers use the same `RuntimeStepInput`, `RuntimeStepOptions`, and
 `arcweft-core` while allowing ordinary flow code to benefit from AOT/JIT pure
 helpers automatically.
 
+Runtime external producers retain the same accepted resource generation as
+their executable. Bundle admission binds the CharacterDialogue declaration,
+validated Character catalog, accepted View definitions and actual Style digest
+to Core's original Native or AWBC program owner. Accelerated headless source
+runs, repeated Flow runs, bundle runners and retained sessions use that binding;
+numeric acceleration and built-in data adapters keep their normal budgets and
+dispatch. A retained session selects a producer by the exact calling executable
+lease, including when an older fiber remains live after replacement. An absent
+or foreign generation is refused before producing a CharacterDialogue value.
+
 `RuntimeStepStats.pure` reports per-step pure helper calls, batch calls, batch
 item counts, JIT/AOT/VM call counts, fixed-stack argument packs, copied
 argument/result byte counts, thread-pool jobs, Vec argument allocations, and

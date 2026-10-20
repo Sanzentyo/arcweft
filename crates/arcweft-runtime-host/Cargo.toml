@@ -11,6 +11,7 @@ arcweft-adapter-context = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-bundle-assets = { workspace = true }
 arcweft-core = { workspace = true }
+arcweft-dialogue = { workspace = true }
 arcweft-host-adapter = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-image = { workspace = true }
@@ -29,7 +30,6 @@ thiserror.workspace = true
 blake3.workspace = true
 arcweft-audio-core = { workspace = true }
 arcweft-character = { workspace = true }
-arcweft-dialogue = { workspace = true }
 arcweft-manifest-model = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }

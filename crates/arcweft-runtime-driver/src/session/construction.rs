@@ -399,39 +399,12 @@ pub(super) fn build_session_runtime(
         program.clone(),
     )?;
     let character_dialogue_schema = bundle
-        .character_dialogue_generation
-        .as_ref()
-        .map(|declaration| {
-            let style_digest = bundle
-                .view_style
-                .as_ref()
-                .map(|style| {
-                    style.canonical_digest().map(|digest| {
-                        arcweft_core::entry::RuntimeValueDigest::from_bytes(digest.as_bytes())
-                    })
-                })
-                .transpose()
-                .map_err(|error| BundleSessionError::CharacterDialogueGeneration {
-                    message: error.to_string(),
-                })?;
-            let characters = bundle.admitted_character_catalog().map_err(|error| {
-                BundleSessionError::CharacterDialogueGeneration {
-                    message: error.to_string(),
-                }
-            })?;
-            declaration
-                .bind_runtime(
-                    Arc::new(view_runtime.registry().clone()),
-                    characters,
-                    style_digest,
-                    arcweft_core::task::RuntimeProgramOwner::Awbc(program.program_arc()),
-                )
-                .map(Arc::new)
-                .map_err(|error| BundleSessionError::CharacterDialogueGeneration {
-                    message: error.to_string(),
-                })
-        })
-        .transpose()?;
+        .admit_character_dialogue_runtime(arcweft_core::task::RuntimeProgramOwner::Awbc(
+            program.program_arc(),
+        ))
+        .map_err(|error| BundleSessionError::CharacterDialogueGeneration {
+            message: error.to_string(),
+        })?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();

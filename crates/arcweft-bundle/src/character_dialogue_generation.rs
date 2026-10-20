@@ -24,6 +24,60 @@ const MAX_PACKAGES: usize = 4_096;
 
 pub(crate) type RuntimeGeneration = CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>;
 
+impl ArcweftBundle {
+    /// Binds the bundled Dialogue declaration and actual Character, View and
+    /// Style resources to the caller's original executable lease. Both Native
+    /// source execution and AWBC use this admission boundary.
+    ///
+    /// The registry contains accepted View definitions, not live mounts or
+    /// reconstructed source. Missing or inconsistent generation resources are
+    /// refused before the returned schema can produce a runtime value.
+    pub fn admit_character_dialogue_runtime(
+        &self,
+        owner: RuntimeProgramOwner,
+    ) -> Result<Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>, BundleCodecError>
+    {
+        let Some(declaration) = &self.character_dialogue_generation else {
+            // An executable opaque Dialogue type still requires a declaration.
+            self.admitted_character_catalog()?;
+            return Ok(None);
+        };
+        let product = crate::resource_codec::ValidatedViewProduct::try_from_borrowed(
+            Some(&self.source_map),
+            self.view_program.as_ref(),
+            self.view_style.as_ref(),
+            crate::resource_codec::ViewProductValidationLimits::default(),
+        )
+        .map_err(|error| invalid_generation(error.to_string()))?;
+        let mut views = arcweft_view::ViewRegistry::default();
+        if let Some(program) = product.program() {
+            program
+                .register_runtime_views(&mut views)
+                .map_err(|error| invalid_generation(error.to_string()))?;
+        }
+        let style_digest = self
+            .view_style
+            .as_ref()
+            .map(|style| {
+                style.canonical_digest().map(|digest| {
+                    arcweft_core::entry::RuntimeValueDigest::from_bytes(digest.as_bytes())
+                })
+            })
+            .transpose()
+            .map_err(|error| invalid_generation(error.to_string()))?;
+        declaration
+            .bind_runtime(
+                Arc::new(views),
+                self.admitted_character_catalog()?,
+                style_digest,
+                owner,
+            )
+            .map(Arc::new)
+            .map(Some)
+            .map_err(|error| invalid_generation(error.to_string()))
+    }
+}
+
 /// Checks the bundled bytes against the typed package metadata and every
 /// logical Character's accepted visual declaration. Package metadata alone is
 /// insufficient because an AWFB may carry mismatched manifest or PNG bytes.

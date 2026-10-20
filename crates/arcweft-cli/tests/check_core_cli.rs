@@ -91,3 +91,6 @@ fn check_keeps_explicit_id_lint_on_the_independent_lint_path() {
 
 #[path = "check_core_cli/runtime_exit.rs"]
 mod runtime_exit;
+
+#[path = "check_core_cli/runtime_dialogue.rs"]
+mod runtime_dialogue;

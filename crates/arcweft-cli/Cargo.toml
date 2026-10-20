@@ -15,6 +15,7 @@ arcweft-agent-runner = { workspace = true }
 arcweft-agent-repl = { workspace = true }
 arcweft-content-policy = { workspace = true }
 arcweft-core = { workspace = true }
+arcweft-dialogue = { workspace = true }
 arcweft-adapter-context = { workspace = true }
 arcweft-adapter-sema = { workspace = true }
 arcweft-adapter-desktop = { workspace = true }
@@ -77,7 +78,6 @@ thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
-arcweft-dialogue = { workspace = true }
 arcweft-lsp = { workspace = true }
 arcweft-runtime-driver = { workspace = true }
 

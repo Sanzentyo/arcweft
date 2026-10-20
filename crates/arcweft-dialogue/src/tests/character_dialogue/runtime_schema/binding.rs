@@ -1,6 +1,66 @@
 use super::*;
 use crate::CharacterDialoguePresentationContract;
 
+#[test]
+fn retained_producers_select_the_exact_native_or_awbc_generation() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let owners = types.program_owners();
+    let schemas = owners
+        .iter()
+        .map(|owner| Arc::new(types.schema(&characters, &views, &custom, owner.clone())))
+        .collect::<Vec<_>>();
+    let mut backend =
+        CharacterDialogueRuntimeExternalCallBackend::with_generations(schemas.clone());
+    let character = sample_manifest().character().clone();
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+    for (owner, schema) in owners.iter().zip(&schemas) {
+        let produced = backend
+            .produce_character_dialogue(
+                owner,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[],
+                types.any_type,
+            )
+            .expect("the exact retained executable selects its accepted producer");
+        let admitted = schema.admit(owner, &produced, types.any_type).unwrap();
+        assert_eq!(admitted.dialogue().character(), &character);
+        let foreign = match owner {
+            RuntimeProgramOwner::Plan(plan) => {
+                RuntimeProgramOwner::Plan(Arc::new((**plan).clone()))
+            }
+            RuntimeProgramOwner::Awbc(program) => {
+                RuntimeProgramOwner::Awbc(Arc::new((**program).clone()))
+            }
+        };
+        assert!(matches!(
+            backend.produce_character_dialogue(
+                &foreign,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[],
+                types.any_type,
+            ),
+            Err(RuntimeEvalError::CharacterDialogueProducerUnavailable)
+        ));
+    }
+    let mut absent = CharacterDialogueRuntimeExternalCallBackend::with_generations(Vec::new());
+    assert!(matches!(
+        absent.produce_character_dialogue(
+            &owners[0],
+            CharacterDialogueOperation::Factory,
+            target,
+            &[],
+            types.any_type,
+        ),
+        Err(RuntimeEvalError::CharacterDialogueProducerUnavailable)
+    ));
+}
+
 fn with_visual(
     declaration: &CharacterDialogueGenerationDeclaration,
     visual: &CharacterDialogueVisualType<RuntimeSemanticTypeId>,

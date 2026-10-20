@@ -110,6 +110,9 @@ fn try_run_runtime_steps_with_executor(
     max_ops: usize,
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
+    if let Some(assets) = host_config.bundle_assets {
+        executor.bind_bundle_external_calls(assets.bundle)?;
+    }
     let mut host = host_config
         .source
         .map(|source| build_native_task_bridge(source, host_config))
@@ -205,6 +208,8 @@ pub(in crate::app) fn build_native_task_bridge(
 
 #[derive(Debug, Error)]
 pub(in crate::app) enum RuntimeStepRunError {
+    #[error("runtime bundle producer admission failed: {0}")]
+    BundleProducer(#[from] arcweft_bundle::BundleCodecError),
     #[error(transparent)]
     Host(#[from] arcweft_host_adapter::HostAdapterError),
     #[error(transparent)]

@@ -422,6 +422,8 @@ fn run_bundle_runner_phase<T>(
 struct BundleRunnerRuntimeProgram {
     program: AwbcProductProgram,
     entry: AwbcEntryId,
+    character_dialogue_schema:
+        Option<std::sync::Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
 }
 
 fn bundle_runner_runtime_program(
@@ -432,7 +434,16 @@ fn bundle_runner_runtime_program(
         .admit_runtime_program()
         .map_err(BundleRunnerError::ProgramAdmission)?;
     let entry = selected_awbc_entry(&program, bundle, options)?;
-    Ok(BundleRunnerRuntimeProgram { program, entry })
+    let character_dialogue_schema = bundle
+        .admit_character_dialogue_runtime(arcweft_core::task::RuntimeProgramOwner::Awbc(
+            program.program_arc(),
+        ))
+        .map_err(BundleRunnerError::ProgramAdmission)?;
+    Ok(BundleRunnerRuntimeProgram {
+        program,
+        entry,
+        character_dialogue_schema,
+    })
 }
 
 fn selected_awbc_entry(
@@ -650,6 +661,13 @@ impl RuntimeExecutorInstance {
             RuntimePureAcceleratorConfig::default(),
             executable,
         );
+        if let Some(schema) = program.character_dialogue_schema {
+            pure.set_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::with_generations(
+                    vec![schema],
+                ),
+            );
+        }
         let format_context = RuntimeFormatContext::new(active_locale);
         executor.set_format_context(format_context.clone());
         pure.set_format_context(format_context);

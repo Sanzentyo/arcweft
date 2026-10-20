@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+mod external_context;
 mod repeated_batch;
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 mod wide_scalar;

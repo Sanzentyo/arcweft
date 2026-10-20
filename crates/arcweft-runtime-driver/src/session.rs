@@ -96,7 +96,6 @@ use thiserror::Error;
 
 mod axis_seed;
 mod construction;
-mod dialogue_backend;
 pub mod environment;
 mod fx;
 mod hot_swap;
@@ -655,14 +654,19 @@ impl BundleSession {
     fn make_pure_backend(
         &self,
         format_context: RuntimeFormatContext,
-    ) -> VmRuntimePureCallBackend<dialogue_backend::GenerationDialogueBackend> {
+    ) -> VmRuntimePureCallBackend<
+        arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend<'static>,
+    > {
         let schemas = self
             .runtime_images
             .images()
             .filter_map(|image| image.runtime().character_dialogue_schema.clone())
             .collect::<Vec<_>>();
-        let mut backend = VmRuntimePureCallBackend::default()
-            .with_external_calls(dialogue_backend::GenerationDialogueBackend::new(schemas));
+        let mut backend = VmRuntimePureCallBackend::default().with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::with_generations(
+                schemas,
+            ),
+        );
         backend.set_format_context(format_context);
         backend
     }

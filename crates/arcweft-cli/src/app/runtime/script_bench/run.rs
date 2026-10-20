@@ -345,7 +345,9 @@ fn run_bench_flow_section(
         options.executor,
         Some(runtime.bundle_assets.product.clone()),
     );
-    let mut pure = match executor_template.pure_backend(runtime.pure_config) {
+    let mut pure = match executor_template
+        .pure_backend(runtime.pure_config, Some(runtime.bundle_assets.bundle))
+    {
         Ok(pure) => pure,
         Err(error) => {
             return ScriptBenchSectionRunSummary::new(

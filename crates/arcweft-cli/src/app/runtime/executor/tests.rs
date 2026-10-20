@@ -155,7 +155,7 @@ fn runtime_executor_product_flow_and_repeated_bench_preserve_original_program_an
         Some(product),
     );
     let mut pure = template
-        .pure_backend(RuntimePureAcceleratorConfig::default())
+        .pure_backend(RuntimePureAcceleratorConfig::default(), None)
         .unwrap();
     assert!(pure.program_owner().same_program(&owner));
     for _ in 0..2 {

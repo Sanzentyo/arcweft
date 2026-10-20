@@ -60,19 +60,30 @@ impl RuntimeExecutorTemplate {
     pub(in crate::app) fn pure_backend(
         &self,
         config: RuntimePureAcceleratorConfig,
+        bundle: Option<&arcweft_bundle::ArcweftBundle>,
     ) -> Result<RuntimePureAccelerator, String> {
-        match self.tier {
-            ArcweftExecutionTier::AwbcProduct => Ok(RuntimePureAccelerator::with_awbc_program(
+        let mut pure = match self.tier {
+            ArcweftExecutionTier::AwbcProduct => RuntimePureAccelerator::with_awbc_program(
                 config,
                 self.product.clone().ok_or_else(|| {
                     "Product AWBC execution requires the compiled executable".to_owned()
                 })?,
-            )),
-            _ => Ok(RuntimePureAccelerator::with_config(
-                config,
-                self.invocation.plan(),
-            )),
+            ),
+            _ => RuntimePureAccelerator::with_config(config, self.invocation.plan()),
+        };
+        if let Some(schema) = bundle
+            .map(|bundle| bundle.admit_character_dialogue_runtime(pure.program_owner()))
+            .transpose()
+            .map_err(|error| error.to_string())?
+            .flatten()
+        {
+            pure.set_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::with_generations(
+                    vec![schema],
+                ),
+            );
         }
+        Ok(pure)
     }
 }
 
@@ -96,6 +107,20 @@ impl RuntimeExecutorCore {
 }
 
 impl RuntimeExecutorInstance {
+    pub(in crate::app) fn bind_bundle_external_calls(
+        &mut self,
+        bundle: &arcweft_bundle::ArcweftBundle,
+    ) -> Result<(), arcweft_bundle::BundleCodecError> {
+        if let Some(schema) = bundle.admit_character_dialogue_runtime(self.program_owner())? {
+            self.pure.set_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::with_generations(
+                    vec![schema],
+                ),
+            );
+        }
+        Ok(())
+    }
+
     pub(in crate::app) fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
         self.executor.program_owner()
     }

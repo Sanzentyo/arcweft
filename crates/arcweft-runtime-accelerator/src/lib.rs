@@ -553,6 +553,7 @@ pub struct RuntimePureAccelerator {
     vm_scratch: VmPureFunctionScratch,
     math: math::RuntimeMathAccelerator,
     math_prepare_cache: RuntimeMathPrepareCache,
+    external: Option<Box<dyn RuntimeExternalCallBackend + Send + Sync>>,
 }
 
 /// Derived state retains its actual program. Only a Native plan can authorize
