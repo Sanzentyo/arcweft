@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -152,14 +151,9 @@ fn toml_enum_payloads_follow_graph_bytes_formats_and_field_overrides() {
         },
     ];
     for (value, expected) in values.into_iter().zip(["CAk=", "0809"]) {
-        let encoded = <TomlCodec as arcweft_data::Codec>::encode_value(
-            &TomlCodec,
-            &value,
-            ShapeRef::Id(root),
-            &graph,
-            &EncodeOptions::default(),
-        )
-        .expect("enum payload follows its selected shape");
+        let encoded = EncodeOptions::default()
+            .encode_value(&TomlCodec, &value, ShapeRef::Id(root), &graph)
+            .expect("enum payload follows its selected shape");
         let text = std::str::from_utf8(&encoded).expect("TOML output is UTF-8");
         assert!(text.contains(expected), "{text}");
         assert!(text.contains("kind") && text.contains("body") && text.contains("value"));
@@ -618,3 +612,6 @@ fn toml_decode_consumes_node_budget_before_value_projection() {
         .expect_err("node budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
+
+#[path = "shape_codec/encoding_limits.rs"]
+mod encoding_limits;

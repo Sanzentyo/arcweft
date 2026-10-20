@@ -52,12 +52,12 @@ fn avro_missing_and_skipped_fields_request_defaults_at_the_original_graph_row() 
         "keep".to_owned(),
         Value::Bool(false),
     )]))]);
-    let encoded = codec
+    let encoded = EncodeOptions::default()
         .encode_value(
+            &codec,
             &input,
             ShapeRef::Inline(&writer_shape),
             &EmptyShapeAccess,
-            &EncodeOptions::default(),
         )
         .unwrap();
     let defaults = Defaults {

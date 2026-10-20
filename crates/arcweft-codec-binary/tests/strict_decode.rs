@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -256,3 +255,6 @@ fn binary_decode_checks_input_and_node_budgets_during_parse() {
     .expect_err("node budget");
     assert_eq!(node_error.kind(), &DataErrorKind::LimitExceeded);
 }
+
+#[path = "strict_decode/encoding_limits.rs"]
+mod encoding_limits;

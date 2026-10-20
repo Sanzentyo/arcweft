@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -751,3 +750,6 @@ fn avro_codec_supports_top_level_scalar_policy() {
         .expect("sequence decode uses container datum stream");
     assert_eq!(seq_error, Value::Seq(vec![Value::Bool(true)]));
 }
+
+#[path = "shape_codec/encoding_limits.rs"]
+mod encoding_limits;

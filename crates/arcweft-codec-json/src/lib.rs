@@ -17,6 +17,17 @@ mod decode;
 pub struct JsonCodec;
 
 impl JsonCodec {
+    /// Projects a shape-checked data value into the JSON value grammar for an
+    /// explicit interoperability consumer, without encoding and parsing bytes.
+    pub fn project_value(
+        value: &Value,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
+    ) -> Result<JsonValue> {
+        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
+        raw_to_json_value(&raw, shape, access)
+    }
+
     /// Checks a complete JSON document before a typed decoder constructs its
     /// values. Uses the same parse-time budget as ordinary JSON decoding and
     /// retains only object keys needed to reject duplicates, never a value tree.
@@ -39,22 +50,21 @@ impl Codec for JsonCodec {
         &["json"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
-        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
-        let json = raw_to_json_value(&raw, shape, access)?;
-        let bytes = if options.pretty {
-            serde_json::to_vec_pretty(&json)
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
+        let json = Self::project_value(value, shape, access)?;
+        if options.pretty {
+            serde_json::to_writer_pretty(output, &json)
         } else {
-            serde_json::to_vec(&json)
+            serde_json::to_writer(output, &json)
         }
-        .map_err(|error| json_error(&error))?;
-        Ok(bytes)
+        .map_err(|error| json_error(&error))
     }
 
     fn decode_value(

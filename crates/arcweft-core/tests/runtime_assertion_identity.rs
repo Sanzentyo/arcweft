@@ -48,12 +48,12 @@ fn assert_codec_round_trip(codec: &dyn Codec) {
     let fingerprint_shape = TypeShape::seq(TypeShape::I128);
     let fingerprint_value = to_arcweft_value(&expected_fingerprint)
         .expect("artifact fingerprint enters the typed data boundary");
-    let fingerprint_bytes = codec
+    let fingerprint_bytes = EncodeOptions::default()
         .encode_value(
+            codec,
             &fingerprint_value,
             ShapeRef::inline(&fingerprint_shape),
             &EmptyShapeAccess,
-            &EncodeOptions::default(),
         )
         .expect("artifact fingerprint encodes");
     let decoded_fingerprint_value = codec
@@ -72,12 +72,12 @@ fn assert_codec_round_trip(codec: &dyn Codec) {
     let failure_shape = failure_shape();
     let failure_value = to_arcweft_value(&expected_failure)
         .expect("assertion failure enters the typed data boundary");
-    let bytes = codec
+    let bytes = EncodeOptions::default()
         .encode_value(
+            codec,
             &failure_value,
             ShapeRef::inline(&failure_shape),
             &EmptyShapeAccess,
-            &EncodeOptions::default(),
         )
         .expect("assertion failure encodes");
     let decoded = codec

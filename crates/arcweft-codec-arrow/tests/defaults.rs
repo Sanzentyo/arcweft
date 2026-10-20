@@ -49,12 +49,12 @@ fn arrow_and_parquet_missing_columns_request_defaults_at_the_original_graph_row(
         Value::Bool(false),
     )]))]);
     for codec in [&ArrowIpcCodec as &dyn Codec, &ParquetCodec as &dyn Codec] {
-        let encoded = codec
+        let encoded = EncodeOptions::default()
             .encode_value(
+                codec,
                 &input,
                 ShapeRef::Inline(&writer_shape),
                 &EmptyShapeAccess,
-                &EncodeOptions::default(),
             )
             .unwrap();
         let defaults = Defaults {

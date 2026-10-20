@@ -627,3 +627,17 @@ Agent actions are replayed as semantic actions when possible.
 ```bash
 arcw agent script replay traces/bug.arcwx --json
 ```
+
+汎用 codec の書き込みは `EncodeOptions::encode_value` が所有する。`Codec::encode_to`
+は、呼び出し元から借りた append-only の `EncodeBuffer` へ書き込み、完成済みの
+無制限な `Vec<u8>` を返さない。既定の encoded-output 上限は 256 MiB とする。
+各 append は累積長と overflow を検査してから reserve/copy し、capacity の成長要求も
+上限内に留める。最初の書き込み失敗は終端状態であり、codec がエラーを捕捉して
+成功を返しても部分的な出力を公開しない。binary writer と text formatter は同じ
+メモリ所有型を使い、具体的なファイルやネットワークへの I/O は行わない。
+
+`SaveEnvelopeLimits::encode_value` は schema/codec ID と header を先に検証し、
+payload 上限、envelope の残容量、u32 wire 長、address 空間の最小値を codec の
+output allowance とする。checksum と最終 header は完全な payload が成立してから
+確定する。TOML は bounded formatter へ table/array/scalar を直接出力し、encoded
+文書全体の String を先に生成しない。nested table は inline table として表現する。

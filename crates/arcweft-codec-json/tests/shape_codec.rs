@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -225,14 +224,9 @@ fn json_enum_payloads_follow_graph_bytes_formats_and_field_overrides() {
         },
     ];
     for (value, expected) in values.into_iter().zip(["CAk=", "0809"]) {
-        let encoded = <JsonCodec as arcweft_data::Codec>::encode_value(
-            &JsonCodec,
-            &value,
-            ShapeRef::Id(root),
-            &graph,
-            &EncodeOptions::default(),
-        )
-        .expect("enum payload follows its selected shape");
+        let encoded = EncodeOptions::default()
+            .encode_value(&JsonCodec, &value, ShapeRef::Id(root), &graph)
+            .expect("enum payload follows its selected shape");
         let text = std::str::from_utf8(&encoded).expect("JSON output is UTF-8");
         assert!(text.contains(expected), "{text}");
         assert!(text.contains("kind") && text.contains("body") && text.contains("value"));
@@ -464,14 +458,9 @@ fn json_codec_traverses_shape_graph_references() {
         ("name".to_owned(), Value::String("root".to_owned())),
         ("next".to_owned(), Value::Option(None)),
     ]));
-    let encoded = <JsonCodec as arcweft_data::Codec>::encode_value(
-        &JsonCodec,
-        &value,
-        ShapeRef::Id(node),
-        &graph,
-        &EncodeOptions::default(),
-    )
-    .expect("encode graph shape");
+    let encoded = EncodeOptions::default()
+        .encode_value(&JsonCodec, &value, ShapeRef::Id(node), &graph)
+        .expect("encode graph shape");
     assert_eq!(
         <JsonCodec as arcweft_data::Codec>::decode_value(
             &JsonCodec,
@@ -519,14 +508,9 @@ fn json_codec_applies_distinct_bytes_formats_to_shared_graph_fields() {
         ("hex".to_owned(), Value::Bytes(payload)),
     ]));
 
-    let encoded = <JsonCodec as arcweft_data::Codec>::encode_value(
-        &JsonCodec,
-        &value,
-        ShapeRef::Id(record_node),
-        &graph,
-        &EncodeOptions::default(),
-    )
-    .expect("encode graph fields");
+    let encoded = EncodeOptions::default()
+        .encode_value(&JsonCodec, &value, ShapeRef::Id(record_node), &graph)
+        .expect("encode graph fields");
     assert_eq!(
         std::str::from_utf8(&encoded).expect("utf8"),
         r#"{"base64":"AQL/","hex":"0102ff"}"#
@@ -771,3 +755,6 @@ fn json_decode_consumes_node_budget_during_parse() {
         .expect_err("node budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
+
+#[path = "shape_codec/encoding_limits.rs"]
+mod encoding_limits;

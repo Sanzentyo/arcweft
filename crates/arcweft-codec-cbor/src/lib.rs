@@ -27,19 +27,18 @@ impl Codec for CborCodec {
         &["cbor"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let cbor = raw_to_cbor(raw)?;
-        let mut out = Vec::new();
-        ciborium::into_writer(&cbor, &mut out)
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        Ok(out)
+        ciborium::into_writer(&cbor, output)
+            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
     }
 
     fn decode_value(

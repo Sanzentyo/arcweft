@@ -206,11 +206,11 @@ fn same_policy<T: Reflect + Encode + 'static>(
     let root = reflected.reference(root);
     assert_eq!(expanded(selected, &shapes), expanded(root, &reflected));
     let value = value.encode().unwrap();
-    let expected = JsonCodec
-        .encode_value(&value, root, &reflected, &EncodeOptions::default())
+    let expected = EncodeOptions::default()
+        .encode_value(&JsonCodec, &value, root, &reflected)
         .unwrap();
-    let actual = JsonCodec
-        .encode_value(&value, selected, &shapes, &EncodeOptions::default())
+    let actual = EncodeOptions::default()
+        .encode_value(&JsonCodec, &value, selected, &shapes)
         .unwrap();
     assert_eq!(actual, expected);
     let expected_value = JsonCodec
@@ -221,8 +221,8 @@ fn same_policy<T: Reflect + Encode + 'static>(
         .unwrap();
     assert_eq!(actual_value, expected_value);
     assert_eq!(
-        JsonCodec
-            .encode_value(&actual_value, selected, &shapes, &EncodeOptions::default())
+        EncodeOptions::default()
+            .encode_value(&JsonCodec, &actual_value, selected, &shapes)
             .unwrap(),
         actual
     );

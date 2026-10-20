@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use arcweft_data::{
-    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EmptyShapeAccess, EncodeOptions,
-    Result, ShapeRef, TypeShape, Value, encode_with_shape,
+    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EmptyShapeAccess, Result, ShapeRef,
+    TypeShape, Value, encode_with_shape,
 };
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -272,13 +272,13 @@ pub fn encode_save(
     registry: &CodecRegistry,
 ) -> Result<Vec<u8>> {
     let codec = registry.by_id(codec_id)?;
-    let payload = codec.encode_value(
+    SaveEnvelopeLimits::default().encode_value(
         value,
-        ShapeRef::inline(shape),
-        &EmptyShapeAccess,
-        &EncodeOptions::default(),
-    )?;
-    SaveEnvelope::new(schema_id, schema_version, codec_id, payload).encode_bytes()
+        shape,
+        &schema_id,
+        schema_version,
+        codec.as_ref(),
+    )
 }
 
 pub fn decode_save(

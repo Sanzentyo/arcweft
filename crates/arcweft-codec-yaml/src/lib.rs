@@ -33,20 +33,19 @@ impl Codec for YamlCodec {
         &["yaml", "yml"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let yaml = raw_to_yaml(&raw, shape, access)?;
-        let mut out = String::new();
-        YamlEmitter::new(&mut out)
+        YamlEmitter::new(output)
             .dump(&yaml)
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        Ok(out.into_bytes())
+            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
     }
 
     fn decode_value(

@@ -16,7 +16,8 @@ pub mod shape_graph;
 pub mod value;
 
 pub use codec::{
-    Codec, CodecRegistry, DataFormat, DecodeOptions, EncodeOptions, FormatId, MediaType,
+    Codec, CodecRegistry, DataFormat, DecodeOptions, EncodeBuffer, EncodeOptions, FormatId,
+    MediaType,
 };
 pub use decode::Decode;
 pub use defaults::{DecodeShapeAccess, FieldDefaultProvider, FieldDefaultRequest};

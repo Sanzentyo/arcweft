@@ -40,21 +40,20 @@ impl Codec for ArrowIpcCodec {
         &["arrow", "feather"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let batch = value_to_batch(value, shape, access)?;
-        let mut output = Vec::new();
-        let mut writer = arrow::ipc::writer::FileWriter::try_new(&mut output, &batch.schema())
+        let mut writer = arrow::ipc::writer::FileWriter::try_new(output, &batch.schema())
             .map_err(arrow_error)?;
         writer.write(&batch).map_err(arrow_error)?;
         writer.finish().map_err(arrow_error)?;
-        drop(writer);
-        Ok(output)
+        Ok(())
     }
 
     fn decode_value(
@@ -98,20 +97,20 @@ impl Codec for ParquetCodec {
         &["parquet"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let batch = value_to_batch(value, shape, access)?;
-        let mut output = Vec::new();
-        let mut writer = parquet::arrow::ArrowWriter::try_new(&mut output, batch.schema(), None)
+        let mut writer = parquet::arrow::ArrowWriter::try_new(output, batch.schema(), None)
             .map_err(arrow_error)?;
         writer.write(&batch).map_err(arrow_error)?;
         writer.close().map_err(arrow_error)?;
-        Ok(output)
+        Ok(())
     }
 
     fn decode_value(

@@ -32,17 +32,18 @@ impl Codec for CsvCodec {
         &["csv"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let row_shape = csv_row_shape(shape, access)?;
         let rows = value.as_seq()?;
         let headers = csv_headers(row_shape.fields());
-        let mut writer = csv::Writer::from_writer(Vec::new());
+        let mut writer = csv::Writer::from_writer(output);
         writer
             .write_record(&headers)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
@@ -50,7 +51,7 @@ impl Codec for CsvCodec {
             write_row(&mut writer, row, &row_shape, &headers, index, access)
         })?;
         writer
-            .into_inner()
+            .flush()
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
     }
 
@@ -371,7 +372,7 @@ fn csv_headers(fields: &[FieldShape]) -> Vec<String> {
 }
 
 fn write_row(
-    writer: &mut csv::Writer<Vec<u8>>,
+    writer: &mut csv::Writer<&mut arcweft_data::EncodeBuffer>,
     row: &Value,
     row_shape: &CsvRowShape,
     headers: &[String],

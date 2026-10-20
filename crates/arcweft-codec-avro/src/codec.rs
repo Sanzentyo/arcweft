@@ -37,20 +37,21 @@ impl Codec for AvroCodec {
         &["avro"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let resolved_shape = shape.resolve(access)?;
         match resolved_shape.as_ref() {
-            TypeShape::Ref(id) => self.encode_value(value, ShapeRef::Id(*id), access, options),
+            TypeShape::Ref(id) => self.encode_to(value, ShapeRef::Id(*id), access, options, output),
             TypeShape::Seq(item_shape) => {
                 validate_schema(ShapeRef::Inline(item_shape), access, &self.schema)?;
                 let rows = value.as_seq()?;
-                let mut writer = Writer::new(&self.schema, Vec::new());
+                let mut writer = Writer::new(&self.schema, output);
                 rows.iter().enumerate().try_for_each(|(index, value)| {
                     writer
                         .append(value_to_avro(
@@ -65,11 +66,11 @@ impl Codec for AvroCodec {
                                 .at_index(index)
                         })
                 })?;
-                writer.into_inner().map_err(invalid_encoding_error)
+                writer.flush().map(|_| ()).map_err(invalid_encoding_error)
             }
             other => {
                 validate_schema(ShapeRef::Inline(other), access, &self.schema)?;
-                let mut writer = Writer::new(&self.schema, Vec::new());
+                let mut writer = Writer::new(&self.schema, output);
                 writer
                     .append(value_to_avro(
                         value,
@@ -79,7 +80,7 @@ impl Codec for AvroCodec {
                     )?)
                     .map(|_| ())
                     .map_err(invalid_encoding_error)?;
-                writer.into_inner().map_err(invalid_encoding_error)
+                writer.flush().map(|_| ()).map_err(invalid_encoding_error)
             }
         }
     }

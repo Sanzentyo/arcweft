@@ -23,14 +23,15 @@ impl Codec for StaticCodec {
         self.media_types
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         _value: &Value,
         _shape: ShapeRef<'_>,
         _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> arcweft_data::Result<Vec<u8>> {
-        Ok(self.id.as_bytes().to_vec())
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> arcweft_data::Result<()> {
+        output.append(self.id.as_bytes())
     }
 
     fn decode_value(

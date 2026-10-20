@@ -26,19 +26,18 @@ impl Codec for MessagePackCodec {
         &["mpk"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let message_pack = raw_to_message_pack(raw)?;
-        let mut out = Vec::new();
-        rmpv::encode::write_value(&mut out, &message_pack)
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        Ok(out)
+        rmpv::encode::write_value(output, &message_pack)
+            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
     }
 
     fn decode_value(

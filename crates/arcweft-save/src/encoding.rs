@@ -12,6 +12,9 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod codec_tests;
+
 /// Limits for the same save envelope on either side of the codec boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SaveEnvelopeLimits {
@@ -37,6 +40,38 @@ impl Default for SaveEnvelopeLimits {
 }
 
 impl SaveEnvelopeLimits {
+    /// Validates header allowances before invoking the codec and bounds its
+    /// output by the payload, complete envelope, wire, and address limits.
+    pub fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        schema_id: &SaveSchemaId,
+        schema_version: u32,
+        codec: &dyn arcweft_data::Codec,
+    ) -> Result<Vec<u8>> {
+        let codec_id = codec.id();
+        let mut output = SaveEnvelopeEncoder::new(
+            schema_id.as_str(),
+            schema_version,
+            codec_id.as_str(),
+            *self,
+            None,
+        )?;
+        let options = arcweft_data::EncodeOptions {
+            max_output_len: output.maximum_buffer_len - output.payload_start,
+            ..arcweft_data::EncodeOptions::default()
+        };
+        let payload = options.encode_value(
+            codec,
+            value,
+            arcweft_data::ShapeRef::inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+        )?;
+        output.append(&payload)?;
+        output.finish(None)
+    }
+
     /// Encodes directly into one bounded envelope buffer. Header limits are
     /// checked before invoking Serialize; payload writes fail before growth or
     /// copying would exceed either the payload or complete-envelope allowance.

@@ -23,17 +23,18 @@ impl Codec for StaticCodec {
         self.extensions
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         _shape: ShapeRef<'_>,
         _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
-        value
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
+        let text = value
             .stringify_scalar()
-            .map(String::into_bytes)
-            .ok_or_else(|| arcweft_data::DataError::invalid_type("scalar", value.type_name()))
+            .ok_or_else(|| arcweft_data::DataError::invalid_type("scalar", value.type_name()))?;
+        output.append(text.as_bytes())
     }
 
     fn decode_value(

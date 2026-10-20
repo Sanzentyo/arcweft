@@ -19,15 +19,16 @@ impl Codec for UnitCodec {
         &["application/x-test-unit"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         _shape: ShapeRef<'_>,
         _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         match value {
-            Value::Unit => Ok(Vec::new()),
+            Value::Unit => output.append(&[]),
             other => Err(arcweft_data::DataError::invalid_type(
                 "unit",
                 other.type_name(),
@@ -77,15 +78,16 @@ impl Codec for TextCodec {
         &["text/plain"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         _shape: ShapeRef<'_>,
         _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         match value {
-            Value::String(value) => Ok(value.as_bytes().to_vec()),
+            Value::String(value) => output.append(value.as_bytes()),
             other => Err(arcweft_data::DataError::invalid_type(
                 "string",
                 other.type_name(),

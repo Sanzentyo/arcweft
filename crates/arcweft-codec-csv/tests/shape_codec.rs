@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -372,3 +371,6 @@ fn csv_decode_preflights_hex_bytes_budget_before_string_record() {
         .expect_err("pre-string-record bytes budget");
     assert_eq!(error.kind(), &DataErrorKind::LimitExceeded);
 }
+
+#[path = "shape_codec/encoding_limits.rs"]
+mod encoding_limits;

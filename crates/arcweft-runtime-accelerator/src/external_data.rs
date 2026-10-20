@@ -1339,31 +1339,37 @@ fn encode_value(
     let options = EncodeOptions::default();
     match format {
         DataFormat::Json => {
-            arcweft_codec_json::JsonCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_json::JsonCodec, value, shape, access)
         }
         DataFormat::Toml => {
-            arcweft_codec_toml::TomlCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_toml::TomlCodec, value, shape, access)
         }
         DataFormat::Yaml => {
-            arcweft_codec_yaml::YamlCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_yaml::YamlCodec, value, shape, access)
         }
-        DataFormat::MessagePack => {
-            arcweft_codec_msgpack::MessagePackCodec.encode_value(value, shape, access, &options)
-        }
+        DataFormat::MessagePack => options.encode_value(
+            &arcweft_codec_msgpack::MessagePackCodec,
+            value,
+            shape,
+            access,
+        ),
         DataFormat::Cbor => {
-            arcweft_codec_cbor::CborCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_cbor::CborCodec, value, shape, access)
         }
         DataFormat::Avro => encode_avro_json_envelope(value, shape, access),
-        DataFormat::Csv => arcweft_codec_csv::CsvCodec.encode_value(value, shape, access, &options),
+        DataFormat::Csv => options.encode_value(&arcweft_codec_csv::CsvCodec, value, shape, access),
         DataFormat::ArrowIpc => {
-            arcweft_codec_arrow::ArrowIpcCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_arrow::ArrowIpcCodec, value, shape, access)
         }
         DataFormat::Parquet => {
-            arcweft_codec_arrow::ParquetCodec.encode_value(value, shape, access, &options)
+            options.encode_value(&arcweft_codec_arrow::ParquetCodec, value, shape, access)
         }
-        DataFormat::ArcweftBinary => {
-            arcweft_codec_binary::ArcweftBinaryCodec.encode_value(value, shape, access, &options)
-        }
+        DataFormat::ArcweftBinary => options.encode_value(
+            &arcweft_codec_binary::ArcweftBinaryCodec,
+            value,
+            shape,
+            access,
+        ),
     }
 }
 
@@ -1409,26 +1415,29 @@ fn encode_avro_json_envelope(
     shape: ShapeRef<'_>,
     access: &dyn ShapeAccess,
 ) -> arcweft_data::Result<Vec<u8>> {
-    let json = arcweft_codec_json::JsonCodec.encode_value(
+    let json = EncodeOptions::default().encode_value(
+        &arcweft_codec_json::JsonCodec,
         value,
         shape,
         access,
-        &EncodeOptions::default(),
     )?;
     let schema = Schema::parse_str(
         r#"{"type":"record","name":"ArcweftDataEnvelope","fields":[{"name":"json","type":"bytes"}]}"#,
     )
     .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-    let mut writer = Writer::new(&schema, Vec::new());
-    writer
-        .append(AvroValue::Record(vec![(
-            "json".to_owned(),
-            AvroValue::Bytes(json),
-        )]))
-        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-    writer
-        .into_inner()
-        .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
+    EncodeOptions::default().encode_with(|output| {
+        let mut writer = Writer::new(&schema, output);
+        writer
+            .append(AvroValue::Record(vec![(
+                "json".to_owned(),
+                AvroValue::Bytes(json),
+            )]))
+            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
+        writer
+            .flush()
+            .map(|_| ())
+            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
+    })
 }
 
 fn decode_avro_json_envelope(

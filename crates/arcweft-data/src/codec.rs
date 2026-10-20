@@ -6,6 +6,10 @@ use crate::shape::BytesFormat;
 use crate::shape_graph::{ShapeAccess, ShapeRef};
 use crate::value::Value;
 
+mod output;
+
+pub use output::EncodeBuffer;
+
 /// Built-in data codec format selected by Arcweft source and runtime APIs.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DataFormat {
@@ -154,6 +158,8 @@ impl From<&str> for MediaType {
 pub struct EncodeOptions {
     pub pretty: bool,
     pub bytes_format: BytesFormat,
+    /// Maximum encoded bytes. Checked before output growth or copying.
+    pub max_output_len: usize,
 }
 
 impl Default for EncodeOptions {
@@ -161,7 +167,33 @@ impl Default for EncodeOptions {
         Self {
             pretty: false,
             bytes_format: BytesFormat::Base64,
+            max_output_len: 256 * 1024 * 1024,
         }
+    }
+}
+
+impl EncodeOptions {
+    /// Encodes into a bounded memory buffer. A codec cannot publish partial
+    /// bytes or suppress an output-limit failure by catching a write error.
+    pub fn encode_value<C: Codec + ?Sized>(
+        &self,
+        codec: &C,
+        value: &Value,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
+    ) -> Result<Vec<u8>> {
+        self.encode_with(|output| codec.encode_to(value, shape, access, self, output))
+    }
+
+    /// Runs an encoder against the same bounded, in-memory output authority.
+    /// No partially written output is returned on any failure.
+    pub fn encode_with(
+        &self,
+        encode: impl FnOnce(&mut EncodeBuffer) -> Result<()>,
+    ) -> Result<Vec<u8>> {
+        let mut output = EncodeBuffer::new(self.max_output_len);
+        let result = encode(&mut output);
+        output.finish(result)
     }
 }
 
@@ -181,13 +213,16 @@ pub trait Codec: Send + Sync {
         &[]
     }
 
-    fn encode_value(
+    /// Writes only through the supplied bounded memory output. Callers enter
+    /// through [`EncodeOptions::encode_value`], which owns final publication.
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         options: &EncodeOptions,
-    ) -> Result<Vec<u8>>;
+        output: &mut EncodeBuffer,
+    ) -> Result<()>;
 
     fn decode_value(
         &self,

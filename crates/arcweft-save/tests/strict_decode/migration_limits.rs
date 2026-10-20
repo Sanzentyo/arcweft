@@ -18,14 +18,15 @@ impl Codec for UncheckedCodec {
     fn media_types(&self) -> &'static [&'static str] {
         &["application/x-unchecked-test"]
     }
-    fn encode_value(
+    fn encode_to(
         &self,
         _: &Value,
         _: ShapeRef<'_>,
         _: &dyn ShapeAccess,
         _: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
-        Ok(Vec::new())
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
+        output.append(&[])
     }
     fn decode_value(
         &self,

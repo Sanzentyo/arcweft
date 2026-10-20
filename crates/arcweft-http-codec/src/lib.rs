@@ -82,11 +82,11 @@ pub fn encode_response_body_with_options(
 ) -> Result<EncodedBody> {
     let media_type = negotiate_accept(headers, registry)?;
     let codec = registry.by_media_type(&media_type)?;
-    let body = codec.encode_value(
+    let body = options.encode.encode_value(
+        codec.as_ref(),
         value,
         ShapeRef::inline(shape),
         &EmptyShapeAccess,
-        &options.encode,
     )?;
     Ok(EncodedBody {
         content_type: media_type,

@@ -24,12 +24,11 @@ impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
         shape: &arcweft_data::TypeShape,
         options: &arcweft_data::EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
-        <C as arcweft_data::Codec>::encode_value(
+        options.encode_value(
             self,
             value,
             arcweft_data::ShapeRef::Inline(shape),
             &arcweft_data::EmptyShapeAccess,
-            options,
         )
     }
 
@@ -567,3 +566,6 @@ fn rejects_unrepresentable_general_shapes_with_paths(codec: &impl Codec) {
         assert_eq!(error.path().to_string(), format!("$.{field_name}"));
     }
 }
+
+#[path = "shape_codec/encoding_limits.rs"]
+mod encoding_limits;

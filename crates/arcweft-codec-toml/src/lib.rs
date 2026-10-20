@@ -13,6 +13,7 @@ use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use source_preflight::preflight_toml_source_budget;
 use toml::Value as TomlValue;
 
+mod encoding;
 mod source_preflight;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -31,18 +32,17 @@ impl Codec for TomlCodec {
         &["toml"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let toml = raw_to_toml_value(&raw, shape, access)?;
-        toml::to_string_pretty(&toml)
-            .map(String::into_bytes)
-            .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
+        encoding::write_document(&toml, output)
     }
 
     fn decode_value(

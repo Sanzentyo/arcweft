@@ -25,17 +25,18 @@ impl Codec for ArcweftBinaryCodec {
         &["awbin"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         _options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         encode_with_shape_ref(value, shape, access)?;
-        let mut out = MAGIC.to_vec();
-        write_value(&mut out, value)?;
-        Ok(out)
+        output.append(MAGIC)?;
+        write_value(output, value)?;
+        Ok(())
     }
 
     fn decode_value(
@@ -80,27 +81,25 @@ impl Codec for BincodeInteropCodec {
         &["bin"]
     }
 
-    fn encode_value(
+    fn encode_to(
         &self,
         value: &Value,
         shape: ShapeRef<'_>,
         access: &dyn ShapeAccess,
         options: &EncodeOptions,
-    ) -> Result<Vec<u8>> {
+        output: &mut arcweft_data::EncodeBuffer,
+    ) -> Result<()> {
         #[cfg(feature = "bincode-interop")]
         {
-            let codec = arcweft_codec_json::JsonCodec;
-            let json: serde_json::Value =
-                serde_json::from_slice(&codec.encode_value(value, shape, access, options)?)
-                    .map_err(|error| {
-                        DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
-                    })?;
-            bincode::serde::encode_to_vec(&json, bincode::config::standard())
+            let _ = options;
+            let json = arcweft_codec_json::JsonCodec::project_value(value, shape, access)?;
+            bincode::serde::encode_into_std_write(&json, output, bincode::config::standard())
+                .map(|_| ())
                 .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
         }
         #[cfg(not(feature = "bincode-interop"))]
         {
-            let _ = (value, shape, access, options);
+            let _ = (value, shape, access, options, output);
             Err(DataError::unsupported(
                 "bincode interop support is disabled; enable feature `bincode-interop` only for explicit interop",
             ))
@@ -144,66 +143,66 @@ impl Codec for BincodeInteropCodec {
     }
 }
 
-fn write_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
+fn write_value(out: &mut arcweft_data::EncodeBuffer, value: &Value) -> Result<()> {
     match value {
-        Value::Unit => out.push(0),
-        Value::Bool(false) => out.push(1),
-        Value::Bool(true) => out.push(2),
+        Value::Unit => out.push(0)?,
+        Value::Bool(false) => out.push(1)?,
+        Value::Bool(true) => out.push(2)?,
         Value::Number(Number::I(value)) => {
-            out.push(3);
-            out.extend_from_slice(&value.to_le_bytes());
+            out.push(3)?;
+            out.append(&value.to_le_bytes())?;
         }
         Value::Number(Number::U(value)) => {
-            out.push(4);
-            out.extend_from_slice(&value.to_le_bytes());
+            out.push(4)?;
+            out.append(&value.to_le_bytes())?;
         }
         Value::Number(Number::F32(value)) => {
-            out.push(5);
-            out.extend_from_slice(&value.to_le_bytes());
+            out.push(5)?;
+            out.append(&value.to_le_bytes())?;
         }
         Value::Number(Number::F64(value)) => {
-            out.push(6);
-            out.extend_from_slice(&value.to_le_bytes());
+            out.push(6)?;
+            out.append(&value.to_le_bytes())?;
         }
         Value::String(value) => {
-            out.push(7);
+            out.push(7)?;
             write_bytes(out, value.as_bytes())?;
         }
         Value::Char(value) => {
-            out.push(8);
+            out.push(8)?;
             write_bytes(out, value.to_string().as_bytes())?;
         }
         Value::Bytes(value) => {
-            out.push(9);
+            out.push(9)?;
             write_bytes(out, value.as_slice())?;
         }
         Value::Seq(values) => {
-            out.push(10);
+            out.push(10)?;
             write_len(out, values.len())?;
             values
                 .iter()
                 .try_for_each(|value| write_value(out, value))?;
         }
         Value::Tuple(values) => {
-            out.push(15);
+            out.push(15)?;
             write_len(out, values.len())?;
             values
                 .iter()
                 .try_for_each(|value| write_value(out, value))?;
         }
         Value::Option(value) => {
-            out.push(14);
+            out.push(14)?;
             match value {
                 Some(value) => {
-                    out.push(1);
+                    out.push(1)?;
                     write_value(out, value)?;
                 }
-                None => out.push(0),
+                None => out.push(0)?,
             }
         }
         Value::Map { kind, entries } => {
-            out.push(11);
-            out.push(map_kind_tag(*kind));
+            out.push(11)?;
+            out.push(map_kind_tag(*kind))?;
             write_len(out, entries.len())?;
             entries.iter().try_for_each(|(key, value)| {
                 write_value(out, key)?;
@@ -211,18 +210,18 @@ fn write_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
             })?;
         }
         Value::Record(values) => {
-            out.push(12);
+            out.push(12)?;
             write_map(out, values)?;
         }
         Value::Enum { variant, payload } => {
-            out.push(13);
+            out.push(13)?;
             write_bytes(out, variant.as_bytes())?;
             match payload {
                 Some(payload) => {
-                    out.push(1);
+                    out.push(1)?;
                     write_value(out, payload)?;
                 }
-                None => out.push(0),
+                None => out.push(0)?,
             }
         }
     }
@@ -249,7 +248,7 @@ fn map_kind_from_tag(tag: u8) -> Result<MapKind> {
     }
 }
 
-fn write_map(out: &mut Vec<u8>, values: &BTreeMap<String, Value>) -> Result<()> {
+fn write_map(out: &mut arcweft_data::EncodeBuffer, values: &BTreeMap<String, Value>) -> Result<()> {
     write_len(out, values.len())?;
     values.iter().try_for_each(|(key, value)| {
         write_bytes(out, key.as_bytes())?;
@@ -257,16 +256,16 @@ fn write_map(out: &mut Vec<u8>, values: &BTreeMap<String, Value>) -> Result<()> 
     })
 }
 
-fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+fn write_bytes(out: &mut arcweft_data::EncodeBuffer, bytes: &[u8]) -> Result<()> {
     write_len(out, bytes.len())?;
-    out.extend_from_slice(bytes);
+    out.append(bytes)?;
     Ok(())
 }
 
-fn write_len(out: &mut Vec<u8>, len: usize) -> Result<()> {
+fn write_len(out: &mut arcweft_data::EncodeBuffer, len: usize) -> Result<()> {
     let len = u64::try_from(len)
         .map_err(|_| DataError::new(DataErrorKind::NumberOutOfRange, "length does not fit u64"))?;
-    out.extend_from_slice(&len.to_le_bytes());
+    out.append(&len.to_le_bytes())?;
     Ok(())
 }
 
