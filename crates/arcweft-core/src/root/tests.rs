@@ -411,34 +411,6 @@ impl Fixture {
     }
 }
 
-struct ReturnValue {
-    value: Option<RuntimeValue>,
-    calls: usize,
-    last_args: Option<Vec<RuntimeValue>>,
-}
-impl ReturnValue {
-    fn new(value: RuntimeValue) -> Self {
-        Self {
-            value: Some(value),
-            calls: 0,
-            last_args: None,
-        }
-    }
-}
-impl RootCallableEvaluator for ReturnValue {
-    fn evaluate_root_callable(
-        &mut self,
-        _: &RuntimeCallableRole,
-        args: Vec<RuntimeValue>,
-    ) -> Result<RuntimeValue, RootCallableEvaluationError> {
-        self.calls += 1;
-        self.last_args = Some(args);
-        self.value
-            .take()
-            .ok_or_else(|| RootCallableEvaluationError::new("test evaluator was called twice"))
-    }
-}
-
 fn reduction(state: RuntimeValue) -> RuntimeValue {
     let owner = RuntimeOpaqueTypeOwner::exact(
         RuntimeOpaqueTypeProducerId::try_new("std.reduction").unwrap(),
@@ -659,18 +631,20 @@ fn reducer_receives_one_owned_affine_event_without_copying_it() {
     let fixture = Fixture::with_affine_field(AffineField::Event);
     for program in fixture.programs() {
         let mut root = fixture.start(program);
-        let mut reducer = ReturnValue::new(reduction(fixture.state(RuntimeValue::Bool(false))));
-        let result = root
-            .step(vec![fixture.event(affine_value())], &mut reducer, program)
+        root.ingress(vec![fixture.event(affine_value())], program)
             .unwrap();
-        assert_eq!(result.outcomes.len(), 1);
-        assert!(!result.failed);
-        let args = reducer
-            .last_args
-            .take()
-            .expect("reducer received owned inputs");
+        let (callable, args) = root.begin_reduction().unwrap().unwrap().into_parts();
+        assert_eq!(callable, fixture.contract.roles.reducer);
         assert_eq!(args.len(), 2);
         assert!(args[1].ownership() == crate::value::ownership::RuntimeValueOwnership::Affine);
+        let result = root
+            .complete_reduction(
+                Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
+                program,
+            )
+            .unwrap();
+        assert!(matches!(result, RootTransitionOutcome::Committed { .. }));
+        assert!(root.begin_reduction().unwrap().is_none());
         assert_eq!(
             root.snapshot_state().phase.state_value().unwrap().0,
             fixture.state(RuntimeValue::Bool(false))
@@ -1045,31 +1019,31 @@ fn canonical_result_payload_reduces_and_bad_nested_state_never_commits() {
     let fixture = Fixture::new();
     for program in fixture.programs() {
         let mut root = fixture.start(program);
-        let mut evaluator = ReturnValue::new(reduction(fixture.state(RuntimeValue::Bool(false))));
+        root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
+            .unwrap();
+        let invocation = root.begin_reduction().unwrap().unwrap();
+        drop(invocation);
         let outcome = root
-            .step(
-                vec![fixture.event(RuntimeValue::Bool(false))],
-                &mut evaluator,
+            .complete_reduction(
+                Ok(reduction(fixture.state(RuntimeValue::Bool(false)))),
                 program,
             )
             .unwrap();
-        assert!(!outcome.failed);
-        assert_eq!(outcome.outcomes.len(), 1);
-        assert_eq!(evaluator.calls, 1);
+        assert!(matches!(outcome, RootTransitionOutcome::Committed { .. }));
+        assert!(root.begin_reduction().unwrap().is_none());
         assert_eq!(
             root.snapshot_state().phase.state_value().unwrap().0,
             fixture.state(RuntimeValue::Bool(false))
         );
         let before = root.snapshot_state();
-        let mut evaluator = ReturnValue::new(reduction(fixture.state(RuntimeValue::Unit)));
-        let outcome = root
-            .step(
-                vec![fixture.event(RuntimeValue::Bool(true))],
-                &mut evaluator,
-                program,
-            )
+        root.ingress(vec![fixture.event(RuntimeValue::Bool(true))], program)
             .unwrap();
-        assert!(outcome.failed);
+        let invocation = root.begin_reduction().unwrap().unwrap();
+        drop(invocation);
+        let outcome = root
+            .complete_reduction(Ok(reduction(fixture.state(RuntimeValue::Unit))), program)
+            .unwrap();
+        assert!(matches!(outcome, RootTransitionOutcome::Trapped { .. }));
         assert_eq!(root.snapshot_state(), before);
     }
 }
@@ -1122,12 +1096,7 @@ fn suspended_reducer_keeps_committed_state_and_sequences_later_ingress() {
             root.begin_reduction(),
             Err(RootRuntimeError::ReducerAlreadyActive)
         ));
-        let mut evaluator = ReturnValue::new(reduction(fixture.state(RuntimeValue::Bool(false))));
-        assert!(matches!(
-            root.step(Vec::new(), &mut evaluator, program),
-            Err(RootRuntimeError::ReducerAlreadyActive)
-        ));
-        assert_eq!(evaluator.calls, 0);
+        assert_eq!(root.snapshot_state(), before);
 
         root.ingress(vec![fixture.event(RuntimeValue::Bool(false))], program)
             .unwrap();

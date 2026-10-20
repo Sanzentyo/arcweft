@@ -406,14 +406,6 @@ pub struct RejectedRootInitialization {
     pub root: RootRuntime,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct RootStepResult {
-    pub outcomes: Vec<RootTransitionOutcome>,
-    pub commands: Vec<RuntimeCommandEnvelope>,
-    pub stopped_after_rejection: bool,
-    pub failed: bool,
-}
-
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RootRuntimeFailure {
     #[error("root transition {sequence} failed: {message}")]
@@ -490,17 +482,6 @@ impl RootCallableEvaluationError {
             message: message.into(),
         }
     }
-}
-
-/// Existing structured or Product AWBC callable engine used by root
-/// transactions. The root owner retains stable semantic identity and never a
-/// tier-local dense function/helper index.
-pub trait RootCallableEvaluator {
-    fn evaluate_root_callable(
-        &mut self,
-        callable: &RuntimeCallableRole,
-        args: Vec<RuntimeValue>,
-    ) -> Result<RuntimeValue, RootCallableEvaluationError>;
 }
 
 impl RootStartupContract {
@@ -1219,38 +1200,6 @@ impl RootRuntime {
             limits,
             failure: None,
         })
-    }
-
-    pub fn step(
-        &mut self,
-        events: Vec<RootEventInput>,
-        evaluator: &mut impl RootCallableEvaluator,
-        program: crate::program_types::RuntimeProgramTypes<'_>,
-    ) -> Result<RootStepResult, RootRuntimeError> {
-        if !self.active.committed_commands.is_empty() {
-            return Err(RootRuntimeError::PendingCommandsAwaitingDispatch);
-        }
-        if self.active.reducer_active() {
-            return Err(RootRuntimeError::ReducerAlreadyActive);
-        }
-        self.ingress(events, program)?;
-        let mut result = RootStepResult::default();
-        while let Some(invocation) = self.begin_reduction()? {
-            let (callable, args) = invocation.into_parts();
-            let returned = evaluator.evaluate_root_callable(&callable, args);
-            let completed = self.complete_reduction(returned, program)?;
-            result.stopped_after_rejection =
-                matches!(completed, RootTransitionOutcome::Rejected { .. });
-            result.failed = matches!(completed, RootTransitionOutcome::Trapped { .. });
-            result.outcomes.push(completed);
-            if result.stopped_after_rejection || result.failed {
-                break;
-            }
-        }
-        result
-            .commands
-            .extend(self.active.committed_commands.iter().cloned());
-        Ok(result)
     }
 
     /// Acknowledges the exact committed prefix after the existing driver has

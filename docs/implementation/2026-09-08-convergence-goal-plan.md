@@ -23555,3 +23555,50 @@ the original implementation goal remain incomplete. Publish only the two owned
 Rust files and this operational note; preserve held changes and use a normal
 fast-forward push from the inspected main base.
 The broader original goal remains active; no completion or blocking is claimed.
+
+Rollback checkpoint `4fffaf024a09365c508a6ec367af92daf3807bf0` was pushed and
+verified against fresh fetched/advertised main, all3 blobs and3939 inputs, held14,
+zero drift and empty index. Parent `1d37ea98f7afe87954e61fac753c06e53819397e`,
+tree `17add0c32476171b864a900d050f3b7e38a71896`, patch SHA256
+`3ca521ac222057122cc738b8261aed1facc8df73686f8d57e578e78910431ed6`.
+The baseline advanced to that commit with owned0 before the next change.
+
+### 2026-10-20 — remove the obsolete synchronous Root execution API
+
+Inspected main `4fffaf024a09365c508a6ec367af92daf3807bf0`. Both production tiers
+already stage ordinary reducer frames. The remaining RootCallableEvaluator
+implementation and all four RootRuntime::step calls were in domain tests.
+Removed that evaluator trait, the synchronous loop and its unused RootStepResult;
+removed the test evaluator and moved the existing tests onto ingress,
+begin_reduction and complete_reduction. They still check one affine event owner,
+the exact selected callable, one completed transition, canonical result commit,
+bad nested state rejection with unchanged state, and reentry rejection with an
+unchanged active transaction. These are domain tests, not Source/backend proofs.
+
+The Root owner retains lifecycle/type/command policy, while the Native and AWBC
+executors own scheduling and execution. No compatibility wrapper or alternative
+evaluator is retained. This review found no maintained specification reference to
+the removed API; historical implementation/review evidence is preserved.
+root.rs owns the same cohesive state machine:66689 bytes/1789 physical LOC versus
+1840 at this base. Its separate tests are47431 bytes/1239 LOC versus1270. The cut
+adds no state group, I/O, crate edge or contract version change. R1930 structure
+passes:3160 files,3030 Rust files,1723897 physical Rust LOC,97 packages,376 review
+triggers,zero blocking violations. R1927 focused Root catalog and R1929 ordinary
+Core Clippy are running; no post-change behavioral pass is claimed yet. The
+earlier2140-case R1924 pass stays attributed to its original bytes. Held14 tracked
+paths and three untracked entries are preserved. Clean is not repeated and no
+branch/worktree, artifact relocation or job/profile tuning is used. Public
+product-only snapshot/restore coupling and the other recorded original-goal
+acceptance remain open; continue those owners after this coherent removal.
+
+Supersedes the running cursors:R1927 completed with1964 total Core cases,15 exact
+Root-domain matches and1949 filtered cases. R1928 executes that complete selected
+set:15 passed,1949 filtered,0.367s,exit0; all selected case keys and3938 frozen
+runtime/spec inputs match. R1929 Core all-target/all-feature Clippy exits0 with
+warnings, with the same frozen-input audit; this is ordinary Clippy. R1930's
+source audit also matches3938 inputs. Both changed Rust files pass rustfmt
+--check and git diff --check passes. No source-sensitive check remains live.
+This slice removes an unused public execution route and migrates its domain
+tests; broader post-migration consumer/backend/restore/visual acceptance is
+still required. The checkpoint publishes these two Rust files and this note,
+preserving the same held inventory; the original goal remains active.
